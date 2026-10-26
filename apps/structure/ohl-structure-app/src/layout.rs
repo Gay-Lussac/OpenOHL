@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::{Sheet, StructureApp};
 
-/// Key of the arrangement in the window's storage.
-pub const DOCK_KEY: &str = "ols-structure-dock";
+/// Key of the arrangement in the window's storage: the name from before
+/// OpenOHL, kept so that the arrangement is not lost.
+pub const DOCK_KEY: &str = "ols-structure-dock"; // storage key: kept
 
 /// Key of the arrangement's version in the window's storage.
 pub const DOCK_VERSION_KEY: &str = "ohl-structure-dock-version";

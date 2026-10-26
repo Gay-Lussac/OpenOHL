@@ -181,7 +181,9 @@ fn profile_kind(shape: &Shape, schema: Schema) -> Option<Profile> {
     })
 }
 
-/// The IFC entity a section's profile maps to (none: no geometry).
+/// The IFC entity a section's profile maps to (none: no geometry); for
+/// the tests.
+#[cfg(test)]
 pub fn profile_entity(shape: &Shape) -> Option<&'static str> {
     profile_kind(shape, Schema::Ifc4).map(|p| match p {
         Profile::Parameterized(e, _) => e,

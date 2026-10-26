@@ -537,12 +537,8 @@ pub struct Placed {
 /// axis), unit vectors, and its solved axis and length. None: the string
 /// has no length.
 fn frame(v: &ohl_structures::StringVolumes, s: &StringAt) -> Option<([P3; 3], P3, f64)> {
-    let o = s.orientation_deg.to_radians();
-    let (x, y, z) = (
-        [o.cos(), o.sin(), 0.0],
-        [-o.sin(), o.cos(), 0.0],
-        [0.0, 0.0, 1.0],
-    );
+    let ([c, n], [a0, a1]) = ohl_line::links::axes(s.orientation_deg);
+    let (x, y, z) = ([c, n, 0.0], [a0, a1, 0.0], [0.0, 0.0, 1.0]);
     let d = sub(s.bottom, s.top);
     let length = norm(d);
     let u = unit(d)?;

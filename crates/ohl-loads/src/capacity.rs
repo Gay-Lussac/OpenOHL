@@ -176,7 +176,7 @@ impl StructureUsage {
         ]
         .into_iter()
         .flatten()
-        .max_by(|a, b| a.usage.total_cmp(&b.usage))
+        .max_by(|a, b| ohl_structures_fe::check::usage_order(a.usage, b.usage))
     }
 
     /// Whether its loads miss a wire that did not solve.
@@ -206,8 +206,10 @@ impl StructureUsage {
         match self.governing() {
             None => UsageStatus::NotChecked,
             // A usage that is not a number never passes.
-            Some(g) if g.usage > 1.0 || g.usage.is_nan() => UsageStatus::Over,
-            Some(_) => UsageStatus::Pass,
+            Some(g) => match ohl_structures_fe::check::classify_usage(g.usage) {
+                ohl_structures_fe::check::UsageClass::Over => UsageStatus::Over,
+                _ => UsageStatus::Pass,
+            },
         }
     }
 
@@ -399,6 +401,37 @@ fn bundle_weight(
     let cable = library.get(&s.cable)?;
     let w = case.wire_load(cable.diameter, cable.weight()).vertical.si();
     Some(w * f64::from(s.bundle.max(1)))
+}
+
+/// The factored loads at the points of structure `structure` in `loads`,
+/// summed per point, by label (the order of the usage's points).
+fn factored_at(loads: &[crate::AttachmentLoad], structure: &str) -> Vec<crate::analysis::Factored> {
+    let mut at: BTreeMap<&str, [f64; 3]> = BTreeMap::new();
+    for l in loads
+        .iter()
+        .filter(|l| l.structure == structure && !l.point.is_empty())
+    {
+        let e = at.entry(l.point.as_str()).or_default();
+        for (sum, f) in e.iter_mut().zip(l.factored) {
+            *sum += f;
+        }
+    }
+    at.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
+}
+
+/// The worse of two checks (the larger usage, one that is not a number
+/// the worst; the first kept on a tie).
+fn worse(a: Option<Check>, b: Option<Check>) -> Option<Check> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(
+            if ohl_structures_fe::check::usage_order(b.usage, a.usage).is_gt() {
+                b
+            } else {
+                a
+            },
+        ),
+        (a, b) => a.or(b),
+    }
 }
 
 /// How much of its capacity every structure uses in every load case of
@@ -681,11 +714,52 @@ pub fn usage_with_sections(
                         .iter()
                         .map(|(label, p)| ((*label).clone(), p.factored))
                         .collect();
-                    let fe = type_def.and_then(|t| {
-                        analyses.fe(t, structure, &factored, &r.case, case, &mut notes)
-                    });
-                    let pole = type_def
-                        .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));
+                    let (fe, pole) = if r.broken_each.is_empty() {
+                        (
+                            type_def.and_then(|t| {
+                                analyses.fe(t, structure, &factored, &r.case, case, &mut notes)
+                            }),
+                            type_def.and_then(|t| {
+                                analyses.pole(t, &factored, &r.case, case, &mut notes)
+                            }),
+                        )
+                    } else {
+                        // A broken wire in every span: each break on its
+                        // own (the envelope of the components is not an
+                        // upper bound of a member force), the worst kept.
+                        let mut fe: Option<Check> = None;
+                        let mut pole: Option<Check> = None;
+                        let mut approximate = false;
+                        let mut each_notes: Vec<String> = Vec::new();
+                        for b in &r.broken_each {
+                            let factored = factored_at(&b.loads, id);
+                            let mark = |c: Option<Check>| {
+                                c.map(|mut c| {
+                                    c.governs = format!("{} (span {} broken)", c.governs, b.span);
+                                    c
+                                })
+                            };
+                            let f = mark(type_def.and_then(|t| {
+                                analyses.fe(t, structure, &factored, &r.case, case, &mut each_notes)
+                            }));
+                            let p = mark(type_def.and_then(|t| {
+                                analyses.pole(t, &factored, &r.case, case, &mut each_notes)
+                            }));
+                            approximate |= f.as_ref().is_some_and(|c| c.approximate);
+                            fe = worse(fe, f);
+                            pole = worse(pole, p);
+                        }
+                        if let Some(f) = fe.as_mut() {
+                            // Approximate when any break's solve was.
+                            f.approximate |= approximate;
+                        }
+                        for n in each_notes {
+                            if !notes.contains(&n) {
+                                notes.push(n);
+                            }
+                        }
+                        (fe, pole)
+                    };
                     let missing: Vec<crate::MissingWire> = r.missing_at(id).cloned().collect();
                     let mark = |c: Option<Check>| {
                         c.map(|mut c| {

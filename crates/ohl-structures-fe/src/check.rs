@@ -246,10 +246,88 @@ fn usage_of(
     }
 }
 
-/// The member using most of its capacity.
+/// The member using most of its capacity (a usage that is not a number
+/// ranks above every other, [`usage_order`]).
 pub fn worst(usage: &[MemberUsage]) -> Option<&MemberUsage> {
     usage
         .iter()
         .filter(|u| u.usage.is_some())
-        .max_by(|a, b| a.usage.unwrap_or(0.0).total_cmp(&b.usage.unwrap_or(0.0)))
+        .max_by(|a, b| usage_order(a.usage.unwrap_or(0.0), b.usage.unwrap_or(0.0)))
+}
+
+/// Usage at or above this share (and up to 100 %) is shown as near full
+/// (a warning, orange) by both applications and the reports. A display
+/// threshold, not a design limit.
+pub const NEAR_FULL: f64 = 0.9;
+
+/// What a usage comes to, one rule for every check, view and report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageClass {
+    /// Below [`NEAR_FULL`].
+    Pass,
+    /// From [`NEAR_FULL`] to 100 %.
+    Near,
+    /// Over 100 %, not allowed (infinite), or not a number (code review
+    /// 2026-10-26: a usage that is not a number never passes).
+    Over,
+}
+
+/// The class of usage `u` (1 = 100 %): over above 1 and when not a
+/// number, near from [`NEAR_FULL`], else pass.
+pub fn classify_usage(u: f64) -> UsageClass {
+    if u.is_nan() || u > 1.0 {
+        UsageClass::Over
+    } else if u >= NEAR_FULL {
+        UsageClass::Near
+    } else {
+        UsageClass::Pass
+    }
+}
+
+/// Orders two usages, a usage that is not a number above every other
+/// (whatever its sign bit), so that the worst of a list is never a pass
+/// hiding a failed computation.
+pub fn usage_order(a: f64, b: f64) -> std::cmp::Ordering {
+    let key = |u: f64| if u.is_nan() { f64::INFINITY } else { u };
+    key(a)
+        .total_cmp(&key(b))
+        .then_with(|| a.is_nan().cmp(&b.is_nan()))
+}
+
+#[cfg(test)]
+mod usage_class_tests {
+    use super::*;
+
+    #[test]
+    fn usages_are_classed_and_ordered_nan_safe() {
+        assert_eq!(classify_usage(0.5), UsageClass::Pass);
+        assert_eq!(classify_usage(NEAR_FULL), UsageClass::Near);
+        assert_eq!(classify_usage(1.0), UsageClass::Near);
+        assert_eq!(classify_usage(1.0001), UsageClass::Over);
+        assert_eq!(classify_usage(f64::INFINITY), UsageClass::Over);
+        assert_eq!(classify_usage(f64::NAN), UsageClass::Over);
+        assert_eq!(classify_usage(-f64::NAN), UsageClass::Over);
+        // NaN (either sign) above everything, infinity included.
+        let mut v = [0.3, -f64::NAN, 2.0, f64::INFINITY, 0.9];
+        v.sort_by(|a, b| usage_order(*a, *b));
+        assert!(v[4].is_nan() && v[3] == f64::INFINITY && v[0] == 0.3);
+        let members = [
+            MemberUsage {
+                member: 0,
+                usage: Some(0.4),
+                governs: String::new(),
+            },
+            MemberUsage {
+                member: 1,
+                usage: Some(-f64::NAN),
+                governs: String::new(),
+            },
+            MemberUsage {
+                member: 2,
+                usage: Some(3.0),
+                governs: String::new(),
+            },
+        ];
+        assert_eq!(worst(&members).map(|m| m.member), Some(1));
+    }
 }

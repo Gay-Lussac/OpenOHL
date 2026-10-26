@@ -552,10 +552,12 @@ impl StructureApp {
                 ui.strong("name");
                 let mut name = t.name.clone();
                 let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(240.0));
-                if r.changed() {
-                    f.edit("name", |doc, _| {
+                if r.changed()
+                    && let Err(e) = f.edit("name", |doc, _| {
                         edit::set_top_field(doc, "name", Some(&name), false)
-                    });
+                    })
+                {
+                    self.message = Some((e, true));
                 }
                 ui.end_row();
                 for (key, label, tip, value) in [
@@ -587,9 +589,11 @@ impl StructureApp {
                         hold(f, &b, label);
                         if a.changed() || b.changed() {
                             let text = format!("{v}");
-                            f.edit(label, |doc, _| {
+                            if let Err(e) = f.edit(label, |doc, _| {
                                 edit::set_top_field(doc, key, on.then_some(text.as_str()), true)
-                            });
+                            }) {
+                                self.message = Some((e, true));
+                            }
                         }
                     });
                     ui.end_row();

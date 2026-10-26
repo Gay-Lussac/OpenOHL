@@ -54,9 +54,7 @@ On a bare wire of diameter *d* and weight *w*:
 
 The vertical load is w + ice weight, the wind load q·D, and the wire hangs in the plane of their resultant. Clearances are measured to the iced surface, D/2 from the wire's axis ([Clearance](terrain.md#clearance)).
 
-**Conservative** (compared with the bare diameter): an ice load given without a density is glaze ice of that weight, 913 kg/m³ (the program's default ice density, `GLAZE_ICE_DENSITY`). Its iced diameter is never the bare one, so the wind on the ice and the clearance lost to it are counted. Exact: the density of the ice the load stands for.
-
-**Simplification:** glaze is the densest ice, so of all ice of that weight it has the smallest iced diameter: for lighter ice (rime, wet snow) given only by its load the wind area and the iced radius are still low (unsafe for such ice). Exact: give the ice density, or the thickness. Ice is a concentric shell of one thickness along the whole span (see [Sag-tension](../theory/sagtension.md#weather-loads)).
+**Simplification** (not on the safe side for the wind, the swing and the clearances): an ice load given without a density is glaze ice of that weight, 913 kg/m³ (the program's default ice density, `GLAZE_ICE_DENSITY`). Glaze is the densest ice, so of all ice of that weight it has the **smallest** iced diameter: the least wind on the iced wire, the least blow-out and string swing, and the least clearance lost to the iced surface. Lighter ice of the same weight (rime, wet snow) gives more of each. Example (the physics review, 2026-10-26): 20 N/m on a 28.1 mm wire is 60.3 mm iced as glaze, 77.4 mm at 500 kg/m³ — 28 % more wind, and the surface 8.5 mm further out. Only against the bare diameter is it more (the ice is counted at all). Exact: give the ice's density, or the thickness. The weather case table says so under the table for every case with wind and an ice load but no density, asking for one; the program picks no other density. Ice is a concentric shell of one thickness along the whole span (see [Sag-tension](../theory/sagtension.md#weather-loads)).
 
 ## Groups of cases
 

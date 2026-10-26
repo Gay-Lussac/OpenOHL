@@ -166,9 +166,24 @@ const LOAD_CASE: &[Field] = &[
         "\"initial\"",
         "the wires' condition: initial, creep, load or max_sag",
     ),
-    ("vertical", "1.0", "factor on the vertical loads"),
-    ("transverse", "1.0", "factor on the transverse loads"),
-    ("longitudinal", "1.0", "factor on the longitudinal loads"),
+    (
+        "vertical",
+        "1.0",
+        "factor on the vertical load components (weights and the tension's vertical part; \
+         a component factor, not one on actions: see the user guide)",
+    ),
+    (
+        "transverse",
+        "1.0",
+        "factor on the transverse load components (the wind and the tension's angle part; \
+         a component factor, not one on actions)",
+    ),
+    (
+        "longitudinal",
+        "1.0",
+        "factor on the longitudinal load components (the tension's unbalance; a component \
+         factor, not one on actions)",
+    ),
     (
         "strength",
         "1.0",

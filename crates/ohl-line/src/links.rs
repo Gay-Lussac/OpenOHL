@@ -30,6 +30,37 @@ pub fn feet(s: &Structure) -> Point {
     ]
 }
 
+/// A structure's axes in plan for its orientation (degrees CCW from
+/// east of its local x): (right of the line, ahead), unit vectors in
+/// line axes. The one place the convention is written (code review
+/// 2026-10-26); [`to_structure_axes`] and [`from_structure_axes`] turn
+/// vectors with it, `ohl_structures::structures::to_global` and
+/// `to_local` points.
+pub fn axes(orientation_deg: f64) -> ([f64; 2], [f64; 2]) {
+    let a = orientation_deg.to_radians();
+    let (s, c) = (a.sin(), a.cos());
+    ([c, s], [-s, c])
+}
+
+/// Vector `v` (line axes) in the axes of a structure turned
+/// `orientation_deg` ([`axes`]): (right, ahead, up).
+pub fn to_structure_axes(orientation_deg: f64, v: Point) -> Point {
+    let ([c, s], _) = axes(orientation_deg);
+    [v[0] * c + v[1] * s, -v[0] * s + v[1] * c, v[2]]
+}
+
+/// Vector `local` (right, ahead, up) of a structure turned
+/// `orientation_deg` in line axes ([`axes`]; the inverse of
+/// [`to_structure_axes`]).
+pub fn from_structure_axes(orientation_deg: f64, local: Point) -> Point {
+    let ([c, s], _) = axes(orientation_deg);
+    [
+        local[0] * c - local[1] * s,
+        local[0] * s + local[1] * c,
+        local[2],
+    ]
+}
+
 /// A joint of a placed structure's type, where it is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlacedJoint {

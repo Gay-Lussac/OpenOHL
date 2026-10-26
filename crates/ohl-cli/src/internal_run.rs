@@ -13,9 +13,8 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use ohl_clearance::internal::{self, BodyMember, StructureBody};
+use ohl_clearance::internal;
 use ohl_clearance::rules::RuleSet;
-use ohl_structures::structures::to_global;
 
 use crate::analysis_run::{CaseArgs, ModelArgs, cases};
 
@@ -40,56 +39,6 @@ pub struct InternalArgs {
     /// Stop after this many seconds (the exit clause).
     #[arg(long, default_value_t = 600)]
     pub time_limit: u64,
-}
-
-/// The bodies of the structures of `line` at levels 2 and 3 as placed in
-/// project coordinates (as the desktop application places them: the type
-/// at the structure's position raised by its height adjustment, turned by
-/// its orientation): each member with its solid where its profile is
-/// known, a pole as one member (its axis and its outline's solid).
-pub fn structure_bodies(
-    line: &ohl_line::Line,
-    bodies: &ohl_structures_fe::drawn::Bodies,
-) -> Vec<StructureBody> {
-    let mut out = Vec::new();
-    for st in &line.structures {
-        let Some(b) = st
-            .structure_type
-            .as_deref()
-            .and_then(|t| bodies.get(t, st.extension.as_deref()))
-        else {
-            continue;
-        };
-        let at = [
-            st.position[0],
-            st.position[1],
-            st.position[2] + st.height_adjust,
-        ];
-        let place = |p: &[f64; 3]| to_global(at, st.orientation_deg, *p);
-        let mut members: Vec<BodyMember> = b
-            .members
-            .iter()
-            .map(|m| BodyMember {
-                id: m.id.clone(),
-                line: m.points.iter().map(place).collect(),
-                solid: m.solid.iter().map(|t| t.each_ref().map(place)).collect(),
-            })
-            .collect();
-        if let Some(p) = &b.pole
-            && let (Some(lo), Some(hi)) = (p.rings.first(), p.rings.last())
-        {
-            members.push(BodyMember {
-                id: Some("pole".into()),
-                line: vec![place(&[0.0, 0.0, lo.0]), place(&[0.0, 0.0, hi.0])],
-                solid: p.solid.iter().map(|t| t.each_ref().map(place)).collect(),
-            });
-        }
-        out.push(StructureBody {
-            structure: st.id.clone(),
-            members,
-        });
-    }
-    out
 }
 
 /// Runs `ohl internal`: whether every part keeps its distance.
@@ -177,7 +126,7 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
             jumpers: j,
         })
         .collect();
-    let placed = structure_bodies(&line, &bodies);
+    let placed = internal::structure_bodies(&line, &bodies);
     let fits = internal::string_fits(&line, &insulators);
     let budget = ohl_core::budget::Budget::new()
         .time_limit(std::time::Duration::from_secs(a.time_limit.max(1)));

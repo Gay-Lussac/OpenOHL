@@ -114,6 +114,13 @@ library format (the structure application's in
 `ObjectTypeFile` for that (a flattened shape would let keys through), a
 size of another shape or a missing size said too.
 
+Typed and read numbers are finite (2026-10-26):
+`ohl_core::units::parse_finite` refuses `nan`, `inf` and numbers that
+overflow (`1e400`); a quantity with a unit (`"1e400 m"`) is refused as an
+invalid number; the structure edits (`ohl-structure-edit`: item fields,
+`[analysis]`, the file's own lengths) refuse them instead of writing TOML
+`nan`/`inf` or 0 m; LandXML points that are not finite are refused.
+
 Names of before 2026-10-18 are read: the `ols` extensions (`.ols`,
 `.ols.json`, `.olsw`, `.olss`…) and format ids (`ols-wire`,
 `ols-structure`, OLS XML's namespace `urn:ols-cad:ols-line:1`) are taken
@@ -126,7 +133,8 @@ files keep the names they were stored under. Plugin manifests
 (sdk 0.2) are refused until rebuilt for `ohl:plugin` (sdk 0.3).
 `crates/ohl-cli/tests/older_names.rs` checks the example line and
 libraries as they were then (`tests/data/before-ohl`) against the current
-ones.
+ones. These old names are read until the owner sets a date for their
+removal (none set; roadmap U12).
 
 New optional fields raise the format version (review rule 2.12: an older
 program then says "newer version", not "unknown field"). The string
@@ -1611,7 +1619,18 @@ not solved: that structure's loads in that case are **incomplete**;
 span (from 1) giving each component (transverse, longitudinal,
 vertical) — with `"every"` the envelope's (the largest factored of each
 component by size over the spans, sign kept, the line-axes force made
-again of them); the loads CSV's last column `broken_span`. The usage
+again of them); the loads CSV's last column `broken_span`.
+`CaseLoads::broken_each` (`Vec<BrokenLoads>`, 2026-10-26): with
+`"every"` (more than one span) each break's own loads (`span` from 1,
+`loads`), empty otherwise; the finite-element and pole checks take each
+and keep the worst (the envelope is no bound of a member force), the
+allowable-loads check the envelope. `CaseLoads::each_break()` makes a
+case of each break (`<case> (span k broken)`, its `broken.span` that
+span), which `ohl_structure_link::placed_values` writes into the
+line-values file instead of the envelope. The usage classification is
+`ohl_structures_fe::check::{classify_usage, UsageClass, NEAR_FULL,
+usage_order}` (a usage that is not a number: over, ranked above every
+other), re-exported by `ohl-structure-link`. The usage
 (`ohl_loads::capacity`, `CaseUsage` → `StructureUsage`) carries the
 same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives

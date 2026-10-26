@@ -44,7 +44,18 @@ test `the_vertical_checks_only_the_band_and_is_drawn_vertical`):
   plan position (the wire interpolated along the piece at the point
   nearest in plan): \\( z_{\text{wire}} - z_{\text{target}} \\) for a
   target below (to the lowest subconductor of a bundle, less the
-  conductor's radius), above: the reverse. With a depth \\( d \\) the
+  conductor's radius), above: the reverse. On a piece sloping at
+  \\( \beta \\) both are measured **vertically** (2026-10-26, physics
+  review): a vertical meets the round surface \\( r/\cos\beta \\) from the
+  axis, and a subconductor \\( d \\) below the axis (square to it) lies
+  \\( d/\cos\beta \\) below it at the same plan position — at most the
+  offset plus the piece's own rise (a vertical through a steep piece
+  leaves it through its end; `checks::vertical_of`). Before, \\( r \\) and
+  \\( d \\) were taken off as on a level wire, \\( r(1/\cos\beta - 1) \\)
+  too little: 4.6 mm for an iced radius of 30 mm on 30°, 39 mm for a
+  bundle's 0.25 m. The ground, the points and the crossings of two wires
+  all measure so; a level piece is unchanged, bit for bit. Test:
+  `the_vertical_takes_the_radius_off_along_the_vertical`. With a depth \\( d \\) the
   wire is taken \\( m\,d/2 \\) lower (the wire's lowest point over the
   slice, above); a depth of 0 gives exactly the height over the point.
 - **With the swing arc** the width is taken across the **swung** wire's
@@ -211,8 +222,16 @@ With a depth, the heights \\( f_-, f_0, f_+ \\) of the lowest point at
 the lowest point over the slice. **Simplification:** this bound is exact
 where the lowest point's height is convex along the line, as a hanging
 wire's (and for a straight piece); a wire kinked by a point load between
-two places 0.1 m apart could dip below it by millimetres. The bundle
-radius and the allowance are taken off as radially (**Conservative**).
+two places 0.1 m apart could dip below it by millimetres.
+
+**Simplification:** in the swing band the bundle radius and the
+allowance are taken off as on a level wire (radially), not
+\\( r/\cos\beta \\) as the still-air vertical does (above): on a span
+sloping at \\( \beta \\) the band's vertical is \\( r(1/\cos\beta - 1) \\)
+too large — unsafe, by millimetres for a conductor's radius (4.6 mm for
+30 mm on 30°), more for a bundle. The radial distance, which never
+exceeds the true vertical one, is not affected. Exact: the radius
+measured vertically, as in still air.
 
 **Check by hand** (`benchmarks/clearance/danger-trees.toml`,
 `arcclear-001…006`): a level 100 m span 20 m up, sag 4 m in still air and

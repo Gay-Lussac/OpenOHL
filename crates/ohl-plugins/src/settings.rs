@@ -34,6 +34,22 @@ use serde::{Deserialize, Serialize};
 /// The settings file's name in the user's plugin directory.
 pub const SETTINGS_FILE: &str = "settings.toml";
 
+/// The data folder (eframe's storage id) holding the user's plugin
+/// directory, shared by both applications: the line application's, the
+/// name from before OpenOHL kept so that nothing is lost (storage id:
+/// kept). One constant, so that the two applications never look in
+/// different folders (code review 2026-10-26).
+pub const STORAGE_ID: &str = "OLS CAD"; // storage id: kept
+
+/// The user's plugin directory's name in the [`STORAGE_ID`] data folder.
+pub const USER_DIR: &str = "plugins";
+
+/// The user's plugin directory in the data folder `storage_dir` (the
+/// folder of [`STORAGE_ID`]).
+pub fn user_dir(storage_dir: &Path) -> PathBuf {
+    storage_dir.join(USER_DIR)
+}
+
 /// The plugin folders added and the plugins turned off.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,5 +206,16 @@ mod tests {
         let e = PluginSettings::load(&path).unwrap_err();
         assert!(e.contains("settings.toml") && e.contains("folder"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Both applications find the plugins in one folder: the line
+    /// application's data folder from before OpenOHL (kept), `plugins`.
+    #[test]
+    fn the_plugin_folder_is_one_for_both_applications() {
+        assert_eq!(STORAGE_ID, "OLS CAD");
+        assert_eq!(
+            user_dir(Path::new("/data/OLS CAD")),
+            Path::new("/data/OLS CAD/plugins")
+        );
     }
 }

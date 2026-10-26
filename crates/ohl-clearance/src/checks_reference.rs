@@ -105,8 +105,11 @@ impl OldPointCheck {
                 // Vertical separation, above or below the wire (a tree
                 // overhanging a low wire, a line crossing over); with a
                 // depth, to the wire's lowest (highest) in the slice.
-                let gap =
-                    wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth) - off;
+                // Measured vertically on the sloping piece (2026-10-26).
+                let off = wire.vertical_allowance(a, b);
+                let gap = wire.vertical_gap(q, z, a, b)
+                    - slice_rise(a, b, self.rule.vertical_depth)
+                    - off;
                 let hit = Hit {
                     distance: gap.max(0.0),
                     wire: q,
@@ -150,18 +153,21 @@ pub fn old_ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<W
         .map(|wire| {
             let mut result = WireResult::with(rule.required(wire.kv()));
             let reach = result.required.largest() + rule.search_margin;
-            // Bundles: the lowest subconductor for the vertical clearance.
-            let (lowest, _) = wire.vertical_extent();
             // To the surface.
             let off = wire.allowance();
             for s in wire.points.windows(2) {
                 let (a, b) = (s[0], s[1]);
                 let (mut vertical_bad, mut radial_bad) = (false, false);
                 let rise = slice_rise(a, b, rule.vertical_depth);
+                // Bundles: the lowest subconductor for the vertical
+                // clearance; it and the radius measured vertically on the
+                // sloping piece (2026-10-26).
+                let (lowest, _) = wire.vertical_extent_on(a, b);
+                let off_vertical = wire.vertical_allowance(a, b);
                 for (t, g) in ground_under(terrain, a, b, rule.vertical_band) {
                     let z = a[2] + (b[2] - a[2]) * t + lowest;
                     let hit = Hit {
-                        distance: z - rise - g[2] - off,
+                        distance: z - rise - g[2] - off_vertical,
                         wire: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z],
                         target: g,
                         class: None,

@@ -597,7 +597,17 @@ fn pole_case(
             );
         }
     }
-    let c = ohl_structures_fe::check_pole(pole, &loads, wind, case.strength, true, budget)?;
+    // The pole's own weight in the P-Delta model times the case's
+    // self-weight factor, as the members' (physics review 2026-10-26).
+    let c = ohl_structures_fe::check_pole_factored(
+        pole,
+        &loads,
+        wind,
+        case.strength,
+        case.self_weight,
+        true,
+        budget,
+    )?;
     Ok(PoleResult {
         usage: c.usage,
         height: c.height,

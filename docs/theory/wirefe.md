@@ -237,8 +237,20 @@ a spacer or a jumper on a span point of the broken span.
 section in turn (`span = "every"`): a solve per span, and for each
 structure point the largest of each force component (transverse,
 longitudinal, vertical; by size, its sign kept) with the span that gave
-it. **Conservative:** the components may come from different spans; taken
-together they are an envelope, at least as large as any one break.
+it. **Conservative for the allowable-loads check only** (Method 2, which
+takes each component on its own, in both directions): the components may
+come from different spans, so each is at least as large as that of any one
+break. It is **not** an upper bound of a force that combines the
+components — a member force \\( a\\,T + b\\,L + c\\,V \\) — nor does it keep
+both directions along the line. Example (the physics review, 2026-10-26):
+break 1 gives \\( (L, V) = (+10, 1) \\) kN at a point, break 2
+\\( (-9, 5) \\) kN; the envelope is \\( (+10, 5) \\) kN, which for
+\\( L - V \\) gives 5 kN, while break 2 alone gives −14 kN. So the
+**finite-element and pole checks take every break as its own load case**
+(`CaseLoads::broken_each`) and keep the worst usage, the span named
+("… (span 2 broken)"); OHL-Structure gets the line's values of each break
+as cases of their own, `<case> (span k broken)`. Test:
+`every_span_broken_checks_each_break_on_its_own` (ohl-loads).
 
 Checked against an independent evaluation (validation
 `brokenwire-001`…`003`, `benchmarks/wirefe/broken_wire.toml`): the
@@ -255,7 +267,7 @@ to 10⁻⁷.
 
 A point load in a span is a weight at a fraction of the span, and may also be a body of some size: a marker ball, an obstruction light. It's given a shape — a sphere of diameter \\( D \\), a cylinder, a box, or given areas (a wind area \\( A \\) and the surface \\( S \\) that takes the ice) — and a drag coefficient \\( C_d \\) (default 1). In a weather case it carries:
 
-- **Ice:** the wire's radial ice thickness \\( t \\) (the case's thickness, or with an ice load the thickness that load makes on the wire's bare diameter, at the case's ice density or else glaze ice, 913 kg/m³), as a shell of \\( \frac{\pi}{6}\left((D+2t)^3 - D^3\right) \\) on a sphere, or a layer \\( t \\) on the surface of a cylinder or a box, or \\( S\,t \\) on given areas, at the case's ice density. A case with an ice load but no density gives no thickness, so the body takes no ice.
+- **Ice:** the wire's radial ice thickness \\( t \\) (the case's thickness, or with an ice load the thickness that load makes on the wire's bare diameter, at the case's ice density or else glaze ice, 913 kg/m³), as a shell of \\( \frac{\pi}{6}\left((D+2t)^3 - D^3\right) \\) on a sphere, or a layer \\( t \\) on the surface of a cylinder or a box, or \\( S\,t \\) on given areas, at the case's ice density (glaze ice when the case gives none: **Simplification**, the thinnest ice that load can make, so the least wind on the iced body; see [Weather cases](../user-guide/weather.md)).
 - **Wind:** \\( F = p\,C_d\,\frac{\pi}{4}(D+2t)^2 \\) on a sphere, across the span, from the case's side (a cylinder or a box: its projected sizes grown by \\( 2t \\); a given area \\( A \\) is grown by the ice as a sphere of that area).
 
 On a bundle the forces are shared by its subconductors. These loads can matter: a 0.6 m ball takes about 180 N of wind at 650 Pa and, with 16 mm of ice, about 170 N of ice, several times its own weight. A dozen of them on a long earth-wire span add a quarter or more to the wind on the wire. Without their wind area a long marked span swings metres less than it should.

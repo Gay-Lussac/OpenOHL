@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 
 use eframe::egui;
-use ohl_clearance::internal::{self, BodyMember, InternalReport, InternalRule, StructureBody};
+use ohl_clearance::internal::{self, InternalReport, InternalRule, StructureBody};
 use ohl_clearance::rules::{PresetCheck, RuleSet};
 
 use crate::check_help as help;
@@ -155,42 +155,10 @@ pub fn wind_study(model: &Model, bodies: &[StructureBody]) -> WindStudy {
 }
 
 /// The bodies of the line's structures at detail level 2 or 3, placed in
-/// project coordinates (the same way `ohl internal` places them, and the
-/// views draw them): each member's centre line and solid; a pole one
-/// member, "pole", its axis and its outline's solid.
+/// project coordinates (`ohl_clearance::internal::structure_bodies`, the
+/// same as `ohl internal`).
 pub fn structure_bodies(model: &Model) -> Vec<StructureBody> {
-    let mut out = Vec::new();
-    for st in &model.line.structures {
-        let Some(b) = crate::scene::drawn_body(&model.bodies, st) else {
-            continue;
-        };
-        let at = crate::scene::type_origin(st);
-        let place =
-            |p: &[f64; 3]| ohl_structures::structures::to_global(at, st.orientation_deg, *p);
-        let mut members: Vec<BodyMember> = b
-            .members
-            .iter()
-            .map(|m| BodyMember {
-                id: m.id.clone(),
-                line: m.points.iter().map(place).collect(),
-                solid: m.solid.iter().map(|t| t.each_ref().map(place)).collect(),
-            })
-            .collect();
-        if let Some(p) = &b.pole
-            && let (Some(lo), Some(hi)) = (p.rings.first(), p.rings.last())
-        {
-            members.push(BodyMember {
-                id: Some("pole".into()),
-                line: vec![place(&[0.0, 0.0, lo.0]), place(&[0.0, 0.0, hi.0])],
-                solid: p.solid.iter().map(|t| t.each_ref().map(place)).collect(),
-            });
-        }
-        out.push(StructureBody {
-            structure: st.id.clone(),
-            members,
-        });
-    }
-    out
+    ohl_clearance::internal::structure_bodies(&model.line, &model.bodies)
 }
 
 /// Each case solved (the case, its sections, its jumpers) as the check

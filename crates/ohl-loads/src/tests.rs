@@ -484,6 +484,56 @@ fn structure_analysis_on_the_example_line() {
     assert!(csv.lines().next().unwrap().contains("fe_usage,pole_usage"));
 }
 
+/// A broken wire in every span (physics review 2026-10-26): the
+/// finite-element and pole checks take each break as its own load and
+/// keep the worst — the same usage as the cases of each break checked
+/// one by one, the span named — never the envelope of the components.
+#[test]
+fn every_span_broken_checks_each_break_on_its_own() {
+    let types = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
+        .unwrap()
+        .resolve(&types, &ohl_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, library, weather, _) = setup();
+    let budget = ohl_wirefe::default_fe_budget();
+    let every = LoadCase {
+        name: "every".into(),
+        longitudinal: 1.2,
+        broken: Some(BrokenWire {
+            section: "S1".into(),
+            span: BrokenSpan::Every,
+            set: None,
+        }),
+        ..LoadCase::from_weather("everyday")
+    };
+    let loads = structure_loads(&line, &library, &weather, &[every], &budget).unwrap();
+    assert_eq!(loads[0].broken_each.len(), 4);
+    let split = loads[0].each_break();
+    let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+    let one_by_one = capacity::usage(&line, &types, &library, &weather, &split);
+    let mut checked = 0;
+    for s in &usage[0].structures {
+        let of = |c: &capacity::StructureUsage, fe: bool| {
+            if fe { c.fe.clone() } else { c.pole.clone() }
+        };
+        for fe in [true, false] {
+            let Some(c) = of(s, fe) else { continue };
+            let worst = one_by_one
+                .iter()
+                .filter_map(|u| u.structures.iter().find(|x| x.structure == s.structure))
+                .filter_map(|x| of(x, fe))
+                .map(|c| c.usage)
+                .fold(f64::NEG_INFINITY, f64::max);
+            assert_eq!(c.usage, worst, "{}: {c:?}", s.structure);
+            assert!(c.governs.contains(" broken)"), "{c:?}");
+            checked += 1;
+        }
+    }
+    assert!(checked >= 2, "an fe and a pole check expected");
+}
+
 /// The placed structure's links reach the structure check (2026-10-21):
 /// T2's attachment point A1 unlinked refuses its finite-element check
 /// (the loads not applied: usage infinite, said why); linked again to its

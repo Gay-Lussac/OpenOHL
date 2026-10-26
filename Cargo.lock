@@ -3568,6 +3568,7 @@ dependencies = [
  "ohl-core",
  "ohl-line",
  "ohl-structures",
+ "ohl-structures-fe",
  "ohl-terrain",
  "ohl-weather",
  "ohl-wirefe",

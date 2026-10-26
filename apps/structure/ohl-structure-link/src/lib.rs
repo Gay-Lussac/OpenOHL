@@ -64,6 +64,10 @@ use ohl_structure_loads::{
     MemberAreas, MissingWire, OtherPlace, PlacedValues,
 };
 use ohl_structures::StructureType;
+/// The one usage classification (over / near / pass, a usage that is not
+/// a number over) of the line's checks, for the structure application's
+/// colours and reports.
+pub use ohl_structures_fe::check::{NEAR_FULL, UsageClass, classify_usage, usage_order};
 use ohl_structures_fe::{Loads, Model, NodalLoad};
 
 /// The values the line gives at placed structure `structure`: per point,
@@ -363,16 +367,17 @@ pub fn placed_values(
     structure: &str,
     line_name: &str,
 ) -> PlacedValues {
+    // A broken wire in every span: a case per break, as the structure's
+    // own checks combine the components (the line's envelope is for its
+    // allowable-loads check only; physics review 2026-10-26).
+    let split =
+        |c: &[CaseLoads]| -> Vec<CaseLoads> { c.iter().flat_map(CaseLoads::each_break).collect() };
+    let (loads, weather) = (split(loads), split(weather));
     let sources: Vec<CaseSource> = std::iter::repeat_n(CaseSource::LoadCase, loads.len())
         .chain(std::iter::repeat_n(CaseSource::WeatherCase, weather.len()))
         .collect();
-    let all: Vec<CaseLoads>;
-    let loads = if weather.is_empty() {
-        loads
-    } else {
-        all = loads.iter().chain(weather).cloned().collect();
-        &all
-    };
+    let loads: Vec<CaseLoads> = loads.into_iter().chain(weather).collect();
+    let loads = loads.as_slice();
     let structure_type = line
         .structures
         .iter()
@@ -808,12 +813,18 @@ impl CaseResult {
             .max_by(|a, b| a.1.total_cmp(&b.1))
     }
 
-    /// The member using most of its capacity.
+    /// The member using most of its capacity (a usage that is not a
+    /// number first, never hidden).
     pub fn governing(&self) -> Option<&MemberResult> {
         self.members
             .iter()
             .filter(|m| m.usage.is_some())
-            .max_by(|a, b| a.usage.unwrap_or(0.0).total_cmp(&b.usage.unwrap_or(0.0)))
+            .max_by(|a, b| {
+                ohl_structures_fe::check::usage_order(
+                    a.usage.unwrap_or(0.0),
+                    b.usage.unwrap_or(0.0),
+                )
+            })
     }
 
     /// The largest out-of-balance of Σ loads + Σ reactions over the three

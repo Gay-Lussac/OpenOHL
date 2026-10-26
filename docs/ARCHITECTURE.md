@@ -5,7 +5,7 @@
 ## Principles
 
 1. **Fast by construction**: the core engine is native Rust; Python is an optional scripting/plugin layer.
-2. **Layered**: data model → engines → session/server → clients. Lower layers never depend on upper ones.
+2. **Layered**: data model → engines → session/server → clients. Lower layers do not depend on upper ones; the few places where a crate reaches across a layer are listed under [Layers](#layers) as they are.
 3. **Headless engines**: every calculation runs without a GUI (library + CLI), so it can be scripted, tested and run on servers.
 4. **Everything is a command**: all edits go through serialisable commands applied by an authoritative session. This gives undo/redo, history, audit and multi-user collaboration with one code path.
 5. **Interfaces, not implementations**: modules communicate through traits / documented interfaces. Implementations can be swapped by plugins.
@@ -19,20 +19,47 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │ Clients     Desktop app (ohl-app) · CLI (ohl-cli) · Python (ohl-py)│
 │             · web client (served by ohl-server)                    │
+│             ohl-validation (the benchmark runner of `ohl validate`)│
 ├──────────────────────────────────────────────────────────────────┤
 │ Session     ohl-session: project file, commands, operation log,    │
 │             undo/redo, versions, grants; ohl-server: many users    │
+│             ohl-io: import/export, also into and out of projects   │
 ├──────────────────────────────────────────────────────────────────┤
 │ Engines     sagtension · wirefe · line · loads · structures-fe ·   │
-│             clearance · thermal · spotting · bom · drawing · io    │
+│             clearance · thermal · spotting · bom · drawing         │
 ├──────────────────────────────────────────────────────────────────┤
-│ Domain      cables · weather · wireloads · structures · terrain ·  │
-│             lidar · pointcloud · crs                               │
+│ Domain      cables · weather · wireloads · structures · sections · │
+│             terrain · lidar · pointcloud · crs · background        │
 ├──────────────────────────────────────────────────────────────────┤
 │ Core        ohl-core: units, geometry, project grid, time budgets  │
-│             ohl-plugins (WASM host) · ohl-render · ohl-validation  │
+│             ohl-plugins (WASM host) · ohl-render                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+What the crates' dependencies are (`cargo metadata`, 2026-10-26), where
+the picture alone would say otherwise:
+
+- **`ohl-io` uses `ohl-session`** (project formats, neutral exchange,
+  surfaces and imports into a project: `projects.rs`, `neutral.rs`,
+  `surfaces.rs`, `import_into.rs`), so it is drawn in the session layer,
+  above the engines it also uses (`ohl-line`, `ohl-loads`,
+  `ohl-clearance`).
+- **`ohl-lidar` uses `ohl-line`** (a domain crate on an engine:
+  `along_spans`, `far_tile_warnings` take the line's spans). An exception,
+  kept as it is.
+- **`ohl-validation`** runs the benchmarks against fourteen engine and
+  domain crates; it is a client of them (used by `ohl-cli`), not part of
+  the core.
+- **`ohl-sections`** (the cross-section library) is a domain crate: used by
+  `ohl-structures-fe`, `ohl-loads`, `ohl-io` and the structure application.
+- Within a layer crates use each other (`ohl-spotting` → `ohl-bom`,
+  `ohl-thermal` → `ohl-clearance`, `ohl-clearance` → `ohl-structures-fe`,
+  `ohl-pointcloud` → `ohl-lidar`, `ohl-drawing` → `ohl-background`).
+- **`ohl-app` uses three crates of the structure application**:
+  `ohl-structure-edit` (its structure screen: one implementation of the
+  edits), `ohl-structure-loads` and `ohl-structure-link` (the line values
+  written for OHL-Structure, the structure screen's load cases). No other
+  core crate depends on `apps/structure` crates.
 
 ## Modules
 
@@ -66,14 +93,21 @@ Every core module is a Rust crate under `crates/` (workspace members, with `apps
 | `ohl-server` | Server mode (pre-alpha, in active development): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
 | `ohl-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming; headless images |
 | `ohl-plugins` | Plugin manifests (`ohl-plugin.toml`), compatibility checks, the sandboxed WebAssembly component host (WIT worlds for formats, projects, terrain, design codes) |
-| `ohl-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ohl validate`) |
+| `ohl-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ohl validate`); a client of the engines it checks |
 | `ohl-app` | OHL-Design, the line application `ohl-design` (egui, ADR-0009): 3D, plan, profile, properties, tools, tables, library editors, checks, Python console, plugin manager |
 | `ohl-cli` | The `ohl` command-line tool |
-| `ohl-py` | Python bindings (PyO3, `import ohl`) for scripts and Python plugins |
+| `ohl-py` | Python bindings (PyO3, `import ohl`): so far only unit conversion (`convert`, `quantity_kinds`). The scripting surface in use is OHL-Design's embedded Python console |
 
 The structure application (`apps/structure/`, [its crates](development/structure-app.md))
-is kept apart from the core: its crates depend on core crates, never the
-other way round, and its tests run on their own.
+is kept apart from the core: its crates depend on core crates, and of the
+core only `ohl-app` depends on some of them (`ohl-structure-edit`,
+`ohl-structure-loads`, `ohl-structure-link`; above); its tests run on
+their own. Within the application, **the engines** (`ohl-line`,
+`ohl-loads`, `ohl-clearance`, `ohl-structures-fe`, `ohl-weather`,
+`ohl-cables`) **are reached only through `ohl-structure-link`**; the
+other application crates use the core's model and format crates directly
+(`ohl-core`, `ohl-structures`, `ohl-sections`), and `ohl-structure-app`
+also `ohl-render` and `ohl-plugins`.
 
 **The boundary between the programs.** Where a core program needs the
 structure side, the programs talk instead of the crates depending on each

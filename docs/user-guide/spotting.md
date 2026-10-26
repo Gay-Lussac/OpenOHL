@@ -37,7 +37,7 @@ ohl spot examples/synthetic-line/synthetic-line-typed.ohl.json --route main \
 | `--wire-type`, `--tension` | | Wire type id (`--cable` still read); horizontal tension in kN in the design condition. |
 | `--temperature` | 80 °C | Temperature of the design condition: the sections of the new line are strung to `--tension` at it, in still air. |
 | `--clearance` | | Vertical ground clearance, m. |
-| `--step` | 10 m | Distance between candidate stations. |
+| `--step` | 10 m | Distance between candidate stations. A step giving more than 1 000 000 stations on the route is refused (a limit of the computation; give a larger step). |
 | `--max-span`, `--min-span` | twice the largest allowable wind span; 0 | Span limits, m. |
 | `--forbid FROM:TO` | | No structure between these stations (repeatable). |
 | `--conductors` | the fewest attachments of a candidate | Wires per span priced per metre. |

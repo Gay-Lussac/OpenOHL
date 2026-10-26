@@ -606,6 +606,15 @@ impl TablePage {
                 .small()
                 .weak(),
             );
+            // An iced wind case without an ice density (physics review
+            // 2026-10-26): said, asking for one.
+            for note in model.cases.iter().filter_map(|c| c.case.ice_density_note()) {
+                crate::menu::message(
+                    ui,
+                    egui::RichText::new(note).small(),
+                    Some(ui.visuals().warn_fg_color),
+                );
+            }
         }
         if kind == TableKind::Alignments {
             // An alignment needs a route: one is made here when there is none.

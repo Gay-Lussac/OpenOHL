@@ -815,7 +815,7 @@ fn parse_area(text: &str) -> Result<Vec<[f64; 2]>, String> {
         .map(|p| {
             let v: Vec<f64> = p
                 .split(',')
-                .map(|x| x.trim().parse::<f64>())
+                .map(ohl_core::units::parse_finite)
                 .collect::<Result<_, _>>()
                 .map_err(|_| format!("--area: \"{p}\" is not X,Y"))?;
             match v[..] {

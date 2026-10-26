@@ -121,6 +121,21 @@ impl Wire {
             .fold(0.0, f64::max)
     }
 
+    /// What a vertical measure takes off a distance to the polyline at
+    /// piece `a`–`b` for the distance to the surface, m: the surface
+    /// radius measured vertically on the sloping piece
+    /// ([`vertical_of`]) and the polyline's error. Level: [`Wire::allowance`].
+    pub(crate) fn vertical_allowance(&self, a: P3, b: P3) -> f64 {
+        vertical_of(self.surface_radius, a, b) + self.polyline_error
+    }
+
+    /// Lowest and highest subconductor relative to the centre line,
+    /// measured vertically at piece `a`–`b` ([`vertical_of`]), m.
+    fn vertical_extent_on(&self, a: P3, b: P3) -> (f64, f64) {
+        let (lo, hi) = self.vertical_extent();
+        (vertical_of(lo, a, b), vertical_of(hi, a, b))
+    }
+
     /// Lowest and highest subconductor relative to the centre line, m.
     fn vertical_extent(&self) -> (f64, f64) {
         if self.bundle.is_empty() {
@@ -167,11 +182,12 @@ impl Wire {
             .expect("at least one subconductor")
     }
 
-    /// Vertical separation of the bundle at centre-line point `q` from a
-    /// point at height `z` below or above it (0 inside its height range):
-    /// to the lowest subconductor from below, the highest from above.
-    fn vertical_gap(&self, q: P3, z: f64) -> f64 {
-        let (lo, hi) = self.vertical_extent();
+    /// Vertical separation of the bundle at centre-line point `q` of piece
+    /// `a`–`b` from a point at height `z` below or above it (0 inside its
+    /// height range): to the lowest subconductor from below, the highest
+    /// from above, measured vertically on the piece ([`vertical_of`]).
+    fn vertical_gap(&self, q: P3, z: f64, a: P3, b: P3) -> f64 {
+        let (lo, hi) = self.vertical_extent_on(a, b);
         if z <= q[2] + lo {
             q[2] + lo - z
         } else if z >= q[2] + hi {
@@ -180,6 +196,29 @@ impl Wire {
             0.0
         }
     }
+}
+
+/// A distance `x` square to a wire, measured vertically on its piece
+/// `a`–`b` sloping at β (physics review 2026-10-26): \( x / \cos β \) — a
+/// vertical meets a round surface of radius r about an axis sloping at β
+/// at r / cos β from the axis, and a line parallel to the axis at d from
+/// it (square to it, in the vertical plane) lies d / cos β above or below
+/// it at the same plan position — but never more than |x| plus the
+/// piece's own rise (a vertical through the piece leaves its capsule
+/// through the end within that: a steep or vertical jumper piece); the
+/// sign kept. A level piece: `x` itself, bit for bit.
+pub(crate) fn vertical_of(x: f64, a: P3, b: P3) -> f64 {
+    let rise = (b[2] - a[2]).abs();
+    if rise == 0.0 {
+        return x;
+    }
+    let h = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let scaled = if h > 0.0 {
+        x.abs() * (h.hypot(rise) / h)
+    } else {
+        f64::INFINITY
+    };
+    scaled.min(x.abs() + rise).copysign(x)
 }
 
 fn key(p: &ohl_line::SectionPoint) -> String {
@@ -858,8 +897,13 @@ impl PointCheck {
                     // Vertical separation, above or below the wire (a tree
                     // overhanging a low wire, a line crossing over); with a
                     // depth, to the wire's lowest (highest) in the slice.
-                    let gap =
-                        wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth) - off;
+                    // The surface radius measured vertically on the
+                    // sloping piece (r / cos β), not radially.
+                    // (`off` is the wire's allowance: the same, level.)
+                    let off = wire.vertical_allowance(a, b);
+                    let gap = wire.vertical_gap(q, z, a, b)
+                        - slice_rise(a, b, self.rule.vertical_depth)
+                        - off;
                     let hit = Hit {
                         distance: gap.max(0.0),
                         wire: q,
@@ -1139,8 +1183,6 @@ pub(crate) fn ground_wire(
 ) -> WireResult {
     let mut result = WireResult::with(rule.required(wire.kv()));
     let reach = result.required.largest() + rule.search_margin;
-    // Bundles: the lowest subconductor for the vertical clearance.
-    let (lowest, _) = wire.vertical_extent();
     let bundle = wire.bundle_radius();
     // To the surface.
     let off = wire.allowance();
@@ -1155,6 +1197,11 @@ pub(crate) fn ground_wire(
         let extra = vertical_extra.map_or(0.0, |x| x[piece]);
         let (mut vertical_bad, mut radial_bad) = (false, false);
         let rise = slice_rise(a, b, rule.vertical_depth);
+        // Bundles: the lowest subconductor for the vertical clearance; it
+        // and the surface radius measured vertically on the sloping piece
+        // (r / cos β; physics review 2026-10-26).
+        let (lowest, _) = wire.vertical_extent_on(a, b);
+        let off_vertical = wire.vertical_allowance(a, b);
         // The vertical: passed over when the piece's lowest point is
         // high enough above the highest ground within the band.
         let ground_top = top.max_in(
@@ -1163,13 +1210,13 @@ pub(crate) fn ground_wire(
             a[1].min(b[1]) - band,
             a[1].max(b[1]) + band,
         );
-        let lower = a[2].min(b[2]) + lowest - rise - ground_top - off - extra;
+        let lower = a[2].min(b[2]) + lowest - rise - ground_top - off_vertical - extra;
         let skip = lower >= best(&result, 0) && result.required.vertical.is_none_or(|r| lower >= r);
         if !skip {
             for (t, g) in ground_under(terrain, a, b, band) {
                 let z = a[2] + (b[2] - a[2]) * t + lowest;
                 let hit = Hit {
-                    distance: z - rise - g[2] - off - extra,
+                    distance: z - rise - g[2] - off_vertical - extra,
                     wire: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z],
                     target: g,
                     class: None,
@@ -1404,8 +1451,14 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                 if let Some((x, y)) = crossing {
                     // Bundles: the upper one's lowest subconductor over the
                     // lower one's highest.
-                    let ((alo, ahi), (blo, bhi)) =
-                        (wire.vertical_extent(), other.vertical_extent());
+                    // Bundles and radii measured vertically on each sloping
+                    // piece (r / cos β; physics review 2026-10-26).
+                    let ((alo, ahi), (blo, bhi)) = (
+                        wire.vertical_extent_on(p, q),
+                        other.vertical_extent_on(c, d),
+                    );
+                    // (`off` is the two allowances: the same, both level.)
+                    let off = wire.vertical_allowance(p, q) + other.vertical_allowance(c, d);
                     let gap = if x[2] >= y[2] {
                         (x[2] + alo) - (y[2] + bhi)
                     } else {
@@ -1782,6 +1835,53 @@ mod tests {
         let d = pairs[0].result.radial.unwrap().distance;
         assert!((d - (4.0 - 0.037)).abs() < 1e-9, "{d}");
         assert!(pairs[0].result.violates());
+    }
+
+    /// On a sloping wire the vertical meets the surface r / cos β from
+    /// the axis, not r (physics review 2026-10-26: iced radius 30 mm on
+    /// 30°, 4.6 mm; a bundle's lowest subconductor 0.25 m down on 30°,
+    /// 39 mm); never more than r plus the piece's own rise (a vertical
+    /// piece: its end); a level piece as before, bit for bit.
+    #[test]
+    fn the_vertical_takes_the_radius_off_along_the_vertical() {
+        let level = ([0.0, 0.0, 10.0], [10.0, 0.0, 10.0]);
+        assert_eq!(vertical_of(0.03, level.0, level.1), 0.03);
+        assert_eq!(vertical_of(-0.25, level.0, level.1), -0.25);
+        let up = 30f64.to_radians().tan() * 10.0;
+        let (a, b) = ([0.0, 0.0, 10.0], [10.0, 0.0, 10.0 + up]);
+        let r = vertical_of(0.03, a, b);
+        assert!((r - 0.03 / 30f64.to_radians().cos()).abs() < 1e-15);
+        assert!((r - 0.03 - 0.004_641).abs() < 1e-6, "{r}");
+        let lo = vertical_of(-0.25, a, b);
+        assert!((lo + 0.288_675).abs() < 1e-6, "{lo}");
+        // Vertical, and very steep: capped at the offset plus the rise.
+        assert_eq!(vertical_of(0.03, [0.0; 3], [0.0, 0.0, 2.0]), 2.03);
+        let steep = vertical_of(0.03, [0.0; 3], [1e-6, 0.0, 2.0]);
+        assert!((steep - 2.03).abs() < 1e-12, "{steep}");
+        // The ground check of a straight wire rising 30° over flat ground:
+        // its lowest clearance at its low end, the surface r / cos β below.
+        let flat: Vec<SurveyPoint> = [(-10.0, -20.0), (110.0, -20.0), (110.0, 20.0), (-10.0, 20.0)]
+            .iter()
+            .map(|&(x, y)| SurveyPoint {
+                x,
+                y,
+                z: 0.0,
+                code: String::new(),
+                line: String::new(),
+            })
+            .collect();
+        let terrain = Terrain::from_points(&flat, None).unwrap();
+        let w = Wire {
+            surface_radius: 0.03,
+            ..straight("A", "L1", [0.0, 0.0, 10.0], [100.0, 0.0, 10.0 + 10.0 * up])
+        };
+        let g = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0");
+        let res = &ground_check(&g, std::slice::from_ref(&w), &terrain)[0];
+        let v = res.vertical.unwrap().distance;
+        assert!(
+            (v - (10.0 - 0.03 / 30f64.to_radians().cos())).abs() < 1e-9,
+            "{v}"
+        );
     }
 
     #[test]

@@ -728,7 +728,9 @@ impl StructureLoadCases {
         Ok(cases)
     }
 
-    /// The cases as `[[load_case]]` tables, to keep in a structure file.
+    /// The cases as `[[load_case]]` tables, to keep in a structure file;
+    /// for the tests.
+    #[cfg(test)]
     pub fn to_tables(cases: &[LoadCaseRecipe]) -> Vec<toml::Table> {
         cases
             .iter()

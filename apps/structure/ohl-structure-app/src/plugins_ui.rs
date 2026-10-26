@@ -217,9 +217,9 @@ pub struct PluginsState {
 impl PluginsState {
     /// The user's plugin directory, shared with the line application:
     /// `plugins` in the line application's data directory (its storage
-    /// id from before OpenOHL, [`crate::LINE_STORAGE_ID`]).
+    /// id from before OpenOHL, `ohl_plugins::STORAGE_ID`).
     pub fn default_user_dir() -> Option<PathBuf> {
-        eframe::storage_dir(crate::LINE_STORAGE_ID).map(|d| d.join("plugins"))
+        eframe::storage_dir(ohl_plugins::STORAGE_ID).map(|d| ohl_plugins::user_dir(&d))
     }
 
     /// The plugins of `user_dir` and of the folders of the shared settings.

@@ -1321,19 +1321,9 @@ pub fn taut_riser(
     Ok((l, s.points.iter().map(|q| p(*q)).collect(), s.ends.map(p)))
 }
 
-/// Solves one jumper in a weather case, between the solved section ends.
-pub fn solve_jumper(
-    line: &Line,
-    jumper: &Jumper,
-    shapes: &[SectionShape],
-    cable: &Cable,
-    case: &WeatherCase,
-) -> Result<JumperShape, LineError> {
-    solve_jumper_in(line, jumper, shapes, cable, case, &TapContext::default())
-}
-
-/// [`solve_jumper`] with what the jumpers solved before it give
-/// ([`TapContext`]): its taps on their points, the loads of the jumpers
+/// Solves one jumper in a weather case, between the solved section ends,
+/// with what the jumpers solved before it give ([`TapContext`]; the
+/// default: none): its taps on their points, the loads of the jumpers
 /// hanging on its own points. A tap end is a hinge: no direction held
 /// there.
 pub fn solve_jumper_in(

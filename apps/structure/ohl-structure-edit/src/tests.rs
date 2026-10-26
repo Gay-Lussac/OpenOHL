@@ -366,6 +366,12 @@ fn a_design_is_completed_in_tables() {
     set_item_field(&mut doc, "section", &s, "i_min", "80 cm4").unwrap();
     set_item_field(&mut doc, "material", &m, "density", "7850 kg/m3").unwrap();
     assert!(set_item_field(&mut doc, "section", &s, "id", "x").is_err());
+    // A number that is not finite is refused, never written as TOML
+    // nan/inf (code review 2026-10-26).
+    for bad in ["nan", "inf", "-inf", "1e400"] {
+        let e = set_item_field(&mut doc, "section", &s, "area", bad).unwrap_err();
+        assert!(e.contains("finite"), "{e}");
+    }
     assert_eq!(item_ids(&doc, "section"), vec!["S1"]);
     assert!(
         item_fields(&doc, "section", "S1").contains(&("area".into(), "1500 mm2".into())),
@@ -416,6 +422,9 @@ fn analysis_settings_are_edited() {
     assert!(doc.get("analysis").is_none());
     assert!(read(&doc).analysis.is_none());
     assert!(set_analysis_field(&mut doc, " ", "1").is_err());
+    // Not finite: refused before the table is made.
+    assert!(set_analysis_field(&mut doc, "dead_load_factor", "NaN").is_err());
+    assert!(doc.get("analysis").is_none());
 }
 
 /// A member's analysis fields typed (one member, or every member of a
@@ -455,9 +464,20 @@ fn member_analysis_fields_are_edited() {
 #[test]
 fn name_height_foot_and_extensions_are_edited() {
     let mut doc: DocumentMut = PYLON.parse().unwrap();
-    set_top_field(&mut doc, "name", Some("tower"), false);
-    set_top_field(&mut doc, "height", Some("32.5"), true);
-    set_top_field(&mut doc, "foot", Some("-1 m"), true);
+    set_top_field(&mut doc, "name", Some("tower"), false).unwrap();
+    set_top_field(&mut doc, "height", Some("32.5"), true).unwrap();
+    set_top_field(&mut doc, "foot", Some("-1 m"), true).unwrap();
+    // A mistyped or non-finite length is refused, the file unchanged
+    // (code review 2026-10-26: it was written as 0 m).
+    let before = doc.to_string();
+    for bad in ["32,5", "abc m", "nan", "inf m", "1e400"] {
+        let e = set_top_field(&mut doc, "height", Some(bad), true).unwrap_err();
+        assert!(
+            e.starts_with("height: ") && e.contains("a length in m"),
+            "{e}"
+        );
+    }
+    assert_eq!(doc.to_string(), before);
     set_extension(&mut doc, "+3", 3.0);
     set_extension(&mut doc, "+6", 6.0);
     set_extension(&mut doc, "+3", 3.5);
@@ -468,7 +488,7 @@ fn name_height_foot_and_extensions_are_edited() {
     assert_eq!(t.extensions.len(), 2);
     assert_eq!(t.extensions[0].dz.si(), 3.5);
     remove_extension(&mut doc, "+3");
-    set_top_field(&mut doc, "height", None, true);
+    set_top_field(&mut doc, "height", None, true).unwrap();
     let t = read(&doc);
     assert_eq!(t.extensions.len(), 1);
     assert!(t.height.is_none());

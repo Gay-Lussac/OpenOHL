@@ -22,6 +22,9 @@ use std::time::Instant;
 use eframe::egui;
 use ohl_loads::CaseLoads;
 use ohl_loads::capacity::{CaseUsage, StructureUsage, UsageStatus};
+// Usage from `ohl_structures_fe::check::NEAR_FULL` is shown as a warning
+// (orange): one classification for both applications.
+use ohl_structures_fe::check::{UsageClass, classify_usage};
 
 use crate::check_help as help;
 use crate::model::Model;
@@ -33,9 +36,6 @@ type Outcome = Result<Vec<CaseLoads>, String>;
 
 /// A computation's answer: the loads, and the usage computed from them.
 type Finished = (Outcome, Vec<CaseUsage>);
-
-/// Usage at or above this share is shown as a warning (orange).
-const NEAR_FULL: f64 = 0.9;
 
 /// Colour of what is not checked because a wire did not solve (grey).
 const INCOMPLETE: egui::Color32 = egui::Color32::from_rgb(150, 156, 170);
@@ -78,7 +78,7 @@ impl UsageMark {
             UsageStatus::NotChecked => Self::Unchecked,
             UsageStatus::Over => Self::Over,
             UsageStatus::Pass => match s.governing() {
-                Some(g) if g.usage >= NEAR_FULL => Self::Near,
+                Some(g) if classify_usage(g.usage) == UsageClass::Near => Self::Near,
                 _ => Self::Within,
             },
         }
@@ -711,7 +711,10 @@ impl LoadsPage {
             .count();
         let over = rows
             .iter()
-            .filter(|r| r.1.governing().is_some_and(|g| g.usage > 1.0))
+            .filter(|r| {
+                r.1.governing()
+                    .is_some_and(|g| classify_usage(g.usage) == UsageClass::Over)
+            })
             .count();
         let incomplete: Vec<&StructureUsage> = match self.usage_case {
             0 => {
@@ -764,12 +767,10 @@ impl LoadsPage {
                 } else {
                     "not allowed".into()
                 };
-                let colour = if c.usage > 1.0 {
-                    error
-                } else if c.usage >= NEAR_FULL {
-                    egui::Color32::from_rgb(255, 170, 60)
-                } else {
-                    ok
+                let colour = match classify_usage(c.usage) {
+                    UsageClass::Over => error,
+                    UsageClass::Near => egui::Color32::from_rgb(255, 170, 60),
+                    UsageClass::Pass => ok,
                 };
                 egui::RichText::new(text).monospace().color(colour)
             }

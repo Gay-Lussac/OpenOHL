@@ -359,6 +359,25 @@ fn exit_clauses_stop_it() {
     assert!(matches!(r, Err(SpotError::Stopped(Stop::Cancelled { .. }))));
 }
 
+/// A step so small that the route would have more than
+/// [`MAX_STATIONS`] stations is refused, with the count, before any is
+/// made (code review 2026-10-26); the limit itself still runs.
+#[test]
+fn a_tiny_step_is_refused_with_the_station_count() {
+    let mut p = flat(10_000.0, vec![candidate("DE", None, 20.0, 10.0, None)]);
+    p.step = 1e-9;
+    match spot(&p, &default_budget()) {
+        Err(SpotError::Invalid(m)) => {
+            assert!(m.contains("stations") && m.contains("larger step"), "{m}");
+        }
+        other => panic!("{other:?}"),
+    }
+    p.step = 10_000.0 / MAX_STATIONS as f64;
+    assert!(p.check().is_ok());
+    p.step = 10_000.0 / (MAX_STATIONS as f64 + 10.0);
+    assert!(p.check().is_err());
+}
+
 #[test]
 fn infeasible_and_invalid_problems_say_why() {
     let mut p = flat(1000.0, vec![candidate("DE", None, 4.0, 10.0, None)]);

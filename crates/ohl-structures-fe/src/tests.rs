@@ -693,6 +693,92 @@ fn pole_check() {
     assert!(Pole::parse("id = \"x\"\nmaterial = \"steel\"\nlength = \"10 m\"\ntop_diameter = \"1 m\"\nground_diameter = \"1 m\"\n").is_err());
 }
 
+/// A load, the wind or a factor that is not a finite number is refused
+/// with an error naming it, never a panic (code review 2026-10-26: a NaN
+/// height placed no node in the P-Delta model).
+#[test]
+fn a_pole_load_that_is_not_finite_is_refused() {
+    let text = "id = \"p\"\nmaterial = \"wood\"\nlength = \"12 m\"\nembedment = \"2 m\"\n\
+                top_diameter = \"200 mm\"\nground_diameter = \"300 mm\"\nfibre_stress = \"50 MPa\"\n\
+                elasticity = \"10 GPa\"\n";
+    let pole = Pole::parse(text).unwrap();
+    let good = PoleLoad {
+        point: [0.0, 0.0, 9.0],
+        force: [5e3, 0.0, -10e3],
+    };
+    for bad in [
+        PoleLoad {
+            point: [0.0, 0.0, f64::NAN],
+            ..good
+        },
+        PoleLoad {
+            force: [f64::INFINITY, 0.0, 0.0],
+            ..good
+        },
+    ] {
+        for p_delta in [true, false] {
+            let e = check_pole(
+                &pole,
+                &[good, bad],
+                [0.0, 0.0],
+                1.0,
+                p_delta,
+                &default_budget(),
+            )
+            .unwrap_err();
+            assert!(
+                e.contains("load 2") && e.contains("not a finite number"),
+                "{e}"
+            );
+        }
+    }
+    let e = check_pole(
+        &pole,
+        &[good],
+        [f64::NAN, 0.0],
+        1.0,
+        true,
+        &default_budget(),
+    )
+    .unwrap_err();
+    assert!(e.contains("wind"), "{e}");
+    assert!(
+        check_pole(
+            &pole,
+            &[good],
+            [0.0, 0.0],
+            f64::NAN,
+            true,
+            &default_budget()
+        )
+        .is_err()
+    );
+    assert!(check_pole(&pole, &[good], [0.0, 0.0], 1.0, true, &default_budget()).is_ok());
+}
+
+/// The pole's own weight in the P-Delta model times the case's vertical
+/// factor (physics review 2026-10-26): more weight, more amplification;
+/// factor 1 is `check_pole` itself.
+#[test]
+fn the_poles_own_weight_takes_the_vertical_factor() {
+    let text = "id = \"p\"\nmaterial = \"wood\"\nlength = \"12 m\"\nembedment = \"2 m\"\n\
+                top_diameter = \"200 mm\"\nground_diameter = \"300 mm\"\nfibre_stress = \"50 MPa\"\n\
+                elasticity = \"10 GPa\"\ndensity = \"650 kg/m3\"\n";
+    let pole = Pole::parse(text).unwrap();
+    let loads = [PoleLoad {
+        point: [0.0, 0.0, 9.0],
+        force: [5e3, 0.0, -10e3],
+    }];
+    let b = default_budget();
+    let one = check_pole(&pole, &loads, [0.0, 0.0], 1.0, true, &b).unwrap();
+    let same = check_pole_factored(&pole, &loads, [0.0, 0.0], 1.0, 1.0, true, &b).unwrap();
+    assert_eq!(one, same);
+    let more = check_pole_factored(&pole, &loads, [0.0, 0.0], 1.0, 1.5, true, &b).unwrap();
+    assert!(more.amplification > one.amplification, "{more:?} {one:?}");
+    let none = check_pole_factored(&pole, &loads, [0.0, 0.0], 1.0, 0.0, true, &b).unwrap();
+    assert!(none.amplification < one.amplification, "{none:?} {one:?}");
+}
+
 /// A section library of invented profiles: a tube and a rectangular tube
 /// (300 mm along z, 100 mm along y).
 const LIBRARY: &str = "[[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\n\

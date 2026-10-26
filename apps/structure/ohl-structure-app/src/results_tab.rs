@@ -39,9 +39,9 @@ use crate::load_cases_tab::arrow;
 const ITERATIONS: u64 = 200;
 /// Longest time one case may take (a solve takes milliseconds).
 const CASE_TIME: Duration = Duration::from_secs(30);
-/// Usage from which a member is near full (as the line application's
-/// Usage page).
-pub const NEAR_FULL: f64 = 0.9;
+/// Usage from which a member is near full (the line application's, one
+/// constant).
+pub use ohl_structure_link::NEAR_FULL;
 
 /// The answer of a run: the cases solved, or why the run could not
 /// start (the model does not read, an extension not there).
@@ -93,11 +93,12 @@ impl Default for ResultsTab {
 /// Usage colour: red above 100 %, orange from 90 %, green below, grey
 /// without a capacity.
 pub fn usage_colour(usage: Option<f64>) -> [u8; 4] {
-    match usage {
-        // A usage that is not a number never shows as a pass.
-        Some(u) if u > 1.0 || u.is_nan() => [235, 70, 60, 255],
-        Some(u) if u >= NEAR_FULL => [255, 170, 60, 255],
-        Some(_) => [110, 220, 120, 255],
+    use ohl_structure_link::UsageClass;
+    // A usage that is not a number never shows as a pass.
+    match usage.map(ohl_structure_link::classify_usage) {
+        Some(UsageClass::Over) => [235, 70, 60, 255],
+        Some(UsageClass::Near) => [255, 170, 60, 255],
+        Some(UsageClass::Pass) => [110, 220, 120, 255],
         None => [150, 150, 160, 255],
     }
 }
@@ -880,7 +881,10 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
         .default_open(true)
         .show(ui, |ui| {
             let mut members: Vec<_> = r.members.iter().collect();
-            members.sort_by(|a, b| b.usage.unwrap_or(-1.0).total_cmp(&a.usage.unwrap_or(-1.0)));
+            // A usage that is not a number first (never hidden at the end).
+            members.sort_by(|a, b| {
+                ohl_structure_link::usage_order(b.usage.unwrap_or(-1.0), a.usage.unwrap_or(-1.0))
+            });
             egui::Grid::new("members-grid")
                 .striped(true)
                 .show(ui, |ui| {

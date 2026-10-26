@@ -146,14 +146,15 @@ pub(crate) fn hash(text: &str) -> u64 {
 
 /// A structure's polylines in its own frame (x along its orientation).
 fn structure_sticks(s: &ohl_line::Structure) -> Vec<Vec<Point>> {
-    let (sin, cos) = s.orientation_deg.to_radians().sin_cos();
     let local = |q: Point| {
-        let (dx, dy) = (q[0] - s.position[0], q[1] - s.position[1]);
-        [
-            dx * cos + dy * sin,
-            -dx * sin + dy * cos,
-            q[2] - s.position[2],
-        ]
+        ohl_line::links::to_structure_axes(
+            s.orientation_deg,
+            [
+                q[0] - s.position[0],
+                q[1] - s.position[1],
+                q[2] - s.position[2],
+            ],
+        )
     };
     let mut lines: Vec<Vec<Point>> = s
         .members
@@ -245,7 +246,7 @@ pub fn document(model: &ExportModel, options: &Options) -> Result<String, String
             s.position[1] - origin[1],
             s.position[2] - origin[2],
         ]);
-        let (sin, cos) = s.orientation_deg.to_radians().sin_cos();
+        let ([cos, sin], _) = ohl_line::links::axes(s.orientation_deg);
         let x = f.add("IFCDIRECTION", &format!("({},{},0.)", real(cos), real(sin)));
         let axes = f.add("IFCAXIS2PLACEMENT3D", &format!("{at},{up},{x}"));
         let place = f.add("IFCLOCALPLACEMENT", &format!("{site_place},{axes}"));
