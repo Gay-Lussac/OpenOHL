@@ -1320,6 +1320,7 @@ fn panel_ui(
     }
     view.view.measure.clone_from(&main.measure);
     view.view.handles.target.clone_from(&main.handles.target);
+    view.view.move_held = main.move_held;
     view.view.link = link;
     view.view.dirty.take_log();
     // The camera: the front view, else carried with the cut.

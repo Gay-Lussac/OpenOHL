@@ -95,8 +95,9 @@ written in its user-guide section.
   `crates/ohl-app/src/model.rs:578`). LiDAR points can be clicked only
   where drawn (`pick_lidar`, `selection.rs:881`).
 - **Tools** are data (`Tool::ALL`, `crates/ohl-app/src/tools.rs:14`): a
-  held tool acts on a right-click, a left-click always selects
-  (`controls::click_buttons` swaps them).
+  held tool acts on a left-click (Select held: it selects); a
+  right-click selects and opens the object's menu
+  (`controls::click_buttons`; owner, 2026-10-26).
 - **Box / lasso** areas on a view's screen (`crates/ohl-app/src/area.rs`).
 - **Labels next to objects** per view (`SectionDisplay`,
   `crates/ohl-app/src/annotations.rs`: section label, sag at mid-span,
@@ -492,8 +493,7 @@ shown, with their author.
   **M** Distance, Shift+M the last measuring tool used, **Enter** finish,
   **Backspace** undo last pick, **P** pin, **A** make annotation,
   **Alt** pick free, **Tab** cycle snap candidates under the cursor.
-- Right-click picks as for every tool (left with *Tools act on
-  left-click*).
+- A click picks as for every tool.
 - Status bar: snap target, then the running value while the second pick
   is hovered (rubber band in the view).
 

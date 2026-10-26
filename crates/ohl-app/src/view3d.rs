@@ -76,6 +76,10 @@ pub struct View3d {
     /// A measuring tool is held: what is under the cursor is found every
     /// frame the pointer moves ([`View3d::hover_use`]).
     pub measuring: bool,
+    /// The Move tool is held: the structure being edited's handles can
+    /// be dragged (owner: OHL-Design UI review, 2026-10-26 — nothing
+    /// moves on a click or drag with Select).
+    pub move_held: bool,
     /// What is under the cursor, as a click of the tool button would
     /// find it (a measuring tool held).
     pub hover_use: Option<selection::Use>,
@@ -918,6 +922,7 @@ impl View3d {
             _ => None,
         };
         let pressed_on_handle = !self.captured
+            && self.move_held
             && self.handles.hovered.is_some()
             && self.handles.drag.is_none()
             && response.hovered()
@@ -1018,9 +1023,8 @@ impl View3d {
         }
         let handle_drag = self.handles.drag.is_some() || self.handles.swallow;
         // Which button's click selects and which uses the held tool (the
-        // option "Tools act on left-click"; drags are not clicks).
-        let (select_button, tool_button) =
-            crate::controls::click_buttons(self.controls.tools_on_left, select_held);
+        // Select tool held or not; drags are not clicks).
+        let (select_button, tool_button) = crate::controls::click_buttons(select_held);
         if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
             self.left_press_on_handle = pressed_on_handle;
         }
@@ -1121,7 +1125,7 @@ impl View3d {
                 !(self.controls.capture && b == egui::PointerButton::Primary)
             };
             // A left-click on a drag handle (released without moving) only
-            // selects, also when tools act on left-click.
+            // selects, also with a tool held.
             let on_handle = self.left_press_on_handle;
             let tool_click = acts(tool_button)
                 && response.clicked_by(tool_button)

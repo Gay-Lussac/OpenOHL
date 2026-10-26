@@ -306,10 +306,6 @@ fn main() -> std::process::ExitCode {
             app.controls = chosen
                 .or_else(|| cc.storage.and_then(controls::Controls::load))
                 .unwrap_or_default();
-            // The click option is kept also when --controls names a scheme.
-            if let Some(st) = cc.storage {
-                app.controls.tools_on_left = controls::Controls::load_tools_on_left(st);
-            }
             log::info!("controls: {}", app.controls.name);
             if let Some(s) = cc.storage.and_then(selection::Snaps::load) {
                 app.snaps = s;

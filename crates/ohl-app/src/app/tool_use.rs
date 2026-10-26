@@ -88,7 +88,7 @@ impl Ready {
         true
     }
 
-    /// What can be right-clicked now: the Snap menu's choice, and strings
+    /// What can be clicked now: the Snap menu's choice, and strings
     /// while a tool that works on them is held.
     pub fn effective_snaps(&self) -> crate::selection::Snaps {
         let mut s = self.snaps.clone();
@@ -130,11 +130,26 @@ impl Ready {
         s
     }
 
+    /// Uses `tool` on `target` as a click with it held would (a
+    /// right-click's menu): the tool held before is held again after,
+    /// unless `keep` (a tool of several clicks: it stays held for them).
+    pub fn use_tool_as(&mut self, tool: crate::tools::Tool, target: Selection, keep: bool) {
+        let before = self.hotbar.clone();
+        self.hotbar.hold(tool);
+        self.use_tool(crate::selection::Use {
+            target,
+            at: None,
+            on: None,
+        });
+        if !keep {
+            self.hotbar = before;
+        }
+    }
+
     /// Uses the held tool on what was clicked with the tool button in a
-    /// view (a right-click, or a left-click with the option "Tools act on
-    /// left-click"): Select
-    /// selects, Go to opens its window, the editing tools act on the object
-    /// (or, Add structure, on the ground point).
+    /// view (a left-click; Select held: a right-click, before its menu):
+    /// Select selects, Go to opens its window, the editing tools act on
+    /// the object (or, Add structure, on the ground point).
     pub fn use_tool(&mut self, u: crate::selection::Use) {
         // A window the click opens, or one it changes to another object,
         // opens next to the click (not where an earlier one was, maybe
@@ -457,7 +472,7 @@ impl Ready {
                         let from = self.jumper_from.clone().expect("checked");
                         self.status = Some((
                             format!(
-                                "Add jumper from {} set {} through {}: right-click more suspension strings, then the other end",
+                                "Add jumper from {} set {} through {}: click more suspension strings, then the other end",
                                 from.structure,
                                 from.set,
                                 via.join(", ")
@@ -468,7 +483,7 @@ impl Ready {
                     _ => {
                         self.status = Some((
                             format!(
-                                "Add jumper: {structure} {label} holds a wire (its wire point has a set): right-click a suspension string to a wire point without a set, or the other end"
+                                "Add jumper: {structure} {label} holds a wire (its wire point has a set): click a suspension string to a wire point without a set, or the other end"
                             ),
                             true,
                         ));
@@ -529,7 +544,7 @@ impl Ready {
                     None => {
                         self.status = Some((
                             format!(
-                                "Add jumper from the tap {}: right-click its other end (a string, or another tap's clamp; the same one again or Escape: cancel)",
+                                "Add jumper from the tap {}: click its other end (a string, or another tap's clamp; the same one again or Escape: cancel)",
                                 tap.text()
                             ),
                             false,
@@ -582,7 +597,7 @@ impl Ready {
                         .map_or(String::new(), |w| format!(" (wire point {})", w.label));
                     self.status = Some((
                         format!(
-                            "Add jumper: set {set} on {structure}{wire} holds no section, so no jumper ends there. To pass the jumper through this string, untick its wire point's set in the string window (Edit on the string); then right-click it between the jumper's ends"
+                            "Add jumper: set {set} on {structure}{wire} holds no section, so no jumper ends there. To pass the jumper through this string, untick its wire point's set in the string window (Edit on the string); then click it between the jumper's ends"
                         ),
                         true,
                     ));
@@ -592,7 +607,7 @@ impl Ready {
                     None => {
                         self.status = Some((
                             format!(
-                                "Add jumper from {structure} set {set}: right-click the suspension strings it passes through in order (if any), then the other end (the same one again or Escape: cancel)"
+                                "Add jumper from {structure} set {set}: click the suspension strings it passes through in order (if any), then the other end (the same one again or Escape: cancel)"
                             ),
                             false,
                         ));
@@ -641,7 +656,7 @@ impl Ready {
             (Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment, _) => {
                 use crate::alignment_tools::{CoordDialog, CoordFor};
                 let stored = model.stored_line().unwrap_or(&model.line);
-                // What was right-clicked gives the point: an alignment
+                // What was clicked gives the point: an alignment
                 // point (used as it is: a junction), a structure (tied
                 // under it), a survey or LiDAR point shown (its
                 // coordinates); else the coordinates are asked for. A new
@@ -713,7 +728,7 @@ impl Ready {
                     None => {
                         self.status = Some((
                             format!(
-                                "Add spacer from {section} span point {label}: right-click the span point at its other end (the same one again or Escape: cancel)"
+                                "Add spacer from {section} span point {label}: click the span point at its other end (the same one again or Escape: cancel)"
                             ),
                             false,
                         ));
@@ -779,7 +794,7 @@ impl Ready {
                     Ok(o) => {
                         self.status = Some((
                             format!(
-                                "Link {label} of {structure}: right-click a ringed joint of its \
+                                "Link {label} of {structure}: click a ringed joint of its \
                                  type ({} joint(s) it may be linked to; Escape: cancel)",
                                 o.joints.len()
                             ),
@@ -797,7 +812,7 @@ impl Ready {
             (Tool::Link, _) => {
                 if self.link_from.take().is_some() {
                     self.status = Some((
-                        "Link: cancelled (right-click a ringed joint to link the point)".into(),
+                        "Link: cancelled (click a ringed joint to link the point)".into(),
                         false,
                     ));
                 } else {
@@ -820,7 +835,7 @@ impl Ready {
                 self.update_draft();
                 self.status = Some((
                     format!(
-                        "String wire: {} points — right-click the next string, Enter: section, Backspace: undo a point, Escape: cancel",
+                        "String wire: {} points — click the next string, Enter: section, Backspace: undo a point, Escape: cancel",
                         self.chain.len()
                     ),
                     false,
@@ -880,7 +895,7 @@ impl Ready {
         }
     }
 
-    /// "Tool: what to right-click" in the status bar.
+    /// "Tool: what to click" in the status bar.
     pub(super) fn hint(&mut self, tool: crate::tools::Tool) {
         self.status = Some((format!("{}: {}", tool.name(), tool.help()), true));
     }

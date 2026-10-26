@@ -501,8 +501,7 @@ impl Follow {
         self.last_hover = hover.cloned();
         self.live = None;
         let Some(subject) = self.subject.clone() else {
-            self.status =
-                "right-click the object to follow: a wire, a jumper or a structure".into();
+            self.status = "click the object to follow: a wire, a jumper or a structure".into();
             return;
         };
         let Some(cloud) = self.cloud(model, case, ctx) else {
@@ -688,7 +687,7 @@ impl Follow {
             |ui| {
                 ui.label(match &self.subject {
                     Some(s) => format!("Following {}", s.name()),
-                    None => "Right-click the object to follow".into(),
+                    None => "Click the object to follow".into(),
                 });
                 ui.label(egui::RichText::new(&self.status).small());
                 ui.separator();

@@ -658,7 +658,7 @@ pub(super) fn span_delete_action(
     })
 }
 
-/// The deletion of a right-clicked object: a structure, a string, a span's
+/// The deletion of a clicked object: a structure, a string, a span's
 /// section, a jumper.
 pub(super) fn delete_action(
     line: &ohl_line::Line,

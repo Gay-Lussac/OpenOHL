@@ -352,7 +352,7 @@ pub(super) fn editor_window(
             r.chain.clear();
             r.hotbar.hold(crate::tools::Tool::StringWire);
             r.status = Some((
-                "String wire: right-click the strings in line order, then Enter".into(),
+                "String wire: click the strings in line order, then Enter".into(),
                 false,
             ));
         }

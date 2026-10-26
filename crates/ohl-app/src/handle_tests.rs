@@ -32,6 +32,14 @@ fn harness(model: crate::model::Model) -> Harness<'static, App> {
         .wgpu()
         .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     h.run();
+    // Handles move with the Move tool only (owner: OHL-Design UI review,
+    // 2026-10-26).
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .hotbar
+        .hold(crate::tools::Tool::Move);
+    h.run();
     h
 }
 
@@ -579,11 +587,12 @@ fn a_v_wire_point_stays_and_its_string_changes_length() {
     assert_eq!(m.line.structure("T3"), Some(&before));
 }
 
-/// With "Tools act on left-click" on and Move held: a left click on a
-/// handle, without moving, only selects, and a left drag on it still moves
-/// the point (one command, the tool not used).
+/// A handle moves with the Move tool only: Select held, a drag on it
+/// moves nothing (owner: OHL-Design UI review, 2026-10-26). Move held: a
+/// left click on a handle, without moving, only selects, and a left drag
+/// on it moves the point (one command, the tool not used).
 #[test]
-fn handles_drag_with_tools_on_left_click() {
+fn handles_drag_with_the_move_tool_only() {
     if !gpu() {
         return;
     }
@@ -592,18 +601,35 @@ fn handles_drag_with_tools_on_left_click() {
     h.run();
     let (label, before) = {
         let r = h.state_mut().ready().unwrap();
-        r.view3d.controls.tools_on_left = true;
+        r.hotbar.hold(crate::tools::Tool::Select);
         r.edit_structure("T3");
         let p = r.model.line.structure("T3").unwrap().points[0].clone();
         (p.label, p.position)
     };
     h.run();
+    screen_aside(&mut h, Tab::StructureEditor, before);
+    let at = on_screen(&mut h, before);
+    // Select held: a drag on the handle does not move the point.
+    pointer(&mut h, at, None);
+    h.run();
+    drag(&mut h, at, egui::vec2(0.0, -60.0), &[(egui::Key::Z, false)]);
+    pointer(&mut h, at + egui::vec2(0.0, -60.0), Some(false));
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.view3d.handles.drag.is_none());
+        let s = r.model.line.structure("T3").unwrap();
+        assert_eq!(
+            s.point(&label).unwrap().position,
+            before,
+            "Select moves nothing"
+        );
+    }
     press(&mut h, egui::Key::M, egui::Modifiers::NONE);
     assert_eq!(
         h.state_mut().ready().unwrap().hotbar.tool(),
         crate::tools::Tool::Move
     );
-    screen_aside(&mut h, Tab::StructureEditor, before);
     let at = on_screen(&mut h, before);
     pointer(&mut h, at, None);
     h.run();

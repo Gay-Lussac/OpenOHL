@@ -10,7 +10,7 @@ each wire point has — the numbers you string the wires to in chapter 5.
    click elsewhere to close it).
 2. Press **G** (Go to structure), choose *T2*, **Enter**: the 3D view
    goes to it. Then do the same for *T4*.
-3. Hold **Edit** and right-click one of T2's strings (from a crossarm
+3. Hold **Edit** and click one of T2's strings (from a crossarm
    down to its wire point). The window **Strings of set
    1 of T2** (or 2, 3, 19) shows the string: the point it hangs from, its
    length and weight (the type's own values; a string can take them from
@@ -40,7 +40,7 @@ own wire point.
 types in chapter 3. A string runs from its top (an attachment point) to
 its **wire point**; the **set** is the wire point's number on its
 structure, the place a wire is connected to. A structure without a type
-gets its strings with the **Add string** tool (a right-click on one of
+gets its strings with the **Add string** tool (a click on one of
 its points). Changing a typed structure's string in its window overrides
 the type's string for that structure only. See the
 [Glossary](../user-guide/glossary.md#strings) (strings combine: two

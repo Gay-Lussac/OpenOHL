@@ -386,7 +386,7 @@ pub fn reroute(
         }
         None => {
             if middle.is_empty() {
-                return Err("Edit alignment: right-click the new point(s) first".into());
+                return Err("Edit alignment: click the new point(s) first".into());
             }
             let at_end = stored.alignments.iter().find_map(|x| {
                 let k = x.points.iter().position(|p| p == a)?;

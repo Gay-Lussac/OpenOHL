@@ -22,7 +22,7 @@ weather cases ticked ──► line results (forces at each attachment point, un
    - **Wires**: leave *as strung*.
    - **Weather cases sent**: tick **everyday** and **high wind**.
 2. Close the menu (a click beside it, or Escape).
-3. Hold **Edit** and right-click **T2** (a suspension structure);
+3. Hold **Edit** and click **T2** (a suspension structure);
    in its Properties, **Open in OHL-Structure…** opens it with the loads
    the line puts on it (OHL-Structure must be built next to OHL-Design).
 4. In OHL-Structure: **Load cases › Load case editor…** (a window of its

@@ -9,8 +9,8 @@
 //! with a colour) and the Edit window of LiDAR points opens on them —
 //! their count, a class for all of them ([`crate::lidar_edit`]).
 //!
-//! The selecting button is the left one, or the right one with the option
-//! "tools act on a left-click" ([`crate::controls::click_buttons`]). While
+//! The selecting button is the left one with Select held, the right one
+//! with another tool ([`crate::controls::click_buttons`]). While
 //! Alt is held the keys do not move the 3D view's camera (Shift would move
 //! it down), and the drag does not turn or pan the view.
 

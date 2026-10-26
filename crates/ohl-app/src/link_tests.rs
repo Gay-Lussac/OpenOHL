@@ -200,7 +200,7 @@ fn the_link_tool_links_with_two_clicks_cancels_and_undoes() {
         o.joints.iter().find(|j| j.id == "L10B").unwrap().clone()
     };
     if gpu {
-        // Through the view: the pointer over the joint, a right-click.
+        // Through the view: the pointer over the joint, a click.
         look_at(&mut h, joint.at, 25.0);
         let at = on_screen(&mut h, joint.at);
         h.input_mut().events.push(egui::Event::PointerMoved(at));
@@ -215,7 +215,7 @@ fn the_link_tool_links_with_two_clicks_cancels_and_undoes() {
             .and_then(|l| l.hovered.clone());
         assert_eq!(hovered.as_deref(), Some("L10B"));
         shot(&mut h, "design-link-tool-hover");
-        click(&mut h, at, egui::PointerButton::Secondary);
+        click(&mut h, at, egui::PointerButton::Primary);
     } else {
         h.state_mut().ready().unwrap().link_to_joint("L10B");
         h.run();

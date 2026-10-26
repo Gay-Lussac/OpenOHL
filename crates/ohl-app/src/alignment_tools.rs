@@ -23,7 +23,7 @@ pub enum CoordFor {
     Reroute,
 }
 
-/// The coordinate window: where nothing to snap to was right-clicked.
+/// The coordinate window: where nothing to snap to was clicked.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoordDialog {
     /// What the point is for.
@@ -88,7 +88,7 @@ impl CoordDialog {
             ui.label(
                 egui::RichText::new(if add {
                     "Its coordinates (all three required; a structure, survey or LiDAR \
-                         point right-clicked gives them)."
+                         point clicked gives them)."
                 } else {
                     "No survey point, alignment point or structure near where you clicked: \
                          give the point's coordinates (all three required)."

@@ -47,6 +47,25 @@ project's.
   shape (as drawn last), and set up again while untouched when the panel
   settles to another shape in its first frames (the ±width was cut off
   at the sides).
+- **Clicks and the object's menu** (as OHL-Structure now). In the
+  views (3D, plan, profile, cross-section) a left-click uses the tool
+  held, with Select held it selects; a right-click selects what is under
+  the pointer and opens its menu: Properties, Zoom to, the tools that
+  apply (Edit…, Move…, Replace structure…, Add string…, Add jumper,
+  Point or load on the span…, Measure the clearance, Link to a joint…,
+  Add structure here…, Add alignment point here…), Use *tool* on it,
+  Cross-section here (the profile's at its station: its own Select-only
+  menu gone) and Delete…. A tool chosen there acts once, the tool held
+  before stays held (one of several clicks stays held). Escape with
+  nothing else to give up holds Select again. Nothing moves on a click or
+  drag with Select: the structure screen's drag handles are dragged with
+  the Move structure tool held (a structure itself moved only through
+  the Move window, as before). The option "Tools act on left-click" is
+  gone (it is now how clicks work; its kept setting is not read). Every
+  text saying "right-click" for a tool now says "click". Not done:
+  **Shift + click adds** — OHL-Design's selection holds one object; a
+  selection of several needs the model of the selection, the views' highlight
+  and Properties reworked (left for the owner to decide).
 - **OHL-Structure**: the 3D view's fit takes in the compass's angles
   written around the feet and centres the structure in the room above
   the hotbar ("270° left" and "180° back" were under it).

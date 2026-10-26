@@ -618,7 +618,7 @@ pub(super) fn section_ui(
         .collect();
     ui.label(egui::RichText::new(text.join(" ➡ ")).small());
     ui.button("Pick points again")
-        .on_hover_text("With the String wire tool: right-click the strings in order, Enter")
+        .on_hover_text("With the String wire tool: click the strings in order, Enter")
         .clicked()
 }
 

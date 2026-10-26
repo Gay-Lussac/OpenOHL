@@ -476,7 +476,7 @@ pub fn ui(
                         if ui
                             .button("Link…")
                             .on_hover_text(
-                                "The Link tool on this point: right-click a ringed joint of its \
+                                "The Link tool on this point: click a ringed joint of its \
                                  type (it is linked there where it is)",
                             )
                             .clicked()
@@ -862,11 +862,9 @@ pub fn ui(
                     .collect::<Vec<_>>(),
             );
             ui.label(
-                egui::RichText::new(
-                    "Edit tool (or right-click with it): change it and where it hangs",
-                )
-                .small()
-                .weak(),
+                egui::RichText::new("Edit tool (or click with it): change it and where it hangs")
+                    .small()
+                    .weak(),
             );
         }
         Selection::AlignmentPoint { id } => {

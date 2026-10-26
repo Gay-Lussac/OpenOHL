@@ -6,8 +6,8 @@
 //! **Link tool** ([`crate::tools::Tool::Link`]), the **rigid links**
 //! drawn, the point's facts for Properties.
 //!
-//! - **Link tool**: the tool click (a right-click; a left-click with
-//!   "Tools act on left-click") on an attachment point of a typed
+//! - **Link tool**: the tool click (a click with the tool held, or Link
+//!   to a joint… in the point's right-click menu) on an attachment point of a typed
 //!   structure chooses it; the attach joints of its type are ringed in
 //!   the 3D view (only attach joints take links: owner decision
 //!   2026-10-21), the one under the pointer showing the offset's length

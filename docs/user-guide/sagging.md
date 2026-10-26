@@ -51,7 +51,7 @@ beyond its curves' range (`max_strain` in the [wire library](wire-library.md)).
 
 ## In the app
 
-Open a section's window (the **Edit** tool and a right-click on one of its spans): the section
+Open a section's window (the **Edit** tool and a click on one of its spans): the section
 window has a **Sagging** panel (folded). Give the conductor temperature
 (off: the stringing temperature), the temperature at clipping in (off: the
 sagging temperature), the number of waves and, optionally, a transit this

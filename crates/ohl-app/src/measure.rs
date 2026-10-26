@@ -1242,7 +1242,6 @@ impl Measuring {
     pub fn window(
         &mut self,
         ctx: &egui::Context,
-        tools_on_left: bool,
         display: &mut crate::annotations::SectionDisplay,
         user: &str,
         now: &dyn Fn() -> String,
@@ -1265,11 +1264,10 @@ impl Measuring {
             Some(&mut open),
             |ui| {
                 ui.label(
-                    egui::RichText::new(crate::controls::click_words(
-                        "Hold a measuring tool (Tools › Measure) and right-click the points; \
-                         values shown to 0.01, copied in full.",
-                        tools_on_left,
-                    ))
+                    egui::RichText::new(
+                        "Hold a measuring tool (the hotbar, or Edit › Tools) and click the \
+                         points; values shown to 0.01, copied in full.",
+                    )
                     .small()
                     .weak(),
                 );
@@ -1951,7 +1949,7 @@ mod tests {
     }
 }
 
-/// The tools in the app: held, two right-clicks (a structure, a wire at
+/// The tools in the app: held, two clicks (a structure, a wire at
 /// mid-span) make a distance in the Measurements panel; the height tool
 /// on the same wire point gives a positive height; Escape gives a first
 /// pick up; read-only is no obstacle.

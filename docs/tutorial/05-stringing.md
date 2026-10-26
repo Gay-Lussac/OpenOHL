@@ -10,7 +10,7 @@ and T4 to T6 — and solved in every weather case.
    diameter, mass, strength and moduli (typical published values). Close
    it; nothing to change.
 2. Hold **String wire**.
-3. Right-click the strings of the first section, in line order (the set
+3. Click the strings of the first section, in line order (the set
    labels of chapter 4 help, in the 3D view):
    T1's string of **set 41**, then T2's **set 1**, T3's **set 1**, and
    T4's **set 21**.
@@ -24,7 +24,7 @@ and T4 to T6 — and solved in every weather case.
 
    ![The plan with the six structures, and the window String wire: new
    section for S1](../images/tutorial/tutorial-string-wire.png)
-5. The second section of the same phase: right-click T4's **set 41**,
+5. The second section of the same phase: click T4's **set 41**,
    T5's **set 1**, T6's **set 21**, **Enter**. The window starts from the
    first section's values (circuit C1, phase L1): **Apply**.
 6. The other phases the same way. The window proposes the circuit and
