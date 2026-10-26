@@ -47,6 +47,7 @@ fn local(code: &str) -> Options {
         keys: None,
         newcomers: Some(Role::Viewer),
         web: None,
+        ..Default::default()
     }
 }
 

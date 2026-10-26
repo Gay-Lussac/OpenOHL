@@ -16,7 +16,11 @@
 //! joining clients are shared while nothing changed and at most
 //! [`MAX_COPIES`] exist at once; presence and lock messages are paced per
 //! connection, the users' list broadcast at most every [`PEERS_EVERY`].
-//! The computer itself (loopback addresses) is not limited per address.
+//! The limits of connections are the host's parameters
+//! ([`Options::max_connections`], [`Options::max_per_address`]) and hold
+//! for every address, the computer's own (loopback, e.g. behind a reverse
+//! proxy) included (owner, 2026-10-26); only the join rate and the waits
+//! after wrong codes leave loopback out.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
@@ -55,11 +59,12 @@ pub const JOINS_PER_MINUTE: f64 = 12.0;
 /// doubled after each next).
 pub const MAX_BACKOFF: u64 = 300;
 
-/// Connections of one address not joined yet (QUIC and web each).
+/// Connections of one address not joined yet (QUIC and web each), by
+/// default ([`Options::max_per_address`]).
 pub const MAX_PENDING: usize = 8;
 
-/// QUIC connections at once.
-const MAX_QUIC: usize = 256;
+/// QUIC connections at once, by default ([`Options::max_connections`]).
+pub const MAX_QUIC: usize = 256;
 
 /// The users' list is broadcast at most this often for presence changes
 /// (the latest one wins).
@@ -88,6 +93,11 @@ pub struct Options {
     /// Also serve the web client (HTTPS and WebSocket over TCP) on this
     /// address and port ([`crate::web`]).
     pub web: Option<SocketAddr>,
+    /// Connections at once (QUIC; more wait for a free one).
+    pub max_connections: usize,
+    /// Connections of one address not joined yet, every address (the
+    /// computer's own too).
+    pub max_per_address: usize,
 }
 
 impl Default for Options {
@@ -99,6 +109,8 @@ impl Default for Options {
             keys: None,
             newcomers: Some(Role::Viewer),
             web: None,
+            max_connections: MAX_QUIC,
+            max_per_address: MAX_PENDING,
         }
     }
 }
@@ -691,9 +703,27 @@ struct Seen {
 
 /// Limits per address (QUIC and web): joins, wrong access codes,
 /// connections not joined yet. Loopback addresses (this computer) pass.
-#[derive(Default)]
 pub(crate) struct Gate {
     seen: Mutex<HashMap<IpAddr, Seen>>,
+    /// Connections of one address not joined yet.
+    per_address: usize,
+}
+
+impl Default for Gate {
+    fn default() -> Self {
+        Self::new(MAX_PENDING)
+    }
+}
+
+impl Gate {
+    /// A gate letting `per_address` connections of one address wait for
+    /// their join (at least 1).
+    pub(crate) fn new(per_address: usize) -> Self {
+        Self {
+            seen: Mutex::default(),
+            per_address: per_address.max(1),
+        }
+    }
 }
 
 /// A connection not joined yet (released when dropped).
@@ -736,7 +766,7 @@ impl Gate {
     /// A new connection of `ip`, if it may have one more not joined yet.
     pub(crate) fn enter(self: &Arc<Self>, ip: IpAddr) -> Option<Pending> {
         let ok = self.with(ip, |s| {
-            if s.pending >= MAX_PENDING && !ip.is_loopback() {
+            if s.pending >= self.per_address {
                 false
             } else {
                 s.pending += 1;
@@ -988,7 +1018,7 @@ impl Server {
                     };
                     let web_addr = web.as_ref().and_then(|(l, _)| l.local_addr().ok());
                     let _ = ready_tx.send(Ok((quic_addr, web_addr)));
-                    let gate = Arc::new(Gate::default());
+                    let gate = Arc::new(Gate::new(options.max_per_address));
                     let web_task = web.map(|(listener, acceptor)| {
                         tokio::spawn(crate::web::listen(
                             listener,
@@ -997,7 +1027,7 @@ impl Server {
                             gate.clone(),
                         ))
                     });
-                    let slots = Arc::new(tokio::sync::Semaphore::new(MAX_QUIC));
+                    let slots = Arc::new(tokio::sync::Semaphore::new(options.max_connections.max(1)));
                     let mut next = 0u64;
                     let mut stop_rx = stop_rx;
                     loop {
@@ -1394,6 +1424,12 @@ mod gate_tests {
         drop(held);
         assert!(gate.enter(ip).is_some());
         let local: IpAddr = "127.0.0.1".parse().unwrap();
+        // The computer's own connections are limited too (a reverse proxy),
+        // by the host's parameter (owner, 2026-10-26).
+        let few = Arc::new(Gate::new(2));
+        let held: Vec<Pending> = (0..2).map(|_| few.enter(local).unwrap()).collect();
+        assert!(few.enter(local).is_none());
+        drop(held);
         for _ in 0..100 {
             gate.joined(local, &Err(WRONG_CODE.into()));
             assert!(gate.may_join(local).is_ok());

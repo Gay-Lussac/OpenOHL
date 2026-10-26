@@ -666,9 +666,11 @@ impl Session {
         Ok(state)
     }
 
-    /// Merges approved review `id` (by a reviewer or an admin; also into a
-    /// protected branch): its target must be the current branch, and the
-    /// branch as approved.
+    /// Merges approved review `id` (by its author, a reviewer or an admin;
+    /// also into a protected branch): its target must be the current
+    /// branch, and the branch as approved. An admin merges alone: no
+    /// approval by somebody else needed, an admin's merge being the
+    /// approval (owner, 2026-10-26).
     pub fn merge_review(
         &mut self,
         user: &str,
@@ -685,7 +687,8 @@ impl Session {
         // Into a protected branch: approved by somebody else than the one
         // who merges, who is (still) a designer or an admin (security
         // review 2026-10-26, M1).
-        if self.find_ref(&review.target)?.is_some_and(|r| r.protected) {
+        let admin = self.role(user)? == Some(Role::Admin);
+        if !admin && self.find_ref(&review.target)?.is_some_and(|r| r.protected) {
             let mut other = false;
             for n in review.notes.iter().filter(|n| n.verdict == "approve") {
                 if n.user != user && n.user != review.author {
@@ -700,7 +703,7 @@ impl Session {
                 )));
             }
         }
-        if review.state != ReviewState::Approved {
+        if review.state != ReviewState::Approved && !(admin && review.state == ReviewState::Open) {
             return Err(refused(format!(
                 "review #{id} is {}, not approved",
                 review.state.as_str()
