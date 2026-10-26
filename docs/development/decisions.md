@@ -10,6 +10,116 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Personal invitations no longer follow from `--code` (security review H2, owner-approved fix, 2026-10-26)**
+
+Every access code used to be the first 6 bytes of SHA-256(secret, name),
+with the secret the host's `--code`. A viewer holding the general
+invitation could guess a short code offline from it and compute the
+admin's personal invitation. Now only the general code comes from that
+secret (unchanged: links made with `--code` stay valid); the personal
+codes are HMAC-SHA-256 of a random 256-bit key over the name, 128 bits
+(`ohl_server::Keys`). The key is made at every start, or kept in a key
+file (`ohl serve --keys FILE`, mode 0600, made when missing; with `--code`
+alone `PROJECT.ohl.server-key` beside the project), so personal
+invitations still survive restarts when wanted. Personal invitations made
+before stop working (hand out new ones). The application hosting keeps
+both in memory as before (a key per run). Tests: RFC 4231 vector, the old
+derivation refused, the same code after a restart with the key file, a
+damaged key file refused.
+
+**Reviews decided by designers, protected merges after somebody else's approval (security review M1, 2026-10-26)**
+
+A viewer (e.g. a second connection of a designer joined with the general
+invitation) could be named reviewer and approve. Now reviewers must be
+designers or admins and never the author (refused at submit); deciding
+needs that role still, and never by the author (admins included). Into a
+protected branch, a review is merged only after an approval by a designer
+or admin other than the one merging it (and other than the author); the
+author may now merge their own approved review (a reviewer approves, the
+author merges), so OHL-Design's Versions window enables Merge for the
+author. Tests: a viewer and the author refused as reviewers, a demoted
+reviewer decides nothing, the approver alone cannot merge into protected
+main, the author can.
+
+**The server keeps running for everyone (security review M2–M4, L3–L6, L8, 2026-10-26)**
+
+- A job that panics inside the authority thread is caught: its client is
+  refused ("an internal error of the server"), the session is read again
+  from the project file, the server keeps running (test: a job made to
+  panic, then edits and joins work).
+- Joins: per address at most 12 a minute; after a wrong access code the
+  address waits 1 s, doubling up to 300 s; at most 8 connections of one
+  address not joined yet (QUIC and web each), 256 QUIC connections in all;
+  loopback is not limited (the hosting application joins its own server).
+  The copy of the project for joining clients is shared while nothing
+  changed (`Snapshot`, removed when the last sender is done), at most 8
+  exist at once, and a client that does not take its copy within 60 s +
+  1 s per 256 KiB is dropped. At most 200 newcomers per run. A full copy
+  is still made per join after any change (partly fixed: a delta transfer
+  is the later fix).
+- Presence: at most 10 a second (burst 20) per connection, the rest
+  dropped; lock requests at most 20 a second (burst 64), the rest refused;
+  the Peers list broadcast at most every 100 ms (latest wins).
+- Messages are read as the bytes arrive (no allocation from the announced
+  length), still at most 64 MiB.
+- Locks: admins pass soft locks; an undo or redo is refused when the log
+  entry it reverses touches an object another user holds.
+- The copies for joining clients and the web scene's work folder are made
+  0700 with random names.
+- Names: invisible characters refused; a newcomer whose name's skeleton
+  (lower case, full-width as ASCII, Cyrillic/Greek look-alikes as Latin,
+  0→o, 1/i→l, spaces - _ . dropped) equals an existing user's is refused.
+  A small table, not full Unicode confusables or NFKC.
+Tests: gate limits per address, pacing, a forged look-alike newcomer
+refused, an undo under another's lock refused, an admin's edit through.
+
+**Project settings: rights, the server's log, no local paths (security review M5, 2026-10-26)**
+
+`Op::SetSetting` needed only a designer. Now it also needs a designer
+whose edits no grant limits, and an admin on a protected project line; a
+value that is an absolute path is refused; the server logs who changed
+which key. The copy a joining client receives keeps only the file name of
+settings holding an absolute path (`app.weather`, the weather case file
+used last; `Session::copy_for_others`). Settings stay outside the
+operation log (not undoable, as before): logging them as commands would
+change the session format — left to the owner.
+
+**Plugins: limits and Python only with the user's consent; the store's limits (security review M6, L1, 2026-10-26)**
+
+A plugin's manifest raised its own time and memory limits (up to 600 s and
+4 GiB). Now `[limits]` above the defaults apply only as far as the user
+allowed them for that plugin version in the plugin manager (asked once,
+kept in the shared `settings.toml` under `allowed."name@version"`, asked
+again for another version); until then the defaults apply. Python plugins
+are not sandboxed: the plugin manager says so, they are off until allowed,
+and their `[permissions]` section is no longer "checked" as if it bound
+them. The WebAssembly store counts all of a plugin's memories together
+against its memory limit (not each), and holds at most 64 instances, 16
+memories, 64 tables of at most 2^20 elements. OHL-Structure keeps the
+consents it reads (it writes the settings too). Tests: a greedy manifest
+not raised without consent, raised with it, another version asked again;
+the budget over two memories; Python asks to run unsandboxed; the shared
+settings round trip with `allowed`; OHL-Design's Python scripts only once
+allowed.
+
+**Imports bounded: zip total, XML depth, xlsx references (security review M7, L2, L9, 2026-10-26)**
+
+A zipped shapefile's members are read up to 2 GiB together (not 2 GiB
+each) and at most 300 of them. The XML reader refuses elements nested
+deeper than 256 ("elements nested more than 256 deep"), so a crafted file
+cannot overflow the stack. OHL-Structure's xlsx reader (tests only)
+refuses cell references that are not one to three capital letters up to
+XFD and parts over 64 MiB. Tests for each.
+
+**Project files opened defensively (security review L7, 2026-10-26)**
+
+Every connection to a project file (the session's, the point-cloud
+store's, the copies for clients) sets SQLite's `trusted_schema` off and
+its defensive mode on: views and triggers in a crafted file run no
+function unsafe for schemas, and the schema itself cannot be written
+through SQL. Nothing in the file changes; every test of the session runs
+with it.
+
 **A usage that is not a number never passes (code review, 2026-10-26)**
 
 The over / near / pass sorting of structure usages compared `usage > 1.0`,
