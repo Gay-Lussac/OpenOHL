@@ -32,7 +32,7 @@ Guiding principles:
 - **Multi-user from day one**: every edit is a command applied by a session.
 
 **Contents**
-- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16; U7, U8, U10, U11; Phases 1–5 for the line
+- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18; U7, U8, U10, U11; Phases 1–5 for the line
 - [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): O2, O9, O11, O17; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
@@ -276,6 +276,36 @@ layer is an orthophoto or a map (Terrain › Backgrounds › Import
 orthophotos or maps…, the kind turned in the menu); the route and
 situation plans and the key map take the maps first. Later: links to
 public map services.
+
+### O18. Electrical module: line parameters and a basic load flow
+Electrical calculations from the line as it is modelled, in an engine crate
+of their own (headless first, then a window in OHL-Design), so that the
+designer gets the line's electrical data from the same geometry as its
+mechanical design. Proposed (to discuss; nothing built):
+1. [ ] **Line parameters** — per circuit and section, from the conductors'
+   positions on the structures (or the mean height in the span), the
+   bundles and the wire data: series impedance (resistance at a
+   temperature, inductive reactance) with earth return, the earth wires
+   included and reduced out, as phase matrices and as positive, negative
+   and zero sequence values; shunt capacitance and susceptance; mutual
+   coupling between circuits on the same structures and with parallel
+   lines nearby; transposition (a transposition plan along the line, or
+   ideally transposed). Inputs to add as data: each wire's resistance and
+   geometric mean radius (or what they are computed from) in the wire
+   library, the soil resistivity along the route.
+2. [ ] **Basic load flow** — a small network of buses and the project's
+   lines (with their computed parameters), generators or a slack bus,
+   loads and transformers as simple models; voltages, currents, power
+   flows and losses, steady state, balanced first (unbalanced from the
+   phase matrices later). Results beside the thermal rating (the current
+   a line carries against its ampacity).
+3. [ ] **Exchange** — the parameters exported for network calculation
+   programs in an open format.
+Methods from textbooks and papers (cited in a new theory page), validated
+against worked examples with their published values, as every module.
+> **Owner:** (2026-10-26) Before the first release, put on the roadmap an
+> electrical module for the necessary electrical calculations, like the
+> impedance, or simply a basic load flow.
 
 ## Unfinished or approximate (known limitations)
 
