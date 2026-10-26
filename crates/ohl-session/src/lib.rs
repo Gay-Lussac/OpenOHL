@@ -392,7 +392,66 @@ pub enum Role {
     Admin,
 }
 
+/// What each role may do, in words, each with the least role allowed
+/// (the roles above it may too): the Roles page and the user guide show
+/// it. It follows the session's checks (`require`, the reviews, the locks,
+/// the protected branches); a test keeps the two together. Edit grants
+/// ([`Session::grant`]) may narrow a designer further.
+pub const ROLE_ABILITIES: &[(&str, Role)] = &[
+    (
+        "Open the project, see the line, its results and checks, switch branches",
+        Role::Viewer,
+    ),
+    (
+        "Edit the line (structures, sections, wires, terrain, library files, settings) and undo or redo",
+        Role::Designer,
+    ),
+    (
+        "Commit, make branches and tags, revert, delete unprotected branches",
+        Role::Designer,
+    ),
+    (
+        "Create project lines and bring another project in",
+        Role::Designer,
+    ),
+    (
+        "Submit reviews; approve or reject others' reviews; merge an approved review",
+        Role::Designer,
+    ),
+    (
+        "Change a protected branch directly; merge into it alone, without another's approval",
+        Role::Admin,
+    ),
+    (
+        "Protect or unprotect branches; delete tags and protected branches",
+        Role::Admin,
+    ),
+    (
+        "Roll back anyone's edits; roll a project line back to a revision; reproject",
+        Role::Admin,
+    ),
+    (
+        "Add users, change roles, grant or revoke edit rights by kind, object or area",
+        Role::Admin,
+    ),
+    ("Pass other users' locks", Role::Admin),
+];
+
 impl Role {
+    /// The roles, least first.
+    pub const ALL: [Role; 3] = [Role::Viewer, Role::Designer, Role::Admin];
+
+    /// What the role is for, in one sentence.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::Viewer => "Looks at the project: reads everything, changes nothing.",
+            Self::Designer => "Designs the line: edits, versions and reviews others' work.",
+            Self::Admin => {
+                "Runs the project: everything a designer does, plus users, protection and roll-backs."
+            }
+        }
+    }
+
     /// The name: `viewer`, `designer` or `admin`.
     pub fn as_str(self) -> &'static str {
         match self {

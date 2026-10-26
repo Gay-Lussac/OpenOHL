@@ -84,6 +84,28 @@ shows:
 
 **Security.** The page and the WebSocket are served over **HTTPS with the server's self-signed certificate**, so the browser warns the first time ("not private", "not trusted"). Before accepting it, compare the certificate's SHA-256 fingerprint (the browser shows it in the certificate details) with the one `ohl serve` prints, or with the last part of the `ohl://` invitation: if they differ, do not continue. The access code travels in the link's `#` part, which browsers do not send to the server or other sites, but it is in the browser history: hand links out like invitations. The listener serves only the client's own four files and the WebSocket; messages have the same size limits as the application's, and a browser silent for 30 s is disconnected. On a network you do not trust, prefer the application (its certificate is checked against the invitation automatically).
 
+## Roles
+
+Each user of a project has one role; admins give them (People). The
+**Roles** page (View) shows this table, your own role marked. Edit grants
+may narrow a designer further (by kind, object or area).
+
+| May | Viewer | Designer | Admin |
+|---|---|---|---|
+| Open the project, see the line, its results and checks, switch branches | ✔ | ✔ | ✔ |
+| Edit the line (structures, sections, wires, terrain, library files, settings) and undo or redo | — | ✔ | ✔ |
+| Commit, make branches and tags, revert, delete unprotected branches | — | ✔ | ✔ |
+| Create project lines and bring another project in | — | ✔ | ✔ |
+| Submit reviews; approve or reject others' reviews; merge an approved review | — | ✔ | ✔ |
+| Change a protected branch directly; merge into it alone, without another's approval | — | — | ✔ |
+| Protect or unprotect branches; delete tags and protected branches | — | — | ✔ |
+| Roll back anyone's edits; roll a project line back to a revision; reproject | — | — | ✔ |
+| Add users, change roles, grant or revoke edit rights by kind, object or area | — | — | ✔ |
+| Pass other users' locks | — | — | ✔ |
+
+The table is the program's (`ohl_session::ROLE_ABILITIES`); a test keeps
+it in step with the checks.
+
 ## Limits against misuse
 
 Somebody holding an invitation must not be able to stop the others (security review 2026-10-26):

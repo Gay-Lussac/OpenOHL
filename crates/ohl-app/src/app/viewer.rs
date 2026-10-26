@@ -336,6 +336,10 @@ impl TabViewer for Viewer<'_> {
                 }
                 None
             }
+            Tab::Roles => {
+                crate::remote::roles_ui(ui, &r.model);
+                None
+            }
             Tab::People => {
                 match crate::remote::people_ui(ui, &mut r.model) {
                     Some(crate::remote::PeopleAction::GoTo(c)) => {

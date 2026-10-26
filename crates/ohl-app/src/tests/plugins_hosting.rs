@@ -636,6 +636,15 @@ fn two_applications_share_a_hosted_project() {
     alice.step();
     alice.get_by_label("Copy");
     alice.get_by_label_contains("(you)");
+    // Roles: what each may do, her own role marked (owner, 2026-10-26).
+    {
+        let r = alice.state_mut().ready().unwrap();
+        r.open_page = Some((crate::app::Tab::Roles, None));
+    }
+    alice.step();
+    alice.step();
+    alice.get_by_label("Admin (you)");
+    alice.get_by_label_contains("Pass other users' locks");
     drop(alice);
     drop(bob);
     server.stop();
