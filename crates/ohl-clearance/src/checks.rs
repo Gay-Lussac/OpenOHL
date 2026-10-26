@@ -1371,6 +1371,87 @@ pub fn ground_check_with(
         .collect()
 }
 
+/// [`ground_check_with`] for wires in groups — `group[w]` for wire `w`, a
+/// span's positions in several wind states, say — when only each
+/// group's smallest clearances (the first of equal ones in the wires'
+/// order) and its largest counts are wanted, as the zone check reports
+/// them (owner, 2026-10-26). A group's wires are checked in their order
+/// on one thread, each with the group's smallest clearances so far as
+/// its bound ([`ground_wire`], as a swing arc's lines are): a piece or
+/// sample that can come neither below them nor below the requirement is
+/// passed over. The groups run in parallel. Each wire's counts are those
+/// of [`ground_check_with`]; its clearances only where it is the group's
+/// smallest (a wire passed over may keep none, or a larger one).
+pub fn ground_check_grouped(
+    rule: &Rule,
+    wires: &[Wire],
+    group: &[usize],
+    terrain: &Terrain,
+    top: &GroundMax,
+) -> Vec<WireResult> {
+    // Each group's wires, in their order.
+    let mut lists: Vec<Vec<usize>> = Vec::new();
+    let mut index: HashMap<usize, usize> = HashMap::new();
+    for w in 0..wires.len() {
+        let g = group.get(w).copied().unwrap_or(usize::MAX - w);
+        let k = *index.entry(g).or_insert_with(|| {
+            lists.push(Vec::new());
+            lists.len() - 1
+        });
+        lists[k].push(w);
+    }
+    let check = |list: &[usize]| -> Vec<(usize, WireResult)> {
+        let mut bound = [f64::INFINITY; 2];
+        list.iter()
+            .map(|&w| {
+                let r = ground_wire(rule, &wires[w], terrain, top, bound, None);
+                if let Some(h) = r.vertical {
+                    bound[0] = bound[0].min(h.distance);
+                }
+                if let Some(h) = r.radial {
+                    bound[1] = bound[1].min(h.distance);
+                }
+                (w, r)
+            })
+            .collect()
+    };
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(lists.len())
+        .max(1);
+    let mut out: Vec<Option<WireResult>> = vec![None; wires.len()];
+    if threads <= 1 {
+        for list in &lists {
+            for (w, r) in check(list) {
+                out[w] = Some(r);
+            }
+        }
+    } else {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let found: std::sync::Mutex<Vec<(usize, WireResult)>> = std::sync::Mutex::new(Vec::new());
+        std::thread::scope(|s| {
+            for _ in 0..threads {
+                s.spawn(|| {
+                    loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(list) = lists.get(k) else {
+                            return;
+                        };
+                        let r = check(list);
+                        found.lock().expect("not poisoned").extend(r);
+                    }
+                });
+            }
+        });
+        for (w, r) in found.into_inner().expect("not poisoned") {
+            out[w] = Some(r);
+        }
+    }
+    out.into_iter()
+        .map(|r| r.expect("every wire checked"))
+        .collect()
+}
+
 /// One wire's [`ground_check`]. `bound`: clearances (vertical, radial)
 /// already found elsewhere (e.g. other wires of the same swing arc): a
 /// piece or sample that cannot come below them nor below the
@@ -1488,14 +1569,7 @@ pub(crate) fn ground_wire(
                 }
                 let below = terrain.height(p[0], p[1]);
                 let radius = below.map_or(reach, |g| (p[2] - g).max(0.0).min(reach));
-                let mut nearest: Option<(f64, P3)> = None;
-                terrain.triangles_near(p[0], p[1], radius, |[ta, tb, tc]| {
-                    let q = closest_on_triangle(p, ta, tb, tc);
-                    let d = distance(p, q);
-                    if nearest.is_none_or(|(bd, _)| d < bd) {
-                        nearest = Some((d, q));
-                    }
-                });
+                let nearest = nearest_triangle(terrain, p, radius);
                 if let Some((d, q)) = nearest {
                     // Between samples the wire may come nearer:
                     // the lower bound, then to the surface.
@@ -1517,6 +1591,60 @@ pub(crate) fn ground_wire(
         result.radial_violations += u64::from(radial_bad);
     }
     result
+}
+
+/// Margin of the triangles' box test in [`nearest_triangle`], m: the
+/// point found on a triangle may lie outside its box by the rounding of
+/// its coordinates.
+const TRIANGLE_BOX_MARGIN: f64 = 1e-6;
+
+thread_local! {
+    /// Per thread: the sample each triangle was last visited for (its
+    /// number), to visit a triangle listed in several grid cells once.
+    static VISITED: std::cell::RefCell<(Vec<u32>, u32)> =
+        const { std::cell::RefCell::new((Vec::new(), 0)) };
+}
+
+/// The nearest point of the surface to `p` among the triangles near it in
+/// plan (within `radius`): (distance, point), the first of equal ones in
+/// the grid's order. Speed (2026-10-26; the same results bit for bit): a
+/// triangle whose bounding box is already no nearer than the nearest so
+/// far is not worked out, and a triangle listed in several cells is
+/// visited once.
+fn nearest_triangle(terrain: &Terrain, p: P3, radius: f64) -> Option<(f64, P3)> {
+    VISITED.with(|visited| {
+        let (stamps, stamp) = &mut *visited.borrow_mut();
+        let n = terrain.triangles().len();
+        if stamps.len() < n {
+            stamps.resize(n, 0);
+        }
+        *stamp = stamp.wrapping_add(1);
+        if *stamp == 0 {
+            stamps.fill(0);
+            *stamp = 1;
+        }
+        let stamp = *stamp;
+        let mut nearest: Option<(f64, P3)> = None;
+        terrain.triangles_near_indexed(p[0], p[1], radius, |k, [ta, tb, tc]| {
+            if stamps[k] == stamp {
+                return;
+            }
+            stamps[k] = stamp;
+            if let Some((bd, _)) = nearest {
+                let lo = [0, 1, 2].map(|i| ta[i].min(tb[i]).min(tc[i]));
+                let hi = [0, 1, 2].map(|i| ta[i].max(tb[i]).max(tc[i]));
+                if box_distance(p, lo, hi) >= bd + TRIANGLE_BOX_MARGIN {
+                    return;
+                }
+            }
+            let q = closest_on_triangle(p, ta, tb, tc);
+            let d = distance(p, q);
+            if nearest.is_none_or(|(bd, _)| d < bd) {
+                nearest = Some((d, q));
+            }
+        });
+        nearest
+    })
 }
 
 /// Whether two wires share an end point (within 1 cm).

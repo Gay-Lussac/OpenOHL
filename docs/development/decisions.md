@@ -510,6 +510,34 @@ Maybe make a toolbar as is the case in the OHL design app."
   grouped index against the reference check.
 >>>>>>> 34cf744e (Point checks pass far pieces over: a vertical lower bound before the exact work, and the zone check's wire index in blocks by span (every wind state's piece together) passed over at once beyond reach (performance review item 2, owner 2026-10-26); same results bit for bit; test; decisions)
 
+**Performance review: the radial ground check (owner, 2026-10-26)**
+
+- The nearest triangle of a sample: a triangle whose bounding box is
+  already no nearer than the nearest so far (with 1 µm to spare for
+  rounding) is not worked out, and a triangle listed in several grid
+  cells is visited once (`Terrain::triangles_near_indexed`). The same
+  results bit for bit (the first of equal ones is kept as before).
+- Owner-approved (2026-10-26), the zone check's ground clearances with
+  wind steps: a span's positions in its states are checked in order on
+  one thread, each with the span's smallest clearances so far as its
+  bound, as a swing arc's lines already were
+  (`checks::ground_check_grouped`); the spans run in parallel. What
+  changes: only the clearance kept per wire position inside the check
+  (a position that is not its span's lowest may keep none, or a larger
+  one: its pieces and samples that can come neither below the span's
+  lowest so far nor below the requirement are passed over). What does
+  not: every count (each position's, so each span's), each span's
+  lowest clearance, its state, its points (the first of equal ones in
+  the states' order), so the report — findings, lowest per rule, counts,
+  notes. Checked: the zone reports of an invented 24-span line (steps
+  and arc, vertical and radial, a rule with spans below and counts) and
+  `ohl zones` on the synthetic lines (vertical, radial, steps, arc) the
+  same as before; a test compares each span's lowest and every count
+  with the ungrouped check.
+- Measured (CPU time, 60 spans, 131 wind states): radial 18.9 s → 2.1 s,
+  vertical 5.6 s → 0.45 s; on the swing arc (3 states, the arcs' lines)
+  radial 29.8 s → 23.1 s (the box test only).
+
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**
 
 - A sheet template's stringing table repeated the band row's values: a

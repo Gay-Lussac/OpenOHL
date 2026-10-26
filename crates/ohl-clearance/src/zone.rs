@@ -43,7 +43,7 @@ use ohl_weather::{WeatherCase, WindSide};
 
 use crate::checks::{
     GroundMax, Hit, PointCheck, PointEvent, Tally, Wire, WireResult, WireSet, checked_parts,
-    ground_check_with, wires_of,
+    ground_check_grouped, wires_of,
 };
 use crate::rules::{
     CheckScope, CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet,
@@ -988,11 +988,16 @@ pub fn check_zones(
                         }
                     };
                     let top = &tops[k].1;
-                    let mut all: Vec<Entry> = ground_check_with(&p.def, &p.wires, ground, top)
-                        .into_iter()
-                        .zip(&p.meta)
-                        .map(|(r, &(s, g))| (r, s, g, None))
-                        .collect();
+                    // A span's positions in its states with a shared bound:
+                    // only the span's lowest and counts are reported
+                    // (owner, 2026-10-26).
+                    let group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
+                    let mut all: Vec<Entry> =
+                        ground_check_grouped(&p.def, &p.wires, &group, ground, top)
+                            .into_iter()
+                            .zip(&p.meta)
+                            .map(|(r, &(s, g))| (r, s, g, None))
+                            .collect();
                     let found = crate::positions::parallel(p.arcs.len(), budget, |k| {
                         Ok(arc_ground(&p.def, &arcs[p.arcs[k]], ground, top))
                     })

@@ -443,6 +443,37 @@ mod tests {
             let old = old_ground_check(&r, &wires, &terrain);
             let new = ground_check(&r, &wires, &terrain);
             assert_eq!(new, old);
+            // In groups with a shared bound (2026-10-26): each group's
+            // lowest (the first of equal ones) and each wire's counts.
+            let groups: Vec<usize> = wires.iter().map(|w| w.span).collect();
+            let top = crate::checks::GroundMax::new(&terrain);
+            let grouped = crate::checks::ground_check_grouped(&r, &wires, &groups, &terrain, &top);
+            let lowest = |results: &[WireResult], g: usize, vertical: bool| {
+                let mut best: Option<Hit> = None;
+                for (k, x) in results.iter().enumerate() {
+                    let hit = if vertical { x.vertical } else { x.radial };
+                    if groups[k] == g
+                        && let Some(h) = hit
+                        && best.is_none_or(|b| h.distance < b.distance)
+                    {
+                        best = Some(h);
+                    }
+                }
+                best
+            };
+            for g in 0..=groups.iter().copied().max().unwrap_or(0) {
+                for vertical in [true, false] {
+                    assert_eq!(
+                        lowest(&grouped, g, vertical),
+                        lowest(&old, g, vertical),
+                        "group {g}"
+                    );
+                }
+            }
+            for (a, b) in grouped.iter().zip(&old) {
+                assert_eq!(a.vertical_violations, b.vertical_violations);
+                assert_eq!(a.radial_violations, b.radial_violations);
+            }
             assert!(
                 old.iter()
                     .any(|x| x.vertical_violations > 0 && x.radial_violations > 0)
