@@ -605,6 +605,45 @@ Maybe make a toolbar as is the case in the OHL design app."
   about 11 µs a member row before, so on the 3700-member tower about
   40 ms → under 1 ms.
 
+**Performance review: OHL-Design's result lists draw the rows in view (owner, 2026-10-26)**
+
+- Display only. The lists of the wire tension, string and internal
+  clearance checks, the vertical and radial clearance findings, the
+  vegetation spans and the bill of materials laid out every row every
+  frame (up to 5000, the zone findings without a limit). They now draw
+  only the rows in view (`rows_in_view::Table`, the helper of
+  OHL-Structure's tables), so every row is listed (the 5000-row cap of
+  the lists is gone; the CSV export was always whole).
+- The Tables page sorts on each row's cell and its number worked out once
+  (not twice per comparison): the same order.
+- Not done, for the owner: keeping the Tables page's rows between frames.
+  They show solved values (tensions, spacer forces) that arrive from
+  background solves while the line's revision stays the same, so a key
+  of (revision, case, table) could show stale values; it needs a counter
+  of the model's solved cases first. The thermal rating's table (one row
+  per section, its ratings already kept) is left as it is.
+- Not measured on a real line (no long lists in the examples); the rows
+  drawn are those in view (about 15–20) instead of all of them.
+
+**Performance review: OHL-Structure's cases solved side by side (owner, 2026-10-26)**
+
+- A structure's load cases are solved on the cores (each thread takes the
+  next case; the results in the cases' order), in the application's run
+  and in `analyse_cases`. Each case is solved on its own, so its result is
+  the same whichever thread solves it; only its time ("took") is measured
+  among the others.
+- A load row's joint and member are found by id in a map made once per
+  case (it was a search through every joint and member per row: 5500 rows
+  × 3700 members), and each member's usage by member (it was a search
+  through every usage per member: 13.7 million comparisons per case at
+  3700 members); the first of an id, as the searches found it.
+- Checked: OHL-Structure's headless tool's replies (`ohl structures
+  analyse --json`) for every example structure the same as before
+  (the times left out); a test checks the cases' order on any number of
+  threads. Not measured on the 3700-member tower (private); the cases'
+  part runs about as many times faster as there are cores, less what
+  one case takes.
+
 ## 2026-10-25
 
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**

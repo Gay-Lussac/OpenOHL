@@ -687,7 +687,11 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         (Some(e), None) => e.members.iter().map(|m| m.id.clone()).collect(),
         _ => Vec::new(),
     };
-    for c in input.cases {
+    // The cases on the cores, in their order (2026-10-26: each case on
+    // its own, the same results whichever thread solves it).
+    let cases = input.cases;
+    let solved = crate::in_case_order(cases.len(), crate::threads(cases.len()), |k| {
+        let c = &cases[k];
         let fe = model.as_ref().map(|m| {
             let mut notes = Vec::new();
             let extra = match input.extension {
@@ -714,11 +718,12 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             Ok(p) => pole_case(input, p, c, budget),
             Err(e) => Err(e.clone()),
         });
-        run.cases.push(StructureCase {
+        StructureCase {
             name: c.name.clone(),
             fe,
             pole,
-        });
-    }
+        }
+    });
+    run.cases.extend(solved);
     Ok(run)
 }

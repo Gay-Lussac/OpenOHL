@@ -52,6 +52,7 @@ pub use run::{
 };
 pub use volumes::{VolumeMesh, string_volumes};
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -653,6 +654,16 @@ pub fn fe_loads(
         force: [f[0] * share, f[1] * share, -f[2] * share],
         moment: [0.0; 3],
     };
+    // Joints and members by id (the first of an id, as a search finds
+    // it): a search per row was slow on a large lattice (2026-10-26).
+    let mut node_of: HashMap<&str, usize> = HashMap::with_capacity(model.nodes.len());
+    for (k, n) in model.nodes.iter().enumerate() {
+        node_of.entry(n.id.as_str()).or_insert(k);
+    }
+    let mut member_of: HashMap<&str, usize> = HashMap::with_capacity(model.members.len());
+    for (k, m) in model.members.iter().enumerate() {
+        member_of.entry(m.id.as_str()).or_insert(k);
+    }
     for r in table.case(case).filter(|r| r.missing.is_none()) {
         match r.at {
             At::Point => {
@@ -665,18 +676,16 @@ pub fn fe_loads(
                 nodal.extend(loads);
             }
             At::Joint => {
-                let n = model
-                    .nodes
-                    .iter()
-                    .position(|n| n.id == r.label)
+                let n = node_of
+                    .get(r.label.as_str())
+                    .copied()
                     .ok_or_else(|| format!("no joint \"{}\" in the model", r.label))?;
                 nodal.push(at(n, r.force, 1.0));
             }
             At::Member => {
-                let m = model
-                    .members
-                    .iter()
-                    .find(|m| m.id == r.label)
+                let m = member_of
+                    .get(r.label.as_str())
+                    .map(|&k| &model.members[k])
                     .ok_or_else(|| format!("no member \"{}\" in the model", r.label))?;
                 nodal.push(at(m.i, r.force, 0.5));
                 nodal.push(at(m.j, r.force, 0.5));
@@ -873,10 +882,50 @@ pub fn analyse_cases(
     budget: &Budget,
 ) -> Result<Vec<CaseRun>, String> {
     let model = model_of(structure, text, dir, sections)?;
-    Ok(cases
-        .iter()
-        .map(|c| (c.name.clone(), analyse_one(&model, table, c, &[], budget)))
-        .collect())
+    Ok(in_case_order(cases.len(), threads(cases.len()), |k| {
+        let c = &cases[k];
+        (c.name.clone(), analyse_one(&model, table, c, &[], budget))
+    }))
+}
+
+/// Threads for `n` cases: the cores, at most one per case.
+pub(crate) fn threads(n: usize) -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, |c| c.get())
+        .min(n)
+        .max(1)
+}
+
+/// `f` of 0..n on `threads` threads (each takes the next case when done),
+/// the results in case order (2026-10-26: the cases are independent, each
+/// solve the same whichever thread does it).
+pub(crate) fn in_case_order<T: Send>(
+    n: usize,
+    threads: usize,
+    f: impl Fn(usize) -> T + Sync,
+) -> Vec<T> {
+    if threads <= 1 || n <= 1 {
+        return (0..n).map(f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done: std::sync::Mutex<Vec<(usize, T)>> = std::sync::Mutex::new(Vec::with_capacity(n));
+    std::thread::scope(|s| {
+        for _ in 0..threads {
+            s.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if k >= n {
+                        return;
+                    }
+                    let r = f(k);
+                    done.lock().expect("not poisoned").push((k, r));
+                }
+            });
+        }
+    });
+    let mut done = done.into_inner().expect("not poisoned");
+    done.sort_by_key(|(k, _)| *k);
+    done.into_iter().map(|(_, r)| r).collect()
 }
 
 /// One case solved; `extra`: loads added to the table's (the surface
@@ -985,12 +1034,22 @@ fn analyse_one(
             support: n.is_support(),
         })
         .collect();
+    // Each member's usage (the first given for it), by member: a search
+    // per member was O(members²) (2026-10-26).
+    let mut usage_of: Vec<Option<&_>> = vec![None; model.members.len()];
+    for u in &usage {
+        if let Some(slot) = usage_of.get_mut(u.member)
+            && slot.is_none()
+        {
+            *slot = Some(u);
+        }
+    }
     let members = model
         .members
         .iter()
         .enumerate()
         .map(|(k, m)| {
-            let u = usage.iter().find(|u| u.member == k);
+            let u = usage_of[k];
             MemberResult {
                 id: m.id.clone(),
                 ends: [m.i, m.j],
@@ -1031,4 +1090,19 @@ fn analyse_one(
         notes,
         points,
     })
+}
+
+#[cfg(test)]
+mod order_tests {
+    /// The cases solved side by side come back in their order, each the
+    /// result of its own index, whatever the threads.
+    #[test]
+    fn cases_come_back_in_their_order() {
+        let f = |k: usize| (k, (k as f64).sqrt().to_bits());
+        let one: Vec<_> = super::in_case_order(97, 1, f);
+        for threads in [2, 4, 16] {
+            assert_eq!(super::in_case_order(97, threads, f), one);
+        }
+        assert!(super::in_case_order(0, 4, f).is_empty());
+    }
 }
