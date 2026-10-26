@@ -251,12 +251,26 @@ fn attribute(tag: &str, name: &str) -> Option<String> {
     Some(tag[at..at + end].to_owned())
 }
 
-/// Column index of a cell reference (`C12` → 2).
-fn column_index(r: &str) -> usize {
-    r.chars()
-        .take_while(char::is_ascii_alphabetic)
-        .fold(0, |k, c| k * 26 + (c as usize - 'A' as usize + 1))
-        - 1
+/// Columns of a worksheet (`XFD`, the spreadsheet programs' last).
+const MAX_COLUMNS: usize = 16_384;
+
+/// Largest part of a workbook read, bytes.
+const MAX_PART: u64 = 64 << 20;
+
+/// Column index of a cell reference (`C12` → 2): one to three capital
+/// letters, at most [`MAX_COLUMNS`] (security review 2026-10-26, L9).
+fn column_index(r: &str) -> Result<usize, String> {
+    let letters: Vec<char> = r.chars().take_while(char::is_ascii_uppercase).collect();
+    if letters.is_empty() || letters.len() > 3 {
+        return Err(format!("cell reference {r}: not a column"));
+    }
+    let k = letters
+        .iter()
+        .fold(0, |k, c| k * 26 + (*c as usize - 'A' as usize + 1));
+    if k > MAX_COLUMNS {
+        return Err(format!("cell reference {r}: beyond column XFD"));
+    }
+    Ok(k - 1)
 }
 
 /// Reads a workbook written by [`write()`] (inline strings and numbers; the
@@ -264,9 +278,14 @@ fn column_index(r: &str) -> usize {
 pub fn read(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
     let mut part = |name: &str| -> Result<String, String> {
-        let mut f = zip.by_name(name).map_err(|e| format!("{name}: {e}"))?;
+        let f = zip.by_name(name).map_err(|e| format!("{name}: {e}"))?;
         let mut s = String::new();
-        f.read_to_string(&mut s).map_err(|e| e.to_string())?;
+        f.take(MAX_PART + 1)
+            .read_to_string(&mut s)
+            .map_err(|e| e.to_string())?;
+        if s.len() as u64 > MAX_PART {
+            return Err(format!("{name}: larger than {} MiB", MAX_PART >> 20));
+        }
         Ok(s)
     };
     let book = part("xl/workbook.xml")?;
@@ -288,7 +307,7 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
             for c in row.split("<c ").skip(1) {
                 let head = &c[..c.find('>').unwrap_or(c.len())];
                 let r = attribute(head, "r").ok_or("cell without r")?;
-                let k = column_index(&r);
+                let k = column_index(&r)?;
                 let cell = if let Some(t) = c.find("<t xml:space=\"preserve\">") {
                     let from = t + "<t xml:space=\"preserve\">".len();
                     let to = c[from..].find("</t>").ok_or("open text")? + from;
@@ -315,6 +334,17 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
 mod tests {
     use super::*;
 
+    /// L9: odd cell references are errors, not an underflow or a
+    /// billion cells.
+    #[test]
+    fn cell_references_are_bounded() {
+        assert_eq!(column_index("C12"), Ok(2));
+        assert_eq!(column_index("XFD1"), Ok(MAX_COLUMNS - 1));
+        for bad in ["1", "", "c3", "XFE1", "ZZZZZZ1"] {
+            assert!(column_index(bad).is_err(), "{bad}");
+        }
+    }
+
     #[test]
     fn round_trip() {
         let mut s = Sheet::new("A & B", &["Name", "Value [kN]"]);
@@ -329,6 +359,6 @@ mod tests {
         assert_eq!(back[0].get(1, "Name"), Some(&Cell::from("x<y")));
         assert_eq!(back[0].get(2, "Value [kN]"), Some(&Cell::Number(-2.0)));
         assert_eq!(column_name(27), "AB");
-        assert_eq!(column_index("AB3"), 27);
+        assert_eq!(column_index("AB3"), Ok(27));
     }
 }

@@ -178,6 +178,12 @@ pub fn decode(data: &[u8]) -> Result<std::borrow::Cow<'_, str>, String> {
     }
 }
 
+/// Deepest nesting of elements read: deeper files are refused (the tree
+/// is dropped and walked recursively; a file nesting a million elements
+/// would overflow the stack: security review 2026-10-26, L2). The XML
+/// formats read nest a few levels.
+pub const MAX_DEPTH: usize = 256;
+
 /// Parses a document into its root element.
 pub fn parse(text: &str) -> Result<Element, String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -298,6 +304,12 @@ pub fn parse(text: &str) -> Result<Element, String> {
                     None => return err("a second root element", i),
                 }
             } else {
+                if stack.len() >= MAX_DEPTH {
+                    return err(
+                        &format!("elements nested more than {MAX_DEPTH} deep (not read)"),
+                        i,
+                    );
+                }
                 stack.push(e);
             }
         }
@@ -331,6 +343,18 @@ mod tests {
             parse(&format!("<e{s}/>")).unwrap().attr("n"),
             Some("a\"<&>\n")
         );
+    }
+
+    /// L2: nesting deeper than [`MAX_DEPTH`] is refused with a clear
+    /// error, not a stack overflow.
+    #[test]
+    fn deep_nesting_is_refused() {
+        let ok = format!("{}{}", "<a>".repeat(MAX_DEPTH), "</a>".repeat(MAX_DEPTH));
+        assert!(parse(&ok).is_ok());
+        let n = 1_000_000;
+        let deep = format!("{}{}", "<a>".repeat(n), "</a>".repeat(n));
+        let e = parse(&deep).unwrap_err();
+        assert!(e.contains("nested more than 256"), "{e}");
     }
 
     #[test]
