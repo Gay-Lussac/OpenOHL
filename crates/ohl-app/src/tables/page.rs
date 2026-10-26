@@ -738,12 +738,22 @@ impl TablePage {
             })
             .collect();
         if let Some((c, up)) = self.sort {
+            // Each row's cell and its number worked out once, not twice
+            // per comparison (2026-10-26; the same order).
+            let mut keys: Vec<Option<(String, Option<f64>)>> = vec![None; rows.len()];
+            for &i in &order {
+                let x = shown_cell(&rows[i], c);
+                let n = x.trim().parse::<f64>().ok();
+                keys[i] = Some((x, n));
+            }
             order.sort_by(|&a, &b| {
-                let (x, y) = (shown_cell(&rows[a], c), shown_cell(&rows[b], c));
-                let o = match (x.trim().parse::<f64>(), y.trim().parse::<f64>()) {
-                    (Ok(p), Ok(q)) => p.total_cmp(&q),
+                let (Some((x, p)), Some((y, q))) = (&keys[a], &keys[b]) else {
+                    return std::cmp::Ordering::Equal;
+                };
+                let o = match (p, q) {
+                    (Some(p), Some(q)) => p.total_cmp(q),
                     // sec2 before sec10.
-                    _ => ohl_core::text::natural_cmp(&x, &y),
+                    _ => ohl_core::text::natural_cmp(x, y),
                 };
                 if up { o } else { o.reverse() }
             });

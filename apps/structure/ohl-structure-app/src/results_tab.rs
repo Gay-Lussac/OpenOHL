@@ -70,6 +70,9 @@ pub struct ResultsTab {
     /// Reactions drawn.
     pub reactions: bool,
     running: Option<(Instant, Receiver<Run>, CancelToken)>,
+    /// The run received, a number of its own in this process (the
+    /// members' order kept for the results shown is of one run).
+    pub generation: u64,
 }
 
 impl Default for ResultsTab {
@@ -86,6 +89,7 @@ impl Default for ResultsTab {
             scale: 50.0,
             reactions: true,
             running: None,
+            generation: 0,
         }
     }
 }
@@ -190,6 +194,10 @@ impl ResultsTab {
             self.scale = (s / p).floor().max(1.0) * p;
         }
         self.results = Some(r);
+        // A count no other run has had (the tab is made anew when a file
+        // is opened).
+        static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        self.generation = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     }
 
     /// The run, solved.
@@ -680,7 +688,7 @@ impl StructureApp {
                 match &c.fe {
                     Some(Ok(r)) => {
                         frame = offset_moments_ui(ui, r, &t);
-                        case_ui(ui, r);
+                        case_ui(ui, r, (self.results.generation, self.results.shown));
                     }
                     Some(Err(e)) => error_label(ui, format!("{}: {e}", c.name)),
                     None => {}
@@ -795,8 +803,20 @@ fn pole_ui(ui: &mut egui::Ui, p: &PoleResult) {
         });
 }
 
-/// One case's finite-element results.
-fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
+/// The members' places in `r`, most used first; a usage that is not a
+/// number first of all (`ohl_structure_link::usage_order`).
+fn members_order(r: &CaseResult) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..r.members.len()).collect();
+    order.sort_by(|&a, &b| {
+        let u = |k: usize| r.members[k].usage.unwrap_or(-1.0);
+        ohl_structure_link::usage_order(u(b), u(a))
+    });
+    order
+}
+
+/// One case's finite-element results. `shown`: (the run's number, the
+/// case's place), what the members' order is kept for.
+fn case_ui(ui: &mut egui::Ui, r: &CaseResult, shown: (u64, usize)) {
     egui::Grid::new("case-summary")
         .num_columns(2)
         .show(ui, |ui| {
@@ -880,43 +900,54 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
         .id_salt("members")
         .default_open(true)
         .show(ui, |ui| {
-            let mut members: Vec<_> = r.members.iter().collect();
-            // A usage that is not a number first (never hidden at the end).
-            members.sort_by(|a, b| {
-                ohl_structure_link::usage_order(b.usage.unwrap_or(-1.0), a.usage.unwrap_or(-1.0))
+            // Most used first, a usage that is not a number first of all
+            // (never hidden at the end): sorted once per run and case
+            // shown (kept in egui's memory, performance review
+            // 2026-10-26); only the rows in view drawn.
+            let order: std::sync::Arc<Vec<usize>> = ui.data_mut(|d| {
+                d.get_temp_mut_or_insert_with(egui::Id::new(("members-order", shown)), || {
+                    std::sync::Arc::new(members_order(r))
+                })
+                .clone()
             });
-            egui::Grid::new("members-grid")
-                .striped(true)
-                .show(ui, |ui| {
-                    for h in ["member", "axial [kN]", "usage [%]", "governs"] {
-                        crate::style::header(ui, h, "");
-                    }
-                    ui.end_row();
-                    for m in members {
-                        ui.label(&m.id);
-                        crate::style::num_label(
-                            ui,
-                            format!(
-                                "{:.2}{}",
-                                m.axial / 1000.0,
-                                if m.slack {
-                                    " slack"
-                                } else if m.bowed {
-                                    " bowed"
-                                } else {
-                                    ""
-                                }
-                            ),
-                        );
-                        crate::style::num(ui, |ui| {
-                            ui.colored_label(
-                                rgb(usage_colour(m.usage)),
-                                m.usage.map_or("—".into(), |u| format!("{:.0}", u * 100.0)),
-                            )
-                        });
-                        ui.label(&m.governs);
-                        ui.end_row();
-                    }
+            let mut table = crate::rows::Table::new(ui, "members-results", 4);
+            table.header(
+                ui,
+                &[
+                    ("member", ""),
+                    ("axial [kN]", ""),
+                    ("usage [%]", ""),
+                    ("governs", ""),
+                ],
+            );
+            table.rows(ui, order.len(), None, |c, i| {
+                let m = &r.members[order[i]];
+                c.cell(|ui| ui.label(&m.id));
+                c.cell(|ui| {
+                    crate::style::num_label(
+                        ui,
+                        format!(
+                            "{:.2}{}",
+                            m.axial / 1000.0,
+                            if m.slack {
+                                " slack"
+                            } else if m.bowed {
+                                " bowed"
+                            } else {
+                                ""
+                            }
+                        ),
+                    )
                 });
+                c.cell(|ui| {
+                    crate::style::num(ui, |ui| {
+                        ui.colored_label(
+                            rgb(usage_colour(m.usage)),
+                            m.usage.map_or("—".into(), |u| format!("{:.0}", u * 100.0)),
+                        )
+                    })
+                });
+                c.cell(|ui| ui.label(&m.governs));
+            });
         });
 }

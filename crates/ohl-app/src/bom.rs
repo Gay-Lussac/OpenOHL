@@ -215,39 +215,43 @@ fn table(ui: &mut egui::Ui, e: &CostEstimate) {
     egui::ScrollArea::vertical()
         .max_height(ui.available_height() - 80.0)
         .show(ui, |ui| {
-            egui::Grid::new("bom-table")
-                .striped(true)
-                .num_columns(6)
-                .show(ui, |ui| {
-                    for h in ["category", "item", "quantity", "unit"] {
-                        ui.strong(h);
-                    }
-                    if e.priced {
-                        ui.strong(format!("unit price{currency}"));
-                        ui.strong(format!("amount{currency}"));
-                    }
-                    ui.end_row();
-                    for l in &e.lines {
-                        ui.label(&l.category);
-                        ui.label(&l.item);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(if l.unit == "m" {
-                                format!("{:.1}", l.quantity)
-                            } else {
-                                format!("{}", l.quantity)
-                            })
-                        });
-                        ui.label(&l.unit);
-                        if e.priced {
-                            match l.unit_price {
-                                Some(p) => ui.label(format!("{p:.2}")),
-                                None => ui.colored_label(ui.visuals().warn_fg_color, "no price"),
-                            };
-                            ui.label(l.amount.map_or(String::new(), |a| format!("{a:.2}")));
-                        }
-                        ui.end_row();
-                    }
+            // Every line, only those in view drawn (2026-10-26).
+            let unit_price = format!("unit price{currency}");
+            let amount = format!("amount{currency}");
+            let mut columns = vec![
+                ("category", ""),
+                ("item", ""),
+                ("quantity", ""),
+                ("unit", ""),
+            ];
+            if e.priced {
+                columns.push((unit_price.as_str(), ""));
+                columns.push((amount.as_str(), ""));
+            }
+            let mut table = crate::rows_in_view::Table::new(ui, "bom-table", columns.len());
+            table.header(ui, &columns);
+            table.rows(ui, e.lines.len(), None, |c, i| {
+                let l = &e.lines[i];
+                c.cell(|ui| ui.label(&l.category));
+                c.cell(|ui| ui.label(&l.item));
+                c.cell(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(if l.unit == "m" {
+                            format!("{:.1}", l.quantity)
+                        } else {
+                            format!("{}", l.quantity)
+                        })
+                    })
                 });
+                c.cell(|ui| ui.label(&l.unit));
+                if e.priced {
+                    c.cell(|ui| match l.unit_price {
+                        Some(p) => ui.label(format!("{p:.2}")),
+                        None => ui.colored_label(ui.visuals().warn_fg_color, "no price"),
+                    });
+                    c.cell(|ui| ui.label(l.amount.map_or(String::new(), |a| format!("{a:.2}"))));
+                }
+            });
         });
     ui.separator();
     ui.label(format!("Spans between structures: {}", e.bom.spans));

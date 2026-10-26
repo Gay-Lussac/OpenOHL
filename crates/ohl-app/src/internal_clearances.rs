@@ -764,65 +764,73 @@ impl InternalClearancesWindow {
             .max_height(360.0)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Grid::new("internal-clearance-rows")
-                    .striped(true)
-                    .spacing([12.0, 3.0])
-                    .show(ui, |ui| {
-                        for h in [
-                            "structure",
-                            "part",
-                            "member or shape",
-                            "rule",
-                            "case",
-                            "distance m",
-                            "required m",
-                            "to",
-                            "",
-                        ] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for r in report
-                            .report
-                            .rows
-                            .iter()
-                            .filter(|r| !self.only_failures || !r.pass())
-                            .take(5000)
-                        {
-                            if ui
-                                .link(&r.structure)
-                                .on_hover_text(format!("Go to {}", r.structure))
-                                .clicked()
-                            {
-                                out.go = Some(Selection::Structure(r.structure.clone()));
-                            }
-                            ui.label(r.part.to_string());
-                            let against = r.against();
-                            ui.label(if against.is_empty() {
-                                "—".into()
-                            } else {
-                                against
-                            });
-                            ui.label(&report.rules[r.rule].name);
-                            ui.label(&r.case);
-                            ui.label(egui::RichText::new(format!("{:.2}", r.distance)).monospace());
-                            ui.label(egui::RichText::new(format!("{:.2}", r.required)).monospace());
-                            ui.label(if r.to_surface {
-                                "surface"
-                            } else {
-                                "centre line"
-                            });
-                            if r.pass() {
-                                ui.label("pass");
-                            } else {
-                                ui.label(
-                                    egui::RichText::new("too near")
-                                        .color(ui.visuals().error_fg_color),
-                                );
-                            }
-                            ui.end_row();
+                // Every row (those asked for), only those in view drawn
+                // (2026-10-26).
+                let rows: Vec<_> = report
+                    .report
+                    .rows
+                    .iter()
+                    .filter(|r| !self.only_failures || !r.pass())
+                    .collect();
+                let mut table = crate::rows_in_view::Table::new(ui, "internal-clearance-rows", 9)
+                    .spacing(12.0, 3.0);
+                table.header(
+                    ui,
+                    &[
+                        ("structure", ""),
+                        ("part", ""),
+                        ("member or shape", ""),
+                        ("rule", ""),
+                        ("case", ""),
+                        ("distance m", ""),
+                        ("required m", ""),
+                        ("to", ""),
+                        ("", ""),
+                    ],
+                );
+                table.rows(ui, rows.len(), None, |c, i| {
+                    let r = rows[i];
+                    if c.cell(|ui| {
+                        ui.link(&r.structure)
+                            .on_hover_text(format!("Go to {}", r.structure))
+                            .clicked()
+                    }) {
+                        out.go = Some(Selection::Structure(r.structure.clone()));
+                    }
+                    c.cell(|ui| ui.label(r.part.to_string()));
+                    let against = r.against();
+                    c.cell(|ui| {
+                        ui.label(if against.is_empty() {
+                            "—".into()
+                        } else {
+                            against
+                        })
+                    });
+                    c.cell(|ui| ui.label(&report.rules[r.rule].name));
+                    c.cell(|ui| ui.label(&r.case));
+                    c.cell(|ui| {
+                        ui.label(egui::RichText::new(format!("{:.2}", r.distance)).monospace())
+                    });
+                    c.cell(|ui| {
+                        ui.label(egui::RichText::new(format!("{:.2}", r.required)).monospace())
+                    });
+                    c.cell(|ui| {
+                        ui.label(if r.to_surface {
+                            "surface"
+                        } else {
+                            "centre line"
+                        })
+                    });
+                    c.cell(|ui| {
+                        if r.pass() {
+                            ui.label("pass")
+                        } else {
+                            ui.label(
+                                egui::RichText::new("too near").color(ui.visuals().error_fg_color),
+                            )
                         }
                     });
+                });
             });
     }
 }

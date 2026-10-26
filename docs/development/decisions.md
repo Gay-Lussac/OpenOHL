@@ -10,6 +10,42 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Performance review: long tables draw the rows in view (owner, 2026-10-26; items 6 and 7)**
+
+- Display only; the results are unchanged. Redone on the tables as the
+  UI reviews left them (units in the headers, numbers right-aligned, the
+  value fields' look, the not-a-number usage first): the first version
+  (on an older base) could not be merged.
+- OHL-Structure: the load table (thousands of rows on a large tower,
+  each copied every frame), the Members results (sorted every frame) and
+  the Members and Joints sheets were laid out whole every frame. They
+  now draw only the rows in view (`rows::Table`: one row height, the
+  table taking the room of all its rows in its scroll area, the columns
+  kept at their widest cell so far so they do not jump while
+  scrolling); the load table reads its rows in place (no copy); the
+  Members results are sorted once per run and case shown (the same
+  order, `usage_order`: a usage that is not a number first). A member or
+  joint picked elsewhere (the 3D view) is still brought into view: by
+  its place in the table.
+- OHL-Design: the lists of the wire tension, string and internal
+  clearance checks, the zone findings, the vegetation spans and the bill
+  of materials draw only the rows in view (`rows_in_view::Table`, its own
+  copy of the helper; each list's spacing, headers and click-anywhere
+  rows kept), so every row is listed (the lists' 5000-row cap is gone;
+  the CSV export was always whole). The Tables page sorts on each row's
+  cell and its number worked out once, not twice per comparison (the
+  same order). Not done: keeping the Tables page's rows between frames
+  (solved values arrive from background solves under the same model
+  revision; it needs a count of solved cases first).
+- Tests: the Members sheet of `type-02` draws its first member and not
+  its last until that is picked, then the last and not the first; a
+  5000-row list draws fewer than 30 rows and scrolls to row 4000.
+- Measured (bench-fast profile, M1 Max under a load of about 20 from
+  other builds, one whole harness frame, example `type-02`: 178 members,
+  46 joints): Members sheet 1.4–1.6 ms → 0.35–0.6 ms, Joints sheet
+  0.9–1.4 ms → 0.45–0.5 ms. A large lattice's frame no longer grows with
+  its rows.
+
 **Performance review: the time limits read a shared clock (owner, 2026-10-26)**
 
 - The performance review of 2026-10-26 (owner-approved fixes, speed only:

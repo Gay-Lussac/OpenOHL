@@ -1383,8 +1383,20 @@ impl StructureApp {
                 .push(p.label.as_str());
         }
         let mut change = None;
-        egui::Grid::new("joints").striped(true).show(ui, |ui| {
-            for (h, tip) in [
+        // Only the rows in view are drawn (a large lattice has thousands,
+        // performance review 2026-10-26); a joint picked elsewhere is
+        // brought into view by its place.
+        let target = match &self.scroll_to {
+            Some(Handle::Joint(id)) => t.nodes.iter().position(|n| &n.id == id),
+            _ => None,
+        };
+        if target.is_some() {
+            self.scroll_to = None;
+        }
+        let mut table = crate::rows::Table::new(ui, "joints", 7);
+        table.header(
+            ui,
+            &[
                 ("joint", "Its id"),
                 ("x [m]", ""),
                 ("y [m]", ""),
@@ -1398,46 +1410,42 @@ impl StructureApp {
                 ),
                 ("members", "The members meeting it"),
                 ("points", "The attachment points linked to it"),
-            ] {
-                crate::style::header(ui, h, tip);
+            ],
+        );
+        let selected = &mut self.selected;
+        table.rows(ui, t.nodes.len(), target, |c, i| {
+            let n = &t.nodes[i];
+            let h = Handle::Joint(n.id.clone());
+            c.cell(|ui| row(ui, selected, &mut None, h.clone(), &n.id));
+            let mut p = n.point.map(|v| v.si());
+            let mut moved = false;
+            for v in &mut p {
+                let r = c.cell(|ui| coord(ui, v));
+                hold(f, &r, &format!("move joint {}", n.id));
+                moved |= r.changed();
             }
-            ui.end_row();
-            for n in &t.nodes {
-                let h = Handle::Joint(n.id.clone());
-                row(
-                    ui,
-                    &mut self.selected,
-                    &mut self.scroll_to,
-                    h.clone(),
-                    &n.id,
-                );
-                let mut p = n.point.map(|v| v.si());
-                let mut moved = false;
-                for v in &mut p {
-                    let r = coord(ui, v);
-                    hold(f, &r, &format!("move joint {}", n.id));
-                    moved |= r.changed();
-                }
-                if moved {
-                    let _ = f.edit(&format!("move joint {}", n.id), |doc, t| {
-                        edit::symmetry::move_to(doc, t, &h, p)
-                    });
-                }
-                let worked_out = worked.get(n.id.as_str()).copied().flatten();
-                if let Some(kind) = kind_cell(ui, &n.id, n.kind, worked_out) {
-                    change = Some((n.id.clone(), kind));
-                }
+            if moved {
+                let _ = f.edit(&format!("move joint {}", n.id), |doc, t| {
+                    edit::symmetry::move_to(doc, t, &h, p)
+                });
+            }
+            let worked_out = worked.get(n.id.as_str()).copied().flatten();
+            if let Some(kind) = c.cell(|ui| kind_cell(ui, &n.id, n.kind, worked_out)) {
+                change = Some((n.id.clone(), kind));
+            }
+            c.cell(|ui| {
                 crate::style::num_label(
                     ui,
                     meeting.get(n.id.as_str()).copied().unwrap_or(0).to_string(),
-                );
+                )
+            });
+            c.cell(|ui| {
                 ui.label(
                     linked
                         .get(n.id.as_str())
                         .map_or(String::new(), |l| l.join(", ")),
-                );
-                ui.end_row();
-            }
+                )
+            });
         });
         if let Some((id, kind)) = change {
             self.set_joint_kind(&id, kind);

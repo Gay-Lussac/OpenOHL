@@ -79,6 +79,7 @@ mod remote;
 mod replace;
 mod requirement_ui;
 mod revision;
+mod rows_in_view;
 mod rule_editor;
 mod safety_volume;
 mod sagging_panel;

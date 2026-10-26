@@ -123,3 +123,53 @@ fn generator_options_in_the_forms() {
     assert_eq!(h.state().body.preview.len(), 8);
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
+
+/// Long tables draw only the rows in view (performance review,
+/// 2026-10-26): the Members table of a lattice draws its first rows, not
+/// its last; a member picked elsewhere (as in the 3D view) is brought into
+/// view by its place in the table, and drawn.
+#[test]
+fn long_tables_draw_the_rows_in_view_and_scroll_to_a_pick() {
+    let path = copy_of("type-02.ohls", "rows-in-view");
+    let mut h = harness(&path);
+    menu(&mut h, "Body", "Members…");
+    h.run();
+    let t = h.state().file.as_ref().unwrap().structure().clone();
+    let first = t.members[0].id.clone();
+    let last = t.members.last().unwrap().id.clone();
+    assert!(h.query_by_label(&first).is_some(), "{first}");
+    assert!(h.query_by_label(&last).is_none(), "{last}: every row drawn");
+    h.state_mut().selected = vec![Handle::Member(last.clone())];
+    h.state_mut().scroll_to = Some(Handle::Member(last.clone()));
+    h.run();
+    h.run();
+    assert!(h.query_by_label(&last).is_some(), "{last} not in view");
+    assert!(h.query_by_label(&first).is_none(), "{first} still drawn");
+    assert!(h.state().scroll_to.is_none());
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
+
+/// The frame time with a long sheet open (performance review item 6,
+/// 2026-10-26): a timing run, not a check (run with the bench-fast
+/// profile, `frame_time -- --ignored --nocapture`).
+#[test]
+#[ignore = "a timing run"]
+fn frame_time_of_the_members_and_joints_sheets() {
+    let path = copy_of("type-02.ohls", "frame-time");
+    let mut h = harness(&path);
+    for entry in ["Members…", "Joints…"] {
+        menu(&mut h, "Body", entry);
+        h.run();
+        for _ in 0..10 {
+            h.step();
+        }
+        let n = 200;
+        let start = std::time::Instant::now();
+        for _ in 0..n {
+            h.step();
+        }
+        let ms = start.elapsed().as_secs_f64() * 1000.0 / n as f64;
+        println!("{entry} frame: {ms:.3} ms");
+    }
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}

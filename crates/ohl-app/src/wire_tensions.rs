@@ -536,52 +536,50 @@ impl WireTensionsWindow {
             .max_height(360.0)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Grid::new("wire-tension-rows")
-                    .striped(true)
-                    .spacing([12.0, 3.0])
-                    .show(ui, |ui| {
-                        for h in [
-                            "span",
-                            "rule",
-                            "case",
-                            "tension kN",
-                            "allowed kN",
-                            "usage %",
-                            "",
-                        ] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for r in report.report.rows.iter().take(5000) {
-                            if ui
-                                .link(format!("{} span {}", r.section, r.span + 1))
-                                .on_hover_text("Go to this span")
-                                .clicked()
-                            {
-                                out.go = Some(Selection::Span {
-                                    section: r.section.clone(),
-                                    span: r.span,
-                                });
-                            }
-                            let rule = &report.rules[r.rule];
-                            ui.label(&rule.name).on_hover_text(rule_text(rule));
-                            ui.label(&r.case);
-                            ui.label(format!("{:.2}", r.tension / 1000.0));
-                            ui.label(format!("{:.2}", r.allowed / 1000.0));
-                            let u =
-                                egui::RichText::new(format!("{:.1}", 100.0 * r.usage)).monospace();
-                            if r.passes() {
-                                ui.label(u);
-                                ui.label("pass");
-                            } else {
-                                ui.label(u.color(ui.visuals().error_fg_color));
-                                ui.label(
-                                    egui::RichText::new("fail").color(ui.visuals().error_fg_color),
-                                );
-                            }
-                            ui.end_row();
-                        }
-                    });
+                // Every row, only those in view drawn (2026-10-26).
+                let rows = &report.report.rows;
+                let mut table =
+                    crate::rows_in_view::Table::new(ui, "wire-tension-rows", 7).spacing(12.0, 3.0);
+                table.header(
+                    ui,
+                    &[
+                        ("span", ""),
+                        ("rule", ""),
+                        ("case", ""),
+                        ("tension kN", ""),
+                        ("allowed kN", ""),
+                        ("usage %", ""),
+                        ("", ""),
+                    ],
+                );
+                table.rows(ui, rows.len(), None, |c, i| {
+                    let r = &rows[i];
+                    if c.cell(|ui| {
+                        ui.link(format!("{} span {}", r.section, r.span + 1))
+                            .on_hover_text("Go to this span")
+                            .clicked()
+                    }) {
+                        out.go = Some(Selection::Span {
+                            section: r.section.clone(),
+                            span: r.span,
+                        });
+                    }
+                    let rule = &report.rules[r.rule];
+                    c.cell(|ui| ui.label(&rule.name).on_hover_text(rule_text(rule)));
+                    c.cell(|ui| ui.label(&r.case));
+                    c.cell(|ui| ui.label(format!("{:.2}", r.tension / 1000.0)));
+                    c.cell(|ui| ui.label(format!("{:.2}", r.allowed / 1000.0)));
+                    let u = egui::RichText::new(format!("{:.1}", 100.0 * r.usage)).monospace();
+                    if r.passes() {
+                        c.cell(|ui| ui.label(u));
+                        c.cell(|ui| ui.label("pass"));
+                    } else {
+                        c.cell(|ui| ui.label(u.color(ui.visuals().error_fg_color)));
+                        c.cell(|ui| {
+                            ui.label(egui::RichText::new("fail").color(ui.visuals().error_fg_color))
+                        });
+                    }
+                });
             });
     }
 }

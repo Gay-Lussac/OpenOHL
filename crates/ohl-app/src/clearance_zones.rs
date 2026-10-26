@@ -1422,86 +1422,98 @@ impl ZoneWindow {
             .max_height(LIST_HEIGHT)
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                egui::Grid::new((self.title(), "result-grid"))
-                    .striped(true)
-                    .spacing([12.0, 3.0])
-                    .show(ui, |ui| {
-                        for (k, h) in [
-                            "Span",
-                            "Rule",
-                            "Required [m]",
-                            "To surface [m]",
-                            "Wind",
-                            "Target",
-                            "Too close",
-                        ]
-                        .into_iter()
-                        .enumerate()
-                        {
-                            if (2..4).contains(&k) {
-                                num(ui, |ui| ui.strong(h));
-                            } else {
-                                ui.strong(h);
-                            }
+                // Every finding, only those in view drawn (2026-10-26).
+                let findings = &report.zone.findings;
+                let mut table =
+                    crate::rows_in_view::Table::new(ui, "result-grid", 7).spacing(12.0, 3.0);
+                table.header_cells(ui, |c| {
+                    for (k, h) in [
+                        "Span",
+                        "Rule",
+                        "Required [m]",
+                        "To surface [m]",
+                        "Wind",
+                        "Target",
+                        "Too close",
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        if (2..4).contains(&k) {
+                            c.cell(|ui| num(ui, |ui| ui.strong(h)));
+                        } else {
+                            c.cell(|ui| ui.strong(h));
                         }
-                        ui.end_row();
-                        for f in &report.zone.findings {
-                            let span = match f.section.strip_prefix("jumper:") {
-                                Some(j) => Selection::Jumper(j.to_owned()),
-                                None => Selection::Span {
-                                    section: f.section.clone(),
-                                    span: f.span,
-                                },
-                            };
-                            // A click anywhere on the row: the views go
-                            // to it (owner: OHL-Design UI review).
-                            let tip = "Select the span and bring the views to it";
-                            let cell = |ui: &mut egui::Ui, t: egui::RichText| {
-                                ui.add(egui::Label::new(t).sense(egui::Sense::click()))
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .on_hover_text(tip)
-                                    .clicked()
-                            };
-                            let mut clicked = ui.link(span.describe()).on_hover_text(tip).clicked();
-                            clicked |= cell(ui, egui::RichText::new(&report.rules[f.rule].name));
-                            clicked |= num(ui, |ui| {
-                                cell(ui, egui::RichText::new(format!("{:.2}", f.required)))
-                            });
-                            clicked |= num(ui, |ui| {
-                                cell(
-                                    ui,
-                                    egui::RichText::new(format!("{:.2}", f.distance))
-                                        .color(ui.visuals().error_fg_color),
-                                )
-                            });
-                            ui.label(f.wind(&report.states))
-                                .on_hover_text(f.position(&report.states));
-                            if clicked {
-                                go = Some((span.clone(), f.wire));
-                            }
-                            ui.label(match f.class {
-                                None => "ground".into(),
-                                Some(c) => format!(
-                                    "class {c}{}",
-                                    model
-                                        .scheme
-                                        .class(c)
-                                        .map_or(String::new(), |d| format!(" {}", d.name))
-                                ),
-                            });
-                            ui.label(format!(
-                                "{} {}",
-                                f.count,
-                                match (f.class, f.count) {
-                                    (None, 1) => "wire piece",
-                                    (None, _) => "wire pieces",
-                                    (Some(_), 1) => "point",
-                                    (Some(_), _) => "points",
-                                }
-                            ));
-                            ui.end_row();
-                        }
+                    }
+                });
+                table.rows(ui, findings.len(), None, |c, i| {
+                    let f = &findings[i];
+                    let span = match f.section.strip_prefix("jumper:") {
+                        Some(j) => Selection::Jumper(j.to_owned()),
+                        None => Selection::Span {
+                            section: f.section.clone(),
+                            span: f.span,
+                        },
+                    };
+                    // A click anywhere on the row: the views go to it
+                    // (owner: OHL-Design UI review).
+                    let tip = "Select the span and bring the views to it";
+                    let cell = |ui: &mut egui::Ui, t: egui::RichText| {
+                        ui.add(egui::Label::new(t).sense(egui::Sense::click()))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(tip)
+                            .clicked()
+                    };
+                    let mut clicked =
+                        c.cell(|ui| ui.link(span.describe()).on_hover_text(tip).clicked());
+                    clicked |=
+                        c.cell(|ui| cell(ui, egui::RichText::new(&report.rules[f.rule].name)));
+                    clicked |= c.cell(|ui| {
+                        num(ui, |ui| {
+                            cell(ui, egui::RichText::new(format!("{:.2}", f.required)))
+                        })
                     });
+                    clicked |= c.cell(|ui| {
+                        num(ui, |ui| {
+                            cell(
+                                ui,
+                                egui::RichText::new(format!("{:.2}", f.distance))
+                                    .color(ui.visuals().error_fg_color),
+                            )
+                        })
+                    });
+                    c.cell(|ui| {
+                        ui.label(f.wind(&report.states))
+                            .on_hover_text(f.position(&report.states))
+                    });
+                    if clicked {
+                        go = Some((span.clone(), f.wire));
+                    }
+                    c.cell(|ui| {
+                        ui.label(match f.class {
+                            None => "ground".into(),
+                            Some(c) => format!(
+                                "class {c}{}",
+                                model
+                                    .scheme
+                                    .class(c)
+                                    .map_or(String::new(), |d| format!(" {}", d.name))
+                            ),
+                        })
+                    });
+                    c.cell(|ui| {
+                        ui.label(format!(
+                            "{} {}",
+                            f.count,
+                            match (f.class, f.count) {
+                                (None, 1) => "wire piece",
+                                (None, _) => "wire pieces",
+                                (Some(_), 1) => "point",
+                                (Some(_), _) => "points",
+                            }
+                        ))
+                    });
+                });
             });
         go
     }
