@@ -64,8 +64,24 @@ all = { level = "warn", priority = -1 }
 lto = "thin"
 codegen-units = 1
 
-# Development and test builds: the dependencies optimised (the WebAssembly
-# engine compiling plugins, rendering, SQLite run many times faster in the
-# tests); the workspace's own code as usual, with its debug assertions.
+# Local timing runs (docs/development/performance.md, Build profiles):
+# release optimisation, much faster to build (no LTO, parallel codegen);
+# shipping builds stay `release`.
+[profile.bench-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+
+# Development and test builds: line tables only (backtraces keep their
+# lines; a smaller build folder, faster links; CARGO_PROFILE_DEV_DEBUG=true
+# for a debugger session with variables).
+[profile.dev]
+debug = "line-tables-only"
+
+# The dependencies optimised (the WebAssembly engine compiling plugins,
+# rendering, SQLite run many times faster in the tests), without debug
+# information; the workspace's own code as usual, with its debug
+# assertions.
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
