@@ -359,6 +359,8 @@ fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
         routes,
         // (Read by the structure checks only, after the solve.)
         weather_groups: _,
+        // (Data only: nothing solved reads it.)
+        soil_resistivity_ohm_m: _,
         fields,
     } = a;
     *id == b.id

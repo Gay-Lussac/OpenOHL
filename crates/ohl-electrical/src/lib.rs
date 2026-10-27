@@ -61,14 +61,29 @@ pub fn run(
     };
     let settings = line.electrical;
     let (spans, mut notes) = cross_section::span_cross_sections(&src, settings.mean_height);
-    let (rho, assumed) = settings.soil_resistivity();
-    if assumed {
+    let (rho, _) = settings.soil_resistivity();
+    let assumed = spans
+        .iter()
+        .filter(|(_, c)| c.ground.soil_resistivity_assumed)
+        .count();
+    if assumed > 0 {
         notes.insert(
             0,
             format!(
-                "soil resistivity not set: {rho} Ω·m assumed (the IEEE distribution test feeders' value; an assumption — set the line's own)"
+                "soil resistivity not set on {assumed} of {} spans (neither structure measured, the line gives none): {rho} Ω·m assumed (the IEEE distribution test feeders' value; an assumption — set the line's own or measure at the structures)",
+                spans.len()
             ),
         );
+    }
+    let measured = line
+        .structures
+        .iter()
+        .filter(|s| s.soil_resistivity_ohm_m.is_some())
+        .count();
+    if measured > 0 {
+        notes.push(format!(
+            "soil resistivity measured at {measured} structures: a span takes the geometric mean of its two structures' values (one measured: that one), the others the line's"
+        ));
     }
     if !line.sections.iter().any(|s| s.system.is_some()) {
         notes.push(

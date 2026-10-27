@@ -32,7 +32,8 @@ The names are those of the line file:
        inside; version 2 <route> holding its <alignment> and <structure ref>,
        and the line's own <alignment> without id: read and converted -->
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…"
-             height_adjust="0.5">                <!-- feet 0.5 m above the ground -->
+             height_adjust="0.5"                 <!-- feet 0.5 m above the ground -->
+             soil_resistivity_ohm_m="8.5">          <!-- soil resistivity measured here, Ω·m -->
     <weather_group name="…"/>                   <!-- its weather case groups (the structure override) -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->

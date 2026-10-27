@@ -312,8 +312,11 @@ fn settings_ui(ui: &mut egui::Ui, model: &Model) -> Option<ElectricalSettings> {
                     if ui
                         .checkbox(&mut given, "given")
                         .on_hover_text(
-                            "Not given: 100 Ω·m assumed — the value the IEEE distribution test \
-                             feeders assume; soils range from a few Ω·m to thousands",
+                            "The line's, for the spans where neither structure has one measured \
+                             (Structures table, soil ρ Ω·m: a span takes the geometric mean of its \
+                             two structures'). Not given: 100 Ω·m assumed — the value the IEEE \
+                             distribution test feeders assume; soils range from a few Ω·m to \
+                             thousands",
                         )
                         .changed()
                     {

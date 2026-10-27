@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Soil resistivity measured at the structures (owner, 2026-10-27)**
+
+- Every structure may carry the soil resistivity measured at it, Ω·m
+  (`Structure.soil_resistivity_ohm_m`; none: not measured), typed in the
+  Structures table's **soil ρ Ω·m** column or the structure's window.
+  First taken as the footing (earthing) resistance in Ω; the owner
+  corrected it to the soil resistivity.
+- The line parameters take on each span the **geometric mean** of its two
+  structures' values (one measured: that one; neither: the line's
+  `electrical` value, else 100 Ω·m assumed and said with the number of
+  spans). Geometric because the earth return's depth goes with √ρ and the
+  impedance with its logarithm; an arithmetic mean would weigh the higher
+  value more.
+- Line file version 11 when one is given (older programs refuse the
+  field); OHL XML attribute `soil_resistivity_ohm_m` on `<structure>`;
+  projects keep it with the structure. `ohl electrical parameters --soil`
+  sets the line's value; measured structures still give theirs.
+
 **Electrical module, first part: cross-sections and line parameters (owner, 2026-10-27; roadmap O18 steps 0 and 1)**
 
 - A headless crate `ohl-electrical` (no GUI, no plugin calls). The

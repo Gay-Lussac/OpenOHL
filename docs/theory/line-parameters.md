@@ -105,8 +105,11 @@ return*):
   overstates the resistance and understates the reactance at low
   resistivities.
 
-**Assumption — soil resistivity:** one value for the whole line, the
-line's setting; when it is not given, **100 Ω·m** is taken, the value the
+**Assumption — soil resistivity:** homogeneous under each span. A span
+takes the **geometric mean** of the values measured at its two structures
+(one measured: that one), else the line's setting; the geometric mean
+because the impedance goes with \( \ln\sqrt\rho \), so it averages what
+the calculation feels. When neither a structure nor the line gives one, **100 Ω·m** is taken, the value the
 IEEE distribution test feeders assume (IEEE PES Distribution System
 Analysis Subcommittee, "Radial Distribution Test Feeders", 2000,
 section III), and every result says so. Soils range from a few Ω·m to

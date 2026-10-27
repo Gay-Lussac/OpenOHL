@@ -489,6 +489,11 @@
                 <xs:documentation>Typed structures: height of the type's feet above the ground at x y z (foundations), metres.</xs:documentation>
               </xs:annotation>
             </xs:attribute>
+            <xs:attribute name="soil_resistivity_ohm_m" type="xs:double">
+              <xs:annotation>
+                <xs:documentation>Soil resistivity measured at the structure, ohm-metres; absent: not measured (the line's).</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
 

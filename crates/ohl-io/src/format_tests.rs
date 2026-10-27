@@ -385,6 +385,8 @@ fn rich_line() -> Line {
     // A structure's weather case group and wind study (2026-10-25), a
     // system's owner and number.
     line.structures[0].weather_groups = vec!["internal".into(), "wind study".into()];
+    // A soil resistivity measured at a structure (2026-10-27).
+    line.structures[1].soil_resistivity_ohm_m = Some(8.5);
     line.sections[0].weather_groups = vec!["snow zone 2".into()];
     // Local winds (line file 9, roadmap O15).
     line.sections[0].set_wind_factor(0, 0, 1.25);

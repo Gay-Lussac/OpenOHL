@@ -370,6 +370,7 @@ impl Structure {
         Structure {
             routes: Default::default(),
             weather_groups: Vec::new(),
+            soil_resistivity_ohm_m: None,
             id: id.into(),
             position,
             orientation_deg: 0.0,
@@ -1004,6 +1005,7 @@ mod tests {
         Structure {
             routes: Default::default(),
             weather_groups: Vec::new(),
+            soil_resistivity_ohm_m: None,
             id: "T".into(),
             position: [0.0; 3],
             orientation_deg: 0.0,
