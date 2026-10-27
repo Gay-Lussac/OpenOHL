@@ -8,6 +8,20 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-27
+
+**Version 0.0.2: the macOS download holds only the two apps (owner, 2026-10-27)**
+
+- The v0.0.1 disk image also carried the command line, the examples,
+  the licence and a read-me beside the apps. The owner wants the
+  Applications folder kept clean: from 0.0.2 the disk image holds only
+  OHL-Design, OHL-Structure and the Applications shortcut (the licence is
+  inside each app). The `ohl` command line and the example line are a
+  separate, optional download on the same release page.
+- The repository's releases are immutable, so v0.0.1 stays as it was
+  published and the slim build is released as v0.0.2 (workspace version
+  0.0.2; the export samples carry the new version).
+
 ## 2026-10-26
 
 **Performance review: long tables draw the rows in view (owner, 2026-10-26; items 6 and 7)**
