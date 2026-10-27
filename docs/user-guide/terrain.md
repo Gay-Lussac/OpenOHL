@@ -143,7 +143,15 @@ read; `ohl line` ignores it too:
 circuits = ["North", "South"]   # circuit names; none: every circuit
 method = "fe"                   # every section by finite elements ("rs": ruling span); none: each section's own
 search_distance = "30 m"        # LiDAR points farther from the wires are ignored
+routes = ["north"]              # route ids; with alignments none: the whole line (2026-10-27)
+alignments = ["A 2"]            # alignment ids, besides whole routes
 ```
+
+`routes` and `alignments` (2026-10-27; built, in active development, not
+approved yet): only the sections and jumpers with a structure on a route
+or an alignment named are solved and checked (a section reaching into
+another route is taken whole). The desktop windows and the Clearances
+tab keep their choice of circuits, routes and alignments here.
 
 Design-code plugins may give such rule files as **clearance presets**
 for those windows ([Design codes](design-codes.md#clearance-presets)),
@@ -426,12 +434,16 @@ are.
 | `--library`, `--structures`, `--insulators` | As for `ohl line`: for a project, the libraries it keeps with its current line; else (and for a kind the project holds none of) the shipped wire and insulator libraries, the `Structures` folder next to the file. |
 | `--swing-arc`, `--wind-step PA`, `--wind-sides both\|left\|right`, `--band-margin M`, `--jumper-band-margin M` | Override the rule file's `[wind]`: add the swing arc, step the wind by this step, the sides, the swing band's margin (m, 2026-10-21; default the file's, else 0.15 m), the jumpers' bands' own margin (m, 2026-10-21; default the file's, else 0 m). |
 | `--search-distance M`, `--circuits NAME`, `--method fe\|rs` | Override the rule file's `[check]` (`--circuits` repeatable; `""`: the sections without a circuit). |
+| `--route ID`, `--alignment ID` | Check only the sections and jumpers on these routes or alignments (repeatable, 2026-10-27; override the rule file's `routes` and `alignments`; an unknown id is refused). `ohl line --rules` takes `--clearance-route` and `--clearance-alignment` for the same (`--route` names the route drawn in `ohl drawing`). |
 | `--csv FILE` | Every finding: `status` (`violation`, then `ok` for each rule's lowest clearance that keeps it), rule, section, span, case, wind pressure and side (`arc` on the swing arc), target, class, clearance and required distance, count, the wire and target points, and `arc_deg` (the angle on the swing arc, degrees from the vertical, positive to the right; empty off it). |
-| `--time-limit S` | Stop after this many seconds (default 600): solving every wind position and reading the points. |
+| `--time-limit S` | Stop after this many seconds: solving every wind position and reading the points. Default (2026-10-27): 900 s and 20 s more per million LiDAR points of the rules' classes in the cloud, as the desktop windows; printed before the run, and said with what makes a run faster when reached. |
 
 The report says where each library came from (`cables: the project's
 (2 files)`, `--library`, shipped, next to the file), lists the sections
-solved, the wind positions, the LiDAR points read and the time taken, then
+solved, the wind positions, the LiDAR points read and the time taken —
+since 2026-10-27 with where the time went (solving, indexing the wires,
+reading the points, checking them, the slowest rules with their reach in
+plan, and hints) — then
 the findings as the window shows them: the violations, worst first, then
 each rule's lowest clearance. A rule of several voltages makes one row
 with them (2026-10-21; a note `no wire of 110 or 150 kV` when the line has

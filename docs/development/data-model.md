@@ -906,9 +906,28 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
-  farther from the wires are ignored) — what the desktop clearance
-  windows and `ohl zones` solve and read (both through
-  `ohl_clearance::zone::run_zone_check`); `ohl line` ignores it.
+  farther from the wires are ignored), and since 2026-10-27 `routes` and
+  `alignments` (ids; both empty: the whole line; else only the sections
+  and jumpers with a structure on one of them,
+  `CheckScope::wires_on` / `ohl_line::Line::wires_on`) — what the
+  desktop clearance windows and `ohl zones` solve and read (both through
+  `ohl_clearance::zone::run_zone_check`), and since 2026-10-27 the
+  circuits, routes and alignments the Clearances tab checks with that
+  rule file; `ohl line` ignores it (`--clearance-route`,
+  `--clearance-alignment` instead).
+- Speed (2026-10-27, results unchanged): `checks::WireSet::within` lists
+  each wire's segments only in the cells as far in plan as a point can
+  count (`checks::plan_reach`: the radial reach and the outer radius, the
+  vertical band — a screen's by voltage); `Required::radial_reach` (a
+  screen: its band, not `SCREEN_DISTANCE`), `Rule::reach_in_plan` (the
+  wire-to-wire sets of a rule file holding a screen); a `ZoneRule`'s
+  screen only in the vertical measure. `ZoneReport::timing`
+  (`ZoneTiming`, `PartTiming`) holds the measured breakdown,
+  `zone::breakdown` says it in lines; `zone::time_limit(points)` = 900 s
+  + 20 s per million LiDAR points of the rules' classes.
+  `ohl_pointcloud::ReadProgress` (`visit_around_with`,
+  `PointSource::visit_with`, `Store::visit_with`): the points of the
+  blocks listed and decoded so far, for the progress bars.
 - `[vegetation]` (optional, 2026-10-20, `VegetationPreset`): settings of
   the vegetation and danger-tree check, each optional — `classes` (LiDAR
   class numbers), `clearance` and `fall_allowance` (a distance, a table

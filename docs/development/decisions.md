@@ -10,6 +10,50 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**LiDAR clearance checks: speed, progress, scope, time limit (owner, 2026-10-27)**
+
+- The owner's vertical and radial runs on a real project with a design
+  code's preset did not finish (900 s). Measured: the *screen* rules'
+  1000 m (today) became the reach of the wire index, each segment listed
+  in some 40 000 cells (single-threaded, unchecked by the time limit);
+  then the corridor test of the points on one thread. Now the index
+  reaches only as far in plan as a point can count (a screen: its band),
+  the corridor test runs on the decoding cores, the rules are indexed on
+  every core, and every rule and wind position is checked against each
+  block of points in one pass. Results unchanged (tests against the
+  cells of before; the real project's CSV identical): vertical from not
+  finishing to under a minute, radial from 4 to about 2 minutes
+  ([Performance](performance.md#lidar-clearance-checks-2026-10-27)).
+- One semantic correction of today's screens, said plainly: a screen's
+  **radial** reach is its band (and its radial requirement), no longer
+  1000 m (`Required::radial_reach`; it only changes a screen's "lowest
+  radial" in the Clearances tab and `ohl line`, which looked 1000 m
+  around every wire), and a wire-to-wire set of a rule file holding a
+  screen reaches the screen's band in plan (`Rule::reach_in_plan`); a
+  screen is a vertical rule only (in the radial window its 1000 m set
+  the reach). Found, not changed: on the swing arc a screen's vertical
+  is taken within the rule's zone width, not its band (an open
+  question).
+- **Progress**: the windows and the Clearances tab show the share of the
+  point cloud's blocks around the wires read, the points checked, the
+  time spent and left; Stop at any time (the tab got Stop too).
+- **Scope**: the routes and, inside them, the alignments checked, next to
+  the circuits and kept the same way: in the rule file's `[check]`
+  (`routes`, `alignments`; the owner: "same storage, same UI pattern" as
+  the circuits) — in both windows and now also in the Clearances tab
+  (circuits too); default the whole line. A section with a structure on
+  a route or alignment chosen is checked whole. `ohl zones --route
+  --alignment`; `ohl line --clearance-route --clearance-alignment`
+  (`--route` is taken by `ohl drawing`, which shares those options).
+- **Information**: before Run, what a run does (wind positions ×
+  sections, the widest reach in plan and its rule, the LiDAR points, the
+  time limit); after it, where the time went, measured, with hints.
+- **Time limit** scales with the work: 900 s + 20 s per million LiDAR
+  points of the rules' classes in the cloud (ten times the rate measured
+  on the real project); said before Run and in the error when reached,
+  with what makes a run faster. `ohl zones --time-limit` defaults to it.
+- Built, in active development, not approved yet.
+
 **Soil resistivity measured at the structures (owner, 2026-10-27)**
 
 - Every structure may carry the soil resistivity measured at it, Ω·m

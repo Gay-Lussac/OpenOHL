@@ -56,6 +56,66 @@ Indexing the sheet takes 0.4 s (0.05 s the corridor), building every chunk at le
 
 Rolling over frictionless sheaves (the default since 2026-10-25; [Sag-tension](../theory/sagtension.md#sagging-outputs)) costs more than one horizontal tension: the equal-H sharing first (its tension the start), then one unknown searched with every span's tension found from the sheave before it — about 10–20 outer steps, each a few element solves per span (the span's last length the start of a secant on its length, else the bracketed search). Measured on the synthetic example (`ohl line`, one weather case, debug build): 0.42 s over sheaves against 0.26 s with equal H; the secant start cut it from 0.76 s with the same results. Exit clauses: the solver's budget on the first span's tension, 200 steps per span, 20 settling passes of the strings. A riser (a jumper given by its tension) is one wire solve per weather case of 8–64 bars (0.1 s in a debug test for a 30 m riser), its cut length 5–15 of them once.
 
+## LiDAR clearance checks (2026-10-27)
+
+The owner's vertical run on a real project (two combined lines, about
+170 structures and 350 sections, 71 million LiDAR points, a design
+code's preset with every clearance check, 31 wind positions) did not
+finish in 900 s; the radial one (53 wind positions) neither in the
+desktop application. Measured on a read-only copy of that project with
+`ohl zones` (10 cores):
+
+- **Cause (vertical).** The preset's *screen* rules require 1000 m
+  vertically (`SCREEN_DISTANCE`: every point within their band in plan
+  is reported, at any height). That 1000 m became the reach of the wire
+  index: each wire segment was listed in every 10 m cell within 1000 m
+  — some 40 000 cells per segment, on one core, outside the time limit's
+  checks. The run was stopped after 13 minutes in that loop at 5.4 GB,
+  its 400 s limit ignored. Now each wire is listed only as far in plan
+  as a point can count for its check (`checks::plan_reach`: the band of
+  a vertical check, a screen's by voltage; the radial reach and the
+  outer radius of a radial one; the same for the swing arcs); a screen
+  in the radial window no longer carries its 1000 m.
+- **Then: reading.** The test whether a decoded point lies in the
+  corridor around the wires (every wire in every wind position) ran on
+  the visiting thread alone: 204 s for 20.6 million points. It now runs
+  on the decoding cores: 36 s.
+- **Then: indexing** a preset's 49 rules × 17 000 wires one after
+  another: 27 s; now on every core: 1–8 s.
+- Every rule and wind position is checked against each block of 65 536
+  points in one pass (one set of threads per block, not one per rule).
+
+Real project, the same results (CSV identical): vertical, did not finish
+(stopped after 13 min) → **53 s** (2.8 s solving, 1.3 s indexing, 36 s
+reading, 2.9 s checking); radial, 4 min 01 s → **1 min 50 s – 2 min 30 s**
+(reading 50–100 s, varying with the machine's load).
+
+Synthetic (`zone_speed`, `SPANS=600 POINTS=3000000 STEP=50`, bench-fast,
+10 cores; 180 sections, 27 wind positions), before → after:
+
+| Check | Before | After |
+|---|---|---|
+| vertical, screen rule (`SCREEN=1`) | not finished after 16 min (stopped) | 2.5 s |
+| vertical, all rules with a screen (`SCREEN=1`) | not finished | 3.6 s |
+| vertical, vegetation (no screen) | 3.5–5.5 s | 1.5–2.1 s |
+| vertical, all rules (no screen) | 4.9 s | 2.3 s |
+| radial, vegetation (no screen) | 5.6 s | 5.2–6.6 s |
+| radial, ground on the swing arc | 38 s | 34–43 s |
+
+Without a screen the checks were already bounded: the change is within
+the noise of a loaded machine, apart from the one pass. The ground on
+the swing arc (radial, 3 solves) is the slowest synthetic part left; the
+reading of the corridor (a test per point against every wire position
+near it) is the slowest part of a real run. The tests
+`narrow_cells_give_the_results_of_before` and
+`a_case_check_with_narrow_cells_gives_the_results_of_before` compare the
+results with the cells of before, bit for bit.
+
+**Time limit.** 900 s and 20 s per million LiDAR points of the rules'
+classes in the cloud (`zone::time_limit`): about ten times the ~2 s per
+million measured on the real project. Shown before Run and in the error
+when reached.
+
 ## Frame benchmark (desktop application)
 
 The desktop window is drawn headless (egui_kittest with wgpu, as the GPU tests) with the 3D view at four distances (the whole line, 3 km, 600 m and 80 m from the middle structure) and the plan view at four zooms (the whole line, 3 km, 400 m and 60 m wide). For each view it settles (every chunk built, every point cloud node read), checks that an idle frame asks for no other one, then draws 20 frames while turning or panning a little (as a drag does) and reports the median and slowest frame, the time to tessellate the frame's shapes, the shapes, what the 3D view drew, the time of a click (picking) and the time of each phase (`crate::perf` spans: frame hooks, menus, each tab, 3D layers rebuilt, chunk plan and build, point stream, render, labels; plan wires and labels; …):
