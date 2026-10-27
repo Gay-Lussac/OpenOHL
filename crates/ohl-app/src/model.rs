@@ -1427,8 +1427,16 @@ impl Model {
                     .cloud
                     .as_ref()
                     .and_then(|spec| ohl_pointcloud::open_source(spec).ok()?.class_scheme());
-                match own {
-                    Some(text) => ohl_lidar::ClassScheme::parse(&text)?,
+                // One that no longer reads (e.g. an old format kept with
+                // the points): the standard classes, said in the log.
+                match own.map(|t| ohl_lidar::ClassScheme::parse(&t)) {
+                    Some(Ok(s)) => s,
+                    Some(Err(e)) => {
+                        log::warn!(
+                            "the point cloud's class scheme is not used ({e}): the standard classes"
+                        );
+                        ohl_lidar::ClassScheme::asprs()
+                    }
                     None => ohl_lidar::ClassScheme::asprs(),
                 }
             }
@@ -2344,8 +2352,19 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         let t = Instant::now();
         // A project's cloud or a COPC file.
         let source = ohl_pointcloud::open_source(&spec)?;
+        // The cloud's own: one that no longer reads (e.g. an old format
+        // kept with the points) never stops the project opening.
         if let Some(text) = source.class_scheme() {
-            scheme = ohl_lidar::ClassScheme::parse(&text)?;
+            match ohl_lidar::ClassScheme::parse(&text) {
+                Ok(s) => scheme = s,
+                Err(e) => step(
+                    format!(
+                        "the point cloud's class scheme is not used ({e}): the standard \
+                         classes; choose one in Class colours"
+                    ),
+                    &mut log,
+                ),
+            }
         }
         // This user's scheme (names, roles, colours), if chosen (an empty
         // path: the cloud's own).

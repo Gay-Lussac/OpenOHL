@@ -1400,13 +1400,19 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                 crs,
                 chunk,
             } => {
+                // A class scheme that cannot be used never stops the import:
+                // the standard classes then (the points keep theirs).
                 let scheme = match &classes {
-                    Some(p) => {
-                        let text = std::fs::read_to_string(p)
-                            .map_err(|e| format!("{}: {e}", p.display()))?;
-                        ohl_lidar::ClassScheme::parse(&text)?;
-                        Some(text)
-                    }
+                    Some(p) => match ohl_lidar::ClassScheme::text_for_import(p) {
+                        Ok(text) => Some(text),
+                        Err(e) => {
+                            eprintln!(
+                                "warning: class scheme not used ({e}): imported with the standard \
+                                 classes; choose a scheme later in the application"
+                            );
+                            None
+                        }
+                    },
                     None => None,
                 };
                 let tiles = ohl_lidar::tiles_in(&tiles).map_err(|e| e.to_string())?;

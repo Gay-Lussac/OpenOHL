@@ -2069,6 +2069,10 @@ impl eframe::App for App {
                 crate::dockable::begin_frame(ui.ctx());
                 {
                     let _t = crate::perf::span("hooks: tool windows");
+                    // The plugins' class schemes, offered beside a file.
+                    if let Some(d) = &mut ready.survey_import {
+                        d.plugin_schemes = self.plugins.class_schemes();
+                    }
                     tool_windows(ui.ctx(), ready, self.render_state.as_ref());
                 }
                 drop(hooks);
@@ -2349,7 +2353,14 @@ impl eframe::App for App {
                 if let Some(mut w) = ready.class_window.take() {
                     let mut open = true;
                     let default = self.default_class_scheme.clone();
-                    let action = w.ui(&ctx, &mut open, &mut ready.model, default.as_ref());
+                    let schemes = self.plugins.class_schemes();
+                    let action = w.ui(
+                        &ctx,
+                        &mut open,
+                        &mut ready.model,
+                        default.as_ref(),
+                        &schemes,
+                    );
                     if let Some(a) = action {
                         use crate::class_colors::ClassAction;
                         let chosen = match a {

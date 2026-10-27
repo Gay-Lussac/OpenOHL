@@ -1083,3 +1083,52 @@ fn the_survey_menu_opens_import_and_export() {
         "no file chosen yet"
     );
 }
+
+/// A class scheme that does not read never blocks the points (owner,
+/// 2026-10-27): kept with the cloud in an old format, the project still
+/// opens, with the standard classes, and says so.
+#[test]
+fn a_cloud_with_an_unreadable_class_scheme_opens() {
+    let first = synthetic_project("survey-old-scheme");
+    let file = first.sources.file.clone();
+    drop(first);
+    let laz = file.parent().unwrap().join("tile.laz");
+    write_survey(&laz, 600.0, 20);
+    let old = std::fs::read_to_string(root().join("libraries/lidar-classes/asprs-las-1.4.ohlc"))
+        .unwrap()
+        .replace("ohl-lidar-classes", "ols-lidar-classes");
+    crate::survey_io::import(
+        &file,
+        &[laz],
+        "lidar",
+        "EPSG:2056",
+        64.0,
+        Some(&old),
+        &|_, _| {},
+    )
+    .unwrap();
+    let mut model = model::load(
+        Sources {
+            file,
+            point_budget: 100_000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    assert!(model.cloud.is_some());
+    assert_eq!(model.scheme, ohl_lidar::ClassScheme::asprs());
+    assert!(
+        model
+            .log
+            .iter()
+            .any(|l| l.contains("class scheme is not used")),
+        "{:?}",
+        model.log
+    );
+    // The cloud's own chosen again: the standard classes, no error.
+    model.use_class_scheme(None).unwrap();
+    assert_eq!(model.scheme, ohl_lidar::ClassScheme::asprs());
+}

@@ -137,6 +137,17 @@ impl ClassScheme {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
+    /// The text of the scheme file `path` to keep with an import, checked;
+    /// `Err` says why it cannot be used. An import never stops for it
+    /// (owner, 2026-10-27): the caller warns and imports with the
+    /// standard classes ([`ClassScheme::asprs`]), the classes kept as they
+    /// are in the files.
+    pub fn text_for_import(path: &Path) -> Result<String, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(text)
+    }
+
     /// The scheme as a file (`.ohlc`).
     pub fn to_toml(&self) -> String {
         let mut s = self.clone();
@@ -178,6 +189,38 @@ impl ClassScheme {
 
 #[cfg(test)]
 mod tests {
+
+    /// A scheme kept with an import is checked; one that does not read
+    /// (here: an old format) says why, so the caller can warn and import
+    /// with the standard classes (owner, 2026-10-27).
+    #[test]
+    fn a_scheme_for_an_import_is_checked() {
+        let dir = std::env::temp_dir().join(format!("ohl-lidar-{}-import", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let good = dir.join("good.ohlc");
+        std::fs::write(
+            &good,
+            "format = \"ohl-lidar-classes\"\nid = \"x\"\nname = \"X\"\n[[class]]\ncode = 2\nname = \"ground\"\nroles = [\"ground\"]\n",
+        )
+        .unwrap();
+        assert!(
+            ClassScheme::text_for_import(&good)
+                .unwrap()
+                .contains("ground")
+        );
+        let old = dir.join("old.ohlc");
+        std::fs::write(
+            &old,
+            std::fs::read_to_string(&good)
+                .unwrap()
+                .replace("ohl-", "ols-"),
+        )
+        .unwrap();
+        let e = ClassScheme::text_for_import(&old).unwrap_err();
+        assert!(e.contains("old.ohlc"), "{e}");
+        assert!(ClassScheme::text_for_import(&dir.join("missing.ohlc")).is_err());
+    }
+
     use super::*;
 
     #[test]

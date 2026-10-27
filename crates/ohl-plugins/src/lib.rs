@@ -435,6 +435,11 @@ pub struct Manifest {
     /// make in one go with its sheet templates (`.ohlset`).
     #[serde(default, rename = "plan-set")]
     pub plan_sets: Vec<ManifestTemplate>,
+    /// `[[class-scheme]]` files the plugin ships (2026-10-27): LiDAR class
+    /// schemes (`.ohlc`, e.g. a utility's survey standard), offered where
+    /// the application chooses one.
+    #[serde(default, rename = "class-scheme")]
+    pub class_schemes: Vec<ManifestTemplate>,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -471,6 +476,7 @@ impl Manifest {
         for (what, list) in [
             ("sheet-template", &manifest.sheet_templates),
             ("plan-set", &manifest.plan_sets),
+            ("class-scheme", &manifest.class_schemes),
         ] {
             for t in list {
                 let inside = t
@@ -1458,6 +1464,25 @@ pub fn plan_sets(dir: &Path) -> Result<Vec<(String, String)>, PluginError> {
         out.push((name, text));
     }
     Ok(out)
+}
+
+/// The LiDAR class schemes plugin `dir`'s manifest names
+/// (`[[class-scheme]]`, 2026-10-27): each file's name (without its
+/// extension) and path. Read where they are (a scheme is a file the
+/// application keeps using).
+pub fn class_schemes(dir: &Path) -> Result<Vec<(String, PathBuf)>, PluginError> {
+    let manifest = Manifest::load(dir)?;
+    Ok(manifest
+        .class_schemes
+        .iter()
+        .map(|t| {
+            let name = t
+                .file
+                .file_stem()
+                .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            (name, dir.join(&t.file))
+        })
+        .collect())
 }
 
 /// The plugins in `roots` giving sheet templates (each as [`discover`]
@@ -2474,5 +2499,22 @@ mod tests {
         // A manifest naming a file outside its folder is refused.
         let text = "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[sheet-template]]\nfile = \"../x.ohlsheet\"";
         assert!(Manifest::parse(text, Path::new("/plugins/t")).is_err());
+        // LiDAR class schemes (2026-10-27): listed by name and path, kept
+        // inside the plugin's folder.
+        let head =
+            "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n";
+        let dir = std::env::temp_dir().join(format!("ohl-plugins-{}-classes", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            manifest_path(&dir),
+            format!("{head}[[class-scheme]]\nfile = \"classes/survey.ohlc\"\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            class_schemes(&dir).unwrap(),
+            [("survey".to_owned(), dir.join("classes/survey.ohlc"))]
+        );
+        let outside = format!("{head}[[class-scheme]]\nfile = \"../x.ohlc\"");
+        assert!(Manifest::parse(&outside, Path::new("/plugins/t")).is_err());
     }
 }

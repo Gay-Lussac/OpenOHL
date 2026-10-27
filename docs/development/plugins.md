@@ -501,6 +501,23 @@ own). The test plugin `plugins/tests/sheet-presets` gives one template
 from its code (an A1 with an SVG logo) and one from its manifest
 (invented values).
 
+## LiDAR class schemes
+
+*Added 2026-10-27 (built, in active development, not approved yet).* Any
+plugin may ship **LiDAR class schemes** (`.ohlc`, format
+`ohl-lidar-classes`: class numbers, names, roles, colours — e.g. a
+utility's survey standard), files only, no code:
+
+```toml
+[[class-scheme]]
+file = "classes/survey-standard.ohlc"   # inside the plugin's folder
+```
+
+They are offered as **From a plugin** in File › Import › LiDAR points
+and in Class colours, read where they are (`ohl_plugins::class_schemes`;
+the app remembers the file chosen). A scheme that does not read is said
+there and never blocks the import (the standard classes then).
+
 ## Wire colour presets
 
 *Added 2026-10-27 (built, in active development, not approved yet).* Any
