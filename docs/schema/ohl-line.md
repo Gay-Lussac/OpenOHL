@@ -106,6 +106,7 @@ The names are those of the line file:
     <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->
     <broken_case name="…"/>                     <!-- version 9: a load case with a broken wire, its weather case with the wire broken -->
   </structure_loads>
+  <electrical soil_resistivity_ohm_m="100" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
 </line>
 ```
 

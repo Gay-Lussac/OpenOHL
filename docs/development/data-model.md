@@ -24,7 +24,7 @@ All examples on this page are invented (structures `T1`, `T2`, sections
                                   LINE  (.ohl.json / OHL XML / project rows)
  ┌──────────────────────────────────────────────────────────────────────────────────┐
  │ meta: name, crs, display, systems[], creep_stretch, bimetallic, solver,          │
- │       defaults, circuit_starts[], structure_loads                                │
+ │       defaults, circuit_starts[], structure_loads, electrical                    │
  │                                                                                  │
  │  Route {id, name} ◄──route── Alignment ──points[] (ids)──► AlignmentPoint {id}   │
  │     ▲                     (one route)      (a point: 0..n alignments) structure?┐ │
@@ -249,7 +249,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ohl-line"` | — |
-| `version` | u32 | — | file version (now 10, 2026-10-25: the simplified in-the-blocks option `solver.blocks = "equal_h"` and a jumper's `tension` (a riser) — 9, 2026-10-25: a section's `wind_factors` and `structure_loads.broken_cases` — 8: a string's own `shapes` — each written only when used, `Line::to_json` writing the oldest version that holds the line (7, 8, 9 or 10; `BEFORE_SHEAVES_VERSION` 9); 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
+| `version` | u32 | — | file version (now 11, 2026-10-27: the electrical settings `electrical`, written only when not the defaults (`BEFORE_ELECTRICAL_VERSION` 10) — 10, 2026-10-25: the simplified in-the-blocks option `solver.blocks = "equal_h"` and a jumper's `tension` (a riser) — 9, 2026-10-25: a section's `wind_factors` and `structure_loads.broken_cases` — 8: a string's own `shapes` — each written only when used, `Line::to_json` writing the oldest version that holds the line (7, 8, 9 or 10; `BEFORE_SHEAVES_VERSION` 9); 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `height_datum` | `HeightDatum?` | — | version 7: the heights' vertical datum, `{name, epsg}` — its name (`"LN02"`), the EPSG code of its vertical system (`5728`), either or both (an empty one refused; informative, nothing converted; `HeightDatum::parse` reads them as typed, `label()` → `LN02 (EPSG:5728)`); left out when none. Set in Terrain › Coordinate system › Define… with the CRS (one line-settings edit) or `put` `meta` `line`; the sheets' `{height_datum}` takes `Line::height_datum_label()` (`SheetInfo::height_datum`) first, then the CRS's vertical part (`ohl_drawing::height_datum_of`), then the template's `[if_empty]` | — |
@@ -269,6 +269,7 @@ files](../user-guide/line-file.md).
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); `loads_per` (2026-10-21, `LoadsPer`, written only when not the default) — `stretched` (default, exact: the finite elements carry the ice and wind per metre of the stretched wire, `CableElement::stretched_load`, a fixed point) or `unstretched` (per unit of unstressed length, the former treatment, as other programs: a Simplification, about T/EA ≈ 0.1 % less; in the solver `solve::Reference::loads_per`, set from the line in `solve_fe`, and the jumpers' `solve_jumper_in`; the closed forms unaffected); in the project's line settings and OHL XML `<solver taps loads_per>`; `ohl line --loads-per` overrides it; `blocks` (2026-10-25, `InTheBlocks`, line file version 10, written only when not the default) — `sheaves` (default: a section in the blocks shares its length over frictionless sheaves, the wire's tension equal on both sides of each suspension clamp; `ohl_sagtension::sheaves::share`, in the solver `solve::over_sheaves` and `settled_over_sheaves`, the stringing state `in_the_blocks_at_stringing` for `clip_lengths` and the curves' zero-strain lengths; `solve::Reference::blocks`, set from the line in `solve_fe`) or `equal_h` (simplified: one horizontal tension, the strings plumb along the line, the model before; the ruling-span method keeps it either way); the sagging table follows it (`SaggingTable::blocks`, `SaggingSpan::horizontal_tension`, `TensionSection::solve_over_sheaves`, `NonlinearSection::solve_over_sheaves`); OHL XML `<solver blocks>`; `ohl line --blocks` overrides it; `ohl sagtension`'s `[sagging] blocks` (default `sheaves`) and the validation calculation `sagtension.sagging`'s input `blocks`; the app's results keep it in `revision::Revision::loads_per` (the line's hash taken without it, so a change is named on its own) and saved check reports in `parameters.loads_per` (vegetation, safety volumes) | — |
 | `circuit_starts` | `[SectionPoint]` | — | conductor path ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
 | `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `weather_cases` — the weather cases sent, by name (default none), each a line result unfactored, a wind case twice (`<case> — wind from the left` / `— right`); `condition` — the wires' condition in them; `broken_cases` (version 9, 2026-10-25, roadmap O9) — the line's load cases with a broken wire sent, by name, after the weather cases, each its weather case with that wire broken, unfactored, `<weather case> — <section> span <n> broken` (`ohl_structure_link::structure_cases_with`, `broken_result_name`, tag `broken wire`); `load_cases` — read, not used since 2026-10-25; a name no longer in the line (or no longer a broken-wire case) is skipped and named in the file's note. Line file `{"structure_loads": {"weather_cases": [...], "condition": "creep", "broken_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>`, `<weather_case name>` and `<broken_case name>` | load case and weather case **names** |
+| `electrical` | `ElectricalSettings` | — | the line's electrical settings for the line parameters (version 11, 2026-10-27, roadmap O18; Analysis › Electrical › Line parameters): `soil_resistivity_ohm_m` (Ω·m, homogeneous earth; none: `DEFAULT_SOIL_RESISTIVITY_OHM_M` 100 Ω·m **assumed**, the IEEE distribution test feeders' value, said in every result), `earth_return` (`carson_series` default, `complex_depth`, `carson_first_terms`), `mean_height` (`solved` default: the solved wire's average over the span; `two_thirds_sag`: attachment height minus 2/3 of the sag). Line file `{"electrical": {...}}` (left out when default); project `meta` row `electrical`; OHL XML `<electrical soil_resistivity_ohm_m earth_return mean_height/>` | — |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
 **Plugin values** (`fields`, `ohl_line::Fields`): structures, sections,
@@ -618,6 +619,50 @@ Derived, never stored:
 - **Potential**: a section's nominal voltage and voltage to earth, from
   which `Potential::between` gives the voltage between two conductors
   (used by clearance rules).
+
+### Cross-sections and line parameters (`ohl-electrical`, derived)
+
+Derived from the line solved in one weather case, never stored (roadmap
+O18, 2026-10-27; built, in active development, not approved yet). The
+**cross-section** is the record every electrical calculation shares —
+the line parameters now; the load flow, the fields and noise and the
+plugins later (a plugin extension point comes with the hvlbuzz step; the
+plugin interface is unchanged so far). It is `serde::Serialize`, so it can
+be written as JSON and passed on as it is.
+
+| Entity.field | Type | Unit | Meaning |
+|---|---|---|---|
+| `LineSpan.from`, `.to` | string | — | a **span of the line**: two structures next to each other, `from` first along the line (`line_spans`) |
+| `LineSpan.wires` | `[(usize, usize)]` | — | every wire between them: (index in `Line.sections`, span index in its section) |
+| `CrossSection.station` | `Station` | — | `from`, `to`, `span_length` (horizontal, m), `at`: `Mean(MeanHeight)` (the span's mean) or `Fraction(f)` (at f × span length from `from`) |
+| `CrossSection.ground` | `Ground` | — | `elevation` (m, on the axis at the station; the span's middle for a mean), `slope_across` (rise per m to the right; 0 without terrain), `soil_resistivity_ohm_m`, `soil_resistivity_assumed` |
+| `CrossSection.wires` | `[CrossWire]` | — | the line's conductors and earth wires there |
+| `CrossSection.other_lines` | `[OtherLineWire]` | — | other lines' wires in the corridor (`line` name, `wire`): **extension point, empty today**; the calculations take them like the line's own |
+| `CrossSection.notes` | `[string]` | — | what was assumed or left out |
+| `CrossWire.section`, `.span` | string, usize | — | its section and span (0 = first) |
+| `CrossWire.offset` | f64 | m | across the line from the span's axis (structure to structure in plan), **positive to the right looking ahead** |
+| `CrossWire.height` | f64 | m | above the ground under it |
+| `CrossWire.elevation` | f64 | m | absolute |
+| `CrossWire.bundle` | `BundleData` | — | `count`, `spacing` (m), `rotation_deg` (as `Section.bundle*`) |
+| `CrossWire.wire` | `WireData` | — | `cable` (id), `diameter` (m), `gmr` (m, `None`: not given), `resistance` (Ω/m at `temperature_c`, AC; the DC one with `resistance_is_dc` when no AC is given), `temperature_c` (the weather case's) |
+| `CrossWire.phase` | `PhaseData?` | — | `system`, `index` (its place in the system), `label`, `circuit` (name, empty: none), `kind`, `voltage_kv`, `frequency_hz`, `angle_deg`; `None`: earthed (earth wire, OPGW) |
+
+Where the wires are: `cross_section_at` (a station: each solved wire where
+it crosses the plane square to the axis) or `span_cross_sections` (each
+span's mean by `MeanHeight`). The ground: a terrain when given, else
+straight between the structures' feet and level across.
+
+**Line parameters** (`parameters::line_parameters`, `ohl_electrical::run`):
+per span `SpanMatrices` (one per AC frequency: `phases` as `PhaseKey`
+{circuit, system, index}, `sections`, `z` Ω/m complex, `c` F/m, the
+earth wires reduced out); per circuit (`CircuitKey` {circuit name,
+system}) `CircuitParameters` {`frequency_hz`, `phases`, `angles`,
+`stretches` (consecutive spans with the same sections: `sections`,
+`from`, `to`, `spans`, `totals`), `total`}; `Totals` {`length` m, `z` Ω,
+`c` F} (`per_km`, `sequence`); `Sequence` (z1, z2, z0 and c1, c0 as built;
+the ideally transposed z1, z0, c1, c0, b1, b0; `unbalance`); `Coupling`
+between circuits of one frequency sharing spans (`length`, `z`, `c`,
+`z0m`). Methods: [Line parameters](../theory/line-parameters.md).
 
 ### Display and criteria
 

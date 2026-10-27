@@ -1,0 +1,463 @@
+{
+  "format": "ohl-line",
+  "version": 7,
+  "name": "Synthetic double circuit (electrical example)",
+  "crs": "",
+  "structures": [
+    {
+      "id": "T1",
+      "position": [
+        0.0,
+        0.0,
+        400.0
+      ],
+      "orientation_deg": -90.0,
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            0.0,
+            5.0,
+            422.0
+          ],
+          "set": 1
+        },
+        {
+          "label": "W2",
+          "position": [
+            0.0,
+            5.0,
+            427.0
+          ],
+          "set": 2
+        },
+        {
+          "label": "W3",
+          "position": [
+            0.0,
+            5.0,
+            432.0
+          ],
+          "set": 3
+        },
+        {
+          "label": "W4",
+          "position": [
+            0.0,
+            -5.0,
+            422.0
+          ],
+          "set": 4
+        },
+        {
+          "label": "W5",
+          "position": [
+            0.0,
+            -5.0,
+            427.0
+          ],
+          "set": 5
+        },
+        {
+          "label": "W6",
+          "position": [
+            0.0,
+            -5.0,
+            432.0
+          ],
+          "set": 6
+        },
+        {
+          "label": "W9",
+          "position": [
+            0.0,
+            0.0,
+            438.0
+          ],
+          "set": 9
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "position": [
+        300.0,
+        0.0,
+        402.0
+      ],
+      "orientation_deg": -90.0,
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            300.0,
+            5.0,
+            424.0
+          ],
+          "set": 1
+        },
+        {
+          "label": "W2",
+          "position": [
+            300.0,
+            5.0,
+            429.0
+          ],
+          "set": 2
+        },
+        {
+          "label": "W3",
+          "position": [
+            300.0,
+            5.0,
+            434.0
+          ],
+          "set": 3
+        },
+        {
+          "label": "W4",
+          "position": [
+            300.0,
+            -5.0,
+            424.0
+          ],
+          "set": 4
+        },
+        {
+          "label": "W5",
+          "position": [
+            300.0,
+            -5.0,
+            429.0
+          ],
+          "set": 5
+        },
+        {
+          "label": "W6",
+          "position": [
+            300.0,
+            -5.0,
+            434.0
+          ],
+          "set": 6
+        },
+        {
+          "label": "W9",
+          "position": [
+            300.0,
+            0.0,
+            440.0
+          ],
+          "set": 9
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "position": [
+        600.0,
+        0.0,
+        398.0
+      ],
+      "orientation_deg": -90.0,
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            600.0,
+            5.0,
+            420.0
+          ],
+          "set": 1
+        },
+        {
+          "label": "W2",
+          "position": [
+            600.0,
+            5.0,
+            425.0
+          ],
+          "set": 2
+        },
+        {
+          "label": "W3",
+          "position": [
+            600.0,
+            5.0,
+            430.0
+          ],
+          "set": 3
+        },
+        {
+          "label": "W4",
+          "position": [
+            600.0,
+            -5.0,
+            420.0
+          ],
+          "set": 4
+        },
+        {
+          "label": "W5",
+          "position": [
+            600.0,
+            -5.0,
+            425.0
+          ],
+          "set": 5
+        },
+        {
+          "label": "W6",
+          "position": [
+            600.0,
+            -5.0,
+            430.0
+          ],
+          "set": 6
+        },
+        {
+          "label": "W9",
+          "position": [
+            600.0,
+            0.0,
+            436.0
+          ],
+          "set": 9
+        }
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "NL1",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "North",
+      "phase_label": "L1",
+      "system": "sysA",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 1
+        },
+        {
+          "structure": "T2",
+          "set": 1
+        },
+        {
+          "structure": "T3",
+          "set": 1
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "NL2",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "North",
+      "phase_label": "L2",
+      "system": "sysA",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 2
+        },
+        {
+          "structure": "T2",
+          "set": 2
+        },
+        {
+          "structure": "T3",
+          "set": 2
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "NL3",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "North",
+      "phase_label": "L3",
+      "system": "sysA",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 3
+        },
+        {
+          "structure": "T2",
+          "set": 3
+        },
+        {
+          "structure": "T3",
+          "set": 3
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "SL1",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "South",
+      "phase_label": "L1",
+      "system": "sysB",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 4
+        },
+        {
+          "structure": "T2",
+          "set": 4
+        },
+        {
+          "structure": "T3",
+          "set": 4
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "SL2",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "South",
+      "phase_label": "L2",
+      "system": "sysB",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 5
+        },
+        {
+          "structure": "T2",
+          "set": 5
+        },
+        {
+          "structure": "T3",
+          "set": 5
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "SL3",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "South",
+      "phase_label": "L3",
+      "system": "sysB",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 6
+        },
+        {
+          "structure": "T2",
+          "set": 6
+        },
+        {
+          "structure": "T3",
+          "set": 6
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "EW",
+      "cable": "ew-synthetic-16",
+      "phase_label": "E",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 9
+        },
+        {
+          "structure": "T2",
+          "set": 9
+        },
+        {
+          "structure": "T3",
+          "set": 9
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 12000.0,
+        "temperature": 15.0
+      }
+    }
+  ],
+  "systems": [
+    {
+      "id": "sysA",
+      "name": "110 kV example sysA",
+      "kind": "ac",
+      "voltage_kv": 110.0,
+      "frequency_hz": 50.0,
+      "phases": [
+        {
+          "label": "L1",
+          "angle_deg": 0.0
+        },
+        {
+          "label": "L2",
+          "angle_deg": -120.0
+        },
+        {
+          "label": "L3",
+          "angle_deg": 120.0
+        }
+      ]
+    },
+    {
+      "id": "sysB",
+      "name": "110 kV example sysB",
+      "kind": "ac",
+      "voltage_kv": 110.0,
+      "frequency_hz": 50.0,
+      "phases": [
+        {
+          "label": "L1",
+          "angle_deg": 0.0
+        },
+        {
+          "label": "L2",
+          "angle_deg": -120.0
+        },
+        {
+          "label": "L3",
+          "angle_deg": 120.0
+        }
+      ]
+    }
+  ]
+}

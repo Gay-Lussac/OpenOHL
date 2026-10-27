@@ -1,0 +1,42 @@
+# OpenOHL wire library (.ohlw)
+format = "ohl-wire"
+version = 1
+
+# Wires of the synthetic electrical example (examples/electrical). Invented
+# for the example: not manufacturer data. The phase wire repeats the shipped
+# Drake example (libraries/cables/acsr-examples.ohlw); the earth wire is a
+# made-up steel-aluminium wire with round values.
+
+[[cable]]
+id = "acsr-drake-26-7"
+name = "Drake 795 kcmil 26/7 ACSR"
+kind = "acsr"
+source = "Typical published values for ASTM B232 795 kcmil 26/7 ACSR; moduli and expansion are typical values — verify against the manufacturer data sheet"
+diameter = "1.108 in"
+mass_per_length = "1.094 lbm/ft"
+rated_tensile_strength = "31200 lbf"
+outer = { area = "0.6245 in²", modulus = "55 GPa", thermal_expansion = 23.0e-6, strands = 26 }
+core = { area = "0.1017 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6, strands = 7 }
+
+[cable.electrical]
+ac_resistance = [
+    { temperature = "25 °C", resistance = "0.07283 Ω/km" },
+    { temperature = "75 °C", resistance = "0.08688 Ω/km" },
+]
+dc_resistance = { temperature = "20 °C", resistance = "0.0702 Ω/km" }
+geometric_mean_radius = "11.43 mm"
+
+[[cable]]
+id = "ew-synthetic-16"
+name = "Synthetic earth wire, 16 mm"
+kind = "acsr"
+source = "Invented for the example (round values), not a real wire"
+diameter = "16 mm"
+mass_per_length = "0.6 kg/m"
+rated_tensile_strength = "80 kN"
+outer = { area = "80 mm²", modulus = "60 GPa", thermal_expansion = 23.0e-6, strands = 12 }
+core = { area = "75 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, strands = 7 }
+
+[cable.electrical]
+ac_resistance = [{ temperature = "20 °C", resistance = "0.30 Ω/km" }]
+geometric_mean_radius = "6.0 mm"

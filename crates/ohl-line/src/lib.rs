@@ -68,7 +68,11 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 10 adds the in-the-blocks model of the line's
+/// Latest line file version: 11 adds the line's electrical settings
+/// (`electrical`: soil resistivity, earth return method, the wires' height
+/// in a span; [`electrical::ElectricalSettings`], roadmap O18, 2026-10-27),
+/// written only when they are not the defaults (else 10 or older,
+/// [`Line::to_json`]); 10 adds the in-the-blocks model of the line's
 /// calculation options (`solver.blocks`, [`SolverOptions::blocks`], written
 /// only when the simplified equal-H model is chosen; owner decision
 /// 2026-10-25) and a jumper given by its tension (`tension`,
@@ -93,7 +97,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 10;
+pub const LINE_FILE_VERSION: u32 = 11;
+
+/// The version before the electrical settings: what a line without them
+/// is written as (when it has the in-the-blocks option or a jumper given
+/// by its tension).
+const BEFORE_ELECTRICAL_VERSION: u32 = 10;
 
 /// The version before the in-the-blocks option and the jumpers given by
 /// their tension: what a line without them is written as (when it has
@@ -211,6 +220,14 @@ pub struct Line {
     /// own.
     #[serde(default, skip_serializing_if = "StructureLoads::is_default")]
     pub structure_loads: StructureLoads,
+    /// Electrical settings: soil resistivity, earth return method, the
+    /// wires' height in a span (line file version 11 when not the
+    /// defaults; [`electrical::ElectricalSettings`]).
+    #[serde(
+        default,
+        skip_serializing_if = "electrical::ElectricalSettings::is_default"
+    )]
+    pub electrical: electrical::ElectricalSettings,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
@@ -3342,7 +3359,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 10 with the simplified
+    /// line, so an older program still reads it: 11 with electrical
+    /// settings other than the defaults, else 10 with the simplified
     /// in-the-blocks model or a jumper given by its tension, else 9 with
     /// local winds, else
     /// 8 with strings' own volumes, else 7 (a line of an older version
@@ -3358,7 +3376,8 @@ impl Line {
         let sheaves =
             !self.solver.blocks.is_default() || self.jumpers.iter().any(|j| j.tension.is_some());
         let written = match (sheaves, winds, shapes) {
-            (true, _, _) => LINE_FILE_VERSION,
+            _ if !self.electrical.is_default() => LINE_FILE_VERSION,
+            (true, _, _) => BEFORE_ELECTRICAL_VERSION,
             (false, true, _) => BEFORE_SHEAVES_VERSION,
             (false, false, true) => BEFORE_WIND_FACTORS_VERSION,
             (false, false, false) => BEFORE_SHAPES_VERSION,
@@ -3588,6 +3607,7 @@ impl Line {
         }
         let invalid = |m: String| Err(LineError::Invalid(m));
         self.bimetallic.validate().map_err(LineError::Invalid)?;
+        self.electrical.validate().map_err(LineError::Invalid)?;
         ohl_core::files::check_header(
             Some(&self.format),
             Some(self.version),
