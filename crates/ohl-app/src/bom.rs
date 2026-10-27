@@ -126,18 +126,24 @@ impl BomWindow {
             ctx,
             crate::dockable::Panel::BillOfMaterials,
             "Bill of materials: wires",
-            [760.0, 520.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
                 help::body(ui, "bom-window", |ui| self.ui(ui, model));
                 help::footer(ui, "bom-window", |ui| {
-                    if help::run_button(ui, !self.running(), "From the line as it is now", None) {
-                        self.start(model, ui.ctx());
-                    }
-                    if self.running() {
-                        ui.spinner();
+                    // The shared Run footer (2026-10-27): Stop while it
+                    // runs (the previous estimate stays).
+                    let f = crate::check_ui::RunFooter {
+                        running: self.running().then(crate::check_ui::Progress::default),
+                        hover: "From the line as it is now",
+                        ..Default::default()
+                    };
+                    match crate::check_ui::run_footer(ui, f, |_| {}) {
+                        crate::check_ui::Action::Run => self.start(model, ui.ctx()),
+                        crate::check_ui::Action::Stop => self.running = None,
+                        crate::check_ui::Action::None => {}
                     }
                 });
             },

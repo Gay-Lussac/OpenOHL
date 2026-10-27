@@ -61,7 +61,7 @@ pub enum Panel {
     WireTensions,
     /// Checks › Analyses › String checks.
     StringChecks,
-    /// Checks › Analyses › Internal clearances.
+    /// Checks › Wire clearances › Internal clearances.
     InternalClearances,
     /// Checks › As-built wires.
     AsBuiltWires,

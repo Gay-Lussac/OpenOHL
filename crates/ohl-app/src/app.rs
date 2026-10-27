@@ -337,7 +337,7 @@ pub struct Ready {
     pub magnetic_field: crate::magnetic_field::MagneticFieldWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
-    /// Checks › Internal clearances….
+    /// Checks › Wire clearances › Internal clearances….
     pub internal_clearances: crate::internal_clearances::InternalClearancesWindow,
     /// Export › Plans: the route, situation and phase plans.
     pub plans: crate::plans_window::PlansWindow,

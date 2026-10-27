@@ -131,7 +131,7 @@ impl WireFitWindow {
                         &budget,
                     )
                     .unwrap_or_else(|e| {
-                        log::warn!("{} span {}: {e}", w.section, w.span);
+                        log::warn!("{} span {}: {e}", w.section, w.span + 1);
                         None
                     });
                 }

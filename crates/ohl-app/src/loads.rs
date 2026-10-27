@@ -348,30 +348,32 @@ impl LoadsPage {
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
         let go = help::body(ui, "loads-page", |ui| self.body_ui(ui, model));
         help::footer(ui, "loads-page", |ui| {
-            ui.checkbox(&mut self.overrides.structures, "structure override")
-                .on_hover_text(
-                    "At a structure with weather case groups (Structures table): only the load \
-                     cases whose weather case is in them",
-                );
-            if help::run_button(
-                ui,
-                !self.running(),
-                "Solve every section in every load case (finite elements)",
-                None,
-            ) {
-                self.start(model, ui.ctx());
-            }
-            if let Some((t, _)) = &self.running {
-                ui.spinner();
-                ui.label(format!("{:.1} s", t.elapsed().as_secs_f64()));
-                ui.ctx()
-                    .request_repaint_after(std::time::Duration::from_millis(200));
-            } else if let Some(t) = self.took {
-                ui.label(
-                    egui::RichText::new(format!("computed in {t:.1?}"))
-                        .small()
-                        .weak(),
-                );
+            // The shared Run footer (2026-10-27): Run greyed with its
+            // reason, Stop while it runs (the previous results stay).
+            let f = crate::check_ui::RunFooter {
+                running: self
+                    .running
+                    .as_ref()
+                    .map(|(t, _)| crate::check_ui::Progress::elapsed(t.elapsed())),
+                why_not: model.sources.load_cases.is_none().then(|| {
+                    "no load case file: add one in the Load cases library (Line › Criteria)"
+                        .to_owned()
+                }),
+                hover: "Solve every section in every load case (finite elements)",
+                scope: None,
+                info: self.took.map(|t| format!("computed in {t:.1?}")),
+            };
+            let overrides = &mut self.overrides;
+            match crate::check_ui::run_footer(ui, f, |ui| {
+                ui.checkbox(&mut overrides.structures, "structure override")
+                    .on_hover_text(
+                        "At a structure with weather case groups (Structures table): only the \
+                         load cases whose weather case is in them",
+                    );
+            }) {
+                crate::check_ui::Action::Run => self.start(model, ui.ctx()),
+                crate::check_ui::Action::Stop => self.running = None,
+                crate::check_ui::Action::None => {}
             }
         });
         go
