@@ -899,6 +899,9 @@ impl VegetationWindow {
             let positions = Arc::new(positions);
             let mut check =
                 VegetationCheck::with_positions(Arc::clone(&positions), &classes, params.clone());
+            // A voltage above a distance table's last row: warned (owner,
+            // 2026-10-27).
+            notes.extend(check.warnings().iter().map(|w| format!("warning: {w}")));
             check.visit_parallel(
                 ground.as_deref(),
                 &points,
