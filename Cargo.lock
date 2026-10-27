@@ -3649,6 +3649,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ohl-electrical"
+version = "0.0.2"
+dependencies = [
+ "nalgebra",
+ "ohl-cables",
+ "ohl-core",
+ "ohl-line",
+ "ohl-weather",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ohl-io"
 version = "0.0.2"
 dependencies = [

@@ -860,6 +860,11 @@ struct Meta {
     circuit_starts: Vec<ohl_line::SectionPoint>,
     #[serde(default, skip_serializing_if = "ohl_line::StructureLoads::is_default")]
     structure_loads: ohl_line::StructureLoads,
+    #[serde(
+        default,
+        skip_serializing_if = "ohl_line::electrical::ElectricalSettings::is_default"
+    )]
+    electrical: ohl_line::electrical::ElectricalSettings,
 }
 
 impl Meta {
@@ -879,6 +884,7 @@ impl Meta {
             defaults: line.defaults,
             circuit_starts: line.circuit_starts.clone(),
             structure_loads: line.structure_loads.clone(),
+            electrical: line.electrical,
         }
     }
 }
@@ -888,7 +894,7 @@ impl Meta {
 /// undo one each: `line` (name, CRS, display) and one row per setting.
 /// Projects written before kept them all in `line`: read as defaults
 /// under the rows ([`meta_of`]), until the first change writes the rows.
-const META_ROWS: [&str; 8] = [
+const META_ROWS: [&str; 9] = [
     "systems",
     "circuits",
     "creep_stretch",
@@ -897,6 +903,7 @@ const META_ROWS: [&str; 8] = [
     "defaults",
     "circuit_starts",
     "structure_loads",
+    "electrical",
 ];
 
 /// The settings `meta` as rows: (id, value).
@@ -916,6 +923,7 @@ fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
             "solver" => json(&meta.solver),
             "defaults" => json(&meta.defaults),
             "circuit_starts" => json(&meta.circuit_starts),
+            "electrical" => json(&meta.electrical),
             _ => json(&meta.structure_loads),
         };
         out.push((key.to_owned(), serde_json::json!({ key: v })));
@@ -1227,6 +1235,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         solver: meta.solver,
         circuit_starts: meta.circuit_starts,
         structure_loads: meta.structure_loads,
+        electrical: meta.electrical,
         condition_cases: Default::default(),
         spacers: vec![],
         defaults: meta.defaults,
@@ -2087,6 +2096,19 @@ impl Session {
     pub fn structure_loads_command(&self, choice: ohl_line::StructureLoads) -> Command {
         let mut line = self.line.clone();
         line.structure_loads = choice;
+        line_settings_change(&self.line, &line)
+    }
+
+    /// The command setting the line's electrical settings (soil
+    /// resistivity, earth return method, the wires' height in a span;
+    /// Analysis › Electrical › Line parameters): one logged, undoable put
+    /// of its settings row (`electrical`); no section is solved again.
+    pub fn electrical_command(
+        &self,
+        settings: ohl_line::electrical::ElectricalSettings,
+    ) -> Command {
+        let mut line = self.line.clone();
+        line.electrical = settings;
         line_settings_change(&self.line, &line)
     }
 

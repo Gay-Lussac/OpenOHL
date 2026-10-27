@@ -929,6 +929,39 @@
             </xs:attribute>
           </xs:complexType>
         </xs:element>
+
+        <xs:element name="electrical" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>Version 11 (2026-10-27, roadmap O18): the
+              line's electrical settings for the line parameters — the soil
+              resistivity in ohm-metres (absent: 100 ohm-m assumed, said in
+              every result), the earth return method (Carson's series by
+              default, the complex depth, or Carson's first terms) and the
+              wires' height in a span (the solved wire's average by default,
+              or the attachment height minus two thirds of the
+              sag).</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:attribute name="soil_resistivity_ohm_m" type="xs:double"/>
+            <xs:attribute name="earth_return" default="carson_series">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="carson_series"/>
+                  <xs:enumeration value="complex_depth"/>
+                  <xs:enumeration value="carson_first_terms"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="mean_height" default="solved">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="solved"/>
+                  <xs:enumeration value="two_thirds_sag"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+          </xs:complexType>
+        </xs:element>
       </xs:sequence>
       <xs:attribute name="format" type="xs:string" fixed="ohl-line"/>
       <!-- The line file version (now 7), not the namespace's 1. -->

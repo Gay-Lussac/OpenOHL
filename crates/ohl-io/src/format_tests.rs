@@ -235,6 +235,12 @@ fn rich_line() -> Line {
     line.solver.blocks = ohl_line::InTheBlocks::EqualH;
     // Ice and wind per unstretched metre (2026-10-21): kept.
     line.solver.loads_per = ohl_line::LoadsPer::Unstretched;
+    // The electrical settings (2026-10-27): kept.
+    line.electrical = ohl_line::electrical::ElectricalSettings {
+        soil_resistivity_ohm_m: Some(320.0),
+        earth_return: ohl_line::electrical::EarthReturn::ComplexDepth,
+        mean_height: ohl_line::electrical::MeanHeight::TwoThirdsSag,
+    };
     line.sections[0].add_spread_load(&ohl_line::legacy::SpreadLoad {
         span: 0,
         start: ohl_line::SpanPlace::at_fraction(0.1),

@@ -37,6 +37,7 @@ ohl-server = { path = "crates/ohl-server" }
 ohl-loads = { path = "crates/ohl-loads" }
 ohl-render = { path = "crates/ohl-render" }
 ohl-thermal = { path = "crates/ohl-thermal" }
+ohl-electrical = { path = "crates/ohl-electrical" }
 ohl-bom = { path = "crates/ohl-bom" }
 ohl-spotting = { path = "crates/ohl-spotting" }
 ohl-structure-loads = { path = "apps/structure/ohl-structure-loads" }

@@ -1,0 +1,23 @@
+[package]
+name = "ohl-electrical"
+description = "OpenOHL electrical calculations: cross-sections of the line and line parameters (series impedance with earth return, shunt capacitance)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-cables.workspace = true
+ohl-line.workspace = true
+nalgebra.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+ohl-weather.workspace = true
+
+[lints]
+workspace = true

@@ -224,6 +224,166 @@ impl System {
     }
 }
 
+/// The soil resistivity taken when the line gives none, Ω·m: the value the
+/// IEEE distribution test feeders assume for their line impedances
+/// (IEEE PES Distribution System Analysis Subcommittee, "Radial
+/// Distribution Test Feeders", 2000, section III: "The impedance matrix
+/// assumes a resistivity of 100 Ohm-meters"). **An assumption**: soils
+/// range from a few Ω·m (wet clay, sea water) to thousands (rock); the
+/// calculations say when they take it.
+pub const DEFAULT_SOIL_RESISTIVITY_OHM_M: f64 = 100.0;
+
+/// How the earth return of the series impedances is computed (the line's
+/// electrical settings, [`ElectricalSettings::earth_return`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EarthReturn {
+    /// Carson's correction terms by his infinite series (asymptotic
+    /// expansion for large arguments), the default: Carson's integral for a
+    /// homogeneous earth to well below 0.1 %.
+    #[default]
+    CarsonSeries,
+    /// The complex depth of Dubanton and Deri et al.: the earth replaced by
+    /// a perfect conductor at a complex depth; a closed form within a few
+    /// per cent of Carson's integral.
+    ComplexDepth,
+    /// Carson's series cut after its first terms (the "modified Carson"
+    /// equations of distribution textbooks): independent of the
+    /// conductors' heights; for comparison with programs that use it.
+    CarsonFirstTerms,
+}
+
+impl EarthReturn {
+    /// Every choice.
+    pub const ALL: [Self; 3] = [
+        Self::CarsonSeries,
+        Self::ComplexDepth,
+        Self::CarsonFirstTerms,
+    ];
+
+    /// The default.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As written in files and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CarsonSeries => "carson_series",
+            Self::ComplexDepth => "complex_depth",
+            Self::CarsonFirstTerms => "carson_first_terms",
+        }
+    }
+
+    /// From its written name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
+
+    /// In words, for report headers.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::CarsonSeries => "Carson's series (homogeneous earth)",
+            Self::ComplexDepth => "complex depth (Deri et al. 1981)",
+            Self::CarsonFirstTerms => "Carson's first terms (modified Carson)",
+        }
+    }
+}
+
+/// The height of a wire in a span that the line parameters take (the
+/// line's electrical settings, [`ElectricalSettings::mean_height`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeanHeight {
+    /// The exact average of the solved wire's height above the ground under
+    /// it along the span (the default).
+    #[default]
+    Solved,
+    /// The textbook approximation: the mean of the attachment heights
+    /// above the ground minus two thirds of the sag (exact for a parabola
+    /// over level ground).
+    TwoThirdsSag,
+}
+
+impl MeanHeight {
+    /// Every choice.
+    pub const ALL: [Self; 2] = [Self::Solved, Self::TwoThirdsSag];
+
+    /// The default.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As written in files and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Solved => "solved",
+            Self::TwoThirdsSag => "two_thirds_sag",
+        }
+    }
+
+    /// From its written name (`mean` is taken for the two-thirds rule, as
+    /// the command line offers it).
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "mean" => Some(Self::TwoThirdsSag),
+            t => Self::ALL.into_iter().find(|j| j.as_str() == t),
+        }
+    }
+
+    /// In words, for report headers.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Solved => "average of the solved wire over the span",
+            Self::TwoThirdsSag => "attachment height minus 2/3 of the sag",
+        }
+    }
+}
+
+/// The line's electrical settings (Analysis › Electrical; line file
+/// version 11 when not the defaults): what the line parameters need
+/// besides the wires and systems.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ElectricalSettings {
+    /// Soil resistivity, Ω·m (homogeneous earth along the line); none:
+    /// [`DEFAULT_SOIL_RESISTIVITY_OHM_M`], said in every result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soil_resistivity_ohm_m: Option<f64>,
+    /// The earth return method.
+    #[serde(default, skip_serializing_if = "EarthReturn::is_default")]
+    pub earth_return: EarthReturn,
+    /// The wires' height in a span.
+    #[serde(default, skip_serializing_if = "MeanHeight::is_default")]
+    pub mean_height: MeanHeight,
+}
+
+impl ElectricalSettings {
+    /// The defaults.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// The soil resistivity to use, Ω·m, and whether it is the assumed
+    /// default.
+    pub fn soil_resistivity(&self) -> (f64, bool) {
+        match self.soil_resistivity_ohm_m {
+            Some(r) => (r, false),
+            None => (DEFAULT_SOIL_RESISTIVITY_OHM_M, true),
+        }
+    }
+
+    /// Refuses a resistivity that is not a positive number.
+    pub fn validate(&self) -> Result<(), String> {
+        match self.soil_resistivity_ohm_m {
+            Some(r) if !(r.is_finite() && r > 0.0) => {
+                Err("electrical: soil resistivity must be a number of Ω·m > 0".into())
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
 /// The electrical state of a conductor: what clearance rules use.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Potential {

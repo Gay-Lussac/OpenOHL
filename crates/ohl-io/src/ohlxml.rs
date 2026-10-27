@@ -978,6 +978,7 @@ pub fn to_xml(line: &Line) -> String {
         defaults,
         circuit_starts,
         structure_loads,
+        electrical,
         condition_cases: _,
     } = line;
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<line");
@@ -1166,6 +1167,24 @@ pub fn to_xml(line: &Line) -> String {
             out.push_str("/>\n");
         }
         out.push_str("  </structure_loads>\n");
+    }
+    if !electrical.is_default() {
+        let ohl_line::electrical::ElectricalSettings {
+            soil_resistivity_ohm_m,
+            earth_return,
+            mean_height,
+        } = electrical;
+        out.push_str("  <electrical");
+        if let Some(r) = soil_resistivity_ohm_m {
+            attr(&mut out, "soil_resistivity_ohm_m", &num(*r));
+        }
+        if !earth_return.is_default() {
+            attr(&mut out, "earth_return", earth_return.as_str());
+        }
+        if !mean_height.is_default() {
+            attr(&mut out, "mean_height", mean_height.as_str());
+        }
+        out.push_str("/>\n");
     }
     out.push_str("</line>\n");
     out
@@ -2037,6 +2056,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "solver",
             "circuit_start",
             "structure_loads",
+            "electrical",
         ],
     )?;
     // A route; files of version 2: its own alignment and structures
@@ -2137,6 +2157,34 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             }
         }
     };
+    let electrical = match root.child("electrical") {
+        None => ohl_line::electrical::ElectricalSettings::default(),
+        Some(e) => {
+            check(
+                e,
+                &["soil_resistivity_ohm_m", "earth_return", "mean_height"],
+                &[],
+            )?;
+            use ohl_line::electrical::{EarthReturn, MeanHeight};
+            ohl_line::electrical::ElectricalSettings {
+                soil_resistivity_ohm_m: optional(e, "soil_resistivity_ohm_m")?,
+                earth_return: match owned(e, "earth_return") {
+                    None => EarthReturn::default(),
+                    Some(t) => EarthReturn::parse(&t).ok_or_else(|| {
+                        format!(
+                            "electrical earth_return \"{t}\": carson_series, complex_depth or carson_first_terms"
+                        )
+                    })?,
+                },
+                mean_height: match owned(e, "mean_height") {
+                    None => MeanHeight::default(),
+                    Some(t) => MeanHeight::parse(&t).ok_or_else(|| {
+                        format!("electrical mean_height \"{t}\": solved or two_thirds_sag")
+                    })?,
+                },
+            }
+        }
+    };
     let bimetallic = match root.child("bimetallic") {
         None => ohl_cables::BimetallicModel::default(),
         Some(b) => {
@@ -2207,6 +2255,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             None => ohl_line::StructureLoads::default(),
             Some(e) => read_structure_loads(e)?,
         },
+        electrical,
         systems: root
             .children_named("system")
             .map(read_system)
