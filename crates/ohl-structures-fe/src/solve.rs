@@ -46,6 +46,25 @@ pub const HELD_SHARE: f64 = 0.01;
 /// out of the plane of its members).
 pub const HELD_JOINT_SHARE: f64 = 0.25;
 
+/// A joint moving more than this share of the structure's size (the
+/// diagonal of the box around its joints) is not a result: the model is a
+/// near-mechanism (a joint whose members lie almost, but not quite, in
+/// one plane, loaded nearly in it) and a small-displacement analysis means
+/// nothing there ([`FeError::Implausible`], 2026-10-27). A tower under its
+/// ultimate loads moves about 1 % of its height; this limit is fifty times
+/// that.
+pub const IMPLAUSIBLE_SHARE: f64 = 0.5;
+
+/// Iterations stopped by an exit clause with the out-of-balance forces
+/// below this share of the loads (but above the tolerance) are accepted,
+/// flagged ([`Solution::stalled`]) and said in the notes
+/// ([`crate::convergence_note`]): the P-Delta iterations (the tangent from
+/// the last axial forces) converge linearly and may stall a little above
+/// a tolerance of 10⁻⁹ on a stiff model (6.4·10⁻⁸ after 200 iterations
+/// seen, 2026-10-27); forces out of balance by 10⁻⁶ of the loads change no
+/// result to the digits shown.
+pub const STALL_ACCEPTED: f64 = 1e-6;
+
 /// Default exit clauses: 200 iterations, 30 s. A first-order solve takes
 /// one or two iterations; P-Delta converges linearly with the ratio of the
 /// axial loads to the buckling load (about 30 iterations at one half).
@@ -150,6 +169,20 @@ pub enum FeError {
         /// A cycle (else: out of passes).
         cycle: bool,
     },
+    /// Joints moved implausibly far ([`IMPLAUSIBLE_SHARE`] of the
+    /// structure's size): a near-mechanism; refused rather than returned
+    /// (2026-10-27).
+    Implausible {
+        /// The joints moving most (at most [`MECHANISM_JOINTS`]), farthest
+        /// first.
+        joints: Vec<String>,
+        /// How many joints move beyond the limit.
+        moving: usize,
+        /// The largest displacement, m.
+        largest: f64,
+        /// The structure's size, m.
+        size: f64,
+    },
     /// An exit clause stopped the iterations.
     Stopped {
         /// Which limit.
@@ -220,6 +253,21 @@ impl fmt::Display for FeError {
                 } else {
                     format!("still changing after {passes} solves")
                 }
+            ),
+            FeError::Implausible {
+                joints,
+                moving,
+                largest,
+                size,
+            } => write!(
+                f,
+                "implausible displacements: {moving} joint(s) move more than {:.0} % of the \
+                 structure's size ({size:.1} m), up to {largest:.3e} m: {}{} — a near-mechanism \
+                 (members at a joint almost in one plane, loaded nearly in it); check those \
+                 joints' members and positions",
+                IMPLAUSIBLE_SHARE * 100.0,
+                joints.join(", "),
+                if *moving > joints.len() { ", …" } else { "" }
             ),
             FeError::Stopped { stop, residual } => write!(
                 f,
@@ -303,6 +351,16 @@ pub struct Solution {
     /// is refused: indices into [`Solution::stabilised`]. Not refused
     /// (their force is carried by the lines' ends), flagged in the notes.
     pub relative_over: Vec<usize>,
+    /// The iterations were stopped by an exit clause with the
+    /// out-of-balance forces ([`Solution::residual`]) below
+    /// [`STALL_ACCEPTED`] of the loads but above the tolerance: accepted,
+    /// said in the notes ([`crate::convergence_note`]).
+    pub stalled: bool,
+    /// The joints were stabilised at the looser threshold for rounded
+    /// coordinates (about 0.2°, [`crate::stabilise`]) after a first solve
+    /// moved them implausibly far ([`FeError::Implausible`]); said in the
+    /// notes ([`crate::convergence_note`]).
+    pub rounded_stabilisation: bool,
 }
 
 /// Per member: what does not change between iterations.
@@ -373,16 +431,48 @@ pub fn solve(
     if let Some(e) = model.bar_joint_error(&loads.nodal) {
         return Err(FeError::Invalid(e));
     }
-    if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
-        return solve_tension_only(model, loads, options, budget);
+    // A near-mechanism (joints moved implausibly far, or buckling): held
+    // again at the looser threshold of rounded coordinates; the error
+    // stands when the joints still move implausibly far or it is still
+    // unstable.
+    let first = solve_at(model, loads, options, budget, crate::stabilise::FREE);
+    match first.and_then(|s| implausible(model, &s.displacements).map(|()| s)) {
+        Err(FeError::Implausible { .. } | FeError::Unstable { .. }) if options.stabilise => {
+            let mut s = solve_at(
+                model,
+                loads,
+                options,
+                budget,
+                crate::stabilise::FREE_ROUNDED,
+            )?;
+            implausible(model, &s.displacements)?;
+            s.rounded_stabilisation = true;
+            Ok(s)
+        }
+        other => other,
     }
-    solve_stabilised(model, loads, options, budget, &[], &[])
+}
+
+/// [`solve`] with the joints' stabilisation threshold `threshold`
+/// ([`crate::stabilise`]), without the plausibility check.
+fn solve_at(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    threshold: f64,
+) -> Result<Solution, FeError> {
+    if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
+        return solve_tension_only(model, loads, options, budget, threshold);
+    }
+    solve_stabilised_with(model, loads, options, budget, &[], &[], threshold)
 }
 
 /// Solves `model` with the members `inactive` left out (empty: none),
 /// each carrying the compression `caps` (N, per member; empty: none) —
 /// bowed tension-only members —, stabilised when it fails as a mechanism
 /// or as unstable (see [`solve`]).
+#[cfg(test)]
 pub(crate) fn solve_stabilised(
     model: &Model,
     loads: &Loads,
@@ -391,9 +481,38 @@ pub(crate) fn solve_stabilised(
     inactive: &[bool],
     caps: &[f64],
 ) -> Result<Solution, FeError> {
+    solve_stabilised_with(
+        model,
+        loads,
+        options,
+        budget,
+        inactive,
+        caps,
+        crate::stabilise::FREE,
+    )
+}
+
+/// [`solve_stabilised`] with the stabilisation threshold `threshold`.
+fn solve_stabilised_with(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    inactive: &[bool],
+    caps: &[f64],
+    threshold: f64,
+) -> Result<Solution, FeError> {
+    // The second try of a near-mechanism holds its joints from the start
+    // (its first solve did not fail, it moved them implausibly far).
+    if threshold > crate::stabilise::FREE && options.stabilise {
+        let held = crate::stabilise::find_with(model, inactive, threshold);
+        if !held.is_empty() {
+            return solve_with(model, loads, options, budget, &held, inactive, caps);
+        }
+    }
     match solve_with(model, loads, options, budget, &[], inactive, caps) {
         Err(e @ (FeError::Mechanism { .. } | FeError::Unstable { .. })) if options.stabilise => {
-            let held = crate::stabilise::find(model, inactive);
+            let held = crate::stabilise::find_with(model, inactive, threshold);
             if held.is_empty() {
                 return Err(e);
             }
@@ -459,6 +578,7 @@ fn solve_tension_only(
     loads: &Loads,
     options: &Options,
     budget: &Budget,
+    threshold: f64,
 ) -> Result<Solution, FeError> {
     let own = buckling_loads(model);
     let run = budget.start();
@@ -474,7 +594,7 @@ fn solve_tension_only(
                     nonlinear,
                     ..*options
                 };
-                let s = solve_stabilised(m, loads, &opts, budget, inactive, &caps)?;
+                let s = solve_stabilised_with(m, loads, &opts, budget, inactive, &caps, threshold)?;
                 residual = s.residual;
                 let (next, shortening) = next_active_set(m, &s, inactive, ties, &caps);
                 Ok((s, next, shortening))
@@ -482,7 +602,7 @@ fn solve_tension_only(
             let over = ties_hiding_compression(&s, ties, &own);
             Ok((s, passes, over))
         },
-        |m| solve_stabilised(m, loads, options, budget, &[], &[]),
+        |m| solve_stabilised_with(m, loads, options, budget, &[], &[], threshold),
     )?;
     s.passes = passes;
     s.kept_active = kept;
@@ -1141,6 +1261,7 @@ fn solve_with(
         .max(1e-9);
     let mut run = budget.start();
     let mut residual;
+    let mut stalled = false;
     loop {
         // Tangent and out-of-balance forces at the current state.
         assemble(
@@ -1164,6 +1285,10 @@ fn solve_with(
             break;
         }
         if let Err(stop) = run.step() {
+            if settled && residual <= STALL_ACCEPTED {
+                stalled = true;
+                break;
+            }
             return Err(FeError::Stopped { stop, residual });
         }
         let negative = match k.factorize() {
@@ -1377,6 +1502,44 @@ fn solve_with(
         passes: 0,
         kept_active: Vec::new(),
         relative_over,
+        stalled,
+        rounded_stabilisation: false,
+    })
+}
+
+/// [`FeError::Implausible`] when a joint moves more than
+/// [`IMPLAUSIBLE_SHARE`] of the structure's size (a displacement that is
+/// not a number counts as beyond).
+fn implausible(model: &Model, displacements: &[[f64; 6]]) -> Result<(), FeError> {
+    let mut lo = [f64::INFINITY; 3];
+    let mut hi = [f64::NEG_INFINITY; 3];
+    for n in &model.nodes {
+        for k in 0..3 {
+            lo[k] = lo[k].min(n.point[k]);
+            hi[k] = hi[k].max(n.point[k]);
+        }
+    }
+    let size = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+    let limit = IMPLAUSIBLE_SHARE * size;
+    let mut far: Vec<(usize, f64)> = displacements
+        .iter()
+        .enumerate()
+        .map(|(k, d)| (k, (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()))
+        .filter(|(_, d)| d.is_nan() || *d > limit)
+        .collect();
+    if far.is_empty() {
+        return Ok(());
+    }
+    far.sort_by(|a, b| crate::check::usage_order(b.1, a.1));
+    Err(FeError::Implausible {
+        joints: far
+            .iter()
+            .take(MECHANISM_JOINTS)
+            .map(|(k, _)| model.nodes[*k].id.clone())
+            .collect(),
+        moving: far.len(),
+        largest: far[0].1,
+        size,
     })
 }
 

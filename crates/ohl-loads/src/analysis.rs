@@ -251,6 +251,9 @@ impl Analyses {
                 if let Some(note) = ohl_structures_fe::kept_active_note(model, &solution) {
                     notes.push(format!("model: {note}"));
                 }
+                if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
+                    notes.push(format!("model: {note}"));
+                }
                 match worst(&usage) {
                     Some(w) => Some(Check {
                         method: Method::Fe,
