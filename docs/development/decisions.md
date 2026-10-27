@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Safe mode for projects from other programs; solid wires filling their circle (owner, 2026-10-27)**
+
+- Exports with faults (an id given twice, empty values, joined sections
+  given two systems, a wire file with a cable twice or one that does not
+  load) refused the whole import. The owner asked for a safe mode that
+  imports what is there with a warning that some things may be missing.
+  The host now reads a project plugin's line and wire files as far as they
+  read (`ohl_io::projects::line_safe`, `safe_cables`), each fault said as a
+  `warning:` in the notes; nothing is refused for one fault. Two joined
+  sections of different systems of the same voltage take the first's
+  system and phase rather than losing the jumpers between them (an export
+  naming one conductor two ways); of different voltages, the jumper is
+  left out.
+- A cable's area was refused when it exceeded its diameter circle by any
+  amount; a solid 50 mm² wire of 8.00 mm (50.3 mm² both, rounded) failed.
+  The check guards against unit mistakes (factors of 10 or more): it now
+  allows 1 % over the circle for rounded data.
+
 **LiDAR class schemes never block the points; plugins may ship them (owner, 2026-10-27)**
 
 - Since the old names were dropped (2026-10-26), a class scheme file still

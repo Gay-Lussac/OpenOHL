@@ -119,17 +119,340 @@ impl ProjectImporter for PluginProject {
             .import_project(&self.id, data, &options)
             .map_err(|e| e.to_string())?
             .map_err(|e| format!("plugin {}: {e}", self.name))?;
-        let line = Line::from_json(&p.line)
+        // Safe mode (owner, 2026-10-27): what reads is imported, the rest
+        // said in the notes.
+        let (line, mut safe) = line_safe(&p.line)
             .map_err(|e| format!("plugin {} returned an invalid line: {e}", self.name))?;
+        let mut notes = std::mem::take(&mut safe);
+        notes.extend(p.notes);
+        let mut libraries: Vec<(String, String, String)> = p
+            .libraries
+            .into_iter()
+            .map(|f| (f.kind, f.name, f.text))
+            .collect();
+        safe_cables(&mut libraries, &mut notes);
         Ok(ImportedProject {
             line,
-            libraries: p
-                .libraries
-                .into_iter()
-                .map(|f| (f.kind, f.name, f.text))
-                .collect(),
-            notes: p.notes,
+            libraries,
+            notes,
         })
+    }
+}
+
+/// The top-level lists of a line file whose items are checked one by one
+/// in safe mode.
+const LISTS: [&str; 10] = [
+    "routes",
+    "alignments",
+    "alignment_points",
+    "structures",
+    "systems",
+    "circuits",
+    "sections",
+    "jumpers",
+    "spacers",
+    "conductor_paths",
+];
+
+/// Reads a line a plugin gives, in **safe mode** (owner, 2026-10-27: an
+/// export with faults is imported as far as it reads, with a warning).
+/// The line as it is when it reads and checks; else, step by step, each
+/// step said in the notes (`warning: …`):
+///
+/// 1. empty values (`null`) left out (the field's default);
+/// 2. an id given twice in a list: the later ones renamed `<id>-2`, `-3`…
+///    (what refers to that id keeps the first);
+/// 3. an item that does not read on its own (a structure, a section…)
+///    left out, by id;
+/// 4. a line that reads but does not check is kept as it is (the import
+///    says "the line does not check yet"), to be mended in the project.
+///
+/// `Err` only when nothing reads (not JSON, or not a line at all).
+pub fn line_safe(json: &str) -> Result<(Line, Vec<String>), String> {
+    let first = match Line::from_json(json) {
+        Ok(line) => return Ok((line, Vec::new())),
+        Err(e) => e.to_string(),
+    };
+    let mut notes = vec![format!(
+        "warning: safe mode — the line as given does not read ({first}); imported as far as it \
+         reads: some things may be missing or need mending"
+    )];
+    let mut v: serde_json::Value = serde_json::from_str(json).map_err(|_| first.clone())?;
+    let nulls = strip_nulls(&mut v);
+    if nulls > 0 {
+        notes.push(format!(
+            "warning: {nulls} empty value(s) left out (taken as not given)"
+        ));
+    }
+    let Some(obj) = v.as_object_mut() else {
+        return Err(first);
+    };
+    for list in LISTS {
+        let Some(items) = obj.get_mut(list).and_then(|x| x.as_array_mut()) else {
+            continue;
+        };
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for item in items.iter_mut() {
+            let Some(id) = item.get("id").and_then(|x| x.as_str()).map(str::to_owned) else {
+                continue;
+            };
+            if seen.insert(id.clone()) {
+                continue;
+            }
+            let mut n = 2;
+            while seen.contains(&format!("{id}-{n}")) {
+                n += 1;
+            }
+            let to = format!("{id}-{n}");
+            notes.push(format!(
+                "warning: {list}: id {id} given twice; the second kept as {to} (what refers to \
+                 {id} keeps the first)"
+            ));
+            item["id"] = serde_json::Value::String(to.clone());
+            seen.insert(to);
+        }
+    }
+    // Each item on its own: a line holding only it (and the rest of the
+    // file's settings) must read.
+    let mut empty = obj.clone();
+    for list in LISTS {
+        if let Some(x) = empty.get_mut(list) {
+            *x = serde_json::Value::Array(Vec::new());
+        }
+    }
+    let reads = |line: &serde_json::Map<String, serde_json::Value>| {
+        serde_json::from_value::<Line>(serde_json::Value::Object(line.clone())).is_ok()
+    };
+    if !reads(obj) {
+        if !reads(&empty) {
+            return Err(first);
+        }
+        for list in LISTS {
+            let Some(items) = obj.get(list).and_then(|x| x.as_array()).cloned() else {
+                continue;
+            };
+            let mut kept = Vec::new();
+            for item in items {
+                let mut one = empty.clone();
+                one.insert(
+                    list.to_owned(),
+                    serde_json::Value::Array(vec![item.clone()]),
+                );
+                if reads(&one) {
+                    kept.push(item);
+                } else {
+                    let id = item.get("id").and_then(|x| x.as_str()).unwrap_or("(no id)");
+                    notes.push(format!("warning: {list}: {id} does not read: left out"));
+                }
+            }
+            obj.insert(list.to_owned(), serde_json::Value::Array(kept));
+        }
+    }
+    let mut line: Line = serde_json::from_value(serde_json::Value::Object(obj.clone()))
+        .map_err(|e| e.to_string())?;
+    line.upgrade_routes();
+    line.read_older();
+    if let Err(e) = line.place_strings() {
+        notes.push(format!("warning: strings not placed: {e}"));
+    }
+    line.version = ohl_line::LINE_FILE_VERSION;
+    mend(&mut line, &mut notes);
+    Ok((line, notes))
+}
+
+/// Mends a line that reads but does not check, so the project takes it
+/// (safe mode): while the check names objects, the one whose removal gets
+/// past that error is left out — first a jumper at an end of a named
+/// section (it is what joins two of them), then a named jumper, spacer,
+/// section, then another named object — each said in the notes. Stops
+/// when the line checks, or when nothing named helps (the project then
+/// refuses it with the check's error). Two joined sections of different
+/// systems of the same voltage: the later takes the first's system and
+/// phase instead (nothing left out). Expected cost: one check per object
+/// tried; at most 1000 mends.
+fn mend(line: &mut Line, notes: &mut Vec<String>) {
+    use ohl_line::JumperEnd;
+    for _ in 0..1000 {
+        let Err(e) = line.validate() else { return };
+        let msg = e.to_string();
+        let named = |id: &str| {
+            msg.match_indices(id).any(|(i, _)| {
+                let before = msg[..i].chars().last();
+                let after = msg[i + id.len()..].chars().next();
+                let edge = |c: Option<char>| {
+                    c.is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '-'))
+                };
+                edge(before) && edge(after)
+            })
+        };
+        let named_sections: Vec<&ohl_line::Section> =
+            line.sections.iter().filter(|s| named(&s.id)).collect();
+        let at_named = |j: &ohl_line::Jumper| {
+            [&j.from, &j.to].into_iter().any(|end| match end {
+                JumperEnd::Wire(p) => named_sections.iter().any(|s| s.points.contains(p)),
+                JumperEnd::Tap { .. } => false,
+            })
+        };
+        let mut candidates: Vec<(&'static str, String)> = Vec::new();
+        candidates.extend(
+            line.jumpers
+                .iter()
+                .filter(|j| at_named(j) || named(&j.id))
+                .map(|j| ("jumper", j.id.clone())),
+        );
+        candidates.extend(
+            line.spacers
+                .iter()
+                .filter(|x| named(&x.id))
+                .map(|x| ("spacer", x.id.clone())),
+        );
+        // The later named section first (the earlier is kept).
+        candidates.extend(
+            named_sections
+                .iter()
+                .rev()
+                .map(|x| ("section", x.id.clone())),
+        );
+        candidates.extend(
+            line.structures
+                .iter()
+                .filter(|x| named(&x.id))
+                .map(|x| ("structure", x.id.clone())),
+        );
+        // Two joined sections given different systems of the same voltage
+        // (an export naming one conductor two ways): the later takes the
+        // first's system and phase — every wire and jumper kept.
+        if let Some((a, b)) = joined_pair(&msg)
+            && let (Some(sa), Some(sb)) = (
+                line.sections.iter().find(|s| s.id == a).cloned(),
+                line.sections.iter().find(|s| s.id == b).cloned(),
+            )
+        {
+            let kv = |s: &ohl_line::Section| {
+                s.system
+                    .as_ref()
+                    .and_then(|id| line.systems.iter().find(|x| &x.id == id))
+                    .map(|x| x.voltage_kv)
+            };
+            if kv(&sa).is_some() && kv(&sa) == kv(&sb) {
+                let mut t = line.clone();
+                if let Some(x) = t.sections.iter_mut().find(|s| s.id == b) {
+                    x.system = sa.system.clone();
+                    x.phase_label = sa.phase_label.clone();
+                }
+                let past = match t.validate() {
+                    Ok(()) => true,
+                    Err(e2) => e2.to_string() != msg,
+                };
+                if past {
+                    notes.push(format!(
+                        "warning: section {b} given the system and phase of section {a} ({} {}), \
+                         joined to it: the export gave {} {}",
+                        sa.system.as_deref().unwrap_or(""),
+                        sa.phase_label,
+                        sb.system.as_deref().unwrap_or(""),
+                        sb.phase_label
+                    ));
+                    *line = t;
+                    continue;
+                }
+            }
+        }
+        let mut done = false;
+        for (kind, id) in candidates {
+            let mut t = line.clone();
+            match kind {
+                "jumper" => t.jumpers.retain(|x| x.id != id),
+                "spacer" => t.spacers.retain(|x| x.id != id),
+                "section" => t.sections.retain(|x| x.id != id),
+                _ => t.structures.retain(|x| x.id != id),
+            }
+            // A structure only when that ends it (what hangs on it would
+            // be named next, a cascade).
+            let past = match t.validate() {
+                Ok(()) => true,
+                Err(e2) => kind != "structure" && e2.to_string() != msg,
+            };
+            if past {
+                notes.push(format!(
+                    "warning: {kind} {id} left out: the line did not check with it ({msg})"
+                ));
+                *line = t;
+                done = true;
+                break;
+            }
+        }
+        if !done {
+            return;
+        }
+    }
+}
+
+/// Safe mode for the wire files a plugin gives (owner, 2026-10-27): a file
+/// the wire library would refuse keeps the cables that load, each once
+/// (a cable given twice: the first), the others left out and said in the
+/// notes — the project's wire library keeps loading, the sections on a
+/// cable left out find no wire.
+fn safe_cables(libraries: &mut [(String, String, String)], notes: &mut Vec<String>) {
+    for (kind, name, text) in libraries.iter_mut() {
+        if kind != "cables" {
+            continue;
+        }
+        let path = Path::new(name.as_str());
+        let first = match ohl_cables::Library::default().add_toml(path, text) {
+            Ok(_) => continue,
+            Err(e) => e.to_string(),
+        };
+        let Some((head, blocks)) = crate::import_into::entries::cable_blocks(text) else {
+            notes.push(format!("warning: wire file {name} does not load ({first})"));
+            continue;
+        };
+        let mut kept = head.clone();
+        let mut ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for b in blocks {
+            if !ids.insert(b.id.clone()) {
+                notes.push(format!(
+                    "warning: wire file {name}: cable {} given twice; the first kept",
+                    b.id
+                ));
+                continue;
+            }
+            match ohl_cables::Library::default().add_toml(path, &format!("{head}{}", b.text)) {
+                Ok(_) => kept.push_str(&b.text),
+                Err(e) => notes.push(format!(
+                    "warning: wire file {name}: cable {} left out: it does not load ({e}); the \
+                     sections on it find no wire",
+                    b.id
+                )),
+            }
+        }
+        *text = kept;
+    }
+}
+
+/// The two sections of the check's "sections A and B are joined …"
+/// error.
+fn joined_pair(msg: &str) -> Option<(String, String)> {
+    let rest = msg.split("sections ").nth(1)?;
+    let (pair, _) = rest.split_once(" are joined")?;
+    let (a, b) = pair.split_once(" and ")?;
+    Some((a.trim().to_owned(), b.trim().to_owned()))
+}
+
+/// Removes every `null` member of the objects in `v`; how many.
+fn strip_nulls(v: &mut serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::Object(m) => {
+            let before = m.len();
+            m.retain(|_, x| !x.is_null());
+            let mut n = before - m.len();
+            for x in m.values_mut() {
+                n += strip_nulls(x);
+            }
+            n
+        }
+        serde_json::Value::Array(a) => a.iter_mut().map(strip_nulls).sum(),
+        _ => 0,
     }
 }
 
@@ -231,4 +554,75 @@ pub fn create_project(
         project: p,
         applied,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn example() -> serde_json::Value {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text =
+            std::fs::read_to_string(root.join("examples/synthetic-line/synthetic-line.ohl.json"))
+                .unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// Safe mode: a line with faults is read as far as it reads, each
+    /// fault said (owner, 2026-10-27).
+    #[test]
+    fn a_faulty_line_is_read_as_far_as_it_reads() {
+        // As given: read, nothing said.
+        let (line, notes) = line_safe(&example().to_string()).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        let sections = line.sections.len();
+        // An empty value, an id twice, a section that does not read.
+        let mut v = example();
+        v["structures"][0]["strings"] = serde_json::Value::Null;
+        let twin = v["structures"][1].clone();
+        v["structures"].as_array_mut().unwrap().push(twin);
+        let bad = v["sections"][0]["id"].as_str().unwrap().to_owned();
+        v["sections"][0]["bundle"] = "two".into();
+        let (line, notes) = line_safe(&v.to_string()).unwrap();
+        let text = notes.join("\n");
+        assert!(text.contains("safe mode"), "{text}");
+        assert!(text.contains("empty value"), "{text}");
+        assert!(text.contains("given twice"), "{text}");
+        assert!(text.contains(&format!("{bad} does not read")), "{text}");
+        assert_eq!(line.sections.len(), sections - 1);
+        let id = v["structures"][1]["id"].as_str().unwrap();
+        assert!(line.structures.iter().any(|s| s.id == format!("{id}-2")));
+        // Nothing of a line: refused.
+        assert!(line_safe("not json").is_err());
+        assert!(line_safe("[1, 2]").is_err());
+    }
+
+    /// A wire file the library would refuse keeps the cables that load,
+    /// each once.
+    #[test]
+    fn a_faulty_wire_file_keeps_the_cables_that_load() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let good =
+            std::fs::read_to_string(root.join("libraries/cables/acsr-examples.ohlw")).unwrap();
+        let (head, blocks) = crate::import_into::entries::cable_blocks(&good).unwrap();
+        let first = &blocks[0];
+        let broken = first
+            .text
+            .replacen(&format!("id = \"{}\"", first.id), "id = \"broken\"", 1)
+            .replace("diameter = ", "diameter = \"0.1 mm\"\nx_diameter = ");
+        let text = format!("{head}{}{}{broken}", first.text, first.text);
+        let mut libs = vec![("cables".to_owned(), "w.ohlw".to_owned(), text)];
+        let mut notes = Vec::new();
+        safe_cables(&mut libs, &mut notes);
+        let text = notes.join("\n");
+        assert!(
+            text.contains(&format!("cable {} given twice", first.id)),
+            "{text}"
+        );
+        assert!(text.contains("cable broken left out"), "{text}");
+        let lib = ohl_cables::Library::default()
+            .add_toml(Path::new("w.ohlw"), &libs[0].2)
+            .map(|_| ());
+        assert!(lib.is_ok(), "{lib:?}");
+    }
 }
