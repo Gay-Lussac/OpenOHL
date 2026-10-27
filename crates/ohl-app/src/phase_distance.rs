@@ -496,6 +496,35 @@ struct Loaded {
     dirs: Vec<PathBuf>,
     /// The host, the check, an instance for the window's calls.
     check: Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String>,
+    /// The weather the plugin suggests for the check (its `check-weather`
+    /// export), if any.
+    weather: Option<ohl_plugins::WeatherHint>,
+}
+
+/// The project's weather case matching `hint`: the same temperature
+/// (within 0.5 °C), wind (within 1 Pa) and ice (with or without); else
+/// the windiest of that temperature and ice; `None` when none is.
+fn case_for(cases: &[&ohl_weather::WeatherCase], hint: &ohl_plugins::WeatherHint) -> Option<usize> {
+    let iced = |c: &ohl_weather::WeatherCase| {
+        c.ice_thickness.si() > 0.0 || c.ice_load.is_some_and(|l| l.si() > 0.0)
+    };
+    let alike = |c: &ohl_weather::WeatherCase| {
+        (c.temperature.celsius() - hint.temperature_c).abs() <= 0.5 && iced(c) == hint.ice
+    };
+    let found = || cases.iter().enumerate().filter(|(_, c)| alike(c));
+    found()
+        .find(|(_, c)| (c.wind_pressure.si() - hint.wind_pa).abs() <= 1.0)
+        .or_else(|| {
+            found()
+                .filter(|(_, c)| c.wind_pressure.si() > 0.0)
+                .max_by(|(i, a), (j, b)| {
+                    a.wind_pressure
+                        .si()
+                        .total_cmp(&b.wind_pressure.si())
+                        .then(j.cmp(i))
+                })
+        })
+        .map(|(k, _)| k)
 }
 
 /// The plugins' check `id` (of the distance between conductors), loaded.
@@ -761,7 +790,18 @@ impl PhaseDistanceWindow {
         match self.kind {
             Kind::Span if self.cases.is_empty() => self.cases = still_air_10(model),
             Kind::UnequalWind if self.cases.len() != 1 => {
-                // One case: the first with the most wind.
+                // One case: the plugin's suggestion (owner, 2026-10-27:
+                // the LeV's 10 °C + 650 Pa) when the project has it, else
+                // the first with the most wind.
+                let suggested = self
+                    .plugin
+                    .as_ref()
+                    .and_then(|p| p.weather.as_ref())
+                    .and_then(|h| {
+                        let cases: Vec<&ohl_weather::WeatherCase> =
+                            model.cases.iter().map(|c| &c.case).collect();
+                        case_for(&cases, h)
+                    });
                 let windiest = model
                     .cases
                     .iter()
@@ -776,7 +816,7 @@ impl PhaseDistanceWindow {
                     })
                     .map(|(k, _)| k);
                 let first = self.cases.first().copied();
-                self.cases = first.or(windiest).into_iter().collect();
+                self.cases = first.or(suggested).or(windiest).into_iter().collect();
             }
             _ => {}
         }
@@ -792,12 +832,18 @@ impl PhaseDistanceWindow {
             return;
         }
         let check = load_plugin(model, self.kind.check_id());
-        if let Ok((_, c, _)) = &check {
+        let mut weather = None;
+        if let Ok((host, c, _)) = &check {
             self.choices = c.info.choices.iter().map(|x| x.default).collect();
+            weather = host
+                .check_weather(&c.dir, self.kind.check_id())
+                .ok()
+                .flatten();
         }
         self.plugin = Some(Loaded {
             dirs: model.check_plugins.clone(),
             check,
+            weather,
         });
         self.tables = None;
     }
@@ -2320,4 +2366,38 @@ fn csv(r: &Report) -> String {
         );
     }
     out
+}
+
+#[cfg(test)]
+mod check_weather_tests {
+    use super::case_for;
+    use ohl_core::units::{Stress, Temperature};
+    use ohl_weather::WeatherCase;
+
+    /// The plugin's suggested weather (10 °C, 650 Pa, no ice; owner,
+    /// 2026-10-27) picks that case; without it, the windiest at 10 °C
+    /// without ice; none at that temperature: none.
+    #[test]
+    fn the_suggested_weather_picks_its_case() {
+        let case = |name: &str, t: f64, pa: f64| {
+            let mut c = WeatherCase::still(name, Temperature::from_celsius(t));
+            c.wind_pressure = Stress::from_pascals(pa);
+            c
+        };
+        let hint = ohl_plugins::WeatherHint {
+            temperature_c: 10.0,
+            wind_pa: 650.0,
+            ice: false,
+        };
+        let all = [
+            case("hot", 80.0, 0.0),
+            case("storm", 15.0, 1000.0),
+            case("10 °C + 500 Pa", 10.0, 500.0),
+            case("10 °C + 650 Pa", 10.0, 650.0),
+        ];
+        let refs: Vec<&WeatherCase> = all.iter().collect();
+        assert_eq!(case_for(&refs, &hint), Some(3));
+        assert_eq!(case_for(&refs[..3], &hint), Some(2));
+        assert_eq!(case_for(&refs[..2], &hint), None);
+    }
 }

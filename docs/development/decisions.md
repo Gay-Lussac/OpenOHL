@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**A check plugin may suggest its check's weather (owner, 2026-10-27)**
+
+- The owner: the LeV unequal wind check should take 10 °C + 650 Pa by
+  default; the window took the project's windiest case. A new optional
+  export `check-weather` (additive to 0.3) lets a check plugin name the
+  weather for a check (temperature, wind pressure, ice or not); the
+  window ticks the project's case matching it when it opens with none
+  chosen (else the windiest of that temperature, else as before). The
+  core keeps no code-specific value.
+
 **Screens said plainly and one rule for every voltage (owner, 2026-10-27)**
 
 - A code's horizontal distance (a lamp post's b = 5 m + 0.01 m/kV in plan,
