@@ -50,6 +50,52 @@ pub fn user_dir(storage_dir: &Path) -> PathBuf {
     storage_dir.join(USER_DIR)
 }
 
+/// The data folder of [`STORAGE_ID`] found without a window library, for
+/// the command line: the folder the applications use (eframe's storage
+/// folder: macOS `~/Library/Application Support/OLS-CAD`, Linux
+/// `$XDG_DATA_HOME/olscad` or `~/.local/share/olscad`, Windows
+/// `%APPDATA%\OLS CAD\data`; a test in OHL-Design keeps the two equal).
+pub fn shared_storage_dir() -> Option<PathBuf> {
+    let home = std::env::home_dir();
+    if cfg!(target_os = "macos") {
+        home.map(|h| {
+            h.join("Library")
+                .join("Application Support")
+                .join(STORAGE_ID.replace(|c: char| c.is_ascii_whitespace(), "-"))
+        })
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join(STORAGE_ID).join("data"))
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| home.map(|h| h.join(".local").join("share")))
+            .map(|p| {
+                p.join(
+                    STORAGE_ID
+                        .to_lowercase()
+                        .replace(|c: char| c.is_ascii_whitespace(), ""),
+                )
+            })
+    }
+}
+
+/// For the command line: what the user allowed the plugins in the
+/// applications' plugin manager (the shared settings, [`shared_storage_dir`])
+/// applies here too, so that a plugin allowed once there is not held to the
+/// defaults by `ohl` (owner report 2026-10-27). Nothing read (no settings
+/// yet, or unreadable: said in `Err`): nothing allowed.
+pub fn load_shared_consents() -> Result<(), String> {
+    let Some(dir) = shared_storage_dir() else {
+        return Ok(());
+    };
+    let path = PluginSettings::path(&user_dir(&dir));
+    if let Some(s) = PluginSettings::load(&path)? {
+        set_consents(&s.allowed);
+    }
+    Ok(())
+}
+
 /// The plugin folders added and the plugins turned off.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

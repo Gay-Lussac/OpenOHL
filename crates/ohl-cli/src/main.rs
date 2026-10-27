@@ -1069,6 +1069,11 @@ enum PluginCommand {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // The plugins' extra time or memory allowed in the applications' plugin
+    // manager holds here too.
+    if let Err(e) = ohl_plugins::load_shared_consents() {
+        eprintln!("warning: plugin settings not read ({e}): plugins run with the default limits");
+    }
     match cli.command {
         Some(Command::Info) | None => {
             print_info();
