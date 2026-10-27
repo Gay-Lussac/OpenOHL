@@ -177,5 +177,5 @@ WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plug
 - **Geospatial**: pure Rust, no native GIS library: `proj4rs` with EPSG definitions, `las`/`laz` for point clouds (COPC read and written), formats written from their public specifications.
 - **Scripting**: Python via PyO3 (`ohl-py`), WASM runtime (`wasmtime`) for plugins.
 - **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks.
-- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`, 177 cases in `benchmarks/`); pytest for bindings. The checks run locally before each push; the CI workflow is started by hand only (lint, tests, validation cases, docs; macOS, Windows and the benchmarks in a full run).
+- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`, 201 cases in `benchmarks/`); pytest for bindings. The checks run locally before each push; the CI workflow is started by hand only (lint, tests, validation cases, docs; macOS, Windows and the benchmarks in a full run).
 - **Docs**: mdBook (this book: user guide, theory manual, design) and `cargo doc` (API).

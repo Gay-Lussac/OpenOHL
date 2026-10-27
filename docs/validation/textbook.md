@@ -285,6 +285,34 @@ Two cases need a word:
 - *sec. 5.4.3* (creep formula, 649 µstrain): OpenOHL takes creep from
   curves or as a temperature shift, not from that formula.
 
+### Line parameters (`benchmarks/electrical/published.toml`, `earth-return.toml`)
+
+Calculations `electrical.parameters` (the phase matrices of parallel wires,
+earth wires reduced out, sequence values) and `electrical.earth_return`
+(the earth return term between two wires); adapters in
+`crates/ohl-validation/src/electrical.rs`. Methods: [Line
+parameters](../theory/line-parameters.md).
+
+| Case | Source | Printed | Tolerance |
+|---|---|---|---|
+| electrical-001 | W. H. Kersting, *Distribution System Modeling and Analysis*, Ex. 4.1, as printed in T. Overbye, ECEN 667 Lecture 4 (Texas A&M, 2019), slide 16 | the 3×3 phase impedance matrix, Ω/mile (Carson's first terms, neutral reduced out) | 0.0002 Ω/mile |
+| electrical-002 | the same, slides 20–21 | the reduced potential coefficients (mile/µF) and four capacitances (µF/mile) | 0.15 %; 0.00008 µF/mile |
+| electrical-003 | the same matrix's symmetrical components (reference script) | z1, z0, z2 (no published sequence values found) | 0.0006 Ω/mile |
+| electrical-004 | T. Overbye, ECEN 667 Lecture 4 (2019), slides 7–8 | triple bundles, transposed: R = 0.02 Ω/km, L = 9.63e-7 H/m, C = 1.17e-11 F/m | the printed figures (0.5 %) |
+| electrical-010…016 | Carson's integral by quadrature (`reference_electrical.py`) | the earth term, a = 0.02…28 | \( 10^{-6} \) (\( 10^{-5} \) above a = 15) |
+| electrical-020, 021 | the complex depth's closed form (`reference_electrical.py`) | its earth term | \( 10^{-6} \) |
+
+The geometry of Kersting's example is taken from the distances the slides
+print and the IEEE test feeders' spacing ID-500 (phase c 7.0 ft from a);
+reproducing all twelve matrix values within their rounding confirms it.
+Two of the slides' printed capacitances (cc, bc) are not the inverse of
+their own printed potential coefficients and are left out. The slide of
+electrical-004, like textbooks, averages the potential coefficients over
+the transposition (equal charges along the line); the program averages the
+capacitances (the stretches in parallel at one voltage), 1.4 % higher on
+that line — the case checks the textbook's value, computed from the
+program's own matrices.
+
 ## What the cases showed
 
 - The code agreed with every independent reference to the tolerances
@@ -348,4 +376,8 @@ Two cases need a word:
 Time-based creep (not modelled), non-linear stress-strain against
 published curves (none provided; the non-linear cases use synthetic and
 invented curves), thermal ratings against a published TB 601
-example (none provided yet), and bundles and jumpers by textbook cases.
+example (none provided yet), and bundles and jumpers by textbook cases. Line parameters: no openly
+published worked example of Carson's full series (only the first terms
+in the distribution examples) nor of sequence impedances with their
+inputs was found; those are checked against Carson's integral by
+quadrature and against the transform of a published matrix.
