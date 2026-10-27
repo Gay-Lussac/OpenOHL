@@ -5,4 +5,4 @@ description = "Test plugin: wire colours from an invented colour table (owner \"
 sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/wire_colours.wasm"
-extension-points = ["wire-colours"]
+extension-points = ["wire-colours", "system-styles"]

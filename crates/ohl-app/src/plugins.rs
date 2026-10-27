@@ -634,7 +634,11 @@ impl Plugins {
     pub fn wire_colour_dirs(&self) -> Vec<(String, PathBuf)> {
         self.listed
             .iter()
-            .filter(|l| self.enabled(l) && l.found.provides(ohl_plugins::WIRE_COLOURS))
+            .filter(|l| {
+                self.enabled(l)
+                    && (l.found.provides(ohl_plugins::WIRE_COLOURS)
+                        || l.found.provides(ohl_plugins::SYSTEM_STYLES))
+            })
             .map(|l| (l.found.name(), l.found.dir.clone()))
             .collect()
     }

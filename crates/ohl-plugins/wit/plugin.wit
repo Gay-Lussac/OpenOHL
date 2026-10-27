@@ -273,3 +273,77 @@ world wire-colour-plugin {
 world wire-colours-export {
     export wire-colours;
 }
+
+/// Styles a plugin suggests for the line's electrical systems (optional
+/// export of any plugin, extension point `system-styles`), e.g. a
+/// utility's table of circuit colours, the line codes that tell a
+/// system's phases apart when wires are drawn by system, and the phase
+/// angles. Applied only when the user asks (Line › Sections › Wire colours
+/// from a plugin…). Added 2026-10-27 to interface version 0.3 without
+/// changing anything else: plugins built before load as they are, and give
+/// none.
+interface system-styles {
+    /// An electrical system of the line.
+    record system-info {
+        /// Its id.
+        id: string,
+        /// Its name.
+        name: string,
+        /// Who owns it ("" without one).
+        owner: string,
+        /// Its number in the owner's register ("" without one).
+        number: string,
+        /// Nominal voltage, kV.
+        voltage-kv: f64,
+        /// AC frequency, Hz (none: not given, or DC).
+        frequency-hz: option<f64>,
+        /// Direct current.
+        dc: bool,
+        /// Its phases' labels, in order.
+        phases: list<string>,
+        /// The plugin's own column values on the system (column name,
+        /// value).
+        fields: list<tuple<string, string>>,
+        /// How many sections carry it.
+        sections: u32,
+    }
+
+    /// What is suggested for one phase (none: left as it is).
+    record phase-style {
+        /// Line code when wires are drawn by system: `-` solid, else dots
+        /// and dashes repeated (e.g. `.-`).
+        code: option<string>,
+        /// Phase angle, degrees (AC).
+        angle-deg: option<f64>,
+    }
+
+    /// What is suggested for one system.
+    record system-style {
+        /// Its colour, "#rrggbb" (none: left as it is).
+        color: option<string>,
+        /// Per phase, in the order given (fewer: the rest left as they
+        /// are).
+        phases: list<phase-style>,
+    }
+
+    /// One style per system, in the order given. The error says why there
+    /// are none.
+    system-styles: func(systems: list<system-info>) -> result<list<system-style>, string>;
+}
+
+/// A plugin that suggests system styles only (extension point
+/// `system-styles`).
+world system-style-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export system-styles;
+}
+
+/// The `system-styles` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world system-styles-export {
+    export system-styles;
+}
