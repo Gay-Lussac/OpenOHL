@@ -276,3 +276,30 @@ world code-check-rules-plugin {
     include code-check-plugin;
     export rule-presets;
 }
+
+/// The weather a check plugin suggests for one of its checks (optional
+/// export, looked for by the host on its own; 2026-10-27): the window of
+/// that check ticks the project's weather case matching it when it opens
+/// with none chosen (e.g. a code's unequal wind check at 10 °C and 650 Pa).
+/// Added to interface version 0.3 without changing anything else: plugins
+/// built before load as they are, and suggest none.
+interface check-weather {
+    /// A weather case to look for among the project's.
+    record weather-hint {
+        /// Temperature, °C.
+        temperature-c: f64,
+        /// Wind pressure, Pa.
+        wind-pa: f64,
+        /// With ice (else none).
+        ice: bool,
+    }
+
+    /// The weather suggested for check `check` (its id), if any.
+    check-weather: func(check: string) -> option<weather-hint>;
+}
+
+/// The `check-weather` export alone: how the host finds it in any check
+/// plugin (not a world to build plugins for).
+world check-weather-export {
+    export check-weather;
+}

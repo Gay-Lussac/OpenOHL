@@ -604,6 +604,14 @@ not `#rrggbb`, is refused with the plugin's name. The test plugin
 
 ## Check plugins
 
+*Suggested weather (2026-10-27):* a check plugin may also give the optional
+export `check-weather` (`code.wit`; looked for by the host on its own, a
+0.3 plugin without it unchanged): for a check's id, a weather case to look
+for — temperature, wind pressure, with ice or not. The check's window,
+opened with no case chosen, ticks the project's case matching it (the same
+temperature within 0.5 °C and ice, the wind within 1 Pa; else the windiest
+of that temperature and ice; else as before, the windiest case).
+
 A plugin that runs a check implements the `check` interface
 (`crates/ohl-plugins/wit/code.wit`: the `check-plugin` world, or
 `code-check-plugin` for a design-code plugin that also runs checks) and

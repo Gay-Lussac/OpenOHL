@@ -144,6 +144,18 @@ pub use wire_colours_bindings::exports::ohl::plugin::wire_colours::WireGroup;
 /// Export name of the optional `wire-colours` interface of any plugin.
 pub const WIRE_COLOURS_EXPORT: &str = "ohl:plugin/wire-colours@0.1.0";
 
+mod check_weather_bindings {
+    wasmtime::component::bindgen!({
+        world: "check-weather-export",
+        path: "wit",
+    });
+}
+
+pub use check_weather_bindings::exports::ohl::plugin::check_weather::WeatherHint;
+
+/// Export name of the optional `check-weather` interface of check plugins.
+pub const CHECK_WEATHER_EXPORT: &str = "ohl:plugin/check-weather@0.1.0";
+
 /// Extension point of plugins suggesting wire colours (the
 /// `wire-colours` export).
 pub const WIRE_COLOURS: &str = "wire-colours";
@@ -1692,6 +1704,48 @@ impl WasmHost {
             }
         }
         Ok(given)
+    }
+
+    /// The weather the check plugin in `dir` suggests for its check
+    /// `check`, from its `check-weather` export (none without the export
+    /// or without a suggestion; a hint that is not finite is refused).
+    pub fn check_weather(
+        &self,
+        dir: &Path,
+        check: &str,
+    ) -> Result<Option<WeatherHint>, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(None);
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component
+            .get_export_index(None, CHECK_WEATHER_EXPORT)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let name = p.manifest.plugin.name.clone();
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest, what, p.limits);
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        let export = check_weather_bindings::CheckWeatherExport::new(&mut p.store, &instance)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let hint = export
+            .ohl_plugin_check_weather()
+            .call_check_weather(&mut p.store, check)
+            .map_err(|e| classify(e, &p.manifest, "check-weather", p.limits))?;
+        if let Some(h) = &hint
+            && !(h.temperature_c.is_finite() && h.wind_pa.is_finite() && h.wind_pa >= 0.0)
+        {
+            return Err(PluginError::Runtime(format!(
+                "plugin {name}: a check weather that is not a number"
+            )));
+        }
+        Ok(hint)
     }
 
     /// The styles the plugin in `dir` suggests for `systems` (one each, in
