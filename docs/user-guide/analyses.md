@@ -75,9 +75,12 @@ along = "sine"                      # or "constant"
 CSV columns: case, method, both spans, distance, required, overlap, where
 (fraction of the span), both ellipses' axes, the first wire's position.
 
-In the desktop app: **Checks › Galloping ellipses…** — choose the parameter
-file (the project's `.ohlg`, or one next to a line file, is chosen first) and the weather case,
-then **Run** (the window's footer, bottom left).
+In the desktop app: **Checks › Galloping ellipses…** — choose the weather
+case (*2 Scope*) and the parameter file (*3 Rules*; the project's `.ohlg`,
+or one next to a line file, is chosen first), then **Run** (the window's
+footer, bottom left). The Results tab lists every pair and method (spans
+named from 1), *Only violations* on by default; a row clicked selects its
+span and draws it in the weather case of the run.
 
 ## Blowout and the right of way
 
@@ -128,7 +131,15 @@ window: a values file (else the project's copy, else the plugin's), the
 plugin's choices, the weather cases (each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
 (1 m), and nearby spans (conductors not between the same two
-structures, within a distance). The window opens floating; its **📌**
+structures, within a distance). On the check windows' layout
+(2026-10-27): *1 What it checks* with *How it is computed* folded, *2
+Scope* (cases, circuits, stations, nearby spans), *3 Rules* (the
+circuits' levels, the values used); the Results tab holds the saved
+report and *Save*, the verdict and the table (*Only violations* — the
+pairs below z — on by default, sortable, grouped by case, span or rule).
+The setup is kept in the project per project line (`app.phase_distance`,
+`app.unequal_wind`). Without its plugin the window says so once and Run
+is greyed ("Before Run: the check plugin: …"). The window opens floating; its **📌**
 docks it as a panel (next to Properties), like every check window
 ([one design](desktop-app.md#check-windows-one-design)). When the
 plugin needs a value per circuit (a plugin column, e.g. an insulation
@@ -399,10 +410,28 @@ the classes whose role is vegetation; the **search distance** (half width
 of the corridor read, ± 50 m), the **points kept per span** in the table,
 **isoclearance lines** (interval, hide above, grid).
 
-**Results.** The table lists per span the required clearance applied, the
-grow-in and fall-in counts, the nearest point and the worst fall-in margin
-with their case and position; **Worst points** below lists the worst of
-each span. **Every** grow-in point and **every** danger tree found is
+**Scope** (2026-10-27, the owner: some circuits "we will model but we
+don't need them checked"; built, in active development, not approved
+yet). In the panel's *2 Scope*: the **circuits**, the **routes and
+alignments** and the **sections** checked, and the **weather cases** —
+each a tick menu that stays open (search, All / None / Invert). The line is
+still solved whole (sections solved together stay together); the spans
+of the wires out of scope are left out of the check: no grow-in point or
+danger tree is looked for near them, and the scope is said in the run's
+notes. The panel's setup — settings, cases (by name), scope, overrides —
+is **kept in the project** for each project line (project setting
+`app.vegetation.<line>`), read again when the project opens.
+
+**Results** (the panel's Results tab, opened by itself after a run; [the
+check windows' layout](desktop-app.md#check-windows-setup-and-results)).
+A verdict first (spans with vegetation, grow-in points and fall-in trees,
+the nearest to the clearance), then the table: per span (named from 1,
+"S1 span 1" the first) the required clearance applied *c [m]*, the
+grow-in and fall-in counts, the nearest point *[m]* and the worst fall-in
+margin *[m]* with their case and position — *Only violations* on by
+default (the spans with grow-in or fall-in), sortable by any column, a
+row clicked goes to its span; **Worst points** folded below lists the
+worst of each span. **Every** grow-in point and **every** danger tree found is
 drawn, on the layers *Vegetation: grow-in* (a dot) and *Vegetation:
 danger trees* (the trunk from base to top) in the 3D view, the plan and
 the profile (within the line width), in two **colours** chosen in the
@@ -413,8 +442,9 @@ point any more: the table names it. *Isoclearance lines* are drawn in the
 colours of their clearance. **The layers show the run of the open panel
 only: closing the panel takes them off the views** (also when ticked in
 View › Layers); reopening it, or reopening a saved run, draws them again.
-Docking or moving the panel keeps them. **Export CSV…** writes the worst
-points of every span and every point found (with case and position),
+Docking or moving the panel keeps them. **Export points CSV…** writes the worst
+points of every span and every point found (with case and position;
+**Export CSV…** under it, the rows of the table as shown),
 **Export lines (CSV)…** the isoclearance lines.
 
 **Presets.** The **Preset** dropdown lists the vegetation presets of
@@ -470,7 +500,12 @@ windows do: the settings in five groups, each with a heading and a link
 **user guide ↗** to its section below, a line under each value saying
 what it does (a longer text on hover), and small drawings that follow
 the values typed (the distance around a conductor, the wind positions
-and the swing arc, the volumes grouped, a mesh where two tubes meet).
+and the swing arc, the volumes grouped, a mesh where two tubes meet). On
+the check windows' layout (2026-10-27): *2 Scope* holds the weather cases
+and *What is included*, *3 Rules* the distance, *4 Settings* the wire
+positions and the mesh; the volumes, *Save* and *Export* are in the
+Results tab. The setup is kept in the project per project line
+(`app.safety_volumes`).
 
 #### Safety volumes: wire positions
 
@@ -621,7 +656,8 @@ temperature at which the model's span sags as surveyed
 Sections with creep or load conditions need their weather cases:
 `--weather`.
 
-Desktop app: **Checks › As-built wires…**.
+Desktop app: **Checks › As-built wires…** (spans named from 1 in its
+table since 2026-10-27; Run greyed without a point cloud).
 
 ## Electrical: line parameters
 
@@ -645,9 +681,10 @@ and the line's **electrical settings**:
 
 **In OHL-Design:** Checks › Electrical › **Line parameters…**. The
 settings at the top are the line's (each change one undoable command,
-kept in the project). Choose the weather case in the footer (the wires as
-solved in it; its temperature is the conductors' for the resistances) and
-**Run**. The table gives per circuit the positive and zero sequence
+kept in the project). Choose the weather case in *2 Scope* (the wires as
+solved in it; its temperature is the conductors' for the resistances; it
+was in the footer until 2026-10-27) and **Run**; the results open in the
+Results tab. The table gives per circuit the positive and zero sequence
 R, X (Ω/km) and B (µS/km) of the ideally transposed line and the totals;
 the + button shows the circuit's stretches (consecutive spans with the same
 sections). Hover a circuit to see how much its sequences couple as built
@@ -741,8 +778,9 @@ longer in the line falls back to the default.
   a CSV with a header naming `x`, `y` and `z` (elevation) or `height`
   (above the ground), optionally `name`.
 
-Choose the weather case in the footer and **Run** (a progress bar and
-**Stop** while it runs). The results: the currents used, the earth wires'
+Choose the weather case in *2 Scope* (in the footer until 2026-10-27),
+the currents under it, and **Run** (a progress bar and **Stop** while it
+runs); the results open in the Results tab. The results: the currents used, the earth wires'
 currents, the notes (what was assumed); the chosen profile plotted —
 B against the distance from the axis (right positive), the cycle's
 largest value fainter, the limit dashed, the value under the pointer; a

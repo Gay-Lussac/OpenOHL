@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <rect width="1000" height="620" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Radial clearance: the shortest distance in any direction, with the wire swinging</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. From docs/theory/clearances.md (The two measures; Wind positions; The radial distance to the arc) and terrain.md ([wind]).</text>
+
+  <!-- Panel A -->
+  <rect x="20" y="70" width="560" height="530" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">A  Seen along the span, at mid-span</text>
+  <!-- axis point -->
+  <circle cx="300" cy="130" r="6" fill="#333"/>
+  <text x="312" y="126">attachment axis (through the string tops;</text>
+  <text x="312" y="140">at a dead end, the clamps)</text>
+  <!-- band: annular sector from angle -50 to +50 deg (from vertical), r=150..R=200 -->
+  <path d="M 185.1,226.4 A 150 150 0 0 0 414.9,226.4 L 453.2,258.6 A 200 200 0 0 1 146.8,258.6 Z" fill="#1f6fd1" fill-opacity="0.12" stroke="#1f6fd1" stroke-dasharray="5,4"/>
+  <!-- positions -->
+  <line x1="300" y1="130" x2="300" y2="310" stroke="#999" stroke-dasharray="2,3"/>
+  <circle cx="300" cy="310" r="8" fill="none" stroke="#1f6fd1" stroke-width="3"/>
+  <text x="312" y="330" fill="#1f6fd1">still air (R₀)</text>
+  <line x1="300" y1="130" x2="166" y2="242" stroke="#999" stroke-dasharray="2,3"/>
+  <circle cx="166" cy="242" r="8" fill="none" stroke="#1f6fd1" stroke-width="3"/>
+  <text x="60" y="236" fill="#1f6fd1">blown left</text><text x="60" y="250" fill="#1f6fd1">(R_L, φ_L)</text>
+  <line x1="300" y1="130" x2="430" y2="239" stroke="#999" stroke-dasharray="2,3"/>
+  <circle cx="430" cy="239" r="8" fill="none" stroke="#1f6fd1" stroke-width="3"/>
+  <text x="446" y="236" fill="#1f6fd1">blown right</text><text x="446" y="250" fill="#1f6fd1">(R_R, φ_R)</text>
+  <text x="40" y="300" fill="#1f6fd1" font-size="12">shaded: the swing band,</text>
+  <text x="40" y="314" fill="#1f6fd1" font-size="12">radii r…R, angles φ_L…φ_R</text>
+  <!-- target -->
+  <circle cx="500" cy="380" r="6" fill="#2e8b57"/>
+  <text x="510" y="384" fill="#2e8b57">LiDAR point</text>
+  <line x1="496" y1="375" x2="428" y2="290" stroke="#c0392b" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="482" y="320" fill="#c0392b">radial distance</text>
+  <text x="482" y="334" fill="#c0392b">(less the margin m)</text>
+  <!-- ground -->
+  <path d="M30,520 L200,515 L330,522 L560,512" fill="none" stroke="#6b4f2a" stroke-width="2"/>
+  <line x1="300" y1="318" x2="320" y2="519" stroke="#555" stroke-dasharray="3,3" marker-end="url(#g)"/>
+  <text x="330" y="470" fill="#555">to the ground: the nearest point</text>
+  <text x="330" y="484" fill="#555">of the surface in any direction</text>
+  <text x="30" y="560" fill="#555" font-size="12">Wind steps instead: still air and every pressure k·Δp up to the case's (e.g. Δp = 50 Pa),</text>
+  <text x="30" y="576" fill="#555" font-size="12">each solved by the line's solver: exact at those pressures. Arc: 3 solves per windy case.</text>
+
+  <!-- Panel B: legend / values -->
+  <rect x="600" y="70" width="380" height="530" fill="none" stroke="#ccc"/>
+  <text x="610" y="90" font-weight="bold">B  What the window does</text>
+  <g font-size="13">
+    <text x="610" y="118">1. Each rule's weather cases are solved:</text>
+    <text x="626" y="136">still air, and with wind from the sides</text>
+    <text x="626" y="154">chosen (left, right or both).</text>
+    <text x="610" y="182">2. Swing arc (option): every position</text>
+    <text x="626" y="200">between the blowouts, as a band</text>
+    <text x="626" y="218">r = min(R_L, R₀, R_R) … R = max(…),</text>
+    <text x="626" y="236">widened by the band margin m</text>
+    <text x="626" y="254">(default 0.15 m; jumpers: own margin,</text>
+    <text x="626" y="272">default 0 m).</text>
+    <text x="610" y="300">3. For each target (ground, LiDAR points</text>
+    <text x="626" y="318">of the classes ticked): the shortest</text>
+    <text x="626" y="336">3D distance to the conductor's surface</text>
+    <text x="626" y="354">(each subconductor of a bundle).</text>
+    <text x="610" y="382">4. Compared with the rule's distance at</text>
+    <text x="626" y="400">the wire's voltage; the lowest per span</text>
+    <text x="626" y="418">is listed with its case and wind:</text>
+    <rect x="620" y="430" width="350" height="56" fill="#f6f6f6" stroke="#ddd"/>
+    <text x="630" y="450" font-family="Menlo, monospace" font-size="12">S2 span 2  Trees  required 4.00</text>
+    <text x="630" y="470" font-family="Menlo, monospace" font-size="12">found 3.12  high wind, 600 Pa left</text>
+    <text x="610" y="512">Vertical vs radial: the vertical looks</text>
+    <text x="626" y="530">only straight down (within w); the radial</text>
+    <text x="626" y="548">in every direction, so a point beside the</text>
+    <text x="626" y="566">wire counts too.</text>
+  </g>
+</svg>

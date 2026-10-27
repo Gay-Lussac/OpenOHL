@@ -77,7 +77,7 @@ tensions, string checks, distance between conductors). **Structures and sections
 groups** column of the Structures and Sections tables, ticked in its dropdown (the case file's groups only, nothing typed; a group name has no semicolon)
 (a wind study's lower winds at some pylons; the snow load varying along
 the line by section). Every check has two ticks — beside **Run**, in the vertical and radial
-clearance windows under *What is solved*:
+clearance windows under *2 Scope*:
 **structure override** and **section override**. Ticked, a result at a
 structure (a string, a structure's loads) or on a span takes only the
 check's cases that are in that structure's or section's groups — a span

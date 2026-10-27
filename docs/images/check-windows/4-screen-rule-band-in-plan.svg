@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+    <marker id="o" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b9770e"/></marker>
+  </defs>
+  <rect width="1000" height="560" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Screen rule: a band in plan, at any height</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. From docs/user-guide/terrain.md (Clearance rules: screen, 2026-10-27). Values: the guide's example, 5 m + 0.01 m/kV.</text>
+
+  <rect x="20" y="70" width="600" height="470" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">A  In plan</text>
+  <!-- towers -->
+  <rect x="55" y="285" width="16" height="16" fill="#333"/>
+  <rect x="565" y="285" width="16" height="16" fill="#333"/>
+  <!-- band -->
+  <rect x="63" y="173" width="510" height="240" fill="#f39c12" fill-opacity="0.13"/>
+  <line x1="63" y1="173" x2="573" y2="173" stroke="#f39c12" stroke-dasharray="6,4"/>
+  <line x1="63" y1="413" x2="573" y2="413" stroke="#f39c12" stroke-dasharray="6,4"/>
+  <line x1="63" y1="293" x2="573" y2="293" stroke="#1f6fd1" stroke-width="3"/>
+  <text x="80" y="285" fill="#1f6fd1">wire (its plan position)</text>
+  <line x1="530" y1="293" x2="530" y2="177" stroke="#b9770e" marker-end="url(#o)"/>
+  <text x="455" y="236" fill="#b9770e">b = 8.80 m</text>
+  <!-- objects -->
+  <g>
+    <rect x="240" y="196" width="10" height="10" fill="#2e8b57"/>
+    <line x1="245" y1="206" x2="245" y2="289" stroke="#c0392b" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+    <text x="256" y="206" fill="#2e8b57">lamp post (LiDAR class)</text>
+    <text x="256" y="246" fill="#c0392b">6.10 m in plan</text>
+    <text x="256" y="260" fill="#c0392b">&lt; b → reported</text>
+  </g>
+  <rect x="380" y="130" width="10" height="10" fill="#999"/>
+  <text x="396" y="140" fill="#777">beyond b: not reported</text>
+  <rect x="160" y="370" width="10" height="10" fill="#2e8b57"/>
+  <text x="176" y="380" fill="#2e8b57">inside b: reported, whatever its height</text>
+  <text x="30" y="470">Every point of the rule's classes within b of the wire in plan is reported.</text>
+  <text x="30" y="490">The result says "6.10 m in plan, within b = 8.80 m": a distance in plan</text>
+  <text x="30" y="510">and the band, not a vertical clearance. Points targets only.</text>
+
+  <rect x="640" y="70" width="340" height="470" fill="none" stroke="#ccc"/>
+  <text x="650" y="90" font-weight="bold">B  The rule</text>
+  <rect x="650" y="104" width="320" height="118" fill="#f6f6f6" stroke="#ddd"/>
+  <g font-family="Menlo, monospace" font-size="12">
+    <text x="660" y="124">name = "Lamp posts"</text>
+    <text x="660" y="142">target = "points"</text>
+    <text x="660" y="160">classes = [64]</text>
+    <text x="660" y="178">screen = true</text>
+    <text x="660" y="196">vertical = { base = "5 m",</text>
+    <text x="660" y="214">  per_kv = "0.01 m", above_kv = 0 }</text>
+  </g>
+  <text x="650" y="250">With screen = true the vertical</text>
+  <text x="650" y="268">requirement is the half width b of</text>
+  <text x="650" y="286">the band, by the wire's voltage:</text>
+  <rect x="660" y="300" width="300" height="24" fill="#eee"/>
+  <text x="670" y="317" font-weight="bold">voltage</text><text x="820" y="317" font-weight="bold">b [m]</text>
+  <text x="670" y="342">0 kV (earth wire)</text><text x="820" y="342">5.00</text>
+  <text x="670" y="364">220 kV</text><text x="820" y="364">7.20</text>
+  <text x="670" y="386">380 kV</text><text x="820" y="386">8.80</text>
+  <text x="650" y="420">For a horizontal distance a code</text>
+  <text x="650" y="438">gives that has no measure of its own</text>
+  <text x="650" y="456">(e.g. to lamp posts). The class</text>
+  <text x="650" y="474">number 64 is an example.</text>
+</svg>

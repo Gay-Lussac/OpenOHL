@@ -10,6 +10,79 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Check windows: Setup and Results tabs, shared parts, Internal clearances under Wire clearances (owner, 2026-10-27)**
+
+- The second review of the check windows (what is inside them: the order
+  of the parts, the scope, the rule editors, the result tables;
+  [UI review 2026-10-27](ui-review-2026-10-27.md)) proposed one layout.
+  The owner's answers:
+  - "Two tabs, yes": every check window has **Setup** and **Results
+    (n)**. The setup scrolls; the results table **fills its tab** (its
+    height follows the window: no scroll inside a scroll, no handle).
+    Results opens by itself when a run ends; Setup again when Run greys
+    with a "Before Run" reason.
+  - Wire clearances and ground clearances stay **two windows** — "two
+    because one is with the model itself while the other is to the
+    ground" — on the same layout.
+  - "Internal clearances should be just under the wire clearance":
+    Checks › **Wire clearances** › … Show results, then **Internal
+    clearances…** (a clearance within the model: the wires to the
+    structure); no more among the Analyses.
+  - Earlier today: Vegetation needs a **circuit choice** ("some of them
+    we will model but we don't need them checked"); results lists big;
+    nothing cramped.
+- **Shared parts** (`crates/ohl-app/src/check_ui.rs`, on top of
+  `check_help`'s window, body and footer): `tabs` and `results_area`;
+  `section` (the fixed order *1 What it checks* with *How it is computed*
+  folded, *2 Scope*, *3 Rules*, *4 Settings*); `ScopePicker` (circuits,
+  routes and alignments, sections, weather cases — tick menus on
+  `tick_list` that stay open, the scope in one line; replaces
+  `clearance_zones::circuit_choice` / `route_choice`, removed);
+  `ResultTable` (the verdict banner generalised from the ground windows',
+  *Only violations*, *Search*, *Group by*, *Export CSV…* of the rows
+  shown, columns sorted by a click on the header, units in brackets,
+  spans through `Selection::describe`, a row clicked returned, rows drawn
+  only in view); `run_footer` / `job_footer` (Run, Stop, progress and time
+  left, "Before Run: …", the scope, the window's extras); `Kept` (a setup
+  as a project setting per project line, the magnetic field's way made
+  generic). `job::Job` has Stop (`stop`, a cancel token handed to the
+  computation where it takes one) and counts its answers (`generation`,
+  which opens Results). `result_case::From::Check(Panel)`: a Wire tensions
+  row or a Galloping pair clicked draws its span in its weather case.
+- **Applied to**: Vertical and Radial clearances, the Clearances window
+  (layout only: its rule editor and run model are phase 2), Vegetation
+  (circuits / routes / sections scope: the line solved whole, the spans
+  out of scope left out of the check), Safety volumes, Distance between
+  conductors (and under unequal wind), Wire tensions, String checks,
+  Internal clearances, Galloping, As-built wires, Thermal rating, Line
+  parameters, Magnetic field (the weather case moved from the footer into
+  Scope); Structure loads, Bill of materials and Spot structures have the
+  shared Run footer (their tables unchanged); Performed checks unchanged
+  (no footer). Default size 860 × 760 px.
+- **Recommended, applied; the owner may change**: Vegetation, Safety
+  volumes and Distance between conductors keep their setup in the
+  project (`app.vegetation`, `app.safety_volumes`, `app.phase_distance`,
+  `app.unequal_wind` per project line, [data model](data-model.md));
+  *Only violations* on by default; spans named from 1 everywhere
+  (Vegetation, Galloping and As-built wires said "span 0" for the first);
+  Internal clearances refuses a rule whose distance is not set ("Before
+  Run: …", as the ground windows do); a header clicked a third time goes
+  back to the check's own order (worst first).
+- **Drawings**: the review's six drawings (vertical, radial, wire to
+  wire, screen band, vegetation, how a rule is read) are in the user
+  guide (`docs/images/check-windows/`, Desktop application › Check
+  windows: Setup and Results). In the windows, *How it is computed* keeps
+  the painter drawings of `check_help` (the SVGs carry text, and the
+  program's SVG renderer is built without text: not drawn in the app
+  yet).
+- **Next (phase 2, not built)**: the shared rule table (`RuleTable`:
+  compact rows, the selected rule's editor below, one *Preset ▾*); the
+  wire clearances running every weather case of their rules with the
+  wind and case pairs, as the ground windows do; scope (circuits,
+  routes) for Wire tensions, String checks, Internal clearances,
+  Galloping, As-built wires; the tables of Structure loads, Bill of
+  materials, Safety volumes and Line parameters on `ResultTable`.
+
 **Vegetation: a voltage above a distance table's last row warns in the report (owner, 2026-10-27)**
 
 - Asked whether Vegetation should refuse it like the clearance rules: "Yes
