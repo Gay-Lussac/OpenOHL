@@ -857,7 +857,14 @@ version 2: the member kind `tension`; version 3: a member's `bending` and
 `check`; version 4, 2026-10-27: `[analysis] single_angle_moments`,
 `Analysis::single_angle_moments`, default false — a single angle's frame
 end moments left out of its usage, `check::is_single_angle`; a member's
-design data `[member.design]`, `Member::design`, module `design`) and
+design data `[member.design]`, `Member::design`, module `design`;
+`[analysis] capacity` — `Analysis::capacity`, `CapacityMethod::Asce10`
+(`"asce10-97"`, the default: module `asce10`, `asce10::capacity` per
+member, its assumptions in `MemberUsage::governs` after
+`check::ASSUMED`) or `Simple` (`"simple"`, `check::SIMPLE`);
+`check::capacity_note`; a material's `ultimate`, `Section::ultimate`; in a
+structure file the same `[analysis]` key, raised to version 8 by
+OHL-Structure when set) and
 poles `.ohlp` (`ohl-pole`) next to the `.ohls`
 ([Structure analysis](../user-guide/structure-analysis.md)); clearance
 rules `.ohlr`; thermal ambient `.ohlta`; unit costs `.ohlcost`; galloping

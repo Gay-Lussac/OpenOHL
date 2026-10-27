@@ -13,7 +13,7 @@ fn close(a: f64, b: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * b.abs().max(1e-30)
 }
 
-const MATERIAL: &str = "[analysis]\nnonlinear = false\n\
+const MATERIAL: &str = "[analysis]\nnonlinear = false\ncapacity = \"simple\"\n\
     [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n";
 
 /// A bar from a pinned joint to a joint held along y and z, pulled or

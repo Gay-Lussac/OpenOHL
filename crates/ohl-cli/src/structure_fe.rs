@@ -38,6 +38,11 @@ pub struct FeArgs {
     /// First order (no P-Delta), whatever the model says.
     #[arg(long)]
     linear: bool,
+    /// Member capacities, whatever the model says: `asce10-97` (ASCE
+    /// 10-97, the default) or `simple` (Euler buckling, gross yield: not a
+    /// design code, unsafe compared with design codes).
+    #[arg(long)]
+    capacity: Option<String>,
     /// Members printed per case, worst first.
     #[arg(long, default_value_t = 10)]
     top: usize,
@@ -203,6 +208,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     if args.linear {
         model.analysis.nonlinear = false;
     }
+    if let Some(c) = &args.capacity {
+        model.analysis.capacity = ohl_structures_fe::CapacityMethod::parse(c)?;
+    }
     let weight = if model.analysis.self_weight {
         args.weight_factor
     } else {
@@ -329,6 +337,10 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ohl_structures_fe::convergence_note(&s) {
             println!("  {note}");
         }
+        println!(
+            "  {}",
+            ohl_structures_fe::check::capacity_note(&model, &usage)
+        );
         let mut sorted: Vec<&ohl_structures_fe::MemberUsage> =
             usage.iter().filter(|u| u.usage.is_some()).collect();
         sorted.sort_by(|a, b| b.usage.unwrap_or(0.0).total_cmp(&a.usage.unwrap_or(0.0)));

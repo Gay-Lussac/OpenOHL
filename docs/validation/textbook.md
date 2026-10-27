@@ -334,6 +334,32 @@ No openly published field profile with all its inputs was found yet (to
 look for: IEC 62110's examples, CIGRE brochures, papers with
 measurements).
 
+### Member capacities by ASCE 10-97 (`benchmarks/structures-fe/asce10.toml`)
+
+Calculation `structures.fe` (output `usage_m`), on invented single bars
+(10 cm², \\( r = 2.236 \\) cm, \\( r_v = 1.414 \\) cm, E = 210 GPa,
+strength factor 1). The expected usages are the force over the capacity
+computed by hand from the published member formulas of ASCE 10-97,
+*Design of Latticed Steel Transmission Structures* (ASCE), metric form
+([theory](../theory/structures-fe.md#member-capacity-methods)); each case's
+notes give L/r, KL/r, \\( F_{cr} \\) and the capacity. Tolerance
+\\( 10^{-9} \\) (closed forms).
+
+| Case | What |
+|---|---|
+| asce10-001 | concentric, L/r 212 (curve 4): the Euler stress |
+| asce10-002 | both ends eccentric, L/r 106, f_y 235 MPa (curve 3) on the parabola |
+| asce10-003 | one end eccentric (curve 2), length ratio 0.5 about the minor axis, w/t 14 above the limit |
+| asce10-004 | L/r 177 restrained at both ends (curve 6), w/t 25 (elastic local buckling) |
+| asce10-005 | tension: net section (one leg, 0.9), bolt shear, bearing — bolt shear governs |
+| asce10-006 | compression of a short bolted bar: bolt shear below the column |
+| asce10-007 | compression without design data: the assumptions on the safe side (curve 3) |
+| asce10-008 | tension without design data: the gross section |
+
+Not published worked examples (none with all inputs found openly); the
+method was also compared, privately, with a tower design program's
+capacities on a real line's towers (theory page).
+
 ## What the cases showed
 
 - The code agreed with every independent reference to the tolerances

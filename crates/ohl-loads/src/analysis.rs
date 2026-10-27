@@ -254,6 +254,14 @@ impl Analyses {
                 if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
                     notes.push(format!("model: {note}"));
                 }
+                // The simple check is said (unsafe); ASCE 10-97, the
+                // default, says its assumptions in what governs.
+                if model.analysis.capacity == ohl_structures_fe::CapacityMethod::Simple {
+                    notes.push(format!(
+                        "model: {}",
+                        ohl_structures_fe::check::capacity_note(model, &usage)
+                    ));
+                }
                 match worst(&usage) {
                     Some(w) => Some(Check {
                         method: Method::Fe,
