@@ -306,36 +306,6 @@ impl TabViewer for Viewer<'_> {
                 r.placed_ui(ui, self.rs);
                 None
             }
-            Tab::PhaseDistance => {
-                let out = r.phase_distance.ui(ui, &r.model);
-                r.phase_distance.apply_values(&mut r.model);
-                r.phase_distance_out(out, crate::phase_distance::Kind::Span);
-                None
-            }
-            Tab::UnequalWind => {
-                let out = r.unequal_wind.ui(ui, &r.model);
-                r.unequal_wind.apply_values(&mut r.model);
-                r.phase_distance_out(out, crate::phase_distance::Kind::UnequalWind);
-                None
-            }
-            Tab::CheckLibrary => {
-                let out = r.check_library.ui(ui, &r.model);
-                r.check_library_out(out);
-                None
-            }
-            Tab::Loads => {
-                r.loads.poll();
-                if let Some(id) = r.loads.ui(ui, &r.model) {
-                    r.go_to(Selection::Structure(id));
-                }
-                // Colour structures by usage: the views follow.
-                let marks = r.loads.usage_marks();
-                if marks != r.model.usage_marks {
-                    r.model.usage_marks = marks;
-                    r.view3d.dirty.insert(Layer::Structures);
-                }
-                None
-            }
             Tab::Roles => {
                 crate::remote::roles_ui(ui, &r.model);
                 None
@@ -556,7 +526,6 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         Tab::Table(_) => 2,
         Tab::Python => 3,
         Tab::StructureEditor => 4,
-        Tab::PhaseDistance | Tab::UnequalWind | Tab::CheckLibrary => 5,
         _ => 0,
     };
     if group(&tab) > 0 {
@@ -570,7 +539,6 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
                 w.set_size(match group(&tab) {
                     2 => egui::vec2(1250.0, 560.0),
                     4 => egui::vec2(1150.0, 760.0),
-                    5 => egui::vec2(1050.0, 780.0),
                     _ => egui::vec2(900.0, 620.0),
                 });
             }

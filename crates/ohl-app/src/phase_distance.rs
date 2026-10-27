@@ -374,8 +374,12 @@ pub struct Out {
     pub measure: Option<Measure>,
     /// A command to apply (a report saved).
     pub apply: Option<(String, ohl_session::Command)>,
-    /// The weather case to show (that of the result clicked), by name.
+    /// The weather case of the result clicked, by name: drawn on the
+    /// pair's sections ([`crate::result_case`]; the case shown for the
+    /// line kept).
     pub case: Option<String>,
+    /// The sections of the pair clicked.
+    pub sections: Vec<String>,
     /// The wires to draw, replacing the last (empty: none).
     pub wires: Option<Vec<MeasureWire>>,
 }
@@ -714,7 +718,7 @@ fn value_tables_ui(
                     .on_hover_text(&t.note);
                 egui::Grid::new(("phase-distance-values", ti))
                     .striped(true)
-                    .spacing([10.0, 2.0])
+                    .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
                         for h in &t.columns {
                             ui.label(egui::RichText::new(h).small().strong());
@@ -1398,14 +1402,17 @@ impl PhaseDistanceWindow {
         ui.separator();
         // How it computes and with which values: open, in a box of
         // its own height so the results keep their place.
-        egui::ScrollArea::vertical()
-            .id_salt("phase-distance-how-and-values")
-            .max_height(260.0)
-            .show(ui, |ui| {
+        help::list(
+            ui,
+            "phase-distance-list-1",
+            360.0,
+            egui::ScrollArea::vertical().id_salt("phase-distance-how-and-values"),
+            |ui| {
                 let plugin = self.check().ok().map(|c| c.info.explanation.clone());
                 explanation(ui, plugin.as_deref(), self.kind);
                 self.values_ui(ui, model);
-            });
+            },
+        );
         ui.separator();
         if let Some(what) = self.out_of_date(model)
             && crate::revision::banner(ui, &what, !self.job.running())
@@ -1805,9 +1812,12 @@ impl PhaseDistanceWindow {
                     if crate::case_groups::pick_indices(ui, model, &groups, &mut ticked) {
                         self.cases = ticked.into_iter().collect();
                     }
-                    egui::ScrollArea::vertical()
-                        .max_height(300.0)
-                        .show(ui, |ui| {
+                    help::list(
+                        ui,
+                        "phase-distance-list-2",
+                        420.0,
+                        egui::ScrollArea::vertical(),
+                        |ui| {
                             for (k, n) in names.iter().enumerate() {
                                 let mut on = self.cases.contains(&k);
                                 if ui.checkbox(&mut on, n).changed() {
@@ -1818,7 +1828,8 @@ impl PhaseDistanceWindow {
                                     }
                                 }
                             }
-                        });
+                        },
+                    );
                 });
             }
             let all = circuit_names(model);
@@ -1840,9 +1851,12 @@ impl PhaseDistanceWindow {
                         self.circuits = Some(BTreeSet::new());
                     }
                 });
-                egui::ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
+                help::list(
+                    ui,
+                    "phase-distance-list-3",
+                    420.0,
+                    egui::ScrollArea::vertical(),
+                    |ui| {
                         for name in &all {
                             let mut on = ticked(&self.circuits, name);
                             let label = if name.is_empty() {
@@ -1864,7 +1878,8 @@ impl PhaseDistanceWindow {
                                 }
                             }
                         }
-                    });
+                    },
+                );
             });
             // Under unequal wind the closest approach is exact: no stations.
             if self.kind == Kind::Span {
@@ -1925,13 +1940,15 @@ impl PhaseDistanceWindow {
                     column.as_ref().map_or_else(Vec::new, |c| c.values.clone());
                 let line = &model.line;
                 let ticked = |n: &String| self.circuits.as_ref().is_none_or(|s| s.contains(n));
-                egui::ScrollArea::vertical()
-                    .id_salt("phase-distance-levels-rows")
-                    .max_height(160.0)
-                    .show(ui, |ui| {
+                help::list(
+                    ui,
+                    "phase-distance-list-4",
+                    220.0,
+                    egui::ScrollArea::vertical().id_salt("phase-distance-levels-rows"),
+                    |ui| {
                         egui::Grid::new("phase-distance-levels-grid")
                             .striped(true)
-                            .spacing([12.0, 2.0])
+                            .spacing(help::GRID_SPACING)
                             .show(ui, |ui| {
                                 for h in ["circuit", "kV", title.as_str()] {
                                     ui.label(egui::RichText::new(h).small().strong());
@@ -2025,7 +2042,8 @@ impl PhaseDistanceWindow {
                                     ui.end_row();
                                 }
                             });
-                    });
+                    },
+                );
             });
     }
 
@@ -2082,7 +2100,7 @@ impl PhaseDistanceWindow {
             .show(ui, |ui| {
                 egui::Grid::new("phase-distance-rows")
                     .striped(true)
-                    .spacing([10.0, 3.0])
+                    .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
                         let heads: &[&str] = if unequal {
                             &[
@@ -2199,9 +2217,13 @@ impl PhaseDistanceWindow {
         if let Some((i, k)) = clicked {
             let r = &report.rows[i];
             self.picked = Some(i);
-            if r.pressure.is_none() {
-                // The worst station is in its case: shown.
-                out.case = Some(r.case.clone());
+            // The pair drawn in its case (under unequal wind, also each
+            // conductor at its own wind, below).
+            out.case = Some(r.case.clone());
+            for (section, _) in &r.span {
+                if !out.sections.contains(section) {
+                    out.sections.push(section.clone());
+                }
             }
             out.go = Some(Selection::Span {
                 section: r.span[k].0.clone(),

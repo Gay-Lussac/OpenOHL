@@ -24,6 +24,11 @@
 //! progress while it runs) at the bottom left, under the scrolled body,
 //! always visible however long the window's content is (owner,
 //! 2026-10-21).
+//!
+//! And every check and result window has **one design** (owner,
+//! 2026-10-27, [`window`]): a floating window that docks as a panel with
+//! its 📌 (and floats again with ⬈), the same spacing ([`ITEM_SPACING`],
+//! [`GRID_SPACING`]) and lists whose height the user drags ([`list`]).
 
 use eframe::egui;
 use ohl_clearance::rules::{WindSides, WindSteps};
@@ -49,6 +54,120 @@ pub fn heading(ui: &mut egui::Ui, title: &str, anchor: &'static str) -> Option<&
     out
 }
 
+/// Space between the items of a check window (owner, 2026-10-27: room to
+/// breathe; egui's default is 8 × 3 px).
+pub const ITEM_SPACING: egui::Vec2 = egui::vec2(10.0, 6.0);
+
+/// Space between the columns and the rows of a check window's tables,
+/// px.
+pub const GRID_SPACING: [f32; 2] = [14.0, 6.0];
+
+/// The height a list of a check window starts with, px (before: 220–360);
+/// [`list`] lets the user change it.
+pub const LIST_HEIGHT: f32 = 320.0;
+
+/// The smallest height a [`list`] is dragged to, px.
+const LIST_MIN: f32 = 60.0;
+
+/// The accessible name of the handle under a [`list`] (for screen readers
+/// and tests).
+pub const LIST_HANDLE: &str = "Drag to make the list taller or shorter";
+
+/// A check or result window of the menus (owner, 2026-10-27: one design
+/// for all of them): floating at first, `size` wide and high, closed with
+/// its ×; **📌 Dock as a panel** in its title bar makes it a tab of the
+/// main window, **⬈ Float** a window again, remembered for the session
+/// ([`crate::dockable`]); the shared spacing ([`ITEM_SPACING`]). `add`
+/// draws its content (usually a [`body`] and a [`footer`]); `None` when it
+/// is not drawn this frame (closed, or docked behind another tab).
+pub fn window<R>(
+    ctx: &egui::Context,
+    panel: crate::dockable::Panel,
+    title: &str,
+    size: [f32; 2],
+    open: &mut bool,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    if !*open {
+        return None;
+    }
+    let w = egui::Window::new(title)
+        .default_width(size[0])
+        .default_height(size[1]);
+    match crate::dockable::show(ctx, panel, title, w, Some(open), |ui| {
+        ui.spacing_mut().item_spacing = ITEM_SPACING;
+        add(ui)
+    }) {
+        crate::dockable::Shown::Drawn(r) => Some(r),
+        _ => None,
+    }
+}
+
+/// The memory key of a list's height.
+fn list_key(id: impl std::hash::Hash + std::fmt::Debug) -> egui::Id {
+    egui::Id::new(("check-list-height", id))
+}
+
+/// The height list `id` is shown at: as the user dragged it this session,
+/// else `default`.
+pub fn list_height(
+    ctx: &egui::Context,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    default: f32,
+) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(list_key(id)))
+        .unwrap_or(default)
+}
+
+/// A list of a check window (owner, 2026-10-27): `scroll` (its scroll
+/// area, as the window builds it) at most `default` px high, or as high
+/// as the user dragged the handle under it — remembered per list (`id`)
+/// for the session, docked or floating. A list shorter than its height
+/// takes only its own.
+pub fn list<R>(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug + Copy,
+    default: f32,
+    scroll: egui::ScrollArea,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let height = list_height(ui.ctx(), id, default);
+    let inner = scroll.max_height(height).show(ui, add).inner;
+    // The handle: a short grip across, the cursor saying it resizes.
+    let (rect, r) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().max(40.0), 8.0),
+        egui::Sense::drag(),
+    );
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, LIST_HANDLE));
+    let r = r
+        .on_hover_cursor(egui::CursorIcon::ResizeVertical)
+        .on_hover_text(LIST_HANDLE);
+    let colour = if r.hovered() || r.dragged() {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    for dy in [-1.5, 1.5] {
+        let y = rect.center().y + dy;
+        ui.painter().line_segment(
+            [
+                egui::pos2(rect.center().x - 16.0, y),
+                egui::pos2(rect.center().x + 16.0, y),
+            ],
+            egui::Stroke::new(1.0, colour),
+        );
+    }
+    if r.dragged() {
+        let dy = r.drag_delta().y;
+        if dy != 0.0 {
+            let new = (height + dy).max(LIST_MIN);
+            ui.data_mut(|d| d.insert_temp(list_key(id), new));
+            ui.ctx().request_repaint();
+        }
+    }
+    inner
+}
+
 /// The memory key of a check window's footer height.
 fn footer_key(id: &str) -> egui::Id {
     egui::Id::new(("check-footer", id))
@@ -62,6 +181,7 @@ const MIN_BODY: f32 = 80.0;
 /// scroll area filling the window down to the footer, so that
 /// the footer stays at the bottom and never scrolls away.
 pub fn body<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.spacing_mut().item_spacing = ITEM_SPACING;
     let key = footer_key(id);
     let footer = ui
         .data(|d| d.get_temp::<f32>(key))

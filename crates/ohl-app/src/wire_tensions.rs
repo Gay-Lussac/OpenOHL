@@ -281,11 +281,13 @@ impl WireTensionsWindow {
         let mut run = false;
         let mut changed = false;
         let stale = self.out_of_date(model);
-        egui::Window::new("Wire tensions")
-            .open(&mut open)
-            .default_width(820.0)
-            .default_height(640.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::WireTensions,
+            "Wire tensions",
+            [820.0, 640.0],
+            &mut open,
+            |ui| {
                 help::body(ui, "wire-tensions-window", |ui| {
                     ui.label(
                         egui::RichText::new(
@@ -323,7 +325,8 @@ impl WireTensionsWindow {
                     );
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if changed {
             self.save(model);
@@ -415,7 +418,7 @@ impl WireTensionsWindow {
         let mut remove = None;
         egui::Grid::new("wire-tension-rules")
             .striped(true)
-            .spacing([10.0, 4.0])
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 for h in ["rule", "weather cases", "factor of RTS", "tension", "wires", ""] {
                     ui.strong(h);
@@ -532,14 +535,16 @@ impl WireTensionsWindow {
                 save_csv("wire-tensions.csv", &report.report.csv(&report.rules));
             }
         });
-        egui::ScrollArea::vertical()
-            .max_height(360.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
+        help::list(
+            ui,
+            "wire-tensions-list-1",
+            500.0,
+            egui::ScrollArea::vertical().auto_shrink([false, false]),
+            |ui| {
                 // Every row, only those in view drawn (2026-10-26).
                 let rows = &report.report.rows;
-                let mut table =
-                    crate::rows_in_view::Table::new(ui, "wire-tension-rows", 7).spacing(12.0, 3.0);
+                let mut table = crate::rows_in_view::Table::new(ui, "wire-tension-rows", 7)
+                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
                 table.header(
                     ui,
                     &[
@@ -580,7 +585,8 @@ impl WireTensionsWindow {
                         });
                     }
                 });
-            });
+            },
+        );
     }
 }
 

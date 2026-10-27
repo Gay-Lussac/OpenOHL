@@ -128,21 +128,24 @@ window: a values file (else the project's copy, else the plugin's), the
 plugin's choices, the weather cases (each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
 (1 m), and nearby spans (conductors not between the same two
-structures, within a distance). The page opens floating; drag its tab
-onto a panel (next to Properties, for example) to dock it. When the
+structures, within a distance). The window opens floating; its **📌**
+docks it as a panel (next to Properties), like every check window
+([one design](desktop-app.md#check-windows-one-design)). When the
 plugin needs a value per circuit (a plugin column, e.g. an insulation
 level), **Circuits checked** lists the ticked circuits with their
 voltage and that value, chosen there for all the circuit's sections —
 the same value as the Conductor paths table's column. **Run** (the
-page's footer, bottom left) runs in the background; the pairs come worst first: the two spans and
+window's footer, bottom left) runs in the background; the pairs come worst first: the two spans and
 circuits, kV, d, the required distance, the margin, the length of
 conductor below it, and at the worst station the measured values, the
 plugin's own and the rule it applied, with a note when it is at a clamp
 or on a nearby span. Clicking a span, or a distance, selects the span,
-shows the result's weather case and draws the worst station's line in
-the 3D view, labelled with d and the required distance; the line goes
-when the window is closed (or a new run starts), and closing it shows
-again the cases shown before (unless you chose another meanwhile). **Export CSV…** writes
+draws the two conductors' sections in the result's weather case (first,
+the cases shown after it; the case shown for the rest of the line stays
+as it is), says the case beside it, and draws the worst station's line
+in the 3D view, labelled with d and the required distance; the line goes
+when the window is closed (or a new run starts), the result's case when
+the window is closed or you select something else. **Export CSV…** writes
 every pair with the points. Below the settings, the window explains the
 computation (the plugin's "How it is computed") and shows the **values
 used** as tables, for transparency, and where they come from (the
@@ -180,15 +183,16 @@ C₄ between systems), the margin, the wind on each conductor and the
 side.
 Clicking it draws the line between the two points and the pair's two
 conductors as they were measured, each at its wind, labelled with it
-and the side — only that span's pair, on top of the view; the weather
-case shown stays as it is and nothing is solved (a saved run keeps the
+and the side — only that span's pair, on top of the view; the pair's
+sections are drawn in the result's weather case (as above), the case
+shown for the line stays as it is and nothing is solved (a saved run keeps the
 pair's conductors to draw them too). Values, saved runs
 and CSV as above. How it is measured: [the core's
 part](../development/phase-distance-check.md#under-unequal-wind).
 ## The library of performed checks
 
-**Checks › Performed checks…** (a page like the check's, floating
-first, dockable) lists the checks saved on the project line you work on: name, check, when, by whom, **status** (draft,
+**Checks › Performed checks…** (a window like the check's, floating
+first, docked with its 📌) lists the checks saved on the project line you work on: name, check, when, by whom, **status** (draft,
 checked, approved — chosen in the list), the **line** (unchanged, or
 what changed since: e.g. "1 structure changed"), the result and a
 **note** (double-click to write it; double-click the name to rename).

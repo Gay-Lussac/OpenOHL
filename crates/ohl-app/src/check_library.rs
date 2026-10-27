@@ -224,7 +224,7 @@ impl CheckLibraryWindow {
             .show(ui, |ui| {
                 egui::Grid::new("check-library-rows")
                     .striped(true)
-                    .spacing([10.0, 4.0])
+                    .spacing(crate::check_help::GRID_SPACING)
                     .show(ui, |ui| {
                         for h in [
                             "", "name", "check", "when", "by", "status", "line", "result", "note",

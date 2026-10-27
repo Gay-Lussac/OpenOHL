@@ -346,9 +346,12 @@ impl SpotWindow {
                 ui.colored_label(ui.visuals().error_fg_color, e);
             }
             Some(Ok((rp, s, _))) => {
-                egui::ScrollArea::vertical()
-                    .max_height(320.0)
-                    .show(ui, |ui| {
+                help::list(
+                    ui,
+                    "spot-list-1",
+                    450.0,
+                    egui::ScrollArea::vertical(),
+                    |ui| {
                         egui::Grid::new("spot-result").striped(true).show(ui, |ui| {
                             for h in [
                                 "#",
@@ -379,7 +382,8 @@ impl SpotWindow {
                                 ui.end_row();
                             }
                         });
-                    });
+                    },
+                );
                 ui.strong(format!(
                     "{} structures: {:.2} (structures {:.2}, spans {:.2}, wire {:.2})",
                     s.structures.len(),

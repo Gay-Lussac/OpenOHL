@@ -787,11 +787,13 @@ impl SafetyVolumeWindow {
         let mut open = true;
         let mut again = false;
         let stale = self.out_of_date(model);
-        egui::Window::new(CHECK_TITLE)
-            .open(&mut open)
-            .default_width(620.0)
-            .default_height(640.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::SafetyVolumes,
+            CHECK_TITLE,
+            [620.0, 640.0],
+            &mut open,
+            |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
                 help::body(ui, "safety-volume-window", |ui| {
@@ -837,7 +839,8 @@ impl SafetyVolumeWindow {
                     );
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if again {
             self.start(model, ctx);
@@ -869,9 +872,12 @@ impl SafetyVolumeWindow {
                     .show(ui, |ui| {
                         let groups = crate::case_groups::groups(model);
                         crate::case_groups::pick_indices(ui, model, &groups, cases);
-                        egui::ScrollArea::vertical()
-                            .max_height(140.0)
-                            .show(ui, |ui| {
+                        help::list(
+                            ui,
+                            "safety-volume-list-1",
+                            200.0,
+                            egui::ScrollArea::vertical(),
+                            |ui| {
                                 for (k, c) in model.cases.iter().enumerate() {
                                     let mut on = cases.contains(&k);
                                     if ui.checkbox(&mut on, &c.case.name).changed() {
@@ -883,7 +889,8 @@ impl SafetyVolumeWindow {
                                         }
                                     }
                                 }
-                            });
+                            },
+                        );
                     });
                 help::explain(
                     ui,
@@ -1233,14 +1240,17 @@ impl SafetyVolumeWindow {
             .weak(),
         );
         if !v.notes.is_empty() {
-            egui::ScrollArea::vertical()
-                .id_salt("safety-volume-notes")
-                .max_height(80.0)
-                .show(ui, |ui| {
+            help::list(
+                ui,
+                "safety-volume-list-2",
+                110.0,
+                egui::ScrollArea::vertical().id_salt("safety-volume-notes"),
+                |ui| {
                     for n in &v.notes {
                         ui.label(egui::RichText::new(n).small());
                     }
-                });
+                },
+            );
         }
     }
 

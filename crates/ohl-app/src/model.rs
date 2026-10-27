@@ -591,6 +591,10 @@ pub struct Model {
     /// and it is not the one shown (highlighted in the views and the
     /// properties); `None`: the case shown.
     pub selection_case: Option<usize>,
+    /// A check result's weather case drawn on the sections it involves
+    /// while it is selected ([`crate::result_case`]): first for them, the
+    /// cases otherwise drawn after it.
+    pub result_case: Option<crate::result_case::ResultCase>,
     /// The others selected with Shift+click (add) or Cmd/Ctrl+click
     /// (toggle), besides the selection (the one clicked last, shown in
     /// Properties): highlighted like it in every view and table
@@ -1612,8 +1616,24 @@ impl Model {
     }
 
     /// The weather cases section `section` is drawn in: its own display
-    /// cases, else the cases shown for the line, else `case`.
+    /// cases, else the cases shown for the line, else `case`; a check
+    /// result's case first while it is selected ([`Model::result_case`]).
     pub fn section_cases(&self, section: &str, case: usize) -> Vec<usize> {
+        let mut cases = self.cases_drawn(section, case);
+        // A check result's case on its sections: first.
+        if let Some(r) = &self.result_case
+            && let Some(k) = r.case
+            && k < self.cases.len()
+            && r.sections.iter().any(|s| s == section)
+        {
+            cases.retain(|c| *c != k);
+            cases.insert(0, k);
+        }
+        cases
+    }
+
+    /// [`Model::section_cases`] without a check result's case.
+    fn cases_drawn(&self, section: &str, case: usize) -> Vec<usize> {
         let valid = |v: &Vec<usize>| -> Vec<usize> {
             v.iter()
                 .copied()
@@ -2623,6 +2643,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         display_cases: Default::default(),
         shown_cases: vec![0],
         selection_case: None,
+        result_case: None,
         selected_also: Vec::new(),
         recently_wanted: Default::default(),
         previewing: false,

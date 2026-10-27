@@ -144,7 +144,9 @@ fn layer_groups_fold() {
 /// table of rules edited in place — no separate "Add a rule" form; Add
 /// rule adds a row, a name typed in its row is kept —; run, the result
 /// first: a banner with the worst margin, its span and case, red below a
-/// rule; a click on it (or on a row) brings the views there.
+/// rule; a click on it (or on a row) brings the views there and draws the
+/// span in the finding's weather case (2026-10-27) until the window
+/// closes.
 #[test]
 fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
     let model = synthetic();
@@ -211,7 +213,7 @@ fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     h.run();
-    let (worst, margin) = {
+    let (worst, margin, case) = {
         let w = &h.state_mut().ready().unwrap().vertical_clearances;
         let Some(Ok(rep)) = &w.report else {
             panic!("a report")
@@ -228,6 +230,7 @@ fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
                 span: f.span,
             },
             f.distance - f.required,
+            rep.states[f.state].name.clone(),
         )
     };
     assert!(margin < 0.0);
@@ -248,9 +251,33 @@ fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
         .click();
     h.run();
     assert_eq!(h.state_mut().ready().unwrap().selection, worst);
+    // Its span drawn in the weather case it was found in (owner,
+    // 2026-10-27), first; the case said beside it; the case shown for the
+    // line kept.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let Selection::Span { section, .. } = &worst else {
+            unreachable!()
+        };
+        let k = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == case)
+            .unwrap();
+        assert_ne!(r.case, k, "another case than the one shown");
+        assert_eq!(r.model.section_case(section, r.case), k);
+        let rc = r.model.result_case.as_ref().expect("the finding's case");
+        assert!(rc.says.contains(&case), "{}", rc.says);
+    }
     // The units in the result table's headers.
     h.get_by_label("Required [m]");
     h.get_by_label("To surface [m]");
+    // The window closed: the span in the cases shown again.
+    h.state_mut().ready().unwrap().vertical_clearances.open = false;
+    h.run();
+    h.run();
+    assert!(h.state_mut().ready().unwrap().model.result_case.is_none());
     std::fs::remove_dir_all(dir).ok();
 }
 

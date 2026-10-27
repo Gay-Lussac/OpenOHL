@@ -1055,15 +1055,12 @@ impl VegetationWindow {
         let mut open = true;
         let mut again = false;
         let stale = self.out_of_date(model);
-        let window = egui::Window::new(CHECK_TITLE)
-            .default_width(900.0)
-            .default_height(760.0);
-        let shown = crate::dockable::show(
+        help::window(
             ctx,
             crate::dockable::Panel::Vegetation,
             CHECK_TITLE,
-            window,
-            Some(&mut open),
+            [900.0, 760.0],
+            &mut open,
             |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
@@ -1113,9 +1110,6 @@ impl VegetationWindow {
                 });
             },
         );
-        if shown == crate::dockable::Shown::Closed {
-            open = false;
-        }
         self.open = open;
         if again {
             self.start(model, ctx);
@@ -1314,9 +1308,12 @@ impl VegetationWindow {
                     .show(ui, |ui| {
                         let groups = crate::case_groups::groups(model);
                         crate::case_groups::pick_indices(ui, model, &groups, cases);
-                        egui::ScrollArea::vertical()
-                            .max_height(140.0)
-                            .show(ui, |ui| {
+                        help::list(
+                            ui,
+                            "vegetation-list-1",
+                            200.0,
+                            egui::ScrollArea::vertical(),
+                            |ui| {
                                 for (k, c) in model.cases.iter().enumerate() {
                                     let mut on = cases.contains(&k);
                                     if ui.checkbox(&mut on, &c.case.name).changed() {
@@ -1328,7 +1325,8 @@ impl VegetationWindow {
                                         }
                                     }
                                 }
-                            });
+                            },
+                        );
                     });
                 help::explain(
                     ui,
@@ -1705,14 +1703,17 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
                 .weak(),
         );
     }
-    egui::ScrollArea::vertical()
-        .id_salt("vegetation-notes")
-        .max_height(60.0)
-        .show(ui, |ui| {
+    help::list(
+        ui,
+        "vegetation-list-2",
+        80.0,
+        egui::ScrollArea::vertical().id_salt("vegetation-notes"),
+        |ui| {
             for n in &report.notes {
                 ui.label(egui::RichText::new(n).small().weak());
             }
-        });
+        },
+    );
     ui.horizontal(|ui| {
         let (enc, fall) = report
             .spans
@@ -1740,19 +1741,22 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
             );
         }
     });
-    egui::ScrollArea::vertical()
-        .id_salt("vegetation-rows")
-        .max_height(320.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
+    help::list(
+        ui,
+        "vegetation-list-3",
+        450.0,
+        egui::ScrollArea::vertical()
+            .id_salt("vegetation-rows")
+            .auto_shrink([false, true]),
+        |ui| {
             // Every span found, only those in view drawn (2026-10-26).
             let rows: Vec<_> = report
                 .spans
                 .iter()
                 .filter(|r| r.encroaching > 0 || r.fall_in > 0)
                 .collect();
-            let mut table =
-                crate::rows_in_view::Table::new(ui, "vegetation-rows", 8).spacing(14.0, 3.0);
+            let mut table = crate::rows_in_view::Table::new(ui, "vegetation-rows", 8)
+                .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
             table.header(
                 ui,
                 &[
@@ -1791,15 +1795,18 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
                 c.cell(|ui| ui.label(or_dash(r.worst_fall.map(|v| v.0), 2)));
                 c.cell(|ui| ui.label(r.worst_fall.map_or("-", |v| report.label(v.1))));
             });
-        });
+        },
+    );
     let worst: usize = report.spans.iter().map(|r| r.worst.len()).sum();
     egui::CollapsingHeader::new(format!("Worst points ({worst})"))
         .id_salt("vegetation-worst")
         .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt("vegetation-worst-rows")
-                .max_height(240.0)
-                .show(ui, |ui| {
+            help::list(
+                ui,
+                "vegetation-list-4",
+                340.0,
+                egui::ScrollArea::vertical().id_salt("vegetation-worst-rows"),
+                |ui| {
                     egui::Grid::new("vegetation-worst-grid")
                         .striped(true)
                         .show(ui, |ui| {
@@ -1821,7 +1828,8 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
                                 }
                             }
                         });
-                });
+                },
+            );
         });
     go
 }

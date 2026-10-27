@@ -642,7 +642,7 @@ pub(super) fn menus(
             if !r.loads.running() {
                 r.loads.start(&r.model, ui.ctx());
             }
-            r.open_page = Some((Tab::Loads, None));
+            r.loads.open = true;
             ui.close();
         }
         ui.separator();

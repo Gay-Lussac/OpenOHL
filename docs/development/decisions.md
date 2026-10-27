@@ -10,6 +10,64 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Check windows: one design, room to breathe, the result's weather case (owner, 2026-10-27)**
+
+- The owner: some check windows could be sent to a panel, others were
+  panels already; one design for all of them, more room (lists that can
+  be made taller, longer scrolling rather than cramming), and a clearance
+  result should show the weather case on the span that led to it, as the
+  distance between conductors under unequal wind does. Survey:
+  [UI review 2026-10-27](ui-review-2026-10-27.md).
+- **One design: every check and result window is a dockable tool window**
+  (`check_help::window` over `dockable::show`): floating first, **📌**
+  docks it as a tab (with Properties), **⬈** floats it again, closing its
+  tab closes it, docked once it opens docked (this session). Chosen over
+  making them all dock pages because the tool-window mechanism already
+  carried the clearance and vegetation windows and needs one call per
+  window (the content is drawn by the window's own code, docked or not),
+  whereas a page needs a tab kind, a branch in the dock's viewer and its
+  own opening code each. So *Distance between conductors* (and under
+  unequal wind), *Performed checks* and *Structure loads*, pages until
+  now, became such windows (their `Tab` kinds removed); Thermal rating,
+  Line parameters, Galloping, Wire tensions, String checks, Internal
+  clearances, Safety volumes, As-built wires and Bill of materials gained
+  the 📌. The Clearances page stays a page: it is one of the View pages
+  (left group) and its marks follow whether it is open. A new check
+  window (e.g. the magnetic field's) calls `check_help::window` with a
+  `dockable::Panel` of its own.
+- **Room**: one spacing for these windows, `check_help::ITEM_SPACING`
+  (10 × 6 px, egui's default 8 × 3) set by the window and the body, and
+  `GRID_SPACING` (14 × 6 px) for their tables (rows were 2–4 px apart).
+  Lists use `check_help::list`: a handle under the list sets its height
+  (dragged), remembered per list for the session (context memory, not
+  saved); default heights about 1.4 × the old ones (`LIST_HEIGHT` 320 px
+  for the clearance windows' lists, before 220). The body keeps scrolling
+  as a whole above the Run footer. Standing rules kept: tick menus stay
+  open, long errors in fixed-height scroll boxes, windows closable.
+- **The result's weather case** (`result_case.rs`, `Model::result_case`):
+  a finding of the Vertical/Radial clearance windows, of the Clearances
+  page, or a Distance between conductors pair, clicked, puts its weather
+  case **first** in `Model::section_cases` for the sections it involves
+  — every view, pick and highlight goes through that function, so each
+  copy stays clickable and highlighted (the owner's rule), the other
+  cases drawn after it; the case shown for the line is not changed (the
+  Distance between conductors used to change it for the whole line and
+  restore it on close: replaced). Said beside the finding in the 3D view
+  in the selection's colour without a box. When the finding's wind is not
+  what the case as drawn shows (a step, still air in a windy case, the
+  other side, a swing angle), the span's wire at that wind is drawn
+  dashed: the section (and those solved with it) solved again in that
+  state on a background thread (`Solved::new_memo`: the check's solve
+  reused when in the memo); a swing angle by turning the still-air wire
+  about its clamps — a drawing, not the check's geometry (the check turns
+  about the string tops), said so in the user guide. It goes when the
+  selection leaves the result's object or the window that set it closes.
+  Jumper findings: the case is said, no section is redrawn.
+- To confirm: the result's case drawn first *and* the cases shown after
+  it (rather than only the result's case); the white note in the 3D view;
+  the default list heights; Bill of materials counted among the result
+  windows; Spot structures left as a tool window without the 📌.
+
 **Electric and magnetic fields in the core, magnetic field first (owner, 2026-10-27)**
 
 - The owner asked for the electric and magnetic fields, the magnetic

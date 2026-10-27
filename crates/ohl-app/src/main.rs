@@ -80,6 +80,7 @@ mod python;
 mod remote;
 mod replace;
 mod requirement_ui;
+mod result_case;
 mod revision;
 mod rows_in_view;
 mod rule_editor;
