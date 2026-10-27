@@ -22,6 +22,7 @@ use ohl_clearance::rules::{PresetCheck, RuleSet};
 use ohl_clearance::tension::{self, TensionMeasure, TensionReport, TensionRule};
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
@@ -43,6 +44,9 @@ pub struct Report {
 pub struct Out {
     /// Go to a span.
     pub go: Option<Selection>,
+    /// The weather case of the row clicked: the span drawn in it
+    /// ([`crate::result_case`]).
+    pub case: Option<String>,
     /// New marks to draw (a new report, or the window opened again);
     /// `Some(empty)`: take them off.
     pub marks: Option<Vec<[f64; 3]>>,
@@ -285,45 +289,71 @@ impl WireTensionsWindow {
             ctx,
             crate::dockable::Panel::WireTensions,
             "Wire tensions",
-            [820.0, 640.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                help::body(ui, "wire-tensions-window", |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "The largest tension each wire may carry: per rule, its wires and \
-                             weather cases, the allowed tension as a factor of the wire type's \
-                             rated tensile strength (RTS), and the tension compared — the \
-                             maximum, at the span's most tensioned support (default), or the \
-                             horizontal. No factor is built in: take them from the regulation \
-                             you work to, or load a design code's preset.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    self.presets_ui(ui, model, presets, &mut out);
-                    changed |= self.rules_ui(ui, model);
-                    if let Some((text, error)) = &self.status {
-                        if *error {
-                            crate::menu::error_label(ui, text.as_str());
-                        } else {
-                            ui.label(egui::RichText::new(text).small().weak());
+                let why = self.why_not_run();
+                let findings = match &self.job.result {
+                    Some(Ok(r)) => Some(r.report.failures().count()),
+                    _ => None,
+                };
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    "wire-tensions-window",
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, "wire-tensions-window", |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "The tension of every span against the largest a rule allows: a factor of the wire \
+                             type's rated tensile strength (RTS), per weather case.",
+                            "set the factor",
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 2, "Scope", None);
+                        ui.label(
+                            egui::RichText::new(
+                                "Each rule gives its wires and weather cases (3 Rules): circuits, routes and sections are not chosen here yet.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 3, "Rules", None);
+                        self.presets_ui(ui, model, presets, &mut out);
+                        changed |= self.rules_ui(ui, model);
+                        if let Some((text, error)) = &self.status {
+                            if *error {
+                                crate::menu::error_label(ui, text.as_str());
+                            } else {
+                                ui.label(egui::RichText::new(text).small().weak());
+                            }
                         }
+                    }),
+                    check_ui::Tab::Results => {
+                        check_ui::results_area(ui, "wire-tensions-window", |ui| {
+                            self.results_ui(ui, &stale, &mut run, &mut out);
+                        })
                     }
-                    ui.separator();
-                    self.results_ui(ui, &stale, &mut run, &mut out);
-                });
+                }
                 help::footer(ui, "wire-tensions-window", |ui| {
-                    changed |= self.overrides.ui(ui);
-                    let why = self.why_not_run();
-                    run |= help::run_button(
+                    let overrides = &mut self.overrides;
+                    run |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
-                        "Solve each weather case of the rules and check the tension of every \
-                         span against its allowed tension",
-                        why.as_deref(),
+                        &mut self.job,
+                        why.clone(),
+                        "Solve each weather case of the rules and check the tension of every span against its allowed tension",
+                        None,
+                        |ui| {
+                            changed |= overrides.ui(ui);
+                        },
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );
@@ -535,58 +565,53 @@ impl WireTensionsWindow {
                 save_csv("wire-tensions.csv", &report.report.csv(&report.rules));
             }
         });
-        help::list(
-            ui,
-            "wire-tensions-list-1",
-            500.0,
-            egui::ScrollArea::vertical().auto_shrink([false, false]),
-            |ui| {
-                // Every row, only those in view drawn (2026-10-26).
-                let rows = &report.report.rows;
-                let mut table = crate::rows_in_view::Table::new(ui, "wire-tension-rows", 7)
-                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
-                table.header(
-                    ui,
-                    &[
-                        ("span", ""),
-                        ("rule", ""),
-                        ("case", ""),
-                        ("tension kN", ""),
-                        ("allowed kN", ""),
-                        ("usage %", ""),
-                        ("", ""),
+        // Every row, sorted, filtered, grouped by the user; a row clicked
+        // selects its span and draws it in the row's weather case.
+        use check_ui::{Cell, Col};
+        let rows: Vec<check_ui::Row> = report
+            .report
+            .rows
+            .iter()
+            .map(|r| {
+                let rule = &report.rules[r.rule];
+                check_ui::Row::new(
+                    vec![
+                        Cell::span(&r.section, r.span),
+                        Cell::text(&rule.name),
+                        Cell::text(&r.case),
+                        Cell::num(Some(r.tension / 1000.0), 2).bad(!r.passes()),
+                        Cell::num(Some(r.allowed / 1000.0), 2),
+                        Cell::num(Some(100.0 * r.usage), 1).bad(!r.passes()),
+                        Cell::text(if r.passes() { "pass" } else { "fail" }).bad(!r.passes()),
                     ],
-                );
-                table.rows(ui, rows.len(), None, |c, i| {
-                    let r = &rows[i];
-                    if c.cell(|ui| {
-                        ui.link(format!("{} span {}", r.section, r.span + 1))
-                            .on_hover_text("Go to this span")
-                            .clicked()
-                    }) {
-                        out.go = Some(Selection::Span {
-                            section: r.section.clone(),
-                            span: r.span,
-                        });
-                    }
-                    let rule = &report.rules[r.rule];
-                    c.cell(|ui| ui.label(&rule.name).on_hover_text(rule_text(rule)));
-                    c.cell(|ui| ui.label(&r.case));
-                    c.cell(|ui| ui.label(format!("{:.2}", r.tension / 1000.0)));
-                    c.cell(|ui| ui.label(format!("{:.2}", r.allowed / 1000.0)));
-                    let u = egui::RichText::new(format!("{:.1}", 100.0 * r.usage)).monospace();
-                    if r.passes() {
-                        c.cell(|ui| ui.label(u));
-                        c.cell(|ui| ui.label("pass"));
-                    } else {
-                        c.cell(|ui| ui.label(u.color(ui.visuals().error_fg_color)));
-                        c.cell(|ui| {
-                            ui.label(egui::RichText::new("fail").color(ui.visuals().error_fg_color))
-                        });
-                    }
-                });
-            },
-        );
+                    !r.passes(),
+                )
+            })
+            .collect();
+        if let Some(k) = check_ui::ResultTable::new(
+            "wire-tension-rows",
+            vec![
+                Col::text("Span"),
+                Col::text("Rule"),
+                Col::text("Case"),
+                Col::num("Tension [kN]"),
+                Col::num("Allowed [kN]"),
+                Col::num("Usage [%]"),
+                Col::text("Verdict"),
+            ],
+        )
+        .rows(rows)
+        .group_by(&[1, 2, 0])
+        .csv("wire-tensions-table.csv")
+        .ui(ui)
+        {
+            let r = &report.report.rows[k];
+            out.go = Some(Selection::Span {
+                section: r.section.clone(),
+                span: r.span,
+            });
+            out.case = Some(r.case.clone());
+        }
     }
 }
 

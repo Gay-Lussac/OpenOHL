@@ -22,6 +22,7 @@ use ohl_clearance::rules::{PresetCheck, RuleSet};
 use ohl_clearance::strings::{self, Measure, Source, StringKind, StringReport, StringRule};
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
@@ -64,8 +65,6 @@ pub struct StringChecksWindow {
     pub rules: Vec<StringRule>,
     /// What was done last, in words (an error: true).
     pub status: Option<(String, bool)>,
-    /// Only the rows beyond their limit.
-    pub only_failures: bool,
     /// The structure and section overrides of its cases.
     pub overrides: crate::case_groups::Overrides,
     /// The plugin preset chosen in the dropdown (plugin, preset).
@@ -284,46 +283,71 @@ impl StringChecksWindow {
             ctx,
             crate::dockable::Panel::StringChecks,
             "String checks",
-            [900.0, 640.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                help::body(ui, "string-checks-window", |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "Every string as solved, in the weather cases of each rule: its \
-                             load against its own maximum load, its swing against its own \
-                             swing limits and those a rule gives (from vertical, across and \
-                             along the line, either side), and the suspension strings' \
-                             uplift — going slack, or pushed beyond the compression they may \
-                             take. A string's limits are its own (else its insulator's), set \
-                             in its window or the Strings table; a design code's preset may \
-                             give rules.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    self.presets_ui(ui, model, presets, &mut out);
-                    changed |= self.rules_ui(ui, model);
-                    if let Some((text, error)) = &self.status {
-                        if *error {
-                            crate::menu::error_label(ui, text.as_str());
-                        } else {
-                            ui.label(egui::RichText::new(text).small().weak());
+                let why = self.why_not_run();
+                let findings = match &self.job.result {
+                    Some(Ok(r)) => Some(r.report.failures().count()),
+                    _ => None,
+                };
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    "string-checks-window",
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, "string-checks-window", |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "Every string as solved, per weather case: its load and swing against its limits, the \
+                             suspension strings' uplift.",
+                            "None ticked: every voltage (0 kV: earth wires)",
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 2, "Scope", None);
+                        ui.label(
+                            egui::RichText::new(
+                                "Each rule gives its strings, voltages and weather cases (3 Rules): circuits, routes and sections are not chosen here yet.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 3, "Rules", None);
+                        self.presets_ui(ui, model, presets, &mut out);
+                        changed |= self.rules_ui(ui, model);
+                        if let Some((text, error)) = &self.status {
+                            if *error {
+                                crate::menu::error_label(ui, text.as_str());
+                            } else {
+                                ui.label(egui::RichText::new(text).small().weak());
+                            }
                         }
+                    }),
+                    check_ui::Tab::Results => {
+                        check_ui::results_area(ui, "string-checks-window", |ui| {
+                            self.results_ui(ui, &stale, &mut run, &mut out);
+                        })
                     }
-                    ui.separator();
-                    self.results_ui(ui, &stale, &mut run, &mut out);
-                });
+                }
                 help::footer(ui, "string-checks-window", |ui| {
-                    changed |= self.overrides.ui(ui);
-                    let why = self.why_not_run();
-                    run |= help::run_button(
+                    let overrides = &mut self.overrides;
+                    run |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
+                        &mut self.job,
+                        why.clone(),
                         "Solve each weather case of the rules and check every string",
-                        why.as_deref(),
+                        None,
+                        |ui| {
+                            changed |= overrides.ui(ui);
+                        },
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );
@@ -562,105 +586,86 @@ impl StringChecksWindow {
                 "{} limits × strings × cases checked, {failed} beyond",
                 report.report.rows.len()
             ));
-            ui.checkbox(&mut self.only_failures, "only those");
             if ui.button("Export CSV…").clicked() {
                 save_csv("string-checks.csv", &report.report.csv(&report.rules));
             }
         });
-        help::list(
-            ui,
-            "string-checks-list-1",
-            500.0,
-            egui::ScrollArea::vertical().auto_shrink([false, false]),
-            |ui| {
-                // Every row (those asked for), only those in view drawn
-                // (2026-10-26).
-                let rows: Vec<_> = report
-                    .report
-                    .rows
-                    .iter()
-                    .filter(|r| !self.only_failures || !r.pass)
-                    .collect();
-                let mut table = crate::rows_in_view::Table::new(ui, "string-check-rows", 10)
-                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
-                table.header(
-                    ui,
-                    &[
-                        ("string", ""),
-                        ("kind", ""),
-                        ("rule", ""),
-                        ("case", ""),
-                        ("check", ""),
-                        ("value", ""),
-                        ("limit", ""),
-                        ("from", ""),
-                        ("usage %", ""),
-                        ("", ""),
-                    ],
-                );
-                table.rows(ui, rows.len(), None, |c, i| {
-                    let r = rows[i];
-                    if c.cell(|ui| {
-                        ui.link(format!("{} {}", r.structure, r.string))
-                            .on_hover_text(format!(
-                                "Go to {} (section {}, point {})",
-                                r.structure,
-                                r.section,
-                                r.point + 1
-                            ))
-                            .clicked()
-                    }) {
-                        out.go = Some(Selection::Structure(r.structure.clone()));
-                    }
-                    c.cell(|ui| ui.label(if r.strain { "strain" } else { "suspension" }));
-                    let rule = &report.rules[r.rule];
-                    c.cell(|ui| ui.label(&rule.name).on_hover_text(rule_text(rule)));
-                    c.cell(|ui| ui.label(&r.case));
-                    c.cell(|ui| ui.label(r.measure.describe()));
-                    let (value, limit, usage) = match r.measure {
-                        Measure::Load => (
-                            format!("{:.2} kN", r.value / 1000.0),
-                            format!("{:.2} kN", r.limit / 1000.0),
-                            format!("{:.1}", 100.0 * r.usage),
-                        ),
-                        Measure::Uplift => (
-                            format!("{:.2} kN", r.value / 1000.0),
-                            if r.pass {
-                                "hangs".to_owned()
-                            } else if r.value < 0.0 {
-                                "pushed".to_owned()
-                            } else {
-                                "slack".to_owned()
-                            },
-                            String::new(),
-                        ),
-                        _ => (
-                            format!("{:.1}°", r.value),
-                            format!("{:.1}°", r.limit),
-                            format!("{:.1}", 100.0 * r.usage),
-                        ),
-                    };
-                    c.cell(|ui| ui.label(value));
-                    c.cell(|ui| ui.label(limit));
-                    c.cell(|ui| {
-                        ui.label(match r.source {
+        // Every row, sorted, filtered, grouped by the user; a row clicked
+        // goes to its structure.
+        use check_ui::{Cell, Col};
+        let rows: Vec<check_ui::Row> = report
+            .report
+            .rows
+            .iter()
+            .map(|r| {
+                let rule = &report.rules[r.rule];
+                let (value, limit, usage) = match r.measure {
+                    Measure::Load => (
+                        Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
+                        Cell::sorted(format!("{:.2} kN", r.limit / 1000.0), r.limit),
+                        Cell::num(Some(100.0 * r.usage), 1),
+                    ),
+                    Measure::Uplift => (
+                        Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
+                        Cell::text(if r.pass {
+                            "hangs"
+                        } else if r.value < 0.0 {
+                            "pushed"
+                        } else {
+                            "slack"
+                        }),
+                        Cell::num(None, 1),
+                    ),
+                    _ => (
+                        Cell::sorted(format!("{:.1}°", r.value), r.value),
+                        Cell::sorted(format!("{:.1}°", r.limit), r.limit),
+                        Cell::num(Some(100.0 * r.usage), 1),
+                    ),
+                };
+                check_ui::Row::new(
+                    vec![
+                        Cell::text(format!("{} {}", r.structure, r.string)),
+                        Cell::text(if r.strain { "strain" } else { "suspension" }),
+                        Cell::text(&rule.name),
+                        Cell::text(&r.case),
+                        Cell::text(r.measure.describe()),
+                        value.bad(!r.pass),
+                        limit,
+                        Cell::text(match r.source {
                             Source::String => "string",
                             Source::Rule => "rule",
-                        })
-                    });
-                    let u = egui::RichText::new(usage).monospace();
-                    if r.pass {
-                        c.cell(|ui| ui.label(u));
-                        c.cell(|ui| ui.label("pass"));
-                    } else {
-                        c.cell(|ui| ui.label(u.color(ui.visuals().error_fg_color)));
-                        c.cell(|ui| {
-                            ui.label(egui::RichText::new("fail").color(ui.visuals().error_fg_color))
-                        });
-                    }
-                });
-            },
-        );
+                        }),
+                        usage.bad(!r.pass),
+                        Cell::text(if r.pass { "pass" } else { "fail" }).bad(!r.pass),
+                    ],
+                    !r.pass,
+                )
+            })
+            .collect();
+        if let Some(k) = check_ui::ResultTable::new(
+            "string-check-rows",
+            vec![
+                Col::text("String"),
+                Col::text("Kind"),
+                Col::text("Rule"),
+                Col::text("Case"),
+                Col::text("Check"),
+                Col::num("Value"),
+                Col::num("Limit"),
+                Col::text("From"),
+                Col::num("Usage [%]"),
+                Col::text("Verdict"),
+            ],
+        )
+        .rows(rows)
+        .group_by(&[2, 3, 0, 4])
+        .csv("string-checks-table.csv")
+        .ui(ui)
+        {
+            out.go = Some(Selection::Structure(
+                report.report.rows[k].structure.clone(),
+            ));
+        }
     }
 }
 
