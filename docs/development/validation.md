@@ -16,7 +16,7 @@ inputs = { quantity = "force", value = "1 lbf", to = "N" }
 expected.value = { value = 4.448222, rel_tol = 1e-6 }   # abs_tol and/or rel_tol
 ```
 
-Run them with `ohl validate` (today 201 cases in 39 files). Run them locally before each push; the CI workflow (started by hand only) runs every case too and publishes the report. A case fails when an output is outside its tolerance, missing, when the calculation errors, or when it exceeds its time limit.
+Run them with `ohl validate` (today 207 cases in 40 files). Run them locally before each push; the CI workflow (started by hand only) runs every case too and publishes the report. A case fails when an output is outside its tolerance, missing, when the calculation errors, or when it exceeds its time limit.
 
 Engines expose calculations to the runner by implementing `ohl_validation::Calculation`.
 

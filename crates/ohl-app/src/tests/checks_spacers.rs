@@ -1617,3 +1617,65 @@ fn calculation_options_choose_the_simplified_blocks() {
     r.perform(crate::edit::Action::Redo);
     assert_eq!(r.model.line.solver.blocks, ohl_line::InTheBlocks::EqualH);
 }
+
+/// Checks › Electrical › Magnetic field…: Run is greyed until a circuit
+/// has a current; then a profile per span with a limit's line; the line
+/// edited, the results are out of date.
+#[test]
+fn the_magnetic_field_window_runs_and_goes_out_of_date() {
+    use egui_kittest::kittest::NodeT;
+    let model = synthetic();
+    let png =
+        ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| ohl_render::headless_device().is_ok());
+    let mut builder = Harness::builder().with_size(egui::vec2(1600.0, 1000.0));
+    if png.is_some() {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    submenu(&mut harness, "Checks", "Electrical");
+    harness.get_by_label("Magnetic field…").click();
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().magnetic_field.open);
+    assert!(
+        run_in(&harness, "Magnetic field")
+            .accesskit_node()
+            .is_disabled(),
+        "no current yet"
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        assert!(!circuits.is_empty());
+        r.magnetic_field.set_current(&circuits[0].label(), 800.0);
+        r.magnetic_field.set_limit(Some(1.0));
+    }
+    harness.run();
+    run_in(&harness, "Magnetic field").click();
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let Some(res) = &r.magnetic_field.job.result {
+            let a = res.as_ref().expect("a field");
+            assert!(!a.field.profiles.is_empty());
+            assert!(a.field.profiles.iter().all(|p| p.max_ut > 0.0));
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no field in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    assert!(harness.query_by_label_contains("Export CSV").is_some());
+    if let Some(dir) = png {
+        let image = harness.render().unwrap();
+        let path = std::path::PathBuf::from(dir).join("ohl-design-magnetic-field.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.magnetic_field.out_of_date(&r.model).is_none());
+    r.model.line.structures[1].position[2] += 1.0;
+    r.model.line_version += 1;
+    assert!(r.magnetic_field.out_of_date(&r.model).is_some());
+}

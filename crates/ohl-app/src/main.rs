@@ -54,6 +54,7 @@ mod line_parameters;
 mod link_tool;
 mod loads;
 mod lod;
+mod magnetic_field;
 mod measure;
 mod menu;
 mod merge_cases;

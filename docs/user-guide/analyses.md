@@ -685,5 +685,94 @@ ohl electrical parameters examples/electrical/double-circuit.ohl.json \
 Not yet: other lines in the corridor, soil resistivity along the route,
 a transposition plan, the terrain in the window (the ground is taken
 straight between the structures' feet there) and the point cloud's ground,
-the fields and audible noise
-(plugins, roadmap O18).
+the electric field and audible noise (roadmap O18). The magnetic field:
+below.
+
+## Electrical: magnetic field
+
+*Built, in active development, not approved yet* (roadmap O18 step 4,
+first slice, 2026-10-27). The magnetic flux density (µT, the rms of the
+vector) of the line's currents, from the wires where they hang in a
+weather case. Methods, assumptions (each marked conservative or not) and
+validation: [Magnetic field](../theory/magnetic-field.md).
+
+**What it needs:** the sections' systems and phases (Line › Electrical
+systems; the circuits are the phases of a system in one named circuit;
+sections of no system are earth wires), and **a current per circuit**.
+For the earth wire currents also the wires' electrical data and the
+line's soil resistivity (as for the [line
+parameters](#electrical-line-parameters)). **No limit is built in**: an
+ordinance's values (which current, which places, which limit) are yours
+to give, or come from its plugin's parameter file later.
+
+**In OHL-Design:** Checks › Electrical › **Magnetic field…**
+
+- **Currents**: per circuit its current (A, rms, each phase) and its load
+  flow, *along the line* (from the line's first structure to its last) or
+  *against it* (every phase turned by 180°). The phases are balanced at
+  their systems' phase angles (L1 0°, L2 −120°, L3 +120° unless the
+  system gives others). Run stays greyed until a circuit has a current.
+- **Model**: *3D* — the wires as solved (sag, line angles, the line's
+  length), bundles subconductor by subconductor; *2D* — the wires as
+  infinite straight conductors where they cross the profile (tick *wires
+  at the span's mean height* to take the line parameters' mean instead).
+  2D results warn where the model is not valid: near a line angle over
+  5°, on a span between differently arranged structures.
+- **Earth wires**: tick to let them carry the currents the phases induce
+  (an infinitely long earth wire earthed everywhere; it may raise the
+  field as well as lower it).
+- **Profiles**: every span's lowest point, or one span at its lowest
+  point or at a place 0–1 along it; **Across** ± the width every step at a
+  height above the ground (default ±50 m every 1 m at 1 m). The ground is
+  the project's surface for the checks when there is one, else straight
+  between the structures' feet.
+- **Limit**: optional, µT: the margin at every point and the limit line's
+  extent on every profile.
+- **Points from CSV…**: places to evaluate (e.g. places of sensitive use),
+  a CSV with a header naming `x`, `y` and `z` (elevation) or `height`
+  (above the ground), optionally `name`.
+
+Choose the weather case in the footer and **Run** (a progress bar and
+**Stop** while it runs). The results: the currents used, the earth wires'
+currents, the notes (what was assumed); the chosen profile plotted —
+B against the distance from the axis (right positive), the cycle's
+largest value fainter, the limit dashed, the value under the pointer; a
+table per profile (station, the distance along the line, the largest B
+and where, the limit line's extent, warnings such as a line end nearer
+than five times the limit line's reach); a table of the points with B and
+the margin (red when above the limit). **Export CSV…** writes every point.
+The results are marked out of date when the line or the ground changes.
+Not yet: the isolines drawn in the 3D view and on the cross-section, the
+thermal rating as the currents (on the command line only), places of
+sensitive use as objects of the project.
+
+**On the command line:**
+
+```text
+ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
+    [--weather CASES.ohlwc --case NAME | --temperature 40]
+    (--current CIRCUIT=A[:reverse])…
+    [--thermal AMBIENT.ohlta --ambient-case NAME --max-temp °C
+        [--method ieee738|cigre601|cigre207] [--reverse CIRCUIT]…]
+    [--earth-wires] [--two-d [--mean-heights]]
+    [--profile FROM:TO[@FRACTION]]… [--width 50] [--height 1] [--step 1]
+    [--grid FROM:TO]… [--points FILE.csv] [--limit µT]
+    [--terrain FILE | --surface NAME] [--all-points] [--csv OUT.csv]
+    [--library WIRES.ohlw]
+```
+
+`CIRCUIT` is a circuit's name or its system's id, `*` every circuit;
+`:reverse` sets the load flow against the line. `--thermal` takes each
+circuit's thermal rating (the least over its sections of the bundle's
+ampacity at `--max-temp` in the ambient case; see [Thermal
+rating](../theory/thermal.md)) — the ambient case and the temperature are
+yours to give; `--current` then overrides single circuits. `--profile`
+without `@` takes the span's lowest point; none: every span's.
+`--grid` adds a grid on a horizontal plane over a span (to draw isolines
+elsewhere). Try it on the synthetic example:
+
+```text
+ohl electrical magnetic examples/electrical/double-circuit.ohl.json \
+    --library examples/electrical/wires.ohlw \
+    --current North=1000 --current South=1000:reverse --earth-wires --limit 1
+```

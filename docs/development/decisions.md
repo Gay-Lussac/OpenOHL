@@ -22,6 +22,57 @@ of Parts A, B and C).
   steps 4 (magnetic field) and 5 (electric field); reference the BAFU's
   NISV enforcement guide (2007 draft, sections 2.4, 8.1.4, 8.7).
 
+**Magnetic field, first slice: the choices made (roadmap O18 step 4, 2026-10-27; to confirm by the owner)**
+
+- **What is reported**: B, the rms of the vector (the guide's equation 2,
+  IEC 62110's resultant field), and beside it the cycle's largest value
+  (the ellipse's semi-major axis, as an rms value). Two frequencies: each
+  apart, added as the root of the sum of squares (the guide's equation
+  3); the largest value likewise (only an indication).
+- **3D** on the solver's polylines, each subconductor its own polyline
+  (the views' bundle geometry), the current shared equally; closed-form
+  Biot–Savart per straight piece; the whole line modelled. Jumpers and
+  the ground's return currents left out (said; the latter estimated at
+  hundredths of a µT in the theory page). Steel not modelled.
+- **2D** takes the wires **where they cross the profile** by default (at
+  the lowest point: conservative against 3D), not the span's mean height
+  the roadmap draft named (not conservative under the lowest point); the
+  mean is an option. Warnings: a line angle over 5° at a structure within
+  the profile's half width (or the limit line's reach) of the station; a
+  span whose wires' places relative to each other differ by more than
+  **0.5 m** between its ends (the tolerance is the program's choice).
+  Crossings are not checked (no other lines yet).
+- **Stations**: every span's lowest point = the lowest point of its
+  lowest phase conductor (height above the ground), projected on the
+  span's axis; profiles square to the span's axis.
+- **Currents**: per circuit (a system's phases in one named circuit),
+  matched by its name, its system's id or `*`; a circuit without one
+  carries 0 A (said). Direction: *along the line* = from its first
+  structure to its last; *reverse* turns every phase by 180°. The thermal
+  rating (command line `--thermal`): the least over the circuit's sections
+  of bundle × ampacity (`ohl-thermal`, now a dependency of
+  `ohl-electrical`), the ambient case and the conductor temperature typed
+  — no ordinance's conditions built in. Not in the window yet.
+- **Earth wire currents**: \\( -Z_{ee}^{-1}Z_{ep}I_p \\) per span from its
+  mean cross-section and the line parameters' primitive matrices (the
+  line's earth return method and soil resistivity). On the synthetic
+  example they **raise** the field near the ground by about 5 % (the
+  induced current nearly in phase with the lowest phase) — the roadmap
+  draft expected a slight reduction; it depends on the arrangement.
+- **Modelled length**: the reach is measured on the profile (the farthest
+  point at or above the limit from the nearest conductor at the station;
+  without a limit the profile's half width); a station closer to the
+  line's end than five times it is warned about.
+- **Points**: a CSV with `x`, `y`, `z` or `height`, optional `name`; each
+  placed beside the nearest span (for its ground and, in 2D, its
+  cross-section).
+- The window holds its inputs for the session only (not saved with the
+  project yet); the computation runs on all cores (scoped threads), with
+  progress and Stop.
+- `ohl electrical parameters` and `magnetic` take their arguments boxed
+  (clippy's size rule); no behaviour change. `cross_section` exposes its
+  span axis and phase data to the crate (no behaviour change).
+
 **LiDAR clearance checks: speed accepted as it is (owner, 2026-10-27)**
 
 - "I think the speed up is good now": the point reading keeps its exact

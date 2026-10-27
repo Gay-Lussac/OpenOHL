@@ -665,6 +665,29 @@ the ideally transposed z1, z0, c1, c0, b1, b0; `unbalance`); `Coupling`
 between circuits of one frequency sharing spans (`length`, `z`, `c`,
 `z0m`). Methods: [Line parameters](../theory/line-parameters.md).
 
+**Magnetic field** (`magnetic::run`, roadmap O18 step 4, 2026-10-27;
+derived, never stored — the window's inputs live in the window for the
+session only). Inputs `Settings`: `model` (`three_d` / `two_d`),
+`heights_2d` (`station` / `mean`), `currents` [`CircuitCurrent` {`circuit`
+(name, system id or `*`), `amps` A rms, `reverse` (load flow against the
+line)}], `earth_wires` (induced currents on), `height`, `width`, `step`
+(m), `stations` [`StationSpec` {`from`, `to`, `fraction` (none: the
+lowest point)}], `grids` [(from, to)], `points` [`GivenPoint` {`name`,
+`x`, `y`, `z`? or `height`?}] (read by `parse_points` from a CSV with a
+header `x`, `y`, `z`|`height`, `name`), `limit_ut` (optional, µT; none
+built in). `thermal_currents` gives the circuits' thermal ratings (the
+least over a circuit's sections of bundle × ampacity, in an ambient case
+and at a temperature given). Results `MagneticField`: `currents`
+[`CurrentUsed`], `earth_wires` [`EarthWireCurrent` {`section`, `from`,
+`to`, `frequency_hz`, `amps`, `angle_deg`}], `profiles` [`Profile`
+{`from`, `to`, `at` m, `span_length`, `along_line` m, `points`, `max_ut`,
+`max_offset`, `limit` (`LimitExtent` {`left`, `right`, `beyond`}),
+`reach` m, `warnings`}], `grids` [`FieldGrid`], `points`, each a
+`FieldPoint` {`name`, `x`, `y`, `z`, `offset` (to the right of the span's
+axis), `height` (above the ground), `b_ut` (rms of the vector), `major_ut`
+(the cycle's largest), `margin_ut` (limit − B)}, `notes`; `csv` writes
+them. Methods: [Magnetic field](../theory/magnetic-field.md).
+
 ### Display and criteria
 
 | Entity.field | Type | Unit | Meaning |
