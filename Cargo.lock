@@ -3495,6 +3495,7 @@ dependencies = [
  "ohl-core",
  "ohl-crs",
  "ohl-drawing",
+ "ohl-electrical",
  "ohl-io",
  "ohl-lidar",
  "ohl-line",

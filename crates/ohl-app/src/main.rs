@@ -50,6 +50,7 @@ mod internal_clearances;
 mod job;
 mod library;
 mod lidar_edit;
+mod line_parameters;
 mod link_tool;
 mod loads;
 mod lod;

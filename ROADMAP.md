@@ -288,7 +288,9 @@ Electrical calculations from the line as it is modelled, so the designer
 gets the line's electrical data from the same geometry as its mechanical
 design: the conductors where they hang (in a weather case or a chosen
 sag), their bundles, the wire data, the earth wires, the other lines
-nearby. **Draft (owner, 2026-10-27; to discuss, nothing built).**
+nearby. **Draft (owner, 2026-10-27; to discuss).** Steps 0 and 1 (the
+cross-sections and the line parameters) **built, in active development,
+not approved yet** (2026-10-27, owner's choice of the first part).
 
 **Where it lives.** A headless engine crate `ohl-electrical` (no GUI, no
 plugin calls) for what is textbook and general — line parameters and the
@@ -309,11 +311,28 @@ the LeV plugin), the core staying independent of them.
   other lines' wires in the corridor. The same `CrossSection` record for
   the parameters, the fields and the noise, exported and given to
   plugins.
+  *Built (2026-10-27; in active development, not approved yet):*
+  `crates/ohl-electrical`, `CrossSection` at a station or as each span's
+  mean (the solved wire's average, or attachment height minus 2/3 of the
+  sag), the line's own wires; the soil resistivity as a line setting (one
+  value, 100 Ω·m assumed when not given, said). Not yet: other lines'
+  wires (an empty extension point), soil resistivity along the route, the
+  terrain under the spans (straight between the feet), the plugin
+  extension point (with step 4).
 - **Operating data per system**: voltage (rated, highest), current per
   circuit (given, from the load flow, or the thermal rating's ampacity),
   phase sequence and transposition along the line.
 
-1. [ ] **Line parameters** (core) — per circuit and section, from the
+1. [x] **Line parameters** (core) — *built 2026-10-27, in active
+   development, not approved yet*: `ohl electrical parameters`, Checks ›
+   Electrical › Line parameters…, [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/line-parameters.md),
+   13 validation cases (Kersting's Ex. 4.1 and Overbye's lecture, Carson's
+   integral by quadrature). Built: Carson's series / complex depth / first
+   terms, Kron, potential coefficients, per circuit and stretch, sequence
+   values ideally transposed and the coupling as built, zero sequence
+   coupling between circuits on the same spans, transpositions along the
+   line in the totals. Not yet: parallel lines elsewhere, a transposition
+   plan, soil along the route. The draft: per circuit and section, from the
    cross-sections (mean height in the span, or several stations
    averaged): series impedance with earth return (Carson, or its complex
    depth approximation) and the earth wires reduced out, as phase

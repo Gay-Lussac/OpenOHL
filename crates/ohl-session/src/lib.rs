@@ -2101,7 +2101,7 @@ impl Session {
 
     /// The command setting the line's electrical settings (soil
     /// resistivity, earth return method, the wires' height in a span;
-    /// Analysis › Electrical › Line parameters): one logged, undoable put
+    /// Checks › Electrical › Line parameters): one logged, undoable put
     /// of its settings row (`electrical`); no section is solved again.
     pub fn electrical_command(
         &self,

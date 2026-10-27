@@ -348,6 +348,8 @@ pub struct Ready {
     pub galloping: crate::galloping::GallopingWindow,
     /// Checks › Wire tensions (2026-10-22).
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
+    /// Checks › Electrical › Line parameters (2026-10-27).
+    pub line_parameters: crate::line_parameters::LineParametersWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
     /// Checks › Internal clearances….
@@ -547,6 +549,7 @@ impl Ready {
             pylon_builder: None,
             galloping: Default::default(),
             wire_tensions: Default::default(),
+            line_parameters: Default::default(),
             string_checks: Default::default(),
             internal_clearances: Default::default(),
             plans: Default::default(),
@@ -2374,6 +2377,20 @@ impl eframe::App for App {
                         .wire_tensions
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
+                let out = ready.line_parameters.ui(&ctx, &ready.model);
+                if let Some(settings) = out.settings {
+                    let command = ready
+                        .model
+                        .editing
+                        .as_ref()
+                        .map(|e| e.session.electrical_command(settings));
+                    if let Ok(command) = command {
+                        ready.perform(crate::edit::Action::Command {
+                            what: "electrical settings".into(),
+                            command,
+                        });
+                    }
+                }
                 let out =
                     ready
                         .string_checks
