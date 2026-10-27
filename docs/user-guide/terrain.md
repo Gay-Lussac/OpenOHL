@@ -329,7 +329,7 @@ distance_wind = "1.2 m"        # optional: in the cases with wind (invented)
 | `distance` | the distance to keep, required: a distance, a table by voltage or a formula, as the clearance rules' `vertical` / `radial`; a part whose voltage the table does not reach is not checked (a note says so) |
 | `conductors` | each span's conductor from its clamp at the structure out to `reach` (in plan along the solved wire), as solved in the case (the strings' swing included); a bundle subconductor by subconductor |
 | `jumpers` | each jumper with an end on the structure, as solved |
-| `string_ends` | each string's wire point (its bottom) as solved, not in still air |
+| `string_ends` | each string's wire point (its bottom) as solved, not in still air — only on a string with an electrified volume (2026-10-27): without one the wire point is the conductor's clamp, already measured with the conductor (to its surface), so only the conductor's distance to the structure is given |
 | `shapes` | the volumes on the strings (2026-10-25): each string's electrified shapes as parts, and every part measured against the grounded shapes too; `false`: neither (the first part's check) |
 | `reach` | above 0 m; default 20 m |
 | `distance_wind` | optional (2026-10-25, the owner's rule): the distance to keep in the cases **with wind** (a wind pressure above 0), in the forms of `distance`; none: `distance` in every case |

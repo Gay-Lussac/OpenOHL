@@ -16,8 +16,11 @@
 //!   in the solved shape); a bundle subconductor by subconductor;
 //! - **the jumpers at it** (a jumper end on one of its wire points), as
 //!   solved;
-//! - **the live end of each string**: its wire point as solved (the
-//!   string's bottom, not in still air);
+//! - **the live end of each string** with an electrified volume: its
+//!   wire point as solved (the string's bottom, not in still air). A
+//!   string without one is left to the conductor (owner, 2026-10-27): its
+//!   wire point is the conductor's clamp, already measured to the
+//!   conductor's surface;
 //! - **the volumes on the strings** (second part, 2026-10-25): each
 //!   string's **electrified** shapes (its assembly's, its own overrides
 //!   merged: [`ohl_structures::StringVolumes`]) placed on the solved string
@@ -1169,8 +1172,20 @@ fn pieces_at(
             }
             if rule.string_ends {
                 for st in shape.strings.get(p).into_iter().flatten() {
+                    // Only a string with an electrified volume (owner,
+                    // 2026-10-27): without one its wire point is the
+                    // conductor's clamp, measured with the conductor (to
+                    // its surface, nearer than the bare point).
+                    let electrified = fits
+                        .get(&(structure, st.label.as_str()))
+                        .is_some_and(|f| {
+                            f.volumes
+                                .shapes
+                                .iter()
+                                .any(|x| x.state == ElectricalState::Electrified)
+                        });
                     // A string shared by two sections (a TAK's): once.
-                    if labels.insert(st.label.clone()) {
+                    if electrified && labels.insert(st.label.clone()) {
                         out.push(Piece {
                             part: Part::StringEnd {
                                 label: st.label.clone(),
@@ -1393,16 +1408,13 @@ mod tests {
         )
         .unwrap();
         assert!(r.rows.iter().all(|x| x.structure == sid));
-        let ends: Vec<&InternalRow> = r
-            .rows
-            .iter()
-            .filter(|x| matches!(x.part, Part::StringEnd { .. }))
-            .collect();
-        assert!(!ends.is_empty());
-        for e in &ends {
-            assert!(e.distance <= 2.0 + 1e-9 && e.distance > 0.0, "{e:?}");
-            assert!(!e.to_surface);
-        }
+        // No volumes on the strings: their ends are left to the
+        // conductors (owner, 2026-10-27).
+        assert!(
+            !r.rows
+                .iter()
+                .any(|x| matches!(x.part, Part::StringEnd { .. }))
+        );
         let wires: Vec<&InternalRow> = r
             .rows
             .iter()
@@ -1602,6 +1614,8 @@ mod tests {
         assert_eq!(horn.against(), "shape string S1 tower-side horn");
         row("string S1 corona ring");
         row("string S1 clamp");
+        // A string with electrified volumes keeps its end.
+        row("string S1 end");
         // The insulated shape is no part; the double string's yoke once.
         assert!(
             !r.rows
