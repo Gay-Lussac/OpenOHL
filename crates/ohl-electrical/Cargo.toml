@@ -1,6 +1,6 @@
 [package]
 name = "ohl-electrical"
-description = "OpenOHL electrical calculations: cross-sections of the line and line parameters (series impedance with earth return, shunt capacitance)"
+description = "OpenOHL electrical calculations: cross-sections of the line and line parameters (series impedance with earth return, shunt capacitance), magnetic field"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,6 +12,7 @@ authors.workspace = true
 ohl-core.workspace = true
 ohl-cables.workspace = true
 ohl-line.workspace = true
+ohl-thermal.workspace = true
 nalgebra.workspace = true
 serde.workspace = true
 

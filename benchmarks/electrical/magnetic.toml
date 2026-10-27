@@ -1,0 +1,136 @@
+# The magnetic flux density (roadmap O18 step 4): the program's closed form
+# of Biot–Savart for finite straight segments and its 2D model of infinite
+# straight conductors, against closed forms and against Biot–Savart's law
+# integrated numerically (benchmarks/electrical/reference_magnetic.py:
+# scipy's adaptive quadrature along each segment, the ellipse's largest
+# value by sampling the cycle — not the program's formulas).
+#
+# Outputs in µT: b_ut the rms of the vector sqrt(|Bx|² + |By|² + |Bz|²),
+# b_major_ut the largest value over the cycle (the ellipse's semi-major
+# axis, as an rms value), bx_ut … the components' rms magnitudes. Currents
+# are rms, angles in degrees, lengths in m. No openly published field
+# profile with all its inputs was found to compare with (to do: IEC 62110
+# examples, CIGRE TB 375); the owner's comparisons with real lines stay
+# local.
+
+[[case]]
+id = "electrical-030"
+title = "One infinite straight conductor (2D): B = μ0 I / (2π d), 1000 A at 10 m"
+calculation = "electrical.magnetic_2d"
+reference = "Closed form μ0 I/(2π d) = 2·10⁻⁷ · 1000 / 10 T = 20 µT (Ampère's law)"
+[case.inputs]
+point = [10.0, 0.0]
+conductors = [{ y = 0.0, z = 0.0, current = 1000.0 }]
+[case.expected]
+b_ut = { value = 20.0, rel_tol = 1e-12 }
+b_major_ut = { value = 20.0, rel_tol = 1e-12 }
+
+[[case]]
+id = "electrical-031"
+title = "One long straight segment (200 km) at 10 m: the infinite conductor's 20 µT"
+calculation = "electrical.magnetic_segments"
+reference = "Closed form μ0 I/(2π d) = 20 µT; the finite length's share, d²/(2L²) = 5·10⁻⁹, is within the tolerance"
+[case.inputs]
+point = [0.0, 10.0, 0.0]
+segments = [{ a = [-100000.0, 0.0, 0.0], b = [100000.0, 0.0, 0.0], current = 1000.0 }]
+[case.expected]
+b_ut = { value = 20.0, rel_tol = 1e-8 }
+bz_ut = { value = 20.0, rel_tol = 1e-8 }
+bx_ut = { value = 0.0, abs_tol = 1e-12 }
+by_ut = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "electrical-032"
+title = "Finite segment, 100 m, 500 A, a point beyond its end"
+calculation = "electrical.magnetic_segments"
+reference = "Biot–Savart integrated by quadrature (benchmarks/electrical/reference_magnetic.py)"
+[case.inputs]
+point = [130.0, 5.0, 3.0]
+segments = [{ a = [0.0, 0.0, 0.0], b = [100.0, 0.0, 0.0], current = 500.0 }]
+[case.expected]
+bx_ut = { value = 0.0, abs_tol = 1e-12 }
+by_ut = { value = 0.07661299235, rel_tol = 1e-9 }
+bz_ut = { value = 0.1276883206, rel_tol = 1e-9 }
+b_ut = { value = 0.148908891, rel_tol = 1e-9 }
+b_major_ut = { value = 0.148908891, rel_tol = 1e-9 }
+
+[[case]]
+id = "electrical-033"
+title = "Finite segment, oblique in space, 800 A"
+calculation = "electrical.magnetic_segments"
+reference = "Biot–Savart integrated by quadrature (benchmarks/electrical/reference_magnetic.py)"
+[case.inputs]
+point = [10.0, -8.0, 1.0]
+segments = [{ a = [0.0, 0.0, 10.0], b = [40.0, 30.0, 25.0], current = 800.0 }]
+[case.expected]
+bx_ut = { value = 0.9276689613, rel_tol = 1e-9 }
+by_ut = { value = 3.154074469, rel_tol = 1e-9 }
+bz_ut = { value = 3.83436504, rel_tol = 1e-9 }
+b_ut = { value = 5.050852474, rel_tol = 1e-9 }
+
+[[case]]
+id = "electrical-034"
+title = "A sagging wire in three pieces and a second phase at −120° beside it: phasor sum, rms and the cycle's largest value"
+calculation = "electrical.magnetic_segments"
+reference = "Biot–Savart integrated by quadrature, the ellipse by sampling the cycle (benchmarks/electrical/reference_magnetic.py)"
+[case.inputs]
+point = [60.0, 15.0, 1.0]
+segments = [
+    { a = [0.0, 0.0, 30.0], b = [40.0, 0.0, 22.0], current = 1000.0, angle = 0.0 },
+    { a = [40.0, 0.0, 22.0], b = [80.0, 0.0, 20.0], current = 1000.0, angle = 0.0 },
+    { a = [80.0, 0.0, 20.0], b = [120.0, 0.0, 26.0], current = 1000.0, angle = 0.0 },
+    { a = [0.0, 6.0, 30.0], b = [120.0, 6.0, 26.0], current = 1000.0, angle = -120.0 },
+]
+[case.expected]
+bx_ut = { value = 0.150072717, rel_tol = 1e-8 }
+by_ut = { value = 5.769995374, rel_tol = 1e-9 }
+bz_ut = { value = 3.762963938, rel_tol = 1e-9 }
+b_ut = { value = 6.890229752, rel_tol = 1e-9 }
+b_major_ut = { value = 6.595517777, rel_tol = 1e-8 }
+
+[[case]]
+id = "electrical-035"
+title = "Balanced three-phase flat line (2D), 1000 A, 8 m apart, 20 m high, at 15 m across and 1 m high"
+calculation = "electrical.magnetic_2d"
+reference = "Sum of the three conductors' closed forms as phasors (benchmarks/electrical/reference_magnetic.py), the ellipse by sampling the cycle"
+[case.inputs]
+point = [15.0, 1.0]
+conductors = [
+    { y = -8.0, z = 20.0, current = 1000.0, angle = 0.0 },
+    { y = 0.0, z = 20.0, current = 1000.0, angle = -120.0 },
+    { y = 8.0, z = 20.0, current = 1000.0, angle = 120.0 },
+]
+[case.expected]
+b_ut = { value = 4.670446798, rel_tol = 1e-9 }
+b_major_ut = { value = 4.620357976, rel_tol = 1e-8 }
+
+[[case]]
+id = "electrical-036"
+title = "Balanced flat line far away (4 km): the closed form √3 μ0 I s / (2π d²)"
+calculation = "electrical.magnetic_2d"
+reference = "The far field of a balanced three-phase flat line (the dipole term of the three line currents): √3 · 4π·10⁻⁷ · 1000 · 8 / (2π · 4000²) T; the next term is smaller by about s/d"
+notes = "The exact sum differs from the far field's closed form by 5·10⁻⁶ relative at 4 km"
+[case.inputs]
+point = [4000.0, 20.0]
+conductors = [
+    { y = -8.0, z = 20.0, current = 1000.0, angle = 0.0 },
+    { y = 0.0, z = 20.0, current = 1000.0, angle = -120.0 },
+    { y = 8.0, z = 20.0, current = 1000.0, angle = 120.0 },
+]
+[case.expected]
+b_ut = { value = 0.0001732050808, rel_tol = 1e-4 }
+
+[[case]]
+id = "electrical-037"
+title = "Balanced flat line at twice the distance (8 km): a quarter (∝ 1/d²)"
+calculation = "electrical.magnetic_2d"
+reference = "√3 μ0 I s / (2π d²) at 8 km: a quarter of electrical-036's value"
+[case.inputs]
+point = [8000.0, 20.0]
+conductors = [
+    { y = -8.0, z = 20.0, current = 1000.0, angle = 0.0 },
+    { y = 0.0, z = 20.0, current = 1000.0, angle = -120.0 },
+    { y = 8.0, z = 20.0, current = 1000.0, angle = 120.0 },
+]
+[case.expected]
+b_ut = { value = 4.330127019e-05, rel_tol = 1e-4 }

@@ -81,3 +81,83 @@ fn parameters_of_the_example() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("no such section"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn magnetic(extra: &[&str]) -> std::process::Output {
+    let ex = root().join("examples/electrical");
+    Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["electrical", "magnetic"])
+        .arg(ex.join("double-circuit.ohl.json"))
+        .arg("--library")
+        .arg(ex.join("wires.ohlw"))
+        .args(extra)
+        .output()
+        .unwrap()
+}
+
+/// `ohl electrical magnetic`: the profiles, a limit's line, given points
+/// from a CSV, the CSV written; the thermal rating as the currents; 2D;
+/// no current refused.
+#[test]
+fn magnetic_field_of_the_example() {
+    let dir = std::env::temp_dir().join(format!("ohl-magnetic-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let points = dir.join("points.csv");
+    std::fs::write(&points, "name,x,y,height\nhouse,150,-30,4\n").unwrap();
+    let csv = dir.join("b.csv");
+    let out = magnetic(&[
+        "--current",
+        "*=1000",
+        "--current",
+        "South=1000:reverse",
+        "--earth-wires",
+        "--limit",
+        "1",
+        "--points",
+        points.to_str().unwrap(),
+        "--csv",
+        csv.to_str().unwrap(),
+    ]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(text.contains("against the line"), "{text}");
+    assert!(text.contains("T1–T2") && text.contains("T2–T3"), "{text}");
+    assert!(text.contains("house"), "{text}");
+    let table = std::fs::read_to_string(&csv).unwrap();
+    assert_eq!(
+        table.lines().filter(|l| l.starts_with("profile")).count(),
+        2 * 101
+    );
+    assert!(table.lines().any(|l| l.starts_with("point,,,,house")));
+    // The thermal rating of the example's wire as the currents, 2D.
+    let ambient = root().join("examples/synthetic-line/thermal-ambient.ohlta");
+    let out = magnetic(&[
+        "--thermal",
+        ambient.to_str().unwrap(),
+        "--ambient-case",
+        "summer still air",
+        "--max-temp",
+        "80",
+        "--two-d",
+        "--profile",
+        "T1:T2@0.5",
+    ]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains("thermal rating") && text.contains("2D"),
+        "{text}"
+    );
+    // No current: refused.
+    let out = magnetic(&[]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--current"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

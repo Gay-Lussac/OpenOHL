@@ -17,6 +17,9 @@
 //! - [`report`]: the results as table rows and CSV.
 //! - [`parameters`]: per span and along the line per circuit — phase
 //!   matrices, sequence values, coupling between circuits.
+//! - [`magnetic`]: the magnetic flux density of the line's currents —
+//!   3D from the solved wires (Biot–Savart, finite segments) or 2D from
+//!   cross-sections — in profiles, grids and given points.
 //!
 //! [`run`] does all of it for a line solved in one weather case.
 //!
@@ -31,6 +34,7 @@
 
 pub mod cross_section;
 pub mod earth;
+pub mod magnetic;
 pub mod matrices;
 pub mod parameters;
 pub mod report;
