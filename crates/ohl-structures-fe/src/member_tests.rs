@@ -117,6 +117,60 @@ fn member_fields_in_a_structure_file() {
     assert_eq!(b.dead_load_factor, Some(1.25));
 }
 
+/// A member's design data (version 4 / structure file 8): read in SI
+/// units, the crossing partner resolved by id; a member without any has
+/// none; an unknown key, a ratio of 0 or a missing partner refused.
+#[test]
+fn member_design_data_are_read() {
+    use crate::design::{ConnectedLeg, Ends, MemberClass};
+    let design = "[member.design]\nclass = \"crossing\"\ncrossing = \"n\"\n\
+        length_ratios = [0.5, 0.5, 0.56]\nend_eccentricity = \"both_ends\"\n\
+        end_restraint = \"one_end\"\nwidth_thickness = 10.2\nthickness = \"6 mm\"\nplies = 2\n\
+        connected_leg = \"long\"\nedge_distance = \"25 mm\"\nend_distance = \"27 mm\"\n\
+        spacing = \"50 mm\"\n\
+        bolts = { diameter = \"16 mm\", hole = \"17.5 mm\", count = 3, shear_capacity = \"60.17 kN\", holes = 1 }\n";
+    let other = "[[member]]\nid = \"n\"\nnodes = [\"b\", \"a\"]\nsection = \"s\"\n";
+    let text = format!("{}{other}", bar(design));
+    let m = Model::parse(&text).unwrap_or_else(|e| panic!("{e}"));
+    let d = &m.members[0].design;
+    assert_eq!(d.class, Some(MemberClass::Crossing));
+    assert_eq!(d.crossing, Some(1));
+    assert_eq!(d.length_ratios, Some([0.5, 0.5, 0.56]));
+    assert_eq!(
+        (d.end_eccentricity, d.end_restraint),
+        (Some(Ends::BothEnds), Some(Ends::OneEnd))
+    );
+    assert_eq!(d.connected_leg, Some(ConnectedLeg::Long));
+    assert!(close(d.thickness.unwrap(), 0.006, 1e-12));
+    assert!(close(d.end_distance.unwrap(), 0.027, 1e-12));
+    let b = d.bolts.unwrap();
+    assert_eq!((b.count, b.shear_planes, b.holes), (3, 1, Some(1)));
+    assert!(
+        close(b.hole.unwrap(), 0.0175, 1e-12) && close(b.shear_capacity.unwrap(), 60170.0, 1e-12)
+    );
+    assert!(m.members[1].design.is_empty());
+    // In a structure file too.
+    let ohls = format!("id = \"t\"\nname = \"t\"\nkind = \"lattice\"\n{text}");
+    let t = ohl_structures::StructureType::parse(std::path::Path::new("t.ohls"), &ohls);
+    assert!(t.is_ok(), "{:?}", t.err());
+    assert_eq!(
+        Model::from_structure_type(&ohls).unwrap().members[0].design,
+        *d
+    );
+    for (bad, says) in [
+        (
+            "[member.design]\nlength_ratios = [1, 0, 1]\n",
+            "length_ratios",
+        ),
+        ("[member.design]\nunknown = 1\n", "unknown"),
+        ("[member.design]\ncrossing = \"x\"\n", "no other member x"),
+        ("[member.design]\ncrossing = \"m\"\n", "no other member m"),
+    ] {
+        let e = Model::parse(&bar(bad)).unwrap_err();
+        assert!(e.contains(says), "{e}");
+    }
+}
+
 /// A frame cantilever along x of an unequal angle (iy = 100 cm4, iz = 400
 /// cm4), loaded down at its tip: with its legs towards +y and +z the
 /// local z is up and the bending about the local y (iy); towards +z and

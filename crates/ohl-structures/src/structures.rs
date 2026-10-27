@@ -186,7 +186,9 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "ohls";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
-/// Newest format version read. Version 7 adds a load case's two parts
+/// Newest format version read. Version 8 (2026-10-27) adds a member's
+/// design data (`[member.design]`, [`TypeMember::design`]); a file is
+/// written at 8 only when a member has them. Version 7 adds a load case's two parts
 /// (2026-10-25): line forces (`[[load_case.line]]`) and loads on the
 /// structure itself (`[load_case.structure]`) — raw tables here, read by
 /// the structure application; a file is written at 7 only when a case
@@ -212,7 +214,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 7;
+pub const STRUCTURE_FILE_VERSION: u32 = 8;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -605,6 +607,12 @@ pub struct TypeMember {
     /// fictitious member): solved, not design-checked.
     #[serde(default)]
     pub check: Option<bool>,
+    /// Version 8: its design data for a capacity method (`[member.design]`:
+    /// effective length ratios, end eccentricity and restraint, leg
+    /// slenderness, bolts, class, crossing partner — read by
+    /// `ohl_structures_fe::design`).
+    #[serde(default)]
+    pub design: Option<toml::Value>,
     /// Its member group (`"body-leg"`, `"body-bracing-3"`…): sections set
     /// and results reported per group.
     #[serde(default)]

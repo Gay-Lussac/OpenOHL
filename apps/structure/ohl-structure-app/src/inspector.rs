@@ -21,6 +21,21 @@ use crate::app::StructureApp;
 /// Same within a micrometre (a shared coordinate).
 const SAME: f64 = 1e-6;
 
+/// A member's `[member.design]` table in one line: `key value, …`.
+fn design_text(d: &toml::Value) -> String {
+    match d.as_table() {
+        Some(t) => t
+            .iter()
+            .map(|(k, v)| match v {
+                toml::Value::String(s) => format!("{k} {s}"),
+                other => format!("{k} {other}"),
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        None => d.to_string(),
+    }
+}
+
 /// While the pointer is pressed on `r` its changes are one undo step.
 fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
     if r.is_pointer_button_down_on() {
@@ -285,6 +300,23 @@ impl StructureApp {
                         });
                     }
                 });
+                ui.end_row();
+                // Design data (2026-10-27): shown, edited in the file
+                // (editing here: not yet).
+                ui.label("design data").on_hover_text(
+                    "[member.design]: effective length ratios, end eccentricity and restraint, \
+                     leg slenderness, bolts, class, crossing partner — read by the capacity \
+                     method. Edited in the file (not yet here).",
+                );
+                match &m.design {
+                    None => ui.label("— (the method's assumptions)"),
+                    Some(d) => {
+                        let text = design_text(d);
+                        let short: String = text.chars().take(60).collect();
+                        let more = if short.len() < text.len() { "…" } else { "" };
+                        ui.label(format!("{short}{more}")).on_hover_text(text)
+                    }
+                };
                 ui.end_row();
             });
     }

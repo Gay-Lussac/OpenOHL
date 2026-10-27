@@ -29,6 +29,7 @@
 //! formulation and its references.
 
 pub mod check;
+pub mod design;
 pub mod drawn;
 mod element;
 pub mod links;

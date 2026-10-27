@@ -125,6 +125,37 @@ node = "T1"                          # at a joint
 
 The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-ohlfe); a point on a joint carries its loads in the finite-element check (several points on one joint add up). A member's `kind` is `truss` (default), `frame`, `cable` or — version 5 — `tension`: a truss in tension only, left out of the analysis while it would be compressed (a tower program's "T-only" bracing; [Tension-only members](structure-analysis.md#tension-only-members)). The structure application raises the file to version 5 when a member is made `tension`; an older program then says the file is newer instead of failing on the kind. Version 6 also adds two member keys: `bending = true` on a `tension` member (it also bends, as a frame, while it is in the analysis: a tower program's tension-only beam; [Tension-only members](structure-analysis.md#tension-only-members)) and `check = false` (a member that is only part of the model — a tower program's fictitious member — solved but not checked).
 
+**Member design data** (version 8, 2026-10-27; `.ohlfe` version 4). What a member-capacity method needs beyond the cross-section and the forces, per member in a `[member.design]` table — all optional; where one is missing the method assumes the least favourable case and says so per member ([theory](../theory/structures-fe.md#member-usage)). The data are neutral: no design code's numbers; a method maps them to its rules.
+
+```toml
+[[member]]
+id = "D1"
+nodes = ["A", "B"]
+section = "L60x6"
+[member.design]
+class = "bracing"                  # leg | bracing | redundant | crossing
+crossing = "D2"                    # its crossing partner (another member's id), for class crossing
+length_ratios = [1.0, 1.0, 0.5]    # buckling length / member length about the section's
+                                   # y, z and minor principal axes (default: all 1)
+end_eccentricity = "both_ends"     # ends connected eccentrically (an angle bolted by one leg):
+                                   # none | one_end | both_ends
+end_restraint = "none"             # ends partly restrained against rotation (two or more bolts
+                                   # into a stiffer member): none | one_end | both_ends
+width_thickness = 10.2             # flat width / thickness of the legs (default: from the profile)
+thickness = "6 mm"                 # of the connected legs (built-ups and `general` profiles)
+plies = 1                          # profiles side by side (2: two angles back to back)
+connected_leg = "long"             # the leg the end bolts hold: both | long | short | none
+bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_planes = 1,
+          shear_capacity = "60 kN", ultimate = "800 MPa", holes = 1 }
+                                   # per end: count; per bolt and shear plane: shear_capacity;
+                                   # holes: holes in one cross-section (net section)
+edge_distance = "25 mm"
+end_distance = "27 mm"
+spacing = "50 mm"
+```
+
+A file with design data is version 8 (an older program says it is newer); the structure application keeps them as written, and its member properties show them (one line; editing them there: not yet — edit the file, or import them).
+
 Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, string swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
 
 ### Body generators, groups and symmetry
