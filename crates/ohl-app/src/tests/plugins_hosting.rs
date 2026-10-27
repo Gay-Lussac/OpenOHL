@@ -240,6 +240,17 @@ pub(super) fn run_until(h: &mut Harness<'_, App>, mut done: impl FnMut(&mut App)
 /// provide; turned off, a format plugin's formats go; File › Export and
 /// Import into the line run on the worker (the import one command,
 /// undoable).
+/// The command line finds the plugin settings where the applications keep
+/// them (it reads the consents given in the plugin manager; owner report
+/// 2026-10-27).
+#[test]
+fn the_command_line_reads_the_applications_plugin_settings() {
+    assert_eq!(
+        ohl_plugins::shared_storage_dir(),
+        eframe::storage_dir(ohl_plugins::STORAGE_ID)
+    );
+}
+
 #[test]
 fn plugins_are_managed_and_give_their_formats() {
     let model = synthetic_project("plugins");

@@ -20,6 +20,11 @@ of Parts A, B and C).
   call that fails (trap or time limit) while the plugin is held below its
   manifest's `[limits]` now starts its error with the advice to allow it
   in the plugin manager. The limits themselves are unchanged.
+- The command line `ohl` did not read what the user allowed (only the
+  applications did), so a project plugin asking for more memory always
+  failed there, even when allowed. It now reads the same shared plugin
+  settings (the applications' data folder, found without the window
+  library; a test keeps the folder equal to the applications').
 
 **Version 0.0.2: the macOS download holds only the two apps (owner, 2026-10-27)**
 

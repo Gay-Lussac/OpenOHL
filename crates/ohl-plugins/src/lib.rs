@@ -39,8 +39,8 @@ use serde::Deserialize;
 
 pub mod settings;
 pub use settings::{
-    Consent, PluginSettings, SETTINGS_FILE, STORAGE_ID, USER_DIR, consent_for, set_consents,
-    user_dir,
+    Consent, PluginSettings, SETTINGS_FILE, STORAGE_ID, USER_DIR, consent_for,
+    load_shared_consents, set_consents, shared_storage_dir, user_dir,
 };
 use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, Trap};
