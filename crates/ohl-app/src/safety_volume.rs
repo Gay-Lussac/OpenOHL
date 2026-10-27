@@ -33,6 +33,7 @@ use ohl_session::reports::{self, CheckReport, ReportStatus};
 use serde_json::{Value, json};
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::Job;
 use crate::model::Model;
 
@@ -457,6 +458,24 @@ pub struct Out {
     pub guide: Option<&'static str>,
 }
 
+/// The id of the window's body, tabs and footer.
+const WINDOW: &str = "safety-volume-window";
+
+/// The project setting holding the window's setup (per project line:
+/// `app.safety_volumes.<line>`; owner, 2026-10-27).
+pub const SETTING: &str = "app.safety_volumes";
+
+/// A part of the window's settings, in the order of the setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Part {
+    /// What is included (2 Scope).
+    Included,
+    /// The distance (3 Rules).
+    Distance,
+    /// The wire positions (4 Settings).
+    Positions,
+}
+
 /// The Safety volumes window.
 pub struct SafetyVolumeWindow {
     /// Shown (closed: its layer is taken off the views).
@@ -485,6 +504,8 @@ pub struct SafetyVolumeWindow {
     pub formats: Vec<Format>,
     /// What the last export did.
     export_message: Option<(String, bool)>,
+    /// The setup kept in the project ([`SETTING`]).
+    kept: check_ui::Kept,
 }
 
 impl Default for SafetyVolumeWindow {
@@ -505,6 +526,7 @@ impl Default for SafetyVolumeWindow {
             rule: 0,
             formats: vec![Format::Dxf, Format::Ifc, Format::Kmz],
             export_message: None,
+            kept: Default::default(),
         }
     }
 }
@@ -787,73 +809,205 @@ impl SafetyVolumeWindow {
         let mut open = true;
         let mut again = false;
         let stale = self.out_of_date(model);
+        let why = self.why_not_run(model);
+        let findings = self.report().map(|r| r.volumes.volumes.len());
         help::window(
             ctx,
             crate::dockable::Panel::SafetyVolumes,
             CHECK_TITLE,
-            [620.0, 640.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                // Run in the footer at the bottom left, always visible
-                // (owner, 2026-10-21); the rest scrolls above it.
-                help::body(ui, "safety-volume-window", |ui| {
-                    if let Some(what) = &stale {
-                        again = crate::revision::banner(ui, what, !self.job.running());
-                    }
-                    // The results at the top, as in the clearance
-                    // windows; the settings below.
-                    match &self.job.result {
+                if let Some(what) = &stale {
+                    again = crate::revision::banner(ui, what, !self.job.running() && why.is_none());
+                }
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    WINDOW,
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "The space within the distance of the wires in every position of the \
+                             cases ticked, for work near the line: one closed volume per wire, \
+                             circuit or system, shown in the 3D view and the plan, exported as \
+                             DXF, IFC or KML.",
+                            "No safety distance is built in: type yours (or take a design-code \
+                             plugin's preset) in 3 Rules.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            WINDOW,
+                            "The wires are solved in every position of the cases ticked (still \
+                             air, the blowouts, the wind steps or the swing arc). Around each \
+                             position the space within the distance plus the margin of the \
+                             conductors' surface is a tube; the tubes of a wire, circuit or \
+                             system are joined into one closed mesh that holds the exact volume \
+                             whole and lies outside it by at most the tolerance where it is \
+                             smooth (4 Settings).",
+                            |ui| {
+                                ui.horizontal(|ui| {
+                                    help::safety_distance(ui, 4.0, 1.0);
+                                    help::mesh_outside(ui, self.settings.tolerance);
+                                });
+                            },
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 2, "Scope", None);
+                        let names: Vec<String> =
+                            model.cases.iter().map(|c| c.case.name.clone()).collect();
+                        check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .cases(check_ui::Cases::Many(&names, &mut self.cases))
+                            .ui(ui);
+                        self.settings_ui(ui, model, presets, &mut out, Part::Included);
+                        ui.separator();
+                        check_ui::section(ui, 3, "Rules", None);
+                        self.settings_ui(ui, model, presets, &mut out, Part::Distance);
+                        ui.separator();
+                        check_ui::section(ui, 4, "Settings", None);
+                        self.settings_ui(ui, model, presets, &mut out, Part::Positions);
+                        ui.separator();
+                        if let Some(a) = help::heading(ui, "Export", "safety-volumes-export") {
+                            out.guide = Some(a);
+                        }
+                        self.export_ui(ui, model);
+                    }),
+                    check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| match &self
+                        .job
+                        .result
+                    {
                         None => {
-                            ui.label(
-                                "The space within the distance of the wires in every \
-                                     position of the cases ticked, for work near the line: \
-                                     one closed volume per wire, circuit or system, shown in \
-                                     the 3D view and the plan, exported as DXF, IFC or KML. Set \
-                                     it up below, then Run.",
-                            );
+                            ui.label(egui::RichText::new("No run yet: Run at the bottom.").weak());
                         }
                         Some(Err(e)) => {
                             crate::menu::error_label(ui, e);
                         }
                         Some(Ok(_)) => {
-                            self.report_ui(ui);
-                            ui.separator();
-                            self.save_ui(ui, model, &mut out);
+                            // A few volumes: the table, the save and the
+                            // export scroll together in the tab.
+                            egui::ScrollArea::vertical()
+                                .id_salt("safety-volume-results")
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    self.report_ui(ui);
+                                    self.save_ui(ui, model, &mut out);
+                                    if let Some(a) =
+                                        help::heading(ui, "Export", "safety-volumes-export")
+                                    {
+                                        out.guide = Some(a);
+                                    }
+                                    self.export_ui(ui, model);
+                                });
                         }
-                    }
-                    ui.separator();
-                    self.settings_ui(ui, model, presets, &mut out);
-                    ui.separator();
-                    if let Some(a) = help::heading(ui, "Export", "safety-volumes-export") {
-                        out.guide = Some(a);
-                    }
-                    self.export_ui(ui, model);
-                });
-                help::footer(ui, "safety-volume-window", |ui| {
-                    self.overrides.ui(ui);
-                    again |= help::run_button(
+                    }),
+                }
+                help::footer(ui, WINDOW, |ui| {
+                    let overrides = &mut self.overrides;
+                    again |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
+                        &mut self.job,
+                        why.clone(),
                         "Solve the cases ticked and build the volumes (in the background)",
                         None,
+                        |ui| {
+                            overrides.ui(ui);
+                        },
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );
         self.open = open;
-        if again {
+        if again && why.is_none() {
             self.start(model, ctx);
         }
         out
     }
 
+    /// Why the volumes cannot be built, if they cannot ("Before Run: …").
+    pub fn why_not_run(&self, model: &Model) -> Option<String> {
+        if !self.cases.iter().any(|&k| k < model.cases.len()) {
+            return Some("tick a weather case (2 Scope)".into());
+        }
+        if let Some(p) = self.settings.scope_problem() {
+            return Some(p);
+        }
+        self.settings
+            .distance
+            .problem()
+            .map(|p| format!("the distance: {p} (3 Rules)"))
+    }
+
+    /// The setup as kept in the project: the settings and the cases (by
+    /// name), the overrides (JSON).
+    fn stored(&self, model: &Model) -> String {
+        let cases: Vec<String> = self
+            .cases
+            .iter()
+            .filter_map(|&k| model.cases.get(k).map(|c| c.case.name.clone()))
+            .collect();
+        serde_json::json!({
+            "settings": self.settings.to_json(&cases),
+            "overrides": [self.overrides.structures, self.overrides.sections],
+        })
+        .to_string()
+    }
+
+    /// Takes the setup kept in the project (none: as it is).
+    fn take_stored(&mut self, model: &Model, text: Option<&str>) {
+        let Some(v) = text.and_then(|t| serde_json::from_str::<Value>(t).ok()) else {
+            return;
+        };
+        if let Some(s) = v.get("settings")
+            && let Ok((settings, cases)) = Settings::from_json(s)
+        {
+            self.settings = settings;
+            let found: Vec<usize> = cases
+                .iter()
+                .filter_map(|n| model.cases.iter().position(|c| &c.case.name == n))
+                .collect();
+            if !found.is_empty() {
+                self.cases = found;
+            }
+        }
+        if let Some([a, b]) = v
+            .get("overrides")
+            .and_then(|o| serde_json::from_value::<[bool; 2]>(o.clone()).ok())
+        {
+            self.overrides.structures = a;
+            self.overrides.sections = b;
+        }
+    }
+
+    /// Reads the setup from the project when not read yet for the line
+    /// worked on, and writes it into it when it changed (owner,
+    /// 2026-10-27: project setting [`SETTING`] per project line).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let json = self.stored(model);
+        let mut kept = std::mem::take(&mut self.kept);
+        if let check_ui::Step::Load(text) =
+            kept.step(model, ctx, SETTING, "safety volume settings", &json)
+        {
+            self.take_stored(model, text.as_deref());
+            kept.loaded(self.stored(model));
+        }
+        self.kept = kept;
+    }
+
+    /// A part of the settings: `part`.
     fn settings_ui(
         &mut self,
         ui: &mut egui::Ui,
         model: &Model,
         presets: &[crate::rule_editor::PluginPresets],
         out: &mut Out,
+        part: Part,
     ) {
         let voltages = ohl_clearance::zone::line_voltages(&model.line);
         let mut heading = |ui: &mut egui::Ui, title: &str, anchor: &'static str| {
@@ -861,37 +1015,13 @@ impl SafetyVolumeWindow {
                 out.guide = Some(a);
             }
         };
-        // Wire positions: the cases, the wind.
-        heading(ui, "Wire positions", "safety-volumes-wire-positions");
         let cases = &mut self.cases;
         let s = &mut self.settings;
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                egui::CollapsingHeader::new(format!("Weather cases ({} ticked)", cases.len()))
-                    .id_salt("safety-volume-cases")
-                    .show(ui, |ui| {
-                        let groups = crate::case_groups::groups(model);
-                        crate::case_groups::pick_indices(ui, model, &groups, cases);
-                        help::list(
-                            ui,
-                            "safety-volume-list-1",
-                            200.0,
-                            egui::ScrollArea::vertical(),
-                            |ui| {
-                                for (k, c) in model.cases.iter().enumerate() {
-                                    let mut on = cases.contains(&k);
-                                    if ui.checkbox(&mut on, &c.case.name).changed() {
-                                        if on {
-                                            cases.push(k);
-                                            cases.sort_unstable();
-                                        } else {
-                                            cases.retain(|x| *x != k);
-                                        }
-                                    }
-                                }
-                            },
-                        );
-                    });
+        // Wire positions: the wind (the cases in the scope).
+        if part == Part::Positions {
+            heading(ui, "Wire positions", "safety-volumes-wire-positions");
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
                 help::explain(
                     ui,
                     "Each case ticked: still air as it is, a windy case blown to the left and to \
@@ -925,23 +1055,24 @@ impl SafetyVolumeWindow {
                     ..wind
                 };
             });
-            let n = if s.wind.stepped() {
-                let full = cases
-                    .iter()
-                    .filter_map(|&k| model.cases.get(k))
-                    .map(|c| c.case.wind_pressure.si())
-                    .fold(0.0, f64::max);
-                (full / s.steps.step.max(1.0)).ceil() as usize
-            } else {
-                0
-            };
-            help::wind_positions(ui, s.wind.arc(), n);
-        });
-        ui.separator();
+                let n = if s.wind.stepped() {
+                    let full = cases
+                        .iter()
+                        .filter_map(|&k| model.cases.get(k))
+                        .map(|c| c.case.wind_pressure.si())
+                        .fold(0.0, f64::max);
+                    (full / s.steps.step.max(1.0)).ceil() as usize
+                } else {
+                    0
+                };
+                help::wind_positions(ui, s.wind.arc(), n);
+            });
+        }
         // Distance: the rule, a preset's, the margin.
-        heading(ui, "Distance", "safety-volumes-distance");
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
+        if part == Part::Distance {
+            heading(ui, "Distance", "safety-volumes-distance");
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
                 ui.label("from the conductors' surface");
                 crate::requirement_ui::requirement_ui_stacked(
                     ui,
@@ -1043,17 +1174,18 @@ impl SafetyVolumeWindow {
                      or loads swinging near the line.",
                 );
             });
-            let d = voltages
-                .iter()
-                .filter_map(|kv| s.distance.at(*kv).ok())
-                .fold(0.0, f64::max);
-            help::safety_distance(ui, d, s.margin);
-        });
-        ui.separator();
+                let d = voltages
+                    .iter()
+                    .filter_map(|kv| s.distance.at(*kv).ok())
+                    .fold(0.0, f64::max);
+                help::safety_distance(ui, d, s.margin);
+            });
+        }
         // What is included: the circuits or systems, the grouping.
-        heading(ui, "What is included", "safety-volumes-what-is-included");
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
+        if part == Part::Included {
+            heading(ui, "What is included", "safety-volumes-what-is-included");
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("scope by");
                     for (scope, tip) in [
@@ -1138,13 +1270,13 @@ impl SafetyVolumeWindow {
                      of the volumes.",
                 );
             });
-            help::volume_grouping(ui, s.grouping);
-        });
-        ui.separator();
-        // Mesh: the tolerance.
-        heading(ui, "Mesh", "safety-volumes-mesh");
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
+                help::volume_grouping(ui, s.grouping);
+            });
+            ui.separator();
+            // Mesh: the tolerance.
+            heading(ui, "Mesh", "safety-volumes-mesh");
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("tolerance");
                     crate::style::field(
@@ -1169,8 +1301,9 @@ impl SafetyVolumeWindow {
                      be larger than the tolerance.",
                 );
             });
-            help::mesh_outside(ui, s.tolerance);
-        });
+                help::mesh_outside(ui, s.tolerance);
+            });
+        }
     }
 
     fn report_ui(&self, ui: &mut egui::Ui) {

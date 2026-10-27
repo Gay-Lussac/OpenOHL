@@ -47,7 +47,7 @@ pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
         ctx,
         Panel::Clearances,
         Panel::Clearances.name(),
-        [560.0, 720.0],
+        [860.0, 760.0],
         &mut open,
         |ui| clearance_panel(ui, r),
     );

@@ -292,12 +292,17 @@ fn safety_volumes_by_system() {
     h.get_by_label("(no system) — earthed wires (none on this line)");
     h.get_by_label("None").click_accesskit();
     h.run_steps(2);
-    h.get_by_label("Run").click();
-    h.run_steps(2);
-    match h.state_mut().ready().unwrap().safety_volume.result().0 {
-        Some(Err(e)) => assert!(e.contains("tick a system"), "{e}"),
-        other => panic!("{other:?}"),
-    }
+    // Run greyed, the reason said before Run (2026-10-27).
+    h.get_by_label_contains("Before Run: tick a system");
+    assert!(
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .safety_volume
+            .result()
+            .0
+            .is_none()
+    );
     h.get_by_label("220 kV example system — 220 kV")
         .click_accesskit();
     h.run_steps(2);
@@ -386,6 +391,9 @@ fn safety_volumes_by_system() {
     );
     // By span: the search finds S1's first span, All ticks it alone; the
     // run takes that span's wire only (one volume, of S1), and records it.
+    // (In the Setup tab: Results opened by itself after the run.)
+    h.get_by_label("Setup").click();
+    h.run_steps(2);
     h.get_by_label("Spans").click_accesskit();
     h.run_steps(2);
     h.get_by_label("10 of 10 ticked");

@@ -176,11 +176,17 @@ fn every_check_window_keeps_run_in_its_footer() {
         let node = harness.get_by_label("Run");
         if node.accesskit_node().is_disabled() {
             // Greyed (thermal without a rule file, a clearance window
-            // whose first rule has no distance yet): it says why.
+            // whose first rule has no distance yet, vegetation without a
+            // point cloud, safety volumes without a distance): it says
+            // why.
             assert!(
                 matches!(
                     check.name,
-                    "thermal" | "vertical-clearances" | "radial-clearances"
+                    "thermal"
+                        | "vertical-clearances"
+                        | "radial-clearances"
+                        | "vegetation"
+                        | "safety-volumes"
                 ),
                 "{}: Run greyed",
                 check.name

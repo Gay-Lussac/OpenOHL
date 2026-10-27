@@ -2340,6 +2340,10 @@ impl eframe::App for App {
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
                 ready.magnetic_field.keep(&mut ready.model, &ctx);
+                ready.vegetation.keep(&mut ready.model, &ctx);
+                ready.safety_volume.keep(&mut ready.model, &ctx);
+                ready.phase_distance.keep(&mut ready.model, &ctx);
+                ready.unequal_wind.keep(&mut ready.model, &ctx);
                 ready.magnetic_field.ui(&ctx, &ready.model);
                 let out = ready.line_parameters.ui(&ctx, &ready.model);
                 if let Some(settings) = out.settings {

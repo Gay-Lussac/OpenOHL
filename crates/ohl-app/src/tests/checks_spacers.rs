@@ -264,7 +264,8 @@ fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
         assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
-    harness.state_mut().ready().unwrap().unequal_wind.only_below = false;
+    // Every pair shown (Only violations unticked).
+    crate::check_ui::set_only_violations(&harness.ctx, "unequal-wind-page-rows", false);
     harness.run();
     let shown = harness.state_mut().ready().unwrap().case;
     let label = format!("{} span {}", row.span[0].0, row.span[0].1 + 1);
@@ -394,12 +395,8 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
     // All pairs shown, then a span link.
-    harness
-        .state_mut()
-        .ready()
-        .unwrap()
-        .phase_distance
-        .only_below = false;
+    // Every pair shown (Only violations unticked).
+    crate::check_ui::set_only_violations(&harness.ctx, "phase-distance-page-rows", false);
     harness.run();
     let _ = below;
     let label = format!("{} span {}", row.span[0].0, row.span[0].1 + 1);
@@ -687,6 +684,9 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
         assert!(started.elapsed().as_secs() < 60);
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    harness.run();
+    // The values in the Setup tab (Results opened by itself).
+    harness.get_by_label("Setup").click();
     harness.run();
     harness.get_by_label_contains("the project's copy");
     harness.get_by_label("Back to the plugin's").click();

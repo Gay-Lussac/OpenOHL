@@ -49,7 +49,8 @@ use ohl_session::reports::{self, CheckReport, ReportStatus};
 use serde_json::{Value, json};
 
 use crate::check_help as help;
-use crate::job::{Job, or_dash, save_csv};
+use crate::check_ui;
+use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -64,6 +65,13 @@ pub const GUIDE: &str = "user-guide/analyses";
 
 /// What a vegetation report is computed from.
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
+
+/// The id of the window's body, tabs and footer.
+const PANEL: &str = "vegetation-panel";
+
+/// The project setting holding the window's setup (per project line:
+/// `app.vegetation.<line>`; owner, 2026-10-27).
+pub const SETTING: &str = "app.vegetation";
 
 /// How unbalanced ice is checked (none: not).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -686,6 +694,10 @@ pub struct VegetationWindow {
     color_tool: Option<(usize, crate::color_tool::ColorTool)>,
     /// The case names a preset selects, once the model has them.
     pending_cases: Option<Vec<String>>,
+    /// The circuits, routes and sections checked (owner, 2026-10-27).
+    pub scope: check_ui::Scope,
+    /// The setup kept in the project ([`SETTING`]).
+    kept: check_ui::Kept,
 }
 
 /// The ground the checks use, in words (a saved run says whether it
@@ -816,14 +828,29 @@ impl VegetationWindow {
         let origin = model.origin;
         let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
         let filter = self.overrides.filter(model);
+        // The wires in scope (owner, 2026-10-27): the line solved whole
+        // (sections solved together stay together), the others' spans
+        // left out of the check.
+        let keep = (!self.scope.whole()).then(|| self.scope.sections_of(&model.line));
+        let scope_note = (!self.scope.whole()).then(|| {
+            format!(
+                "scope: {}",
+                check_ui::scope_words(&model.line, &self.scope, true)
+            )
+        });
+        let cancel = self.job.cancel_token();
         self.job.start_at(ctx, model.revision(), move || {
             // Exit clause: ~1 µs a point and position set; an hour is far
-            // beyond what a line needs.
-            let budget =
-                ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(3600));
+            // beyond what a line needs. Stop cancels it.
+            let budget = ohl_core::budget::Budget::new()
+                .time_limit(std::time::Duration::from_secs(3600))
+                .cancel_token(cancel);
             let mut positions = ohl_clearance::positions::solve_positions(
                 &line, &library, &cases, options, &budget,
             )?;
+            if let Some(keep) = &keep {
+                keep_sections(&mut positions, keep);
+            }
             // The points, as whole millimetres from the model's origin.
             let (file, name) = ohl_lidar::cloud_spec(&spec);
             let source =
@@ -845,6 +872,7 @@ impl VegetationWindow {
             )?;
             let at = |v: i32, k: usize| v as f64 / 1000.0 + origin[k];
             let mut notes = positions.notes.clone();
+            notes.extend(scope_note);
             if let Some(mode) = ice {
                 let spans = ohl_clearance::vegetation::spans_near(
                     &positions,
@@ -1055,6 +1083,13 @@ impl VegetationWindow {
         let mut open = true;
         let mut again = false;
         let stale = self.out_of_date(model);
+        let why = self.why_not_run(model);
+        let findings = self.report().map(|r| {
+            r.spans
+                .iter()
+                .filter(|s| s.encroaching > 0 || s.fall_in > 0)
+                .count()
+        });
         help::window(
             ctx,
             crate::dockable::Panel::Vegetation,
@@ -1062,56 +1097,128 @@ impl VegetationWindow {
             [900.0, 760.0],
             &mut open,
             |ui| {
-                // Run in the footer at the bottom left, always visible
-                // (owner, 2026-10-21); the rest scrolls above it.
-                help::body(ui, "vegetation-panel", |ui| {
-                    // Out of date: said at the top, Run again beside.
-                    if let Some(what) = &stale
-                        && self.report().is_some()
-                    {
-                        again = crate::revision::banner(ui, what, !self.job.running());
-                    }
-                    self.preset_ui(ui, model, presets, &mut out);
-                    ui.separator();
-                    egui::CollapsingHeader::new("Settings")
-                        .id_salt("vegetation-settings")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            self.settings_ui(ui, model, &mut out);
-                            ui.separator();
-                            self.colors_ui(ui, model);
+                // Out of date: said at the top, Run again beside.
+                if let Some(what) = &stale
+                    && self.report().is_some()
+                {
+                    again = crate::revision::banner(ui, what, !self.job.running() && why.is_none());
+                }
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    PANEL,
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, PANEL, |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "Vegetation near the wires of the cases ticked, now and after growth, \
+                             and trees that could fall onto them turning about their root ball.",
+                            "Grow-in: every vegetation point within the clearance c plus the \
+                             growth g and the buffer b of a wire in any of its positions. \
+                             Fall-in: a tree (a point above its base on the ground) that, \
+                             falling about its root ball, would come within the allowance A of \
+                             a wire.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            PANEL,
+                            "The wires are solved in every position of the weather cases ticked \
+                             (still air, each side, the wind steps or the swing arc, unbalanced \
+                             ice). Every LiDAR point of the vegetation classes within the search \
+                             distance is measured to the nearest wire surface in any position: \
+                             closer than c + g + b, it grows in. A point's tree base is the \
+                             ground below it (or the nearest ground point); the tree falls about \
+                             the root ball's edge in every direction of its sector, and comes \
+                             within A of a wire: a danger tree.",
+                            |ui| {
+                                ui.horizontal(|ui| {
+                                    help::falling_tree(
+                                        ui,
+                                        self.settings.root_ball,
+                                        largest(&self.settings.allowance),
+                                    );
+                                });
+                            },
+                        );
+                        ui.separator();
+                        if let Some(a) =
+                            check_ui::section(ui, 2, "Scope", Some("vegetation-wire-positions"))
+                        {
+                            out.guide = Some(a);
+                        }
+                        let names: Vec<String> =
+                            model.cases.iter().map(|c| c.case.name.clone()).collect();
+                        // The circuits, routes and sections checked (owner,
+                        // 2026-10-27: "some of them we will model but we
+                        // don't need them checked").
+                        check_ui::ScopePicker::new(PANEL, &model.line)
+                            .wires(&mut self.scope, true)
+                            .cases(check_ui::Cases::Many(&names, &mut self.cases))
+                            .ui(ui);
+                        ui.horizontal_wrapped(|ui| {
+                            let groups = crate::case_groups::groups(model);
+                            crate::case_groups::pick_indices(ui, model, &groups, &mut self.cases);
                         });
-                    ui.separator();
-                    match &self.job.result {
-                        None => {
-                            ui.label(
-                                "Vegetation near the wires of the cases ticked, now and after \
-                                     growth, and trees that could fall onto them turning about \
-                                     their root ball.",
-                            );
-                        }
-                        Some(Err(e)) => {
-                            crate::menu::error_label(ui, e);
-                        }
-                        Some(Ok(report)) => {
-                            if let Some(go) = report_ui(ui, report) {
-                                out.go = Some(go);
+                        ui.separator();
+                        check_ui::section(ui, 3, "Rules", None);
+                        self.preset_ui(ui, model, presets, &mut out);
+                        ui.separator();
+                        check_ui::section(ui, 4, "Settings", None);
+                        egui::CollapsingHeader::new("Settings")
+                            .id_salt("vegetation-settings")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                self.settings_ui(ui, model, &mut out);
+                                ui.separator();
+                                self.colors_ui(ui, model);
+                            });
+                    }),
+                    check_ui::Tab::Results => check_ui::results_area(ui, PANEL, |ui| {
+                        match &self.job.result {
+                            None => {
+                                ui.label(
+                                    egui::RichText::new("No run yet: Run at the bottom.").weak(),
+                                );
+                            }
+                            Some(Err(e)) => {
+                                crate::menu::error_label(ui, e);
+                            }
+                            Some(Ok(report)) => {
+                                if let Some(go) = report_ui(ui, report) {
+                                    out.go = Some(go);
+                                }
                             }
                         }
-                    }
-                    if self.report().is_some() {
-                        ui.separator();
-                        self.save_ui(ui, model, &mut out);
-                    }
-                });
-                again |= help::footer(ui, "vegetation-panel", |ui| {
-                    self.overrides.ui(ui);
-                    self.run_ui(ui)
+                        if self.report().is_some() {
+                            self.save_ui(ui, model, &mut out);
+                        }
+                    }),
+                }
+                again |= help::footer(ui, PANEL, |ui| {
+                    let scope = check_ui::scope_words(&model.line, &self.scope, true);
+                    let overrides = &mut self.overrides;
+                    check_ui::job_footer(
+                        ui,
+                        &mut self.job,
+                        why.clone(),
+                        "Solve the cases, read the vegetation points again and check every span \
+                         in scope",
+                        Some(scope),
+                        |ui| {
+                            overrides.ui(ui);
+                        },
+                    )
                 });
             },
         );
         self.open = open;
-        if again {
+        if again && why.is_none() {
             self.start(model, ctx);
         }
         // The colour tool, when open.
@@ -1128,6 +1235,87 @@ impl VegetationWindow {
             }
         }
         out
+    }
+
+    /// Why the check cannot run, if it cannot ("Before Run: …").
+    pub fn why_not_run(&self, model: &Model) -> Option<String> {
+        if model.cloud.is_none() {
+            return Some("no point cloud in this model".into());
+        }
+        if self.settings.classes_of(&model.scheme).is_empty() {
+            return Some(format!(
+                "no class chosen, and no class of \"{}\" has the role vegetation (4 Settings)",
+                model.scheme.name
+            ));
+        }
+        if !self.cases.iter().any(|&k| k < model.cases.len()) {
+            return Some("tick a weather case (2 Scope)".into());
+        }
+        self.scope.why_not(&model.line)
+    }
+
+    /// The setup as kept in the project: the settings, the cases (by
+    /// name), the scope, the overrides (JSON).
+    fn stored(&self, model: &Model) -> String {
+        let cases: Vec<String> = self
+            .cases
+            .iter()
+            .filter_map(|&k| model.cases.get(k).map(|c| c.case.name.clone()))
+            .collect();
+        serde_json::json!({
+            "settings": self.settings.to_json(&cases),
+            "scope": self.scope,
+            "overrides": [self.overrides.structures, self.overrides.sections],
+        })
+        .to_string()
+    }
+
+    /// Takes the setup kept in the project (none: the defaults; what
+    /// cannot be read, said in the window's status line).
+    fn take_stored(&mut self, model: &Model, text: Option<&str>) {
+        let Some(v) = text.and_then(|t| serde_json::from_str::<Value>(t).ok()) else {
+            return;
+        };
+        if let Some(s) = v.get("settings")
+            && let Ok((settings, cases)) = Settings::from_json(s)
+        {
+            self.settings = settings;
+            let found: Vec<usize> = cases
+                .iter()
+                .filter_map(|n| model.cases.iter().position(|c| &c.case.name == n))
+                .collect();
+            if !found.is_empty() {
+                self.cases = found;
+            }
+        }
+        if let Some(s) = v.get("scope")
+            && let Ok(scope) = serde_json::from_value(s.clone())
+        {
+            self.scope = scope;
+        }
+        if let Some([a, b]) = v
+            .get("overrides")
+            .and_then(|o| serde_json::from_value::<[bool; 2]>(o.clone()).ok())
+        {
+            self.overrides.structures = a;
+            self.overrides.sections = b;
+        }
+    }
+
+    /// Reads the setup from the project when not read yet for the line
+    /// worked on, and writes it into it when it changed (owner,
+    /// 2026-10-27: kept in the project as the magnetic field's, project
+    /// setting [`SETTING`] per project line).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let json = self.stored(model);
+        let mut kept = std::mem::take(&mut self.kept);
+        if let check_ui::Step::Load(text) =
+            kept.step(model, ctx, SETTING, "vegetation check settings", &json)
+        {
+            self.take_stored(model, text.as_deref());
+            kept.loaded(self.stored(model));
+        }
+        self.kept = kept;
     }
 
     /// The preset dropdown, its preview and Apply.
@@ -1302,32 +1490,6 @@ impl VegetationWindow {
         let s = &mut self.settings;
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                // The cases: a tick each (the list stays open while ticking).
-                egui::CollapsingHeader::new(format!("Weather cases ({} ticked)", cases.len()))
-                    .id_salt("vegetation-cases")
-                    .show(ui, |ui| {
-                        let groups = crate::case_groups::groups(model);
-                        crate::case_groups::pick_indices(ui, model, &groups, cases);
-                        help::list(
-                            ui,
-                            "vegetation-list-1",
-                            200.0,
-                            egui::ScrollArea::vertical(),
-                            |ui| {
-                                for (k, c) in model.cases.iter().enumerate() {
-                                    let mut on = cases.contains(&k);
-                                    if ui.checkbox(&mut on, &c.case.name).changed() {
-                                        if on {
-                                            cases.push(k);
-                                            cases.sort_unstable();
-                                        } else {
-                                            cases.retain(|x| *x != k);
-                                        }
-                                    }
-                                }
-                            },
-                        );
-                    });
                 help::explain(
                     ui,
                     "Each case ticked: still air as it is, a windy case blown to the left and to \
@@ -1625,18 +1787,6 @@ impl VegetationWindow {
         );
     }
 
-    /// The Run footer: Run, its status. True to run.
-    fn run_ui(&self, ui: &mut egui::Ui) -> bool {
-        let run = help::run_button(
-            ui,
-            !self.job.running(),
-            "Solve the cases, read the vegetation points again and check every span",
-            None,
-        );
-        self.job.status_ui(ui);
-        run
-    }
-
     /// Saving the run shown in Performed checks.
     fn save_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
         ui.horizontal(|ui| {
@@ -1692,42 +1842,80 @@ impl VegetationWindow {
     }
 }
 
-/// The results: totals, exports, a table of the spans with findings, the
-/// worst points.
+/// The results: the verdict, the exports, the spans in the shared table
+/// (spans 1-based, the units in the headers; a row clicked goes to its
+/// span), the notes and the worst points folded under it.
 fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
     let mut go = None;
-    if let Some(s) = &report.saved {
-        ui.label(
-            egui::RichText::new(format!("saved run \"{s}\""))
-                .small()
-                .weak(),
-        );
-    }
-    help::list(
-        ui,
-        "vegetation-list-2",
-        80.0,
-        egui::ScrollArea::vertical().id_salt("vegetation-notes"),
-        |ui| {
-            for n in &report.notes {
-                ui.label(egui::RichText::new(n).small().weak());
-            }
-        },
-    );
-    ui.horizontal(|ui| {
-        let (enc, fall) = report
-            .spans
-            .iter()
-            .fold((0, 0), |(e, f), r| (e + r.encroaching, f + r.fall_in));
-        ui.label(format!(
-            "{} vegetation points, {} positions; grow-in {enc}, fall-in {fall} — {} grow-in \
-             points and {} danger trees drawn",
+    let (enc, fall) = report
+        .spans
+        .iter()
+        .fold((0, 0), |(e, f), r| (e + r.encroaching, f + r.fall_in));
+    let found: Vec<&SpanRow> = report
+        .spans
+        .iter()
+        .filter(|r| r.encroaching > 0 || r.fall_in > 0)
+        .collect();
+    let text = if found.is_empty() {
+        format!(
+            "✔ No vegetation within reach: {} vegetation points, {} spans checked",
             report.points,
-            report.positions,
-            report.grow.len(),
-            report.fall.len()
-        ));
-        if ui.button("Export CSV…").clicked() {
+            report.spans.len()
+        )
+    } else {
+        let worst = found
+            .iter()
+            .filter_map(|r| r.nearest.map(|n| (n.0 - r.required, *r)))
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let mut t = format!(
+            "✖ {} span{} with vegetation: grow-in {enc} points, fall-in {fall} trees",
+            found.len(),
+            if found.len() == 1 { "" } else { "s" }
+        );
+        if let Some((m, r)) = worst {
+            t.push_str(&format!(
+                " — nearest {m:+.2} m to c: {}",
+                Selection::Span {
+                    section: r.section.clone(),
+                    span: r.span,
+                }
+                .describe()
+            ));
+        }
+        t
+    };
+    if check_ui::verdict(ui, !found.is_empty(), &text, !found.is_empty())
+        && let Some(r) = found.first()
+    {
+        go = Some(Selection::Span {
+            section: r.section.clone(),
+            span: r.span,
+        });
+    }
+    ui.horizontal_wrapped(|ui| {
+        if let Some(s) = &report.saved {
+            ui.label(
+                egui::RichText::new(format!("saved run \"{s}\""))
+                    .small()
+                    .weak(),
+            );
+        }
+        ui.label(
+            egui::RichText::new(format!(
+                "{} vegetation points, {} positions; {} grow-in points and {} danger trees drawn",
+                report.points,
+                report.positions,
+                report.grow.len(),
+                report.fall.len()
+            ))
+            .small()
+            .weak(),
+        );
+        if ui
+            .button("Export points CSV…")
+            .on_hover_text("Every span with its counts and every worst point, as a CSV file")
+            .clicked()
+        {
             save_csv("danger-trees.csv", &report.csv());
         }
         if let Some((lines, _)) = &report.lines
@@ -1741,62 +1929,54 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
             );
         }
     });
-    help::list(
-        ui,
-        "vegetation-list-3",
-        450.0,
-        egui::ScrollArea::vertical()
-            .id_salt("vegetation-rows")
-            .auto_shrink([false, true]),
-        |ui| {
-            // Every span found, only those in view drawn (2026-10-26).
-            let rows: Vec<_> = report
-                .spans
-                .iter()
-                .filter(|r| r.encroaching > 0 || r.fall_in > 0)
-                .collect();
-            let mut table = crate::rows_in_view::Table::new(ui, "vegetation-rows", 8)
-                .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
-            table.header(
-                ui,
-                &[
-                    ("span", ""),
-                    ("c m", ""),
-                    ("grow-in", ""),
-                    ("fall-in", ""),
-                    ("nearest m", ""),
-                    ("case, position", ""),
-                    ("fall margin m", ""),
-                    ("case, position", ""),
+    use check_ui::{Cell, Col};
+    let rows: Vec<check_ui::Row> = report
+        .spans
+        .iter()
+        .map(|r| {
+            let label =
+                |l: Option<(f64, u32)>| l.map_or("-".to_owned(), |v| report.label(v.1).to_owned());
+            check_ui::Row::new(
+                vec![
+                    Cell::span(&r.section, r.span),
+                    Cell::num(Some(r.required), 2),
+                    Cell::sorted(r.encroaching.to_string(), r.encroaching as f64)
+                        .bad(r.encroaching > 0),
+                    Cell::sorted(r.fall_in.to_string(), r.fall_in as f64).bad(r.fall_in > 0),
+                    Cell::num(r.nearest.map(|v| v.0), 2),
+                    Cell::text(label(r.nearest)),
+                    Cell::num(r.worst_fall.map(|v| v.0), 2),
+                    Cell::text(label(r.worst_fall)),
                 ],
-            );
-            table.rows(ui, rows.len(), None, |c, i| {
-                let r = rows[i];
-                if c.cell(|ui| {
-                    ui.link(format!("{} span {}", r.section, r.span))
-                        .on_hover_text("Go to this span")
-                        .clicked()
-                }) {
-                    go = Some(Selection::Span {
-                        section: r.section.clone(),
-                        span: r.span,
-                    });
-                }
-                let error = c.ui.visuals().error_fg_color;
-                let red = |n: u64| {
-                    let t = egui::RichText::new(n.to_string()).monospace();
-                    if n > 0 { t.color(error) } else { t }
-                };
-                c.cell(|ui| ui.label(format!("{:.2}", r.required)));
-                c.cell(|ui| ui.label(red(r.encroaching)));
-                c.cell(|ui| ui.label(red(r.fall_in)));
-                c.cell(|ui| ui.label(or_dash(r.nearest.map(|v| v.0), 2)));
-                c.cell(|ui| ui.label(r.nearest.map_or("-", |v| report.label(v.1))));
-                c.cell(|ui| ui.label(or_dash(r.worst_fall.map(|v| v.0), 2)));
-                c.cell(|ui| ui.label(r.worst_fall.map_or("-", |v| report.label(v.1))));
-            });
-        },
-    );
+                r.encroaching > 0 || r.fall_in > 0,
+            )
+        })
+        .collect();
+    let clicked = check_ui::ResultTable::new(
+        "vegetation-rows",
+        vec![
+            Col::text("Span"),
+            Col::num("c [m]").tip("The clearance required at the span's voltage"),
+            Col::num("Grow-in [points]"),
+            Col::num("Fall-in [trees]"),
+            Col::num("Nearest [m]").tip("The nearest vegetation point to a wire's surface"),
+            Col::text("Case, position"),
+            Col::num("Fall margin [m]").tip("The worst falling tree's margin to the allowance"),
+            Col::text("Case, position (fall)"),
+        ],
+    )
+    .rows(rows)
+    .csv("vegetation-spans.csv")
+    .below(check_ui::FOLDS_BELOW + 70.0)
+    .ui(ui);
+    if let Some(k) = clicked {
+        let r = &report.spans[k];
+        go = Some(Selection::Span {
+            section: r.section.clone(),
+            span: r.span,
+        });
+    }
+    check_ui::notes_fold(ui, "vegetation", &report.notes);
     let worst: usize = report.spans.iter().map(|r| r.worst.len()).sum();
     egui::CollapsingHeader::new(format!("Worst points ({worst})"))
         .id_salt("vegetation-worst")
@@ -1804,19 +1984,26 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
             help::list(
                 ui,
                 "vegetation-list-4",
-                340.0,
+                200.0,
                 egui::ScrollArea::vertical().id_salt("vegetation-worst-rows"),
                 |ui| {
                     egui::Grid::new("vegetation-worst-grid")
                         .striped(true)
+                        .spacing(help::GRID_SPACING)
                         .show(ui, |ui| {
-                            for h in ["span", "class", "x, y, z", "margin m", "case, position"] {
+                            for h in ["Span", "Class", "x, y, z", "Margin [m]", "Case, position"] {
                                 ui.strong(h);
                             }
                             ui.end_row();
                             for r in &report.spans {
                                 for w in &r.worst {
-                                    ui.label(format!("{} span {}", r.section, r.span));
+                                    ui.label(
+                                        Selection::Span {
+                                            section: r.section.clone(),
+                                            span: r.span,
+                                        }
+                                        .describe(),
+                                    );
                                     ui.label(w.class.to_string());
                                     ui.label(format!(
                                         "{:.2}, {:.2}, {:.2}",
@@ -1832,6 +2019,33 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
             );
         });
     go
+}
+
+/// Only the spans of sections `keep` (and their positions), the others
+/// taken out of `p` (the scope of the check).
+fn keep_sections(p: &mut Positions, keep: &BTreeSet<String>) {
+    let mut new_span = vec![None; p.spans.len()];
+    let mut spans = Vec::new();
+    for (k, s) in std::mem::take(&mut p.spans).into_iter().enumerate() {
+        if keep.contains(&s.wire.section) {
+            new_span[k] = Some(spans.len());
+            spans.push(s);
+        }
+    }
+    let mut new_pos = vec![None; p.positions.len()];
+    let mut positions = Vec::new();
+    for (k, mut x) in std::mem::take(&mut p.positions).into_iter().enumerate() {
+        if let Some(s) = new_span[x.span] {
+            x.span = s;
+            new_pos[k] = Some(positions.len());
+            positions.push(x);
+        }
+    }
+    for s in &mut spans {
+        s.positions = s.positions.iter().filter_map(|k| new_pos[*k]).collect();
+    }
+    p.spans = spans;
+    p.positions = positions;
 }
 
 /// What the application does with the panel's [`Out`].
