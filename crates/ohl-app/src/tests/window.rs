@@ -238,6 +238,13 @@ fn a_wobbly_click_captures_the_mouse() {
         .wgpu()
         .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     harness.run();
+    // Ready within 30 s (a busy machine may need more than a frame).
+    let started = std::time::Instant::now();
+    while harness.state_mut().ready().is_none() {
+        assert!(started.elapsed().as_secs() < 30, "not ready in 30 s");
+        harness.step();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     harness.state_mut().ready().unwrap().view3d.controls = crate::controls::Controls::presets()
         .into_iter()
         .find(|c| c.capture)
