@@ -10,6 +10,17 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**A plugin held below its asked limits says so when it fails (owner report, 2026-10-27)**
+
+- Since the security review (2026-10-26, M6) a WebAssembly plugin whose
+  manifest asks for more time or memory runs with the defaults (5 s,
+  256 MiB) until the user allows it in the plugin manager. A large file
+  through a project plugin then ran out of memory and failed as a bare
+  "wasm `unreachable`" trap, which did not say what to do. Every plugin
+  call that fails (trap or time limit) while the plugin is held below its
+  manifest's `[limits]` now starts its error with the advice to allow it
+  in the plugin manager. The limits themselves are unchanged.
+
 **Version 0.0.2: the macOS download holds only the two apps (owner, 2026-10-27)**
 
 - The v0.0.1 disk image also carried the command line, the examples,
