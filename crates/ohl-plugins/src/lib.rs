@@ -178,6 +178,24 @@ pub const SYSTEM_STYLES_EXPORT: &str = "ohl:plugin/system-styles@0.1.0";
 /// `system-styles` export).
 pub const SYSTEM_STYLES: &str = "system-styles";
 
+mod member_capacity_bindings {
+    wasmtime::component::bindgen!({
+        world: "member-capacity-export",
+        path: "wit",
+    });
+}
+
+pub use member_capacity_bindings::exports::ohl::plugin::member_capacity::{
+    MemberInput, MemberResult, MethodInfo,
+};
+
+/// Export name of the optional `member-capacity` interface of any plugin.
+pub const MEMBER_CAPACITY_EXPORT: &str = "ohl:plugin/member-capacity@0.1.0";
+
+/// Extension point of plugins giving member capacities by a design
+/// method (the `member-capacity` export, 2026-10-27).
+pub const MEMBER_CAPACITY: &str = "member-capacity";
+
 mod check_bindings {
     wasmtime::component::bindgen!({
         world: "check-plugin",
@@ -1824,6 +1842,93 @@ impl WasmHost {
         Ok(given)
     }
 
+    /// The member-capacity export of the plugin in `dir`, instantiated
+    /// (none: not a WebAssembly plugin, or built without it).
+    fn member_capacity_export(
+        &self,
+        dir: &Path,
+    ) -> Result<Option<(Prepared, member_capacity_bindings::MemberCapacityExport)>, PluginError>
+    {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(None);
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component
+            .get_export_index(None, MEMBER_CAPACITY_EXPORT)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest, what, p.limits);
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        let export = member_capacity_bindings::MemberCapacityExport::new(&mut p.store, &instance)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        Ok(Some((p, export)))
+    }
+
+    /// The member-capacity methods of the plugin in `dir`, from its
+    /// `member-capacity` export (none: built without it).
+    pub fn member_capacity_methods(&self, dir: &Path) -> Result<Vec<MethodInfo>, PluginError> {
+        let Some((mut p, export)) = self.member_capacity_export(dir)? else {
+            return Ok(Vec::new());
+        };
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        export
+            .ohl_plugin_member_capacity()
+            .call_methods(&mut p.store)
+            .map_err(|e| classify(e, &p.manifest, "member-capacity", p.limits))
+    }
+
+    /// The capacities of `members` (one each, in order) by method
+    /// `method` of the plugin in `dir`, for a load case of strength factor
+    /// `strength`. A plugin without the export, or without that method,
+    /// is an error naming it, as are its own error, a list of another
+    /// length and a capacity that is not a positive number.
+    pub fn member_capacities(
+        &self,
+        dir: &Path,
+        method: &str,
+        strength: f64,
+        members: &[MemberInput],
+    ) -> Result<Vec<MemberResult>, PluginError> {
+        let Some((mut p, export)) = self.member_capacity_export(dir)? else {
+            return Err(PluginError::Runtime(format!(
+                "plugin in {}: no member-capacity export",
+                dir.display()
+            )));
+        };
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_member_capacity()
+            .call_member_capacities(&mut p.store, method, strength, members)
+            .map_err(|e| classify(e, &p.manifest, "member-capacity", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+        if given.len() != members.len() {
+            return Err(bad(format!(
+                "{} member capacities for {} members",
+                given.len(),
+                members.len()
+            )));
+        }
+        for (r, m) in given.iter().zip(members) {
+            for c in [r.compression, r.tension].into_iter().flatten() {
+                if !(c.is_finite() && c > 0.0) {
+                    return Err(bad(format!(
+                        "member {}: a capacity that is not a positive number",
+                        m.id
+                    )));
+                }
+            }
+        }
+        Ok(given)
+    }
+
     /// Loads the plugin in `dir` in the world of each extension point its
     /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
     /// none of these: the minimal `plugin` world) and says what it
@@ -2616,6 +2721,64 @@ mod tests {
     /// a colour and per phase a line code and an angle, in order; none for
     /// a system it has nothing for; its error names it; a plugin built
     /// without the export gives none.
+    #[test]
+    fn plugins_give_member_capacities() {
+        let Some(dir) = built_plugin("tests/member-capacity") else {
+            return;
+        };
+        let member = |id: &str, fy: Option<f64>, design: &str, partner: Option<f64>| MemberInput {
+            id: id.into(),
+            kind: "truss".into(),
+            shape: "equal_angle".into(),
+            dimensions: vec![("h".into(), 0.06), ("t".into(), 0.006)],
+            area: 6.91e-4,
+            iy: 2.28e-7,
+            iz: 2.28e-7,
+            iv: 9.4e-8,
+            wy: None,
+            wz: None,
+            e: 210e9,
+            fy,
+            fu: Some(490e6),
+            length: 2.0,
+            k: 1.0,
+            lk: None,
+            design: design.into(),
+            axial: -10e3,
+            moments: vec![0.0; 4],
+            partner_axial: partner,
+        };
+        let host = WasmHost::new().unwrap();
+        let methods = host.member_capacity_methods(&dir).unwrap();
+        assert_eq!(methods[0].name, "area-yield");
+        let got = host
+            .member_capacities(
+                &dir,
+                "area-yield",
+                0.9,
+                &[
+                    member("a", Some(355e6), "class = \"bracing\"\n", Some(5e3)),
+                    member("b", None, "", None),
+                ],
+            )
+            .unwrap();
+        assert!((got[0].compression.unwrap() - 6.91e-4 * 355e6).abs() < 1e-6);
+        assert_eq!(got[0].tension_governs, "area × yield");
+        assert_eq!(got[0].notes, ["design: class", "partner 5000 N"]);
+        assert!(got[1].compression.is_none() && got[1].notes.is_empty());
+        let e = host
+            .member_capacities(&dir, "fail", 1.0, &[member("a", None, "", None)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("fail"), "{e}");
+        // A plugin built without the export: no methods, and asking is an
+        // error naming it.
+        if let Some(old) = built_plugin("tests/code-old") {
+            assert!(host.member_capacity_methods(&old).unwrap().is_empty());
+            assert!(host.member_capacities(&old, "x", 1.0, &[]).is_err());
+        }
+    }
+
     #[test]
     fn plugins_suggest_system_styles() {
         let Some(dir) = built_plugin("tests/wire-colours") else {

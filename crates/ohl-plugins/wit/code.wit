@@ -303,3 +303,112 @@ interface check-weather {
 world check-weather-export {
     export check-weather;
 }
+
+/// Member capacities from a design method (optional export of any
+/// plugin, extension point `member-capacity`; 2026-10-27): the structure
+/// check sends each member of a solved structure model — its section,
+/// material, length, design data and forces — and takes the compression
+/// and tension capacities the method gives; OpenOHL computes the usage
+/// (force over capacity times the strength factor). The core has a
+/// method of its own (ASCE 10-97) and a simple check; a plugin adds
+/// others. Added to interface version 0.3 without changing anything
+/// else: plugins built before load as they are, and give none.
+interface member-capacity {
+    /// A method the plugin gives.
+    record method-info {
+        /// Its name, as the user chooses it (e.g. "my-code-2024").
+        name: string,
+        /// What it is and where its rules come from, in words.
+        description: string,
+    }
+
+    /// One member, SI units (m, N, Pa), the forces of one load case.
+    record member-input {
+        /// Its id.
+        id: string,
+        /// `truss`, `frame`, `cable` or `tension` (tension only).
+        kind: string,
+        /// The profile's shape (`equal_angle`, `unequal_angle`,
+        /// `circular_hollow`, `general`, …; "" without a profile).
+        shape: string,
+        /// The profile's dimensions by name (`h`, `b`, `t`, `r`, `d`,
+        /// `tw`, `tf`), m.
+        dimensions: list<tuple<string, f64>>,
+        /// Area, m².
+        area: f64,
+        /// Second moment about the section's y, m⁴.
+        iy: f64,
+        /// Second moment about the section's z, m⁴.
+        iz: f64,
+        /// The minor principal second moment, m⁴.
+        iv: f64,
+        /// Elastic section modulus about y, m³ (none: not given).
+        wy: option<f64>,
+        /// Elastic section modulus about z, m³ (none: not given).
+        wz: option<f64>,
+        /// Young's modulus, Pa.
+        e: f64,
+        /// Yield strength, Pa (none: not given).
+        fy: option<f64>,
+        /// Ultimate tensile strength, Pa (none: not given).
+        fu: option<f64>,
+        /// The member's length, m.
+        length: f64,
+        /// Its effective length factor `k`.
+        k: f64,
+        /// Its effective length, m (none: k × length).
+        lk: option<f64>,
+        /// Its design data as a TOML table (the keys of
+        /// `[member.design]`, lengths in m and forces in N as plain
+        /// numbers, stresses in Pa; `crossing` the partner's id); "" for
+        /// none.
+        design: string,
+        /// Axial force, N, tension positive.
+        axial: f64,
+        /// End moments about the local y and z at its first and second
+        /// joint: my-i, mz-i, my-j, mz-j, N·m.
+        moments: list<f64>,
+        /// The crossing partner's axial force in this load case, N (none:
+        /// no partner).
+        partner-axial: option<f64>,
+    }
+
+    /// What the method gives for one member.
+    record member-result {
+        /// Compression capacity, N (none: the method gives none).
+        compression: option<f64>,
+        /// What governs it, in words (e.g. "KL/r 85").
+        compression-governs: string,
+        /// Tension capacity, N (none: the method gives none).
+        tension: option<f64>,
+        /// What governs it, in words (e.g. "net section").
+        tension-governs: string,
+        /// Notes for this member (assumptions, limits), in words.
+        notes: list<string>,
+    }
+
+    /// The methods the plugin gives.
+    methods: func() -> list<method-info>;
+
+    /// The capacities of `members` (one result each, in order) by method
+    /// `method`, for a load case of strength factor `strength`. The error
+    /// says why there are none.
+    member-capacities: func(method: string, strength: f64, members: list<member-input>) -> result<list<member-result>, string>;
+}
+
+/// A plugin that gives member capacities only (extension point
+/// `member-capacity`).
+world member-capacity-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export member-capacity;
+}
+
+/// The `member-capacity` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world member-capacity-export {
+    export member-capacity;
+}
