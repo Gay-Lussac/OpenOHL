@@ -1,0 +1,367 @@
+# ASCE 10-97 member capacities (the default capacity method of the
+# structure check, ohl_structures_fe::asce10), on invented single bars
+# against values computed by hand from the published formulas of ASCE
+# 10-97, Design of Latticed Steel Transmission Structures (American
+# Society of Civil Engineers), metric form: effective slenderness curves
+# 1-6, local buckling of the legs, the column curve, bolt shear, bearing
+# and the net section. Each bar: 10 cm2, iy = iz = 50 cm4 (r = 2.236 cm),
+# i_min = 20 cm4 (r_v = 1.414 cm), E = 210 GPa, pinned at a, held across
+# at b, loaded along it at b; first order. The usage is the force over
+# the capacity (strength factor 1). Values evaluated in double precision
+# (scratch script reproduced in the notes).
+
+[[case]]
+id = "asce10-001"
+title = "Compression, concentric, L/r 212 > 120 (curve 4): Euler stress"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "L = 3 m, fy = 355 MPa: L/r = 212.1320, KL/r = 212.1320, Fcr = 355.0000 MPa, P = 46.0582 kN; 20 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["3 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 1]
+end_eccentricity = "none"
+end_restraint = "none"
+width_thickness = 10
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.43423364418144755, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-002"
+title = "Compression, both ends eccentric, L/r 106 (curve 3): 60 + L/r/2 on the parabola"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "L = 1.5 m, fy = 235 MPa: L/r = 106.0660, KL/r = 113.0330, Fcr = 235.0000 MPa, P = 149.8926 kN; 20 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "235 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 1]
+end_eccentricity = "both_ends"
+end_restraint = "none"
+width_thickness = 10
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.13342885873435986, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-003"
+title = "Compression, one end eccentric (curve 2), length ratio 0.5 about the minor axis, legs w/t 14 above the limit"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "L = 1.5 m, fy = 355 MPa: L/r = 67.0820, KL/r = 80.3115, Fcr = 292.8750 MPa, P = 226.1419 kN; 20 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 0.5]
+end_eccentricity = "one_end"
+end_restraint = "none"
+width_thickness = 14
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.08844005093431505, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-004"
+title = "Compression, L/r 177 restrained at both ends (curve 6), legs w/t 25 (elastic local buckling)"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "L = 2.5 m, fy = 355 MPa: L/r = 176.7767, KL/r = 154.9177, Fcr = 110.0974 MPa, P = 75.0079 kN; 20 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["2.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 1]
+end_eccentricity = "both_ends"
+end_restraint = "both_ends"
+width_thickness = 25
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.2666385131903536, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-005"
+title = "Tension: least of net section (one leg, 0.9 fy An), bolt shear, bearing — bolt shear governs"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "2 M16 bolts in 17.5 mm holes, one per section, t = 6 mm, long leg bolted: net 285.9525 kN, shear 2 x 60.17 = 120.34 kN, bearing 2 x 1.5 fu d t = 141.12 kN; 60 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+end_eccentricity = "none"
+length_ratios = [1, 1, 1]
+width_thickness = 10
+bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_planes = 1, shear_capacity = "60.17 kN", holes = 1 }
+thickness = "6 mm"
+connected_leg = "long"
+[[load]]
+node = "b"
+force = ["60 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.4985873358816686, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-006"
+title = "Compression of a short bolted bar: bolt shear governs over the column"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "L = 1 m concentric: L/r = 70.7107, P = 278.9940 kN, bolt shear 120.34 kN; 60 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+end_eccentricity = "none"
+length_ratios = [1, 1, 1]
+width_thickness = 10
+bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_planes = 1, shear_capacity = "60.17 kN", holes = 1 }
+thickness = "6 mm"
+connected_leg = "long"
+[[load]]
+node = "b"
+force = ["-60 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.4985873358816686, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-007"
+title = "Compression without design data: assumed on the safe side (length ratios 1, both ends eccentric, no restraint)"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "L = 1.5 m, no design data, no profile (no local buckling): L/r = 106.0660, KL/r = 113.0330 (curve 3), P = 162.2215 kN; 20 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.12328820517986588, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-008"
+title = "Tension without design data: the gross section (no bolts given, connection not checked)"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
+notes = "A fy = 355 kN; 60 kN"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[[load]]
+node = "b"
+force = ["60 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.16901408450704225, rel_tol = 1e-9 }

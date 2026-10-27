@@ -197,6 +197,7 @@ fn triangle_truss_member_forces() {
     // Usage: the rafters buckle first (Euler, k = 1) when given an I.
     m.sections[0].i_min = 1e-7;
     m.sections[0].yield_strength = Some(355e6);
+    m.analysis.capacity = crate::CapacityMethod::Simple;
     let u = member_usage(&m, &sol, 1.0);
     let euler = PI * PI * E * 1e-7 / 8.0;
     assert!(

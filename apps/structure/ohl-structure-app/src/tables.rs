@@ -1580,6 +1580,51 @@ impl StructureApp {
             }) {
                 self.message = Some((e, true));
             }
+            // The member capacity method (2026-10-27): ASCE 10-97 by
+            // default, the simple check as an option.
+            ui.label("capacities");
+            let current = analysis
+                .get("capacity")
+                .and_then(toml::Value::as_str)
+                .unwrap_or("asce10-97")
+                .to_owned();
+            let mut chosen = current.clone();
+            egui::ComboBox::from_id_salt("analysis-capacity")
+                .selected_text(&chosen)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut chosen, "asce10-97".to_owned(), "asce10-97")
+                        .on_hover_text(
+                            "ASCE 10-97 (the default): effective slenderness, local buckling, \
+                             column curve, bolts and net section from the members' design \
+                             data; missing data assumed on the safe side, said per member",
+                        );
+                    ui.selectable_value(&mut chosen, "simple".to_owned(), "simple")
+                        .on_hover_text(
+                            "Simple check (Euler buckling, gross yield): not a design code; \
+                             unsafe compared with design codes",
+                        );
+                });
+            if chosen != current
+                && let Err(e) = f.edit("capacity method", |doc, _| {
+                    let typed = if chosen == "asce10-97" {
+                        String::new()
+                    } else {
+                        // Version 8: an older program says the file is
+                        // newer instead of refusing the key.
+                        if doc
+                            .get("version")
+                            .and_then(toml_edit::Item::as_integer)
+                            .is_some_and(|v| v < 8)
+                        {
+                            doc["version"] = toml_edit::value(8);
+                        }
+                        format!("\"{chosen}\"")
+                    };
+                    edit::set_analysis_field(doc, "capacity", &typed)
+                })
+            {
+                self.message = Some((e, true));
+            }
         });
         let mut insert: Option<String> = None;
         egui::Grid::new("design").striped(true).show(ui, |ui| {

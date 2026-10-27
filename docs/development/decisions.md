@@ -10,6 +10,44 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**ASCE 10-97 member capacities in the core, the default (owner, 2026-10-27)**
+
+- The owner, verbatim: "For the tower the asce 10-97 should be an option
+  in the core if safer even the default not a plugin". This overrides,
+  for this method, the standing rule that design-code methods live in
+  plugins; the plugin extension point for other codes stays approved
+  but secondary.
+- `[analysis] capacity = "asce10-97"` (the default) or `"simple"`
+  (`.ohlfe` version 4; a structure file raised to 8 when OHL-Structure
+  sets it; `ohl structures fe --capacity`; OHL-Structure's Design sheet,
+  *capacities*). ASCE 10-97 (*Design of Latticed Steel Transmission
+  Structures*, ASCE) in metric form: L/r with the length ratios, KL/r by
+  the end eccentricity (≤ 120) and restraint (> 120), local buckling of
+  angle legs by w/t, the column curve, the least with bolt shear and
+  bearing; tension the least of net section (0.9 for one leg), bolt shear
+  and bearing; crossing diagonals braced only by a partner in tension;
+  class slenderness limits said, not refused.
+- **Missing data: the least favourable case, said per member** in what
+  governs (`[assumed: …]`): length ratios 1, both ends eccentric, no end
+  restraint, w/t without root radius, one leg bolted, hole + 2 mm, one
+  hole, threads in the shear plane; without bolts the connection is not
+  checked and the tension is on the gross section (said; unsafe where the
+  connection governs — marked in the theory page). A material without a
+  yield strength: the simple check, said.
+- The old check stays as `simple`, labelled "simple check (Euler
+  buckling, gross yield): not a design code; unsafe compared with design
+  codes" in results, notes and the theory page, with the comparison's
+  numbers in words (no line named).
+- Validation: 8 cases `asce10-001…008` against hand values from the
+  published formulas (invented bars); unit tests (crossing diagonal,
+  assumptions). The line's structure check says the method only for the
+  simple check (ASCE says its assumptions in what governs).
+- To confirm: tension-only members in compression keep the simple rule
+  (A·f_y without buckling, the solve caps them); frames of non-angle
+  sections keep a linear N + M interaction with W·f_y; f_y not reduced by
+  thickness; the bolt shear from `ultimate` (0.62 f_ub on 0.75 A); the
+  slenderness limits only said.
+
 **Member design data in the structure model (owner, 2026-10-27)**
 
 - The owner: "go ahead with the changes" — member design data carried in

@@ -28,6 +28,7 @@
 //! The theory manual (`docs/theory/structures-fe.md`) gives the
 //! formulation and its references.
 
+pub mod asce10;
 pub mod check;
 pub mod design;
 pub mod drawn;
@@ -43,7 +44,9 @@ pub mod wind;
 
 pub use check::{MemberUsage, member_usage};
 pub use links::PointLoad;
-pub use model::{Analysis, JointPoint, Member, MemberKind, Model, NodalLoad, Node, Section};
+pub use model::{
+    Analysis, CapacityMethod, JointPoint, Member, MemberKind, Model, NodalLoad, Node, Section,
+};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole, check_pole_factored};
 pub use solve::{FeError, Loads, MemberForces, Options, Reaction, Solution, default_budget, solve};
 pub use stabilise::{Stabilisation, Stabilised};

@@ -1026,6 +1026,7 @@ fn analyse_one(
     if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
         notes.push(note);
     }
+    notes.push(ohl_structures_fe::check::capacity_note(model, &usage));
     let joints = model
         .nodes
         .iter()

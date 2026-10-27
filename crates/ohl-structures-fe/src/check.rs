@@ -5,15 +5,26 @@
 //! Member usage: the member forces of a [`Solution`] against the section's
 //! capacity times the load case's strength factor.
 //!
-//! - **Tension**: the member's `capacity_tension` when it gives one, else
-//!   the section's allowable tension, else area × yield.
-//! - **Compression**: the member's `capacity_compression` when it gives
-//!   one (it replaces the whole computation, buckling included), else the
-//!   allowable compression (else area × yield), but not above the Euler
-//!   load π²EI/(kL)² (I: `i_min`, kL: the member's `lk`, else its
-//!   effective length factor × its length). A simple check — no column
-//!   curve, no imperfections; a design code's buckling curve gives the
-//!   allowable compression to write in the section or the member instead.
+//! The capacities come from the model's capacity method
+//! (`[analysis] capacity`, [`CapacityMethod`], 2026-10-27):
+//!
+//! - **ASCE 10-97** (the default, [`crate::asce10`]): compression by the
+//!   effective slenderness, local buckling and the column curve, the
+//!   least with the bolts' shear and bearing; tension the least of the net
+//!   section, bolt shear and bearing — from the member's design data
+//!   ([`crate::design`]), missing data assumed on the safe side and said
+//!   per member (`[assumed: …]`). A member whose section has no yield
+//!   strength falls back to the simple check.
+//! - **Simple** ([`SIMPLE`]): tension against the section's allowable
+//!   tension, else area × yield; compression against the allowable
+//!   compression (else area × yield), but not above the Euler load
+//!   π²EI/(kL)² (I: `i_min`, kL: the member's `lk`, else its effective
+//!   length factor × its length) — no column curve, no imperfections, no
+//!   connections: **not a design code, unsafe compared with design
+//!   codes**.
+//!
+//! Either way the member's `capacity_tension` and `capacity_compression`
+//! replace the computed ones (the compression one buckling included).
 //! - **Frames**: linear interaction N/N_c + M_y/M_y,c + M_z/M_z,c with the
 //!   largest end moments (the allowable moments, else W × yield) — except
 //!   **single angles** (a profile `equal_angle` or `unequal_angle`),
@@ -37,8 +48,51 @@
 //! - **Modelling members** (`check = false`, a tower program's fictitious
 //!   members): solved, not checked ([`NOT_CHECKED`], no usage).
 
-use crate::model::{MemberKind, Model};
+use crate::model::{CapacityMethod, MemberKind, Model};
 use crate::solve::Solution;
+
+/// The simple check in words, as results and notes say it.
+pub const SIMPLE: &str = "simple check (Euler buckling, gross yield): not a design code; \
+                          unsafe compared with design codes";
+
+/// The capacity method of `model` in words, for the results' notes: ASCE
+/// 10-97 with how many members' capacities rest on assumptions (from
+/// `usage`), or [`SIMPLE`].
+pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
+    match model.analysis.capacity {
+        CapacityMethod::Simple => format!("member capacities: {SIMPLE}"),
+        CapacityMethod::Asce10 => {
+            let assumed = usage.iter().filter(|u| u.governs.contains(ASSUMED)).count();
+            let simple = usage
+                .iter()
+                .filter(|u| u.governs.contains(NO_YIELD))
+                .count();
+            let mut text = "member capacities: ASCE 10-97 (Design of Latticed Steel Transmission \
+                            Structures)"
+                .to_owned();
+            if assumed > 0 {
+                text.push_str(&format!(
+                    "; {assumed} member(s) with data assumed on the safe side (\"{ASSUMED} …]\" in \
+                     what governs)"
+                ));
+            }
+            if simple > 0 {
+                text.push_str(&format!(
+                    "; {simple} member(s) without a yield strength: {SIMPLE}"
+                ));
+            }
+            text
+        }
+    }
+}
+
+/// The mark before what a capacity method assumed for a member's missing
+/// design data, in what governs: `[assumed: length ratios 1, …]`.
+pub const ASSUMED: &str = "[assumed:";
+
+/// The mark of a member checked by the simple check under ASCE 10-97
+/// because its section has no yield strength.
+pub const NO_YIELD: &str = "no yield strength: simple check";
 
 /// Usage of one member.
 #[derive(Debug, Clone, PartialEq)]
@@ -123,14 +177,39 @@ fn usage_of(
             }
             let n = f.axial;
             let kn = |x: f64| x / 1000.0;
+            // The design method's capacities (none: the simple check).
+            let asce = (model.analysis.capacity == CapacityMethod::Asce10
+                && s.yield_strength.is_some())
+            .then(|| {
+                let partner = m
+                    .design
+                    .crossing
+                    .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
+                crate::asce10::capacity(model, idx, partner)
+            });
+            let mut assumed: &[String] = &[];
+            let mut extra = String::new();
+            if model.analysis.capacity == CapacityMethod::Asce10 && s.yield_strength.is_none() {
+                extra = format!(" ({NO_YIELD})");
+            }
             // Axial: (ratio, words).
             let axial: Option<(f64, String)> = if n >= 0.0 {
-                match m.capacity_tension {
-                    Some(cap) => Some((
+                match (
+                    m.capacity_tension,
+                    asce.as_ref().and_then(|c| c.tension.as_ref()),
+                ) {
+                    (Some(cap), _) => Some((
                         n / (strength * cap),
                         format!("tension {:.1} kN of {:.1} kN (given)", kn(n), kn(cap)),
                     )),
-                    None => s
+                    (None, Some((cap, what))) if m.kind != MemberKind::Cable => {
+                        assumed = asce.as_ref().map_or(&[][..], |c| &c.tension_assumed[..]);
+                        Some((
+                            n / (strength * cap),
+                            format!("tension {:.1} kN of {:.1} kN ({what})", kn(n), kn(*cap)),
+                        ))
+                    }
+                    _ => s
                         .tension
                         .or(s.yield_strength.map(|y| y * s.area))
                         .map(|cap| {
@@ -174,6 +253,21 @@ fn usage_of(
                     -n / (strength * cap),
                     format!("compression {:.1} kN of {:.1} kN (given)", kn(-n), kn(cap)),
                 ))
+            } else if let Some(c) = &asce
+                && let Some((cap, what)) = &c.compression
+            {
+                assumed = &c.compression_assumed;
+                if let Some(l) = &c.limit {
+                    extra = format!("; {l}");
+                }
+                Some((
+                    -n / (strength * cap),
+                    format!(
+                        "compression {:.1} kN of {:.1} kN ({what})",
+                        kn(-n),
+                        kn(*cap)
+                    ),
+                ))
             } else {
                 let squash = s.compression.or(s.yield_strength.map(|y| y * s.area));
                 let euler = euler_load(model, idx);
@@ -195,6 +289,13 @@ fn usage_of(
                     )
                 })
             };
+            let axial = axial.map(|(u, mut words)| {
+                words.push_str(&extra);
+                if !assumed.is_empty() {
+                    words.push_str(&format!(" {ASSUMED} {}]", assumed.join(", ")));
+                }
+                (u, words)
+            });
             if !m.is_frame() || (is_single_angle(s) && !model.analysis.single_angle_moments) {
                 return MemberUsage {
                     member: idx,

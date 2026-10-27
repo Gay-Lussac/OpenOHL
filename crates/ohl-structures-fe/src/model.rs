@@ -17,6 +17,7 @@
 //! stabilise = true          # hold joint directions without stiffness (default)
 //! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
 //! single_angle_moments = false  # true: a single angle's frame end moments in its usage (version 4)
+//! capacity = "asce10-97"    # member capacities: asce10-97 (default) | simple (version 4)
 //!
 
 //! [[material]]
@@ -25,6 +26,7 @@
 //! shear_modulus = "81 GPa"  # default E / 2.6
 //! density = "7850 kg/m3"    # default 0
 //! yield = "355 MPa"         # optional: capacity from A·fy, W·fy
+//! ultimate = "490 MPa"      # optional: bolt bearing (version 4)
 //!
 //! [[section]]
 //! id = "L90x9"
@@ -126,6 +128,8 @@ struct AnalysisFile {
     dead_load_factor: f64,
     #[serde(default)]
     single_angle_moments: bool,
+    #[serde(default)]
+    capacity: Option<String>,
 }
 
 impl Default for AnalysisFile {
@@ -137,6 +141,7 @@ impl Default for AnalysisFile {
             stabilise: true,
             dead_load_factor: 1.0,
             single_angle_moments: false,
+            capacity: None,
         }
     }
 }
@@ -152,6 +157,8 @@ struct MaterialFile {
     density: Density,
     #[serde(default, rename = "yield")]
     yield_strength: Option<Stress>,
+    #[serde(default)]
+    ultimate: Option<Stress>,
 }
 
 #[derive(Deserialize)]
@@ -398,6 +405,8 @@ pub struct Section {
     pub density: f64,
     /// Yield strength, Pa.
     pub yield_strength: Option<f64>,
+    /// Ultimate tensile strength, Pa (bolt bearing in a capacity method).
+    pub ultimate: Option<f64>,
     /// Allowable tension, N.
     pub tension: Option<f64>,
     /// Allowable compression (before buckling), N.
@@ -427,6 +436,7 @@ impl Section {
             g: e / 2.6,
             density: 0.0,
             yield_strength: None,
+            ultimate: None,
             tension: None,
             compression: None,
             moment_y: None,
@@ -464,6 +474,7 @@ impl Section {
             g: m.shear_modulus,
             density: m.density,
             yield_strength: m.yield_strength,
+            ultimate: m.ultimate,
             tension: None,
             compression: None,
             moment_y: None,
@@ -675,6 +686,43 @@ pub struct Analysis {
     /// `unequal_angle` — is checked for its axial force only, as lattice
     /// tower practice checks it, [`crate::check`]).
     pub single_angle_moments: bool,
+    /// How the members' capacities are found ([`CapacityMethod`]; version
+    /// 4, default ASCE 10-97).
+    pub capacity: CapacityMethod,
+}
+
+/// How the check finds the members' capacities (`[analysis] capacity`,
+/// 2026-10-27).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CapacityMethod {
+    /// ASCE 10-97 (`"asce10-97"`, the default; [`crate::asce10`]).
+    #[default]
+    Asce10,
+    /// The simple check (`"simple"`): Euler buckling and gross yield —
+    /// not a design code, unsafe compared with design codes.
+    Simple,
+}
+
+impl CapacityMethod {
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CapacityMethod::Asce10 => crate::asce10::NAME,
+            CapacityMethod::Simple => "simple",
+        }
+    }
+
+    /// The method of a name in files.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name.trim() {
+            crate::asce10::NAME => Ok(CapacityMethod::Asce10),
+            "simple" => Ok(CapacityMethod::Simple),
+            other => Err(format!(
+                "capacity \"{other}\": {} (default) or simple",
+                crate::asce10::NAME
+            )),
+        }
+    }
 }
 
 impl Default for Analysis {
@@ -686,6 +734,7 @@ impl Default for Analysis {
             stabilise: true,
             dead_load_factor: 1.0,
             single_angle_moments: false,
+            capacity: CapacityMethod::Asce10,
         }
     }
 }
@@ -765,6 +814,7 @@ impl Model {
                 g: m.shear_modulus.map_or(e / 2.6, |g| g.si()),
                 density: m.density.si(),
                 yield_strength: m.yield_strength.map(|y| y.si()),
+                ultimate: m.ultimate.map(|u| u.si()),
                 tension: s.tension.map(|f| f.si()),
                 compression: s.compression.map(|f| f.si()),
                 moment_y: s.moment_y.map(|m| m.0),
@@ -927,6 +977,10 @@ impl Model {
                 stabilise: file.analysis.stabilise,
                 dead_load_factor: file.analysis.dead_load_factor,
                 single_angle_moments: file.analysis.single_angle_moments,
+                capacity: match &file.analysis.capacity {
+                    None => CapacityMethod::default(),
+                    Some(c) => CapacityMethod::parse(c).map_err(|e| format!("analysis: {e}"))?,
+                },
             },
             nodes,
             sections,
