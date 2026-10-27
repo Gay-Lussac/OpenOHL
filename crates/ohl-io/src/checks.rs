@@ -350,8 +350,14 @@ mod tests {
         let check = checks.iter().find(|c| c.info.id == UNEQUAL_WIND).unwrap();
         assert_eq!(check.info.menu, vec!["LeV/OLEI".to_owned()]);
         // Its suggested weather (owner, 2026-10-27): 10 °C, 650 Pa, no ice.
-        let hint = host.check_weather(&check.dir, UNEQUAL_WIND).unwrap().unwrap();
-        assert_eq!((hint.temperature_c, hint.wind_pa, hint.ice), (10.0, 650.0, false));
+        let hint = host
+            .check_weather(&check.dir, UNEQUAL_WIND)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (hint.temperature_c, hint.wind_pa, hint.ice),
+            (10.0, 650.0, false)
+        );
         let values = &check.info.values;
         assert!(!value_tables(&host, check, values).unwrap().is_empty());
 
