@@ -101,7 +101,8 @@ impl OldPointCheck {
                     radial_bad.push(w);
                 }
             }
-            if let Some((q, _)) = over_in_plan(x, y, a, b, self.rule.vertical_band) {
+            let band = result.required.band.unwrap_or(self.rule.vertical_band);
+            if let Some((q, _)) = over_in_plan(x, y, a, b, band) {
                 // Vertical separation, above or below the wire (a tree
                 // overhanging a low wire, a line crossing over); with a
                 // depth, to the wire's lowest (highest) in the slice.

@@ -322,6 +322,9 @@ pub struct Required {
     pub vertical: Option<f64>,
     /// Radial.
     pub radial: Option<f64>,
+    /// A screen rule's band in plan at the wire's voltage, m: the vertical
+    /// requirement is then [`SCREEN_DISTANCE`] within it.
+    pub band: Option<f64>,
 }
 
 impl Required {
@@ -441,7 +444,18 @@ pub struct Rule {
     /// (none: the surface the checks use, the project's check surface or
     /// `--terrain`).
     pub surface: Option<String>,
+    /// A **screen** (owner, 2026-10-27): the rule's vertical requirement
+    /// is the half width b of a band in plan (by the wire's voltage, e.g.
+    /// 5 m + 0.01 m/kV), and every point of its classes within b of the
+    /// wire in plan is reported — a horizontal distance of a code that
+    /// the rule format has no measure for, said as such in the results
+    /// ([`Required::band`]; required [`SCREEN_DISTANCE`]).
+    pub screen: bool,
 }
+
+/// What a screen rule requires vertically ([`Rule::screen`]): no point
+/// can meet it, so every point within the band is reported.
+pub const SCREEN_DISTANCE: f64 = 1000.0;
 
 /// Which wires a rule checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -503,9 +517,17 @@ impl Rule {
     pub fn required(&self, kv: Option<f64>) -> Required {
         let kv = kv.unwrap_or(0.0);
         let at = |r: &Option<Requirement>| r.as_ref().map(|r| r.at_or_last(kv));
+        if self.screen {
+            return Required {
+                vertical: Some(SCREEN_DISTANCE),
+                radial: at(&self.radial),
+                band: at(&self.vertical),
+            };
+        }
         Required {
             vertical: at(&self.vertical),
             radial: at(&self.radial),
+            band: None,
         }
     }
 
@@ -622,6 +644,8 @@ struct RawRule {
     pair_voltage: Option<String>,
     #[serde(default)]
     vertical_band: Option<Length>,
+    #[serde(default)]
+    screen: bool,
     #[serde(default)]
     search_margin: Option<Length>,
     #[serde(default)]
@@ -1355,6 +1379,13 @@ impl RuleSet {
                 if r.voltages.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
                     return bad("voltages must be ≥ 0 kV");
                 }
+                if r.screen
+                    && (vertical.is_none() || !matches!(target, Target::Points { .. }))
+                {
+                    return bad(
+                        "screen: a vertical requirement (the band in plan) and a point target needed",
+                    );
+                }
                 let band = if matches!(target, Target::Ground) {
                     0.0
                 } else {
@@ -1377,6 +1408,7 @@ impl RuleSet {
                     wires: r.wires.as_deref().map_or(Ok(Wires::Both), Wires::parse)?,
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
                     surface,
+                    screen: r.screen,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -1494,6 +1526,7 @@ impl RuleSet {
                 wires: Wires::Both,
                 vertical_depth: 0.0,
                 surface: None,
+                screen: false,
             }],
             wind: None,
             check: None,
@@ -1679,6 +1712,9 @@ impl Rule {
             PairVoltage::Higher => {}
             PairVoltage::Sum => t.push_str("pair_voltage = \"sum\"\n"),
             PairVoltage::Difference => t.push_str("pair_voltage = \"difference\"\n"),
+        }
+        if self.screen {
+            t.push_str("screen = true\n");
         }
         if self.vertical_band != default_band(&self.target) {
             let _ = writeln!(t, "vertical_band = {}", length(self.vertical_band));
@@ -1991,7 +2027,8 @@ mod tests {
             b.required(None),
             Required {
                 vertical: Some(5.0),
-                radial: Some(5.0)
+                radial: Some(5.0),
+                band: None,
             }
         );
         assert_eq!(b.required(Some(132.0)).vertical, Some(6.0));

@@ -1199,10 +1199,17 @@ pub(super) fn drawing_checks(r: &Ready) -> (Vec<ohl_clearance::Rule>, Vec<([f64;
             .map(|f| {
                 (
                     f.at,
-                    format!(
-                        "{} {}: {:.2} m < {:.2} m",
-                        f.rule, f.measure, f.distance, f.required
-                    ),
+                    match f.band {
+                        Some(b) => format!(
+                            "{}: {}",
+                            f.rule,
+                            ohl_clearance::zone::screen_text(b, f.at, f.target)
+                        ),
+                        None => format!(
+                            "{} {}: {:.2} m < {:.2} m",
+                            f.rule, f.measure, f.distance, f.required
+                        ),
+                    },
                 )
             })
             .collect(),

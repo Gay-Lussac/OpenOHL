@@ -225,6 +225,7 @@ fn closing_a_clearance_window_takes_its_marks_off() {
             surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
+            screen: false,
         });
     }
     harness.run();

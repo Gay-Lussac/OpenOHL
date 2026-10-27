@@ -687,15 +687,25 @@ fn print_report(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) {
             (Some(_), 1) => "point",
             (Some(_), _) => "points",
         };
+        // A screen: the distance in plan and the band b, said as such
+        // (owner, 2026-10-27).
+        let (distance, required, note) = match f.band {
+            Some(b) => (
+                (f.wire[0] - f.target[0]).hypot(f.wire[1] - f.target[1]),
+                b,
+                "  (in plan, within b: a screen)",
+            ),
+            None => (f.distance, f.required, ""),
+        };
         println!(
-            "  {:<9} {:<28} {:<16} {:<44} {:<26} {:>9.2} {:>10.2} {:>8}",
+            "  {:<9} {:<28} {:<16} {:<44} {:<26} {:>9.2} {:>10.2} {:>8}{note}",
             status,
             r.rules[f.rule].name,
             span_name(f),
             f.position(&r.states),
             target_name(f.class, scheme),
-            f.distance,
-            f.required,
+            distance,
+            required,
             if status == "ok" {
                 String::new()
             } else {
@@ -858,8 +868,10 @@ pub fn csv(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) -> String {
             },
             csv_field(&target_name(f.class, scheme)),
             f.class.map_or(String::new(), |c| c.to_string()),
-            f.distance,
-            f.required,
+            // A screen: the distance in plan and the band b.
+            f.band.map_or(f.distance, |_| (f.wire[0] - f.target[0])
+                .hypot(f.wire[1] - f.target[1])),
+            f.band.unwrap_or(f.required),
             f.count,
             f.wire[0],
             f.wire[1],

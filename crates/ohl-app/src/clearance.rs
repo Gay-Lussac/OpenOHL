@@ -47,6 +47,9 @@ pub struct Finding {
     pub class: Option<u8>,
     /// Points (or wire pieces) below the requirement.
     pub count: u64,
+    /// A screen rule's band in plan, m (the distance then in plan, see
+    /// [`ohl_clearance::zone::screen_text`]).
+    pub band: Option<f64>,
 }
 
 /// The result of a check.
@@ -120,6 +123,11 @@ fn findings(rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult, out: &mut V
                 target,
                 class: h.class,
                 count: count.max(1),
+                band: if measure == "vertical" {
+                    r.required.band
+                } else {
+                    None
+                },
             });
         }
     }
