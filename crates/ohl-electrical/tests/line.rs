@@ -258,7 +258,11 @@ fn soil_resistivity_measured_at_the_structures() {
     assert!((a - b).norm() < 1e-12 * a.norm());
     assert!(!notes_given.iter().any(|n| n.contains("assumed")));
     assert!(!notes_measured.iter().any(|n| n.contains("assumed")));
-    assert!(notes_measured.iter().any(|n| n.contains("measured at 3 structures")));
+    assert!(
+        notes_measured
+            .iter()
+            .any(|n| n.contains("measured at 3 structures"))
+    );
     // T1 100, T2 400: the first span 200 Ω·m; T3 not measured: the
     // second span takes T2's.
     let mut mixed = line.clone();
@@ -268,7 +272,10 @@ fn soil_resistivity_measured_at_the_structures() {
     assert_eq!(mixed.span_soil_resistivity("T2", "T3"), (400.0, false));
     assert_eq!(line.span_soil_resistivity("T1", "T2"), (100.0, true));
     let (_, notes) = z0(&line);
-    assert!(notes.iter().any(|n| n.contains("not set on 2 of 2 spans")), "{notes:?}");
+    assert!(
+        notes.iter().any(|n| n.contains("not set on 2 of 2 spans")),
+        "{notes:?}"
+    );
     // A resistivity of 0 is refused.
     let mut zero = line.clone();
     zero.structures[0].soil_resistivity_ohm_m = Some(0.0);
