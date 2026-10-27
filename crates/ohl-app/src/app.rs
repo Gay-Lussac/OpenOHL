@@ -439,6 +439,8 @@ pub struct Ready {
     pub preset_editor: crate::preset_edits::PresetEditor,
     /// File › Import › Another project into this one.
     pub import_into: crate::import_into::ImportInto,
+    /// Line › Sections › Wire colours from a plugin.
+    pub wire_colours: crate::wire_colours::WireColours,
     /// Add jumper: the first string clicked.
     pub jumper_from: Option<ohl_line::SectionPoint>,
     /// Add jumper: the first end clicked when it is a tap (a clamp
@@ -595,6 +597,7 @@ impl Ready {
             rule_editor: Default::default(),
             preset_editor: Default::default(),
             import_into: Default::default(),
+            wire_colours: Default::default(),
             jumper_from: None,
             spacer_from: None,
             link_from: None,
@@ -2220,6 +2223,7 @@ impl eframe::App for App {
                 crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
                 crate::preset_edits::window(&ctx, ready, &self.plugins);
                 crate::import_into::window(&ctx, ready, &mut self.plugins);
+                crate::wire_colours::window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),
                     ready.wirefit.ui(&ctx, &ready.model),

@@ -493,6 +493,18 @@ pub(super) fn menus(
             item(ui, Command::Table(TableKind::Systems), out);
             item(ui, Command::Table(TableKind::ConductorPaths), out);
             item(ui, Command::Table(TableKind::Circuits), out);
+            if ui
+                .button("Wire colours from a plugin…")
+                .on_hover_text(
+                    "A plugin suggests a colour for each circuit and phase (e.g. a utility's \
+                     colour table); shown first, applied as the sections' own colours, one \
+                     command",
+                )
+                .clicked()
+            {
+                r.wire_colours.show();
+                ui.close();
+            }
             ui.separator();
             crate::menu::options_menu(ui, "Display options", |ui| {
                 ui.label(

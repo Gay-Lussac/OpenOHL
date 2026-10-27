@@ -151,6 +151,7 @@ mod tests;
 mod ux_tests;
 #[cfg(test)]
 mod vegetation_tests;
+mod wire_colours;
 #[cfg(test)]
 mod xsection_tests;
 
