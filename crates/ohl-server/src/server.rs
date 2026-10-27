@@ -32,10 +32,12 @@ use std::time::{Duration, Instant};
 
 use ohl_session::{Role, Session};
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::{
     ALPN, Bucket, ClientMsg, Invitation, Keys, MAX_HELLO, Op, PROTOCOL, Peer, Presence, ServerMsg,
-    execute, fingerprint, lock_target, random_code, read_msg, read_msg_max, write_msg,
+    execute, fingerprint, lock_target, random_code, read_msg, read_msg_max, write_encoded,
+    write_msg,
 };
 
 /// Messages waiting for a client before its forwarder stops taking
@@ -132,11 +134,37 @@ pub struct Server {
 }
 
 /// One broadcast: a message for everyone, with the request it answers
-/// (client, request id) when it is an edit.
+/// (client, request id) when it is an edit. Encoded once
+/// ([`Event::new`]): every client is sent the same bytes (QUIC and web
+/// clients alike: the message's JSON), and the message itself is shared,
+/// not copied per client.
 #[derive(Debug, Clone)]
 pub(crate) struct Event {
     pub(crate) answers: Option<(u64, u64)>,
-    pub(crate) msg: ServerMsg,
+    pub(crate) msg: Arc<ServerMsg>,
+    /// The message's JSON (or why it could not be written).
+    pub(crate) text: Result<Utf8Bytes, String>,
+}
+
+impl Event {
+    /// The broadcast of `msg`, encoded.
+    pub(crate) fn new(answers: Option<(u64, u64)>, msg: ServerMsg) -> Self {
+        let text = serde_json::to_string(&msg)
+            .map(Utf8Bytes::from)
+            .map_err(|e| e.to_string());
+        Self {
+            answers,
+            msg: Arc::new(msg),
+            text,
+        }
+    }
+}
+
+/// What one client's writer sends: a broadcast as encoded once, or a
+/// message of its own (answers, notices).
+enum Out {
+    Shared(Result<Utf8Bytes, String>),
+    Own(ServerMsg),
 }
 
 /// A copy of the project file for joining clients, removed when the last
@@ -249,7 +277,7 @@ struct Authority {
 
 impl Authority {
     fn broadcast(&self, msg: ServerMsg) {
-        let _ = self.events.send(Event { answers: None, msg });
+        let _ = self.events.send(Event::new(None, msg));
     }
 
     fn peers_msg(&self) -> ServerMsg {
@@ -474,15 +502,15 @@ impl Authority {
             self.revision += 1;
         }
         let role_changed = matches!(&op, Op::SetUser { .. });
-        let _ = self.events.send(Event {
-            answers: Some((client, id)),
-            msg: ServerMsg::Applied {
+        let _ = self.events.send(Event::new(
+            Some((client, id)),
+            ServerMsg::Applied {
                 user: user.to_owned(),
                 op: op.clone(),
                 line,
                 seq: applied.map(|a| a.seq),
             },
-        });
+        ));
         if let (true, Op::SetUser { name, role }) = (role_changed, &op)
             && let Some(p) = self.peers.get_mut(name)
         {
@@ -1228,7 +1256,7 @@ async fn serve(
     // right after their edits) and this client's notices.
     // Bounded: a client that stops reading holds the forwarder, which then
     // lags behind the broadcasts and drops the client.
-    let (out, mut out_rx) = mpsc::channel::<ServerMsg>(OUT_QUEUE);
+    let (out, mut out_rx) = mpsc::channel::<Out>(OUT_QUEUE);
     let mut events = joined.events;
     let forward = {
         let out = out.clone();
@@ -1236,8 +1264,8 @@ async fn serve(
         tokio::spawn(async move {
             loop {
                 match events.recv().await {
-                    Ok(Event { answers, msg }) => {
-                        let answer = match (&msg, answers) {
+                    Ok(Event { answers, msg, text }) => {
+                        let answer = match (&*msg, answers) {
                             (ServerMsg::Applied { op, .. }, Some((c, id))) if c == client => {
                                 Some(ServerMsg::Response {
                                     id,
@@ -1246,19 +1274,19 @@ async fn serve(
                             }
                             _ => None,
                         };
-                        if out.send(msg).await.is_err() {
+                        if out.send(Out::Shared(text)).await.is_err() {
                             break;
                         }
                         if let Some(a) = answer
-                            && out.send(a).await.is_err()
+                            && out.send(Out::Own(a)).await.is_err()
                         {
                             break;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
-                        let _ = out.try_send(ServerMsg::Notice {
+                        let _ = out.try_send(Out::Own(ServerMsg::Notice {
                             text: "too far behind the server: join again".into(),
-                        });
+                        }));
                         // A client that reads gets the notice first.
                         tokio::time::sleep(Duration::from_secs(5)).await;
                         conn.close(0u32.into(), b"too far behind");
@@ -1276,12 +1304,19 @@ async fn serve(
                 return Ok::<(), String>(());
             };
             if let Some(answer) = dispatch(msg, client, user, jobs, &mut pace).await? {
-                let _ = out.send(answer).await;
+                let _ = out.send(Out::Own(answer)).await;
             }
         }
     };
     let writing = async {
-        while let Some(msg) = out_rx.recv().await {
+        while let Some(out) = out_rx.recv().await {
+            let msg = match out {
+                Out::Shared(text) => {
+                    write_encoded(send, text?.as_bytes()).await?;
+                    continue;
+                }
+                Out::Own(msg) => msg,
+            };
             let last =
                 matches!(&msg, ServerMsg::Notice { text } if text.starts_with("too far behind"));
             write_msg(send, &msg).await?;

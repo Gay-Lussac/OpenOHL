@@ -1064,6 +1064,12 @@ pub async fn write_msg<T: Serialize>(
     msg: &T,
 ) -> Result<(), String> {
     let bytes = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
+    write_encoded(stream, &bytes).await
+}
+
+/// Writes a message already encoded (its JSON): length (u32, big endian),
+/// the bytes. A broadcast is encoded once and written to every client so.
+pub async fn write_encoded(stream: &mut quinn::SendStream, bytes: &[u8]) -> Result<(), String> {
     if bytes.len() > MAX_MESSAGE {
         return Err(format!("message of {} bytes: too large", bytes.len()));
     }
@@ -1071,7 +1077,7 @@ pub async fn write_msg<T: Serialize>(
         .write_all(&(bytes.len() as u32).to_be_bytes())
         .await
         .map_err(|e| e.to_string())?;
-    stream.write_all(&bytes).await.map_err(|e| e.to_string())
+    stream.write_all(bytes).await.map_err(|e| e.to_string())
 }
 
 /// Reads a message (`None`: the stream ended).
