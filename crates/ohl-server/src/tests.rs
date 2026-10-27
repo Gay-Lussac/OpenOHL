@@ -529,3 +529,64 @@ fn replicas_follow_version_control() {
         .is_none()
     );
 }
+
+/// A broadcast is encoded once: every receiver holds the same bytes (one
+/// buffer, not a copy), the message's JSON.
+#[test]
+fn a_broadcast_is_encoded_once() {
+    let (tx, mut a) = tokio::sync::broadcast::channel(4);
+    let mut b = tx.subscribe();
+    let msg = ServerMsg::Notice {
+        text: "hello".into(),
+    };
+    let json = serde_json::to_string(&msg).unwrap();
+    tx.send(crate::server::Event::new(None, msg)).unwrap();
+    let (a, b) = (a.try_recv().unwrap(), b.try_recv().unwrap());
+    let (ta, tb) = (a.text.unwrap(), b.text.unwrap());
+    assert_eq!(ta.as_str(), json);
+    assert_eq!(ta.as_str().as_ptr(), tb.as_str().as_ptr());
+    assert!(std::sync::Arc::ptr_eq(&a.msg, &b.msg));
+}
+
+/// Three users: an edit of one reaches all three as the same message.
+#[test]
+fn every_client_receives_the_same_broadcast() {
+    let dir = temp("same-broadcast");
+    let path = project(&dir);
+    let server = Server::start(&path, local("abcd2345")).unwrap();
+    let mut clients: Vec<Client> = ["alice", "bob", "carol"]
+        .into_iter()
+        .map(|u| Client::join(&server.invitation_for(u), u, &dir).unwrap())
+        .collect();
+    let id = clients[0].replica.line().structures[1].id.clone();
+    let p0 = position(&clients[0].replica, &id);
+    let op = moved(&id, [p0[0] + 2.0, p0[1], p0[2]]);
+    let rid = clients[0].joined.link.request(op).unwrap();
+    let applied: Vec<String> = clients
+        .iter_mut()
+        .map(|c| {
+            let got = c.pump(|m| {
+                matches!(
+                    m,
+                    ServerMsg::Applied {
+                        op: Op::Do { .. },
+                        ..
+                    }
+                )
+            });
+            serde_json::to_string(got.last().unwrap()).unwrap()
+        })
+        .collect();
+    assert!(applied[0].contains(&id), "{}", applied[0]);
+    assert_eq!(applied[0], applied[1]);
+    assert_eq!(applied[0], applied[2]);
+    // The editor's answer still comes right after.
+    let got = clients[0].pump(|m| matches!(m, ServerMsg::Response { .. }));
+    assert!(matches!(got.last(), Some(ServerMsg::Response { id, result: Ok(_) }) if *id == rid));
+    for c in &clients {
+        assert_eq!(position(&c.replica, &id)[0], p0[0] + 2.0);
+    }
+    drop(clients);
+    drop(server);
+    let _ = std::fs::remove_dir_all(&dir);
+}

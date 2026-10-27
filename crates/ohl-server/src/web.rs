@@ -403,10 +403,19 @@ async fn send<S: AsyncRead + AsyncWrite + Unpin>(
     msg: &ServerMsg,
 ) -> Result<(), String> {
     let text = serde_json::to_string(msg).map_err(|e| e.to_string())?;
+    send_encoded(ws, Utf8Bytes::from(text)).await
+}
+
+/// Sends a message already encoded (a broadcast, encoded once for every
+/// client).
+async fn send_encoded<S: AsyncRead + AsyncWrite + Unpin>(
+    ws: &mut WebSocketStream<S>,
+    text: Utf8Bytes,
+) -> Result<(), String> {
     if text.len() > MAX_MESSAGE {
         return Err(format!("message of {} bytes: too large", text.len()));
     }
-    ws.send(Message::text(text))
+    ws.send(Message::Text(text))
         .await
         .map_err(|e| e.to_string())
 }
@@ -509,20 +518,20 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                 }
             }
             event = events.recv() => match event {
-                Ok(Event { answers, msg }) => {
-                    let answer = match (&msg, answers) {
+                Ok(Event { answers, msg, text }) => {
+                    let answer = match (&*msg, answers) {
                         (ServerMsg::Applied { op, .. }, Some((c, id))) if c == client => {
                             Some(ServerMsg::Response { id, result: Ok(op.describe()) })
                         }
                         _ => None,
                     };
-                    if let ServerMsg::Applied { op, line, .. } = &msg
+                    if let ServerMsg::Applied { op, line, .. } = &*msg
                         && changes_scene(op, line)
                         && refresh.is_none()
                     {
                         refresh = Some(Instant::now() + SCENE_DELAY);
                     }
-                    send(&mut ws, &msg).await?;
+                    send_encoded(&mut ws, text?).await?;
                     if let Some(a) = answer {
                         send(&mut ws, &a).await?;
                     }

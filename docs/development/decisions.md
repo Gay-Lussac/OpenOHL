@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**The server encodes each broadcast once (owner, 2026-10-27)**
+
+- Left open on 2026-10-26 (see "Not done" there): every broadcast
+  (edits, locks, the users' list) was serialised to JSON once per client,
+  in each client's writer, and the message itself copied per client by
+  the broadcast channel. Now `server::Event::new` encodes it once
+  (`Utf8Bytes`, a shared buffer) and shares the message (`Arc`): the QUIC
+  writer writes those bytes (`write_encoded`, the same length prefix and
+  64 MiB limit), the web client's writer sends them as its text frame.
+  Answers and notices of one client are still encoded by its writer.
+- Behaviour identical: the same JSON, the same order (the answer right
+  after its edit), the same limits; tests that every receiver holds one
+  buffer and that three users receive the same edit.
+
 **Library files the export lacks are added on project import (owner, 2026-10-27)**
 
 - An export cut off before its cable data imported with no cables and
