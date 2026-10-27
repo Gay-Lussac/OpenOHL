@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**A shared UI crate for both applications: a plan (owner, 2026-10-27)**
+
+- Both applications keep their own copy of the look (`style.rs`), the
+  notices, the hotbar drawing, the glyph test. The plan
+  ([A shared UI crate](ui-shared.md)): a crate `crates/ohl-ui` on egui
+  only (no model, no engine), first the look, then notices, the hotbar
+  drawing, the check footer.
+- Not built: the separation rule lists what `ohl-structure-app` may use
+  besides its own crates (the model and format crates, `ohl-render`,
+  `ohl-plugins`); a new UI crate is not among them, so adding it is the
+  owner's decision before the first step.
+
 **One name per object: a sweep (owner, 2026-10-27, partial)**
 
 "Same object, same name everywhere": user-visible texts of both
