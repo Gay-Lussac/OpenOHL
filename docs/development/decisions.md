@@ -10,6 +10,27 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Member design data in the structure model (owner, 2026-10-27)**
+
+- The owner: "go ahead with the changes" — member design data carried in
+  the structure model, so that a capacity method (built in, or a plugin)
+  has what a design code needs. Per member, optional, in
+  `[member.design]` (structure file version 8, `.ohlfe` version 4; older
+  files read unchanged): class (leg, bracing, redundant, crossing) and
+  crossing partner, effective length ratios about the section's y, z and
+  minor principal axes, end eccentricity and end restraint (each none,
+  one end, both ends), the legs' width/thickness ratio, the connected
+  legs' thickness, plies, the connected leg (both, long, short, none),
+  bolts (diameter, hole, count, shear planes, shear capacity per bolt and
+  plane, ultimate strength, holes in the section), edge and end distances
+  and spacing.
+- Named neutrally (no design code's codes or numbers); a method maps them
+  to its rules. A crossing partner that is not another member of the
+  model is refused. OHL-Structure shows them in a member's properties
+  (one line); editing them there is not yet built.
+- To confirm: the root radius is not a design field (the profile's
+  `r` and `width_thickness` cover it); bolts alike at both ends.
+
 **Single angles checked axially by default (owner, 2026-10-27)**
 
 - From the same comparison: the check added frame end moments to light

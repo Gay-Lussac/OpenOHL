@@ -68,6 +68,8 @@
 //! # capacity_compression = "95 kN"   # instead of the section's and Euler's
 //! # dead_load_factor = 1.3  # its self-weight × this, instead of [analysis]'s
 //! pretension = "10 kN"      # cable
+//! # [member.design]         # design data for a capacity method (version 4, crate::design)
+//! # length_ratios = [1, 1, 1]
 //!
 //! [[load]]                  # the model's own load case (optional)
 //! node = "A1"
@@ -88,7 +90,8 @@ use crate::units::Moment;
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
 /// Newest format version read. Version 4 (2026-10-27) adds `[analysis]
-/// single_angle_moments`; versions 1 to 3 read as before. Version 3 adds a member's `bending` (a
+/// single_angle_moments` and a member's design data (`[member.design]`,
+/// [`crate::design`]); versions 1 to 3 read as before. Version 3 adds a member's `bending` (a
 /// tension-only member that also bends, as a frame: a tower program's
 /// tension-only beam) and `check = false` (a member not design-checked: a
 /// modelling member, a tower program's fictitious member). Version 2 adds
@@ -247,6 +250,8 @@ struct MemberFile {
     bending: bool,
     #[serde(default = "yes")]
     check: bool,
+    #[serde(default)]
+    design: Option<crate::design::DesignFile>,
 }
 
 #[derive(Deserialize)]
@@ -515,6 +520,9 @@ pub struct Member {
     /// member (a tower program's fictitious member), its forces solved and
     /// reported, its usage not.
     pub check: bool,
+    /// Its design data for a capacity method (version 4, 2026-10-27; all
+    /// optional, [`crate::design`]).
+    pub design: crate::design::MemberDesign,
 }
 
 impl Member {
@@ -537,6 +545,7 @@ impl Member {
             dead_load_factor: None,
             bending: false,
             check: true,
+            design: crate::design::MemberDesign::default(),
         }
     }
 
@@ -809,6 +818,7 @@ impl Model {
                 .ok_or_else(|| format!("{what}: no node {id}"))
         };
         let mut members = Vec::new();
+        let mut partners: Vec<(usize, String)> = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
         // Library sections taken in (one replaces a table of its id).
         let mut taken = std::collections::BTreeSet::new();
@@ -854,7 +864,18 @@ impl Model {
                     )
                 }
             };
+            let design = match &m.design {
+                None => crate::design::MemberDesign::default(),
+                Some(d) => {
+                    let (design, partner) = d.read(&what)?;
+                    if let Some(p) = partner {
+                        partners.push((members.len(), p));
+                    }
+                    design
+                }
+            };
             members.push(Member {
+                design,
                 id: m.id.clone(),
                 kind: m.kind,
                 i,
@@ -871,6 +892,19 @@ impl Model {
                 bending: m.bending,
                 check: m.check,
             });
+        }
+        for (k, partner) in partners {
+            let at = members
+                .iter()
+                .position(|o: &Member| o.id == partner)
+                .filter(|&o| o != k)
+                .ok_or_else(|| {
+                    format!(
+                        "member {}: design crossing: no other member {partner}",
+                        members[k].id
+                    )
+                })?;
+            members[k].design.crossing = Some(at);
         }
         let loads = file
             .loads
