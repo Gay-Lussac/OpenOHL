@@ -15,27 +15,30 @@ the starter's invented values, not those of any regulation.
    the result for the weather case shown first (*everyday*), with the
    starter's rule file *starter-clearance-rules* chosen: per rule its
    lowest clearance — *Ground* (7 m) and *Phase to phase* (2 m) — and no
-   violation.
+   violation. Close the window.
 2. **Vertical clearances.** **Checks › Ground clearances › Vertical
-   clearances…**. The window starts with one rule, *Ground*, its
-   distance still to set: in the **Rules** table type **7** m in its
+   clearances…**. The window has two tabs, **Setup** and **Results**.
+   It starts with one rule, *Ground*, its distance still to set (Run is
+   greyed and the footer says so): in **3 Rules**, type **7** m in its
    **Distance** (one distance, every voltage, every weather case). Click
-   **Run**. The result, in the green banner at the top: every span
-   clear, the worst margin between 2 and 3 m (the lowest clearance,
-   between 9 and 10 m, at the maximum temperature).
+   **Run**. The **Results** tab opens by itself: in the green banner at
+   the top, every span clear, the worst margin between 2 and 3 m (the
+   lowest clearance, between 9 and 10 m, at the maximum temperature).
 3. **See a failure.** Hold **Edit**, click a span of S1, set its
    **horizontal tension** to **10 kN** and **Apply**. The vertical
    clearances window says its result is out of date: **Run again**. Now
    the banner is red — *S1 span 3* below the rule (about 6.3 m at the
    maximum temperature, a margin of about −0.7 m) — and the span is
-   marked red in the views. Click the banner (or the span's row) to go
-   to it. Then **Undo** (⌘Z / Ctrl+Z) and
+   marked red in the views. Click the banner (or the span's row in the
+   table) to go to it; the span is drawn in the weather case of the
+   finding. Then **Undo** (⌘Z / Ctrl+Z) and
    **Run** again: clear. Close the window.
 4. **Wire tensions.** **Checks › Wire tensions…**. Click **Add rule** and
    type its **factor of RTS**: **0.5** (each wire may carry half its rated
-   tensile strength — invented). Click **Run**: every span in every
-   weather case, with its tension, the allowed tension and the usage;
-   all pass.
+   tensile strength — invented). Click **Run**: all pass, so the table
+   is empty while **Only violations** is ticked (the default); untick it
+   to see every span in every weather case, with its tension, the
+   allowed tension and the usage. Click a header to sort by it.
 5. **String checks.** **Checks › String checks…**. The window starts
    with a rule checking each string against its own limits and the
    suspension strings' uplift. Click **Run**: the uplift passes; the notes

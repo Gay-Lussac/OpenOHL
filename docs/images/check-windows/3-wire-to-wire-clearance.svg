@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+  </defs>
+  <rect width="1000" height="640" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Wire-to-wire clearance (rule target same_line) and a weather case pair</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. From docs/user-guide/terrain.md (Clearance rules: target, pair_voltage, circuits, exclude_near_ends, case_pairs; Clearances by voltage).</text>
+
+  <!-- Panel A: profile -->
+  <rect x="20" y="70" width="600" height="330" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">A  One span, two wires of the line (profile)</text>
+  <line x1="70" y1="110" x2="70" y2="380" stroke="#333" stroke-width="3"/>
+  <line x1="570" y1="110" x2="570" y2="380" stroke="#333" stroke-width="3"/>
+  <!-- exclusion near ends -->
+  <rect x="70" y="110" width="50" height="270" fill="#999" fill-opacity="0.15"/>
+  <rect x="520" y="110" width="50" height="270" fill="#999" fill-opacity="0.15"/>
+  <text x="76" y="396" fill="#777" font-size="12">not checked</text>
+  <text x="470" y="396" fill="#777" font-size="12">exclude_near_ends</text>
+  <!-- upper wire iced -->
+  <path d="M70,130 Q320,330 570,130" fill="none" stroke="#7d3cc8" stroke-width="4"/>
+  <text x="150" y="140" fill="#7d3cc8">upper wire in "glaze ice"</text>
+  <text x="150" y="154" fill="#7d3cc8">(iced: sags towards the lower wire)</text>
+  <!-- lower wire hot -->
+  <path d="M70,200 Q320,330 570,200" fill="none" stroke="#d35400" stroke-width="2.5"/>
+  <text x="380" y="300" fill="#d35400">lower wire in "max temperature"</text>
+  <text x="380" y="314" fill="#d35400">(hot conductor)</text>
+  <!-- closest approach at mid-span: upper y=230, lower y=265 -->
+  <line x1="320" y1="234" x2="320" y2="261" stroke="#c0392b" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="130" y="330" fill="#c0392b">closest approach (red arrow):</text>
+  <text x="130" y="344" fill="#c0392b">surface to surface, e.g. 1.46 m &lt; 3.00 m</text>
+  <text x="30" y="430" fill="#555" font-size="12"> </text>
+
+  <!-- Panel B: cross-section -->
+  <rect x="640" y="70" width="340" height="330" fill="none" stroke="#ccc"/>
+  <text x="650" y="90" font-weight="bold">B  At the closest point (section)</text>
+  <circle cx="800" cy="170" r="26" fill="#7d3cc8" fill-opacity="0.15" stroke="#7d3cc8" stroke-dasharray="4,3"/>
+  <circle cx="800" cy="170" r="12" fill="none" stroke="#7d3cc8" stroke-width="3"/>
+  <text x="834" y="160" fill="#7d3cc8">ice: radius</text>
+  <text x="834" y="174" fill="#7d3cc8">grows</text>
+  <circle cx="830" cy="300" r="12" fill="none" stroke="#d35400" stroke-width="3"/>
+  <line x1="804" y1="195" x2="826" y2="287" stroke="#c0392b" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="660" y="250" fill="#c0392b">d = axis distance</text>
+  <text x="660" y="264" fill="#c0392b">− both radii</text>
+  <text x="660" y="278" fill="#c0392b">− both bounds</text>
+  <text x="650" y="350" font-size="12">radial: the shortest 3D distance;</text>
+  <text x="650" y="366" font-size="12">vertical: the separation where the</text>
+  <text x="650" y="382" font-size="12">two wires cross in plan.</text>
+
+  <!-- Panel C: rule and pair voltage -->
+  <rect x="20" y="415" width="600" height="210" fill="none" stroke="#ccc"/>
+  <text x="30" y="435" font-weight="bold">C  The rule and the pair's voltage</text>
+  <rect x="30" y="447" width="580" height="96" fill="#f6f6f6" stroke="#ddd"/>
+  <g font-family="Menlo, monospace" font-size="12">
+    <text x="40" y="466">name = "Phase to phase"   target = "same_line"</text>
+    <text x="40" y="484">radial = "3 m"            pair_voltage = "higher"</text>
+    <text x="40" y="502">circuits = "any"          exclude_near_ends = "10 m"</text>
+    <text x="40" y="520">case_pairs = [["glaze ice", "max temperature"]]</text>
+    <text x="40" y="538">include_same_phase = false</text>
+  </g>
+  <text x="30" y="565">pair_voltage: higher (default) | sum | difference (the voltage between the two</text>
+  <text x="30" y="583">conductors). With "difference": two phases of one 380 kV system → 380 kV row;</text>
+  <text x="30" y="601">the same phase of two parallel systems → 0 kV row; a phase and an earth wire → 219 kV.</text>
+  <text x="30" y="619" fill="#555" font-size="12">Wires sharing an end point (adjacent spans, a jumper and its sections) are never checked against each other.</text>
+
+  <!-- Panel D: case pair note -->
+  <rect x="640" y="415" width="340" height="210" fill="none" stroke="#ccc"/>
+  <text x="650" y="435" font-weight="bold">D  The case pair</text>
+  <text x="650" y="460">case_pairs: the first wire in the</text>
+  <text x="650" y="478">first case, the second wire in the</text>
+  <text x="650" y="496">second (an iced upper wire sagging</text>
+  <text x="650" y="514">onto a hot lower one); checked after</text>
+  <text x="650" y="532">all cases are solved.</text>
+  <text x="650" y="562" fill="#c0392b">Today the desktop Clearances window</text>
+  <text x="650" y="580" fill="#c0392b">checks only the case shown and notes</text>
+  <text x="650" y="598" fill="#c0392b">case pairs as "not run" (ohl line only).</text>
+</svg>

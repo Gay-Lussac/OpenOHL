@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <rect width="1000" height="700" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Vertical clearance to the ground and to LiDAR points</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. From docs/theory/clearances.md (The two measures; The vertical: straight below) and docs/user-guide/terrain.md (vertical_band, vertical_depth).</text>
+
+  <!-- Panel A: across the line -->
+  <rect x="20" y="70" width="470" height="330" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">A  Across the line (looking along it)</text>
+  <!-- zone band -->
+  <rect x="200" y="110" width="100" height="250" fill="#f39c12" fill-opacity="0.12"/>
+  <line x1="200" y1="110" x2="200" y2="360" stroke="#f39c12" stroke-dasharray="5,4"/>
+  <line x1="300" y1="110" x2="300" y2="360" stroke="#f39c12" stroke-dasharray="5,4"/>
+  <line x1="250" y1="104" x2="300" y2="104" stroke="#f39c12" marker-start="url(#g)" marker-end="url(#g)"/>
+  <text x="304" y="108" fill="#b9770e">w (width on each side, e.g. 1.00 m)</text>
+  <!-- wire -->
+  <circle cx="250" cy="150" r="8" fill="none" stroke="#1f6fd1" stroke-width="3"/>
+  <text x="140" y="146" fill="#1f6fd1">wire (lowest</text>
+  <text x="140" y="160" fill="#1f6fd1">subconductor)</text>
+  <!-- ground -->
+  <path d="M30,350 L120,345 L200,352 L260,340 L300,346 L400,338 L480,344" fill="none" stroke="#6b4f2a" stroke-width="2"/>
+  <text x="400" y="370" fill="#6b4f2a">ground surface</text>
+  <!-- tree point inside -->
+  <line x1="270" y1="341" x2="270" y2="250" stroke="#2e8b57" stroke-width="3"/>
+  <circle cx="270" cy="250" r="5" fill="#2e8b57"/>
+  <text x="278" y="262" fill="#2e8b57">LiDAR point</text>
+  <text x="278" y="276" fill="#2e8b57">within w: checked</text>
+  <line x1="270" y1="245" x2="270" y2="162" stroke="#c0392b" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="160" y="210" fill="#c0392b">vertical distance</text>
+  <text x="160" y="224" fill="#c0392b">to the surface</text>
+  <!-- point outside -->
+  <circle cx="360" cy="190" r="5" fill="#999"/>
+  <text x="368" y="186" fill="#777">point beyond w:</text>
+  <text x="368" y="200" fill="#777">left out of the vertical</text>
+  <text x="368" y="214" fill="#777">(a radial rule sees it)</text>
+  <!-- ground distance -->
+  <line x1="228" y1="160" x2="228" y2="344" stroke="#555" stroke-dasharray="3,3" marker-end="url(#g)"/>
+  <text x="40" y="300" fill="#555">to the ground: the highest</text>
+  <text x="40" y="314" fill="#555">ground within w, straight below</text>
+  <text x="30" y="392" fill="#555" font-size="12">Measured and drawn vertical: the same x, y at both ends of the mark.</text>
+
+  <!-- Panel B: along the line -->
+  <rect x="510" y="70" width="470" height="330" fill="none" stroke="#ccc"/>
+  <text x="520" y="90" font-weight="bold">B  Along the line (profile of one span)</text>
+  <line x1="550" y1="130" x2="550" y2="360" stroke="#333" stroke-width="3"/>
+  <line x1="940" y1="120" x2="940" y2="360" stroke="#333" stroke-width="3"/>
+  <path d="M550,135 Q745,330 940,125" fill="none" stroke="#1f6fd1" stroke-width="2.5"/>
+  <path d="M520,360 L620,355 L700,352 L780,350 L860,356 L970,352" fill="none" stroke="#6b4f2a" stroke-width="2"/>
+  <!-- slice -->
+  <rect x="770" y="200" width="40" height="160" fill="#f39c12" fill-opacity="0.15" stroke="#f39c12" stroke-dasharray="4,3"/>
+  <text x="818" y="290" fill="#b9770e">slice of depth d</text>
+  <text x="818" y="304" fill="#b9770e">(e.g. 0.20 m): the</text>
+  <text x="818" y="318" fill="#b9770e">wire's lowest point</text>
+  <text x="818" y="332" fill="#b9770e">over it is taken</text>
+  <circle cx="790" cy="300" r="5" fill="#2e8b57"/>
+  <line x1="790" y1="295" x2="790" y2="230" stroke="#c0392b" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="640" y="280" fill="#c0392b">clearance found</text>
+  <text x="640" y="294" fill="#c0392b">e.g. 4.67 m</text>
+  <text x="520" y="392" fill="#555" font-size="12">Each wind position of the rule's cases is checked; the lowest is reported.</text>
+
+  <!-- Panel C: plan -->
+  <rect x="20" y="415" width="470" height="270" fill="none" stroke="#ccc"/>
+  <text x="30" y="435" font-weight="bold">C  In plan: the band checked</text>
+  <rect x="50" y="520" width="410" height="60" fill="#f39c12" fill-opacity="0.15"/>
+  <line x1="50" y1="550" x2="460" y2="550" stroke="#1f6fd1" stroke-width="2.5"/>
+  <text x="380" y="545" fill="#1f6fd1">wire</text>
+  <line x1="50" y1="520" x2="460" y2="520" stroke="#f39c12" stroke-dasharray="5,4"/>
+  <line x1="50" y1="580" x2="460" y2="580" stroke="#f39c12" stroke-dasharray="5,4"/>
+  <text x="60" y="512" fill="#b9770e">+ w</text><text x="60" y="598" fill="#b9770e">− w</text>
+  <g fill="#2e8b57"><circle cx="120" cy="540" r="4"/><circle cx="200" cy="565" r="4"/><circle cx="300" cy="530" r="4"/></g>
+  <g fill="#999"><circle cx="160" cy="500" r="4"/><circle cx="260" cy="605" r="4"/><circle cx="350" cy="495" r="4"/></g>
+  <text x="40" y="630" fill="#2e8b57">● inside the band: checked vertically</text>
+  <text x="40" y="650" fill="#777">● outside: not part of the vertical check</text>
+  <text x="40" y="670" fill="#555" font-size="12">A rule may set its own width (rules table, column Width [m]).</text>
+
+  <!-- Panel D: requirement by voltage -->
+  <rect x="510" y="415" width="470" height="270" fill="none" stroke="#ccc"/>
+  <text x="520" y="435" font-weight="bold">D  The distance required, by the wire's voltage</text>
+  <text x="520" y="455" fill="#555" font-size="12">Example table (user guide, Clearances by voltage); values are an example only.</text>
+  <g font-size="13">
+    <rect x="530" y="468" width="300" height="24" fill="#eee"/>
+    <text x="540" y="485" font-weight="bold">up to kV</text><text x="690" y="485" font-weight="bold">distance [m]</text>
+    <text x="540" y="510">0 (earth wires)</text><text x="690" y="510">5.0</text>
+    <text x="540" y="532">150</text><text x="690" y="532">6.0</text>
+    <text x="540" y="554">245</text><text x="690" y="554">6.5</text>
+    <text x="540" y="576">420</text><text x="690" y="576">7.5</text>
+    <line x1="530" y1="492" x2="830" y2="492" stroke="#ccc"/>
+  </g>
+  <text x="520" y="605">A 220 kV wire takes the first row not exceeded: 245 kV → 6.5 m.</text>
+  <text x="520" y="625">A 380 kV wire → 7.5 m. Above the last row: an error, not the last value.</text>
+  <text x="520" y="645">Verdict: found 4.67 m &lt; required 6.5 m → margin −1.83 m (violation).</text>
+  <text x="520" y="670" fill="#555" font-size="12">Every distance is to the conductor's surface (iced in a case with ice).</text>
+</svg>

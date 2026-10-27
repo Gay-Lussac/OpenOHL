@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="k" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <rect width="1000" height="700" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">How a clearance rule is set and read</text>
+  <text x="20" y="50" fill="#555">From docs/user-guide/terrain.md (Clearance rules; Clearances by voltage) and desktop-app.md (Distances by voltage). Rule names and values are examples.</text>
+
+  <!-- A: rule table -->
+  <text x="20" y="80" font-weight="bold">A  A rule table (one row per rule)</text>
+  <g>
+    <rect x="20" y="90" width="960" height="26" fill="#e8eef7"/>
+    <g font-weight="bold" font-size="12">
+      <text x="28" y="108">Name</text><text x="150" y="108">Target</text><text x="290" y="108">Voltages</text>
+      <text x="380" y="108">Weather cases</text><text x="510" y="108">Distance</text><text x="740" y="108">Wires</text><text x="820" y="108">Exclusions</text>
+    </g>
+    <g font-size="12">
+      <text x="28" y="138">Ground</text><text x="150" y="138">ground (surface)</text><text x="290" y="138">every</text>
+      <text x="380" y="138">every case</text><text x="510" y="138">vertical: table by voltage</text><text x="740" y="138">both</text><text x="820" y="138">—</text>
+      <line x1="20" y1="148" x2="980" y2="148" stroke="#ddd"/>
+      <text x="28" y="168">Trees</text><text x="150" y="168">points: vegetation</text><text x="290" y="168">every</text>
+      <text x="380" y="168">high wind, ice</text><text x="510" y="168">radial: 4 m + 0.01 m/kV</text><text x="740" y="168">sections</text><text x="820" y="168">—</text>
+      <line x1="20" y1="178" x2="980" y2="178" stroke="#ddd"/>
+      <text x="28" y="198">Phase to phase</text><text x="150" y="198">same_line</text><text x="290" y="198">every</text>
+      <text x="380" y="198">every case</text><text x="510" y="198">radial: 3 m</text><text x="740" y="198">both</text><text x="820" y="198">10 m near ends</text>
+      <line x1="20" y1="208" x2="980" y2="208" stroke="#ddd"/>
+      <text x="28" y="228">Lamp posts</text><text x="150" y="228">points: class 64</text><text x="290" y="228">every</text>
+      <text x="380" y="228">every case</text><text x="510" y="228">screen: b = 5 m + 0.01 m/kV</text><text x="740" y="228">sections</text><text x="820" y="228">—</text>
+      <line x1="20" y1="238" x2="980" y2="238" stroke="#ddd"/>
+      <text x="28" y="258">Earth wire</text><text x="150" y="258">ground</text><text x="290" y="258">0 kV only</text>
+      <text x="380" y="258">max temperature</text><text x="510" y="258">vertical: 5 m</text><text x="740" y="258">sections</text><text x="820" y="258">spans at con_*</text>
+    </g>
+    <rect x="20" y="90" width="960" height="178" fill="none" stroke="#bbb"/>
+  </g>
+  <text x="20" y="288" fill="#555" font-size="12">Weather cases: none ticked = every case. Voltages: none = every wire (a distance by voltage needs no filter). Wires: sections, jumpers or both.</text>
+
+  <!-- B: the three distance forms -->
+  <text x="20" y="324" font-weight="bold">B  The distance: three forms</text>
+  <g>
+    <rect x="20" y="334" width="300" height="200" fill="#fafafa" stroke="#ccc"/>
+    <text x="30" y="356" font-weight="bold">One distance</text>
+    <text x="30" y="380" font-family="Menlo, monospace" font-size="12">vertical = "7 m"</text>
+    <text x="30" y="410">7 m at every voltage.</text>
+    <text x="30" y="440">0 kV → 7.0 m</text>
+    <text x="30" y="460">220 kV → 7.0 m</text>
+    <text x="30" y="480">380 kV → 7.0 m</text>
+
+    <rect x="340" y="334" width="300" height="200" fill="#fafafa" stroke="#ccc"/>
+    <text x="350" y="356" font-weight="bold">Table by voltage</text>
+    <text x="350" y="380" font-size="12">rows "up to kV: m": 0: 5 · 150: 6 · 245: 6.5 · 420: 7.5</text>
+    <text x="350" y="410">The first row whose voltage is</text>
+    <text x="350" y="426">not exceeded; nothing interpolated.</text>
+    <text x="350" y="452">0 kV → 5.0 m</text>
+    <text x="350" y="472">220 kV → 6.5 m (row 245)</text>
+    <text x="350" y="492">380 kV → 7.5 m (row 420)</text>
+    <text x="350" y="516" fill="#c0392b" font-size="12">Above the last row: an error, before any check.</text>
+
+    <rect x="660" y="334" width="320" height="200" fill="#fafafa" stroke="#ccc"/>
+    <text x="670" y="356" font-weight="bold">Base + per kV</text>
+    <text x="670" y="380" font-family="Menlo, monospace" font-size="12">base 7 m, per_kv 0.01 m, above 0 kV</text>
+    <text x="670" y="410">base + per_kv · max(0, U − above_kv)</text>
+    <text x="670" y="440">0 kV → 7.0 m</text>
+    <text x="670" y="460">220 kV → 7 + 0.01·220 = 9.2 m</text>
+    <text x="670" y="480">380 kV → 7 + 0.01·380 = 10.8 m</text>
+  </g>
+
+  <!-- C: how a rule is read -->
+  <text x="20" y="570" font-weight="bold">C  How one span is checked against one rule</text>
+  <g font-size="12">
+    <rect x="20" y="582" width="150" height="56" rx="6" fill="#e8eef7" stroke="#9db3d6"/>
+    <text x="30" y="602">the span's wire</text><text x="30" y="618">system → voltage U</text><text x="30" y="632">(earth wire: 0 kV)</text>
+    <line x1="170" y1="610" x2="200" y2="610" stroke="#333" marker-end="url(#k)"/>
+    <rect x="205" y="582" width="150" height="56" rx="6" fill="#e8eef7" stroke="#9db3d6"/>
+    <text x="215" y="602">U in the rule's</text><text x="215" y="618">voltages? wire kind</text><text x="215" y="632">in Wires? excluded?</text>
+    <line x1="355" y1="610" x2="385" y2="610" stroke="#333" marker-end="url(#k)"/>
+    <rect x="390" y="582" width="150" height="56" rx="6" fill="#e8eef7" stroke="#9db3d6"/>
+    <text x="400" y="602">for each of the</text><text x="400" y="618">rule's cases and</text><text x="400" y="632">wind positions</text>
+    <line x1="540" y1="610" x2="570" y2="610" stroke="#333" marker-end="url(#k)"/>
+    <rect x="575" y="582" width="150" height="56" rx="6" fill="#e8eef7" stroke="#9db3d6"/>
+    <text x="585" y="602">distance found to</text><text x="585" y="618">the target (to the</text><text x="585" y="632">conductor's surface)</text>
+    <line x1="725" y1="610" x2="755" y2="610" stroke="#333" marker-end="url(#k)"/>
+    <rect x="760" y="582" width="220" height="56" rx="6" fill="#fdecea" stroke="#e3a29a"/>
+    <text x="770" y="602">compared with the distance</text><text x="770" y="618">required at U: the lowest per</text><text x="770" y="632">span, with its case, is listed</text>
+  </g>
+  <text x="20" y="670" fill="#555" font-size="12">One rule per group of targets (ground, vegetation, buildings, roads, other wires…), each with its own distance; the required clearance then follows</text>
+  <text x="20" y="686" fill="#555" font-size="12">both the target and the voltage. A requirement that does not fit the three forms needs two rules, each checked on its own.</text>
+</svg>

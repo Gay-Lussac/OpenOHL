@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+    <marker id="k" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <rect width="1000" height="620" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Vegetation: grow-in and trees falling in</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. From docs/theory/lidar-analysis.md (Danger trees: Grow-in; Fall-in, a tree pivoting about its root ball). Defaults: k = 0.05, A = 2 m.</text>
+
+  <!-- Panel A grow-in -->
+  <rect x="20" y="70" width="380" height="530" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">A  Grow-in (section through the wire)</text>
+  <circle cx="200" cy="260" r="135" fill="#2e8b57" fill-opacity="0.06" stroke="#999" stroke-dasharray="3,3"/>
+  <circle cx="200" cy="260" r="110" fill="none" stroke="#2e8b57" stroke-dasharray="5,4"/>
+  <circle cx="200" cy="260" r="80" fill="none" stroke="#e67e22" stroke-width="2"/>
+  <circle cx="200" cy="260" r="7" fill="none" stroke="#1f6fd1" stroke-width="3"/>
+  <line x1="207" y1="260" x2="280" y2="260" stroke="#e67e22" marker-end="url(#k)"/>
+  <text x="222" y="252" fill="#e67e22">c</text>
+  <line x1="280" y1="260" x2="310" y2="260" stroke="#2e8b57" marker-end="url(#k)"/>
+  <text x="288" y="252" fill="#2e8b57">g</text>
+  <line x1="310" y1="260" x2="335" y2="260" stroke="#777" marker-end="url(#k)"/>
+  <text x="318" y="252" fill="#777">b</text>
+  <circle cx="140" cy="350" r="6" fill="#2e8b57"/>
+  <text x="40" y="420" fill="#2e8b57">vegetation point inside c + g + b:</text>
+  <text x="40" y="436" fill="#2e8b57">grows in (reported, drawn)</text>
+  <g font-size="13">
+    <text x="30" y="470">d(q, wire) − r &lt; c + g + b</text>
+    <text x="30" y="492">c  required clearance (one distance,</text>
+    <text x="46" y="508">or by the wire's voltage)</text>
+    <text x="30" y="528">g  growth until the next cut (per year × years)</text>
+    <text x="30" y="548">b  buffer (e.g. the survey's accuracy)</text>
+    <text x="30" y="574" fill="#555" font-size="12">In every wire position checked: still air, blown</text>
+    <text x="30" y="590" fill="#555" font-size="12">left and right, and (option) the swing arc.</text>
+  </g>
+
+  <!-- Panel B fall-in -->
+  <rect x="420" y="70" width="560" height="530" fill="none" stroke="#ccc"/>
+  <text x="430" y="90" font-weight="bold">B  Fall-in (vertical plane through the tree and the wire)</text>
+  <!-- ground -->
+  <line x1="440" y1="480" x2="960" y2="480" stroke="#6b4f2a" stroke-width="2"/>
+  <!-- tree: base B at x=520, hinge H at x=535, top at y=200 (h' = 280 px ~ 20 m, 14 px/m) -->
+  <line x1="520" y1="480" x2="520" y2="200" stroke="#2e8b57" stroke-width="5"/>
+  <circle cx="520" cy="200" r="6" fill="#2e8b57"/>
+  <text x="440" y="196" fill="#2e8b57">tree top</text>
+  <text x="440" y="212" fill="#2e8b57">(vegetation point)</text>
+  <line x1="500" y1="480" x2="500" y2="200" stroke="#333" marker-start="url(#k)" marker-end="url(#k)"/>
+  <text x="445" y="340">h' = h + g</text>
+  <circle cx="534" cy="480" r="5" fill="#e67e22"/>
+  <text x="520" y="500" fill="#e67e22">hinge H, k·h' from the trunk</text>
+  <!-- sector radius L ~ 280 about H (534,480) from top (520,200) down to ground (814,480) -->
+  <path d="M520,200 A 280 280 0 0 1 814,480" fill="none" stroke="#e67e22" stroke-width="2" stroke-dasharray="7,4"/>
+  <line x1="534" y1="480" x2="732" y2="282" stroke="#e67e22" marker-end="url(#k)"/>
+  <text x="600" y="380" fill="#e67e22">L = √(h'² + (k·h')²)</text>
+  <!-- wire -->
+  <circle cx="730" cy="284" r="7" fill="none" stroke="#1f6fd1" stroke-width="3"/>
+  <circle cx="730" cy="284" r="28" fill="none" stroke="#c0392b" stroke-dasharray="4,3"/>
+  <text x="768" y="270" fill="#1f6fd1">wire (each of its positions</text>
+  <text x="768" y="286" fill="#1f6fd1">is checked)</text>
+  <text x="768" y="314" fill="#c0392b">allowance A around it</text>
+  <text x="440" y="540">The tree turns about the edge of its root ball (radius k·h') towards the</text>
+  <text x="440" y="558">wire and sweeps the sector of radius L down to where it rests on the</text>
+  <text x="440" y="576">ground. If the sector comes within A of the wire: a danger tree.</text>
+  <text x="440" y="594" fill="#555" font-size="12">Example: h' = 20 m, k = 0.05 → k·h' = 1.0 m, L = 20.02 m.</text>
+</svg>

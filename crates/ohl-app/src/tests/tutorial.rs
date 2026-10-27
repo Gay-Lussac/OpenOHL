@@ -479,6 +479,9 @@ fn the_tutorial_builds_a_first_line() {
     // Checks › Ground clearances › Vertical clearances…: the first rule's
     // distance set (7 m, as the starter's rule file; typed in its field),
     // Run.
+    // The Clearances window closed (its ×), then the next window.
+    h.state_mut().ready().unwrap().clearances.open = false;
+    h.run();
     open_clearance_window(&mut h, "Vertical clearances…");
     {
         let r = h.state_mut().ready().unwrap();
