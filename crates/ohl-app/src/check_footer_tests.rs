@@ -177,8 +177,8 @@ fn every_check_window_keeps_run_in_its_footer() {
         if node.accesskit_node().is_disabled() {
             // Greyed (thermal without a rule file, a clearance window
             // whose first rule has no distance yet, vegetation without a
-            // point cloud, safety volumes without a distance): it says
-            // why.
+            // point cloud, safety volumes without a distance, as-built
+            // wires without a point cloud): it says why.
             assert!(
                 matches!(
                     check.name,
@@ -187,6 +187,7 @@ fn every_check_window_keeps_run_in_its_footer() {
                         | "radial-clearances"
                         | "vegetation"
                         | "safety-volumes"
+                        | "as-built-wires"
                 ),
                 "{}: Run greyed",
                 check.name

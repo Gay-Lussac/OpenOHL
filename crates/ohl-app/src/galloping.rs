@@ -14,7 +14,8 @@ use eframe::egui;
 use ohl_clearance::galloping::{self, GallopingParams};
 
 use crate::check_help as help;
-use crate::job::{Job, case_combo, or_dash, save_csv};
+use crate::check_ui;
+use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -62,8 +63,6 @@ pub struct GallopingWindow {
     pub file: Option<PathBuf>,
     /// Weather case (index in the model's cases).
     pub case: usize,
-    /// Only pairs below the requirement.
-    pub only_short: bool,
     pub(crate) job: Job<Report>,
 }
 
@@ -155,150 +154,206 @@ impl GallopingWindow {
         let mut again = false;
         let stale = self.out_of_date(model);
         let mut open = self.open;
+        let why = (!model.cases.is_empty())
+            .then_some(())
+            .map_or(Some("the model has no weather case".to_owned()), |_| None);
+        let findings = match &self.job.result {
+            Some(Ok(r)) => Some(r.rows.iter().filter(|r| short(r)).count()),
+            _ => None,
+        };
         help::window(
             ctx,
             crate::dockable::Panel::Galloping,
             "Galloping ellipses",
-            [760.0, 600.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                // Run in the footer at the bottom left, always visible
-                // (owner, 2026-10-21); the rest scrolls above it.
-                help::body(ui, "galloping-window", |ui| {
-                    ui.horizontal(|ui| {
-                        let name = self.file.as_ref().map_or("no parameter file".into(), |p| {
-                            p.file_name()
-                                .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-                        });
-                        ui.label(format!("parameters: {name}"));
-                        if ui.button("Choose…").clicked()
-                            && let Some(p) = rfd::FileDialog::new()
-                                .add_filter(
-                                    "Galloping parameters",
-                                    &[ohl_clearance::galloping::GALLOPING_FILE_EXTENSION],
-                                )
-                                .pick_file()
-                        {
-                            self.file = Some(p);
-                        }
+                if let Some(what) = &stale {
+                    again = crate::revision::banner(ui, what, !self.job.running());
+                }
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    WINDOW,
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "Ellipses around the wires of each span, sized from the sag by the \
+                             coefficients of the parameter file, and their clearances.",
+                            "Each method of the parameter file sizes an ellipse around each wire \
+                             from its sag in the weather case chosen; the distance between the \
+                             ellipses of two wires is compared with the requirement of the file.",
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 2, "Scope", None);
                         let names: Vec<String> =
                             model.cases.iter().map(|c| c.case.name.clone()).collect();
-                        case_combo(ui, "galloping-case", &names, &mut self.case);
-                    });
-                    let report = match &self.job.result {
-                        None => {
-                            ui.label(
-                                "Ellipses around the wires of each span, sized from the sag by the \
-                             coefficients of the parameter file, and their clearances.",
-                            );
-                            return;
-                        }
-                        Some(Err(e)) => {
-                            crate::menu::error_label(ui, e);
-                            return;
-                        }
-                        Some(Ok(r)) => r,
-                    };
-                    if let Some(what) = &stale {
-                        again = crate::revision::banner(ui, what, !self.job.running());
-                    }
-                    for n in &report.notes {
-                        ui.label(egui::RichText::new(n).small().weak());
-                    }
-                    let short = report
-                        .rows
-                        .iter()
-                        .filter(|r| r.required.is_some_and(|q| r.distance < q))
-                        .count();
-                    ui.horizontal(|ui| {
-                        ui.label(format!(
-                            "\"{}\": {} pairs × methods, {short} below the requirement",
-                            report.case,
-                            report.rows.len()
-                        ));
-                        ui.checkbox(&mut self.only_short, "only those");
-                        if ui.button("Export CSV…").clicked() {
-                            save_csv("galloping.csv", &csv(report));
-                        }
-                    });
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            egui::Grid::new("galloping-rows")
-                                .striped(true)
-                                .spacing(help::GRID_SPACING)
-                                .show(ui, |ui| {
-                                    for h in [
-                                        "method",
-                                        "span",
-                                        "other",
-                                        "distance m",
-                                        "required m",
-                                        "at %",
-                                        "ellipse m",
-                                        "other m",
-                                    ] {
-                                        ui.strong(h);
-                                    }
-                                    ui.end_row();
-                                    for r in report
-                                        .rows
-                                        .iter()
-                                        .filter(|r| {
-                                            !self.only_short
-                                                || r.required.is_some_and(|q| r.distance < q)
-                                        })
-                                        .take(5000)
-                                    {
-                                        ui.label(&r.method);
-                                        for (s, k) in [&r.a, &r.b] {
-                                            if ui
-                                                .link(format!("{s} span {k}"))
-                                                .on_hover_text("Go to this span")
-                                                .clicked()
-                                            {
-                                                go = Some(Selection::Span {
-                                                    section: s.clone(),
-                                                    span: *k,
-                                                });
-                                            }
-                                        }
-                                        let bad = r.required.is_some_and(|q| r.distance < q);
-                                        let d = egui::RichText::new(format!("{:.2}", r.distance))
-                                            .monospace();
-                                        ui.label(if bad {
-                                            d.color(ui.visuals().error_fg_color)
-                                        } else {
-                                            d
-                                        });
-                                        ui.label(or_dash(r.required, 2));
-                                        ui.label(format!("{:.0}", r.at * 100.0));
-                                        for a in r.axes {
-                                            ui.label(format!("{:.2} × {:.2}", a[0], a[1]));
-                                        }
-                                        ui.end_row();
-                                    }
-                                });
+                        check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .cases(check_ui::Cases::One(&names, &mut self.case))
+                            .ui(ui);
+                        ui.separator();
+                        check_ui::section(ui, 3, "Rules", None);
+                        ui.horizontal(|ui| {
+                            let name = self.file.as_ref().map_or("no parameter file".into(), |p| {
+                                p.file_name()
+                                    .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+                            });
+                            ui.label(format!("parameters: {name}"));
+                            if ui.button("Choose…").clicked()
+                                && let Some(p) = rfd::FileDialog::new()
+                                    .add_filter(
+                                        "Galloping parameters",
+                                        &[ohl_clearance::galloping::GALLOPING_FILE_EXTENSION],
+                                    )
+                                    .pick_file()
+                            {
+                                self.file = Some(p);
+                            }
                         });
-                });
-                help::footer(ui, "galloping-window", |ui| {
-                    self.overrides.ui(ui);
-                    again |= help::run_button(
+                    }),
+                    check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
+                        let report = match &self.job.result {
+                            None => {
+                                ui.label(
+                                    egui::RichText::new("No run yet: Run at the bottom.").weak(),
+                                );
+                                return;
+                            }
+                            Some(Err(e)) => {
+                                crate::menu::error_label(ui, e);
+                                return;
+                            }
+                            Some(Ok(r)) => r,
+                        };
+                        let n = report.rows.iter().filter(|r| short(r)).count();
+                        check_ui::verdict(
+                            ui,
+                            n > 0,
+                            &if n > 0 {
+                                format!(
+                                    "✖ {n} pair{} × method below the requirement in case \"{}\"",
+                                    if n == 1 { "" } else { "s" },
+                                    report.case
+                                )
+                            } else {
+                                format!(
+                                    "✔ Every pair at its requirement in case \"{}\" ({} pairs × \
+                                     methods)",
+                                    report.case,
+                                    report.rows.len()
+                                )
+                            },
+                            false,
+                        );
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button("Export all CSV…")
+                                .on_hover_text("Every pair with every value, as a CSV file")
+                                .clicked()
+                            {
+                                save_csv("galloping.csv", &csv(report));
+                            }
+                        });
+                        use check_ui::{Cell, Col};
+                        let rows: Vec<check_ui::Row> = report
+                            .rows
+                            .iter()
+                            .map(|r| {
+                                check_ui::Row::new(
+                                    vec![
+                                        Cell::text(&r.method),
+                                        Cell::span(&r.a.0, r.a.1),
+                                        Cell::span(&r.b.0, r.b.1),
+                                        Cell::num(Some(r.distance), 2).bad(short(r)),
+                                        Cell::num(r.required, 2),
+                                        Cell::num(Some(r.at * 100.0), 0),
+                                        Cell::sorted(
+                                            format!("{:.2} × {:.2}", r.axes[0][0], r.axes[0][1]),
+                                            r.axes[0][0],
+                                        ),
+                                        Cell::sorted(
+                                            format!("{:.2} × {:.2}", r.axes[1][0], r.axes[1][1]),
+                                            r.axes[1][0],
+                                        ),
+                                    ],
+                                    short(r),
+                                )
+                            })
+                            .collect();
+                        if let Some(k) = check_ui::ResultTable::new(
+                            "galloping-rows",
+                            vec![
+                                Col::text("Method"),
+                                Col::text("Span"),
+                                Col::text("Other span"),
+                                Col::num("Distance [m]"),
+                                Col::num("Required [m]"),
+                                Col::num("At [%]").tip("Where along the span"),
+                                Col::text("Ellipse [m]"),
+                                Col::text("Other ellipse [m]"),
+                            ],
+                        )
+                        .rows(rows)
+                        .group_by(&[0, 1])
+                        .csv("galloping-table.csv")
+                        .below(check_ui::FOLDS_BELOW)
+                        .ui(ui)
+                        {
+                            let r = &report.rows[k];
+                            go = Some(Selection::Span {
+                                section: r.a.0.clone(),
+                                span: r.a.1,
+                            });
+                        }
+                        check_ui::notes_fold(ui, WINDOW, &report.notes);
+                    }),
+                }
+                help::footer(ui, WINDOW, |ui| {
+                    let overrides = &mut self.overrides;
+                    again |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
-                        "Size the ellipses of every span by the parameter file in the case chosen and check their clearances",
+                        &mut self.job,
+                        why.clone(),
+                        "Size the ellipses of every span by the parameter file in the case chosen \
+                         and check their clearances",
                         None,
+                        |ui| {
+                            overrides.ui(ui);
+                        },
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );
         self.open = open;
-        if again {
+        if again && why.is_none() {
             self.start(model, ctx);
         }
         go
     }
+
+    /// The weather case of the results shown (a row clicked is drawn in
+    /// it).
+    pub fn result_case(&self) -> Option<String> {
+        match &self.job.result {
+            Some(Ok(r)) => Some(r.case.clone()),
+            _ => None,
+        }
+    }
+}
+
+/// The id of the window's body, tabs and footer.
+const WINDOW: &str = "galloping-window";
+
+/// A pair below its requirement.
+fn short(r: &Row) -> bool {
+    r.required.is_some_and(|q| r.distance < q)
 }
 
 fn csv(r: &Report) -> String {

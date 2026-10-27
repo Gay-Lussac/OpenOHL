@@ -124,6 +124,9 @@ fn thermal_rating_window() {
         assert!(r.thermal.open);
         assert!(matches!(&r.thermal.ambient, Some(Ok(set)) if set.cases.len() == 3));
     }
+    // The ampacities at once, in the Results tab.
+    harness.get_by_label("Results").click();
+    harness.run();
     harness.get_by_label("summer noon at 80 °C");
     harness.get_by_label("Run").click();
     harness.step();

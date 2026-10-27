@@ -291,26 +291,34 @@ pub fn window(
         ctx,
         crate::dockable::Panel::Thermal,
         "Thermal rating",
-        [640.0, 600.0],
+        [860.0, 760.0],
         &mut open,
         |ui| {
-            // Run in the footer at the bottom left, always visible (owner,
-            // 2026-10-21); the rest scrolls above it.
-            help::body(ui, "thermal-window", |ui| body(ui, w, model, rules));
+            // Two tabs (owner, 2026-10-27): the setup scrolls, the table
+            // fills its tab; Run in the footer, always visible. A search
+            // ended opens Results.
+            let generation = w.took.map_or(0, |t| t.as_nanos() as u64 | 1);
+            let blocked = !matches!(rules, Some(Ok(_))) && !w.running();
+            let tab = crate::check_ui::tabs(ui, "thermal-window", None, generation, blocked);
+            match tab {
+                crate::check_ui::Tab::Setup => {
+                    help::body(ui, "thermal-window", |ui| body(ui, w, model));
+                }
+                crate::check_ui::Tab::Results => {
+                    crate::check_ui::results_area(ui, "thermal-window", |ui| {
+                        results(ui, w, model, rules)
+                    });
+                }
+            }
             help::footer(ui, "thermal-window", |ui| run_ui(ui, w, model, rules));
         },
     );
     w.open = open;
 }
 
-/// The window's body (above the Run footer): the ambient cases, the
-/// method, the clearance-limit settings, the table.
-fn body(
-    ui: &mut egui::Ui,
-    w: &mut ThermalWindow,
-    model: &Model,
-    rules: Option<&Result<Vec<Rule>, String>>,
-) {
+/// The Setup tab: the ambient cases, the method, the clearance-limit
+/// settings.
+fn body(ui: &mut egui::Ui, w: &mut ThermalWindow, model: &Model) {
     ui.horizontal(|ui| {
         ui.label("Ambient cases");
         let name = w.file.as_ref().map_or("none".to_owned(), |p| {
@@ -402,6 +410,16 @@ fn body(
             );
         })
     });
+}
+
+/// The Results tab: the out-of-date banner, the table filling the tab
+/// (the ampacities at once, the clearance limits after Run).
+fn results(
+    ui: &mut egui::Ui,
+    w: &mut ThermalWindow,
+    model: &Model,
+    rules: Option<&Result<Vec<Rule>, String>>,
+) {
     if let Some(Err(e)) = &w.limits {
         ui.colored_label(ui.visuals().error_fg_color, e);
     }
@@ -411,7 +429,17 @@ fn body(
     {
         w.start(model, r.clone(), ui.ctx());
     }
-    ui.separator();
+    let cases = match &w.ambient {
+        Some(Ok(set)) => set.cases.clone(),
+        _ => {
+            ui.label(
+                egui::RichText::new("Choose an ambient case file (Setup).")
+                    .small()
+                    .weak(),
+            );
+            Vec::new()
+        }
+    };
     table(ui, w, model, &cases);
 }
 
@@ -461,12 +489,11 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
         Some(Ok(v)) => v,
         _ => &[],
     };
-    help::list(
-        ui,
-        "thermal-list-1",
-        590.0,
-        egui::ScrollArea::both(),
-        |ui| {
+    // The table fills the Results tab (its height the window's).
+    egui::ScrollArea::both()
+        .id_salt("thermal-table-scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
             egui::Grid::new("thermal-table")
                 .striped(true)
                 .show(ui, |ui| {
@@ -587,6 +614,5 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
                         ui.end_row();
                     }
                 });
-        },
-    );
+        });
 }
