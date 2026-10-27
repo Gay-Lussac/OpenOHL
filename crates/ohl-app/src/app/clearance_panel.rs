@@ -185,6 +185,34 @@ impl Ready {
         self.show_result_case(Some(rc));
     }
 
+    /// A row of a check window (`panel`) clicked: its span (`target`,
+    /// already selected) drawn in the row's weather case `case`, said
+    /// beside it ([`crate::result_case`], 2026-10-27).
+    pub(crate) fn show_check_case(
+        &mut self,
+        panel: crate::dockable::Panel,
+        target: Selection,
+        case: &str,
+    ) {
+        let sections = match &target {
+            Selection::Span { section, .. } => vec![section.clone()],
+            _ => Vec::new(),
+        };
+        let k = self.model.cases.iter().position(|c| c.case.name == case);
+        let at = target
+            .focus(&self.model, self.case)
+            .unwrap_or(self.model.origin);
+        let rc = crate::result_case::ResultCase::new(
+            crate::result_case::From::Check(panel),
+            target,
+            sections,
+            k,
+            format!("found in {case}"),
+            at,
+        );
+        self.show_result_case(Some(rc));
+    }
+
     /// A finding of the Clearances window clicked: its wire (and the other
     /// wire of a wire rule) drawn in the case checked.
     pub(crate) fn show_clearance_finding(&mut self, f: &crate::clearance::Finding, case: &str) {
@@ -225,6 +253,10 @@ impl Ready {
             From::Clearances => self.clearances.open,
             From::PhaseDistance(crate::phase_distance::Kind::Span) => self.phase_distance.open,
             From::PhaseDistance(crate::phase_distance::Kind::UnequalWind) => self.unequal_wind.open,
+            From::Check(crate::dockable::Panel::WireTensions) => self.wire_tensions.open,
+            From::Check(crate::dockable::Panel::Galloping) => self.galloping.open,
+            From::Check(crate::dockable::Panel::Vegetation) => self.vegetation.open,
+            From::Check(_) => true,
         };
         if !open || self.selection != rc.selection {
             self.show_result_case(None);
@@ -327,7 +359,11 @@ impl Ready {
 /// tension, else the worst; at the most tensioned support) or taken off.
 pub(crate) fn wire_tensions_out(r: &mut Ready, out: crate::wire_tensions::Out) {
     if let Some(target) = out.go {
-        r.go_to(target);
+        r.go_to(target.clone());
+        // The span drawn in the row's weather case (2026-10-27).
+        if let Some(case) = &out.case {
+            r.show_check_case(crate::dockable::Panel::WireTensions, target, case);
+        }
     }
     if let Some((plugin, p)) = out.plugin_preset
         && let Some(wc) = &p.weather

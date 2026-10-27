@@ -4,7 +4,8 @@
 
 //! A check result's weather case drawn on its spans (owner, 2026-10-27):
 //! a finding of a clearance window or of the Clearances window, a result of
-//! the Distance between conductors, once clicked, has the sections it
+//! the Distance between conductors, a row of Wire tensions, Galloping or
+//! Vegetation, once clicked, has the sections it
 //! involves drawn in the weather case that gave it — first, the cases
 //! otherwise drawn for them after it — and the case (and the wind) said
 //! beside the finding in the views, in the wire's highlight colour without
@@ -33,6 +34,9 @@ pub enum From {
     Clearances,
     /// A Distance between conductors window.
     PhaseDistance(crate::phase_distance::Kind),
+    /// Another check window with a weather case per result (Wire
+    /// tensions, Galloping, Vegetation; 2026-10-27).
+    Check(crate::dockable::Panel),
 }
 
 /// A wire as drawn on top: its points.

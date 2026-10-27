@@ -24,6 +24,7 @@ use ohl_clearance::internal::{self, InternalReport, InternalRule, StructureBody}
 use ohl_clearance::rules::{PresetCheck, RuleSet};
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
@@ -64,8 +65,6 @@ pub struct InternalClearancesWindow {
     pub rules: Vec<InternalRule>,
     /// What was done last, in words (an error: true).
     pub status: Option<(String, bool)>,
-    /// Only the parts too near.
-    pub only_failures: bool,
     /// The structure and section overrides of its cases.
     pub overrides: crate::case_groups::Overrides,
     /// The plugin preset chosen in the dropdown (plugin, preset).
@@ -214,10 +213,19 @@ impl InternalClearancesWindow {
         if self.rules.is_empty() {
             return Some("no rule: add one, or load a preset".into());
         }
+        // A distance not set (0 m, a table or formula not filled in):
+        // refused, as the ground windows do (2026-10-27).
         let why: Vec<String> = self
             .rules
             .iter()
-            .filter_map(InternalRule::problem)
+            .filter_map(|r| {
+                r.problem().or_else(|| {
+                    std::iter::once(&r.distance)
+                        .chain(r.distance_wind.as_ref())
+                        .find_map(|d| d.problem())
+                        .map(|p| format!("\"{}\": {p}", r.name))
+                })
+            })
             .collect();
         (!why.is_empty()).then(|| why.join("; "))
     }
@@ -420,47 +428,71 @@ impl InternalClearancesWindow {
             ctx,
             crate::dockable::Panel::InternalClearances,
             "Internal clearances",
-            [940.0, 640.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                help::body(ui, "internal-clearances-window", |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "At each structure with a body (detail level 2 or 3): the \
-                             conductors near it (within each rule's reach along the span), its \
-                             jumpers, its strings' live ends and the electrified volumes on its \
-                             strings (Line › Structures › String shapes), as solved in each weather \
-                             case of the rules, against every member — to the member's surface \
-                             where its section's solid is known, else to its centre line (said: \
-                             on the unsafe side) — and against the grounded volumes. Structures \
-                             without a body are listed, not checked.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    self.presets_ui(ui, model, presets, &mut out);
-                    changed |= self.rules_ui(ui, model);
-                    if let Some((text, error)) = &self.status {
-                        if *error {
-                            crate::menu::error_label(ui, text.as_str());
-                        } else {
-                            ui.label(egui::RichText::new(text).small().weak());
+                let why = self.why_not_run();
+                let findings = match &self.job.result {
+                    Some(Ok(r)) => Some(r.report.failures().count()),
+                    _ => None,
+                };
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    "internal-clearances-window",
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, "internal-clearances-window", |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "At each structure with a body: the conductors near it, its jumpers and its strings' \
+                             live ends against its members, per weather case.",
+                            "None ticked: every voltage",
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 2, "Scope", None);
+                        ui.label(
+                            egui::RichText::new(
+                                "Each rule gives its voltages and weather cases (3 Rules): circuits, routes and sections are not chosen here yet.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.separator();
+                        check_ui::section(ui, 3, "Rules", None);
+                        self.presets_ui(ui, model, presets, &mut out);
+                        changed |= self.rules_ui(ui, model);
+                        if let Some((text, error)) = &self.status {
+                            if *error {
+                                crate::menu::error_label(ui, text.as_str());
+                            } else {
+                                ui.label(egui::RichText::new(text).small().weak());
+                            }
                         }
+                    }),
+                    check_ui::Tab::Results => {
+                        check_ui::results_area(ui, "internal-clearances-window", |ui| {
+                            self.results_ui(ui, &stale, &mut run, &mut out);
+                        })
                     }
-                    ui.separator();
-                    self.results_ui(ui, &stale, &mut run, &mut out);
-                });
+                }
                 help::footer(ui, "internal-clearances-window", |ui| {
-                    changed |= self.overrides.ui(ui);
-                    let why = self.why_not_run();
-                    run |= help::run_button(
+                    let overrides = &mut self.overrides;
+                    run |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
-                        "Solve each weather case of the rules and check every structure with a \
-                         body",
-                        why.as_deref(),
+                        &mut self.job,
+                        why.clone(),
+                        "Solve each weather case of the rules and check every structure with a body",
+                        None,
+                        |ui| {
+                            changed |= overrides.ui(ui);
+                        },
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );
@@ -758,86 +790,66 @@ impl InternalClearancesWindow {
                 "{} parts × cases checked, {failed} too near",
                 report.report.rows.len()
             ));
-            ui.checkbox(&mut self.only_failures, "only those");
             if ui.button("Export CSV…").clicked() {
                 save_csv("internal-clearances.csv", &report.report.csv(&report.rules));
             }
         });
-        help::list(
-            ui,
-            "internal-clearances-list-1",
-            500.0,
-            egui::ScrollArea::vertical().auto_shrink([false, false]),
-            |ui| {
-                // Every row (those asked for), only those in view drawn
-                // (2026-10-26).
-                let rows: Vec<_> = report
-                    .report
-                    .rows
-                    .iter()
-                    .filter(|r| !self.only_failures || !r.pass())
-                    .collect();
-                let mut table = crate::rows_in_view::Table::new(ui, "internal-clearance-rows", 9)
-                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
-                table.header(
-                    ui,
-                    &[
-                        ("structure", ""),
-                        ("part", ""),
-                        ("member or shape", ""),
-                        ("rule", ""),
-                        ("case", ""),
-                        ("distance m", ""),
-                        ("required m", ""),
-                        ("to", ""),
-                        ("", ""),
-                    ],
-                );
-                table.rows(ui, rows.len(), None, |c, i| {
-                    let r = rows[i];
-                    if c.cell(|ui| {
-                        ui.link(&r.structure)
-                            .on_hover_text(format!("Go to {}", r.structure))
-                            .clicked()
-                    }) {
-                        out.go = Some(Selection::Structure(r.structure.clone()));
-                    }
-                    c.cell(|ui| ui.label(r.part.to_string()));
-                    let against = r.against();
-                    c.cell(|ui| {
-                        ui.label(if against.is_empty() {
+        // Every row, sorted, filtered, grouped by the user; a row clicked
+        // goes to its structure.
+        use check_ui::{Cell, Col};
+        let rows: Vec<check_ui::Row> = report
+            .report
+            .rows
+            .iter()
+            .map(|r| {
+                let against = r.against();
+                check_ui::Row::new(
+                    vec![
+                        Cell::text(&r.structure),
+                        Cell::text(r.part.to_string()),
+                        Cell::text(if against.is_empty() {
                             "—".into()
                         } else {
                             against
-                        })
-                    });
-                    c.cell(|ui| ui.label(&report.rules[r.rule].name));
-                    c.cell(|ui| ui.label(&r.case));
-                    c.cell(|ui| {
-                        ui.label(egui::RichText::new(format!("{:.2}", r.distance)).monospace())
-                    });
-                    c.cell(|ui| {
-                        ui.label(egui::RichText::new(format!("{:.2}", r.required)).monospace())
-                    });
-                    c.cell(|ui| {
-                        ui.label(if r.to_surface {
+                        }),
+                        Cell::text(&report.rules[r.rule].name),
+                        Cell::text(&r.case),
+                        Cell::num(Some(r.distance), 2).bad(!r.pass()),
+                        Cell::num(Some(r.required), 2),
+                        Cell::text(if r.to_surface {
                             "surface"
                         } else {
                             "centre line"
-                        })
-                    });
-                    c.cell(|ui| {
-                        if r.pass() {
-                            ui.label("pass")
-                        } else {
-                            ui.label(
-                                egui::RichText::new("too near").color(ui.visuals().error_fg_color),
-                            )
-                        }
-                    });
-                });
-            },
-        );
+                        }),
+                        Cell::text(if r.pass() { "pass" } else { "too near" }).bad(!r.pass()),
+                    ],
+                    !r.pass(),
+                )
+            })
+            .collect();
+        if let Some(k) = check_ui::ResultTable::new(
+            "internal-clearance-rows",
+            vec![
+                Col::text("Structure"),
+                Col::text("Part"),
+                Col::text("Member or shape"),
+                Col::text("Rule"),
+                Col::text("Case"),
+                Col::num("Distance [m]"),
+                Col::num("Required [m]"),
+                Col::text("To"),
+                Col::text("Verdict"),
+            ],
+        )
+        .rows(rows)
+        .group_by(&[0, 3, 4])
+        .csv("internal-clearances-table.csv")
+        .ui(ui)
+        {
+            out.go = Some(Selection::Structure(
+                report.report.rows[k].structure.clone(),
+            ));
+        }
     }
 }
 
