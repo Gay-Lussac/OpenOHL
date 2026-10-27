@@ -14,6 +14,7 @@ mod analysis_run;
 mod clearance_run;
 mod code_run;
 mod cost_run;
+mod electrical_run;
 mod internal_run;
 mod io_run;
 mod links_run;
@@ -195,6 +196,13 @@ enum Command {
     Thermal {
         #[command(subcommand)]
         command: thermal_run::ThermalCommand,
+    },
+    /// Electrical calculations: line parameters (series impedance with
+    /// earth return, capacitance, sequence values) from the line as
+    /// modelled.
+    Electrical {
+        #[command(subcommand)]
+        command: electrical_run::ElectricalCommand,
     },
     /// Design codes (plugins): weather and load cases from a parameter
     /// file.
@@ -1149,6 +1157,7 @@ fn main() -> ExitCode {
         Some(Command::Code { command }) => report(code_run::run(command)),
         Some(Command::Surface { command }) => report(surface::run(command)),
         Some(Command::Thermal { command }) => report(thermal_run::run(command)),
+        Some(Command::Electrical { command }) => report(electrical_run::run(command)),
         Some(Command::Serve {
             project,
             bind,
