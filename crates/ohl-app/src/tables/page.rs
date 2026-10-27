@@ -1015,7 +1015,7 @@ impl TablePage {
                             ui.spacing_mut().item_spacing.x = 2.0;
                             let selected = match kind {
                                 TableKind::WeatherCases => row.key == case.to_string(),
-                                _ => *selection == row.select && row.select != Selection::None,
+                                _ => crate::selection::is_selected(selection, model, &row.select),
                             };
                             let go = ui
                                 .add_sized(

@@ -591,6 +591,12 @@ pub struct Model {
     /// and it is not the one shown (highlighted in the views and the
     /// properties); `None`: the case shown.
     pub selection_case: Option<usize>,
+    /// The others selected with Shift+click (add) or Cmd/Ctrl+click
+    /// (toggle), besides the selection (the one clicked last, shown in
+    /// Properties): highlighted like it in every view and table
+    /// ([`crate::selection::all_selected`]); never `Selection::None`, never
+    /// the selection itself.
+    pub selected_also: Vec<crate::selection::Selection>,
     /// When each weather case was last asked for by a view ([`Model::want`]):
     /// those asked for lately are brought up to date at once after an edit,
     /// the others solved again when next wanted ([`Model::sync`]).
@@ -2617,6 +2623,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         display_cases: Default::default(),
         shown_cases: vec![0],
         selection_case: None,
+        selected_also: Vec::new(),
         recently_wanted: Default::default(),
         previewing: false,
         usage_marks: Default::default(),

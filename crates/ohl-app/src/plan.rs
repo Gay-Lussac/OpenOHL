@@ -591,6 +591,7 @@ impl PlanView {
                 },
                 &selection::LidarShown::Nothing,
             );
+            selection::clicked(ui.ctx(), &picked);
             *selection = picked;
             self.picked_case = Some(picked_case);
             if response.double_clicked_by(select_button)
@@ -635,7 +636,8 @@ impl PlanView {
         }
         // Every alignment point (those on no alignment too).
         for a in &line.alignment_points {
-            let selected = matches!(selection, Selection::AlignmentPoint { id } if *id == a.id);
+            let selected = selection::all_selected(selection, model)
+                .any(|x| matches!(x, Selection::AlignmentPoint { id } if *id == a.id));
             painter.circle_filled(
                 to_screen(a.position),
                 if selected { 5.0 } else { 3.0 },
@@ -665,8 +667,10 @@ impl PlanView {
                     if !cull.sees(&span.points) {
                         continue;
                     }
-                    let selected = matches!(selection, Selection::Span { section, span: n }
-                        if *section == shape.section && *n == k);
+                    let selected = selection::all_selected(selection, model).any(|x| {
+                        matches!(x, Selection::Span { section, span: n }
+                        if *section == shape.section && *n == k)
+                    });
                     let pts = on_screen(&span.points, to_screen);
                     let off = scope
                         .as_ref()
@@ -699,8 +703,10 @@ impl PlanView {
                     if !cull.sees(points) {
                         continue;
                     }
-                    let selected = matches!(selection, Selection::Span { section: s, span: n }
-                        if *s == section && *n == k);
+                    let selected = selection::all_selected(selection, model).any(|x| {
+                        matches!(x, Selection::Span { section: s, span: n }
+                        if *s == section && *n == k)
+                    });
                     let pts = on_screen(points, to_screen);
                     // Hovered: a tooltip says why it is not solved.
                     if let Some(h) = hover
@@ -742,7 +748,8 @@ impl PlanView {
                 if !cull.sees(&j.points) {
                     continue;
                 }
-                let selected = matches!(selection, Selection::Jumper(id) if *id == j.jumper);
+                let selected = selection::all_selected(selection, model)
+                    .any(|x| matches!(x, Selection::Jumper(id) if *id == j.jumper));
                 let style = styles.jumper(&j.jumper);
                 let arrow = styles
                     .directions
@@ -826,11 +833,13 @@ impl PlanView {
             model.section_display.structure_label[plan] && model.section_display.descriptions[plan];
         let name_color = egui::Color32::from_gray(200);
         let mut names: Vec<(egui::Pos2, std::sync::Arc<egui::Galley>)> = Vec::new();
-        let chosen = match &*selection {
-            Selection::Structure(id) => Some(id.clone()),
-            _ => None,
-        };
-        let is_selected = |s: &ohl_line::Structure| chosen.as_ref() == Some(&s.id);
+        let chosen: Vec<String> = selection::all_selected(selection, model)
+            .filter_map(|x| match x {
+                Selection::Structure(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        let is_selected = |s: &ohl_line::Structure| chosen.contains(&s.id);
         for s in line
             .structures
             .iter()

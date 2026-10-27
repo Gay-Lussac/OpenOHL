@@ -365,6 +365,31 @@ fn deleting_a_route_lists_its_alignments_and_an_alignment_may_lose_every_point()
     assert_eq!(s.line().alignment_by_id("main").unwrap().points.len(), 2);
 }
 
+/// Several deletions in one command taking the same dependents (the
+/// branch's section S3 and the structure T6 at its end both take jumper
+/// J-T3-branch): each object deleted once; one undo brings all back.
+#[test]
+fn deletions_in_one_command_take_shared_dependents_once() {
+    let (_, mut s) = project("delete-several");
+    let del = |kind, id: &str| Command::Delete {
+        kind,
+        id: id.into(),
+        confirm: true,
+    };
+    s.apply(
+        "ben",
+        Command::Batch {
+            commands: vec![del(Kind::Section, "S3"), del(Kind::Structure, "T6")],
+        },
+    )
+    .unwrap();
+    assert!(s.line().structure("T6").is_none());
+    assert!(s.line().jumpers.is_empty());
+    assert_eq!(s.line().sections.len(), 2);
+    s.undo("ben").unwrap();
+    assert_eq!(s.export(), example());
+}
+
 #[test]
 fn deleting_a_section_takes_its_jumpers() {
     let (_, mut s) = project("section");

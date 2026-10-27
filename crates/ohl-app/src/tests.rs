@@ -19,6 +19,7 @@ mod clearances;
 mod display_codes;
 mod lidar;
 mod local_winds;
+mod multi_select;
 mod objects;
 mod plugins_hosting;
 mod project;

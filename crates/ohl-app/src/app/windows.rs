@@ -220,7 +220,8 @@ pub(super) fn goto_window(ctx: &egui::Context, r: &mut Ready) {
 }
 
 /// Shortcuts (not while typing in a text field): ⌘Z undo, Shift+⌘Z redo,
-/// Delete or Backspace deletes the selected structure, M holds the Move
+/// Delete or Backspace deletes what is selected (all of it), Escape clears
+/// the selection when nothing else takes it, M holds the Move
 /// tool, E opens the inventory, 1–9 choose a hotbar slot; the wheel scrolls
 /// the hotbar while the mouse is captured.
 pub(super) fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
@@ -379,8 +380,34 @@ pub(super) fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
             r.hotbar.active = k;
         }
         if delete && editable {
-            let target = r.selection.clone();
-            r.delete_object(&target);
+            r.delete_selected();
+        }
+        // Nothing else took Escape: the selection goes (all of it; the
+        // mouse held by the 3D view is freed first).
+        let busy = windows
+            || r.view3d.captured
+            || r.inventory
+            || r.hotbar.tool() != Tool::Select
+            || r.context_menu.is_some()
+            || r.coord_dialog.is_some()
+            || r.route_choice.is_some()
+            || r.point_delete.is_some()
+            || r.spread_delete.is_some()
+            || r.confirm.is_some()
+            || r.replace.is_some()
+            || r.display_window.is_some()
+            || r.lines_window.is_some()
+            || !r.chain.is_empty()
+            || !r.new_alignment.is_empty()
+            || r.jumper_from.is_some()
+            || r.jumper_tap.is_some()
+            || r.link_from.is_some()
+            || r.spacer_from.is_some();
+        if (r.selection != Selection::None || !r.model.selected_also.is_empty())
+            && !busy
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            r.select(Selection::None);
         }
     }
     // Captured mouse: the wheel (without Ctrl) scrolls the hotbar, wheel

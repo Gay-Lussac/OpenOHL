@@ -377,7 +377,13 @@ impl TabViewer for Viewer<'_> {
                     rs: self.rs,
                     preview: &mut r.picker_preview,
                 };
-                match page.ui(ui, kind, &r.model, r.case, &r.selection, &mut tools) {
+                let page_action = page.ui(ui, kind, &r.model, r.case, &r.selection, &mut tools);
+                let m = ui.input(|i| i.modifiers);
+                match page_action {
+                    // Shift (adds) or Cmd/Ctrl (toggles) + ⤴: more than one.
+                    Some(crate::tables::TableAction::Select(s)) if m.shift || m.command => {
+                        r.select_more(s, m.command && !m.shift);
+                    }
                     Some(crate::tables::TableAction::Select(s)) => {
                         r.go_to(s);
                     }
@@ -432,6 +438,18 @@ impl TabViewer for Viewer<'_> {
         {
             r.model.selection_case = c;
             r.view3d.dirty.insert(Layer::Selection);
+        }
+        // A click in a view: with Shift or Cmd/Ctrl it adds to the
+        // selection or takes out; else the one clicked is the only one.
+        if let Some(picked) = crate::selection::take_click(ui.ctx()) {
+            let m = ui.input(|i| i.modifiers);
+            if m.shift || m.command {
+                r.selection = before.clone();
+                r.select_more(picked, m.command && !m.shift);
+            } else if !r.model.selected_also.is_empty() {
+                r.model.selected_also.clear();
+                r.view3d.dirty.insert(Layer::Selection);
+            }
         }
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);

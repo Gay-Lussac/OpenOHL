@@ -1321,6 +1321,7 @@ impl View3d {
                 picked.describe(),
                 started.elapsed()
             );
+            selection::clicked(ui.ctx(), &picked);
             if picked != *selection {
                 *selection = picked;
             }

@@ -914,8 +914,7 @@ pub(super) fn run_command(
         Command::ClearSelection => r.select(Selection::None),
         Command::DeleteSelected => {
             if editable {
-                let target = r.selection.clone();
-                r.delete_object(&target);
+                r.delete_selected();
             }
         }
         Command::GoTo => {

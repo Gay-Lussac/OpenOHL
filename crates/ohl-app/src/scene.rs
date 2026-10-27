@@ -1710,297 +1710,303 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {
             let hi = [255, 255, 255, 255];
-            match selection {
-                Selection::Structure(id) => {
-                    if let Some(st) = line.structure(id) {
-                        // Its wire points where the strings hold them in
-                        // the case shown (as solved), else as given.
-                        let pieces = crate::selection::string_pieces(model, case);
-                        for w in &st.wires {
-                            for p in wire_drawn(st, w, &pieces) {
-                                s.point(p, hi, 9.0);
-                            }
-                        }
-                        s.point(st.position, hi, 12.0);
-                    }
-                }
-                Selection::Span { section, span } => {
-                    // In every case it is drawn in (both wind sides), the
-                    // copy clicked (else the first case's) the strongest.
-                    let cases = model.section_cases(section, case);
-                    let strong = model
-                        .selection_case
-                        .filter(|k| cases.contains(k))
-                        .unwrap_or(cases[0]);
-                    for k in cases {
-                        let Some(c) = model.cases.get(k) else {
-                            continue;
-                        };
-                        for (side, solved) in c.drawn().enumerate() {
-                            let Some(sp) = solved
-                                .shapes
-                                .iter()
-                                .find(|x| x.section == *section)
-                                .and_then(|x| x.spans.get(*span))
-                            else {
-                                // Not solved in this case: its copy drawn
-                                // dashed in its place, highlighted too.
-                                if let Some(points) = model
-                                    .unsolved_drawn(section, k, side)
-                                    .and_then(|d| d.spans.get(*span).cloned())
-                                    .filter(|p| p.len() > 1)
-                                {
-                                    let main = k == strong && side == 0;
-                                    s.polyline(&points, hi, if main { 5.0 } else { 2.5 });
+            // The selection and the others selected (Shift or Cmd/Ctrl+click).
+            for selection in crate::selection::all_selected(selection, model) {
+                match selection {
+                    Selection::Structure(id) => {
+                        if let Some(st) = line.structure(id) {
+                            // Its wire points where the strings hold them in
+                            // the case shown (as solved), else as given.
+                            let pieces = crate::selection::string_pieces(model, case);
+                            for w in &st.wires {
+                                for p in wire_drawn(st, w, &pieces) {
+                                    s.point(p, hi, 9.0);
                                 }
+                            }
+                            s.point(st.position, hi, 12.0);
+                        }
+                    }
+                    Selection::Span { section, span } => {
+                        // In every case it is drawn in (both wind sides), the
+                        // copy clicked (else the first case's) the strongest.
+                        let cases = model.section_cases(section, case);
+                        let strong = model
+                            .selection_case
+                            .filter(|k| cases.contains(k))
+                            .unwrap_or(cases[0]);
+                        for k in cases {
+                            let Some(c) = model.cases.get(k) else {
                                 continue;
                             };
-                            let lines = match solved.bundles.spans.get(&(section.clone(), *span)) {
-                                Some(l) => l.clone(),
-                                None => vec![sp.points.clone()],
-                            };
-                            let main = k == strong && side == 0;
-                            let width = match (main, lines.len() > 1) {
-                                (true, true) => 3.0,
-                                (true, false) => 5.0,
-                                (false, true) => 1.5,
-                                (false, false) => 2.5,
-                            };
-                            for l in &lines {
-                                s.polyline(l, hi, width);
-                            }
-                        }
-                    }
-                }
-                Selection::Jumper(id) => {
-                    let cases = model.shown(case);
-                    let strong = model
-                        .selection_case
-                        .filter(|k| cases.contains(k))
-                        .unwrap_or(case);
-                    for k in cases {
-                        let Some(c) = model.cases.get(k) else {
-                            continue;
-                        };
-                        for (side, solved) in c.drawn().enumerate() {
-                            if let Some(j) = solved.jumpers.iter().find(|x| &x.jumper == id) {
-                                let (_, lines) = jumper_lines(line, j, &solved.bundles);
-                                let width = if k == strong && side == 0 { 3.0 } else { 1.5 };
+                            for (side, solved) in c.drawn().enumerate() {
+                                let Some(sp) = solved
+                                    .shapes
+                                    .iter()
+                                    .find(|x| x.section == *section)
+                                    .and_then(|x| x.spans.get(*span))
+                                else {
+                                    // Not solved in this case: its copy drawn
+                                    // dashed in its place, highlighted too.
+                                    if let Some(points) = model
+                                        .unsolved_drawn(section, k, side)
+                                        .and_then(|d| d.spans.get(*span).cloned())
+                                        .filter(|p| p.len() > 1)
+                                    {
+                                        let main = k == strong && side == 0;
+                                        s.polyline(&points, hi, if main { 5.0 } else { 2.5 });
+                                    }
+                                    continue;
+                                };
+                                let lines =
+                                    match solved.bundles.spans.get(&(section.clone(), *span)) {
+                                        Some(l) => l.clone(),
+                                        None => vec![sp.points.clone()],
+                                    };
+                                let main = k == strong && side == 0;
+                                let width = match (main, lines.len() > 1) {
+                                    (true, true) => 3.0,
+                                    (true, false) => 5.0,
+                                    (false, true) => 1.5,
+                                    (false, false) => 2.5,
+                                };
                                 for l in &lines {
                                     s.polyline(l, hi, width);
                                 }
                             }
                         }
                     }
-                }
-                Selection::Attachment { structure, set } => {
-                    // The strings holding it where they are drawn in every
-                    // case drawn (as solved), else as given; the copy
-                    // clicked (else the case shown) the strongest.
-                    let strong = model.selection_case.unwrap_or(case);
-                    if let Some(st) = line.structure(structure)
-                        && let Some(w) = st.wire_at_set(*set)
-                    {
+                    Selection::Jumper(id) => {
+                        let cases = model.shown(case);
+                        let strong = model
+                            .selection_case
+                            .filter(|k| cases.contains(k))
+                            .unwrap_or(case);
+                        for k in cases {
+                            let Some(c) = model.cases.get(k) else {
+                                continue;
+                            };
+                            for (side, solved) in c.drawn().enumerate() {
+                                if let Some(j) = solved.jumpers.iter().find(|x| &x.jumper == id) {
+                                    let (_, lines) = jumper_lines(line, j, &solved.bundles);
+                                    let width = if k == strong && side == 0 { 3.0 } else { 1.5 };
+                                    for l in &lines {
+                                        s.polyline(l, hi, width);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Selection::Attachment { structure, set } => {
+                        // The strings holding it where they are drawn in every
+                        // case drawn (as solved), else as given; the copy
+                        // clicked (else the case shown) the strongest.
+                        let strong = model.selection_case.unwrap_or(case);
+                        if let Some(st) = line.structure(structure)
+                            && let Some(w) = st.wire_at_set(*set)
+                        {
+                            for k in crate::selection::drawn_cases(model, case) {
+                                if k == strong {
+                                    continue;
+                                }
+                                let pieces = crate::selection::string_pieces(model, k);
+                                for &i in &st.component(&w.label).strings {
+                                    let x = &st.strings[i];
+                                    for (top, bottom) in pieces
+                                        .get(&(st.id.clone(), x.label.clone()))
+                                        .into_iter()
+                                        .flatten()
+                                    {
+                                        s.polyline(&[*top, *bottom], hi, 1.5);
+                                    }
+                                }
+                                for p in wire_drawn(st, w, &pieces) {
+                                    s.point(p, hi, 7.0);
+                                }
+                            }
+                            let pieces = crate::selection::string_pieces(model, strong);
+                            for &i in &st.component(&w.label).strings {
+                                let x = &st.strings[i];
+                                match pieces.get(&(st.id.clone(), x.label.clone())) {
+                                    Some(drawn) => {
+                                        for (top, bottom) in drawn {
+                                            s.polyline(&[*top, *bottom], hi, 3.0);
+                                            s.point(*top, hi, 9.0);
+                                        }
+                                    }
+                                    None => {
+                                        if let (Some(top), Some(bottom)) =
+                                            (st.node(&x.top), st.wire(&x.wire))
+                                        {
+                                            s.polyline(&[top.position(), bottom.position], hi, 3.0);
+                                            s.point(top.position(), hi, 9.0);
+                                        }
+                                    }
+                                }
+                            }
+                            for p in wire_drawn(st, w, &pieces) {
+                                s.point(p, hi, 11.0);
+                            }
+                        }
+                    }
+                    Selection::String { structure, label } => {
+                        // Where it is drawn in every case drawn (both wind
+                        // sides), else as given; the copies in the case clicked
+                        // (else the one shown) the strongest.
+                        let strong = model.selection_case.unwrap_or(case);
                         for k in crate::selection::drawn_cases(model, case) {
                             if k == strong {
                                 continue;
                             }
-                            let pieces = crate::selection::string_pieces(model, k);
-                            for &i in &st.component(&w.label).strings {
-                                let x = &st.strings[i];
-                                for (top, bottom) in pieces
-                                    .get(&(st.id.clone(), x.label.clone()))
-                                    .into_iter()
-                                    .flatten()
-                                {
-                                    s.polyline(&[*top, *bottom], hi, 1.5);
-                                }
-                            }
-                            for p in wire_drawn(st, w, &pieces) {
-                                s.point(p, hi, 7.0);
-                            }
-                        }
-                        let pieces = crate::selection::string_pieces(model, strong);
-                        for &i in &st.component(&w.label).strings {
-                            let x = &st.strings[i];
-                            match pieces.get(&(st.id.clone(), x.label.clone())) {
-                                Some(drawn) => {
-                                    for (top, bottom) in drawn {
-                                        s.polyline(&[*top, *bottom], hi, 3.0);
-                                        s.point(*top, hi, 9.0);
-                                    }
-                                }
-                                None => {
-                                    if let (Some(top), Some(bottom)) =
-                                        (st.node(&x.top), st.wire(&x.wire))
-                                    {
-                                        s.polyline(&[top.position(), bottom.position], hi, 3.0);
-                                        s.point(top.position(), hi, 9.0);
-                                    }
-                                }
-                            }
-                        }
-                        for p in wire_drawn(st, w, &pieces) {
-                            s.point(p, hi, 11.0);
-                        }
-                    }
-                }
-                Selection::String { structure, label } => {
-                    // Where it is drawn in every case drawn (both wind
-                    // sides), else as given; the copies in the case clicked
-                    // (else the one shown) the strongest.
-                    let strong = model.selection_case.unwrap_or(case);
-                    for k in crate::selection::drawn_cases(model, case) {
-                        if k == strong {
-                            continue;
-                        }
-                        for (a, b) in crate::selection::string_pieces(model, k)
-                            .remove(&(structure.clone(), label.clone()))
-                            .unwrap_or_default()
-                        {
-                            s.polyline(&[a, b], hi, 2.0);
-                        }
-                    }
-                    let mut drawn = crate::selection::string_pieces(model, strong)
-                        .remove(&(structure.clone(), label.clone()))
-                        .unwrap_or_default();
-                    if drawn.is_empty()
-                        && let Some(st) = line.structure(structure)
-                        && let Some(x) = st.string(label)
-                        && let (Some(top), Some(w)) = (st.node(&x.top), st.wire(&x.wire))
-                    {
-                        drawn.push((top.position(), w.position));
-                    }
-                    for (a, b) in drawn {
-                        s.polyline(&[a, b], hi, 4.0);
-                        s.point(a, hi, 9.0);
-                        s.point(b, hi, 9.0);
-                    }
-                }
-                Selection::Point { structure, label } => {
-                    // Its rigid link (an attachment point at an offset).
-                    for (_, _, a, b) in crate::link_tool::drawn_links(model)
-                        .into_iter()
-                        .filter(|l| &l.0 == structure && &l.1 == label)
-                    {
-                        s.polyline(&[a, b], hi, 5.0);
-                        s.point(a, hi, 9.0);
-                    }
-                    // A wire point: where it hangs in every case drawn.
-                    let strong = model.selection_case.unwrap_or(case);
-                    if let Some(st) = line.structure(structure)
-                        && let Some(w) = st.wire(label)
-                    {
-                        for k in crate::selection::drawn_cases(model, case) {
-                            let pieces = crate::selection::string_pieces(model, k);
-                            for p in wire_drawn(st, w, &pieces) {
-                                s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
-                            }
-                        }
-                    } else if let Some(p) = selection.focus(model, case) {
-                        s.point(p, hi, 12.0);
-                    }
-                }
-                Selection::SpanPoint { section, label } => {
-                    // Every case its section is drawn in (both wind sides).
-                    let strong = model.selection_case.unwrap_or(case);
-                    for (k, solved) in drawn_copies(model, section, case) {
-                        let Some(p) = solved
-                            .shapes
-                            .iter()
-                            .find(|x| x.section == *section)
-                            .and_then(|x| x.span_points.iter().find(|(l, _)| l == label))
-                            .map(|(_, p)| *p)
-                        else {
-                            continue;
-                        };
-                        s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
-                    }
-                }
-                Selection::Spread { section, index } => {
-                    // Its stretch in every case its section is drawn in
-                    // (both wind sides), the copy clicked the strongest.
-                    let strong = model.selection_case.unwrap_or(case);
-                    let def = line
-                        .sections
-                        .iter()
-                        .find(|x| x.id == *section)
-                        .map(|x| line.section_with_fractions(x));
-                    for (k, solved) in drawn_copies(model, section, case) {
-                        let Some(stretch) = def.as_ref().and_then(|def| {
-                            let shape = solved.shapes.iter().find(|x| x.section == *section)?;
-                            spreads_drawn(def, shape)
-                                .into_iter()
-                                .find(|(i, _)| i == index)
-                                .map(|(_, s)| s)
-                        }) else {
-                            continue;
-                        };
-                        let main = k == strong;
-                        s.polyline(&stretch, hi, if main { 6.0 } else { 3.0 });
-                        for p in [stretch[0], stretch[stretch.len() - 1]] {
-                            s.point(p, hi, if main { 9.0 } else { 6.0 });
-                        }
-                    }
-                }
-                Selection::JumperPoint { jumper, label } => {
-                    // Every case drawn (both wind sides).
-                    let strong = model.selection_case.unwrap_or(case);
-                    for k in crate::selection::drawn_cases(model, case) {
-                        let Some(c) = model.cases.get(k) else {
-                            continue;
-                        };
-                        for solved in c.drawn() {
-                            if let Some(p) = solved
-                                .jumpers
-                                .iter()
-                                .find(|j| &j.jumper == jumper)
-                                .and_then(|j| j.point_positions.iter().find(|(l, _)| l == label))
-                                .map(|(_, p)| *p)
+                            for (a, b) in crate::selection::string_pieces(model, k)
+                                .remove(&(structure.clone(), label.clone()))
+                                .unwrap_or_default()
                             {
-                                s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                                s.polyline(&[a, b], hi, 2.0);
+                            }
+                        }
+                        let mut drawn = crate::selection::string_pieces(model, strong)
+                            .remove(&(structure.clone(), label.clone()))
+                            .unwrap_or_default();
+                        if drawn.is_empty()
+                            && let Some(st) = line.structure(structure)
+                            && let Some(x) = st.string(label)
+                            && let (Some(top), Some(w)) = (st.node(&x.top), st.wire(&x.wire))
+                        {
+                            drawn.push((top.position(), w.position));
+                        }
+                        for (a, b) in drawn {
+                            s.polyline(&[a, b], hi, 4.0);
+                            s.point(a, hi, 9.0);
+                            s.point(b, hi, 9.0);
+                        }
+                    }
+                    Selection::Point { structure, label } => {
+                        // Its rigid link (an attachment point at an offset).
+                        for (_, _, a, b) in crate::link_tool::drawn_links(model)
+                            .into_iter()
+                            .filter(|l| &l.0 == structure && &l.1 == label)
+                        {
+                            s.polyline(&[a, b], hi, 5.0);
+                            s.point(a, hi, 9.0);
+                        }
+                        // A wire point: where it hangs in every case drawn.
+                        let strong = model.selection_case.unwrap_or(case);
+                        if let Some(st) = line.structure(structure)
+                            && let Some(w) = st.wire(label)
+                        {
+                            for k in crate::selection::drawn_cases(model, case) {
+                                let pieces = crate::selection::string_pieces(model, k);
+                                for p in wire_drawn(st, w, &pieces) {
+                                    s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                                }
+                            }
+                        } else if let Some(p) = selection.focus(model, case) {
+                            s.point(p, hi, 12.0);
+                        }
+                    }
+                    Selection::SpanPoint { section, label } => {
+                        // Every case its section is drawn in (both wind sides).
+                        let strong = model.selection_case.unwrap_or(case);
+                        for (k, solved) in drawn_copies(model, section, case) {
+                            let Some(p) = solved
+                                .shapes
+                                .iter()
+                                .find(|x| x.section == *section)
+                                .and_then(|x| x.span_points.iter().find(|(l, _)| l == label))
+                                .map(|(_, p)| *p)
+                            else {
+                                continue;
+                            };
+                            s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                        }
+                    }
+                    Selection::Spread { section, index } => {
+                        // Its stretch in every case its section is drawn in
+                        // (both wind sides), the copy clicked the strongest.
+                        let strong = model.selection_case.unwrap_or(case);
+                        let def = line
+                            .sections
+                            .iter()
+                            .find(|x| x.id == *section)
+                            .map(|x| line.section_with_fractions(x));
+                        for (k, solved) in drawn_copies(model, section, case) {
+                            let Some(stretch) = def.as_ref().and_then(|def| {
+                                let shape = solved.shapes.iter().find(|x| x.section == *section)?;
+                                spreads_drawn(def, shape)
+                                    .into_iter()
+                                    .find(|(i, _)| i == index)
+                                    .map(|(_, s)| s)
+                            }) else {
+                                continue;
+                            };
+                            let main = k == strong;
+                            s.polyline(&stretch, hi, if main { 6.0 } else { 3.0 });
+                            for p in [stretch[0], stretch[stretch.len() - 1]] {
+                                s.point(p, hi, if main { 9.0 } else { 6.0 });
                             }
                         }
                     }
-                }
-                Selection::Spacer(id) => {
-                    let strong = model.selection_case.unwrap_or(case);
-                    let held = line
-                        .spacers
-                        .iter()
-                        .find(|x| &x.id == id)
-                        .map(|x| x.a.section.clone());
-                    for (k, solved) in held
-                        .iter()
-                        .flat_map(|section| drawn_copies(model, section, case))
-                    {
-                        let Some(x) = solved
-                            .shapes
+                    Selection::JumperPoint { jumper, label } => {
+                        // Every case drawn (both wind sides).
+                        let strong = model.selection_case.unwrap_or(case);
+                        for k in crate::selection::drawn_cases(model, case) {
+                            let Some(c) = model.cases.get(k) else {
+                                continue;
+                            };
+                            for solved in c.drawn() {
+                                if let Some(p) = solved
+                                    .jumpers
+                                    .iter()
+                                    .find(|j| &j.jumper == jumper)
+                                    .and_then(|j| {
+                                        j.point_positions.iter().find(|(l, _)| l == label)
+                                    })
+                                    .map(|(_, p)| *p)
+                                {
+                                    s.point(p, hi, if k == strong { 12.0 } else { 8.0 });
+                                }
+                            }
+                        }
+                    }
+                    Selection::Spacer(id) => {
+                        let strong = model.selection_case.unwrap_or(case);
+                        let held = line
+                            .spacers
                             .iter()
-                            .flat_map(|x| &x.spacers)
                             .find(|x| &x.id == id)
-                        else {
-                            continue;
-                        };
-                        let [a, b] = x.ends;
-                        let main = k == strong;
-                        s.polyline(&[a, b], hi, if main { 5.0 } else { 2.5 });
-                        s.point(a, hi, if main { 9.0 } else { 6.0 });
-                        s.point(b, hi, if main { 9.0 } else { 6.0 });
+                            .map(|x| x.a.section.clone());
+                        for (k, solved) in held
+                            .iter()
+                            .flat_map(|section| drawn_copies(model, section, case))
+                        {
+                            let Some(x) = solved
+                                .shapes
+                                .iter()
+                                .flat_map(|x| &x.spacers)
+                                .find(|x| &x.id == id)
+                            else {
+                                continue;
+                            };
+                            let [a, b] = x.ends;
+                            let main = k == strong;
+                            s.polyline(&[a, b], hi, if main { 5.0 } else { 2.5 });
+                            s.point(a, hi, if main { 9.0 } else { 6.0 });
+                            s.point(b, hi, if main { 9.0 } else { 6.0 });
+                        }
                     }
-                }
-                Selection::AlignmentPoint { id } => {
-                    if let Some(p) = crate::selection::alignment_point(model, id) {
-                        s.point(p, hi, 12.0);
-                        s.polyline(&[p, [p[0], p[1], p[2] + 30.0]], hi, 1.5);
+                    Selection::AlignmentPoint { id } => {
+                        if let Some(p) = crate::selection::alignment_point(model, id) {
+                            s.point(p, hi, 12.0);
+                            s.polyline(&[p, [p[0], p[1], p[2] + 30.0]], hi, 1.5);
+                        }
                     }
-                }
-                Selection::LidarPoint(_) | Selection::SurveyPoint(_) => {
-                    if let Some(p) = crate::selection::position(model, selection) {
-                        s.point(p, hi, 10.0);
+                    Selection::LidarPoint(_) | Selection::SurveyPoint(_) => {
+                        if let Some(p) = crate::selection::position(model, selection) {
+                            s.point(p, hi, 10.0);
+                        }
                     }
+                    Selection::None => {}
                 }
-                Selection::None => {}
             }
         }
     }

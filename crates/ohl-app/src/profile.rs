@@ -116,7 +116,7 @@ type ViewKey = [u64; 8];
 
 /// What the wires were drawn for: the view, the selection, the styles,
 /// arrows or not.
-type WiresKey = (ViewKey, Selection, Option<u64>, bool);
+type WiresKey = (ViewKey, Vec<Selection>, Option<u64>, bool);
 
 /// What the drawing was made for: the route (none: all), the weather
 /// case, the line width (the corridor's half width).
@@ -1118,7 +1118,8 @@ impl ProfileView {
             if m.station < s0 - 100.0 || m.station > s1 + 100.0 {
                 continue;
             }
-            let selected = matches!(selection, Selection::Structure(id) if *id == m.id);
+            let selected = crate::selection::all_selected(selection, model)
+                .any(|x| matches!(x, Selection::Structure(id) if *id == m.id));
             // Away from the alignment (a connection beside the line, on the
             // route because it gives it): projected, fainter, its distance
             // written.
@@ -1210,7 +1211,14 @@ impl ProfileView {
         let arrows = display.direction[crate::annotations::View::Profile as usize];
         // (The styles made again first when the line changed: their key.)
         self.styles.get(&model.line, display.coloring);
-        let wires_key: WiresKey = (view_key, selection.clone(), self.styles.key(), arrows);
+        let wires_key: WiresKey = (
+            view_key,
+            crate::selection::all_selected(selection, model)
+                .cloned()
+                .collect(),
+            self.styles.key(),
+            arrows,
+        );
         if self.wires.as_ref().is_none_or(|(k, _)| *k != wires_key) {
             let styles = self.styles.get(&model.line, display.coloring);
             let mut out = Vec::new();
@@ -1220,7 +1228,9 @@ impl ProfileView {
                     continue;
                 }
                 let traced = trace_selection(&w.label);
-                let selected = traced.as_ref().is_some_and(|s| s == selection);
+                let selected = traced
+                    .as_ref()
+                    .is_some_and(|s| crate::selection::is_selected(selection, model, s));
                 let (style, forward) = match &traced {
                     Some(Selection::Span { section, .. }) => (
                         Some(styles.section(section)),
@@ -1539,7 +1549,9 @@ impl ProfileView {
         if response.clicked_by(select_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
-            *selection = pick(pos);
+            let picked = pick(pos);
+            crate::selection::clicked(ui.ctx(), &picked);
+            *selection = picked;
         }
         // A right-click: where it was along which alignment, for the menu.
         if response.secondary_clicked()

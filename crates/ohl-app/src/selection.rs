@@ -88,6 +88,72 @@ pub enum Selection {
     SurveyPoint(usize),
 }
 
+/// The selection and the others selected with Shift or Cmd/Ctrl+click
+/// ([`Model::selected_also`]): each highlighted in every view, on every
+/// copy drawn.
+pub fn all_selected<'a>(
+    selection: &'a Selection,
+    model: &'a Model,
+) -> impl Iterator<Item = &'a Selection> {
+    std::iter::once(selection)
+        .chain(&model.selected_also)
+        .filter(|s| **s != Selection::None)
+}
+
+/// Whether `x` is selected: the selection or one of the others.
+pub fn is_selected(selection: &Selection, model: &Model, x: &Selection) -> bool {
+    *x != Selection::None && (selection == x || model.selected_also.contains(x))
+}
+
+fn click_id() -> eframe::egui::Id {
+    eframe::egui::Id::new("ohl-selection-click")
+}
+
+/// A click in a view picked `picked` (`Selection::None`: nothing there):
+/// kept for the application, which adds it to the selection or takes it
+/// out when Shift or Cmd/Ctrl was held, and else makes it the only one
+/// ([`take_click`]).
+pub fn clicked(ctx: &eframe::egui::Context, picked: &Selection) {
+    ctx.data_mut(|d| d.insert_temp(click_id(), picked.clone()));
+}
+
+/// The click of this frame ([`clicked`]), taken.
+pub fn take_click(ctx: &eframe::egui::Context) -> Option<Selection> {
+    ctx.data_mut(|d| d.remove_temp::<Selection>(click_id()))
+}
+
+/// The selection after Shift+click (`toggle` false: added) or
+/// Cmd/Ctrl+click (`toggle`: added, or taken out when selected) on
+/// `picked`: the one clicked last is the selection (shown in
+/// Properties), the one before joins `also`. A click on nothing changes
+/// nothing; the selection taken out is followed by the last of `also`.
+pub fn multi_click(
+    selection: &mut Selection,
+    also: &mut Vec<Selection>,
+    picked: Selection,
+    toggle: bool,
+) {
+    if picked == Selection::None {
+        return;
+    }
+    if toggle && (*selection == picked || also.contains(&picked)) {
+        if *selection == picked {
+            *selection = also.pop().unwrap_or_default();
+        } else {
+            also.retain(|x| *x != picked);
+        }
+        return;
+    }
+    if *selection == picked {
+        return;
+    }
+    also.retain(|x| *x != picked);
+    let before = std::mem::replace(selection, picked);
+    if before != Selection::None {
+        also.push(before);
+    }
+}
+
 /// A click in a view: what is there, and the point on the ground
 /// under it (when the view knows one).
 #[derive(Debug, Clone, PartialEq)]
