@@ -501,6 +501,42 @@ own). The test plugin `plugins/tests/sheet-presets` gives one template
 from its code (an A1 with an SVG logo) and one from its manifest
 (invented values).
 
+### System styles
+
+*Added 2026-10-27 (built, in active development, not approved yet).* Next
+to the wire colours, a plugin may suggest **styles of the line's
+electrical systems** — its colour (used when wires are drawn by system),
+per phase the **line code** that tells the phases apart in that drawing
+and the **phase angle** — through the optional export `system-styles`
+(extension point `system-styles`; world `system-style-plugin`, or add
+`export system-styles;` to any world), additive to interface 0.3:
+
+```wit
+interface system-styles {
+    record system-info {
+        id: string, name: string, owner: string, number: string,
+        voltage-kv: f64, frequency-hz: option<f64>, dc: bool,
+        phases: list<string>,                  // labels, in order
+        fields: list<tuple<string, string>>,   // the plugin's own columns
+        sections: u32,
+    }
+    record phase-style { code: option<string>, angle-deg: option<f64> }
+    record system-style { color: option<string>, phases: list<phase-style> }
+    system-styles: func(systems: list<system-info>) -> result<list<system-style>, string>;
+}
+```
+
+One style per system in the order given; a phase style per phase in its
+order (fewer: the rest left); `none` leaves a value as it is. The host
+(`ohl_plugins::WasmHost::system_styles`) refuses another length, a colour
+other than `#rrggbb`, a code of other than dots and dashes, an angle that
+is not finite. The same window (Line › Sections › Wire colours from a
+plugin…) shows them beside the wire colours; the systems' colours and
+line codes are applied when ticked (default), the **phase angles only
+when ticked** (off by default: they feed the electrical calculations) —
+all in one command with the wire colours. The test plugin
+`plugins/tests/wire-colours` gives both exports.
+
 ## LiDAR class schemes
 
 *Added 2026-10-27 (built, in active development, not approved yet).* Any

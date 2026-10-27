@@ -148,6 +148,24 @@ pub const WIRE_COLOURS_EXPORT: &str = "ohl:plugin/wire-colours@0.1.0";
 /// `wire-colours` export).
 pub const WIRE_COLOURS: &str = "wire-colours";
 
+mod system_styles_bindings {
+    wasmtime::component::bindgen!({
+        world: "system-styles-export",
+        path: "wit",
+    });
+}
+
+pub use system_styles_bindings::exports::ohl::plugin::system_styles::{
+    PhaseStyle, SystemInfo, SystemStyle,
+};
+
+/// Export name of the optional `system-styles` interface of any plugin.
+pub const SYSTEM_STYLES_EXPORT: &str = "ohl:plugin/system-styles@0.1.0";
+
+/// Extension point of plugins suggesting system styles (the
+/// `system-styles` export).
+pub const SYSTEM_STYLES: &str = "system-styles";
+
 mod check_bindings {
     wasmtime::component::bindgen!({
         world: "check-plugin",
@@ -1676,6 +1694,82 @@ impl WasmHost {
         Ok(given)
     }
 
+    /// The styles the plugin in `dir` suggests for `systems` (one each, in
+    /// order), from its `system-styles` export. A plugin built without it
+    /// gives none (`Ok` of empty styles); its own error comes back as an
+    /// `Err` naming it, as does a list of another length, a colour that is
+    /// not `#rrggbb`, a line code of other than dots and dashes, or a
+    /// phase angle that is not finite.
+    pub fn system_styles(
+        &self,
+        dir: &Path,
+        systems: &[SystemInfo],
+    ) -> Result<Vec<SystemStyle>, PluginError> {
+        let none = || {
+            systems
+                .iter()
+                .map(|_| SystemStyle {
+                    color: None,
+                    phases: Vec::new(),
+                })
+                .collect()
+        };
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(none());
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component
+            .get_export_index(None, SYSTEM_STYLES_EXPORT)
+            .is_none()
+        {
+            return Ok(none());
+        }
+        let name = p.manifest.plugin.name.clone();
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest, what, p.limits);
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        let export = system_styles_bindings::SystemStylesExport::new(&mut p.store, &instance)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_system_styles()
+            .call_system_styles(&mut p.store, systems)
+            .map_err(|e| classify(e, &p.manifest, "system-styles", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+        if given.len() != systems.len() {
+            return Err(bad(format!(
+                "{} system styles for {} systems",
+                given.len(),
+                systems.len()
+            )));
+        }
+        for s in &given {
+            if let Some(c) = &s.color {
+                let ok = c.len() == 7
+                    && c.starts_with('#')
+                    && c[1..].chars().all(|x| x.is_ascii_hexdigit());
+                if !ok {
+                    return Err(bad(format!("system colour \"{c}\" is not #rrggbb")));
+                }
+            }
+            for p in &s.phases {
+                if let Some(code) = &p.code
+                    && !(!code.is_empty() && code.chars().all(|c| c == '.' || c == '-'))
+                {
+                    return Err(bad(format!("line code \"{code}\": dots and dashes only")));
+                }
+                if p.angle_deg.is_some_and(|a| !a.is_finite()) {
+                    return Err(bad("a phase angle that is not a number".into()));
+                }
+            }
+        }
+        Ok(given)
+    }
+
     /// Loads the plugin in `dir` in the world of each extension point its
     /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
     /// none of these: the minimal `plugin` world) and says what it
@@ -2461,6 +2555,55 @@ mod tests {
                 host.wire_colours(&old, &groups).unwrap(),
                 [None, None, None, None]
             );
+        }
+    }
+
+    /// A plugin suggests system styles from its `system-styles` export:
+    /// a colour and per phase a line code and an angle, in order; none for
+    /// a system it has nothing for; its error names it; a plugin built
+    /// without the export gives none.
+    #[test]
+    fn plugins_suggest_system_styles() {
+        let Some(dir) = built_plugin("tests/wire-colours") else {
+            return;
+        };
+        let system = |name: &str, owner: &str, kv: f64| SystemInfo {
+            id: name.into(),
+            name: name.into(),
+            owner: owner.into(),
+            number: String::new(),
+            voltage_kv: kv,
+            frequency_hz: Some(50.0),
+            dc: false,
+            phases: vec!["L1".into(), "L2".into(), "L3".into()],
+            fields: Vec::new(),
+            sections: 3,
+        };
+        let host = WasmHost::new().unwrap();
+        let got = host
+            .system_styles(
+                &dir,
+                &[
+                    system("a", "Utility A", 380.0),
+                    system("b", "Utility A", 220.0),
+                    system("c", "B", 220.0),
+                ],
+            )
+            .unwrap();
+        assert_eq!(got[0].color.as_deref(), Some("#ff0000"));
+        assert_eq!(got[1].color.as_deref(), Some("#00ff00"));
+        assert_eq!(got[2].color, None);
+        let codes: Vec<Option<&str>> = got[0].phases.iter().map(|p| p.code.as_deref()).collect();
+        assert_eq!(codes, [Some("-"), Some(".-"), Some(".--")]);
+        assert_eq!(got[0].phases[1].angle_deg, Some(-120.0));
+        let e = host
+            .system_styles(&dir, &[system("fail", "", 1.0)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("system-styles") || e.contains("fail"), "{e}");
+        if let Some(old) = built_plugin("tests/code-old") {
+            let none = host.system_styles(&old, &[system("a", "", 1.0)]).unwrap();
+            assert!(none[0].color.is_none() && none[0].phases.is_empty());
         }
     }
 

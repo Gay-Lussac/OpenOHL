@@ -10,6 +10,19 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Plugins may suggest system styles: colour, line code per phase, phase angle (owner, 2026-10-27)**
+
+- A utility's line-modelling standard gives the circuits' colours by
+  their order, a line pattern to tell phases of one colour apart, and the
+  phase angles. The owner: the pattern has to be **per phase** (drawn by
+  system, all phases of a system share its colour, so the pattern tells
+  them apart) — which is OpenOHL's existing line code per phase; and to
+  preset the system colours and the phase angles. A new optional export
+  `system-styles` (extension point `system-styles`, additive to 0.3)
+  suggests them; applied from the wire-colours window, the phase angles
+  only when ticked (off by default: they feed the electrical
+  calculations), in one command with the wire colours.
+
 **Another project into this one: an id the import uses twice over (owner report, 2026-10-27)**
 
 - Importing a re-delivered line into its earlier version stopped with
