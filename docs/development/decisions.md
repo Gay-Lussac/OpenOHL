@@ -10,6 +10,14 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Internal clearances: a string's end only with an electrified volume (owner, 2026-10-27)**
+
+- While a string has no electrified volume, the internal clearance check
+  measures only the conductor to the structure: the string's wire point
+  is the conductor's clamp, already measured with the conductor to its
+  surface (nearer than the bare point). A string with electrified
+  volumes keeps its end row beside its shapes.
+
 **LiDAR clearance checks: speed, progress, scope, time limit (owner, 2026-10-27)**
 
 - The owner's vertical and radial runs on a real project with a design
