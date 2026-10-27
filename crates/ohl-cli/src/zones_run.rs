@@ -100,6 +100,15 @@ pub struct ZonesArgs {
     /// circuit is refused).
     #[arg(long)]
     pub circuits: Vec<String>,
+    /// Check only the sections and jumpers on this route, by id
+    /// (repeatable; with `--alignment`: on either; overrides the rule
+    /// file's `routes` and `alignments`; an unknown id is refused).
+    #[arg(long = "route")]
+    pub routes: Vec<String>,
+    /// Check only the sections and jumpers on this alignment, by id
+    /// (repeatable; see `--route`).
+    #[arg(long = "alignment")]
+    pub alignments: Vec<String>,
     /// Solve every section by this method: fe (finite elements) or rs
     /// (ruling span) (overrides the rule file's `method`).
     #[arg(long)]
@@ -183,6 +192,34 @@ fn measure_of(set: &RuleSet, asked: Option<&str>) -> Result<Measure, String> {
             ),
         },
     }
+}
+
+/// Refuses a route or an alignment id the line does not have
+/// (`--route`, `--alignment`).
+pub fn known_routes(
+    line: &ohl_line::Line,
+    routes: &[String],
+    alignments: &[String],
+) -> Result<(), String> {
+    for r in routes {
+        if !line.routes.iter().any(|x| &x.id == r) {
+            let ids: Vec<&str> = line.routes.iter().map(|x| x.id.as_str()).collect();
+            return Err(format!(
+                "--route {r}: no such route (routes: {})",
+                ids.join(", ")
+            ));
+        }
+    }
+    for a in alignments {
+        if !line.alignments.iter().any(|x| &x.id == a) {
+            let ids: Vec<&str> = line.alignments.iter().map(|x| x.id.as_str()).collect();
+            return Err(format!(
+                "--alignment {a}: no such alignment (alignments: {})",
+                ids.join(", ")
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Opens a project file (`None`: a line file).
@@ -430,6 +467,11 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
             .circuit_names_for(&args.circuits)
             .map_err(|e| format!("--circuits: {e}"))?;
     }
+    if !args.routes.is_empty() || !args.alignments.is_empty() {
+        known_routes(&line, &args.routes, &args.alignments)?;
+        check.routes = args.routes.clone();
+        check.alignments = args.alignments.clone();
+    }
     if let Some(m) = &args.method {
         check.method =
             Some(ohl_clearance::rules::parse_method(m).map_err(|e| format!("--method {e}"))?);
@@ -663,6 +705,10 @@ fn print_report(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) {
         r.checking,
         r.zone.points
     );
+    // Where the time went (measured).
+    for l in zone::breakdown(r) {
+        println!("  {l}");
+    }
     for f in &r.failed {
         println!("  not solved: {f}");
     }

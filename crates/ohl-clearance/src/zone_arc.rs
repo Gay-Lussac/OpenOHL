@@ -300,7 +300,21 @@ impl ArcPointCheck {
         for (i, &k) in items.iter().enumerate() {
             let a = &arcs[k];
             results.push(WireResult::with(def.required(a.wire.kv())));
-            let grow = a.radius + a.arc.outer + reach + def.vertical_band + def.vertical_depth;
+            // In plan the band lies within its radius of the attachment
+            // axis: a vertical clearance counts within the zone's width
+            // (and half a slice) of it, a radial one within the reach —
+            // only that one widens the cells (2026-10-27: a screen's
+            // 1000 m vertical requirement did).
+            #[cfg(not(test))]
+            let full = false;
+            #[cfg(test)]
+            let full = crate::checks::FULL_CELLS.load(std::sync::atomic::Ordering::Relaxed);
+            let radial = if def.radial.is_some() || full {
+                reach
+            } else {
+                0.0
+            };
+            let grow = a.radius + a.arc.outer + radial + def.vertical_band + def.vertical_depth;
             let mut mine: HashSet<(i64, i64)> = HashSet::new();
             let centres: Vec<P3> = a
                 .arc

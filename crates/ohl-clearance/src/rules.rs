@@ -84,7 +84,11 @@
 //!   objects with weather case groups take only the check's cases in
 //!   them (the desktop windows: clearances, wire tensions, string
 //!   checks; the command line does not apply them yet); the rest `ohl
-//!   zones` too; `ohl line` ignores it.
+//!   zones` too; `ohl line` ignores it. `routes`, `alignments`
+//!   (2026-10-27, ids, default none: the whole line): only the sections
+//!   and jumpers on a route or an alignment named are solved and checked
+//!   ([`CheckScope::wires_on`]; `ohl zones` too, `--route`/`--alignment`
+//!   override them).
 //!
 //! ## Clearances by voltage
 //!
@@ -331,6 +335,19 @@ impl Required {
     /// The larger of the two (0 without any).
     pub fn largest(&self) -> f64 {
         self.vertical.unwrap_or(0.0).max(self.radial.unwrap_or(0.0))
+    }
+
+    /// How far a radial clearance is looked for (before the search
+    /// margin), m: [`Required::largest`]; for a screen its band and its
+    /// radial requirement — not [`SCREEN_DISTANCE`], which only says
+    /// that every point within the band is reported at any height
+    /// (2026-10-27: a screen's radial clearances were looked for 1000 m
+    /// around every wire).
+    pub fn radial_reach(&self) -> f64 {
+        match self.band {
+            Some(b) => b.max(self.radial.unwrap_or(0.0)),
+            None => self.largest(),
+        }
     }
 }
 
@@ -609,6 +626,27 @@ impl Rule {
         largest + self.search_margin
     }
 
+    /// [`Rule::reach`] in plan: a screen's band (and radial requirement)
+    /// instead of its [`SCREEN_DISTANCE`] ([`Required::radial_reach`]) —
+    /// how far from the wires the wire-to-wire checks of a rule file
+    /// look when it holds a screen (2026-10-27); for other rules the
+    /// same.
+    pub fn reach_in_plan(
+        &self,
+        potentials: &[Option<Potential>],
+        others: &[Option<Potential>],
+    ) -> f64 {
+        if !self.screen {
+            return self.reach(potentials, others);
+        }
+        let met = self.voltages_met(potentials, others);
+        let kvs = if met.is_empty() { vec![None] } else { met };
+        kvs.iter()
+            .map(|&kv| self.required(kv).radial_reach())
+            .fold(0.0, f64::max)
+            + self.search_margin
+    }
+
     /// Class numbers of a point rule: its classes and those of its roles
     /// (`classes_with_role`, e.g. from a LiDAR class scheme), sorted.
     pub fn point_classes(&self, classes_with_role: impl Fn(&str) -> Vec<u8>) -> Vec<u8> {
@@ -769,6 +807,10 @@ struct RawCheck {
     structure_override: bool,
     #[serde(default)]
     section_override: bool,
+    #[serde(default)]
+    routes: Vec<String>,
+    #[serde(default)]
+    alignments: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1197,6 +1239,13 @@ pub struct CheckScope {
     /// The section override ticked: on a section with weather case
     /// groups, only the check's cases in them.
     pub section_override: bool,
+    /// The routes checked, by id (owner, 2026-10-27): with
+    /// [`CheckScope::alignments`] empty too, the whole line; else only the
+    /// sections and jumpers on a route or an alignment chosen
+    /// ([`ohl_line::Line::wires_on`]).
+    pub routes: Vec<String>,
+    /// The alignments checked, by id (besides whole routes).
+    pub alignments: Vec<String>,
 }
 
 impl CheckScope {
@@ -1204,6 +1253,8 @@ impl CheckScope {
     /// no override).
     pub fn is_empty(&self) -> bool {
         self.circuits.is_empty()
+            && self.routes.is_empty()
+            && self.alignments.is_empty()
             && self.method.is_none()
             && self.search_distance.is_none()
             && !self.structure_override
@@ -1213,6 +1264,20 @@ impl CheckScope {
     /// Whether a section of circuit `name` is checked.
     pub fn takes_circuit(&self, name: &str) -> bool {
         self.circuits.is_empty() || self.circuits.iter().any(|c| c == name)
+    }
+
+    /// The sections and jumpers of `line` on the routes and alignments
+    /// chosen ([`ohl_line::Line::wires_on`]); `None`: none chosen, the
+    /// whole line.
+    pub fn wires_on(
+        &self,
+        line: &ohl_line::Line,
+    ) -> Option<(
+        std::collections::BTreeSet<String>,
+        std::collections::BTreeSet<String>,
+    )> {
+        (!(self.routes.is_empty() && self.alignments.is_empty()))
+            .then(|| line.wires_on(&self.routes, &self.alignments))
     }
 }
 
@@ -1456,6 +1521,8 @@ impl RuleSet {
                     structure_override: c.structure_override,
                     section_override: c.section_override,
                     circuits: c.circuits,
+                    routes: c.routes,
+                    alignments: c.alignments,
                     method: c
                         .method
                         .as_deref()
@@ -1599,6 +1666,16 @@ impl RuleSet {
                     t,
                     "circuits = {}",
                     list(c.circuits.iter().map(|n| quoted(n)))
+                );
+            }
+            if !c.routes.is_empty() {
+                let _ = writeln!(t, "routes = {}", list(c.routes.iter().map(|n| quoted(n))));
+            }
+            if !c.alignments.is_empty() {
+                let _ = writeln!(
+                    t,
+                    "alignments = {}",
+                    list(c.alignments.iter().map(|n| quoted(n)))
                 );
             }
             if let Some(m) = c.method {

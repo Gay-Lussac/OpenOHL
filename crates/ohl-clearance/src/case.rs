@@ -164,7 +164,14 @@ pub fn check_case(
     let active: Vec<usize> = (0..rules.len())
         .filter(|&k| applies(&rules[k], case))
         .collect();
+    // How far the wire-to-wire checks look: a screen's band, not its
+    // 1000 m (2026-10-27).
     let reach = active
+        .iter()
+        .map(|&k| rules[k].reach_in_plan(targets.voltages, targets.other_voltages))
+        .fold(0.0, f64::max);
+    // The reach of every rule, as the point checks were capped before.
+    let every = active
         .iter()
         .map(|&k| rules[k].reach(targets.voltages, targets.other_voltages))
         .fold(0.0, f64::max);
@@ -188,11 +195,30 @@ pub fn check_case(
             };
             (parts, skipped.map(Outcome::Skipped))
         };
-        sets.push(
-            (outcome.is_none()
-                && matches!(rule.target, Target::Points { .. } | Target::SameLine { .. }))
-            .then(|| WireSet::new(parts.clone(), reach)),
-        );
+        sets.push(match rule.target {
+            _ if outcome.is_some() => None,
+            // A point rule: its own reach (no point beyond it counts:
+            // the results are those of the reach of every rule), its
+            // segments listed as far in plan as a point counts
+            // ([`crate::checks::plan_reach`]).
+            Target::Points { .. } => {
+                let own = parts
+                    .iter()
+                    .map(|w| rule.required(w.kv()).largest() + rule.search_margin)
+                    .fold(
+                        rule.reach(targets.voltages, targets.other_voltages),
+                        f64::max,
+                    )
+                    .min(every);
+                let plan: Vec<f64> = parts
+                    .iter()
+                    .map(|w| crate::checks::plan_reach(rule, w, own, [true, true]))
+                    .collect();
+                Some(WireSet::within(parts.clone(), own, None, &plan))
+            }
+            Target::SameLine { .. } => Some(WireSet::new(parts.clone(), reach)),
+            _ => None,
+        });
         out.push(RuleCheck {
             rule: k,
             wires: parts,

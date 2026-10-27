@@ -33,6 +33,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use ohl_core::budget::Budget;
 use ohl_core::units::Stress;
@@ -51,7 +52,9 @@ use crate::rules::{
 };
 pub use crate::zone_arc::{ARC_TOLERANCE, ArcCase, ZoneArc, arc_cases, arc_polylines, zone_arcs};
 use crate::zone_arc::{ArcPointCheck, arc_ground, arcs_of_rule};
-pub use crate::zone_run::{PointReader, ZoneCheckResult, line_voltages, run_zone_check};
+pub use crate::zone_run::{
+    PointReader, ZoneCheckResult, breakdown, line_voltages, millions, run_zone_check,
+};
 use ohl_line::jumper::JumperShape;
 
 /// Default half width of the vertical zone, m.
@@ -186,7 +189,9 @@ impl ZoneRule {
                 surface: matches!(target, Target::Ground)
                     .then(|| self.surface.clone())
                     .flatten(),
-                screen: self.screen,
+                // A screen is a vertical rule: in the radial window its
+                // 1000 m would set the reach of a radial check (2026-10-27).
+                screen: self.screen && vertical,
                 target,
             }
         };
@@ -746,6 +751,40 @@ pub struct ZoneReport {
     pub points: u64,
     /// What was not checked, and why.
     pub notes: Vec<String>,
+    /// Where the time went (measured).
+    pub timing: ZoneTiming,
+}
+
+/// Where a zone check's time went, measured (2026-10-27: shown after a
+/// run, so that the user sees what makes it slow).
+#[derive(Debug, Clone, Default)]
+pub struct ZoneTiming {
+    /// Indexing the wires (and the swing arcs) for the points.
+    pub preparing: Duration,
+    /// Reading the points (decoding the point cloud, outside the checks).
+    pub reading: Duration,
+    /// Checking the points, every rule together (wall time).
+    pub checking: Duration,
+    /// Per rule and target: the time (the points': summed over the cores).
+    pub parts: Vec<PartTiming>,
+}
+
+/// One rule's check of one kind of target, timed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartTiming {
+    /// The rule (index in the rules).
+    pub rule: usize,
+    /// The ground (else the LiDAR points).
+    pub ground: bool,
+    /// Time spent (the points': summed over the cores).
+    pub took: Duration,
+    /// The wires checked: every span (and jumper) in every wind state.
+    pub wires: usize,
+    /// The swing arcs checked.
+    pub arcs: usize,
+    /// The widest distance in plan from a wire at which a point counts,
+    /// m (0 for the ground).
+    pub plan: f64,
 }
 
 /// What a zone check runs against.
@@ -778,6 +817,9 @@ struct Part {
     arcs: Vec<usize>,
     arc_groups: Vec<usize>,
     arc_points: Option<ArcPointCheck>,
+    /// The widest reach in plan of its point check, m
+    /// ([`crate::checks::plan_reach`]).
+    plan: f64,
 }
 
 /// Whether the overrides let span wire `w` (a section's span; a jumper
@@ -813,6 +855,7 @@ pub fn check_zones(
     budget: &Budget,
 ) -> Result<ZoneReport, String> {
     let run = budget.start();
+    let begun = Instant::now();
     let mut report = ZoneReport {
         lowest: vec![None; rules.len()],
         ..ZoneReport::default()
@@ -904,19 +947,26 @@ pub fn check_zones(
                 arcs: arc_items,
                 arc_groups,
                 arc_points: None,
+                plan: 0.0,
             });
         }
     }
     let groups_n = spans.len();
     // Points: one pass for every point rule.
     let mut wanted = [false; 256];
-    for p in &mut parts {
-        let Target::Points { classes, .. } = &p.def.target else {
-            continue;
-        };
-        for c in classes {
-            wanted[*c as usize] = true;
+    for p in &parts {
+        if let Target::Points { classes, .. } = &p.def.target {
+            for c in classes {
+                wanted[*c as usize] = true;
+            }
         }
+    }
+    // Each part's index of its wires (and arcs), the parts spread over the
+    // cores (2026-10-27: tens of seconds on one with a preset's rules).
+    let index = |p: &mut Part| {
+        let Target::Points { classes, .. } = &p.def.target else {
+            return;
+        };
         // The index reaches the zone's edge too, not beyond the search
         // distance.
         // The largest requirement of its wires (by their voltages).
@@ -937,7 +987,16 @@ pub fn check_zones(
         let mut group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
         // A span's pieces in every state together: passed over as one
         // where out of reach.
-        let set = WireSet::grouped(p.wires.clone(), reach, &group);
+        // Each wire's segments listed only as far in plan as a point can
+        // count (a screen: its band, not its 1000 m; 2026-10-27).
+        let measures = [p.def.vertical.is_some(), p.def.radial.is_some()];
+        let plan: Vec<f64> = p
+            .wires
+            .iter()
+            .map(|w| crate::checks::plan_reach(&p.def, w, reach, measures))
+            .collect();
+        p.plan = plan.iter().copied().fold(0.0, f64::max);
+        let set = WireSet::within(p.wires.clone(), reach, Some(&group), &plan);
         // Room for the arcs' groups too.
         group.extend(p.arc_groups.iter().copied());
         p.points = Some(
@@ -955,7 +1014,24 @@ pub fn check_zones(
                 reach,
             ));
         }
-    }
+    };
+    let next = AtomicUsize::new(0);
+    let slots: Vec<Mutex<&mut Part>> = parts.iter_mut().map(Mutex::new).collect();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(slots.len())
+        .max(1);
+    std::thread::scope(|s| {
+        for _ in 0..threads {
+            s.spawn(|| {
+                while let Some(slot) = slots.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    index(&mut slot.lock().expect("not poisoned"));
+                }
+            });
+        }
+    });
+    drop(slots);
+    report.timing.preparing = begun.elapsed();
     let have_points = targets.points.is_some();
     let classes: Vec<u8> = (0..=255u8).filter(|c| wanted[*c as usize]).collect();
     if !classes.is_empty() {
@@ -968,16 +1044,37 @@ pub fn check_zones(
                 // In blocks, worked out on every core and applied in the
                 // points' order: the results of one point at a time.
                 let mut block: Vec<([f64; 3], u8)> = Vec::with_capacity(BLOCK);
+                let mut spent = vec![Duration::ZERO; parts.len()];
+                let mut checking = Duration::ZERO;
+                let started = Instant::now();
                 feed(&classes, &mut |x, y, z, c| {
                     n += 1;
                     block.push(([x, y, z], c));
                     if block.len() == BLOCK {
-                        check_block(&mut parts, arcs, &block);
+                        let t = Instant::now();
+                        check_block(&mut parts, arcs, &block, &mut spent);
+                        checking += t.elapsed();
                         block.clear();
                     }
                 })?;
-                check_block(&mut parts, arcs, &block);
+                let t = Instant::now();
+                check_block(&mut parts, arcs, &block, &mut spent);
+                checking += t.elapsed();
                 report.points = n;
+                report.timing.reading = started.elapsed().saturating_sub(checking);
+                report.timing.checking = checking;
+                for (p, took) in parts.iter().zip(spent) {
+                    if p.points.is_some() {
+                        report.timing.parts.push(PartTiming {
+                            rule: p.rule,
+                            ground: false,
+                            took,
+                            wires: p.wires.len(),
+                            arcs: p.arcs.len(),
+                            plan: p.plan,
+                        });
+                    }
+                }
             }
         }
     }
@@ -1022,6 +1119,7 @@ pub fn check_zones(
                     // only the span's lowest and counts are reported
                     // (owner, 2026-10-26).
                     let group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
+                    let started = Instant::now();
                     let mut all: Vec<Entry> =
                         ground_check_grouped(&p.def, &p.wires, &group, ground, top)
                             .into_iter()
@@ -1035,6 +1133,14 @@ pub fn check_zones(
                     for ((&arc, &g), r) in p.arcs.iter().zip(&p.arc_groups).zip(found) {
                         all.push((r, arcs[arc].state, g, Some(arc)));
                     }
+                    report.timing.parts.push(PartTiming {
+                        rule: p.rule,
+                        ground: true,
+                        took: started.elapsed(),
+                        wires: p.wires.len(),
+                        arcs: p.arcs.len(),
+                        plan: 0.0,
+                    });
                     (all, None)
                 }
                 None => {
@@ -1117,12 +1223,20 @@ pub fn check_zones(
 /// Points worked out together on every core.
 const BLOCK: usize = 1 << 16;
 
-/// Checks a block of points against every part: each core works out a
-/// stretch of the block ([`PointCheck::eval`], [`ArcPointCheck::eval`])
-/// from the results so far, then the events are applied in the points'
-/// order — the results, the counts and the first of equal clearances as
-/// one point at a time gives them.
-fn check_block(parts: &mut [Part], arcs: &[ZoneArc], block: &[([f64; 3], u8)]) {
+/// Checks a block of points against every part, in one pass (owner,
+/// 2026-10-27): each core takes a stretch of the block and works it out
+/// for every part — every rule and measure, with the wires of every wind
+/// state ([`PointCheck::eval`], [`ArcPointCheck::eval`]) — from the
+/// results so far; then each part's events are applied in the points'
+/// order: the results, the counts and the first of equal clearances as
+/// one point at a time gives them. `spent` adds each part's time (summed
+/// over the cores).
+fn check_block(
+    parts: &mut [Part],
+    arcs: &[ZoneArc],
+    block: &[([f64; 3], u8)],
+    spent: &mut [Duration],
+) {
     if block.is_empty() {
         return;
     }
@@ -1131,8 +1245,8 @@ fn check_block(parts: &mut [Part], arcs: &[ZoneArc], block: &[([f64; 3], u8)]) {
         .min(block.len().div_ceil(1024))
         .max(1);
     let size = block.len().div_ceil(threads);
-    /// One stretch's events: per point, whether it was taken and where
-    /// its wire and arc events end.
+    /// One stretch's events for one part: per point, whether it was taken
+    /// and where its wire and arc events end.
     struct Stretch {
         taken: Vec<bool>,
         wire_end: Vec<usize>,
@@ -1141,74 +1255,92 @@ fn check_block(parts: &mut [Part], arcs: &[ZoneArc], block: &[([f64; 3], u8)]) {
         arc: Vec<PointEvent>,
         /// The counts (added up in any order).
         tally: Tally,
+        /// Time spent on it.
+        took: Duration,
     }
-    for p in parts.iter_mut() {
-        let (Some(check), Some(set)) = (p.points.as_mut(), p.set.as_ref()) else {
-            continue;
-        };
-        let arc_check = p.arc_points.as_mut();
-        let stretches: Vec<Stretch> = {
-            let (check, arc_check) = (&*check, arc_check.as_deref());
-            std::thread::scope(|s| {
-                let handles: Vec<_> = block
-                    .chunks(size)
-                    .enumerate()
-                    .map(|(k, chunk)| {
-                        // The points' numbers, above every one before.
-                        let first = check.offered + (k * size) as u64;
-                        s.spawn(move || {
-                            let mut best = check.best.clone();
-                            let mut arc_best =
-                                arc_check.map(|a| a.best.clone()).unwrap_or_default();
-                            let mut out = Stretch {
-                                taken: Vec::with_capacity(chunk.len()),
-                                wire_end: Vec::with_capacity(chunk.len()),
-                                arc_end: Vec::with_capacity(chunk.len()),
-                                wire: Vec::new(),
-                                arc: Vec::new(),
-                                tally: Tally::new(check.best.len(), check.groups()),
-                            };
-                            for (i, &(q, c)) in chunk.iter().enumerate() {
-                                let stamp = first + i as u64 + 1;
-                                let taken = check.eval(
-                                    set,
-                                    &mut best,
-                                    Some(&mut out.tally),
-                                    stamp,
-                                    q[0],
-                                    q[1],
-                                    q[2],
-                                    c,
-                                    &mut out.wire,
-                                );
-                                if taken && let Some(a) = arc_check {
-                                    a.eval(
-                                        arcs,
-                                        &mut arc_best,
+    // Per stretch (core), per part.
+    let stretches: Vec<Vec<Option<Stretch>>> = {
+        let parts = &*parts;
+        std::thread::scope(|s| {
+            let handles: Vec<_> = block
+                .chunks(size)
+                .enumerate()
+                .map(|(k, chunk)| {
+                    s.spawn(move || {
+                        parts
+                            .iter()
+                            .map(|p| {
+                                let (Some(check), Some(set)) = (p.points.as_ref(), p.set.as_ref())
+                                else {
+                                    return None;
+                                };
+                                let started = Instant::now();
+                                let arc_check = p.arc_points.as_ref();
+                                // The points' numbers, above every one before.
+                                let first = check.offered + (k * size) as u64;
+                                let mut best = check.best.clone();
+                                let mut arc_best =
+                                    arc_check.map(|a| a.best.clone()).unwrap_or_default();
+                                let mut out = Stretch {
+                                    taken: Vec::with_capacity(chunk.len()),
+                                    wire_end: Vec::with_capacity(chunk.len()),
+                                    arc_end: Vec::with_capacity(chunk.len()),
+                                    wire: Vec::new(),
+                                    arc: Vec::new(),
+                                    tally: Tally::new(check.best.len(), check.groups()),
+                                    took: Duration::ZERO,
+                                };
+                                for (i, &(q, c)) in chunk.iter().enumerate() {
+                                    let stamp = first + i as u64 + 1;
+                                    let taken = check.eval(
+                                        set,
+                                        &mut best,
                                         Some(&mut out.tally),
                                         stamp,
-                                        q,
+                                        q[0],
+                                        q[1],
+                                        q[2],
                                         c,
-                                        &mut out.arc,
+                                        &mut out.wire,
                                     );
+                                    if taken && let Some(a) = arc_check {
+                                        a.eval(
+                                            arcs,
+                                            &mut arc_best,
+                                            Some(&mut out.tally),
+                                            stamp,
+                                            q,
+                                            c,
+                                            &mut out.arc,
+                                        );
+                                    }
+                                    out.taken.push(taken);
+                                    out.wire_end.push(out.wire.len());
+                                    out.arc_end.push(out.arc.len());
                                 }
-                                out.taken.push(taken);
-                                out.wire_end.push(out.wire.len());
-                                out.arc_end.push(out.arc.len());
-                            }
-                            out
-                        })
+                                out.took = started.elapsed();
+                                Some(out)
+                            })
+                            .collect()
                     })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|h| h.join().expect("a point check thread"))
-                    .collect()
-            })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a point check thread"))
+                .collect()
+        })
+    };
+    for (n, p) in parts.iter_mut().enumerate() {
+        let Some(check) = p.points.as_mut() else {
+            continue;
         };
+        if p.set.is_none() {
+            continue;
+        }
         check.offered += block.len() as u64;
-        let mut arc_check = arc_check;
-        for st in &stretches {
+        let mut arc_check = p.arc_points.as_mut();
+        for st in stretches.iter().filter_map(|per| per[n].as_ref()) {
             let (mut w0, mut a0) = (0, 0);
             for k in 0..st.taken.len() {
                 let (w1, a1) = (st.wire_end[k], st.arc_end[k]);
@@ -1221,6 +1353,9 @@ fn check_block(parts: &mut [Part], arcs: &[ZoneArc], block: &[([f64; 3], u8)]) {
                 (w0, a0) = (w1, a1);
             }
             check.take_tally(&st.tally);
+            if let Some(t) = spent.get_mut(n) {
+                *t += st.took;
+            }
         }
     }
 }
@@ -1374,6 +1509,144 @@ mod tests {
             .unwrap()
             .spans[0]
             .mid_point
+    }
+
+    /// `n` invented points (a fixed sequence) over the example line's
+    /// spans, ±30 m beside, from 470 m to 40 m above it, classes 5 and 6.
+    fn scattered(n: usize) -> Vec<([f64; 3], u8)> {
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        (0..n)
+            .map(|_| {
+                let p = [
+                    -50.0 + next() * 1400.0,
+                    -60.0 + next() * 600.0,
+                    470.0 + next() * 70.0,
+                ];
+                (p, 5 + (next() * 2.0) as u8)
+            })
+            .collect()
+    }
+
+    /// Speed work of 2026-10-27, results unchanged: the cells listing a
+    /// wire's segments only as far in plan as a point can count (a
+    /// screen: its band, not its 1000 m), the one pass of every rule
+    /// through each block — the same findings, lowest clearances and
+    /// counts, bit for bit, as with the cells of the whole reach; vertical
+    /// and radial, with wind steps and swing arcs, a screen, a rule's own
+    /// width and a search distance.
+    #[test]
+    fn narrow_cells_give_the_results_of_before() {
+        let (line, library) = example();
+        let points = scattered(20_000);
+        let cases = [
+            windy(600.0),
+            WeatherCase::still("cold", Temperature::from_celsius(-5.0)),
+        ];
+        let wind = WindSteps {
+            stepped: true,
+            step: 300.0,
+            sides: WindSides::Both,
+            arc: true,
+            ..Default::default()
+        };
+        let states = wind_states(&cases, |_| true, &wind);
+        let budget = Budget::new();
+        let mut rules = vec![
+            rule(6.0, &[5]),
+            ZoneRule {
+                name: "wide".into(),
+                width: Some(4.0),
+                ..rule(9.0, &[6])
+            },
+            ZoneRule {
+                name: "screen".into(),
+                screen: true,
+                distance: Requirement::Formula {
+                    base: 5.0,
+                    per_kv: 0.01,
+                    above_kv: 0.0,
+                },
+                ..rule(0.0, &[6])
+            },
+        ];
+        rules[0].wires = Wires::Sections;
+        let solved = solve_states(
+            &line,
+            &library,
+            &states,
+            &sections_needed(&line, &rules),
+            jumpers_needed(&rules),
+            &budget,
+            &AtomicUsize::new(0),
+        )
+        .unwrap();
+        let (arcs, _) = zone_arcs(
+            &line,
+            &solved.shapes,
+            &solved.jumpers,
+            &arc_cases(&states),
+            wind.margins(),
+        );
+        assert!(!arcs.is_empty());
+        let run = |zone: &Zone, rules: &[ZoneRule], full: bool| {
+            crate::checks::FULL_CELLS.store(full, Ordering::Relaxed);
+            let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+                for (p, c) in &points {
+                    if classes.contains(c) {
+                        visit(p[0], p[1], p[2], *c);
+                    }
+                }
+                Ok(())
+            };
+            let r = check_zones(
+                &line,
+                zone,
+                rules,
+                &states,
+                &solved.shapes,
+                &solved.jumpers,
+                &arcs,
+                ZoneTargets {
+                    ground: None,
+                    surfaces: &[],
+                    points: Some(&mut feed),
+                    filter: &Default::default(),
+                },
+                &budget,
+            )
+            .unwrap();
+            crate::checks::FULL_CELLS.store(false, Ordering::Relaxed);
+            r
+        };
+        let mut searched = Zone::new(Measure::Vertical);
+        // The screen with a search distance: the cells of before reach
+        // 1000 m without one (minutes in a test build).
+        searched.search = Some(40.0);
+        for (zone, rules) in [
+            (Zone::new(Measure::Vertical), &rules[..2]),
+            (searched, &rules[..]),
+            (Zone::new(Measure::Radial), &rules[..2]),
+        ] {
+            let (now, before) = (run(&zone, rules, false), run(&zone, rules, true));
+            assert!(!now.findings.is_empty(), "{:?}", zone.measure);
+            assert_eq!(now.findings, before.findings, "{:?}", zone.measure);
+            assert_eq!(now.lowest, before.lowest);
+            assert_eq!(now.points, before.points);
+            // Measured: every point rule timed.
+            assert_eq!(now.timing.parts.len(), rules.len());
+            assert!(now.points > 0);
+        }
+        // The screen's cells: its band (5 m + 0.01 m/kV) in plan, not
+        // its 1000 m.
+        let screen = run(&Zone::new(Measure::Vertical), &rules[2..], false);
+        let plan = screen.timing.parts[0].plan;
+        assert!(plan > 5.0 && plan < 10.0, "{plan}");
     }
 
     /// The whole check: the points through the caller's reader, the
@@ -1839,6 +2112,9 @@ mod tests {
             search_distance: None,
             structure_override: false,
             section_override: true,
+            // Routes and alignments chosen (2026-10-27): kept too.
+            routes: vec!["north".into()],
+            alignments: vec!["A 2".into()],
         };
         let set = to_rule_set("Window rules", &zone, &wind, &scope, &rows);
         assert_eq!(set.rules.len(), 4);
@@ -1847,7 +2123,8 @@ mod tests {
         let text = set.to_toml();
         assert!(
             text.contains(
-                "[check]\ncircuits = [\"North\", \"\"]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
+                "[check]\ncircuits = [\"North\", \"\"]\nroutes = [\"north\"]\n\
+                 alignments = [\"A 2\"]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
                  section_override = true\n"
             ),
             "{text}"

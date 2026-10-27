@@ -69,7 +69,8 @@ pub struct Prepared {
 
 impl Prepared {
     fn reach(&self, rule: &Rule) -> f64 {
-        rule.reach(&self.voltages, &self.other_voltages)
+        // In plan: a screen's band, not its 1000 m (2026-10-27).
+        rule.reach_in_plan(&self.voltages, &self.other_voltages)
     }
 
     /// The rules.

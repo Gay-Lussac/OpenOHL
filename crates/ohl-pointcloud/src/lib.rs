@@ -1548,7 +1548,11 @@ impl Store {
                 })
                 .collect::<Result<_, _>>()?;
             let per = batch.len().div_ceil(threads);
-            let decoded: Vec<Result<Vec<[f64; 3]>, String>> = std::thread::scope(|scope| {
+            // Per block: the points decoded, and those of them inside its
+            // corridor (tested on the decoding cores, 2026-10-27: on the
+            // visiting thread alone it took most of a clearance check).
+            type Decoded = Result<(u64, Vec<[f64; 3]>), String>;
+            let decoded: Vec<Decoded> = std::thread::scope(|scope| {
                 let handles: Vec<_> = batch
                     .chunks(per)
                     .zip(blobs.chunks(per))
@@ -1557,11 +1561,12 @@ impl Store {
                             metas
                                 .iter()
                                 .zip(blobs)
-                                .map(|(((_, cx, cy, _, n, z0, _), read), blob)| {
+                                .map(|(((_, cx, cy, _, n, z0, local), read), blob)| {
                                     let (cx, cy, z0) = (*cx, *cy, *z0);
                                     let n = read.decoded(*n);
                                     let (x, y, z) = Columns::decode_xyz(blob, n)?;
-                                    Ok((0..n)
+                                    let mut kept = 0u64;
+                                    let points = (0..n)
                                         .filter(|&i| match read {
                                             Read::Pick(k) => lod_level(i) >= *k,
                                             _ => true,
@@ -1573,7 +1578,12 @@ impl Store {
                                                 (z0 + z[i] as i64) as f64 * cloud.scale,
                                             ]
                                         })
-                                        .collect())
+                                        .filter(|p| {
+                                            kept += 1;
+                                            local.as_deref().is_none_or(|a| a.contains(p[0], p[1]))
+                                        })
+                                        .collect();
+                                    Ok((kept, points))
                                 })
                                 .collect::<Vec<_>>()
                         })
@@ -1585,11 +1595,12 @@ impl Store {
                     .collect()
             });
             for ((meta, _), points) in batch.iter().zip(decoded) {
-                let points = points.map_err(err)?;
+                let (n, points) = points.map_err(err)?;
                 stats.read += 1;
-                stats.points_read += points.len() as u64;
+                stats.points_read += n;
+                // Inside the block's corridor already.
                 for p in points {
-                    if visit(p, meta.3, meta.6.as_deref()) {
+                    if visit(p, meta.3, None) {
                         stats.points_visited += 1;
                     }
                 }
