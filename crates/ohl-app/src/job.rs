@@ -19,6 +19,12 @@ pub struct Job<T> {
     pub took: Option<Duration>,
     /// What the answer was computed from ([`crate::revision`]).
     pub stamp: crate::revision::Stamp,
+    /// Counts the answers taken (a new one opens the Results tab,
+    /// [`crate::check_ui::tabs`]).
+    pub generation: u64,
+    /// The run's cancel token: Stop cancels it (a computation that looks
+    /// at it ends early; one that does not finishes unseen).
+    cancel: Option<ohl_core::budget::CancelToken>,
 }
 
 impl<T> Default for Job<T> {
@@ -28,6 +34,8 @@ impl<T> Default for Job<T> {
             result: None,
             took: None,
             stamp: Default::default(),
+            generation: 0,
+            cancel: None,
         }
     }
 }
@@ -58,6 +66,29 @@ impl<T: Send + 'static> Job<T> {
         }
         self.stamp.started(now);
         self.start(ctx, work);
+    }
+
+    /// Since when it runs.
+    pub fn elapsed(&self) -> Option<Duration> {
+        self.running.as_ref().map(|(t, _)| t.elapsed())
+    }
+
+    /// A cancel token for the next run ([`Job::start`]): Stop cancels it;
+    /// a computation that checks it (a budget's token) ends early.
+    #[allow(dead_code)] // TEMP: used as the windows move over
+    pub fn cancel_token(&mut self) -> ohl_core::budget::CancelToken {
+        let token = ohl_core::budget::CancelToken::new();
+        self.cancel = Some(token.clone());
+        token
+    }
+
+    /// Stops the run (owner, 2026-10-27: Stop in every check): its token
+    /// cancelled, its answer not waited for; the previous answer stays.
+    pub fn stop(&mut self) {
+        if let Some(t) = self.cancel.take() {
+            t.cancel();
+        }
+        self.running = None;
     }
 
     /// Runs `work` on its own thread (unless it runs already).
@@ -95,6 +126,8 @@ impl<T: Send + 'static> Job<T> {
         }
         self.result = Some(r);
         self.running = None;
+        self.cancel = None;
+        self.generation += 1;
     }
 
     /// A spinner while it runs, else how long the last run took.

@@ -607,61 +607,133 @@ pub(super) fn keep_rule_file(
     Ok(to)
 }
 
-/// The Clearances window: rule file, the violations of the shown case
-/// (click one to go there).
+/// The id of the Clearances window's body, tabs and footer.
+const WINDOW: &str = "clearances-window";
+
+/// The Clearances window (wire clearances: the line's wires among
+/// themselves and to other lines; owner, 2026-10-27: two windows, this
+/// one "with the model itself", the ground windows "to the ground", on
+/// the same layout): the Setup tab (what it checks, scope, rules), the
+/// Results tab (the findings of the case shown, a click selects the
+/// wire), Run in the footer.
 pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
-    // Run in the footer at the bottom left, always visible (owner,
-    // 2026-10-21); the rest scrolls above it.
-    let mut check =
-        crate::check_help::body(ui, "clearances-window", |ui| clearance_panel_body(ui, r));
-    if !r.clearances.files.is_empty() {
-        crate::check_help::footer(ui, "clearances-window", |ui| {
-            let c = &mut r.clearances;
-            check |= crate::check_help::run_button(
-                ui,
-                !c.running(),
-                "Check wire clearances: the rules of this file, the weather case shown",
-                None,
-            );
-            ui.checkbox(&mut c.auto, "after every edit");
-            if let Some((share, visited, elapsed)) = c.progress() {
-                ui.spinner();
-                // The points read (owner, 2026-10-27), and Stop.
-                match share {
-                    Some(f) => {
-                        ui.add(
-                            egui::ProgressBar::new(f as f32)
-                                .desired_width(120.0)
-                                .text(format!("{:.0} % of the points", f * 100.0)),
-                        );
-                        let left = (f > 0.02).then(|| elapsed / f * (1.0 - f));
-                        ui.label(match left {
+    let mut check = false;
+    if r.clearances.files.is_empty() {
+        crate::check_help::body(ui, WINDOW, |ui| clearance_panel_body(ui, r));
+        return;
+    }
+    // Out of date: said at the top, Run again beside.
+    {
+        let c = &r.clearances;
+        if c.stale
+            && !c.running()
+            && c.report.is_some()
+            && crate::revision::banner(ui, "the model or the case shown", true)
+        {
+            check = true;
+        }
+    }
+    let findings = match &r.clearances.report {
+        Some(Ok(rep)) => Some(rep.findings.len()),
+        _ => None,
+    };
+    let why = clearances_why_not(ui.ctx(), r);
+    // After every edit: the results come in as the rules are typed; the
+    // tab stays where the user is.
+    let generation = if r.clearances.auto {
+        0
+    } else {
+        r.clearances.generation
+    };
+    let tab = crate::check_ui::tabs(
+        ui,
+        WINDOW,
+        findings,
+        generation,
+        why.is_some() && !r.clearances.running(),
+    );
+    match tab {
+        crate::check_ui::Tab::Setup => {
+            crate::check_help::body(ui, WINDOW, |ui| clearance_panel_body(ui, r));
+        }
+        crate::check_ui::Tab::Results => {
+            crate::check_ui::results_area(ui, WINDOW, |ui| clearance_results(ui, r));
+        }
+    }
+    crate::check_help::footer(ui, WINDOW, |ui| {
+        let c = &mut r.clearances;
+        match c.progress() {
+            Some((share, visited, elapsed)) => {
+                let p = match share {
+                    // The points read (owner, 2026-10-27).
+                    Some(f) => crate::check_ui::Progress {
+                        fraction: Some(f as f32),
+                        text: match (f > 0.02).then(|| elapsed / f * (1.0 - f)) {
                             Some(l) => format!("{elapsed:.0} s, about {l:.0} s left"),
                             None => format!("{elapsed:.0} s"),
-                        });
-                    }
-                    None => {
-                        ui.label(format!(
+                        },
+                    },
+                    None => crate::check_ui::Progress {
+                        fraction: None,
+                        text: format!(
                             "{elapsed:.0} s; {} points checked",
                             ohl_clearance::zone::millions(visited)
-                        ));
-                    }
-                }
-                if crate::check_help::stop_button(ui, "Stop this check") {
+                        ),
+                    },
+                };
+                let f = crate::check_ui::RunFooter {
+                    running: Some(p),
+                    ..Default::default()
+                };
+                if crate::check_ui::run_footer(ui, f, |_| {}) == crate::check_ui::Action::Stop {
                     c.stop();
                 }
-                ui.ctx()
-                    .request_repaint_after(std::time::Duration::from_millis(200));
             }
-        });
-    }
+            None => {
+                let f = crate::check_ui::RunFooter {
+                    running: None,
+                    why_not: why.clone(),
+                    hover: "Check wire clearances: the rules of this file, the weather case shown",
+                    scope: None,
+                    info: match &c.report {
+                        Some(Ok(rep)) => {
+                            Some(format!("case {}, checked in {:.1?}", rep.case, rep.took))
+                        }
+                        _ => None,
+                    },
+                };
+                let auto = &mut c.auto;
+                if crate::check_ui::run_footer(ui, f, |ui| {
+                    ui.checkbox(auto, "after every edit");
+                }) == crate::check_ui::Action::Run
+                {
+                    check = true;
+                }
+            }
+        }
+    });
     if check {
         r.clearances.stale = true;
         start_clearance_check(ui.ctx(), r);
     }
 }
 
-/// The Clearances window above its footer: true to run the check (Run again).
+/// Why the wire clearances cannot run, if they cannot.
+fn clearances_why_not(ctx: &egui::Context, r: &Ready) -> Option<String> {
+    let c = &r.clearances;
+    match &c.rules {
+        None => Some("choose a rule file (3 Rules)".into()),
+        Some(Err(_)) => Some("the rule file could not be read (3 Rules)".into()),
+        Some(Ok(rules)) if rules.is_empty() => Some("add a rule (3 Rules)".into()),
+        Some(Ok(_)) => crate::check_ui::Scope::remembered(ctx, "clearances-scope", &c.check)
+            .and_then(|s| s.circuits)
+            .filter(|c| c.is_empty())
+            .map(|_| "no circuit ticked (2 Scope)".into()),
+    }
+}
+
+/// The Clearances window's Setup tab, or its first steps without a rule
+/// file: true to run the check.
 pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     r.clearances.set_defaults(&r.model.line.defaults);
     if r.clearances.files.is_empty() {
@@ -700,6 +772,86 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         });
         return false;
     }
+    crate::check_ui::section(ui, 1, "What it checks", None);
+    crate::check_help::explain(
+        ui,
+        "The clearances between the wires of this line (and to exclusion zones), by the rules \
+         of a rule file, in the weather case shown in the views.",
+        "Each rule gives a vertical and/or radial distance by voltage (a wire pair takes the \
+         pair's voltage) between the wires of the line, to the ground or to points. The check \
+         solves the line in the weather case shown; rules across weather cases and to other \
+         lines are checked by the command line (`ohl line --weather`, `--other-line`).",
+    );
+    crate::check_ui::how_computed(
+        ui,
+        WINDOW,
+        "Every span of the circuits and routes in scope is solved in the weather case shown. \
+         For each rule, the closest approach of each wire to its targets (another wire's \
+         surface, the ground, a LiDAR point) is measured surface to surface — straight up or \
+         down for a vertical distance, in any direction for a radial one — and compared with \
+         the rule's distance at the wire's (or the pair's) voltage. Exclusions near the ends \
+         and at structures are taken from the rule file.",
+        |_| {},
+    );
+    // To the ground and the LiDAR points: the other two clearance
+    // windows (the same layout).
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new("To the ground and LiDAR points:")
+                .small()
+                .weak(),
+        );
+        if ui
+            .small_button("Vertical…")
+            .on_hover_text("Checks › Ground clearances › Vertical clearances")
+            .clicked()
+        {
+            r.vertical_clearances.show(&r.model);
+        }
+        if ui
+            .small_button("Radial…")
+            .on_hover_text("Checks › Ground clearances › Radial clearances")
+            .clicked()
+        {
+            r.radial_clearances.show(&r.model);
+        }
+    });
+    ui.separator();
+    crate::check_ui::section(ui, 2, "Scope", None);
+    // The circuits, routes and alignments checked: kept in the rule
+    // file's `[check]`, as the vertical and radial windows keep theirs
+    // (owner, 2026-10-27).
+    let ctx = ui.ctx().clone();
+    let mut scope =
+        crate::check_ui::Scope::remembered(&ctx, "clearances-scope", &r.clearances.check)
+            .unwrap_or_else(|| crate::check_ui::Scope::of_check(&r.clearances.check));
+    if crate::check_ui::ScopePicker::new("clearances-scope", &r.model.line)
+        .wires(&mut scope, false)
+        .ui(ui)
+    {
+        scope.write_check(&mut r.clearances.check);
+        let saved = r
+            .clearances
+            .save_check()
+            .and_then(|()| r.model.store_libraries().map(|_| ()));
+        if let Err(e) = saved {
+            r.status = Some((format!("rule file not saved: {e}"), true));
+        }
+    }
+    crate::check_ui::Scope::remember(&ctx, "clearances-scope", &r.clearances.check, scope);
+    ui.label(
+        egui::RichText::new(format!(
+            "Weather case: the case shown ({})",
+            r.model
+                .cases
+                .get(r.case)
+                .map_or("none", |c| c.case.name.as_str())
+        ))
+        .small()
+        .weak(),
+    );
+    ui.separator();
+    crate::check_ui::section(ui, 3, "Rules", None);
     let c = &mut r.clearances;
     let name = |p: &std::path::Path| {
         p.file_name()
@@ -745,43 +897,16 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     if add {
         add_rule_file(r);
     }
-    // The circuits, routes and alignments checked: kept in the rule
-    // file's `[check]`, as the vertical and radial windows keep theirs
-    // (owner, 2026-10-27).
-    let mut scope_changed = false;
-    ui.horizontal_wrapped(|ui| {
-        let c = &mut r.clearances;
-        scope_changed |= crate::clearance_zones::circuit_choice(
-            ui,
-            "clearances-circuits",
-            &r.model.line,
-            &mut c.check,
-        );
-    });
-    scope_changed |= crate::clearance_zones::route_choice(
-        ui,
-        "clearances-routes",
-        &r.model.line,
-        &mut r.clearances.check,
-    );
-    if scope_changed {
-        let saved = r
-            .clearances
-            .save_check()
-            .and_then(|()| r.model.store_libraries().map(|_| ()));
-        if let Err(e) = saved {
-            r.status = Some((format!("rule file not saved: {e}"), true));
-        }
-    }
-    let c = &mut r.clearances;
-    let mut check = false;
-    if c.stale
-        && !c.running()
-        && c.report.is_some()
-        && crate::revision::banner(ui, "the model or the case shown", true)
-    {
-        check = true;
-    }
+    crate::rule_editor::ui(ui, r);
+    false
+}
+
+/// The Clearances window's Results tab: the verdict, the findings of the
+/// case shown in the shared table (a click selects the wire, draws the
+/// case and goes there), the rules' lowest clearances and the notes
+/// folded under it.
+fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
+    let c = &r.clearances;
     let mut go: Option<crate::clearance::Finding> = None;
     match &c.report {
         Some(Err(e)) => {
@@ -789,93 +914,106 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         }
         Some(Ok(rep)) => {
             let n = rep.findings.len();
-            let head = format!(
-                "case {}: {n} violation{} ({:.1?})",
-                rep.case,
-                if n == 1 { "" } else { "s" },
-                rep.took
-            );
-            if n == 0 {
-                ui.colored_label(crate::menu::ok_color(ui), head);
-            } else {
-                ui.colored_label(ui.visuals().error_fg_color, head);
+            let text = match rep.findings.first() {
+                Some(f) => format!(
+                    "✖ {n} violation{} in case {} — worst {} {:.2} m of {:.2} m: {} ({})",
+                    if n == 1 { "" } else { "s" },
+                    rep.case,
+                    f.measure,
+                    f.distance,
+                    f.required,
+                    f.wire.describe(),
+                    f.rule
+                ),
+                None => format!("✔ Every rule met in case {}", rep.case),
+            };
+            if crate::check_ui::verdict(ui, n > 0, &text, n > 0) {
+                go = rep.findings.first().cloned();
             }
-            if n > 0 {
-                ui.label(
-                    egui::RichText::new("Click one to select its wire and go there.")
-                        .small()
-                        .weak(),
-                );
-            }
-            // The violations first, then the rules and notes they were
-            // found with (all there, below).
-            crate::check_help::list(
-                ui,
-                "clearances-findings",
-                crate::check_help::LIST_HEIGHT,
-                egui::ScrollArea::vertical().auto_shrink([false, true]),
-                |ui| {
-                    for f in &rep.findings {
-                        let other = f
-                            .other
-                            .as_ref()
-                            .map_or(String::new(), |o| format!(" – {}", o.describe()));
-                        let class = f.class.map_or(String::new(), |k| {
-                            format!(
-                                ", class {k}{}",
-                                r.model
-                                    .scheme
-                                    .class(k)
-                                    .map_or(String::new(), |d| format!(" {}", d.name))
-                            )
-                        });
-                        // What, then by how much: two lines (one line was cut
-                        // off in a narrow window or tab).
-                        let mut job = egui::text::LayoutJob::default();
-                        let strong = egui::TextFormat {
-                            color: ui.visuals().strong_text_color(),
-                            ..Default::default()
-                        };
-                        let weak = egui::TextFormat {
-                            font_id: egui::FontId::proportional(11.0),
-                            color: ui.visuals().weak_text_color(),
-                            ..Default::default()
-                        };
-                        job.append(&format!("{}{other}", f.wire.describe()), 0.0, strong);
-                        let how = match f.band {
-                            Some(b) => ohl_clearance::zone::screen_text(b, f.at, f.target),
-                            None => {
-                                format!("{} {:.2} m < {:.2} m", f.measure, f.distance, f.required)
-                            }
-                        };
-                        job.append(
-                            &format!(
-                                "\n{how} — {}{class}{}",
-                                f.rule,
-                                if f.count > 1 {
-                                    format!(" ({} below)", f.count)
-                                } else {
-                                    String::new()
-                                }
-                            ),
-                            0.0,
-                            weak,
-                        );
-                        let selected = r.selection == f.wire;
-                        if ui.selectable_label(selected, job).clicked() {
-                            go = Some(f.clone());
+            let rows: Vec<crate::check_ui::Row> = rep
+                .findings
+                .iter()
+                .map(|f| {
+                    use crate::check_ui::Cell;
+                    let class = f.class.map_or("-".to_owned(), |k| {
+                        format!(
+                            "class {k}{}",
+                            r.model
+                                .scheme
+                                .class(k)
+                                .map_or(String::new(), |d| format!(" {}", d.name))
+                        )
+                    });
+                    let wire = match &f.wire {
+                        crate::selection::Selection::Span { section, span } => {
+                            Cell::span(section, *span)
                         }
-                    }
-                },
-            );
-            ui.separator();
-            for (rule, text) in &rep.rules {
-                ui.label(egui::RichText::new(format!("{rule}: {text}")).small());
+                        other => Cell::text(other.describe()),
+                    };
+                    let (required, found) = match f.band {
+                        Some(b) => (
+                            Cell::sorted(format!("b {b:.2} in plan"), b),
+                            Cell::sorted(
+                                ohl_clearance::zone::screen_text(b, f.at, f.target),
+                                f.distance,
+                            ),
+                        ),
+                        None => (
+                            Cell::num(Some(f.required), 2),
+                            Cell::num(Some(f.distance), 2),
+                        ),
+                    };
+                    crate::check_ui::Row::new(
+                        vec![
+                            wire,
+                            Cell::text(f.other.as_ref().map_or("-".into(), |o| o.describe())),
+                            Cell::text(&f.rule),
+                            Cell::text(f.measure),
+                            required,
+                            found.bad(true),
+                            Cell::sorted(
+                                format!("{:+.2}", f.distance - f.required),
+                                f.distance - f.required,
+                            )
+                            .bad(true),
+                            Cell::text(class),
+                            Cell::sorted(f.count.to_string(), f.count as f64),
+                        ],
+                        true,
+                    )
+                })
+                .collect();
+            let notes: Vec<String> = rep
+                .rules
+                .iter()
+                .map(|(rule, text)| format!("{rule}: {text}"))
+                .chain(rep.notes.iter().cloned())
+                .chain(std::iter::once(SURFACE_NOTE.to_owned()))
+                .collect();
+            let clicked = crate::check_ui::ResultTable::new(
+                "clearances-findings",
+                vec![
+                    crate::check_ui::Col::text("Wire"),
+                    crate::check_ui::Col::text("Other wire"),
+                    crate::check_ui::Col::text("Rule"),
+                    crate::check_ui::Col::text("Measure"),
+                    crate::check_ui::Col::num("Required [m]"),
+                    crate::check_ui::Col::num("Found [m]")
+                        .tip("The clearance found, to the conductor's surface"),
+                    crate::check_ui::Col::num("Margin [m]").tip("Found less required"),
+                    crate::check_ui::Col::text("Target"),
+                    crate::check_ui::Col::num("Below").tip("Points or wire pieces below the rule"),
+                ],
+            )
+            .rows(rows)
+            .group_by(&[2, 0, 3])
+            .csv("wire-clearances.csv")
+            .below(crate::check_ui::FOLDS_BELOW)
+            .ui(ui);
+            if let Some(k) = clicked {
+                go = rep.findings.get(k).cloned();
             }
-            for note in &rep.notes {
-                ui.label(egui::RichText::new(note).small().weak());
-            }
-            ui.label(egui::RichText::new(SURFACE_NOTE).small().weak());
+            crate::check_ui::notes_fold(ui, "clearances-findings", &notes);
         }
         None if c.running() => {
             ui.label("checking…");
@@ -890,31 +1028,6 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
             );
         }
     }
-    ui.separator();
-    crate::rule_editor::ui(ui, r);
-    // To the ground and the LiDAR points: the other two clearance checks,
-    // also from here (before: only while no rule file was kept).
-    ui.horizontal_wrapped(|ui| {
-        ui.label(
-            egui::RichText::new("To the ground and LiDAR points:")
-                .small()
-                .weak(),
-        );
-        if ui
-            .small_button("Vertical…")
-            .on_hover_text("Checks › Ground clearances › Vertical clearances")
-            .clicked()
-        {
-            r.vertical_clearances.show(&r.model);
-        }
-        if ui
-            .small_button("Radial…")
-            .on_hover_text("Checks › Ground clearances › Radial clearances")
-            .clicked()
-        {
-            r.radial_clearances.show(&r.model);
-        }
-    });
     if let Some(f) = go {
         r.select(f.wire.clone());
         if let Some(Ok(rep)) = &r.clearances.report {
@@ -927,5 +1040,4 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         }
         r.plan.centre_on(f.at);
     }
-    check
 }

@@ -338,6 +338,8 @@ pub struct Clearances {
     /// The circuits, routes and alignments checked: the chosen rule
     /// file's `[check]` (owner, 2026-10-27: as the clearance windows).
     pub check: ohl_clearance::CheckScope,
+    /// Counts the reports taken (a new one opens the Results tab).
+    pub generation: u64,
     running: Option<Receiver<Result<Report, String>>>,
     /// The running check's progress, start and Stop.
     progress: Option<(
@@ -472,6 +474,7 @@ impl Clearances {
                 self.report = Some(r);
                 self.running = None;
                 self.progress = None;
+                self.generation += 1;
                 true
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,

@@ -690,16 +690,25 @@ fn remove_all_rules_asks_and_undoes() {
     );
 }
 
-/// The Clearances window (usability pass 2026-10-27): the rule file named,
-/// "not checked yet" before a run, the results above the rule editor, the
-/// ground and LiDAR clearance windows reachable from it.
+/// The Clearances window on the check windows' layout (owner,
+/// 2026-10-27: "Two tabs, yes"): the Setup tab with the rule file and the
+/// rule editor, the ground and LiDAR clearance windows reachable from it;
+/// "not checked yet" in Results before a run; after Run, Results opens by
+/// itself with the verdict and the findings' table.
 #[test]
-fn the_clearances_window_puts_the_results_first() {
+fn the_clearances_window_has_setup_and_results_tabs() {
     let (mut harness, _file) = harness_with_rules("clearances-order");
     harness.get_by_label("Rule file");
-    let hint = harness.get_by_label_contains("Not checked yet").rect();
-    let edit = harness.get_by_label("Edit rules").rect();
-    assert!(hint.bottom() <= edit.top());
+    harness.get_by_label("Edit rules");
+    harness.get_by_label("Results").click();
+    harness.run();
+    harness.get_by_label_contains("Not checked yet");
+    assert!(
+        harness.query_by_label("Edit rules").is_none(),
+        "Setup hidden"
+    );
+    harness.get_by_label("Setup").click();
+    harness.run();
     harness.get_by_label("Run").click();
     for _ in 0..200 {
         harness.step();
@@ -716,10 +725,14 @@ fn the_clearances_window_puts_the_results_first() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     harness.run();
-    let head = harness.get_by_label_contains("violations (").rect();
-    assert!(head.bottom() <= harness.get_by_label("Edit rules").rect().top());
-    // Below the rule editor (scrolled to: the page's items have more
-    // room since 2026-10-27).
+    assert_eq!(
+        crate::check_ui::current_tab(&harness.ctx, "clearances-window"),
+        crate::check_ui::Tab::Results
+    );
+    harness.get_by_label_contains("in case ");
+    harness.get_by_label("Required [m]");
+    harness.get_by_label("Setup").click();
+    harness.run();
     harness.get_by_label("Vertical…").scroll_to_me();
     harness.run();
     harness.get_by_label("Vertical…").click();
