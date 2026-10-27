@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Another project into this one: an id the import uses twice over (owner report, 2026-10-27)**
+
+- Importing a re-delivered line into its earlier version stopped with
+  "section sec11 → sec13: refused: section sec13 exists already": the
+  import's sec11 is the project's sec13 (same place), and the import has
+  a section sec13 of its own elsewhere. Now the one of the import holding
+  the id waits under a temporary id until its turn, then is matched (or
+  kept apart) as usual; two of the import at one project object's place:
+  the second kept apart, said.
+
 **A shared UI crate for both applications: a plan (owner, 2026-10-27)**
 
 - Both applications keep their own copy of the look (`style.rs`), the

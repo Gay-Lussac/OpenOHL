@@ -605,7 +605,13 @@ pub fn plan(
                 _ => place(v),
             }
         };
+        // An imported object moved off an id another of the import takes
+        // (its original id → where it waits), and the ids settled so far.
+        let mut moved: BTreeMap<String, String> = BTreeMap::new();
+        let mut done: BTreeSet<String> = BTreeSet::new();
         for (id, value) in theirs {
+            // Where it is now (moved aside, or as read).
+            let cur = moved.remove(&id).unwrap_or_else(|| id.clone());
             // Replace: an alignment on one of the project's (two points or
             // more in common) replaces the part of it between them.
             if replace
@@ -631,19 +637,26 @@ pub fn plan(
                 same_id.or_else(same_place)
             };
             let Some((eid, evalue)) = found else {
-                if elsewhere {
+                if let Some(k) = kind
+                    && (elsewhere || cur != id)
+                {
                     let to = free_apart(&id, &ours_ids, &ids_of(scratch.line(), word));
-                    if let Some(k) = kind {
-                        scratch.rename(k, word, &id, &to, &mut out)?;
-                        *apart.entry(word).or_default() += 1;
+                    scratch.rename(k, word, &cur, &to, &mut out)?;
+                    if let Some(r) = out.renamed.last_mut() {
+                        r.1 = id.clone();
                     }
+                    *apart.entry(word).or_default() += 1;
+                    done.insert(to);
+                } else {
+                    done.insert(cur.clone());
                 }
                 *out.added.entry(word).or_default() += 1;
                 continue;
             };
             if *eid == id && *evalue == value {
                 *out.identical.entry(word).or_default() += 1;
-                settled.insert((word, id.clone()), Resolution::KeepExisting);
+                settled.insert((word, cur.clone()), Resolution::KeepExisting);
+                done.insert(cur);
                 continue;
             }
             let key = format!("{word}:{id}");
@@ -661,20 +674,54 @@ pub fn plan(
                 differences: differences(evalue, &value),
                 resolution,
             });
-            let to = match resolution {
+            let mut to = match resolution {
                 Resolution::KeepExisting | Resolution::TakeImported => eid.clone(),
-                Resolution::KeepBoth if ours_ids.contains(&id) => {
+                Resolution::KeepBoth if ours_ids.contains(&id) || cur != id => {
                     free_id(&id, &ours_ids, &ids_of(scratch.line(), word))
                 }
                 Resolution::KeepBoth => id.clone(),
             };
-            if to != id {
-                match (kind, word) {
-                    (Some(k), _) => scratch.rename(k, word, &id, &to, &mut out)?,
-                    (None, "system") => scratch.rename_system(&id, &to, &mut out)?,
-                    _ => scratch.rename_circuit(&id, &to, &mut out)?,
+            if let Some(k) = kind
+                && to != cur
+                && ids_of(scratch.line(), word).contains(&to)
+            {
+                if done.contains(&to) {
+                    // Another of the import is that object already (two of
+                    // the import at its place): this one kept apart.
+                    let apart_to = free_id(&id, &ours_ids, &ids_of(scratch.line(), word));
+                    out.notes.push(format!(
+                        "{word} {id} of the import is at the place of {to}, as another of the \
+                         import is: kept apart as {apart_to}"
+                    ));
+                    to = apart_to;
+                } else {
+                    // One of the import not settled yet holds that id: it
+                    // waits under another (owner report 2026-10-27:
+                    // "section sec13 exists already").
+                    let mut n = 1;
+                    let mut wait = format!("{to}~{n}");
+                    while ids_of(scratch.line(), word).contains(&wait) {
+                        n += 1;
+                        wait = format!("{to}~{n}");
+                    }
+                    scratch.session_rename(k, &to, &wait)?;
+                    moved.insert(to.clone(), wait);
                 }
             }
+            if to != cur {
+                match (kind, word) {
+                    (Some(k), _) => scratch.rename(k, word, &cur, &to, &mut out)?,
+                    (None, "system") => scratch.rename_system(&cur, &to, &mut out)?,
+                    _ => scratch.rename_circuit(&cur, &to, &mut out)?,
+                }
+                // Said as from its id as read.
+                if cur != id
+                    && let Some(r) = out.renamed.last_mut()
+                {
+                    r.1 = id.clone();
+                }
+            }
+            done.insert(to.clone());
             settled.insert((word, to), resolution);
         }
     }
@@ -1770,6 +1817,22 @@ impl Scratch {
         Ok(())
     }
 
+    /// Renames without recording it (an object of the import moved aside
+    /// for a moment, renamed again when its turn comes).
+    fn session_rename(&mut self, kind: Kind, from: &str, to: &str) -> Result<(), String> {
+        self.session
+            .apply(
+                USER,
+                Command::Rename {
+                    kind,
+                    id: from.to_owned(),
+                    new_id: to.to_owned(),
+                },
+            )
+            .map(drop)
+            .map_err(|e| format!("{from} → {to}: {e}"))
+    }
+
     fn rename_system(&mut self, from: &str, to: &str, out: &mut ImportPlan) -> Result<(), String> {
         self.session
             .apply(
@@ -2631,6 +2694,43 @@ mod tests {
         let mut out: Vec<String> = v.iter().map(|x| id(x).clone()).collect();
         out.sort();
         out
+    }
+
+    /// An imported section at the place of the project's A2 whose id the
+    /// import gives to another of its sections (here: its B2 is named
+    /// A2): the one holding the id waits under another until its turn
+    /// (owner report 2026-10-27: "section sec13 exists already"); each
+    /// matches the project's at its place and the line checks.
+    #[test]
+    fn an_id_the_import_uses_twice_over_is_untangled() {
+        let (ours, mut theirs) = project_and_variant();
+        for s in &mut theirs.sections {
+            match s.id.as_str() {
+                "A2" => s.id = "S9".into(),
+                "B2" => s.id = "A2".into(),
+                _ => {}
+            }
+        }
+        let p = plan(&ours, &[], &imported(theirs), &ImportOptions::default()).unwrap();
+        let at = |id: &str| {
+            p.line
+                .sections
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.circuit_name.clone())
+        };
+        // A2 is circuit A's again, B2 circuit B's: each matched by place.
+        assert_eq!(at("A2").as_deref(), Some("A"));
+        assert_eq!(at("B2").as_deref(), Some("B"));
+        assert!(
+            p.renamed
+                .iter()
+                .all(|r| !r.1.contains('~') && !r.2.contains('~')),
+            "{:?}",
+            p.renamed
+        );
+        assert!(!p.line.sections.iter().any(|s| s.id.contains('~')));
+        p.line.validate().unwrap();
     }
 
     /// A project section running through a removed tower and on beyond
