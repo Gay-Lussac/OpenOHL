@@ -27,6 +27,13 @@ of Parts A, B and C).
   such in the theory page), said when the library loads and warned about
   in every state beyond it. With a range given, a curve that turns inside
   it is still left out (the data contradict themselves).
+- Another project into this one: a merged line that does not check (a
+  variant labelling the phases or systems of a conductor the project
+  continues otherwise — a by-pass reconnecting circuits) was refused at
+  Import. It is now mended as safe mode mends a plugin's line (the later
+  section of a joined pair takes the first's system and phase, same
+  voltage; else the joining jumper is left out), each mend said in the
+  notes, to be checked afterwards.
 - Versions › Project lines › Working tree: a project line with nothing
   of its own committed and uncommitted work was drawn joined to its
   source twice (its start ring and its open dot); the open dot now follows

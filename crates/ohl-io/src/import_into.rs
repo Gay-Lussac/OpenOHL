@@ -850,6 +850,11 @@ pub fn plan(
         }
     }
     check_libraries(existing_libs, &mut out);
+    // The import gets everything in, the rules are checked afterwards
+    // (owner, 2026-10-27): a merged line that does not check is mended as
+    // safe mode mends a plugin's (e.g. a variant labelling the phases of a
+    // conductor the project continues otherwise), each mend said.
+    crate::projects::mend(&mut out.line, &mut out.notes);
     if let Err(e) = out.line.validate() {
         out.notes
             .push(format!("the merged line does not check yet: {e}"));

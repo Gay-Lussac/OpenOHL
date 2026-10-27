@@ -270,7 +270,7 @@ pub fn line_safe(json: &str) -> Result<(Line, Vec<String>), String> {
 /// systems of the same voltage: the later takes the first's system and
 /// phase instead (nothing left out). Expected cost: one check per object
 /// tried; at most 1000 mends.
-fn mend(line: &mut Line, notes: &mut Vec<String>) {
+pub(crate) fn mend(line: &mut Line, notes: &mut Vec<String>) {
     use ohl_line::JumperEnd;
     for _ in 0..1000 {
         let Err(e) = line.validate() else { return };
