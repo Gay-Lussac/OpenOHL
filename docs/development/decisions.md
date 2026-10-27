@@ -10,6 +10,79 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Another project into this one: towers in both, cables by id (owner, 2026-10-27)**
+
+Found when combining several exports of neighbouring lines that share
+junction towers and cables: every project-plugin import names its wire
+file alike, so a second import's wire file "differed" and was left out
+(its new cables missing) or kept both (the same cable id twice: the wire
+library refused to load, and then the structure types were not found
+either); towers in two exports came in twice or replaced each other.
+
+- **A tower in both is kept once, as the project's** (its id, position,
+  orientation and type), and its sets are asked for one by one
+  (`ohl_io::import_into::SharedTower`, `SetChoice`; key
+  `tower:<imported id>:set:<n>`): a set only in the import is **added**
+  (default) or left out (its imported sections and jumpers with it); a
+  set in both within the tolerance (the wire points in still air, world
+  coordinates, so towers turned differently compare right) is the same
+  attachment; a set in both at other places: **keep the project's**
+  (default; the imported sections hang on it), **take the imported
+  one** (replaces the project's wire point and strings of that set), or
+  **add it under a new number** (a free number; the imported sections
+  follow). A set added brings the imported wire point and the strings
+  above it up to the structure points as the tower's own items (labels
+  unique on the tower, string directions turned into the project
+  tower's axes; a project point at the same place used). The imported
+  tower is taken in effect (resolved with the import's own files). Its
+  type file is not added when only towers in both use it. The window
+  lists one line per tower, opened to its sets.
+- **The same id further than the tolerance is another structure**,
+  without asking: an id of its own (`T1-2`), a note with the distance;
+  its type comes with it, under a new id and file when the project's
+  type file of that name, or its type of that id, is another.
+- Programs number alignment points, sections, jumpers and alignments
+  alike in every file: **the same id elsewhere** (an alignment point
+  beyond the tolerance, a section or jumper over other structures, an
+  alignment of another route) is another object, kept apart under an id
+  of its own (`sec1-2`), counted in a note. Before, an alignment point,
+  structure, section or jumper of the same id was always a duplicate,
+  kept as the project's by default: the import lost it. An alignment
+  point at the same place alike but for its id is the same.
+- **Cables by id, one of each in the project** (owner, the same day):
+  the import's wire files are read cable by cable; one the project has
+  with the same data is left out; a new one is added **to the project's
+  wire file** (the first by name when it has several, said in a note),
+  never as a second file of the same name; one of the project's ids with
+  other data is a duplicate (`cable:<id>`): keep the project's (default)
+  or the imported one under a new id (`<id>-2`, added likewise; the
+  imported sections and jumpers name it). A project without a wire file
+  gets the import's as it is. A cable the wire library would refuse
+  (seen: a cable whose area exceeds its diameter's circle by rounding)
+  is left out with a note, so the library keeps loading.
+- **Structure type files by type id**; a type file whose name is taken
+  by another type is added under a name of its own (`<id>.ohls`)
+  without asking (keeping the project's would leave the imported
+  structures' type missing). **Every structure's type must be in a type
+  file of the project after the import**: the plan lists any that would
+  not be (`ImportPlan::missing_types`), in the window before Import and
+  on the command line. *Keep both* of a type file now gives the type a
+  new id when the project has its id (two files of one id did not
+  load).
+- The window plans with the project line as stored (before: the line as
+  resolved, so typed structures were written back merged with their
+  types) and with the project's structure, insulator and wire files.
+- **Command line**: `ohl project import-into FILE --into PROJECT.ohl
+  --user U --plugin DIR [--option K=V] [--choose KEY=keep|imported|both]
+  [--choose tower:T:set:N=add|leave|keep|imported|new] [--route
+  ID=existing|new|ROUTE] [--tolerance M] [--dry-run]` prints the plan and
+  writes it as one change; it says whether the wire library loads.
+- Tests on synthetic data only (the example line split at its junction
+  tower: a set only in the import, the same, at another place with each
+  choice, a tower of the same id far away with its type, cables alike,
+  new and differing, type files); the real exports were checked locally
+  only.
+
 **Plugins may suggest wire colours (owner, 2026-10-27)**
 
 - The owner asked for a utility's wire colour table (by owner, voltage,

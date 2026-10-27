@@ -7,14 +7,18 @@
 //! plugin), then brought into the project open — into the project line
 //! you work on, or a new project line made from it; each of its routes
 //! said to be one of the project's or new; what appears twice listed, each
-//! settled (keep the project's, take the imported one, keep both); then
-//! its library files and its line written ([`ohl_io::import_into`]).
+//! settled (keep the project's, take the imported one, keep both); the
+//! towers in both listed, one line each, opened to their sets, each set
+//! of the import settled (add or leave out; at another place than the
+//! project's: keep the project's, take the imported one, or add it under
+//! a new number); then its library files and its line written
+//! ([`ohl_io::import_into`]).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use eframe::egui;
-use ohl_io::import_into::{ImportOptions, ImportPlan, Resolution, Twice};
+use ohl_io::import_into::{ImportOptions, ImportPlan, Resolution, SetState, Twice};
 use ohl_io::projects::ImportedProject;
 
 use crate::app::Ready;
@@ -107,12 +111,20 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
     if let Some(p) = &w.read
         && (w.stale || w.plan.as_ref().is_none_or(|(_, s)| *s != stamp))
     {
-        let kinds: Vec<&str> = p.libraries.iter().map(|(k, ..)| k.as_str()).collect();
+        // The project's types, insulators and wires too: its towers are
+        // compared as they are in effect, its cables by id.
+        let mut kinds: Vec<&str> = p.libraries.iter().map(|(k, ..)| k.as_str()).collect();
+        kinds.extend(["structures", "insulators", "cables"]);
+        kinds.sort_unstable();
+        kinds.dedup();
         let libs = project_libraries(&r.model, &kinds);
-        w.plan = Some((
-            ohl_io::import_into::plan(&r.model.line, &libs, p, &w.how),
-            stamp,
-        ));
+        // The line as stored (typed structures not merged with their
+        // types), as it is written back.
+        let stored = r
+            .model
+            .session()
+            .map_or_else(|| r.model.line.clone(), |s| s.export());
+        w.plan = Some((ohl_io::import_into::plan(&stored, &libs, p, &w.how), stamp));
         w.stale = false;
     }
     let formats: Vec<crate::plugins::FormatInfo> = plugins
@@ -335,6 +347,23 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                 "The same in both (left as they are): {}.",
                 words(&plan.identical)
             ));
+            if !plan.missing_types.is_empty() {
+                crate::menu::error_label(
+                    ui,
+                    format!(
+                        "After the import these structures' types are in no structure type \
+                         file of the project: {}",
+                        plan.missing_types
+                            .iter()
+                            .map(|(s, t)| format!("{s} ({t})"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                );
+            }
+            if !plan.shared.is_empty() {
+                towers(ui, plan, &mut w.how, &mut w.stale);
+            }
             if plan.duplicates.is_empty() {
                 ui.label("Nothing appears in both with other values.");
             } else {
@@ -342,7 +371,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                     ui.label("All:");
                     for res in Resolution::ALL {
                         if ui.button(res.words()).clicked() {
-                            for d in &plan.duplicates {
+                            for d in plan.duplicates.iter().filter(|d| d.choices().contains(&res)) {
                                 w.how.choices.insert(d.key.clone(), res);
                             }
                             w.stale = true;
@@ -375,7 +404,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                                     egui::ComboBox::from_id_salt(("import-into-choice", &d.key))
                                         .selected_text(d.resolution.words())
                                         .show_ui(ui, |ui| {
-                                            for res in Resolution::ALL {
+                                            for &res in d.choices() {
                                                 if ui
                                                     .selectable_label(
                                                         d.resolution == res,
@@ -448,6 +477,91 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
     }
 }
 
+/// The towers in both: one line each, opened to their sets side by side
+/// (the project's and the imported wire point, world, m; how far apart),
+/// each set of the import with its choices.
+fn towers(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale: &mut bool) {
+    ui.label(
+        egui::RichText::new(format!(
+            "Towers in both ({}): kept once, as this project's (its id, position, orientation \
+             and type); the import's sets settled one by one.",
+            plan.shared.len()
+        ))
+        .strong(),
+    );
+    let at = |p: Option<[f64; 3]>| {
+        p.map_or("—".to_owned(), |p| {
+            format!("{:.2}, {:.2}, {:.2}", p[0], p[1], p[2])
+        })
+    };
+    egui::ScrollArea::vertical()
+        .id_salt("import-into-towers")
+        .max_height(260.0)
+        .show(ui, |ui| {
+            for t in &plan.shared {
+                egui::CollapsingHeader::new(t.summary())
+                    .id_salt(("import-into-tower", &t.key))
+                    .show(ui, |ui| {
+                        egui::Grid::new(("import-into-sets", &t.key))
+                            .striped(true)
+                            .num_columns(5)
+                            .spacing([10.0, 4.0])
+                            .show(ui, |ui| {
+                                for h in ["set", "this project's", "imported", "apart", ""] {
+                                    ui.strong(h);
+                                }
+                                ui.end_row();
+                                for s in &t.sets {
+                                    ui.label(s.set.to_string());
+                                    ui.label(at(s.existing));
+                                    ui.label(at(s.imported));
+                                    ui.label(
+                                        s.distance().map_or(String::new(), |d| format!("{d:.2} m")),
+                                    );
+                                    match (s.state, s.choice) {
+                                        (SetState::OnlyExisting, _) => {
+                                            ui.label("this project's only");
+                                        }
+                                        (SetState::Same, _) => {
+                                            ui.label("the same attachment");
+                                        }
+                                        (_, Some(now)) => {
+                                            let text = match s.new_set {
+                                                Some(n) => format!("{} ({n})", now.words()),
+                                                None => now.words().to_owned(),
+                                            };
+                                            egui::ComboBox::from_id_salt((
+                                                "import-into-set",
+                                                &s.key,
+                                            ))
+                                            .selected_text(text)
+                                            .show_ui(
+                                                ui,
+                                                |ui| {
+                                                    for &c in s.choices() {
+                                                        if ui
+                                                            .selectable_label(now == c, c.words())
+                                                            .clicked()
+                                                        {
+                                                            how.sets.insert(s.key.clone(), c);
+                                                            *stale = true;
+                                                        }
+                                                    }
+                                                },
+                                            );
+                                        }
+                                        (_, None) => {
+                                            ui.label("");
+                                        }
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    });
+            }
+        });
+}
+
 /// Writes the import: the new project line first (when asked), then the
 /// library files, then the merged line (one command).
 fn apply(r: &mut Ready) -> Result<String, String> {
@@ -495,12 +609,16 @@ fn apply(r: &mut Ready) -> Result<String, String> {
             .refresh_project_libraries()
             .map_err(|e| format!("the library files written, not read again: {e}"))?;
     }
-    let done = r.perform(crate::edit::Action::Command {
-        what: format!("imported {file} into {}", r.model.project_line()),
-        command: ohl_session::Command::ReplaceLine {
-            line: Box::new(plan.line.clone()),
-        },
-    });
+    // Nothing new in the line (all of it the project's already): no
+    // change to make.
+    let unchanged = r.model.session().is_some_and(|s| s.export() == plan.line);
+    let done = unchanged
+        || r.perform(crate::edit::Action::Command {
+            what: format!("imported {file} into {}", r.model.project_line()),
+            command: ohl_session::Command::ReplaceLine {
+                line: Box::new(plan.line.clone()),
+            },
+        });
     if !done {
         return Err("the line was not changed (see the status bar)".into());
     }
@@ -528,30 +646,49 @@ mod tests {
         h
     }
 
-    /// The import read (as a project plugin gives it; the plugins' formats
-    /// load meanwhile, a spinner: steps, not runs): the same line with a
-    /// structure moved 50 m. The window lists it as appearing in both,
-    /// kept as the project's by default; "take the imported one" for all
-    /// and Import: the structure moved, one change, undone at once.
-    #[test]
-    fn a_structure_in_both_is_taken_from_the_import() {
-        let mut h = harness("import-into");
-        let (id, x0) = {
-            let r = h.state_mut().ready().unwrap();
-            let mut line = r.model.session().unwrap().export();
-            let id = line.structures[1].id.clone();
-            let x0 = line.structures[1].position[0];
-            line.structures[1].position[0] += 50.0;
-            r.import_into.show();
-            r.import_into.file = Some(PathBuf::from("other.xml"));
-            r.import_into.read = Some(Box::new(ImportedProject {
-                line,
-                libraries: Vec::new(),
-                notes: Vec::new(),
-            }));
-            r.import_into.stale = true;
-            (id, x0)
+    /// The first section's stringing tension in the line.
+    fn tension(r: &Ready) -> f64 {
+        match r.model.line.sections[0].stringing {
+            ohl_line::Stringing::Tension {
+                horizontal_tension, ..
+            } => horizontal_tension,
+            _ => panic!("the example strings in tension"),
+        }
+    }
+
+    /// The import (as a project plugin gives it) with its first section
+    /// strung 1 kN harder; the choice for it given, if any.
+    fn read_harder(r: &mut Ready, choice: Option<Resolution>) -> (String, f64) {
+        let mut line = r.model.session().unwrap().export();
+        let id = line.sections[0].id.clone();
+        let before = tension(r);
+        line.sections[0].stringing = ohl_line::Stringing::Tension {
+            horizontal_tension: before + 1000.0,
+            temperature: 15.0,
         };
+        r.import_into.show();
+        r.import_into.file = Some(PathBuf::from("other.xml"));
+        r.import_into.read = Some(Box::new(ImportedProject {
+            line,
+            libraries: Vec::new(),
+            notes: Vec::new(),
+        }));
+        if let Some(c) = choice {
+            r.import_into.how.choices.insert(format!("section:{id}"), c);
+        }
+        r.import_into.stale = true;
+        (id, before)
+    }
+
+    /// The import read (the plugins' formats load meanwhile, a spinner:
+    /// steps, not runs): the same line with its first section strung
+    /// harder. The window lists it as appearing in both, kept as the
+    /// project's by default; "take the imported one" for all and Import:
+    /// the section changed, one change, undone at once.
+    #[test]
+    fn a_section_in_both_is_taken_from_the_import() {
+        let mut h = harness("import-into");
+        let (_, before) = read_harder(h.state_mut().ready().unwrap(), None);
         h.run_steps(3);
         let plan = |h: &mut Harness<'static, App>| {
             let r = h.state_mut().ready().unwrap();
@@ -559,7 +696,7 @@ mod tests {
         };
         let p = plan(&mut h);
         assert_eq!(p.duplicates.len(), 1, "{:?}", p.duplicates);
-        assert_eq!(p.duplicates[0].differences, ["position"]);
+        assert_eq!(p.duplicates[0].differences, ["stringing"]);
         h.get_by_label("take the imported one").click();
         h.run_steps(3);
         assert_eq!(
@@ -570,10 +707,9 @@ mod tests {
         h.run_steps(3);
         let r = h.state_mut().ready().unwrap();
         assert!(!r.import_into.open, "{:?}", r.import_into.status);
-        let x = |r: &mut Ready| r.model.line.structure(&id).unwrap().position[0];
-        assert!((x(r) - x0 - 50.0).abs() < 1e-9);
+        assert!((tension(r) - before - 1000.0).abs() < 1e-9);
         r.model.undo().unwrap();
-        assert!((x(r) - x0).abs() < 1e-9);
+        assert!((tension(r) - before).abs() < 1e-9);
     }
 
     /// Into a new project line made from the one worked on: the line is
@@ -581,27 +717,13 @@ mod tests {
     #[test]
     fn into_a_new_project_line() {
         let mut h = harness("import-into-new");
-        let (id, x0, before) = {
+        let (before_line, before) = {
             let r = h.state_mut().ready().unwrap();
-            let before = r.model.project_line();
-            let mut line = r.model.session().unwrap().export();
-            let id = line.structures[0].id.clone();
-            let x0 = line.structures[0].position[0];
-            line.structures[0].position[0] += 50.0;
-            r.import_into.show();
-            r.import_into.read = Some(Box::new(ImportedProject {
-                line,
-                libraries: Vec::new(),
-                notes: Vec::new(),
-            }));
-            r.import_into
-                .how
-                .choices
-                .insert(format!("structure:{id}"), Resolution::TakeImported);
+            let line = r.model.project_line();
+            let (_, t) = read_harder(r, Some(Resolution::TakeImported));
             r.import_into.into_new = true;
             r.import_into.new_name = "imported".into();
-            r.import_into.stale = true;
-            (id, x0, before)
+            (line, t)
         };
         h.run_steps(3);
         h.get_by_label("Import").click();
@@ -613,9 +735,64 @@ mod tests {
             "{:?}",
             r.import_into.status
         );
-        let x = |r: &mut Ready| r.model.line.structure(&id).unwrap().position[0];
-        assert!((x(r) - x0 - 50.0).abs() < 1e-9);
-        r.switch_line(&before);
-        assert!((x(r) - x0).abs() < 1e-9);
+        assert!((tension(r) - before - 1000.0).abs() < 1e-9);
+        r.switch_line(&before_line);
+        assert!((tension(r) - before).abs() < 1e-9);
+    }
+
+    /// A tower in both: the import's T3 holds a set the project's has not
+    /// (a wire point fixed to it, set 9). The window lists the tower in
+    /// one line, opened to its sets side by side (three the same), set 9
+    /// to be added by default; Import
+    /// adds it to the project's T3 (its own wire point), nothing else
+    /// changing.
+    #[test]
+    fn a_tower_in_both_lists_its_sets() {
+        let mut h = harness("import-into-tower");
+        {
+            let r = h.state_mut().ready().unwrap();
+            let mut line = r.model.session().unwrap().export();
+            let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+            let mut w = t3.wires[0].clone();
+            w.label = "W9".into();
+            w.set = Some(9);
+            w.position[2] += 3.0;
+            t3.wires.push(w);
+            r.import_into.show();
+            r.import_into.file = Some(PathBuf::from("branch.xml"));
+            r.import_into.read = Some(Box::new(ImportedProject {
+                line,
+                libraries: Vec::new(),
+                notes: Vec::new(),
+            }));
+            r.import_into.stale = true;
+        }
+        h.run_steps(3);
+        {
+            let r = h.state_mut().ready().unwrap();
+            let p = r.import_into.plan.as_ref().unwrap().0.clone().unwrap();
+            assert!(p.duplicates.is_empty(), "{:?}", p.duplicates);
+            assert_eq!(p.shared.len(), 1);
+            assert_eq!(p.shared[0].existing, "T3");
+        }
+        h.get_by_label_contains("T3: 3 sets in the project's, 4 in the imported")
+            .click();
+        h.run_steps(3);
+        h.get_by_label("9");
+        assert_eq!(h.get_all_by_label("the same attachment").count(), 3);
+        {
+            let r = h.state_mut().ready().unwrap();
+            let p = r.import_into.plan.as_ref().unwrap().0.clone().unwrap();
+            let s9 = p.shared[0].sets.iter().find(|s| s.set == 9).unwrap();
+            assert_eq!(s9.choice, Some(ohl_io::import_into::SetChoice::Add));
+        }
+        h.get_by_label("Import").click();
+        h.run_steps(3);
+        let r = h.state_mut().ready().unwrap();
+        assert!(!r.import_into.open, "{:?}", r.import_into.status);
+        let t3 = r.model.session().unwrap().export();
+        let t3 = t3.structure("T3").unwrap();
+        assert_eq!(t3.wire_at_set(9).unwrap().label, "W9");
+        assert_eq!(t3.wires.len(), 4);
     }
 }

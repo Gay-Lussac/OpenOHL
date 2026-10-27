@@ -172,21 +172,86 @@ later state of the same line:
    its id is taken). A route of an id the project has is taken to be the
    same by default.
 4. **What appears in both**: an object of the **same id** with other
-   values, or of another id **at the same place** — an alignment point or
-   a structure nearer than the tolerance in plan (1 m by default), a
-   section over the same structures and sets, a jumper between the same
-   ends — and a library file of the same name with another text. Each is
-   listed with what differs and settled: **keep the project's** (the
-   default: the imported one left out, what the import attached to it
-   attached to the project's), **take the imported one** (it replaces the
-   project's, under the project's id) or **keep both** (the imported one
-   under an id of its own, `T12 (2)`, what refers to it following). *All:*
-   settles every one alike. What is the same in both is left as it is;
-   the rest is added. The ids the import's objects were given are listed.
+   values, or of another id **at the same place** — an alignment point
+   nearer than the tolerance in plan (1 m by default), a section over the
+   same structures and sets, a jumper between the same ends — and a
+   library file of the same name with another text. Each is listed with
+   what differs and settled: **keep the project's** (the default: the
+   imported one left out, what the import attached to it attached to the
+   project's), **take the imported one** (it replaces the project's,
+   under the project's id) or **keep both** (the imported one under an id
+   of its own, `P12 (2)`, what refers to it following). *All:* settles
+   every one alike. What is the same in both is left as it is; the rest
+   is added. The ids the import's objects were given are listed.
+5. **Towers in both** (2026-10-27): a structure of the import within the
+   tolerance of one of the project's — of its id or another — is kept
+   **once, as the project's**: its id, position, orientation and type. It
+   is listed in one line (its sets in each, how many the same, at other
+   places, taken from the import); opened, it shows every set number of
+   either side by side — the project's and the imported wire point (in
+   still air, in world coordinates, so towers turned differently in the
+   two files compare right) and how far apart they are:
+   - a set **only in the import**: **add** (the default) or **leave out**
+     (the imported sections and jumpers at it are left out with it);
+   - a set in both **at the same place** (within the tolerance): the same
+     attachment, nothing to choose;
+   - a set in both **at other places**: **keep the project's** (the
+     default; the imported sections at that set hang on the project's),
+     **take the imported one** (it replaces the project's wire point and
+     strings of that set) or **add the imported one under a new number**
+     (a free number on the tower; the imported sections at it follow).
+
+   A set added brings the imported tower's wire point and the strings
+   above it, up to the structure points, as the project tower's own items
+   (a structure point of the project's tower at the same place is used
+   instead of a new one); labels are made unique on the tower and string
+   directions turned into the project tower's axes. The imported tower is
+   taken as it is in effect, merged with its type from the import's own
+   files, since its wire points may be in its type file. Its type file is
+   not added when only towers in both use it.
+
+**Kept apart without asking**: a structure of the **same id further
+away** than the tolerance is another structure: it comes in under an id
+of its own (`T12-2`) with its type, and a note gives the distance. If the
+project holds another type file of that name, or another type of that
+id, the import's type comes in under a new id (`type-2`, in a file of
+that name) and the structure names it. Alignment points of the same id
+elsewhere, and sections, jumpers and alignments of the same id over other
+structures or on another route, are kept apart the same way (programs
+number them alike in every file).
+
+**Wire and structure type files by what they hold**: wire files are
+compared cable by cable, so the project keeps one of each cable. A cable
+the project has with the same data is left out; a new cable is added to
+the project's wire file (the first by name when it has several, said in a
+note); a cable of the project's id with other data is listed — **keep the
+project's** (the default; the imported sections use it) or **keep both**
+(the imported one under a new id, `cable-2`, added likewise; the imported
+sections and jumpers name it). A project without a wire file gets the
+import's as it is. A cable the wire library would refuse is left out
+with a note, so the library keeps loading. Structure type files are
+compared by type id; a type file whose name is taken by another type is
+added under a name of its own. Before **Import** the window says which
+structures' types would be in no type file of the project afterwards.
+Other library files are compared by name.
 
 **Import** writes the library files, then the line as one change. The
 coordinate systems must be the same (else reproject one first). The
 renames are made with the project's own rename (what refers to an object
 follows as when it is renamed by hand).
+
+From the command line, the same without the window (in active
+development):
+
+```bash
+ohl project import-into FILE --into project.ohl --user ann --plugin DIR [--format F] \
+    [--option KEY=VALUE] [--clip-in] [--tolerance M] [--route ID=existing|new|ROUTE] \
+    [--choose KEY=keep|imported|both] [--choose tower:T3:set:2=add|leave|keep|imported|new] [--dry-run]
+```
+
+It prints the plan — what is added and the same, the towers in both with
+their sets and keys, what appears in both with its key, the ids given,
+the library files written, the notes — then writes it (not with
+`--dry-run`) and says whether the project's wire library loads.
 
 Terrain (TIN) and point clouds are imported apart, also from File: **Import › Terrain surface (TIN)…** (Line › Terrain › Terrain surfaces) and **Import › LiDAR points (LAS/LAZ)…**.
