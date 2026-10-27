@@ -709,7 +709,12 @@ parameters](#electrical-line-parameters)). **No limit is built in**: an
 ordinance's values (which current, which places, which limit) are yours
 to give, or come from its plugin's parameter file later.
 
-**In OHL-Design:** Checks › Electrical › **Magnetic field…**
+**In OHL-Design:** Checks › Electrical › **Magnetic field…** Its inputs
+— the weather case, the currents and directions, the model, the earth
+wires, the profiles, the limit and the points (the CSV's text) — are kept
+in the project for the project line worked on (2026-10-27): the window
+opens as it was left, for every user of the project. A case or span no
+longer in the line falls back to the default.
 
 - **Currents**: per circuit its current (A, rms, each phase) and its load
   flow, *along the line* (from the line's first structure to its last) or

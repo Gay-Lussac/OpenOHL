@@ -13,6 +13,11 @@
 //! CSV. Out of date like the other checks when the line or the ground
 //! changes. Not yet: isolines drawn in the views, the thermal rating as
 //! the currents (in `ohl electrical magnetic --thermal`).
+//!
+//! The window's inputs are kept in the project, per project line
+//! ([`SETTING`]; owner, 2026-10-27): the weather case, the currents and
+//! directions, the earth wires, the profiles, the stations, the limit, 2D,
+//! and the points (the CSV's text, so they travel with the project).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -69,6 +74,13 @@ pub struct MagneticFieldWindow {
     mean_heights: bool,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
+    /// The points file's text (kept in the project).
+    points_text: Option<String>,
+    /// The project setting's key and the inputs as last read or written
+    /// (none: not read yet).
+    saved: Option<(String, String)>,
+    /// The weather case came from the project (opening keeps it).
+    case_kept: bool,
     /// Why the last points file could not be read.
     points_error: Option<String>,
     /// The profile shown in the plot.
@@ -94,6 +106,9 @@ impl Default for MagneticFieldWindow {
             two_d: false,
             mean_heights: false,
             points: None,
+            points_text: None,
+            saved: None,
+            case_kept: false,
             points_error: None,
             shown: 0,
             progress: None,
@@ -102,10 +117,149 @@ impl Default for MagneticFieldWindow {
     }
 }
 
+/// The project setting holding the window's inputs (per project line:
+/// `app.magnetic_field.<line>`).
+pub const SETTING: &str = "app.magnetic_field";
+
+/// The window's inputs as kept in the project (JSON).
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct Stored {
+    case: Option<String>,
+    currents: BTreeMap<String, (f64, bool)>,
+    earth_wires: bool,
+    height: Option<f64>,
+    width: Option<f64>,
+    step: Option<f64>,
+    /// One span's stations: its structures and the place in it (none:
+    /// every span at its lowest point).
+    span: Option<(String, String, Option<f64>)>,
+    limit: Option<f64>,
+    two_d: bool,
+    mean_heights: bool,
+    /// The points file's name and text.
+    points: Option<(String, String)>,
+}
+
 impl MagneticFieldWindow {
+    /// The inputs as kept in the project.
+    fn stored(&self, model: &Model) -> Stored {
+        let span = match &self.stations {
+            Stations::EverySpan => None,
+            Stations::One { span, fraction } => {
+                ohl_electrical::cross_section::line_spans(&model.line)
+                    .get(*span)
+                    .map(|s| (s.from.clone(), s.to.clone(), *fraction))
+            }
+        };
+        Stored {
+            case: model.cases.get(self.case).map(|c| c.case.name.clone()),
+            currents: self.currents.clone(),
+            earth_wires: self.earth_wires,
+            height: Some(self.height),
+            width: Some(self.width),
+            step: Some(self.step),
+            span,
+            limit: self.limit,
+            two_d: self.two_d,
+            mean_heights: self.mean_heights,
+            points: match (&self.points, &self.points_text) {
+                (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
+                _ => None,
+            },
+        }
+    }
+
+    /// Takes the inputs kept in the project for the line worked on (after
+    /// opening it, switching lines, or another user changing them); what
+    /// is no longer there (a case, a span) falls back to the default.
+    fn load(&mut self, model: &Model) {
+        let Some(session) = model.session() else {
+            return;
+        };
+        let key = format!("{SETTING}.{}", session.current_line());
+        let text = session.setting(&key).ok().flatten();
+        let st: Stored = text
+            .as_deref()
+            .and_then(|t| serde_json::from_str(t).ok())
+            .unwrap_or_default();
+        let d = Self::default();
+        self.case_kept = false;
+        if let Some(k) = st
+            .case
+            .as_ref()
+            .and_then(|n| model.cases.iter().position(|c| &c.case.name == n))
+        {
+            self.case = k;
+            self.case_kept = true;
+        }
+        self.currents = st.currents;
+        self.earth_wires = st.earth_wires;
+        self.height = st.height.unwrap_or(d.height);
+        self.width = st.width.unwrap_or(d.width);
+        self.step = st.step.unwrap_or(d.step);
+        self.stations = st
+            .span
+            .and_then(|(from, to, fraction)| {
+                ohl_electrical::cross_section::line_spans(&model.line)
+                    .iter()
+                    .position(|s| s.from == from && s.to == to)
+                    .map(|span| Stations::One { span, fraction })
+            })
+            .unwrap_or_default();
+        self.limit = st.limit;
+        self.two_d = st.two_d;
+        self.mean_heights = st.mean_heights;
+        (self.points, self.points_text, self.points_error) = match st.points {
+            Some((name, text)) => match magnetic::parse_points(&text) {
+                Ok(p) => (Some((name, p)), Some(text), None),
+                Err(e) => (
+                    None,
+                    None,
+                    Some(format!("{name} (kept in the project): {e}")),
+                ),
+            },
+            None => (None, None, None),
+        };
+        self.saved = serde_json::to_string(&self.stored(model))
+            .ok()
+            .map(|json| (key, json));
+    }
+
+    /// Reads the inputs from the project when not read yet for the line
+    /// worked on, and writes them into it when they changed (each frame;
+    /// not while a value is dragged or typed). A project this user
+    /// cannot change keeps them for the session.
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let Some(line) = model.session().map(|s| s.current_line().to_owned()) else {
+            return;
+        };
+        let key = format!("{SETTING}.{line}");
+        if self.saved.as_ref().is_none_or(|(k, _)| *k != key) {
+            self.load(model);
+            return;
+        }
+        let Ok(json) = serde_json::to_string(&self.stored(model)) else {
+            return;
+        };
+        if self.saved.as_ref().is_some_and(|(_, j)| *j == json)
+            || ctx.input(|i| i.pointer.any_down())
+            || ctx.memory(|m| m.focused().is_some())
+        {
+            return;
+        }
+        let op = ohl_server::Op::SetSetting {
+            key: key.clone(),
+            value: Some(json.clone()),
+        };
+        // (Read-only for this user: kept for the session.)
+        let _ = model.project_op("magnetic field inputs", op);
+        self.saved = Some((key, json));
+    }
+
     /// Opens the window on the weather case shown.
     pub fn show(&mut self, case: usize) {
-        if !self.open {
+        if !self.open && !self.case_kept {
             self.case = case;
         }
         self.open = true;
@@ -115,6 +269,18 @@ impl MagneticFieldWindow {
     #[cfg(test)]
     pub fn set_current(&mut self, circuit: &str, amps: f64) {
         self.currents.insert(circuit.to_owned(), (amps, false));
+    }
+
+    /// A circuit's current, A (tests).
+    #[cfg(test)]
+    pub fn current_of(&self, circuit: &str) -> Option<f64> {
+        self.currents.get(circuit).map(|c| c.0)
+    }
+
+    /// The limit, µT (tests).
+    #[cfg(test)]
+    pub fn limit(&self) -> Option<f64> {
+        self.limit
     }
 
     /// Sets the limit, µT (tests).
@@ -514,6 +680,7 @@ impl MagneticFieldWindow {
                                     .file_name()
                                     .map_or(String::new(), |n| n.to_string_lossy().into_owned());
                                 self.points = Some((name, p));
+                                self.points_text = std::fs::read_to_string(&path).ok();
                                 self.points_error = None;
                             }
                             Err(e) => self.points_error = Some(format!("{}: {e}", path.display())),
@@ -523,6 +690,7 @@ impl MagneticFieldWindow {
                         ui.label(format!("{} points from {name}", p.len()));
                         if ui.small_button("Clear").clicked() {
                             self.points = None;
+                            self.points_text = None;
                         }
                     }
                 });
