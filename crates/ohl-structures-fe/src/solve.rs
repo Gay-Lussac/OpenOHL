@@ -1262,6 +1262,8 @@ fn solve_with(
     let mut run = budget.start();
     let mut residual;
     let mut stalled = false;
+    let mut step: f64 = 1.0;
+    let mut last_residual = f64::INFINITY;
     loop {
         // Tangent and out-of-balance forces at the current state.
         assemble(
@@ -1321,8 +1323,22 @@ fn solve_with(
             });
         }
         k.solve(&mut r);
+        // Relaxation (2026-10-27): the iterations are a fixed point of the
+        // axial forces; where they oscillate (the out-of-balance forces
+        // grow from one iteration to the next on a settled set), the step
+        // is halved, down to an eighth, and grows back while they fall.
+        // The converged solution is the same; a model that converges
+        // without it takes the same steps (the step stays 1).
+        if settled && options.nonlinear {
+            if residual > last_residual {
+                step = (step * 0.5).max(0.125);
+            } else {
+                step = (step * 2.0).min(1.0);
+            }
+        }
+        last_residual = residual;
         for (a, b) in u.iter_mut().zip(&r) {
-            *a += b;
+            *a += step * b;
         }
         slack_solved = Some(slack.clone());
         // Axial forces and slack cables from the new displacements.

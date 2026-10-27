@@ -296,7 +296,7 @@ fn usage_of(
                 }
                 (u, words)
             });
-            if !m.is_frame() || (is_single_angle(s) && !model.analysis.single_angle_moments) {
+            if !m.is_frame() || (axial_member(m, s) && !model.analysis.single_angle_moments) {
                 return MemberUsage {
                     member: idx,
                     usage: axial.as_ref().map(|a| a.0),
@@ -362,6 +362,15 @@ pub fn is_single_angle(s: &crate::model::Section) -> bool {
         s.profile.as_ref().map(|p| &p.shape),
         Some(ohl_sections::Shape::EqualAngle { .. } | ohl_sections::Shape::UnequalAngle { .. })
     )
+}
+
+/// Whether a frame member is checked for its axial force only (unless
+/// `[analysis] single_angle_moments`): a single angle
+/// ([`is_single_angle`]), or a lattice member — one whose design data
+/// give it a class (leg, bracing, redundant, crossing diagonal: built-up
+/// angles too), which lattice tower practice designs axially.
+pub fn axial_member(m: &crate::model::Member, s: &crate::model::Section) -> bool {
+    is_single_angle(s) || m.design.class.is_some()
 }
 
 /// The member using most of its capacity (a usage that is not a number

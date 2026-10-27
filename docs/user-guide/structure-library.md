@@ -147,7 +147,8 @@ plies = 1                          # profiles side by side (2: two angles back t
 connected_leg = "long"             # the leg the end bolts hold: both | long | short | none
 bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_planes = 1,
           shear_capacity = "60 kN", ultimate = "800 MPa", holes = 1 }
-                                   # per end: count; per bolt and shear plane: shear_capacity;
+                                   # per end: count (0: the holes only, no bolt check);
+                                   # per bolt and shear plane: shear_capacity;
                                    # holes: holes in one cross-section (net section)
 edge_distance = "25 mm"
 end_distance = "27 mm"

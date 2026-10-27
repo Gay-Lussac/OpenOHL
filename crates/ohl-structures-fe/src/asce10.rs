@@ -244,6 +244,8 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     let mut conn: Vec<String> = Vec::new();
     match d.bolts {
         None => conn.push("no bolts given: connection not checked".into()),
+        // Holes only (the bolts elsewhere): the net section, no bolt check.
+        Some(b) if b.count == 0 => conn.push("no end bolts: connection not checked".into()),
         Some(b) => {
             let per_plane = match (b.shear_capacity, b.ultimate) {
                 (Some(v), _) => Some(v),
@@ -396,6 +398,30 @@ mod tests {
             );
         }
         assert_eq!(bare.tension.as_ref().unwrap().1, "gross section, no holes");
+        // Bolts counted 0: the holes only — the net section, no bolt check.
+        m.members[1].design.bolts = Some(crate::design::Bolts {
+            diameter: 0.016,
+            hole: Some(0.0175),
+            count: 0,
+            shear_planes: 1,
+            shear_capacity: Some(60e3),
+            ultimate: None,
+            holes: Some(1),
+        });
+        m.members[1].design.thickness = Some(0.006);
+        m.members[1].design.connected_leg = Some(crate::design::ConnectedLeg::Both);
+        let holes = capacity(&m, 1, None);
+        let net = (10e-4 - 0.0175 * 0.006) * 355e6;
+        assert!(
+            (holes.tension.as_ref().unwrap().0 - net).abs() < 1e-6,
+            "{holes:?}"
+        );
+        assert!(
+            holes
+                .tension_assumed
+                .iter()
+                .any(|a| a.contains("no end bolts"))
+        );
         // No yield strength: no capacity (the check falls back).
         m.sections[0].yield_strength = None;
         assert!(capacity(&m, 0, None).compression.is_none());

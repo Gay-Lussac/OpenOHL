@@ -42,6 +42,21 @@ of Parts A, B and C).
   published formulas (invented bars); unit tests (crossing diagonal,
   assumptions). The line's structure check says the method only for the
   simple check (ASCE says its assumptions in what governs).
+- Lattice members axial: a frame with a design class (leg, bracing,
+  redundant, crossing diagonal) is checked axially like a single angle
+  (built-up angles are `general` profiles); with their end moments the
+  tower maxima were 1.5 times the tower program's, axially 1.00 (85 %
+  of the towers within 5 %).
+- Bolts with `count = 0`: the net section's holes only (the export
+  gives holes for members whose bolts are counted elsewhere).
+- P-Delta relaxation (B2): the step is halved (to an eighth) when the
+  out-of-balance forces grow on a settled set, doubled back while they
+  fall; the oscillating tower converged (1.4·10⁻⁷, accepted as stalled,
+  forces within 1.7 %). A model whose forces fall at every iteration is
+  unchanged.
+- Local comparison (private): compression capacities within 0.5 % of the
+  tower program's on 95.5 % of 161,399 members (unsafe 0.02 %), tension
+  95.3 % (unsafe 0.06 %), tower maxima of the usage median 1.00.
 - To confirm: tension-only members in compression keep the simple rule
   (A·f_y without buckling, the solve caps them); frames of non-angle
   sections keep a linear N + M interaction with W·f_y; f_y not reduced by

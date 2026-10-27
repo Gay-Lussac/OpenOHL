@@ -130,7 +130,8 @@ pub struct Bolts {
     pub diameter: f64,
     /// Hole diameter, m (none: not given).
     pub hole: Option<f64>,
-    /// Bolts at one end.
+    /// Bolts at one end (0: the holes only — the net section — the
+    /// bolts not checked).
     pub count: u32,
     /// Shear planes per bolt (default 1).
     pub shear_planes: u32,
@@ -250,9 +251,9 @@ impl DesignFile {
         let bolts = match &self.bolts {
             None => None,
             Some(b) => {
-                if b.count == 0 || b.shear_planes == Some(0) {
+                if b.shear_planes == Some(0) {
                     return Err(format!(
-                        "{what}: design bolts: count and shear_planes must be 1 or more"
+                        "{what}: design bolts: shear_planes must be 1 or more"
                     ));
                 }
                 Some(Bolts {
