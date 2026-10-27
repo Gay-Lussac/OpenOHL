@@ -433,7 +433,50 @@ impl Action {
                 set: *set,
                 confirm: true,
             }),
+            // Several deleted at once (Delete selected): every deletion of
+            // the batch confirmed.
+            Action::Command { what, command } if asks(command) => Some(Action::Command {
+                what: what.clone(),
+                command: confirmed(command.clone()),
+            }),
             _ => None,
         }
+    }
+}
+
+/// Whether `command` holds a deletion not confirmed.
+fn asks(command: &ohl_session::Command) -> bool {
+    use ohl_session::Command;
+    match command {
+        Command::Delete { confirm, .. } | Command::DeleteAttachment { confirm, .. } => !confirm,
+        Command::Batch { commands } => commands.iter().any(asks),
+        _ => false,
+    }
+}
+
+/// `command` with its deletions confirmed.
+fn confirmed(command: ohl_session::Command) -> ohl_session::Command {
+    use ohl_session::Command;
+    match command {
+        Command::Delete { kind, id, .. } => Command::Delete {
+            kind,
+            id,
+            confirm: true,
+        },
+        Command::DeleteAttachment {
+            structure,
+            set,
+            phase,
+            ..
+        } => Command::DeleteAttachment {
+            structure,
+            set,
+            phase,
+            confirm: true,
+        },
+        Command::Batch { commands } => Command::Batch {
+            commands: commands.into_iter().map(confirmed).collect(),
+        },
+        other => other,
     }
 }

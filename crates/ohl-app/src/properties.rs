@@ -64,6 +64,20 @@ pub fn ui(
     let line = &model.line;
     let mut next: Option<Selection> = None;
     let mut action: Option<crate::edit::Action> = None;
+    // Several selected (Shift or Cmd/Ctrl+click): the one clicked last
+    // below.
+    if !model.selected_also.is_empty() {
+        let n = model.selected_also.len() + 1;
+        ui.label(egui::RichText::new(format!("{n} selected — the last one clicked:")).strong())
+            .on_hover_text(format!(
+                "{}\n\nShift+click adds, Cmd/Ctrl+click adds or takes out, Escape clears; \
+                 Delete selected deletes them all (one undo)",
+                crate::selection::all_selected(selection, model)
+                    .map(Selection::describe)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
+    }
     egui::ScrollArea::vertical().show(ui, |ui| match selection.clone() {
         Selection::None => {
             ui.label("Click a structure or a wire in a view.");

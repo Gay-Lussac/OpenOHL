@@ -1457,9 +1457,7 @@ impl Ready {
                 self.status = Some((m, true));
             }
         }
-        if !self.selection_exists() {
-            self.selection = Selection::None;
-        }
+        self.drop_gone_selection();
         self.clearances.stale = true;
         self.refresh_views();
     }
@@ -1720,12 +1718,48 @@ impl Ready {
         self.drawings.invalidate_preview();
     }
 
-    /// Selects `target`.
+    /// Selects `target` (only it: the others selected go).
     pub fn select(&mut self, target: Selection) {
         self.selection = target;
+        self.model.selected_also.clear();
         // Not a copy clicked in a view: the case shown.
         self.model.selection_case = None;
         self.view3d.dirty.insert(Layer::Selection);
+    }
+
+    /// Shift+click (`toggle` false: adds) or Cmd/Ctrl+click (`toggle`:
+    /// adds or takes out) on `picked`, in a view or a table
+    /// ([`crate::selection::multi_click`]).
+    pub fn select_more(&mut self, picked: Selection, toggle: bool) {
+        crate::selection::multi_click(
+            &mut self.selection,
+            &mut self.model.selected_also,
+            picked,
+            toggle,
+        );
+        self.view3d.dirty.insert(Layer::Selection);
+    }
+
+    /// Deletes the selection and the others selected: one command (one
+    /// undo) when several, with the confirmation of what they take with
+    /// them; the selection itself alone as before.
+    pub fn delete_selected(&mut self) {
+        if self.model.selected_also.is_empty() {
+            let target = self.selection.clone();
+            self.delete_object(&target);
+            return;
+        }
+        let all: Vec<Selection> = crate::selection::all_selected(&self.selection, &self.model)
+            .cloned()
+            .collect();
+        match edits::delete_all_action(&self.model.line, &all) {
+            Ok(action) => {
+                if self.perform(action) {
+                    self.select(Selection::None);
+                }
+            }
+            Err(e) => self.status = Some((e, true)),
+        }
     }
 
     /// A project edit (library, user, project line, rollback…), reported

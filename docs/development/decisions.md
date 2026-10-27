@@ -10,6 +10,35 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Several objects selected: Shift and Cmd/Ctrl+click (owner, 2026-10-27)**
+
+- The selection held one object. Now Shift+click adds, Cmd+click
+  (Ctrl+click on Windows and Linux) adds or takes out, in the 3D, plan
+  and profile views and with a table row's ⤴. The one clicked last stays
+  the selection (`Ready::selection`: Properties, the tools, Go to…); the
+  others are `Model::selected_also` (with the model, as
+  `selection_case`, so every view highlights them without new
+  parameters: `selection::all_selected` / `is_selected`). A view reports
+  its click (`selection::clicked`, egui's temporary data); the page
+  adds or toggles it (`selection::multi_click`) when Shift or Cmd/Ctrl
+  was held, else the one clicked is the only one. Highlighted in every
+  view on every drawn copy (the 3D selection layer draws each), the plan,
+  the profile and the tables.
+- **Delete selected** with several: one command (a batch of the
+  deletions, sections and points before the structures; a section once
+  for several of its spans), confirmed as before; the confirmation
+  shows what the first deletion needing one takes (the others' are
+  taken too; one undo brings all back). A span point or spread with
+  spreads is refused in a multiple deletion (it asks which, on its own).
+  For this the session deletes an object once when several deletions of
+  one command take it (`ohl_session::deleted_once`: two structures and
+  the jumper between them); a single deletion is unchanged.
+- **Escape** clears the selection (all of it) when no window, tool,
+  chain or drag takes the key and the 3D view does not hold the mouse.
+  Selected objects that an edit removed are no longer selected.
+- Not in the cross-section views yet (they highlight the selection
+  only).
+
 **The Tables page keeps its rows (owner, 2026-10-27)**
 
 - A table's rows were built every frame (each structure's sections

@@ -352,9 +352,7 @@ impl Ready {
             }
         };
         self.edit_position = None;
-        if !self.selection_exists() {
-            self.selection = Selection::None;
-        }
+        self.drop_gone_selection();
         self.chain
             .retain(|p| self.model.line.wire_point(p).is_some());
         self.update_draft();
@@ -391,10 +389,25 @@ impl Ready {
         self.drawings.invalidate_preview();
     }
 
-    /// Whether the selected object is still in the line.
-    pub(super) fn selection_exists(&self) -> bool {
+    /// The selected objects no longer in the line are no longer selected
+    /// (the last of the others selected follows a selection gone).
+    pub(super) fn drop_gone_selection(&mut self) {
+        if !self.exists(&self.selection) {
+            self.selection = Selection::None;
+        }
+        let also = std::mem::take(&mut self.model.selected_also);
+        self.model.selected_also = also.into_iter().filter(|s| self.exists(s)).collect();
+        if self.selection == Selection::None
+            && let Some(s) = self.model.selected_also.pop()
+        {
+            self.selection = s;
+        }
+    }
+
+    /// Whether `target` is still in the line.
+    pub(super) fn exists(&self, target: &Selection) -> bool {
         let line = &self.model.line;
-        match &self.selection {
+        match target {
             Selection::None | Selection::LidarPoint(_) | Selection::SurveyPoint(_) => true,
             Selection::Structure(id) => line.structure(id).is_some(),
             Selection::Jumper(id) => line.jumpers.iter().any(|j| &j.id == id),
@@ -660,6 +673,64 @@ pub(super) fn span_delete_action(
 
 /// The deletion of a clicked object: a structure, a string, a span's
 /// section, a jumper.
+/// One command deleting every object of `targets` (spans of one section
+/// deleting it once; sections, jumpers, spacers and points before the
+/// structures, which take theirs with them); asks for a confirmation when
+/// any takes others ([`crate::edit::Action::confirmed`]). Refused for a
+/// span point or spread with spreads (deleted one by one, asked first).
+pub(crate) fn delete_all_action(
+    line: &ohl_line::Line,
+    targets: &[Selection],
+) -> Result<crate::edit::Action, String> {
+    use crate::edit::Action;
+    let mut ordered: Vec<&Selection> = targets.iter().collect();
+    // Structures last, then sets: what hangs on them goes first.
+    ordered.sort_by_key(|t| match t {
+        Selection::Structure(_) => 2,
+        Selection::Attachment { .. } => 1,
+        _ => 0,
+    });
+    let mut commands: Vec<ohl_session::Command> = Vec::new();
+    let mut names = Vec::new();
+    for t in ordered {
+        if matches!(t, Selection::Spread { .. })
+            || matches!(t, Selection::SpanPoint { section, label }
+                if line.sections.iter().any(|s| &s.id == section && !s.spreads_at(label).is_empty()))
+        {
+            return Err(format!(
+                "{}: delete it on its own (its spread is asked for)",
+                t.describe()
+            ));
+        }
+        let command = match delete_action(line, t) {
+            Some(Action::Delete { kind, id, confirm }) => {
+                ohl_session::Command::Delete { kind, id, confirm }
+            }
+            Some(Action::DeleteAttachment {
+                structure,
+                set,
+                confirm,
+            }) => ohl_session::Command::DeleteAttachment {
+                structure,
+                set,
+                phase: None,
+                confirm,
+            },
+            Some(Action::Command { command, .. }) => command,
+            _ => return Err(format!("{}: cannot be deleted", t.describe())),
+        };
+        // A section once (several of its spans selected).
+        if !commands.contains(&command) {
+            commands.push(command);
+            names.push(t.describe());
+        }
+    }
+    Ok(Action::Command {
+        what: format!("deleted {} objects: {}", names.len(), names.join(", ")),
+        command: ohl_session::Command::Batch { commands },
+    })
+}
+
 pub(super) fn delete_action(
     line: &ohl_line::Line,
     target: &Selection,

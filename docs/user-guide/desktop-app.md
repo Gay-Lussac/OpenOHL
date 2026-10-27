@@ -829,6 +829,9 @@ The 3D view is navigated with the mouse and the keyboard — like Minecraft in c
 | scroll | zoom |
 | right or middle drag | pan |
 | double-click | fly to the object |
+| Shift + click | adds the object to the selection (3D, plan and profile views; ⤴ in a table) |
+| Cmd + click (Ctrl + click on Windows and Linux) | adds the object, or takes it out when it is selected |
+| Escape | clears the selection (all of it), when no window, tool or drag takes it |
 | G | go to a structure: a window with every structure in a list; Enter goes (selects it, brings the 3D view within 150 m and centres the plan), Escape closes |
 | C | a cross-section: the window that opens a cut across the line at a station or a structure ([Cross-section view](#cross-section-view)); in any view, not while typing |
 | Alt + drag (select button) | a box: the LiDAR points drawn in it, their class changed together ([Editing](#editing)); also in the profile. Not while the mouse is captured; Alt pressed first never captures it |
@@ -866,6 +869,8 @@ The speed (m/s) and, for the first-person scheme, the look sensitivity are set t
 The **plan** pans with a drag of any button and the **profile** moves along the route with one; their clicks are the same, and their double-click with Select held (plan: select and centre on it; profile: show the whole route).
 
 **Edit › Snap: what can be clicked** chooses what can be clicked: structures, spans, jumpers, wire points and string tops (selecting their set), alignment points, LiDAR points (those drawn, see [Point budget](#point-budget)) (more kinds will be added); by default structures, spans and jumpers. At about the same distance, a point wins over the line it sits on and a structure over a wire. The choice is remembered.
+
+**Several objects** (2026-10-27): **Shift+click** adds an object to the selection, **Cmd+click** (Ctrl+click on Windows and Linux) adds it or takes it out — in the 3D, plan and profile views and with a table row's ⤴. Every one selected is highlighted in every view (on every copy drawn) and in the tables; Properties shows the one clicked last under "N selected" (the others listed on hover). **Delete selected** (Delete) deletes them all as one command — one undo brings them all back — and asks first when they take other objects with them; a span point or spread with spreads is deleted on its own (it asks which). **Escape** or **Clear selection** clears them; a plain click selects only the object clicked. Everything else works on the one clicked last.
 
 Clicking an object in any view selects it everywhere: a structure anywhere along the lines it is drawn with (shaft or stick drawing, arms), a **string** anywhere along it where it is drawn (as solved in the case shown — with the wind from both sides, each of the two; a jumper's helping strings too; its properties give where it hangs, its wire point, set, length, weight, wind area, dead end and its force in the case shown), attachment points (Snap) where the clamps are drawn, a span anywhere along its wire, a jumper anywhere along it (drawn as a bundle like its section). The properties of a jumper show its wire type, section, bundle (and whether it is its own or its section's), length or sag, support string or helping strings, results in every weather case, and the force in each string holding a support clamp in the case shown ("slack" when it is), in a box of fixed height. In the 3D view the strings holding a jumper's clamps are drawn to the clamps as solved, and each clamp as a short bar along the jumper. Tabs can be dragged to rearrange the window.
 

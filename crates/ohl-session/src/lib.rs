@@ -81,6 +81,22 @@ use serde_json::Value;
 /// lines).
 pub const SCHEMA_VERSION: u32 = 6;
 
+/// Several deletions in one user's command (Delete selected with several
+/// objects, 2026-10-27) may take the same dependents (two structures, one
+/// jumper between them): an object deleted earlier in `prims` is not
+/// deleted again (unless put again in between).
+fn deleted_once(prims: &mut Vec<Command>) {
+    let mut gone: BTreeSet<(Kind, String)> = BTreeSet::new();
+    prims.retain(|c| match c {
+        Command::Delete { kind, id, .. } => gone.insert((*kind, id.clone())),
+        Command::Put { kind, id, .. } => {
+            gone.remove(&(*kind, id.clone()));
+            true
+        }
+        _ => true,
+    });
+}
+
 /// The object id of library file `name` of `kind`.
 pub(crate) fn library_id(kind: &str, name: &str) -> String {
     format!("{kind}/{name}")
@@ -3230,6 +3246,7 @@ impl Session {
         let mut notes = Vec::new();
         self.primitives(command, &mut prims, &mut notes, cascade)?;
         if cascade {
+            deleted_once(&mut prims);
             self.starts_follow(&mut prims);
         }
         // Settings rows unchanged are left out: a setting changed touches
