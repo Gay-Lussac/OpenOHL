@@ -78,6 +78,43 @@ of Parts A, B and C).
   the default list heights; Bill of materials counted among the result
   windows; Spot structures left as a tool window without the 📌.
 
+**Check windows: the owner's answers (owner, 2026-10-27)**
+
+- Every check and result window the same: "keep it standard between
+  all". Each check or result window opened from the menus goes through
+  `check_help::window` with a `dockable::Panel` of its own (floating with
+  📌, docked state per session); checked against the menus: the
+  Clearances page and Spot structures were the last ones left.
+- Bill of materials keeps its 📌; **Spot structures**: "keep it standard
+  too" — dockable (`Panel::Spot`), the shared spacing, its list
+  resizable.
+- **The Clearances page becomes a window**: "yes standardise". A check
+  window like the others (`Panel::Clearances`, floating first, 📌/⬈),
+  opened from where the page was: Checks › Wire clearances › Show
+  results, Check wire clearances (menu, quick bar), Add a rule file, and
+  a tick *Clearances* in the View menu under the pages. Its violations
+  are drawn while it is open, taken off when it closes, back when it
+  reopens (`Clearances::open`, as the other windows' marks); its
+  findings and the rule editor's lists are resizable. The `Tab::
+  Clearances` kind is removed (the left page group is Model and Next
+  steps). Saved state: the dock layout is not saved between runs (`Tab`
+  is not serialized), so no old layout can name the page; nothing to
+  migrate.
+- **Resizable lists in the settings windows**: "yes if the list is
+  scrollable and risks getting big". `check_help::list` (a per-list id,
+  the old height as default) and the shared spacing in Default values,
+  Weather case groups, Merge duplicate weather cases, History, Versions
+  (revisions, changes, reviews), Class colours, Survey data display
+  options and a plugin's presets (values, changes); short fixed lists
+  (Design code's notes, the delete confirmations, the presets' item
+  column beside its values) left as they are.
+- **The result's note in the 3D view** ("found in …"): in the object's
+  colour — its wire's display colour (the section's, or the jumper's) —
+  without a box, not white (the standing rule for view notes, confirmed
+  2026-10-27); its dashed wire at the finding's wind in the same colour.
+- Confirmed as they are: the spacing (`ITEM_SPACING` 10 × 6 px,
+  `GRID_SPACING` 14 × 6 px) and the list heights (`LIST_HEIGHT` 320 px).
+
 **Electric and magnetic fields in the core, magnetic field first (owner, 2026-10-27)**
 
 - The owner asked for the electric and magnetic fields, the magnetic

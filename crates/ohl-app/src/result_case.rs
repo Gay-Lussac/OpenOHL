@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! A check result's weather case drawn on its spans (owner, 2026-10-27):
-//! a finding of a clearance window or of the Clearances page, a result of
+//! a finding of a clearance window or of the Clearances window, a result of
 //! the Distance between conductors, once clicked, has the sections it
 //! involves drawn in the weather case that gave it — first, the cases
 //! otherwise drawn for them after it — and the case (and the wind) said
@@ -29,7 +29,7 @@ use crate::selection::Selection;
 pub enum From {
     /// A Vertical or Radial clearances window.
     Zone(ohl_clearance::Measure),
-    /// The Clearances page.
+    /// The Clearances window.
     Clearances,
     /// A Distance between conductors window.
     PhaseDistance(crate::phase_distance::Kind),
@@ -54,6 +54,10 @@ pub struct ResultCase {
     pub says: String,
     /// Where it is said: the finding's point on the wire.
     pub at: [f64; 3],
+    /// The colour it is said and its dashed wire drawn in: the object's —
+    /// its wire's display colour (owner, 2026-10-27: view notes in the
+    /// object's colour, no box); set by [`ResultCase::colour_from`].
+    pub colour: [u8; 3],
     /// The span's wire at the finding's wind, when the case as drawn does
     /// not show it (empty until solved, or when not needed).
     pub wires: Vec<Wire>,
@@ -80,8 +84,23 @@ impl ResultCase {
             case,
             says,
             at,
+            colour: [255, 255, 255],
             wires: Vec::new(),
             pending: None,
+        }
+    }
+
+    /// Takes its colour from its object as `line` draws it (Line ›
+    /// Sections › Display options, `coloring`): the jumper's, else the
+    /// first section's.
+    pub fn colour_from(&mut self, line: &ohl_line::Line, coloring: crate::wire_style::Coloring) {
+        let styles = crate::wire_style::Styles::new(line, coloring);
+        let style = match &self.selection {
+            Selection::Jumper(id) => Some(styles.jumper(id)),
+            _ => self.sections.first().map(|s| styles.section(s)),
+        };
+        if let Some(s) = style {
+            self.colour = s.color;
         }
     }
 

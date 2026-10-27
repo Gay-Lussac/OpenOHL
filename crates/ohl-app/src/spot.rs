@@ -186,11 +186,15 @@ impl SpotWindow {
         }
         self.poll();
         let mut open = true;
-        egui::Window::new("Spot structures")
-            .open(&mut open)
-            .default_width(680.0)
-            .default_height(600.0)
-            .show(ctx, |ui| {
+        // One design with the check windows (owner, 2026-10-27: "keep it
+        // standard too"): floating with 📌, the shared spacing.
+        help::window(
+            ctx,
+            crate::dockable::Panel::Spot,
+            crate::dockable::Panel::Spot.name(),
+            [680.0, 600.0],
+            &mut open,
+            |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
                 help::body(ui, "spot-window", |ui| self.ui(ui, model));
@@ -211,7 +215,8 @@ impl SpotWindow {
                         self.start(model, ui.ctx());
                     }
                 });
-            });
+            },
+        );
         self.open = open;
         if !open && let Some((token, _)) = &self.running {
             token.cancel();
@@ -230,6 +235,7 @@ impl SpotWindow {
         );
         egui::Grid::new("spot-inputs")
             .num_columns(2)
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 ui.label("Route");
                 egui::ComboBox::from_id_salt("spot-route")
@@ -352,36 +358,41 @@ impl SpotWindow {
                     450.0,
                     egui::ScrollArea::vertical(),
                     |ui| {
-                        egui::Grid::new("spot-result").striped(true).show(ui, |ui| {
-                            for h in [
-                                "#",
-                                "station m",
-                                "type",
-                                "ext",
-                                "angle °",
-                                "span m",
-                                "clearance m",
-                            ] {
-                                ui.strong(h);
-                            }
-                            ui.end_row();
-                            for (k, p) in s.structures.iter().enumerate() {
-                                let c = &rp.problem.candidates[p.candidate];
-                                let span = s.spans.get(k);
-                                ui.label(format!("{}", k + 1));
-                                ui.label(format!("{:.1}", p.station));
-                                ui.label(&c.structure_type);
-                                ui.label(c.extension.as_deref().unwrap_or(""));
-                                ui.label(format!("{:.1}", p.angle_deg));
-                                ui.label(
-                                    span.map_or(String::new(), |x| format!("{:.1}", x.length)),
-                                );
-                                ui.label(
-                                    span.map_or(String::new(), |x| format!("{:.2}", x.clearance)),
-                                );
+                        egui::Grid::new("spot-result")
+                            .striped(true)
+                            .spacing(help::GRID_SPACING)
+                            .show(ui, |ui| {
+                                for h in [
+                                    "#",
+                                    "station m",
+                                    "type",
+                                    "ext",
+                                    "angle °",
+                                    "span m",
+                                    "clearance m",
+                                ] {
+                                    ui.strong(h);
+                                }
                                 ui.end_row();
-                            }
-                        });
+                                for (k, p) in s.structures.iter().enumerate() {
+                                    let c = &rp.problem.candidates[p.candidate];
+                                    let span = s.spans.get(k);
+                                    ui.label(format!("{}", k + 1));
+                                    ui.label(format!("{:.1}", p.station));
+                                    ui.label(&c.structure_type);
+                                    ui.label(c.extension.as_deref().unwrap_or(""));
+                                    ui.label(format!("{:.1}", p.angle_deg));
+                                    ui.label(
+                                        span.map_or(String::new(), |x| format!("{:.1}", x.length)),
+                                    );
+                                    ui.label(
+                                        span.map_or(String::new(), |x| {
+                                            format!("{:.2}", x.clearance)
+                                        }),
+                                    );
+                                    ui.end_row();
+                                }
+                            });
                     },
                 );
                 ui.strong(format!(

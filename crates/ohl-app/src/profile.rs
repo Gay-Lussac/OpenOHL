@@ -65,7 +65,7 @@ pub struct ProfileView {
     vegetation_along: Option<VegetationAlong>,
     /// counted up when another report is shown.
     vegetation_serial: u64,
-    /// The clearances below a requirement (the Clearances tab, the
+    /// The clearances below a requirement (the Clearances window, the
     /// Vertical and Radial clearances windows), as in the 3D view: (the
     /// end at the wire, the end at the target); a vertical one has the
     /// same x and y at both ends, so it is drawn vertical here too ...

@@ -262,7 +262,7 @@ pub fn dimmed32(c: egui::Color32, stale: bool) -> egui::Color32 {
 
 /// Every frame: the layers drawn from results (vegetation and danger
 /// trees with the isoclearance lines, the clearance violations of a
-/// clearance window or of the Clearances tab, the structures by usage)
+/// clearance window or of the Clearances window, the structures by usage)
 /// dimmed or marked while their result is out of date.
 pub fn frame(r: &mut crate::app::Ready) {
     use crate::scene::Layer;

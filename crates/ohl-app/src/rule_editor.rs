@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The Clearances tab's **rule editor**: the rules of the rule file chosen
+//! The Clearances window's **rule editor**: the rules of the rule file chosen
 //! (ground, LiDAR classes, the line's own wires, other lines), each
 //! distance set as one distance, a table by voltage or a base plus an
 //! amount per kV ([`crate::requirement_ui`]), rules added and removed;
@@ -283,7 +283,7 @@ impl PresetsWindow {
     }
 }
 
-/// The editor of the rule file chosen in the Clearances tab.
+/// The editor of the rule file chosen in the Clearances window.
 #[derive(Default)]
 pub struct RuleEditor {
     /// The file edited.
@@ -680,7 +680,7 @@ impl RuleEditor {
     }
 }
 
-/// The Clearances tab's editor of the rule file chosen.
+/// The Clearances window's editor of the rule file chosen.
 pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     let file = r
         .clearances
@@ -712,7 +712,7 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
             if e.file.is_none() {
                 ui.label("Choose a rule file above.");
             }
-            // Wrapped: the Clearances tab is narrow.
+            // Wrapped: the Clearances window is narrow.
             ui.horizontal_wrapped(|ui| {
                 ui.add_enabled_ui(editable && e.doc.is_some(), |ui| {
                     ui.menu_button("Add rule", |ui| {
@@ -797,12 +797,8 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
             }
             merge_ui(ui, e, &voltages);
             let mut remove = None;
-            egui::ScrollArea::vertical()
-                .id_salt("rule-editor-rules")
-                .max_height(260.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    // One block per rule (the Clearances tab is narrow).
+            crate::check_help::list(ui, "rule-editor-rules", 360.0, egui::ScrollArea::vertical().id_salt("rule-editor-rules").auto_shrink([false, true]), |ui| {
+                    // One block per rule (the Clearances window is narrow).
                     for (k, rule) in e.rules.iter_mut().enumerate() {
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
@@ -964,14 +960,17 @@ fn merge_ui(ui: &mut egui::Ui, e: &mut RuleEditor, voltages: &[f64]) {
             .small()
             .weak(),
         );
-        egui::ScrollArea::vertical()
-            .id_salt("rule-editor-merge-preview")
-            .max_height(120.0)
-            .show(ui, |ui| {
+        crate::check_help::list(
+            ui,
+            "rule-editor-merge-preview",
+            170.0,
+            egui::ScrollArea::vertical().id_salt("rule-editor-merge-preview"),
+            |ui| {
                 for line in merge_preview(&e.rules, &group, voltages) {
                     ui.label(egui::RichText::new(line).small());
                 }
-            });
+            },
+        );
         ui.horizontal(|ui| {
             if ui
                 .button("Merge")
@@ -1178,10 +1177,7 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
                 };
                 ui.strong(format!("{plugin}: {}", p.name));
                 crate::menu::message(ui, p.description.as_str(), None);
-                egui::ScrollArea::vertical()
-                    .id_salt("rule-preset-preview")
-                    .max_height(300.0)
-                    .show(ui, |ui| {
+                crate::check_help::list(ui, "rule-preset-preview", 420.0, egui::ScrollArea::vertical().id_salt("rule-preset-preview"), |ui| {
                         // Grouped by target; each rule with the cases it
                         // uses (the project's names).
                         let rules = shown.as_ref().unwrap_or(&p.rules);
@@ -1214,7 +1210,7 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
                         });
                     }
                     None => {
-                        ui.label("Choose a rule file in the Clearances tab first (or add one).");
+                        ui.label("Choose a rule file in the Clearances window first (or add one).");
                     }
                 }
             });

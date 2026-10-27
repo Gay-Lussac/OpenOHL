@@ -2169,7 +2169,7 @@ fn targets_ui(
 /// The routes and alignments checked (owner, 2026-10-27): a menu as the
 /// circuits', a route ticked with all of it, an alignment alone; none
 /// ticked: the whole line. Kept as the circuits are, in the rule file's
-/// `[check]` (and in the Clearances tab's settings). True when changed.
+/// `[check]` (and in the Clearances window's settings). True when changed.
 pub fn route_choice(
     ui: &mut egui::Ui,
     id: impl std::hash::Hash + std::fmt::Debug,
@@ -2249,7 +2249,7 @@ pub fn route_choice(
 
 /// The circuits checked: a menu of the line's circuits (none ticked:
 /// every one), kept in the rule file's `[check]` — the vertical and radial
-/// windows' and the Clearances tab's alike. True when changed.
+/// windows' and the Clearances window's alike. True when changed.
 pub fn circuit_choice(
     ui: &mut egui::Ui,
     id: impl std::hash::Hash + std::fmt::Debug,

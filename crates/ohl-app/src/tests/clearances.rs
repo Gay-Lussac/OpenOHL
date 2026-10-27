@@ -67,7 +67,7 @@ fn clearance_violations_of_the_shown_case() {
     assert!(crate::clearance::run(&input).is_err());
 }
 
-/// The Clearances tab finds the example rules next to the model; checks run
+/// The Clearances window finds the example rules next to the model; checks run
 /// on demand (Checks › Run checks), not at start; the violations are drawn.
 #[test]
 fn the_checks_menu_runs_the_clearance_check() {
@@ -116,7 +116,7 @@ fn the_checks_menu_runs_the_clearance_check() {
         "{:?}",
         rep.notes
     );
-    // Run, in the tab's footer.
+    // Run, in the window's footer (it opened).
     harness.get_by_label("Run");
 }
 
@@ -185,7 +185,13 @@ pub(super) fn open_clearance_window(harness: &mut Harness<'_, App>, item: &str) 
     harness.run();
     harness.get_by_label_contains("Ground clearances").hover();
     harness.run();
-    harness.get_by_label(item).click();
+    // The menu's (the Clearances window, when open, has the same buttons
+    // before it).
+    harness
+        .query_all_by_label(item)
+        .last()
+        .expect("the menu item")
+        .click();
     harness.run();
 }
 

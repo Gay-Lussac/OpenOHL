@@ -249,6 +249,8 @@ impl GroupsWindow {
             .open(&mut open)
             .default_width(460.0)
             .show(ctx, |ui| {
+                // The shared spacing (owner, 2026-10-27).
+                ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
                 ui.label(
                     egui::RichText::new(
                         "A group: a name, a description and a few weather cases, kept in the \
@@ -261,9 +263,7 @@ impl GroupsWindow {
                 if let Err(why) = model.can_edit() {
                     crate::menu::error_label(ui, format!("read-only: {why}"));
                 }
-                egui::ScrollArea::vertical()
-                    .max_height(480.0)
-                    .show(ui, |ui| {
+                crate::check_help::list(ui, "case-groups", 480.0, egui::ScrollArea::vertical(), |ui| {
                         for (k, g) in edit.iter_mut().enumerate() {
                             ui.push_id(k, |ui| {
                                 ui.horizontal(|ui| {

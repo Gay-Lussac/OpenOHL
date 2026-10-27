@@ -934,64 +934,62 @@ pub fn history_ui(ui: &mut egui::Ui, model: &Model) -> Option<(String, Op)> {
         .small()
         .weak(),
     );
-    egui::ScrollArea::vertical()
-        .max_height(480.0)
-        .show(ui, |ui| {
-            egui::Grid::new("history")
-                .striped(true)
-                .spacing([10.0, 3.0])
-                .show(ui, |ui| {
-                    for h in ["#", "time (UTC)", "user", "", "what", ""] {
-                        ui.strong(h);
-                    }
-                    ui.end_row();
-                    for e in log.iter().rev().take(1000) {
-                        ui.label(e.seq.to_string());
-                        ui.label(e.time.get(..19).unwrap_or(&e.time));
-                        ui.label(&e.user);
-                        ui.label(&e.kind);
-                        let what = e.note.clone().unwrap_or_else(|| {
-                            format!(
-                                "{} object(s): {}",
-                                e.objects.len(),
-                                e.objects
-                                    .iter()
-                                    .take(4)
-                                    .map(|(k, id)| format!("{} {id}", k.as_str()))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            )
-                        });
-                        let undone = e.undone_by.map(|b| format!(" (reversed by #{b})"));
-                        ui.label(format!("{what}{}", undone.unwrap_or_default()));
-                        ui.horizontal(|ui| {
-                            ui.add_enabled_ui(admin, |ui| {
-                                if e.undone_by.is_none()
-                                    && ui
-                                        .small_button("Reverse")
-                                        .on_hover_text("Undo this entry")
-                                        .clicked()
-                                {
-                                    out = Some((
-                                        format!("entry {} reversed", e.seq),
-                                        Op::Rollback { seq: e.seq },
-                                    ));
-                                }
-                                if ui
-                                    .small_button("Back to here")
-                                    .on_hover_text("The line as it was just after this entry")
+    crate::check_help::list(ui, "history", 480.0, egui::ScrollArea::vertical(), |ui| {
+        egui::Grid::new("history")
+            .striped(true)
+            .spacing(crate::check_help::GRID_SPACING)
+            .show(ui, |ui| {
+                for h in ["#", "time (UTC)", "user", "", "what", ""] {
+                    ui.strong(h);
+                }
+                ui.end_row();
+                for e in log.iter().rev().take(1000) {
+                    ui.label(e.seq.to_string());
+                    ui.label(e.time.get(..19).unwrap_or(&e.time));
+                    ui.label(&e.user);
+                    ui.label(&e.kind);
+                    let what = e.note.clone().unwrap_or_else(|| {
+                        format!(
+                            "{} object(s): {}",
+                            e.objects.len(),
+                            e.objects
+                                .iter()
+                                .take(4)
+                                .map(|(k, id)| format!("{} {id}", k.as_str()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    });
+                    let undone = e.undone_by.map(|b| format!(" (reversed by #{b})"));
+                    ui.label(format!("{what}{}", undone.unwrap_or_default()));
+                    ui.horizontal(|ui| {
+                        ui.add_enabled_ui(admin, |ui| {
+                            if e.undone_by.is_none()
+                                && ui
+                                    .small_button("Reverse")
+                                    .on_hover_text("Undo this entry")
                                     .clicked()
-                                {
-                                    out = Some((
-                                        format!("back to entry {}", e.seq),
-                                        Op::RollbackAfter { seq: e.seq },
-                                    ));
-                                }
-                            });
+                            {
+                                out = Some((
+                                    format!("entry {} reversed", e.seq),
+                                    Op::Rollback { seq: e.seq },
+                                ));
+                            }
+                            if ui
+                                .small_button("Back to here")
+                                .on_hover_text("The line as it was just after this entry")
+                                .clicked()
+                            {
+                                out = Some((
+                                    format!("back to entry {}", e.seq),
+                                    Op::RollbackAfter { seq: e.seq },
+                                ));
+                            }
                         });
-                        ui.end_row();
-                    }
-                });
-        });
+                    });
+                    ui.end_row();
+                }
+            });
+    });
     out
 }

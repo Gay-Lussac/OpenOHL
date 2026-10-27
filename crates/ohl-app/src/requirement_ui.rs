@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! A distance rule, as the user sets it wherever one is edited (the
-//! Clearances tab's rule editor, the Vertical / Radial clearances windows'
+//! Clearances window's rule editor, the Vertical / Radial clearances windows'
 //! rule tables, the vegetation panel's clearance
 //! and allowance, the safety-volume distance): one shared component.
 //!
@@ -45,7 +45,7 @@ const FORM_TIPS: [&str; 3] = [
     "A base distance plus an amount per kV above a voltage: base + per kV × (U − above)",
 ];
 
-/// A table row's remove button (narrow: the Clearances tab).
+/// A table row's remove button (narrow: the Clearances window).
 pub const REMOVE: &str = "×";
 
 /// The toggle that shows a voltage filter beside a distance that
@@ -454,7 +454,7 @@ fn parts(
     let mut changed = false;
     let wid = ui.make_persistent_id(("requirement", id));
     // The form selector: three buttons, the form in use lit.
-    // Wrapped: the Clearances tab is narrow.
+    // Wrapped: the Clearances window is narrow.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         framed_fields(ui);

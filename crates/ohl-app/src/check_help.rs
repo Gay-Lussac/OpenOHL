@@ -191,7 +191,7 @@ pub fn body<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R
     // scrolled page, or taller than the screen).
     let room = below.height().min(ui.clip_rect().bottom() - below.top());
     let height = (room - footer).max(MIN_BODY);
-    // Across too: a narrow docked page (the Clearances tab) scrolls
+    // Across too: a narrow window or docked tab (the Clearances window) scrolls
     // sideways rather than cutting its rows.
     egui::ScrollArea::both()
         .id_salt((key, "body"))

@@ -92,7 +92,7 @@ to its outer surface (bundle radius and conductor radius, iced in a case
 with ice, included), and how far it goes beyond the right of way (`--left`,
 `--right` for different widths each side). Clearances of the blown-out wires
 to buildings, trees and other wires are the radial clearances of a rule file
-run in the windy case (`ohl line --rules`, the Clearances tab).
+run in the windy case (`ohl line --rules`, the Clearances window).
 
 ## Phase to phase and circuit to circuit
 

@@ -647,6 +647,8 @@ pub fn window(ctx: &egui::Context, r: &mut crate::app::Ready, plugins: &crate::p
         .default_width(980.0)
         .default_height(620.0)
         .show(ctx, |ui| {
+            // The shared spacing (owner, 2026-10-27).
+            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
             let w = &mut r.preset_editor;
             ui.label(
                 egui::RichText::new(
@@ -783,14 +785,16 @@ fn presets_tab(
                 }
             };
             let find = w.filter.to_lowercase();
-            egui::ScrollArea::vertical()
-                .id_salt("preset-values")
-                .max_height(440.0)
-                .show(ui, |ui| {
+            crate::check_help::list(
+                ui,
+                "preset-values",
+                440.0,
+                egui::ScrollArea::vertical().id_salt("preset-values"),
+                |ui| {
                     egui::Grid::new("preset-values-grid")
                         .striped(true)
                         .num_columns(4)
-                        .spacing([10.0, 4.0])
+                        .spacing(crate::check_help::GRID_SPACING)
                         .show(ui, |ui| {
                             ui.strong("value");
                             ui.strong("in this project");
@@ -895,7 +899,8 @@ fn presets_tab(
                                 ui.end_row();
                             }
                         });
-                });
+                },
+            );
         });
     });
     changed
@@ -941,14 +946,16 @@ fn changes_tab(
         }
     });
     let mut remove = None;
-    egui::ScrollArea::vertical()
-        .id_salt("preset-changes")
-        .max_height(460.0)
-        .show(ui, |ui| {
+    crate::check_help::list(
+        ui,
+        "preset-changes",
+        460.0,
+        egui::ScrollArea::vertical().id_salt("preset-changes"),
+        |ui| {
             egui::Grid::new("preset-changes-grid")
                 .striped(true)
                 .num_columns(7)
-                .spacing([10.0, 4.0])
+                .spacing(crate::check_help::GRID_SPACING)
                 .show(ui, |ui| {
                     for h in [
                         "preset",
@@ -1004,7 +1011,8 @@ fn changes_tab(
                         ui.end_row();
                     }
                 });
-        });
+        },
+    );
     if let Some(k) = remove {
         edits.remove(k);
         changed = true;

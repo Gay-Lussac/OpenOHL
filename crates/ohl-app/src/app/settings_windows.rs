@@ -178,14 +178,19 @@ pub(super) fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
         .resizable(false)
         .default_width(560.0)
         .show(ctx, |ui| {
+            // The shared spacing (owner, 2026-10-27).
+            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
             ui.label(
                 "What new objects start with in this project, and what the calculations take \
                  where an object, a cable, a weather or ambient case or a rule file gives no \
                  value of its own. Display settings stay yours (View, Display options).",
             );
-            egui::ScrollArea::vertical()
-                .max_height(420.0)
-                .show(ui, |ui| {
+            crate::check_help::list(
+                ui,
+                "default-values",
+                420.0,
+                egui::ScrollArea::vertical(),
+                |ui| {
                     egui::Grid::new("defaults")
                         .num_columns(3)
                         .striped(true)
@@ -225,7 +230,8 @@ pub(super) fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
                                 ui.end_row();
                             }
                         });
-                });
+                },
+            );
             if ui
                 .add_enabled(!draft.is_default(), egui::Button::new("Program's values"))
                 .on_hover_text("Back to the values OHL-Design starts with")
@@ -646,7 +652,10 @@ pub(super) fn history_window(ctx: &egui::Context, r: &mut Ready) {
     egui::Window::new("History")
         .open(&mut open)
         .default_width(760.0)
-        .show(ctx, |ui| op = crate::remote::history_ui(ui, &r.model));
+        .show(ctx, |ui| {
+            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
+            op = crate::remote::history_ui(ui, &r.model)
+        });
     r.history_open = open;
     if let Some((what, op)) = op {
         r.project_op(&what, op);
@@ -790,6 +799,8 @@ pub(super) fn survey_window(ctx: &egui::Context, r: &mut Ready) {
         .resizable([true, false])
         .default_width(520.0)
         .show(ctx, |ui| {
+            // The shared spacing (owner, 2026-10-27).
+            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
             ui.horizontal(|ui| {
                 ui.label("Classes shown:");
                 if ui.button("All").clicked() {
@@ -862,10 +873,12 @@ pub(super) fn survey_window(ctx: &egui::Context, r: &mut Ready) {
             // of classes).
             // A fixed height: sized from the space left, the window grew a
             // little every frame until it filled the screen.
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, true])
-                .max_height(SURVEY_LIST_HEIGHT)
-                .show(ui, |ui| {
+            crate::check_help::list(
+                ui,
+                "survey-display-classes",
+                SURVEY_LIST_HEIGHT,
+                egui::ScrollArea::vertical().auto_shrink([false, true]),
+                |ui| {
                     for (code, name, roles, loaded, total) in &classes {
                         let text = format!("{code} {name}");
                         if !f.is_empty()
@@ -928,7 +941,8 @@ pub(super) fn survey_window(ctx: &egui::Context, r: &mut Ready) {
                             changed = true;
                         }
                     }
-                });
+                },
+            );
             ui.separator();
             // How many points: near the camera; farther away the level of
             // detail and the render distance thin them further.
