@@ -32,6 +32,7 @@ ohl-sections.workspace = true
 ohl-terrain.workspace = true
 ohl-clearance.workspace = true
 ohl-thermal.workspace = true
+ohl-electrical.workspace = true
 ohl-lidar.workspace = true
 ohl-pointcloud.workspace = true
 ohl-session.workspace = true

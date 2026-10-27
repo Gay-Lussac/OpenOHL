@@ -14,6 +14,7 @@
 //!   coefficient.
 //! - [`matrices`]: the primitive matrices, bundles as equivalent wires,
 //!   Kron's reduction of the earth wires, symmetrical components.
+//! - [`report`]: the results as table rows and CSV.
 //! - [`parameters`]: per span and along the line per circuit — phase
 //!   matrices, sequence values, coupling between circuits.
 //!
@@ -32,6 +33,7 @@ pub mod cross_section;
 pub mod earth;
 pub mod matrices;
 pub mod parameters;
+pub mod report;
 
 use ohl_line::Line;
 use ohl_line::solve::SectionShape;
