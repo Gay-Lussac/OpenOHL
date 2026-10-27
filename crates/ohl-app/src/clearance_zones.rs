@@ -38,6 +38,8 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+
+use crate::check_ui;
 use ohl_clearance::rules::Requirement;
 use ohl_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneFinding, ZoneRule};
 use ohl_clearance::{CheckScope, RuleSet, WindSteps};
@@ -146,6 +148,9 @@ pub struct ZoneWindow {
     /// The circuits checked and the calculation method (the search
     /// distance is the zone's).
     pub check: CheckScope,
+    /// The circuits and routes of [`ZoneWindow::check`] as the scope
+    /// picker shows them.
+    scope: check_ui::Scope,
     /// The project's rule file of this window (`None`: not set yet).
     pub file: Option<PathBuf>,
     loaded: bool,
@@ -221,6 +226,7 @@ impl ZoneWindow {
             wind: WindSteps::default(),
             rules: Vec::new(),
             check: CheckScope::default(),
+            scope: check_ui::Scope::default(),
             file: None,
             loaded: false,
             dirty: false,
@@ -363,6 +369,9 @@ impl ZoneWindow {
         if self.rules.is_empty() {
             return Some("no rule: add one first".into());
         }
+        if self.scope.circuits.as_ref().is_some_and(|c| c.is_empty()) {
+            return Some("no circuit ticked (2 Scope)".into());
+        }
         let why: Vec<String> = self.rules.iter().filter_map(not_ready).collect();
         (!why.is_empty()).then(|| why.join("; "))
     }
@@ -399,6 +408,7 @@ impl ZoneWindow {
             search_distance: None,
             ..check
         };
+        self.scope = check_ui::Scope::of_check(&self.check);
         self.status = (!notes.is_empty()).then(|| (notes.join("\n"), false));
     }
 
@@ -824,42 +834,66 @@ impl ZoneWindow {
         };
         let mut guide = None;
         let footer = self.title();
-        help::window(ctx, panel, self.title(), [820.0, 760.0], &mut open, |ui| {
-            // Scrolled: with the distance editors in place a window may be
-            // taller than the screen; it stays closable. Run in the footer
-            // at the bottom left, always visible (owner, 2026-10-21).
-            help::body(ui, footer, |ui| {
-                {
-                    self.help(ui);
-                    // Out of date: said at the top, Run again beside.
-                    // Run again as Run: greyed alike.
-                    let can_run = self.running.is_none() && self.why_not_run().is_none();
-                    if let Some(what) = self.out_of_date(model)
-                        && crate::revision::banner(ui, &what, can_run)
-                    {
-                        run = true;
-                    }
-                    // The results first, the settings below.
-                    guide = guide.or(help::heading(ui, "Results", "clearances-results"));
-                    self.results_help(ui);
-                    if let Some(p) = self.results_ui(ui, model) {
-                        out.go = Some((p.selection(), p.finding.wire));
-                        out.picked = Some(p);
-                    }
-                    ui.separator();
-                    guide = guide.or(help::heading(
+        let why = self.why_not_run();
+        let findings = match &self.report {
+            Some(Ok(r)) => Some(r.zone.findings.len()),
+            _ => None,
+        };
+        help::window(ctx, panel, self.title(), [860.0, 760.0], &mut open, |ui| {
+            // Out of date: said at the top, Run again beside (greyed as
+            // Run).
+            let can_run = self.running.is_none() && why.is_none();
+            if let Some(what) = self.out_of_date(model)
+                && crate::revision::banner(ui, &what, can_run)
+            {
+                run = true;
+            }
+            // Two tabs (owner, 2026-10-27): the setup scrolls, the
+            // results fill theirs; Run in the footer, always visible.
+            let tab = check_ui::tabs(
+                ui,
+                footer,
+                findings,
+                self.generation,
+                why.is_some() && self.running.is_none(),
+            );
+            match tab {
+                check_ui::Tab::Setup => help::body(ui, footer, |ui| {
+                    guide = guide.or(check_ui::section(
                         ui,
-                        "Rules and presets",
-                        "clearances-rules-and-presets",
+                        1,
+                        "What it checks",
+                        Some("clearances-results"),
+                    ));
+                    self.help(ui);
+                    let measure = self.zone.measure;
+                    check_ui::how_computed(ui, footer, self.computed_text(), |ui| match measure {
+                        Measure::Vertical => help::vertical_zone(ui, 30.0, 10.0),
+                        Measure::Radial => help::radial_zone(ui),
+                    });
+                    ui.separator();
+                    guide = guide.or(check_ui::section(
+                        ui,
+                        2,
+                        "Scope",
+                        Some("clearances-what-is-solved"),
+                    ));
+                    self.check_ui(ui, model);
+                    ui.separator();
+                    guide = guide.or(check_ui::section(
+                        ui,
+                        3,
+                        "Rules",
+                        Some("clearances-rules-and-presets"),
                     ));
                     self.plugin_presets_ui(ui, model, presets);
                     if let Some(chosen) = self.rules_ui(ui, model) {
                         preset = Some(chosen);
                     }
                     ui.separator();
+                    check_ui::section(ui, 4, "Settings", None);
                     guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
                     self.wind_ui(ui, model);
-                    ui.separator();
                     guide = guide.or(help::heading(
                         ui,
                         match self.zone.measure {
@@ -869,26 +903,15 @@ impl ZoneWindow {
                         "clearances-zone",
                     ));
                     self.zone_ui(ui);
-                    ui.separator();
-                    guide = guide.or(help::heading(
-                        ui,
-                        "What is solved",
-                        "clearances-what-is-solved",
-                    ));
-                    self.check_ui(ui, model);
-                    // The structure and section overrides of the cases
-                    // (in the body here: the footer stays one line).
-                    ui.horizontal_wrapped(|ui| {
-                        let mut o = self.overrides();
-                        if o.ui(ui) {
-                            // Kept in the rule file's [check].
-                            self.check.structure_override = o.structures;
-                            self.check.section_override = o.sections;
-                            self.dirty = true;
-                        }
-                    });
-                }
-            });
+                }),
+                check_ui::Tab::Results => check_ui::results_area(ui, footer, |ui| {
+                    guide = guide.or(help::heading(ui, "Results", "clearances-results"));
+                    if let Some(p) = self.results_ui(ui, model) {
+                        out.go = Some((p.selection(), p.finding.wire));
+                        out.picked = Some(p);
+                    }
+                }),
+            }
             self.update_estimate(model);
             run |= help::footer(ui, footer, |ui| self.run_ui(ui));
         });
@@ -1128,12 +1151,17 @@ impl ZoneWindow {
         });
     }
 
-    /// The circuits checked and the calculation method.
+    /// The scope: the circuits and routes checked (kept in the rule
+    /// file's `[check]`), the calculation method.
     fn check_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        if check_ui::ScopePicker::new(self.title(), &model.line)
+            .wires(&mut self.scope, false)
+            .ui(ui)
+        {
+            self.scope.write_check(&mut self.check);
+            self.dirty = true;
+        }
         ui.horizontal(|ui| {
-            if circuit_choice(ui, (self.title(), "circuits"), &model.line, &mut self.check) {
-                self.dirty = true;
-            }
             ui.label("Solved by");
             let name = |m: Option<Method>| match m {
                 None => "each section's calculation",
@@ -1155,19 +1183,48 @@ impl ZoneWindow {
                      cable condition)",
                 );
         });
-        if route_choice(ui, (self.title(), "routes"), &model.line, &mut self.check) {
-            self.dirty = true;
-        }
+        // The structure and section overrides of the cases (kept in the
+        // rule file's [check]).
+        ui.horizontal_wrapped(|ui| {
+            let mut o = self.overrides();
+            if o.ui(ui) {
+                self.check.structure_override = o.structures;
+                self.check.section_override = o.sections;
+                self.dirty = true;
+            }
+        });
         help::explain(
             ui,
-            "Circuits: those checked (none ticked: every one). Routes: the routes and alignments \
-             checked (none ticked: the whole line). Solved by: each section's own \
-             calculation, or one method for all.",
+            "Circuits: those checked. Routes: the routes and alignments checked (none ticked: \
+             the whole line). Solved by: each section's own calculation, or one method for all.",
             "Only the sections of the circuits ticked, on the routes and alignments ticked, are \
              solved and checked (a section with a structure on one of them, whole). Finite elements \
              solve each section with its strings swinging; ruling span is the classic \
-             approximation; each section keeps its cable condition (initial, final).",
+             approximation; each section keeps its cable condition (initial, final). The rules' \
+             weather cases are set per rule (3 Rules).",
         );
+    }
+
+    /// *How it is computed*, in short.
+    fn computed_text(&self) -> &'static str {
+        match self.zone.measure {
+            Measure::Vertical => {
+                "Each span is solved in every wind position of its rules' weather cases (the \
+                 steps, the swing arc or the case's own pressure, 4 Settings). Under the wire, \
+                 within the zone's width on each side and in slices of its depth along the line, \
+                 the ground and the LiDAR points of the rules' classes are compared with the \
+                 wire's lowest point over the slice; the clearance is to the conductor's surface \
+                 and is compared with the rule's distance at the wire's voltage."
+            }
+            Measure::Radial => {
+                "Each span is solved in every wind position of its rules' weather cases (the \
+                 steps, the swing arc or the case's own pressure, 4 Settings). The direct 3D \
+                 distance from every subconductor's surface to the ground and to the LiDAR points \
+                 of the rules' classes is compared with the rule's distance at the wire's \
+                 voltage; the swing arc covers every angle between the blowouts, widened by the \
+                 band margin."
+            }
+        }
     }
 
     /// The rules; a preset chosen (rule file, weather case file).
@@ -1501,13 +1558,17 @@ impl ZoneWindow {
 
     fn results_ui(&self, ui: &mut egui::Ui, model: &Model) -> Option<Picked> {
         let report = match &self.report {
-            None => return None,
+            None => {
+                ui.label(egui::RichText::new("No run yet: Run at the bottom.").weak());
+                return None;
+            }
             Some(Err(e)) => {
                 crate::menu::error_label(ui, e.as_str());
                 return None;
             }
             Some(Ok(r)) => r,
         };
+        self.results_help(ui);
         let n = report.zone.findings.len();
         let mut go: Option<&ZoneFinding> = None;
         if let Some(g) = result_banner(ui, report) {
@@ -1525,6 +1586,107 @@ impl ZoneWindow {
             report.zone.points
         );
         ui.label(egui::RichText::new(head).small().weak());
+        // Every finding, only those in view drawn (2026-10-26); sorted,
+        // filtered and grouped by the user (2026-10-27).
+        let findings = &report.zone.findings;
+        let rows: Vec<check_ui::Row> = findings
+            .iter()
+            .map(|f| {
+                let span = match finding_span(f) {
+                    Selection::Span { section, span } => check_ui::Cell::span(&section, span),
+                    other => check_ui::Cell::text(other.describe()),
+                };
+                // A screen: the band b and the distance in plan, said as
+                // such (owner, 2026-10-27).
+                let plan = (f.wire[0] - f.target[0]).hypot(f.wire[1] - f.target[1]);
+                let (required, found) = match f.band {
+                    Some(b) => (
+                        check_ui::Cell::sorted(format!("b {b:.2} in plan"), b),
+                        check_ui::Cell::sorted(format!("{plan:.2} in plan"), plan),
+                    ),
+                    None => (
+                        check_ui::Cell::num(Some(f.required), 2),
+                        check_ui::Cell::num(Some(f.distance), 2),
+                    ),
+                };
+                let target = match f.class {
+                    None => "ground".into(),
+                    Some(c) => format!(
+                        "class {c}{}",
+                        model
+                            .scheme
+                            .class(c)
+                            .map_or(String::new(), |d| format!(" {}", d.name))
+                    ),
+                };
+                let what = match (f.class, f.count) {
+                    (None, 1) => "wire piece",
+                    (None, _) => "wire pieces",
+                    (Some(_), 1) => "point",
+                    (Some(_), _) => "points",
+                };
+                check_ui::Row::new(
+                    vec![
+                        span,
+                        check_ui::Cell::text(&report.rules[f.rule].name),
+                        required,
+                        found.bad(true),
+                        check_ui::Cell::sorted(
+                            format!("{:+.2}", f.distance - f.required),
+                            f.distance - f.required,
+                        )
+                        .bad(true),
+                        // The case said with the wind (owner, 2026-10-27);
+                        // clicked, the span is drawn in them.
+                        check_ui::Cell::text(f.position(&report.states)),
+                        check_ui::Cell::text(target),
+                        check_ui::Cell::sorted(format!("{} {what}", f.count), f.count as f64),
+                    ],
+                    true,
+                )
+            })
+            .collect();
+        let mut notes: Vec<String> = Vec::new();
+        for (k, low) in report.zone.lowest.iter().enumerate() {
+            let name = &report.rules[k].name;
+            notes.push(match low {
+                Some(f) => format!(
+                    "{name}: lowest {:.2} m ({}, {})",
+                    f.distance,
+                    finding_span(f).describe(),
+                    f.position(&report.states)
+                ),
+                None => format!("{name}: nothing within reach"),
+            });
+        }
+        notes.extend(report.zone.notes.iter().cloned());
+        notes.push(crate::app::SURFACE_NOTE.to_owned());
+        notes.extend(report.failed.iter().map(|f| format!("not solved: {f}")));
+        let id = format!("{}-results", self.title());
+        let csv = format!("{}.csv", self.title().to_lowercase().replace(' ', "-"));
+        let clicked = check_ui::ResultTable::new(
+            &id,
+            vec![
+                check_ui::Col::text("Span"),
+                check_ui::Col::text("Rule"),
+                check_ui::Col::num("Required [m]"),
+                check_ui::Col::num("To surface [m]")
+                    .tip("The clearance found, to the conductor's surface"),
+                check_ui::Col::num("Margin [m]").tip("Found less required"),
+                check_ui::Col::text("Case and wind"),
+                check_ui::Col::text("Target"),
+                check_ui::Col::num("Too close"),
+            ],
+        )
+        .rows(rows)
+        .group_by(&[1, 0, 6])
+        .csv(&csv)
+        .below(check_ui::FOLDS_BELOW)
+        .ui(ui);
+        if let Some(k) = clicked {
+            go = Some(&findings[k]);
+        }
+        check_ui::notes_fold(ui, &id, &notes);
         // Where the time went, measured (owner, 2026-10-27).
         egui::CollapsingHeader::new(
             egui::RichText::new(format!(
@@ -1539,148 +1701,8 @@ impl ZoneWindow {
                 ui.label(egui::RichText::new(l).small().weak());
             }
         });
-        let mut notes: Vec<String> = Vec::new();
-        for (k, low) in report.zone.lowest.iter().enumerate() {
-            let name = &report.rules[k].name;
-            notes.push(match low {
-                Some(f) => format!(
-                    "{name}: lowest {:.2} m ({} span {}, {})",
-                    f.distance,
-                    f.section,
-                    f.span + 1,
-                    f.position(&report.states)
-                ),
-                None => format!("{name}: nothing within reach"),
-            });
-        }
-        notes.extend(report.zone.notes.iter().cloned());
-        notes.push(crate::app::SURFACE_NOTE.to_owned());
-        notes.extend(report.failed.iter().map(|f| format!("not solved: {f}")));
-        crate::menu::message(
-            ui,
-            egui::RichText::new(notes.join("\n")).small().weak(),
-            None,
-        );
-        if n == 0 {
-            return picked(go);
-        }
-        help::list(
-            ui,
-            (self.title(), "results"),
-            help::LIST_HEIGHT,
-            egui::ScrollArea::vertical()
-                .id_salt((self.title(), "results"))
-                .auto_shrink([false, true]),
-            |ui| {
-                // Every finding, only those in view drawn (2026-10-26).
-                let findings = &report.zone.findings;
-                let mut table = crate::rows_in_view::Table::new(ui, "result-grid", 7)
-                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
-                table.header_cells(ui, |c| {
-                    for (k, h) in [
-                        "Span",
-                        "Rule",
-                        "Required [m]",
-                        "To surface [m]",
-                        "Case and wind",
-                        "Target",
-                        "Too close",
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    {
-                        if (2..4).contains(&k) {
-                            c.cell(|ui| num(ui, |ui| ui.strong(h)));
-                        } else {
-                            c.cell(|ui| ui.strong(h));
-                        }
-                    }
-                });
-                table.rows(ui, findings.len(), None, |c, i| {
-                    let f = &findings[i];
-                    let span = match f.section.strip_prefix("jumper:") {
-                        Some(j) => Selection::Jumper(j.to_owned()),
-                        None => Selection::Span {
-                            section: f.section.clone(),
-                            span: f.span,
-                        },
-                    };
-                    // A click anywhere on the row: the views go to it
-                    // (owner: OHL-Design UI review).
-                    let tip = "Select the span and bring the views to it";
-                    let cell = |ui: &mut egui::Ui, t: egui::RichText| {
-                        ui.add(egui::Label::new(t).sense(egui::Sense::click()))
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(tip)
-                            .clicked()
-                    };
-                    let mut clicked =
-                        c.cell(|ui| ui.link(span.describe()).on_hover_text(tip).clicked());
-                    clicked |=
-                        c.cell(|ui| cell(ui, egui::RichText::new(&report.rules[f.rule].name)));
-                    // A screen: the band b and the distance in plan, said
-                    // as such (owner, 2026-10-27).
-                    let plan = (f.wire[0] - f.target[0]).hypot(f.wire[1] - f.target[1]);
-                    clicked |= c.cell(|ui| {
-                        num(ui, |ui| match f.band {
-                            Some(b) => cell(ui, egui::RichText::new(format!("b {b:.2} in plan"))),
-                            None => cell(ui, egui::RichText::new(format!("{:.2}", f.required))),
-                        })
-                    });
-                    clicked |= c.cell(|ui| {
-                        num(ui, |ui| {
-                            cell(
-                                ui,
-                                egui::RichText::new(match f.band {
-                                    Some(_) => format!("{plan:.2} in plan"),
-                                    None => format!("{:.2}", f.distance),
-                                })
-                                .color(ui.visuals().error_fg_color),
-                            )
-                        })
-                    });
-                    // The case said with the wind (owner, 2026-10-27);
-                    // clicked, the span is drawn in them.
-                    clicked |=
-                        c.cell(|ui| cell(ui, egui::RichText::new(f.position(&report.states))));
-                    if clicked {
-                        go = Some(f);
-                    }
-                    c.cell(|ui| {
-                        ui.label(match f.class {
-                            None => "ground".into(),
-                            Some(c) => format!(
-                                "class {c}{}",
-                                model
-                                    .scheme
-                                    .class(c)
-                                    .map_or(String::new(), |d| format!(" {}", d.name))
-                            ),
-                        })
-                    });
-                    c.cell(|ui| {
-                        ui.label(format!(
-                            "{} {}",
-                            f.count,
-                            match (f.class, f.count) {
-                                (None, 1) => "wire piece",
-                                (None, _) => "wire pieces",
-                                (Some(_), 1) => "point",
-                                (Some(_), _) => "points",
-                            }
-                        ))
-                    });
-                });
-            },
-        );
         picked(go)
     }
-}
-
-/// `add` right-aligned in its cell (a number column of a grid).
-fn num<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add)
-        .inner
 }
 
 /// The span a finding is on (a jumper's: the jumper).
@@ -1706,11 +1728,6 @@ fn result_banner<'a>(ui: &mut egui::Ui, report: &'a Report) -> Option<&'a ZoneFi
         .chain(report.zone.lowest.iter().flatten())
         .min_by(|a, b| (a.distance - a.required).total_cmp(&(b.distance - b.required)));
     let failing = !report.zone.findings.is_empty();
-    let color = if failing {
-        ui.visuals().error_fg_color
-    } else {
-        crate::menu::ok_color(ui)
-    };
     let text = match worst {
         Some(f) => {
             let margin = f.distance - f.required;
@@ -1740,24 +1757,7 @@ fn result_banner<'a>(ui: &mut egui::Ui, report: &'a Report) -> Option<&'a ZoneFi
         None if failing => "✖ Spans below a rule".to_owned(),
         None => "✔ Every span clear (nothing within reach of the rules)".to_owned(),
     };
-    let r = egui::Frame::group(ui.style())
-        .stroke(egui::Stroke::new(1.5, color))
-        .fill(color.gamma_multiply(0.12))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.add(
-                egui::Label::new(egui::RichText::new(&text).strong().color(color))
-                    .sense(egui::Sense::click()),
-            )
-        })
-        .inner;
-    let r = match worst {
-        Some(_) => r
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text("Bring the views to it"),
-        None => r,
-    };
-    if r.clicked() {
+    if check_ui::verdict(ui, failing, &text, worst.is_some()) {
         return worst;
     }
     None
@@ -2158,150 +2158,6 @@ fn targets_ui(
                                 changed = true;
                             }
                         });
-                    }
-                },
-            );
-        });
-    });
-    changed
-}
-
-/// The routes and alignments checked (owner, 2026-10-27): a menu as the
-/// circuits', a route ticked with all of it, an alignment alone; none
-/// ticked: the whole line. Kept as the circuits are, in the rule file's
-/// `[check]` (and in the Clearances window's settings). True when changed.
-pub fn route_choice(
-    ui: &mut egui::Ui,
-    id: impl std::hash::Hash + std::fmt::Debug,
-    line: &ohl_line::Line,
-    check: &mut CheckScope,
-) -> bool {
-    if line.routes.is_empty() && line.alignments.is_empty() {
-        return false;
-    }
-    let mut changed = false;
-    let name = |id: &str, name: &str| {
-        if name.is_empty() || name == id {
-            id.to_owned()
-        } else {
-            format!("{name} ({id})")
-        }
-    };
-    ui.horizontal(|ui| {
-        ui.label("Routes");
-        let title = match (check.routes.len(), check.alignments.len()) {
-            (0, 0) => "the whole line".to_owned(),
-            (1, 0) => format!("route {}", check.routes[0]),
-            (0, 1) => format!("alignment {}", check.alignments[0]),
-            (r, a) => format!("{r} route(s), {a} alignment(s)"),
-        };
-        ui.push_id(id, |ui| {
-            crate::menu::options_menu(ui, &title, |ui| {
-                ui.label(
-                    egui::RichText::new("None ticked: the whole line")
-                        .small()
-                        .weak(),
-                );
-                help::list(
-                    ui,
-                    "clearance-zones-list-3",
-                    help::LIST_HEIGHT,
-                    egui::ScrollArea::vertical(),
-                    |ui| {
-                        let toggle = |list: &mut Vec<String>, id: &str, on: bool| {
-                            if on {
-                                list.push(id.to_owned());
-                                list.sort();
-                                list.dedup();
-                            } else {
-                                list.retain(|x| x != id);
-                            }
-                        };
-                        for r in &line.routes {
-                            let mut on = check.routes.contains(&r.id);
-                            if ui.checkbox(&mut on, name(&r.id, &r.name)).changed() {
-                                toggle(&mut check.routes, &r.id, on);
-                                changed = true;
-                            }
-                            let whole = on;
-                            ui.indent(("alignments", &r.id), |ui| {
-                                for a in line.alignments.iter().filter(|a| a.route == r.id) {
-                                    let mut on = whole || check.alignments.contains(&a.id);
-                                    let label = format!("alignment {}", name(&a.id, &a.name));
-                                    if ui
-                                        .add_enabled(!whole, egui::Checkbox::new(&mut on, label))
-                                        .on_disabled_hover_text("The whole route is ticked")
-                                        .changed()
-                                    {
-                                        toggle(&mut check.alignments, &a.id, on);
-                                        changed = true;
-                                    }
-                                }
-                            });
-                        }
-                    },
-                );
-            });
-        });
-    });
-    changed
-}
-
-/// The circuits checked: a menu of the line's circuits (none ticked:
-/// every one), kept in the rule file's `[check]` — the vertical and radial
-/// windows' and the Clearances window's alike. True when changed.
-pub fn circuit_choice(
-    ui: &mut egui::Ui,
-    id: impl std::hash::Hash + std::fmt::Debug,
-    line: &ohl_line::Line,
-    check: &mut CheckScope,
-) -> bool {
-    let mut changed = false;
-    let mut names: Vec<String> = line
-        .sections
-        .iter()
-        .map(|s| s.circuit_name.clone())
-        .collect();
-    names.extend(check.circuits.iter().cloned());
-    names.sort();
-    names.dedup();
-    let shown = |n: &str| {
-        if n.is_empty() {
-            "(no circuit name)".to_owned()
-        } else {
-            n.to_owned()
-        }
-    };
-    ui.label("Circuits");
-    let title = match check.circuits.len() {
-        0 => "every circuit".to_owned(),
-        1 => shown(&check.circuits[0]),
-        n => format!("{n} circuits"),
-    };
-    ui.push_id(id, |ui| {
-        crate::menu::options_menu(ui, &title, |ui| {
-            ui.label(
-                egui::RichText::new("None ticked: every circuit")
-                    .small()
-                    .weak(),
-            );
-            help::list(
-                ui,
-                "clearance-zones-list-4",
-                help::LIST_HEIGHT,
-                egui::ScrollArea::vertical(),
-                |ui| {
-                    for n in &names {
-                        let mut on = check.circuits.contains(n);
-                        if ui.checkbox(&mut on, shown(n)).changed() {
-                            if on {
-                                check.circuits.push(n.clone());
-                                check.circuits.sort();
-                            } else {
-                                check.circuits.retain(|c| c != n);
-                            }
-                            changed = true;
-                        }
                     }
                 },
             );

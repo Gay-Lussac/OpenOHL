@@ -340,11 +340,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             .next()
             .is_some()
     );
-    for g in [
-        "Wind: user guide ↗",
-        "Zone: user guide ↗",
-        "Results: user guide ↗",
-    ] {
+    for g in ["Wind: user guide ↗", "Zone: user guide ↗"] {
         harness.get_by_label(g);
     }
     {

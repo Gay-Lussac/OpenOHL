@@ -184,14 +184,7 @@ const MIN_BODY: f32 = 80.0;
 pub fn body<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.spacing_mut().item_spacing = ITEM_SPACING;
     let key = footer_key(id);
-    let footer = ui
-        .data(|d| d.get_temp::<f32>(key))
-        .unwrap_or(ui.spacing().interact_size.y + 3.0 * ui.spacing().item_spacing.y + 6.0);
-    let below = ui.available_rect_before_wrap();
-    // The room left: the window's, or what is visible of it (docked in a
-    // scrolled page, or taller than the screen).
-    let room = below.height().min(ui.clip_rect().bottom() - below.top());
-    let height = (room - footer).max(MIN_BODY);
+    let height = room(ui, id);
     // Across too: a narrow window or docked tab (the Clearances window) scrolls
     // sideways rather than cutting its rows.
     egui::ScrollArea::both()
@@ -200,6 +193,20 @@ pub fn body<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R
         .max_height(height)
         .show(ui, add)
         .inner
+}
+
+/// The height a check window's body (or its Results tab,
+/// [`crate::check_ui::results_area`]) has above its [`footer`] (same
+/// `id`): the room left down to the footer, at least a few lines.
+pub fn room(ui: &egui::Ui, id: &str) -> f32 {
+    let footer = ui
+        .data(|d| d.get_temp::<f32>(footer_key(id)))
+        .unwrap_or(ui.spacing().interact_size.y + 3.0 * ui.spacing().item_spacing.y + 6.0);
+    let below = ui.available_rect_before_wrap();
+    // The room left: the window's, or what is visible of it (docked in a
+    // scrolled page, or taller than the screen).
+    let room = below.height().min(ui.clip_rect().bottom() - below.top());
+    (room - footer).max(MIN_BODY)
 }
 
 /// The Run footer of a check window, under its [`body`] (same `id`): a

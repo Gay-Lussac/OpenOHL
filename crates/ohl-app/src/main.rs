@@ -25,6 +25,7 @@ mod bom;
 mod case_groups;
 mod check_help;
 mod check_library;
+mod check_ui;
 mod chunks;
 mod circuit_join;
 mod class_colors;
