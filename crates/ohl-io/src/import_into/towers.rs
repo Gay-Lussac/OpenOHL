@@ -2,7 +2,9 @@
 //! as the project's — its id, position, orientation and type — and
 //! compared set by set, each set of the import added, left out, or (at
 //! another place than the project's set of that number) kept as the
-//! project's, taken from the import or added under a new number.
+//! project's, taken from the import or added under a new number; or (the
+//! default in Replace mode) taken as the imported tower, the project's
+//! sets it lacks added back where what the line keeps hangs on them.
 //!
 //! The sets are compared as the towers are in effect: each line resolved
 //! with its own library files (a set may live in the tower's type), the
@@ -12,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ohl_line::{InsulatorString, Line, Point, Structure, StructurePoint, WirePoint};
 use ohl_structures::{InsulatorLibrary, LibraryItem, StructureLibrary, StructureType};
+
+use super::Resolution;
 
 /// What is done with one set of a tower in both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,6 +91,10 @@ pub struct SharedSet {
     /// The imported set's number on the project's tower when added under
     /// a new number.
     pub new_set: Option<u32>,
+    /// A set only the project's has, of a tower taken from the import:
+    /// what still hangs on it (`section S4`, `jumper J2`), so it is kept
+    /// on the imported tower; none: it goes with the project's tower.
+    pub kept_for: Vec<String>,
 }
 
 impl SharedSet {
@@ -109,12 +117,16 @@ impl SharedSet {
     }
 }
 
-/// A tower in the project and in the import: kept once, as the
-/// project's, its sets settled one by one.
+/// A tower in the project and in the import: kept once — as the
+/// project's, its sets settled one by one, or as the imported one, the
+/// project's sets it lacks kept where what stays hangs on them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SharedTower {
-    /// `tower:<imported id>`.
+    /// `tower:<imported id>`: the choice of the tower
+    /// ([`Resolution::KeepExisting`] or [`Resolution::TakeImported`]).
     pub key: String,
+    /// The project's tower kept, or the imported one taken.
+    pub resolution: Resolution,
     /// The project's id (kept).
     pub existing: String,
     /// The imported one's id.
@@ -144,6 +156,16 @@ impl SharedTower {
         } else {
             format!("{} (imported {})", self.existing, self.imported)
         };
+        if self.resolution == Resolution::TakeImported {
+            let kept = n(&|s| s.state == SetState::OnlyExisting && !s.kept_for.is_empty());
+            let gone = n(&|s| s.state == SetState::OnlyExisting && s.kept_for.is_empty());
+            return format!(
+                "{name}: the imported tower ({theirs} set{}), {ours} in the project's, {same} the \
+                 same, {differ} at other places; of the project's own {kept} kept (what stays \
+                 hangs on them), {gone} gone",
+                if theirs == 1 { "" } else { "s" }
+            );
+        }
         format!(
             "{name}: {ours} set{} in the project's, {theirs} in the imported, {same} the same, \
              {differ} at other places, {added} taken from the import",
@@ -256,6 +278,7 @@ pub(super) fn compare(
                 state,
                 choice: None,
                 new_set: None,
+                kept_for: Vec::new(),
             };
             let choices = set.choices();
             if let Some(first) = choices.first() {
@@ -273,6 +296,7 @@ pub(super) fn compare(
         .collect();
     SharedTower {
         key: format!("tower:{}", theirs.id),
+        resolution: Resolution::KeepExisting,
         existing: ours.id.clone(),
         imported: theirs.id.clone(),
         distance: (ours.position[0] - theirs.position[0])
