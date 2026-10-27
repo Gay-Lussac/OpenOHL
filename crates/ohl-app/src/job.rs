@@ -75,7 +75,6 @@ impl<T: Send + 'static> Job<T> {
 
     /// A cancel token for the next run ([`Job::start`]): Stop cancels it;
     /// a computation that checks it (a budget's token) ends early.
-    #[allow(dead_code)] // TEMP: used as the windows move over
     pub fn cancel_token(&mut self) -> ohl_core::budget::CancelToken {
         let token = ohl_core::budget::CancelToken::new();
         self.cancel = Some(token.clone());

@@ -33,6 +33,7 @@ use ohl_session::reports::{self, CheckReport, LineState, ReportStatus};
 use serde::{Deserialize, Serialize};
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
@@ -63,6 +64,13 @@ pub const UNEQUAL_WIND_CHECK_TITLE: &str = "Distance between conductors under un
 
 /// The wind step when none is set, Pa.
 pub const DEFAULT_WIND_STEP: f64 = 50.0;
+
+/// The project setting holding the window's setup (per project line:
+/// `app.phase_distance.<line>`; owner, 2026-10-27).
+pub const SETTING: &str = "app.phase_distance";
+
+/// The same for the window under unequal wind.
+pub const UNEQUAL_WIND_SETTING: &str = "app.unequal_wind";
 
 /// Which check the window runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -419,8 +427,6 @@ pub struct PhaseDistanceWindow {
     pub wind_step: f64,
     /// Under unequal wind: the other conductor's least share of the wind.
     pub low_share: f64,
-    /// Only pairs below z.
-    pub only_below: bool,
     /// The row clicked.
     pub picked: Option<usize>,
     /// The values of a saved report (file name, text), used instead of
@@ -451,6 +457,8 @@ pub struct PhaseDistanceWindow {
     /// The line's state against the saved report's, for this line version.
     since: Option<(u64, String, bool)>,
     pub(crate) job: Job<Report>,
+    /// The setup kept in the project ([`SETTING`]).
+    kept: check_ui::Kept,
 }
 
 impl Default for PhaseDistanceWindow {
@@ -473,7 +481,6 @@ impl PhaseDistanceWindow {
             choices: Vec::new(),
             wind_step: DEFAULT_WIND_STEP,
             low_share: ohl_clearance::unequal_wind::UnequalWindSettings::default().low_share,
-            only_below: true,
             picked: None,
             values: None,
             loaded: None,
@@ -490,6 +497,7 @@ impl PhaseDistanceWindow {
             pending_values: None,
             since: None,
             job: Job::default(),
+            kept: Default::default(),
         }
     }
 }
@@ -1246,7 +1254,6 @@ impl PhaseDistanceWindow {
             state: Some(r.state.clone()),
         }));
         self.loaded = Some(r.clone());
-        self.only_below = true;
         self.open = true;
         Ok(())
     }
@@ -1361,29 +1368,8 @@ impl PhaseDistanceWindow {
     /// the rest scrolls above it.
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         let page = self.kind.page();
-        let out = help::body(ui, page, |ui| self.body_ui(ui, model));
-        help::footer(ui, page, |ui| {
-            self.overrides.ui(ui);
-            if help::run_button(
-                ui,
-                !self.job.running(),
-                "Compute the distances between the conductors with the plugin's values",
-                None,
-            ) {
-                self.start(model, ui.ctx());
-            }
-            self.job.status_ui(ui);
-        });
-        out
-    }
-
-    /// The page above its footer.
-    fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         self.job.poll();
         self.ensure_plugin(model);
-        if let Err(e) = self.check() {
-            crate::menu::error_label(ui, e);
-        }
         // A run again of a saved report: compared with it, then asked.
         if !self.compared
             && !self.job.running()
@@ -1395,31 +1381,198 @@ impl PhaseDistanceWindow {
                 self.ask = Some(Ask::Replace);
             }
         }
+        let why = self.why_not_run(model);
+        let findings = match &self.job.result {
+            Some(Ok(r)) => Some(r.below().0),
+            _ => None,
+        };
         let mut out = Out::default();
-        self.settings_ui(ui, model);
-        self.levels_ui(ui, model, &mut out);
-        self.library_ui(ui, model, &mut out);
-        ui.separator();
-        // How it computes and with which values: open, in a box of
-        // its own height so the results keep their place.
-        help::list(
-            ui,
-            "phase-distance-list-1",
-            360.0,
-            egui::ScrollArea::vertical().id_salt("phase-distance-how-and-values"),
-            |ui| {
-                let plugin = self.check().ok().map(|c| c.info.explanation.clone());
-                explanation(ui, plugin.as_deref(), self.kind);
-                self.values_ui(ui, model);
-            },
-        );
-        ui.separator();
+        // Without its plugin: said once, at the top (and why Run is grey).
+        if let Err(e) = self.check() {
+            crate::menu::error_label(ui, e);
+        }
         if let Some(what) = self.out_of_date(model)
-            && crate::revision::banner(ui, &what, !self.job.running())
+            && crate::revision::banner(ui, &what, !self.job.running() && why.is_none())
         {
             self.start(model, ui.ctx());
         }
-        self.results_ui(ui, &mut out);
+        // Two tabs (owner, 2026-10-27): the setup scrolls, the results
+        // fill theirs; Run in the footer, always visible.
+        let tab = check_ui::tabs(
+            ui,
+            page,
+            findings,
+            self.job.generation,
+            why.is_some() && !self.job.running(),
+        );
+        match tab {
+            check_ui::Tab::Setup => {
+                out = help::body(ui, page, |ui| self.body_ui(ui, model));
+            }
+            check_ui::Tab::Results => {
+                check_ui::results_area(ui, page, |ui| {
+                    // The saved report shown, the questions, saving the
+                    // run (Save in Performed checks).
+                    self.library_ui(ui, model, &mut out);
+                    self.results_ui(ui, &mut out);
+                });
+            }
+        }
+        help::footer(ui, page, |ui| {
+            let overrides = &mut self.overrides;
+            if check_ui::job_footer(
+                ui,
+                &mut self.job,
+                why.clone(),
+                "Compute the distances between the conductors with the plugin's values",
+                None,
+                |ui| {
+                    overrides.ui(ui);
+                },
+            ) {
+                self.start(model, ui.ctx());
+            }
+        });
+        out
+    }
+
+    /// Why the check cannot run, if it cannot ("Before Run: …").
+    pub fn why_not_run(&self, model: &Model) -> Option<String> {
+        if let Err(e) = self.check() {
+            return Some(format!("the check plugin: {e}"));
+        }
+        if !self.cases.iter().any(|&k| k < model.cases.len()) {
+            return Some("tick a weather case (2 Scope)".into());
+        }
+        if self.circuits.as_ref().is_some_and(|c| c.is_empty()) {
+            return Some("tick a circuit (2 Scope)".into());
+        }
+        None
+    }
+
+    /// The setup as kept in the project (owner, 2026-10-27): the cases
+    /// by name, the circuits, the stations and nearby spans, the plugin's
+    /// choices, the wind step and share (JSON).
+    fn stored(&self, model: &Model) -> String {
+        let cases: Vec<String> = self
+            .cases
+            .iter()
+            .filter_map(|&k| model.cases.get(k).map(|c| c.case.name.clone()))
+            .collect();
+        serde_json::json!({
+            "cases": cases,
+            "circuits": self.circuits,
+            "spacing": self.settings.spacing,
+            "nearby": self.settings.nearby,
+            "max_distance": self.settings.max_distance,
+            "choices": self.choices,
+            "wind_step": self.wind_step,
+            "low_share": self.low_share,
+            "overrides": [self.overrides.structures, self.overrides.sections],
+        })
+        .to_string()
+    }
+
+    /// Takes the setup kept in the project (what is missing: as it is).
+    fn take_stored(&mut self, model: &Model, text: Option<&str>) {
+        let Some(v) = text.and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok()) else {
+            return;
+        };
+        let get = |k: &str| v.get(k).cloned().unwrap_or(serde_json::Value::Null);
+        if let Ok(names) = serde_json::from_value::<Vec<String>>(get("cases")) {
+            let found: BTreeSet<usize> = names
+                .iter()
+                .filter_map(|n| model.cases.iter().position(|c| &c.case.name == n))
+                .collect();
+            if !found.is_empty() {
+                self.cases = found;
+            }
+        }
+        if let Ok(c) = serde_json::from_value(get("circuits")) {
+            self.circuits = c;
+        }
+        if let Some(x) = get("spacing").as_f64() {
+            self.settings.spacing = x;
+        }
+        if let Some(x) = get("nearby").as_bool() {
+            self.settings.nearby = x;
+        }
+        if let Some(x) = get("max_distance").as_f64() {
+            self.settings.max_distance = x;
+        }
+        if let Ok(c) = serde_json::from_value(get("choices")) {
+            self.choices = c;
+        }
+        if let Some(x) = get("wind_step").as_f64() {
+            self.wind_step = x;
+        }
+        if let Some(x) = get("low_share").as_f64() {
+            self.low_share = x;
+        }
+        if let Ok([a, b]) = serde_json::from_value::<[bool; 2]>(get("overrides")) {
+            self.overrides.structures = a;
+            self.overrides.sections = b;
+        }
+    }
+
+    /// Reads the setup from the project when not read yet for the line
+    /// worked on, and writes it into it when it changed (project setting
+    /// `app.phase_distance.<line>`, `app.unequal_wind.<line>`).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let setting = match self.kind {
+            Kind::Span => SETTING,
+            Kind::UnequalWind => UNEQUAL_WIND_SETTING,
+        };
+        let json = self.stored(model);
+        let mut kept = std::mem::take(&mut self.kept);
+        if let check_ui::Step::Load(text) = kept.step(
+            model,
+            ctx,
+            setting,
+            "distance between conductors settings",
+            &json,
+        ) {
+            self.take_stored(model, text.as_deref());
+            kept.loaded(self.stored(model));
+        }
+        self.kept = kept;
+    }
+
+    /// The Setup tab.
+    fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
+        let mut out = Out::default();
+        check_ui::section(ui, 1, "What it checks", None);
+        help::explain(
+            ui,
+            match self.kind {
+                Kind::Span => {
+                    "The distance between the conductors of every span against the distance z \
+                     the design-code plugin's values give (the k diagram, the sag, the swing)."
+                }
+                Kind::UnequalWind => {
+                    "The closest approach of two conductors blown by unequal wind (one at the \
+                     case's wind, the other at a share of it) against the plugin's distance z."
+                }
+            },
+            "The values come from the check plugin's values file (the project's copy, else the \
+             plugin's); How it is computed shows them.",
+        );
+        // How it computes and with which values: folded under 1.
+        egui::CollapsingHeader::new("How it is computed")
+            .id_salt((self.kind.page(), "how-computed"))
+            .show(ui, |ui| {
+                let plugin = self.check().ok().map(|c| c.info.explanation.clone());
+                explanation(ui, plugin.as_deref(), self.kind);
+            });
+        ui.separator();
+        check_ui::section(ui, 2, "Scope", None);
+        self.settings_ui(ui, model);
+        ui.separator();
+        check_ui::section(ui, 3, "Rules", None);
+        // The insulation levels of the circuits, then the plugin's
+        // values (the distances z).
+        self.levels_ui(ui, model, &mut out);
+        self.values_ui(ui, model);
         out
     }
 
@@ -2049,171 +2202,187 @@ impl PhaseDistanceWindow {
 
     fn results_ui(&mut self, ui: &mut egui::Ui, out: &mut Out) {
         let report = match &self.job.result {
-            None => return,
+            None => {
+                ui.label(egui::RichText::new("No run yet: Run at the bottom.").weak());
+                return;
+            }
             Some(Err(e)) => {
                 crate::menu::error_label(ui, e);
                 return;
             }
             Some(Ok(r)) => r,
         };
-        for n in &report.notes {
-            crate::menu::message(ui, egui::RichText::new(n).small(), None);
-        }
         let (below, length) = report.below();
         let kept = report.rows.len() < report.pairs;
         let unequal = self.kind == Kind::UnequalWind;
-        let mut export = false;
-        ui.horizontal(|ui| {
-            let how = if unequal {
-                format!(
-                    "{}: {} pairs, {below} below z (z = C₃ within a system, C₄ between)",
-                    report.code, report.pairs
-                )
-            } else {
-                format!(
-                    "{} — {}: {} pairs, {below} below z ({length:.0} m of conductor)",
-                    report.code, report.diagram, report.pairs
-                )
-            };
-            ui.label(format!(
-                "{how}{}",
-                if kept {
-                    format!("; {} kept (within {KEPT_WITHIN} m of z)", report.rows.len())
-                } else {
-                    String::new()
-                }
-            ));
-            ui.checkbox(&mut self.only_below, "only those");
-            export = ui.button("Export CSV…").clicked();
-        });
-        if export {
-            let name = if unequal {
-                "unequal-wind.csv"
-            } else {
-                "phase-distance.csv"
-            };
-            save_csv(name, &csv(report));
-        }
+        let worst = report
+            .rows
+            .iter()
+            .min_by(|a, b| a.margin().total_cmp(&b.margin()));
+        let text = match worst {
+            Some(r) if r.margin() < 0.0 => format!(
+                "✖ {below} pair{} below z — worst d − z {:+.2} m: {} span {} – {} span {}, case {}",
+                if below == 1 { "" } else { "s" },
+                r.margin(),
+                r.span[0].0,
+                r.span[0].1 + 1,
+                r.span[1].0,
+                r.span[1].1 + 1,
+                r.case
+            ),
+            _ => format!("✔ Every pair at z or more ({} pairs)", report.pairs),
+        };
         let mut clicked = None;
-        egui::ScrollArea::both()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                egui::Grid::new("phase-distance-rows")
-                    .striped(true)
-                    .spacing(help::GRID_SPACING)
-                    .show(ui, |ui| {
-                        let heads: &[&str] = if unequal {
-                            &[
-                                "case", "span", "circuit", "other", "circuit", "C", "kV", "d m",
-                                "z m", "d − z", "wind Pa", "from", "β °", "rule", "",
-                            ]
-                        } else {
-                            &[
-                                "case", "span", "circuit", "other", "circuit", "C", "kV", "d m",
-                                "z m", "d − z", "below m", "f m", "l_k m", "β °", "k", "C m",
-                                "rule", "",
-                            ]
-                        };
-                        for h in heads {
-                            ui.strong(*h);
-                        }
-                        if self.comparison.is_some() {
-                            ui.strong("vs saved");
-                        }
-                        ui.end_row();
-                        for (i, r) in report
-                            .rows
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, r)| !self.only_below || r.margin() < 0.0)
-                            .take(5000)
-                        {
-                            let picked = self.picked == Some(i);
-                            ui.label(&r.case);
-                            for k in 0..2 {
-                                let (s, n) = &r.span[k];
-                                if ui
-                                    .selectable_label(picked, format!("{s} span {}", n + 1))
-                                    .on_hover_text(
-                                        "Select this span and draw the worst station's line \
-                                         (d and z)",
-                                    )
-                                    .clicked()
-                                {
-                                    clicked = Some((i, k));
-                                }
-                                ui.label(&r.what[k]);
-                            }
-                            ui.label(match (unequal, r.same_system) {
-                                (false, true) => "C₁",
-                                (false, false) => "C₂",
-                                (true, true) => "C₃",
-                                (true, false) => "C₄",
-                            });
-                            ui.label(format!("{:.0}", r.kv));
-                            let mono = |v: f64| egui::RichText::new(format!("{v:.2}")).monospace();
-                            let m = mono(r.margin());
-                            let m = if r.margin() < 0.0 {
-                                m.color(ui.visuals().error_fg_color)
-                            } else {
-                                m
-                            };
-                            // The values too: a click goes to the worst station.
-                            for v in [mono(r.distance), mono(r.required), m] {
-                                if ui
-                                    .selectable_label(picked, v)
-                                    .on_hover_text(
-                                        "Go to the worst station: its line drawn with d and z, \
-                                         in its weather case",
-                                    )
-                                    .clicked()
-                                {
-                                    clicked = Some((i, 0));
-                                }
-                            }
-                            if unequal {
-                                let [pa, pb] = r.pressure.unwrap_or([f64::NAN; 2]);
-                                ui.label(format!("{pa:.0} / {pb:.0}")).on_hover_text(
-                                    "The wind pressure on the first and on the other conductor \
-                                     at the closest approach",
-                                );
-                                ui.label(r.side.as_deref().unwrap_or("—"));
-                                ui.label(format!("{:.0}", r.beta));
-                            } else {
-                                ui.label(format!("{:.0}", r.length_below));
-                                ui.label(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]));
-                                ui.label(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]));
-                                ui.label(format!("{:.0}", r.beta));
-                                ui.label(format!("{:.2} / {:.2}", r.k[0], r.k[1]));
-                                ui.label(format!("{:.2}", r.c));
-                            }
-                            ui.label(&r.rule);
-                            let mut note = Vec::new();
-                            if r.at_clamp {
-                                note.push("at a clamp (f ≈ 0)");
-                            }
-                            if !r.same_span {
-                                note.push("nearby span");
-                            }
-                            ui.label(egui::RichText::new(note.join(", ")).small().weak());
-                            if let Some(c) = &self.comparison {
-                                let change = c.changes.get(&r.key()).copied();
-                                let text = change.map_or("", Change::text);
-                                let color = match change {
-                                    Some(Change::New | Change::Worse) => {
-                                        ui.visuals().error_fg_color
-                                    }
-                                    Some(Change::Fixed | Change::Better) => {
-                                        crate::menu::ok_color(ui)
-                                    }
-                                    None => ui.visuals().weak_text_color(),
-                                };
-                                ui.label(egui::RichText::new(text).color(color));
-                            }
-                            ui.end_row();
-                        }
-                    });
-            });
+        if check_ui::verdict(ui, below > 0, &text, below > 0)
+            && let Some(k) = worst.and_then(|w| report.rows.iter().position(|r| std::ptr::eq(r, w)))
+        {
+            clicked = Some((k, 0));
+        }
+        let how = if unequal {
+            format!(
+                "{}: {} pairs, {below} below z (z = C₃ within a system, C₄ between)",
+                report.code, report.pairs
+            )
+        } else {
+            format!(
+                "{} — {}: {} pairs, {below} below z ({length:.0} m of conductor)",
+                report.code, report.diagram, report.pairs
+            )
+        };
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{how}{}",
+                    if kept {
+                        format!("; {} kept (within {KEPT_WITHIN} m of z)", report.rows.len())
+                    } else {
+                        String::new()
+                    }
+                ))
+                .small()
+                .weak(),
+            );
+            if ui
+                .button("Export all CSV…")
+                .on_hover_text("Every pair with every value, as a CSV file")
+                .clicked()
+            {
+                let name = if unequal {
+                    "unequal-wind.csv"
+                } else {
+                    "phase-distance.csv"
+                };
+                save_csv(name, &csv(report));
+            }
+        });
+        use check_ui::{Cell, Col};
+        let mut cols = vec![
+            Col::text("Case"),
+            Col::text("Span"),
+            Col::text("Circuit"),
+            Col::text("Other span"),
+            Col::text("Other circuit"),
+            Col::text("C"),
+            Col::num("Voltage [kV]"),
+            Col::num("d [m]").tip("The distance found"),
+            Col::num("z [m]").tip("The distance required"),
+            Col::num("d − z [m]"),
+        ];
+        if unequal {
+            cols.extend([
+                Col::text("Wind [Pa]").tip(
+                    "The wind pressure on the first and on the other conductor at the closest \
+                     approach",
+                ),
+                Col::text("From"),
+                Col::num("β [°]"),
+            ]);
+        } else {
+            cols.extend([
+                Col::num("Below [m]"),
+                Col::text("f [m]"),
+                Col::text("l_k [m]"),
+                Col::num("β [°]"),
+                Col::text("k"),
+                Col::num("C [m]"),
+            ]);
+        }
+        cols.extend([Col::text("Rule"), Col::text("Note")]);
+        if self.comparison.is_some() {
+            cols.push(Col::text("vs saved"));
+        }
+        let rows: Vec<check_ui::Row> = report
+            .rows
+            .iter()
+            .map(|r| {
+                let mut cells = vec![
+                    Cell::text(&r.case),
+                    Cell::span(&r.span[0].0, r.span[0].1),
+                    Cell::text(&r.what[0]),
+                    Cell::span(&r.span[1].0, r.span[1].1),
+                    Cell::text(&r.what[1]),
+                    Cell::text(match (unequal, r.same_system) {
+                        (false, true) => "C₁",
+                        (false, false) => "C₂",
+                        (true, true) => "C₃",
+                        (true, false) => "C₄",
+                    }),
+                    Cell::sorted(format!("{:.0}", r.kv), r.kv),
+                    Cell::num(Some(r.distance), 2).bad(r.margin() < 0.0),
+                    Cell::num(Some(r.required), 2),
+                    Cell::num(Some(r.margin()), 2).bad(r.margin() < 0.0),
+                ];
+                if unequal {
+                    let [pa, pb] = r.pressure.unwrap_or([f64::NAN; 2]);
+                    cells.extend([
+                        Cell::sorted(format!("{pa:.0} / {pb:.0}"), pa),
+                        Cell::text(r.side.as_deref().unwrap_or("—")),
+                        Cell::sorted(format!("{:.0}", r.beta), r.beta),
+                    ]);
+                } else {
+                    cells.extend([
+                        Cell::sorted(format!("{:.0}", r.length_below), r.length_below),
+                        Cell::sorted(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]), r.sag[0]),
+                        Cell::sorted(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]), r.lk[0]),
+                        Cell::sorted(format!("{:.0}", r.beta), r.beta),
+                        Cell::sorted(format!("{:.2} / {:.2}", r.k[0], r.k[1]), r.k[0]),
+                        Cell::num(Some(r.c), 2),
+                    ]);
+                }
+                let mut note = Vec::new();
+                if r.at_clamp {
+                    note.push("at a clamp (f ≈ 0)");
+                }
+                if !r.same_span {
+                    note.push("nearby span");
+                }
+                cells.extend([Cell::text(&r.rule), Cell::text(note.join(", "))]);
+                if let Some(c) = &self.comparison {
+                    let change = c.changes.get(&r.key()).copied();
+                    cells.push(
+                        Cell::text(change.map_or("", Change::text))
+                            .bad(matches!(change, Some(Change::New | Change::Worse))),
+                    );
+                }
+                check_ui::Row::new(cells, r.margin() < 0.0)
+            })
+            .collect();
+        let id = format!("{}-rows", self.kind.page());
+        let csv_name = if unequal {
+            "unequal-wind-table.csv"
+        } else {
+            "phase-distance-table.csv"
+        };
+        if let Some(k) = check_ui::ResultTable::new(&id, cols)
+            .rows(rows)
+            .group_by(&[0, 1, if unequal { 13 } else { 16 }])
+            .csv(csv_name)
+            .below(check_ui::FOLDS_BELOW)
+            .ui(ui)
+        {
+            clicked = Some((k, 0));
+        }
+        check_ui::notes_fold(ui, &id, &report.notes);
         if let Some((i, k)) = clicked {
             let r = &report.rows[i];
             self.picked = Some(i);

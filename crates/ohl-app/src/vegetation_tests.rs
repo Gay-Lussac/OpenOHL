@@ -94,6 +94,9 @@ fn every_setting_is_explained_and_drawn() {
     ] {
         h.get_by_label_contains(text);
     }
+    // (Scrolled to: the Setup tab is longer than the window.)
+    h.get_by_label("Fall-in: user guide ↗").scroll_to_me();
+    h.run();
     h.get_by_label("Fall-in: user guide ↗").click();
     h.run_steps(2);
     let status = h.state_mut().ready().unwrap().status.clone();
@@ -158,7 +161,14 @@ fn the_highlights_are_drawn_while_the_panel_is_open() {
     h.state_mut().ready().unwrap().vegetation.show(0);
     h.run_steps(3);
     assert_eq!(drawn(&mut h).0, n);
-    // A colour chosen: the layers' (and the view settings').
+    // A colour chosen: the layers' (and the view settings'), in the
+    // Setup tab (Results opened by itself after the run).
+    assert_eq!(
+        crate::check_ui::current_tab(&h.ctx, "vegetation-panel"),
+        crate::check_ui::Tab::Results
+    );
+    h.get_by_label("Setup").click();
+    h.run_steps(2);
     h.get_by_label("colour of the grow-in points")
         .click_accesskit();
     h.run_steps(2);
@@ -530,5 +540,78 @@ fn the_vegetation_panel_takes_only_its_part_of_a_big_preset() {
         .collect();
     assert_eq!(ticked, ["max temperature", "Veg wind"]);
     assert_eq!(r.vegetation.settings.classes, [5]);
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
+/// The scope (owner, 2026-10-27: "some of them we will model but we
+/// don't need them checked"): a circuit unticked, the run checks only the
+/// others' spans; the choice is kept in the project (a project setting
+/// per project line) and read back by a fresh window.
+#[test]
+fn a_circuit_unticked_is_not_checked_and_the_choice_is_kept() {
+    let (file, mut h) = opened("veg-scope");
+    run(&mut h);
+    let (all, circuit_of) = {
+        let r = h.state_mut().ready().unwrap();
+        let rep = r.vegetation.result().0.unwrap().as_ref().unwrap().clone();
+        let circuit_of: std::collections::BTreeMap<String, String> = r
+            .model
+            .line
+            .sections
+            .iter()
+            .map(|s| (s.id.clone(), s.circuit_name.clone()))
+            .collect();
+        (rep.spans, circuit_of)
+    };
+    let circuits = crate::check_ui::circuits_of(&h.state_mut().ready().unwrap().model.line);
+    assert!(circuits.len() >= 2, "{circuits:?}");
+    // The circuit of the first span found: unticked.
+    let dropped = circuit_of[&all[0].section].clone();
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.vegetation.scope.circuits = Some(
+            circuits
+                .iter()
+                .filter(|c| **c != dropped)
+                .cloned()
+                .collect(),
+        );
+    }
+    h.run_steps(3);
+    // Back on Setup to run again (Results opened after the first run).
+    h.get_by_label("Setup").click();
+    h.run_steps(2);
+    run(&mut h);
+    let r = h.state_mut().ready().unwrap();
+    let rep = r.vegetation.result().0.unwrap().as_ref().unwrap().clone();
+    // (The other circuit has no vegetation near it in this example: no
+    // span of the circuit unticked is left.)
+    assert!(!all.is_empty());
+    assert!(
+        rep.spans.iter().all(|s| circuit_of[&s.section] != dropped),
+        "no span of {dropped}"
+    );
+    assert!(rep.notes.iter().any(|n| n.starts_with("scope: ")));
+    // Kept in the project: a fresh window reads it back.
+    let line = r.model.session().unwrap().current_line().to_owned();
+    let kept = r
+        .model
+        .session()
+        .unwrap()
+        .setting(&format!("{}.{line}", crate::vegetation::SETTING))
+        .unwrap()
+        .expect("kept in the project");
+    assert!(kept.contains("\"circuits\""), "{kept}");
+    r.vegetation = Default::default();
+    h.run_steps(2);
+    let r = h.state_mut().ready().unwrap();
+    assert_eq!(
+        r.vegetation
+            .scope
+            .circuits
+            .as_ref()
+            .map(|c| c.contains(&dropped)),
+        Some(false)
+    );
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }
