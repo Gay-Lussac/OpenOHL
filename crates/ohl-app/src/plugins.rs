@@ -110,6 +110,8 @@ pub struct ProjectRead {
     pub format: Option<String>,
     /// Format options.
     pub options: ohl_io::Options,
+    /// Library files the export lacks, added (kind from the extension).
+    pub libraries: Vec<PathBuf>,
     /// Clip the sections in at their stringing condition.
     pub clip_in: bool,
 }
@@ -123,6 +125,8 @@ pub struct ProjectImport {
     pub format: Option<String>,
     /// Format options.
     pub options: ohl_io::Options,
+    /// Library files the export lacks, added (kind from the extension).
+    pub libraries: Vec<PathBuf>,
     /// The new project file (must not exist).
     pub into: PathBuf,
     /// The user (its admin).
@@ -216,6 +220,7 @@ impl Worker {
                                 &job.path,
                                 job.format.as_deref(),
                                 &job.options,
+                                &job.libraries,
                                 job.clip_in,
                             )
                             .map(Box::new),
@@ -259,6 +264,7 @@ fn create_project(
         &job.path,
         job.format.as_deref(),
         &job.options,
+        &job.libraries,
         &job.into,
         &job.user,
         job.clip_in,

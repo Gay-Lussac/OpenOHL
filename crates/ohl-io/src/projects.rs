@@ -73,6 +73,95 @@ impl ImportedProject {
     }
 }
 
+/// The library files that may be added to an import (owner, 2026-10-27):
+/// kind in the project and file extension. The structure loads
+/// (`*.loads.csv`) are not among them.
+pub const LIBRARY_EXTENSIONS: [(&str, &str); 12] = [
+    ("cables", ohl_cables::WIRE_FILE_EXTENSION),
+    (
+        "structures",
+        ohl_structures::structures::STRUCTURE_FILE_EXTENSION,
+    ),
+    (
+        "insulators",
+        ohl_structures::insulators::INSULATOR_FILE_EXTENSION,
+    ),
+    ("weather", ohl_weather::WEATHER_FILE_EXTENSION),
+    ("loadcases", ohl_loads::LOAD_CASE_FILE_EXTENSION),
+    ("rules", ohl_clearance::rules::RULE_FILE_EXTENSION),
+    (
+        "galloping",
+        ohl_clearance::galloping::GALLOPING_FILE_EXTENSION,
+    ),
+    ("ambient", "ohlta"),
+    ("costs", "ohlcost"),
+    ("poles", "ohlp"),
+    ("femodels", "ohlfe"),
+    ("sections", ohl_sections::SECTION_FILE_EXTENSION),
+];
+
+/// The library kind of a file, from its extension (`None`: not a library
+/// file that may be added).
+pub fn library_kind(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?;
+    LIBRARY_EXTENSIONS
+        .iter()
+        .find(|(_, e)| e.eq_ignore_ascii_case(ext))
+        .map(|(k, _)| *k)
+}
+
+/// Reads library files to add to an import: kind (from the extension),
+/// file name, text. Refused for a file of no library kind or one that
+/// cannot be read.
+pub fn read_library_files(paths: &[PathBuf]) -> Result<Vec<(String, String, String)>, String> {
+    paths
+        .iter()
+        .map(|p| {
+            let kind = library_kind(p).ok_or_else(|| {
+                format!(
+                    "{}: not a library file (extensions: {})",
+                    p.display(),
+                    LIBRARY_EXTENSIONS
+                        .iter()
+                        .map(|(_, e)| format!(".{e}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .ok_or_else(|| format!("{}: no file name", p.display()))?;
+            let text = std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            Ok((kind.to_owned(), name, text))
+        })
+        .collect()
+}
+
+impl ImportedProject {
+    /// Adds library files the export lacks (kind, file name, text): a
+    /// file of the same kind and name as one read replaces it; a note for
+    /// each.
+    pub fn add_libraries(&mut self, files: Vec<(String, String, String)>) {
+        for (kind, name, text) in files {
+            if let Some(l) = self
+                .libraries
+                .iter_mut()
+                .find(|(k, n, _)| *k == kind && *n == name)
+            {
+                l.2 = text;
+                self.notes.push(format!(
+                    "library file {name} ({kind}) added, in place of the one read"
+                ));
+            } else {
+                self.notes
+                    .push(format!("library file {name} ({kind}) added"));
+                self.libraries.push((kind, name, text));
+            }
+        }
+    }
+}
+
 /// Reads a whole project from a file.
 pub trait ProjectImporter {
     /// Unique id.
@@ -501,22 +590,26 @@ pub struct CreatedProject {
 }
 
 /// Reads another program's file (format: `format`, else the extension)
-/// as a project (its line and library files), the sections clipped in if
-/// asked; nothing written ([`crate::import_into`] brings it into an
-/// existing project).
+/// as a project (its line and library files), the library files
+/// `libraries` added ([`ImportedProject::add_libraries`]: an export cut
+/// off before its cable data), the sections clipped in if asked; nothing
+/// written ([`crate::import_into`] brings it into an existing project).
 pub fn read_project(
     registry: &mut Registry,
     path: &Path,
     format: Option<&str>,
     options: &Options,
+    libraries: &[PathBuf],
     clip_in: bool,
 ) -> Result<ImportedProject, String> {
+    let added = read_library_files(libraries)?;
     let id = crate::format_of(path, format);
     let importer = registry
         .project_importer(&id)
         .ok_or_else(|| format!("no project format \"{id}\": it needs a project plugin"))?;
     let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut p = importer.import(&data, options)?;
+    p.add_libraries(added);
     if clip_in {
         let (n, failed) = p.clip_in();
         p.notes.push(format!(
@@ -533,13 +626,15 @@ pub fn read_project(
 
 /// Reads another program's file (format: `format`, else the extension)
 /// into a new project `into` (`.ohl` added): the line and its library
-/// files, the sections clipped in if asked. Refused if the project file
-/// exists.
+/// files, those of `libraries` added, the sections clipped in if asked.
+/// Refused if the project file exists.
+#[allow(clippy::too_many_arguments)]
 pub fn create_project(
     registry: &mut Registry,
     path: &Path,
     format: Option<&str>,
     options: &Options,
+    libraries: &[PathBuf],
     into: &Path,
     user: &str,
     clip_in: bool,
@@ -548,7 +643,7 @@ pub fn create_project(
     if into.exists() {
         return Err(format!("{} exists already", into.display()));
     }
-    let p = read_project(registry, path, format, options, clip_in)?;
+    let p = read_project(registry, path, format, options, libraries, clip_in)?;
     let mut s = ohl_session::Session::open(&into).map_err(|e| e.to_string())?;
     let applied = s.import(&p.line, user).map_err(|e| e.to_string())?;
     for (kind, name, text) in &p.libraries {
@@ -699,5 +794,63 @@ mod tests {
         assert!(m.validate().is_ok(), "{notes:?}");
         assert_eq!(m.sections[a].phase_label, m.sections[b].phase_label);
         assert!(!notes.is_empty());
+    }
+
+    fn dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ohl-io-libs-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// The kind comes from the extension (`.ohlw` is not `.ohlwc`); other
+    /// files are refused.
+    #[test]
+    fn library_kinds_from_the_extension() {
+        assert_eq!(library_kind(Path::new("a/w.ohlw")), Some("cables"));
+        assert_eq!(library_kind(Path::new("w.ohlwc")), Some("weather"));
+        assert_eq!(library_kind(Path::new("r.OHLR")), Some("rules"));
+        assert_eq!(library_kind(Path::new("t.ohls")), Some("structures"));
+        assert_eq!(library_kind(Path::new("i.ohli")), Some("insulators"));
+        assert_eq!(library_kind(Path::new("x.loads.csv")), None);
+        assert_eq!(library_kind(Path::new("noext")), None);
+        let d = dir("kinds");
+        std::fs::write(d.join("w.ohlw"), "# wires\n").unwrap();
+        std::fs::write(d.join("x.txt"), "").unwrap();
+        let got = read_library_files(&[d.join("w.ohlw")]).unwrap();
+        assert_eq!(
+            got,
+            vec![("cables".into(), "w.ohlw".into(), "# wires\n".into())]
+        );
+        assert!(
+            read_library_files(&[d.join("x.txt")])
+                .unwrap_err()
+                .contains("not a library file")
+        );
+        assert!(read_library_files(&[d.join("missing.ohlw")]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// An added file is appended, or replaces the read one of the same
+    /// kind and name; each is noted.
+    #[test]
+    fn added_libraries() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let mut p = ImportedProject {
+            line,
+            libraries: vec![("cables".into(), "w.ohlw".into(), "old".into())],
+            notes: Vec::new(),
+        };
+        p.add_libraries(vec![
+            ("cables".into(), "w.ohlw".into(), "new".into()),
+            ("rules".into(), "r.ohlr".into(), "r".into()),
+        ]);
+        assert_eq!(p.libraries.len(), 2);
+        assert_eq!(p.libraries[0].2, "new");
+        assert_eq!(p.libraries[1].0, "rules");
+        assert_eq!(p.notes.len(), 2);
+        assert!(p.notes[0].contains("in place of"));
     }
 }

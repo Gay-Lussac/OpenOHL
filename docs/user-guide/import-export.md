@@ -149,8 +149,21 @@ A **project plugin** reads another program's project file into a new OpenOHL pro
 - **From the command line:**
 
   ```bash
-  ohl project import-from FILE --into new.ohl --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--clip-in]
+  ohl project import-from FILE --into new.ohl --user ann --plugin DIR [--format F] [--option KEY=VALUE] [--library FILE]… [--clip-in]
   ```
+
+**Library files the export lacks** (2026-10-27): **Add library files…**
+in the window (`--library FILE`, repeatable) adds library files of your
+own to what was read — e.g. an export cut off before its cable data,
+which would otherwise import with no cables and every section unsolved.
+Their kind comes from the extension: wire types `.ohlw`, clearance rules
+`.ohlr`, structure types `.ohls`, insulators `.ohli`, weather cases
+`.ohlwc`, load cases `.ohllc`, galloping `.ohlg`, ambient `.ohlta`, costs
+`.ohlcost`, poles `.ohlp`, structure models `.ohlfe`, cross-sections
+`.ohlsec`; another file is refused. They are written into the project
+with the import (a file of the same name as one the export holds
+replaces it), and the reader's notes list each one. They are added
+before *clip in*, which needs the wire types.
 
 **Clip in** (`--clip-in`, or the window's tick): sections the reader left in the blocks are clipped in at their stringing condition, so each span keeps its length — as programs that sag a section with a ruling span and then solve it with fixed lengths do.
 
@@ -175,7 +188,11 @@ later state of the same line, a variant of part of it:
    the default, or **Add to the project (keep the project's)** — see
    below.
 2. **The file**: the format (default: from the extension), options,
-   *clip in*; **Read the file** (in the background; nothing changes yet).
+   *clip in*, **Add library files…** (the files the export lacks, as
+   above; they are part of what is read, so they are merged like the
+   import's own — cables by id into the project's wire file); **Read the
+   file** (in the background; nothing changes yet; files added after
+   reading need **Read the file** again).
 3. **Into which project line?** The line you work on (one change,
    undoable), or **a new project line made from it** (named; you then work
    on it — to look at the import apart and bring it into another line
@@ -336,7 +353,7 @@ development):
 
 ```bash
 ohl project import-into FILE --into project.ohl --user ann --plugin DIR [--format F] \
-    [--option KEY=VALUE] [--clip-in] [--tolerance M] [--route ID=existing|new|ROUTE] \
+    [--option KEY=VALUE] [--library FILE]… [--clip-in] [--tolerance M] [--route ID=existing|new|ROUTE] \
     [--mode replace|add] [--choose KEY=keep|imported|both] [--choose tower:T3=keep|imported] \
     [--choose tower:T3:set:2=add|leave|keep|imported|new] \
     [--choose remove:structure:T7=remove|keep] [--dry-run]

@@ -44,6 +44,11 @@ pub enum ProjectCommand {
         /// Project plugin directory (repeatable).
         #[arg(long)]
         plugin: Vec<PathBuf>,
+        /// A library file the export lacks (repeatable): its kind from
+        /// the extension (.ohlw wires, .ohlr clearance rules, .ohls
+        /// structure types, .ohli insulators, .ohlwc weather…).
+        #[arg(long = "library")]
+        libraries: Vec<PathBuf>,
         /// Clip the sections in: each span keeps the length of its
         /// stringing condition (as the source program solves it).
         #[arg(long)]
@@ -72,6 +77,11 @@ pub enum ProjectCommand {
         /// Project plugin directory (repeatable).
         #[arg(long)]
         plugin: Vec<PathBuf>,
+        /// A library file the export lacks (repeatable): its kind from
+        /// the extension, merged like the import's own (cables by id into
+        /// the project's wire file).
+        #[arg(long = "library")]
+        libraries: Vec<PathBuf>,
         /// Clip the sections in at their stringing condition.
         #[arg(long)]
         clip_in: bool,
@@ -555,6 +565,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             format,
             options,
             plugin,
+            libraries,
             clip_in,
         } => {
             let started = std::time::Instant::now();
@@ -564,6 +575,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 &file,
                 format.as_deref(),
                 &crate::io_run::options(&options)?,
+                &libraries,
                 &into,
                 &user,
                 clip_in,
@@ -593,6 +605,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             format,
             options,
             plugin,
+            libraries,
             clip_in,
             mode,
             choose,
@@ -606,6 +619,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 &file,
                 format.as_deref(),
                 &crate::io_run::options(&options)?,
+                &libraries,
                 clip_in,
             )?;
             let how = import_options(&mode, &choose, &routes, tolerance)?;
