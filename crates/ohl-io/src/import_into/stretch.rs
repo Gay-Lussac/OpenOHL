@@ -21,8 +21,9 @@
 //!   matched towers only whose every span the import joins; a section the
 //!   import has at the same place (the same structures and sets) is not
 //!   removed but settled as a duplicate. A section that crosses the
-//!   stretch's end through a removed structure goes too (it cannot stand
-//!   without it; a note says so).
+//!   stretch's end through a removed structure is split there: its runs
+//!   of spans with an end outside the stretch stay as sections of their
+//!   own ([`ohl_line::Section::piece`]; owner, 2026-10-27), the rest goes.
 //! - **Jumpers removed**: those at a removed structure (or on a tap of a
 //!   removed section or jumper), and those whose every end is at a
 //!   matched tower inside the stretch (not one of its ends); jumpers at
@@ -189,6 +190,11 @@ pub struct Removed {
     /// Removed whatever is chosen: it is at a removed structure (keep the
     /// structure to keep it).
     pub fixed: bool,
+    /// A section crossing the stretch's end: the runs of its points
+    /// (first, last) outside the stretch, kept as sections of their own
+    /// (the first under its id; owner, 2026-10-27: split, not removed
+    /// whole).
+    pub pieces: Vec<(usize, usize)>,
 }
 
 impl Removed {
@@ -201,6 +207,7 @@ impl Removed {
             id: id.to_owned(),
             why: why.to_owned(),
             fixed,
+            pieces: Vec::new(),
         }
     }
 }
@@ -268,16 +275,40 @@ pub(super) fn removals(
             .iter()
             .find(|p| gone.contains(p.structure.as_str()));
         let r = if let Some(p) = at_gone {
-            let outside = s.points.iter().any(|q| !inside(&q.structure));
-            let why = if outside {
+            // Its spans with an end outside the stretch, in runs: kept
+            // as sections of their own (split at the stretch's end).
+            let n = s.points.len();
+            let outside_span = |k: usize| {
+                let (a, b) = (&s.points[k].structure, &s.points[k + 1].structure);
+                !gone.contains(a.as_str())
+                    && !gone.contains(b.as_str())
+                    && (!inside(a) || !inside(b))
+            };
+            let mut pieces: Vec<(usize, usize)> = Vec::new();
+            let mut k = 0;
+            while k + 1 < n {
+                if outside_span(k) {
+                    let start = k;
+                    while k + 1 < n && outside_span(k) {
+                        k += 1;
+                    }
+                    pieces.push((start, k));
+                } else {
+                    k += 1;
+                }
+            }
+            let why = if pieces.is_empty() {
+                format!("at the removed structure {}", p.structure)
+            } else {
                 format!(
-                    "at the removed structure {}; it runs on outside the stretch (crosses its end)",
+                    "at the removed structure {}; it runs on outside the stretch (crosses its \
+                     end): split there, the part outside kept",
                     p.structure
                 )
-            } else {
-                format!("at the removed structure {}", p.structure)
             };
-            Removed::new("section", &s.id, &why, kept, true)
+            let mut r = Removed::new("section", &s.id, &why, kept, true);
+            r.pieces = pieces;
+            r
         } else {
             let over_matched = s.points.iter().all(|p| mine.contains(p.structure.as_str()));
             let spans_joined = s.points.windows(2).all(|w| {
@@ -378,11 +409,46 @@ pub(super) fn remove(line: &mut Line, removed: &[Removed]) {
     let (structures, sections, jumpers) = (of("structure"), of("section"), of("jumper"));
     line.structures
         .retain(|s| !structures.contains(s.id.as_str()));
+    // A section crossing the stretch's end: its parts outside kept.
+    let pieces: Vec<ohl_line::Section> = removed
+        .iter()
+        .filter(|r| r.kind == "section" && !r.keep && !r.pieces.is_empty())
+        .filter_map(|r| line.sections.iter().find(|s| s.id == r.id).map(|s| (r, s)))
+        .flat_map(|(r, s)| {
+            let taken: BTreeSet<String> = line.sections.iter().map(|x| x.id.clone()).collect();
+            r.pieces
+                .iter()
+                .enumerate()
+                .filter_map(|(k, &(a, b))| {
+                    let id = if k == 0 {
+                        s.id.clone()
+                    } else {
+                        let mut n = k + 1;
+                        while taken.contains(&format!("{}-{n}", s.id)) {
+                            n += 1;
+                        }
+                        format!("{}-{n}", s.id)
+                    };
+                    s.piece(a, b, &id)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
     line.sections.retain(|s| !sections.contains(s.id.as_str()));
+    let spared: BTreeSet<String> = pieces.iter().map(|p| p.id.clone()).collect();
+    line.sections.extend(pieces);
     line.jumpers.retain(|j| !jumpers.contains(j.id.as_str()));
-    line.spacers.retain(|s| {
-        !sections.contains(s.a.section.as_str()) && !sections.contains(s.b.section.as_str())
-    });
+    // Spacers on what is gone (a spared piece's only where both ends'
+    // span points are still on it).
+    let on = |e: &ohl_line::SpanPointRef| {
+        !sections.contains(e.section.as_str())
+            || (spared.contains(&e.section)
+                && line
+                    .sections
+                    .iter()
+                    .any(|x| x.id == e.section && x.span_points.iter().any(|p| p.label == e.point)))
+    };
+    line.spacers.retain(|s| on(&s.a) && on(&s.b));
     for p in &mut line.alignment_points {
         if p.structure
             .as_deref()
