@@ -3658,6 +3658,7 @@ dependencies = [
  "ohl-cables",
  "ohl-core",
  "ohl-line",
+ "ohl-thermal",
  "ohl-weather",
  "serde",
  "serde_json",

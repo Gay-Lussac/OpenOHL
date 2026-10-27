@@ -245,16 +245,16 @@ pub fn line_spans(line: &Line) -> Vec<LineSpan> {
 }
 
 /// The axis of a span: start, unit direction, unit right, length (plan).
-struct Axis {
-    a: [f64; 3],
-    b: [f64; 3],
-    u: [f64; 2],
-    right: [f64; 2],
-    length: f64,
+pub(crate) struct Axis {
+    pub(crate) a: [f64; 3],
+    pub(crate) b: [f64; 3],
+    pub(crate) u: [f64; 2],
+    pub(crate) right: [f64; 2],
+    pub(crate) length: f64,
 }
 
 impl Axis {
-    fn of(line: &Line, span: &LineSpan) -> Result<Self, String> {
+    pub(crate) fn of(line: &Line, span: &LineSpan) -> Result<Self, String> {
         let get = |id: &str| {
             line.structure(id)
                 .map(|s| s.position)
@@ -279,7 +279,7 @@ impl Axis {
     }
 
     /// Along the axis and to its right, m.
-    fn local(&self, p: &Point) -> (f64, f64) {
+    pub(crate) fn local(&self, p: &Point) -> (f64, f64) {
         let d = [p[0] - self.a[0], p[1] - self.a[1]];
         (
             d[0] * self.u[0] + d[1] * self.u[1],
@@ -288,7 +288,7 @@ impl Axis {
     }
 
     /// The plan point `t` along the axis and `s` to its right.
-    fn plan(&self, t: f64, s: f64) -> [f64; 2] {
+    pub(crate) fn plan(&self, t: f64, s: f64) -> [f64; 2] {
         [
             self.a[0] + t * self.u[0] + s * self.right[0],
             self.a[1] + t * self.u[1] + s * self.right[1],
@@ -297,7 +297,12 @@ impl Axis {
 
     /// Ground elevation at `t` along the axis and `s` to its right: the
     /// terrain's, else straight between the feet and level across.
-    fn ground(&self, ground: Option<&dyn Fn(f64, f64) -> Option<f64>>, t: f64, s: f64) -> f64 {
+    pub(crate) fn ground(
+        &self,
+        ground: Option<&dyn Fn(f64, f64) -> Option<f64>>,
+        t: f64,
+        s: f64,
+    ) -> f64 {
         let p = self.plan(t, s);
         ground.and_then(|g| g(p[0], p[1])).unwrap_or_else(|| {
             let f = (t / self.length).clamp(0.0, 1.0);
@@ -426,23 +431,11 @@ pub fn cross_section(
             (None, Some(d)) => (Some(d.resistance.si()), true),
             (None, None) => (None, false),
         };
-        let phase = phases.get(&section.id).copied().flatten().map(|(ks, kp)| {
-            let sys = &line.systems[ks];
-            let n = sys.phases.len().max(1) as f64;
-            PhaseData {
-                system: sys.id.clone(),
-                index: kp,
-                label: sys.phases[kp].label.clone(),
-                circuit: section.circuit_name.clone(),
-                kind: sys.kind,
-                voltage_kv: sys.voltage_kv,
-                frequency_hz: sys.frequency_hz,
-                angle_deg: match sys.kind {
-                    SystemKind::Ac => sys.phases[kp].angle_deg.unwrap_or(-(kp as f64) * 360.0 / n),
-                    SystemKind::Dc => 0.0,
-                },
-            }
-        });
+        let phase = phases
+            .get(&section.id)
+            .copied()
+            .flatten()
+            .map(|at| phase_data(line, section, at));
         wires.push(CrossWire {
             section: section.id.clone(),
             span: j,
@@ -490,6 +483,32 @@ pub fn cross_section(
         other_lines: Vec::new(),
         notes,
     })
+}
+
+/// The system data of a phase conductor of `section`: (system index,
+/// phase index) in `line` as [`Line::section_phases`] gives it. AC phase
+/// angles not given are spread evenly from 0° in the phases' order
+/// (L1 0°, L2 −120°, L3 +120° for three).
+pub(crate) fn phase_data(
+    line: &Line,
+    section: &ohl_line::Section,
+    (ks, kp): (usize, usize),
+) -> PhaseData {
+    let sys = &line.systems[ks];
+    let n = sys.phases.len().max(1) as f64;
+    PhaseData {
+        system: sys.id.clone(),
+        index: kp,
+        label: sys.phases[kp].label.clone(),
+        circuit: section.circuit_name.clone(),
+        kind: sys.kind,
+        voltage_kv: sys.voltage_kv,
+        frequency_hz: sys.frequency_hz,
+        angle_deg: match sys.kind {
+            SystemKind::Ac => sys.phases[kp].angle_deg.unwrap_or(-(kp as f64) * 360.0 / n),
+            SystemKind::Dc => 0.0,
+        },
+    }
 }
 
 /// The mean offset, height and elevation of samples (along, offset,

@@ -77,7 +77,7 @@ pub struct SpanMatrices {
 }
 
 /// The equivalent wire of a cross-section's wire, or why there is none.
-fn wire_of(w: &CrossWire, notes: &mut Vec<String>) -> Option<Wire> {
+pub(crate) fn wire_of(w: &CrossWire, notes: &mut Vec<String>) -> Option<Wire> {
     let radius = 0.5 * w.wire.diameter;
     let gmr = match w.wire.gmr {
         Some(g) => g,

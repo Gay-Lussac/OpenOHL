@@ -19,6 +19,161 @@ use crate::{Calculation, Inputs, Outputs, Registry};
 pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(EarthTerms));
     registry.register(Box::new(Parameters));
+    registry.register(Box::new(MagneticSegments));
+    registry.register(Box::new(Magnetic2d));
+}
+
+/// A list of numbers (`[x, y, z]`).
+fn numbers(v: Option<&toml::Value>, what: &str, n: usize) -> Result<Vec<f64>, String> {
+    let list = v
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("input \"{what}\": a list of {n} numbers"))?;
+    let out: Vec<f64> = list
+        .iter()
+        .filter_map(|x| x.as_float().or_else(|| x.as_integer().map(|i| i as f64)))
+        .collect();
+    if out.len() != n {
+        return Err(format!("input \"{what}\": a list of {n} numbers"));
+    }
+    Ok(out)
+}
+
+fn number(t: &toml::Table, name: &str) -> Result<f64, String> {
+    let v = t
+        .get(name)
+        .ok_or_else(|| format!("missing input \"{name}\""))?;
+    v.as_float()
+        .or_else(|| v.as_integer().map(|i| i as f64))
+        .ok_or_else(|| format!("input \"{name}\" must be a number"))
+}
+
+/// A current (A, rms) at a phase angle (degrees, default 0) as a phasor.
+fn phasor(t: &toml::Table) -> Result<nalgebra::Complex<f64>, String> {
+    let angle = if t.contains_key("angle") {
+        number(t, "angle")?
+    } else {
+        0.0
+    };
+    Ok(nalgebra::Complex::from_polar(
+        number(t, "current")?,
+        angle.to_radians(),
+    ))
+}
+
+fn tables<'a>(inputs: &'a Inputs, name: &str) -> Result<Vec<&'a toml::Table>, String> {
+    inputs
+        .get(name)
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("missing input \"{name}\" (a list of tables)"))?
+        .iter()
+        .enumerate()
+        .map(|(k, v)| v.as_table().ok_or_else(|| format!("{name} {k}: a table")))
+        .collect()
+}
+
+/// `electrical.magnetic_segments`: the flux density at `point` (`[x, y,
+/// z]`, m) of straight `segments` (`{ a = [x, y, z], b = [x, y, z],
+/// current = A, angle = deg }`, the current flowing from a to b) by the
+/// program's closed form of Biot–Savart for a finite segment, summed as
+/// phasors. Outputs in µT: `bx_ut`, `by_ut`, `bz_ut` (each component's
+/// rms magnitude), `b_ut` (the rms of the vector), `b_major_ut` (the
+/// largest over the cycle).
+struct MagneticSegments;
+
+impl Calculation for MagneticSegments {
+    fn id(&self) -> &'static str {
+        "electrical.magnetic_segments"
+    }
+
+    fn description(&self) -> &'static str {
+        "Magnetic flux density of straight finite segments (Biot–Savart, closed form)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_electrical::magnetic::{Group, Segment, rms_and_major, segment_field};
+        let p = numbers(inputs.get("point"), "point", 3)?;
+        let p = [p[0], p[1], p[2]];
+        let mut segments = Vec::new();
+        for (k, t) in tables(inputs, "segments")?.into_iter().enumerate() {
+            let a = numbers(t.get("a"), &format!("segment {k} a"), 3)?;
+            let b = numbers(t.get("b"), &format!("segment {k} b"), 3)?;
+            segments.push(Segment {
+                a: [a[0], a[1], a[2]],
+                b: [b[0], b[1], b[2]],
+                current: phasor(t)?,
+            });
+        }
+        let mut field = [nalgebra::Complex::new(0.0, 0.0); 3];
+        for s in &segments {
+            let f = segment_field(s.a, s.b, p);
+            for k in 0..3 {
+                field[k] += s.current * f[k];
+            }
+        }
+        let (rms, major) = rms_and_major(&field);
+        // The same through the program's group sum.
+        let (b, _) = ohl_electrical::magnetic::field_3d(
+            &[Group {
+                frequency_hz: 50.0,
+                segments,
+            }],
+            p,
+        );
+        if (b - rms).abs() > 1e-12 * rms.max(1e-30) {
+            return Err(format!("group sum {b} differs from {rms}"));
+        }
+        Ok([
+            ("bx_ut".to_owned(), field[0].norm() * 1e6),
+            ("by_ut".to_owned(), field[1].norm() * 1e6),
+            ("bz_ut".to_owned(), field[2].norm() * 1e6),
+            ("b_ut".to_owned(), rms * 1e6),
+            ("b_major_ut".to_owned(), major * 1e6),
+        ]
+        .into_iter()
+        .collect())
+    }
+}
+
+/// `electrical.magnetic_2d`: the flux density at `point` (`[y, z]`, m) of
+/// infinite straight parallel `conductors` (`{ y, z, current = A, angle =
+/// deg }`, m) by the program's 2D model. Outputs `b_ut`, `b_major_ut`.
+struct Magnetic2d;
+
+impl Calculation for Magnetic2d {
+    fn id(&self) -> &'static str {
+        "electrical.magnetic_2d"
+    }
+
+    fn description(&self) -> &'static str {
+        "Magnetic flux density of infinite straight parallel conductors (2D)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_electrical::magnetic::{Conductor2d, Group2d, field_2d};
+        let p = numbers(inputs.get("point"), "point", 2)?;
+        let mut conductors = Vec::new();
+        for t in tables(inputs, "conductors")? {
+            conductors.push(Conductor2d {
+                y: number(t, "y")?,
+                z: number(t, "z")?,
+                current: phasor(t)?,
+            });
+        }
+        let (b, major) = field_2d(
+            &[Group2d {
+                frequency_hz: 50.0,
+                conductors,
+            }],
+            p[0],
+            p[1],
+        );
+        Ok([
+            ("b_ut".to_owned(), b * 1e6),
+            ("b_major_ut".to_owned(), major * 1e6),
+        ]
+        .into_iter()
+        .collect())
+    }
 }
 
 fn float(inputs: &Inputs, name: &str) -> Result<f64, String> {
