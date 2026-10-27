@@ -49,6 +49,51 @@ pub enum ProjectCommand {
         #[arg(long)]
         clip_in: bool,
     },
+    /// Bring another program's file (a project plugin's format) into an
+    /// existing project: its routes said to be the project's or new, what
+    /// appears in both settled (--choose), towers in both kept once and
+    /// their sets settled; prints the plan, then writes it as one change
+    /// (unless --dry-run).
+    ImportInto {
+        /// The file.
+        file: PathBuf,
+        /// The project file (.ohl; must exist).
+        #[arg(long)]
+        into: PathBuf,
+        /// User name.
+        #[arg(long)]
+        user: String,
+        /// Format id (default: from the file extension).
+        #[arg(long)]
+        format: Option<String>,
+        /// Format option KEY=VALUE (repeatable).
+        #[arg(long = "option")]
+        options: Vec<String>,
+        /// Project plugin directory (repeatable).
+        #[arg(long)]
+        plugin: Vec<PathBuf>,
+        /// Clip the sections in at their stringing condition.
+        #[arg(long)]
+        clip_in: bool,
+        /// KEY=CHOICE (repeatable), KEY as listed: a duplicate
+        /// (`section:S1`, `cable:x`, `library:weather/w.ohlwc`)
+        /// keep|imported|both; a set of a tower in both (`tower:T3:set:2`)
+        /// add|leave (only in the import) or keep|imported|new (at another
+        /// place).
+        #[arg(long = "choose")]
+        choose: Vec<String>,
+        /// ID=existing|new|ROUTE (repeatable): an imported route is the
+        /// project's of the same id, a new route, or the project's ROUTE.
+        #[arg(long = "route")]
+        routes: Vec<String>,
+        /// Alignment points and structures nearer than this in plan are
+        /// the same place, m.
+        #[arg(long, default_value_t = ohl_io::import_into::DEFAULT_TOLERANCE)]
+        tolerance: f64,
+        /// Only print the plan.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Read a file of any line format (see ohl formats: structure points
     /// from CSV, GeoJSON or shapefiles, LandXML, OHL XML…) into a project
     /// file: a new project gets the line, one holding a line gets it
@@ -201,6 +246,209 @@ fn report(a: &Applied) {
     );
 }
 
+/// The import's options from the command line: the choices
+/// (`KEY=keep|imported|both`, a tower's set `KEY=add|leave|keep|imported|new`),
+/// the routes (`ID=existing|new|ROUTE`), the tolerance.
+pub fn import_options(
+    choose: &[String],
+    routes: &[String],
+    tolerance: f64,
+) -> Result<ohl_io::import_into::ImportOptions, String> {
+    use ohl_io::import_into::{Resolution, SetChoice};
+    let mut how = ohl_io::import_into::ImportOptions {
+        tolerance,
+        ..Default::default()
+    };
+    for c in choose {
+        let (k, v) = c
+            .rsplit_once('=')
+            .ok_or_else(|| format!("--choose \"{c}\": KEY=CHOICE"))?;
+        let (k, v) = (k.trim().to_owned(), v.trim());
+        if k.starts_with("tower:") {
+            let set = match v {
+                "add" => SetChoice::Add,
+                "leave" => SetChoice::LeaveOut,
+                "keep" => SetChoice::KeepExisting,
+                "imported" => SetChoice::TakeImported,
+                "new" => SetChoice::NewNumber,
+                _ => {
+                    return Err(format!(
+                        "--choose \"{c}\": a set is add, leave, keep, imported or new"
+                    ));
+                }
+            };
+            how.sets.insert(k, set);
+        } else {
+            let r = match v {
+                "keep" => Resolution::KeepExisting,
+                "imported" => Resolution::TakeImported,
+                "both" | "new" => Resolution::KeepBoth,
+                _ => return Err(format!("--choose \"{c}\": keep, imported or both")),
+            };
+            how.choices.insert(k, r);
+        }
+    }
+    for r in routes {
+        let (id, v) = r
+            .split_once('=')
+            .ok_or_else(|| format!("--route \"{r}\": ID=existing, ID=new or ID=ROUTE"))?;
+        let to = match v.trim() {
+            "new" => None,
+            "existing" => Some(id.trim().to_owned()),
+            other => Some(other.to_owned()),
+        };
+        how.routes.insert(id.trim().to_owned(), to);
+    }
+    Ok(how)
+}
+
+/// The import of `read` into the project `into` as `how` says: the plan
+/// printed, then (unless `dry_run`) its library files and its line
+/// written (the line one logged command), and whether the wire library
+/// and the structure types load and the line resolves after it.
+pub fn import_into(
+    read: &ohl_io::projects::ImportedProject,
+    into: &Path,
+    user: &str,
+    how: &ohl_io::import_into::ImportOptions,
+    dry_run: bool,
+) -> Result<(), String> {
+    let mut s = open_existing(into)?;
+    let existing = s.export();
+    let mut libs = Vec::new();
+    let mut kinds: Vec<&str> = PROJECT_LIBRARY_KINDS.iter().map(|(k, _)| *k).collect();
+    kinds.extend(read.libraries.iter().map(|(k, ..)| k.as_str()));
+    kinds.sort_unstable();
+    kinds.dedup();
+    for kind in kinds {
+        for (n, t) in s.library_files(kind).map_err(|e| e.to_string())? {
+            libs.push((kind.to_owned(), n, t));
+        }
+    }
+    let plan = ohl_io::import_into::plan(&existing, &libs, read, how)?;
+    print_import_plan(&plan);
+    if dry_run {
+        println!("dry run: nothing written");
+        return Ok(());
+    }
+    for (kind, name, text) in &plan.libraries {
+        s.put_library_file(user, kind, name, text)
+            .map_err(|e| format!("library {kind}/{name}: {e}"))?;
+    }
+    if plan.line == existing {
+        println!("the line is unchanged");
+    } else {
+        let a = s
+            .apply(
+                user,
+                Command::ReplaceLine {
+                    line: Box::new(plan.line.clone()),
+                },
+            )
+            .map_err(|e| e.to_string())?;
+        report(&a);
+    }
+    s.checkpoint().map_err(|e| e.to_string())?;
+    // What the project reads after it.
+    let after = ohl_io::import_into::libraries_after(&libs, &plan);
+    let mut wires = ohl_cables::Library::default();
+    let mut loads = Ok(());
+    for (_, n, t) in after.iter().filter(|(k, ..)| k == "cables") {
+        if let Err(e) = wires.add_toml(Path::new(n), t) {
+            loads = Err(e.to_string());
+            break;
+        }
+    }
+    match loads {
+        Ok(()) => println!("the wire library loads: {} cables", wires.len()),
+        Err(e) => println!("the wire library does not load: {e}"),
+    }
+    Ok(())
+}
+
+/// The plan of an import, in words.
+fn print_import_plan(p: &ohl_io::import_into::ImportPlan) {
+    use ohl_io::import_into::SetState;
+    let words = |m: &std::collections::BTreeMap<&'static str, usize>| -> String {
+        if m.is_empty() {
+            return "nothing".into();
+        }
+        m.iter()
+            .map(|(k, n)| format!("{n} {k}{}", if *n == 1 { "" } else { "s" }))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    println!("added: {}", words(&p.added));
+    println!("the same in both: {}", words(&p.identical));
+    for (s, t) in &p.missing_types {
+        println!(
+            "structure {s}: its type {t} is in no structure type file of the project after the import"
+        );
+    }
+    if !p.shared.is_empty() {
+        println!("towers in both (kept once, as the project's):");
+    }
+    for t in &p.shared {
+        println!("  {}", t.summary());
+        let at = |x: Option<[f64; 3]>| {
+            x.map_or("—".to_owned(), |p| {
+                format!("({:.2}, {:.2}, {:.2})", p[0], p[1], p[2])
+            })
+        };
+        for s in &t.sets {
+            let what = match (s.state, s.choice) {
+                (SetState::OnlyExisting, _) => "the project's only".to_owned(),
+                (SetState::Same, _) => "the same".to_owned(),
+                (_, Some(c)) => match s.new_set {
+                    Some(n) => format!("{} ({n})", c.words()),
+                    None => c.words().to_owned(),
+                },
+                (_, None) => String::new(),
+            };
+            let apart = s
+                .distance()
+                .map_or(String::new(), |d| format!(", {d:.2} m apart"));
+            println!(
+                "    set {:>3}: project's {} imported {}{apart}: {what}   [{}]",
+                s.set,
+                at(s.existing),
+                at(s.imported),
+                s.key
+            );
+        }
+    }
+    if !p.duplicates.is_empty() {
+        println!("in both with other values:");
+    }
+    for d in &p.duplicates {
+        println!(
+            "  {} {} / {} ({}): {}   [{}]",
+            d.kind,
+            d.existing,
+            d.imported,
+            d.differences.join(", "),
+            d.resolution.words(),
+            d.key
+        );
+    }
+    for (k, from, to) in &p.renamed {
+        println!("  {k} {from} is now {to}");
+    }
+    for (k, n, _) in &p.libraries {
+        println!("  library file written: {k}/{n}");
+    }
+    for n in &p.notes {
+        println!("  - {n}");
+    }
+    println!(
+        "the merged line: {} structures, {} sections, {} jumpers, {} routes",
+        p.line.structures.len(),
+        p.line.sections.len(),
+        p.line.jumpers.len(),
+        p.line.routes.len()
+    );
+}
+
 fn open(path: &Path) -> Result<Session, String> {
     Session::open(path).map_err(|e| e.to_string())
 }
@@ -258,6 +506,30 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 started.elapsed()
             );
             report(&made.applied);
+        }
+        ProjectCommand::ImportInto {
+            file,
+            into,
+            user,
+            format,
+            options,
+            plugin,
+            clip_in,
+            choose,
+            routes,
+            tolerance,
+            dry_run,
+        } => {
+            let mut r = crate::io_run::registry(&plugin)?;
+            let read = ohl_io::projects::read_project(
+                &mut r,
+                &file,
+                format.as_deref(),
+                &crate::io_run::options(&options)?,
+                clip_in,
+            )?;
+            let how = import_options(&choose, &routes, tolerance)?;
+            import_into(&read, &into, &user, &how, dry_run)?;
         }
         ProjectCommand::ImportFile {
             file,

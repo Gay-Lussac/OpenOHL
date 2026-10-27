@@ -3662,11 +3662,13 @@ dependencies = [
  "ohl-plugins",
  "ohl-sections",
  "ohl-session",
+ "ohl-structures",
  "ohl-terrain",
  "ohl-weather",
  "rusqlite",
  "serde",
  "serde_json",
+ "toml 0.9.12+spec-1.1.0",
  "zip",
 ]
 
