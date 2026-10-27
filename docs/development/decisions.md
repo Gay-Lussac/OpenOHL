@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Single angles checked axially by default (owner, 2026-10-27)**
+
+- From the same comparison: the check added frame end moments to light
+  single angles modelled as frames, giving usages 1.2–16 times the tower
+  program's, mostly from bending (3,094 members at 50 % or more mainly by
+  bending where the tower program had a median of 5 %). Tower practice
+  designs single angles axially, the connections' eccentricity in the
+  effective slenderness.
+- A frame whose section is a single angle (`equal_angle`,
+  `unequal_angle` in the cross-section library) is checked for its axial
+  force only; `[analysis] single_angle_moments = true` keeps the old
+  interaction (`.ohlfe` version 4). Other sections keep the interaction.
+  Marked as a simplification in the theory page (Member usage).
+
 **Structure solver guards: implausible displacements, stalled P-Delta (owner, 2026-10-27)**
 
 - From a comparison of the structure analysis with a commercial tower

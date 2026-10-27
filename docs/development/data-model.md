@@ -854,7 +854,9 @@ new `sagtension.nonlinear_criteria` and `sagtension.sagging`.
 
 Other data files: structure models `.ohlfe` (`ohl-structure-model`,
 version 2: the member kind `tension`; version 3: a member's `bending` and
-`check`) and
+`check`; version 4, 2026-10-27: `[analysis] single_angle_moments`,
+`Analysis::single_angle_moments`, default false — a single angle's frame
+end moments left out of its usage, `check::is_single_angle`) and
 poles `.ohlp` (`ohl-pole`) next to the `.ohls`
 ([Structure analysis](../user-guide/structure-analysis.md)); clearance
 rules `.ohlr`; thermal ambient `.ohlta`; unit costs `.ohlcost`; galloping
