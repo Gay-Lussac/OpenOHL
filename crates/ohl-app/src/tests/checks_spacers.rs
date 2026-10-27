@@ -233,12 +233,8 @@ fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
         .click();
     harness.run();
     assert!(
-        harness
-            .state_mut()
-            .dock()
-            .find_tab(&crate::app::Tab::UnequalWind)
-            .is_some(),
-        "its page"
+        harness.state_mut().ready().unwrap().unequal_wind.open,
+        "its window"
     );
     {
         let r = harness.state_mut().ready().unwrap();
@@ -272,6 +268,13 @@ fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
     harness.run();
     let shown = harness.state_mut().ready().unwrap().case;
     let label = format!("{} span {}", row.span[0].0, row.span[0].1 + 1);
+    // (Scrolled to: the window's items have more room since 2026-10-27.)
+    harness
+        .query_all_by_label(&label)
+        .next()
+        .unwrap()
+        .scroll_to_me();
+    harness.run();
     harness.query_all_by_label(&label).next().unwrap().click();
     harness.run();
     assert_eq!(
@@ -296,9 +299,7 @@ fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
     if a > 0.0 {
         assert!(w[0].1.contains(&format!("{a:.0} Pa")), "{}", w[0].1);
     }
-    let dock = harness.state_mut().dock();
-    let at = dock.find_tab(&crate::app::Tab::UnequalWind).unwrap();
-    dock.remove_tab(at);
+    harness.state_mut().ready().unwrap().unequal_wind.open = false;
     harness.run();
     let v = &harness.state_mut().ready().unwrap().view3d;
     assert!(v.measure.is_none() && v.measure_wires.is_empty());
@@ -344,13 +345,19 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         .get_by_label("Distance between conductors (LeV)…")
         .click();
     harness.run();
-    // A page of its own, floating first (it may be docked).
-    let at = harness
-        .state_mut()
-        .dock()
-        .find_tab(&crate::app::Tab::PhaseDistance)
-        .expect("its page");
-    assert!(!at.surface.is_main(), "floating");
+    // A window like every check window, floating first (its 📌 docks
+    // it).
+    assert!(harness.state_mut().ready().unwrap().phase_distance.open);
+    assert!(
+        harness
+            .state_mut()
+            .dock()
+            .find_tab(&crate::app::Tab::Tool(
+                crate::dockable::Panel::PhaseDistance
+            ))
+            .is_none(),
+        "floating"
+    );
     {
         let r = harness.state_mut().ready().unwrap();
         let w = &mut r.phase_distance;
@@ -396,6 +403,13 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     harness.run();
     let _ = below;
     let label = format!("{} span {}", row.span[0].0, row.span[0].1 + 1);
+    // (Scrolled to: the window's items have more room since 2026-10-27.)
+    harness
+        .query_all_by_label(&label)
+        .next()
+        .unwrap()
+        .scroll_to_me();
+    harness.run();
     harness.query_all_by_label(&label).next().unwrap().click();
     harness.run();
     let r = harness.state_mut().ready().unwrap();
@@ -409,17 +423,18 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     let (a, b, text) = r.view3d.measure.clone().expect("the line drawn");
     assert_eq!([a, b], row.at);
     assert!(text.contains("d ") && text.contains("z "), "{text}");
-    // In its weather case.
-    assert_eq!(r.model.cases[r.case].case.name, row.case);
-    // The page closed: the line gone.
-    let dock = harness.state_mut().dock();
-    let at = dock.find_tab(&crate::app::Tab::PhaseDistance).unwrap();
-    dock.remove_tab(at);
+    // The pair's sections drawn in its weather case (first), the case
+    // shown for the line kept (owner, 2026-10-27).
+    assert_eq!(r.case, original);
+    let k = r.model.section_case(&row.span[0].0, r.case);
+    assert_eq!(r.model.cases[k].case.name, row.case);
+    // The window closed: the line gone, the section in the cases shown.
+    harness.state_mut().ready().unwrap().phase_distance.open = false;
     harness.run();
     let r = harness.state_mut().ready().unwrap();
     assert!(r.view3d.measure.is_none());
-    // The case shown before the check's, back.
-    assert_eq!(r.case, original);
+    assert!(r.model.result_case.is_none());
+    assert_eq!(r.model.section_case(&row.span[0].0, r.case), original);
 }
 
 /// The library of performed checks: a run of the LeV distance between
@@ -503,7 +518,12 @@ fn performed_checks_are_saved_and_run_again() {
     }
     harness.run();
     // In the library: what changed since.
-    harness.get_by_label_contains("changed since:").hover();
+    // (The check's window beside it says so too.)
+    harness
+        .query_all_by_label_contains("changed since:")
+        .next()
+        .unwrap()
+        .hover();
     // Opened again from the library: its parameters and results.
     harness.get_by_label("Open").click();
     harness.run();
@@ -567,9 +587,7 @@ fn performed_checks_are_saved_and_run_again() {
     }
     // Deleted after a confirmation; undo brings it back (the check's
     // window closed: it lies over the library).
-    let dock = harness.state_mut().dock();
-    let at = dock.find_tab(&crate::app::Tab::PhaseDistance).unwrap();
-    dock.remove_tab(at);
+    harness.state_mut().ready().unwrap().phase_distance.open = false;
     harness.run();
     harness.get_by_label("Delete…").click();
     harness.run();

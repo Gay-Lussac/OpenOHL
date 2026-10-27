@@ -107,7 +107,7 @@ Each load is given:
 
 A section that does not solve in a load case is listed, with why. Its loads are then missing, and every structure it ends at or hangs on (and, for a jumper held by strings, every structure holding it) is **incomplete** in that case: its loads are those computed — nothing is made up for the missing wire — but they lack that wire's forces. The incomplete structures are listed per case with the sections or jumpers they miss ("T3: incomplete — not checked: S3 not solved in ice"), and their rows on the Structure loads page are grey with the missing wires named.
 
-**In the application:** Checks › **Compute structure loads** runs in the background (the model is not changed) and opens the **Structure loads** page; **Run** in its footer (bottom left) computes them again. It shows one load case at a time (factored, or unfactored), a filter by structure, a structure's link to go to it, and **Export CSV…** for every case.
+**In the application:** Checks › **Compute structure loads** runs in the background (the model is not changed) and opens the **Structure loads** window (floating first, docked as a panel with its 📌 like every check window); **Run** in its footer (bottom left) computes them again. It shows one load case at a time (factored, or unfactored), a filter by structure, a structure's link to go to it, and **Export CSV…** for every case.
 
 **From the command line:**
 

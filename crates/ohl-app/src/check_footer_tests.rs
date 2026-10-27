@@ -12,7 +12,7 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 
-use crate::app::{App, Ready, Tab};
+use crate::app::{App, Ready};
 use crate::tests::synthetic;
 
 /// The screenshots of the footer go here when `OHL_FOOTER_SHOTS` names a
@@ -91,7 +91,7 @@ const CHECKS: &[Check] = &[
     },
     Check {
         name: "structure-loads",
-        open: |r, _| r.open_page = Some((Tab::Loads, None)),
+        open: |r, _| r.loads.open = true,
         started: |r| r.loads.running() || r.loads.results.is_some(),
     },
 ];

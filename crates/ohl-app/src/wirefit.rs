@@ -160,11 +160,13 @@ impl WireFitWindow {
         let mut again = false;
         let stale = self.out_of_date(model);
         let mut open = self.open;
-        egui::Window::new("As-built wires")
-            .open(&mut open)
-            .default_width(800.0)
-            .default_height(600.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::AsBuiltWires,
+            "As-built wires",
+            [800.0, 600.0],
+            &mut open,
+            |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
                 help::body(ui, "wirefit-window", |ui| {
@@ -232,7 +234,7 @@ impl WireFitWindow {
                         .show(ui, |ui| {
                             egui::Grid::new("wirefit-rows")
                                 .striped(true)
-                                .spacing([12.0, 3.0])
+                                .spacing(help::GRID_SPACING)
                                 .show(ui, |ui| {
                                     for h in [
                                         "span",
@@ -299,7 +301,8 @@ impl WireFitWindow {
                     );
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if again {
             self.start(model, ctx);

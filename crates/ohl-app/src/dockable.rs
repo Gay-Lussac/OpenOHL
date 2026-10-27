@@ -4,8 +4,9 @@
 
 //! Tool windows that can also be panels of the dock: the editor windows
 //! (structure, string, section, jumper), the pylon builder, Replace
-//! structure, the ground clearance windows,
-//! Display weather cases. Each comes up as a floating window where it
+//! structure, Display weather cases, and every check and result window of
+//! the menus (through [`crate::check_help::window`], owner 2026-10-27:
+//! one design for all of them). Each comes up as a floating window where it
 //! always did; **Dock as a panel** (📌, a small button in its title bar —
 //! owner: OHL-Design UI review, 2026-10-26) makes it a tab
 //! of the main window — dragged anywhere there, into another group or out
@@ -46,11 +47,38 @@ pub enum Panel {
     Measurements,
     /// The Follow and snap tool's panel.
     Follow,
+    /// Checks › Safety volumes.
+    SafetyVolumes,
+    /// Checks › Thermal rating.
+    Thermal,
+    /// Checks › Electrical › Line parameters.
+    LineParameters,
+    /// Checks › Analyses › Galloping ellipses.
+    Galloping,
+    /// Checks › Analyses › Wire tensions.
+    WireTensions,
+    /// Checks › Analyses › String checks.
+    StringChecks,
+    /// Checks › Analyses › Internal clearances.
+    InternalClearances,
+    /// Checks › As-built wires.
+    AsBuiltWires,
+    /// Checks › (the plugin's submenu) › Distance between conductors.
+    PhaseDistance,
+    /// Checks › (the plugin's submenu) › Distance between conductors under
+    /// unequal wind.
+    UnequalWind,
+    /// Checks › Performed checks.
+    CheckLibrary,
+    /// Checks › Compute structure loads.
+    Loads,
+    /// Bill of materials › Wires.
+    BillOfMaterials,
 }
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 9] = [
+    pub const ALL: [Panel; 22] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -60,6 +88,19 @@ impl Panel {
         Panel::Vegetation,
         Panel::Measurements,
         Panel::Follow,
+        Panel::SafetyVolumes,
+        Panel::Thermal,
+        Panel::LineParameters,
+        Panel::Galloping,
+        Panel::WireTensions,
+        Panel::StringChecks,
+        Panel::InternalClearances,
+        Panel::AsBuiltWires,
+        Panel::PhaseDistance,
+        Panel::UnequalWind,
+        Panel::CheckLibrary,
+        Panel::Loads,
+        Panel::BillOfMaterials,
     ];
 
     /// A name until its window gave its title.
@@ -74,6 +115,19 @@ impl Panel {
             Panel::Vegetation => "Vegetation and danger trees",
             Panel::Measurements => "Measurements",
             Panel::Follow => "Follow and snap",
+            Panel::SafetyVolumes => "Safety volumes",
+            Panel::Thermal => "Thermal rating",
+            Panel::LineParameters => "Line parameters",
+            Panel::Galloping => "Galloping ellipses",
+            Panel::WireTensions => "Wire tensions",
+            Panel::StringChecks => "String checks",
+            Panel::InternalClearances => "Internal clearances",
+            Panel::AsBuiltWires => "As-built wires",
+            Panel::PhaseDistance => "Distance between conductors",
+            Panel::UnequalWind => "Under unequal wind",
+            Panel::CheckLibrary => "Performed checks",
+            Panel::Loads => "Structure loads",
+            Panel::BillOfMaterials => "Bill of materials: wires",
         }
     }
 }

@@ -1694,6 +1694,42 @@ impl View3d {
                 painter.galley(at, galley, colour);
             }
         }
+        // A check result's weather case (and wind), said beside its
+        // finding in the selection's colour without a box; its wire at the
+        // finding's wind dashed, when the case drawn does not show it.
+        if let Some(rc) = &model.result_case {
+            let colour = egui::Color32::WHITE;
+            for w in &rc.wires {
+                let shown: Vec<Option<egui::Pos2>> = w.iter().map(|p| screen(*p)).collect();
+                for run in shown.split(Option::is_none) {
+                    let points: Vec<egui::Pos2> = run.iter().flatten().copied().collect();
+                    if points.len() > 1 {
+                        painter.extend(egui::Shape::dashed_line(
+                            &points,
+                            egui::Stroke::new(2.0, colour),
+                            8.0,
+                            5.0,
+                        ));
+                    }
+                }
+            }
+            if let Some(at) = screen(rc.at) {
+                let text = if rc.solving() {
+                    format!("{} (its wind: solving…)", rc.says)
+                } else if rc.wires.is_empty() {
+                    rc.says.clone()
+                } else {
+                    format!("{} (dashed: the wire at that wind)", rc.says)
+                };
+                painter.text(
+                    at + egui::vec2(10.0, -10.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    text,
+                    egui::FontId::proportional(14.0),
+                    colour,
+                );
+            }
+        }
         // The kept ones' labels within the label distance, as the others.
         self.user_measure.paint(&painter, &|p| screen(p), near);
         // Structures coloured by usage: the legend.

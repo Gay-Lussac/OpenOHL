@@ -114,11 +114,13 @@ impl LineParametersWindow {
         let mut open = true;
         let mut run = false;
         let stale = self.out_of_date(model);
-        egui::Window::new("Line parameters")
-            .open(&mut open)
-            .default_width(900.0)
-            .default_height(600.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::LineParameters,
+            "Line parameters",
+            [900.0, 600.0],
+            &mut open,
+            |ui| {
                 help::body(ui, "line-parameters-window", |ui| {
                     ui.label(
                         egui::RichText::new(
@@ -152,7 +154,8 @@ impl LineParametersWindow {
                     );
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if run {
             self.start(model, ctx);
@@ -197,7 +200,7 @@ impl LineParametersWindow {
         });
         egui::Grid::new("line-parameters-table")
             .striped(true)
-            .spacing([12.0, 3.0])
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 for h in [
                     "",
@@ -304,7 +307,7 @@ fn settings_ui(ui: &mut egui::Ui, model: &Model) -> Option<ElectricalSettings> {
     let editable = model.can_edit().is_ok();
     ui.add_enabled_ui(editable, |ui| {
         egui::Grid::new("line-parameters-settings")
-            .spacing([10.0, 4.0])
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 ui.label("Soil resistivity");
                 ui.horizontal(|ui| {

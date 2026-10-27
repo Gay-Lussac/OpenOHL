@@ -151,9 +151,12 @@ pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect, out_of_date
     }
 }
 
-/// The Structure loads page.
+/// The Structure loads window (a page until 2026-10-27; now docked as a
+/// panel or floating like every check window, [`crate::check_help::window`]).
 #[derive(Default)]
 pub struct LoadsPage {
+    /// Shown.
+    pub open: bool,
     /// The last results (or why there are none).
     pub results: Option<Outcome>,
     /// The structure override of its cases (its loads are at the
@@ -523,11 +526,14 @@ impl LoadsPage {
         );
         if !r.failed.is_empty() {
             // In a box of its own height, scrolled: a long list stays small.
-            egui::ScrollArea::vertical()
-                .id_salt("loads-not-solved")
-                .max_height(90.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
+            help::list(
+                ui,
+                "loads-list-1",
+                130.0,
+                egui::ScrollArea::vertical()
+                    .id_salt("loads-not-solved")
+                    .auto_shrink([false, true]),
+                |ui| {
                     for f in &r.failed {
                         crate::menu::error_label(ui, format!("not solved: {f}"));
                     }
@@ -547,7 +553,8 @@ impl LoadsPage {
                             ),
                         );
                     }
-                });
+                },
+            );
         }
         let filter = self.filter.trim().to_lowercase();
         egui::ScrollArea::vertical()
@@ -555,7 +562,7 @@ impl LoadsPage {
             .show(ui, |ui| {
                 egui::Grid::new("structure-loads")
                     .striped(true)
-                    .spacing([14.0, 3.0])
+                    .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
                         for h in [
                             "structure",
@@ -780,7 +787,7 @@ impl LoadsPage {
             .show(ui, |ui| {
                 egui::Grid::new("structure-usage")
                     .striped(true)
-                    .spacing([14.0, 3.0])
+                    .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
                         for h in [
                             "structure",

@@ -122,11 +122,13 @@ impl BomWindow {
         }
         self.poll();
         let mut open = true;
-        egui::Window::new("Bill of materials: wires")
-            .open(&mut open)
-            .default_width(760.0)
-            .default_height(520.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::BillOfMaterials,
+            "Bill of materials: wires",
+            [760.0, 520.0],
+            &mut open,
+            |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
                 help::body(ui, "bom-window", |ui| self.ui(ui, model));
@@ -138,7 +140,8 @@ impl BomWindow {
                         ui.spinner();
                     }
                 });
-            });
+            },
+        );
         self.open = open;
     }
 
@@ -212,9 +215,12 @@ fn table(ui: &mut egui::Ui, e: &CostEstimate) {
     } else {
         format!(" {}", e.currency)
     };
-    egui::ScrollArea::vertical()
-        .max_height(ui.available_height() - 80.0)
-        .show(ui, |ui| {
+    help::list(
+        ui,
+        "bom-table",
+        help::LIST_HEIGHT,
+        egui::ScrollArea::vertical().auto_shrink([false, true]),
+        |ui| {
             // Every line, only those in view drawn (2026-10-26).
             let unit_price = format!("unit price{currency}");
             let amount = format!("amount{currency}");
@@ -252,7 +258,8 @@ fn table(ui: &mut egui::Ui, e: &CostEstimate) {
                     c.cell(|ui| ui.label(l.amount.map_or(String::new(), |a| format!("{a:.2}"))));
                 }
             });
-        });
+        },
+    );
     ui.separator();
     ui.label(format!("Spans between structures: {}", e.bom.spans));
     if e.priced {

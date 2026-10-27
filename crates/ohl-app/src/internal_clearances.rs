@@ -416,11 +416,13 @@ impl InternalClearancesWindow {
         let mut run = false;
         let mut changed = false;
         let stale = self.out_of_date(model);
-        egui::Window::new("Internal clearances")
-            .open(&mut open)
-            .default_width(940.0)
-            .default_height(640.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::InternalClearances,
+            "Internal clearances",
+            [940.0, 640.0],
+            &mut open,
+            |ui| {
                 help::body(ui, "internal-clearances-window", |ui| {
                     ui.label(
                         egui::RichText::new(
@@ -460,7 +462,8 @@ impl InternalClearancesWindow {
                     );
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if changed {
             self.save(model);
@@ -554,7 +557,7 @@ impl InternalClearancesWindow {
         let mut remove = None;
         egui::Grid::new("internal-clearance-rules")
             .striped(true)
-            .spacing([10.0, 4.0])
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 for h in [
                     "rule",
@@ -760,10 +763,12 @@ impl InternalClearancesWindow {
                 save_csv("internal-clearances.csv", &report.report.csv(&report.rules));
             }
         });
-        egui::ScrollArea::vertical()
-            .max_height(360.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
+        help::list(
+            ui,
+            "internal-clearances-list-1",
+            500.0,
+            egui::ScrollArea::vertical().auto_shrink([false, false]),
+            |ui| {
                 // Every row (those asked for), only those in view drawn
                 // (2026-10-26).
                 let rows: Vec<_> = report
@@ -773,7 +778,7 @@ impl InternalClearancesWindow {
                     .filter(|r| !self.only_failures || !r.pass())
                     .collect();
                 let mut table = crate::rows_in_view::Table::new(ui, "internal-clearance-rows", 9)
-                    .spacing(12.0, 3.0);
+                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
                 table.header(
                     ui,
                     &[
@@ -831,7 +836,8 @@ impl InternalClearancesWindow {
                         }
                     });
                 });
-            });
+            },
+        );
     }
 }
 

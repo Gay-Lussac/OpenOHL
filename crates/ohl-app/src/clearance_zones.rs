@@ -59,17 +59,44 @@ pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
 // classes (`zone::time_limit`, owner 2026-10-27: the limit scales with
 // the work; said before Run and when it is reached).
 
-/// Height of the scrolling lists (rules, results), points.
-const LIST_HEIGHT: f32 = 220.0;
-
 /// What a check found.
 pub type Report = zone::ZoneCheckResult;
+
+/// A finding clicked: the span (or jumper) and its point, and the weather
+/// case and wind position it was found in.
+#[derive(Debug, Clone)]
+pub struct Picked {
+    /// The finding.
+    pub finding: ZoneFinding,
+    /// Its wind position (the case as solved, its pressure and side).
+    pub state: WindState,
+}
+
+impl Picked {
+    /// The span or jumper.
+    pub fn selection(&self) -> Selection {
+        finding_span(&self.finding)
+    }
+
+    /// Where the wire was, in words: "high wind, 300 of 600 Pa from the
+    /// left", "high wind, swing arc at 23° to the right".
+    pub fn says(&self) -> String {
+        let f = ZoneFinding {
+            state: 0,
+            ..self.finding.clone()
+        };
+        f.position(std::slice::from_ref(&self.state))
+    }
+}
 
 /// What the window asks of the application.
 #[derive(Debug, Default)]
 pub struct Out {
     /// Go to a span (and look at this point).
     pub go: Option<(Selection, [f64; 3])>,
+    /// The finding clicked: its span drawn in its weather case and wind
+    /// ([`crate::result_case`]).
+    pub picked: Option<Picked>,
     /// New violations to draw (wire point, target): a new report, or
     /// the window opened again.
     pub marks: Option<Vec<([f64; 3], [f64; 3])>>,
@@ -795,12 +822,9 @@ impl ZoneWindow {
             Measure::Vertical => crate::dockable::Panel::VerticalClearances,
             Measure::Radial => crate::dockable::Panel::RadialClearances,
         };
-        let window = egui::Window::new(self.title())
-            .default_width(820.0)
-            .default_height(760.0);
         let mut guide = None;
         let footer = self.title();
-        crate::dockable::show(ctx, panel, self.title(), window, Some(&mut open), |ui| {
+        help::window(ctx, panel, self.title(), [820.0, 760.0], &mut open, |ui| {
             // Scrolled: with the distance editors in place a window may be
             // taller than the screen; it stays closable. Run in the footer
             // at the bottom left, always visible (owner, 2026-10-21).
@@ -818,8 +842,9 @@ impl ZoneWindow {
                     // The results first, the settings below.
                     guide = guide.or(help::heading(ui, "Results", "clearances-results"));
                     self.results_help(ui);
-                    if let Some(go) = self.results_ui(ui, model) {
-                        out.go = Some(go);
+                    if let Some(p) = self.results_ui(ui, model) {
+                        out.go = Some((p.selection(), p.finding.wire));
+                        out.picked = Some(p);
                     }
                     ui.separator();
                     guide = guide.or(help::heading(
@@ -1260,14 +1285,17 @@ impl ZoneWindow {
         let mut remove = None;
         let mut duplicate = None;
         let n = self.rules.len();
-        egui::ScrollArea::both()
-            .id_salt((self.title(), "rules"))
-            .max_height(LIST_HEIGHT)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
+        help::list(
+            ui,
+            (self.title(), "rules"),
+            help::LIST_HEIGHT,
+            egui::ScrollArea::both()
+                .id_salt((self.title(), "rules"))
+                .auto_shrink([false, true]),
+            |ui| {
                 egui::Grid::new((self.title(), "rule-grid"))
                     .striped(true)
-                    .spacing([10.0, 4.0])
+                    .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
                         let vertical = self.zone.measure == Measure::Vertical;
                         for h in [
@@ -1327,7 +1355,8 @@ impl ZoneWindow {
                             ui.end_row();
                         }
                     });
-            });
+            },
+        );
         if let Some(k) = duplicate {
             let mut r = self.rules[k].clone();
             r.name.push_str(" (copy)");
@@ -1470,7 +1499,7 @@ impl ZoneWindow {
         );
     }
 
-    fn results_ui(&self, ui: &mut egui::Ui, model: &Model) -> Option<(Selection, [f64; 3])> {
+    fn results_ui(&self, ui: &mut egui::Ui, model: &Model) -> Option<Picked> {
         let report = match &self.report {
             None => return None,
             Some(Err(e)) => {
@@ -1480,10 +1509,16 @@ impl ZoneWindow {
             Some(Ok(r)) => r,
         };
         let n = report.zone.findings.len();
-        let mut go = None;
+        let mut go: Option<&ZoneFinding> = None;
         if let Some(g) = result_banner(ui, report) {
             go = Some(g);
         }
+        let picked = |f: Option<&ZoneFinding>| {
+            f.map(|f| Picked {
+                finding: f.clone(),
+                state: report.states[f.state].clone(),
+            })
+        };
         let head = format!(
             "{n} span{} below a rule; {} LiDAR points read",
             if n == 1 { "" } else { "s" },
@@ -1527,24 +1562,27 @@ impl ZoneWindow {
             None,
         );
         if n == 0 {
-            return go;
+            return picked(go);
         }
-        egui::ScrollArea::vertical()
-            .id_salt((self.title(), "results"))
-            .max_height(LIST_HEIGHT)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
+        help::list(
+            ui,
+            (self.title(), "results"),
+            help::LIST_HEIGHT,
+            egui::ScrollArea::vertical()
+                .id_salt((self.title(), "results"))
+                .auto_shrink([false, true]),
+            |ui| {
                 // Every finding, only those in view drawn (2026-10-26).
                 let findings = &report.zone.findings;
-                let mut table =
-                    crate::rows_in_view::Table::new(ui, "result-grid", 7).spacing(12.0, 3.0);
+                let mut table = crate::rows_in_view::Table::new(ui, "result-grid", 7)
+                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
                 table.header_cells(ui, |c| {
                     for (k, h) in [
                         "Span",
                         "Rule",
                         "Required [m]",
                         "To surface [m]",
-                        "Wind",
+                        "Case and wind",
                         "Target",
                         "Too close",
                     ]
@@ -1601,12 +1639,12 @@ impl ZoneWindow {
                             )
                         })
                     });
-                    c.cell(|ui| {
-                        ui.label(f.wind(&report.states))
-                            .on_hover_text(f.position(&report.states))
-                    });
+                    // The case said with the wind (owner, 2026-10-27);
+                    // clicked, the span is drawn in them.
+                    clicked |=
+                        c.cell(|ui| cell(ui, egui::RichText::new(f.position(&report.states))));
                     if clicked {
-                        go = Some((span.clone(), f.wire));
+                        go = Some(f);
                     }
                     c.cell(|ui| {
                         ui.label(match f.class {
@@ -1633,8 +1671,9 @@ impl ZoneWindow {
                         ))
                     });
                 });
-            });
-        go
+            },
+        );
+        picked(go)
     }
 }
 
@@ -1659,7 +1698,7 @@ fn finding_span(f: &ZoneFinding) -> Selection {
 /// 2026-10-26): the worst margin (clearance found less the one required)
 /// over every rule, where and in which weather case, red below a rule,
 /// green when every span is clear; a click on it brings the views there.
-fn result_banner(ui: &mut egui::Ui, report: &Report) -> Option<(Selection, [f64; 3])> {
+fn result_banner<'a>(ui: &mut egui::Ui, report: &'a Report) -> Option<&'a ZoneFinding> {
     let worst = report
         .zone
         .findings
@@ -1719,7 +1758,7 @@ fn result_banner(ui: &mut egui::Ui, report: &Report) -> Option<(Selection, [f64;
         None => r,
     };
     if r.clicked() {
-        return worst.map(|f| (finding_span(f), f.wire));
+        return worst;
     }
     None
 }
@@ -1907,13 +1946,17 @@ fn cases_ui(
                 return;
             }
             let mut ticks = on.clone();
-            egui::ScrollArea::vertical()
-                .max_height(LIST_HEIGHT)
-                .show(ui, |ui| {
+            help::list(
+                ui,
+                "clearance-zones-list-1",
+                help::LIST_HEIGHT,
+                egui::ScrollArea::vertical(),
+                |ui| {
                     for (k, c) in cases.iter().enumerate() {
                         changed |= ui.checkbox(&mut ticks[k], c).changed();
                     }
-                });
+                },
+            );
             if changed {
                 r.cases = cases
                     .iter()
@@ -2095,9 +2138,12 @@ fn targets_ui(
             }
             ui.separator();
             ui.label(egui::RichText::new("LiDAR classes").small().weak());
-            egui::ScrollArea::vertical()
-                .max_height(LIST_HEIGHT)
-                .show(ui, |ui| {
+            help::list(
+                ui,
+                "clearance-zones-list-2",
+                help::LIST_HEIGHT,
+                egui::ScrollArea::vertical(),
+                |ui| {
                     for (code, name) in classes {
                         let mut on = r.classes.contains(code);
                         ui.horizontal(|ui| {
@@ -2113,7 +2159,8 @@ fn targets_ui(
                             }
                         });
                     }
-                });
+                },
+            );
         });
     });
     changed
@@ -2155,9 +2202,12 @@ pub fn route_choice(
                         .small()
                         .weak(),
                 );
-                egui::ScrollArea::vertical()
-                    .max_height(LIST_HEIGHT)
-                    .show(ui, |ui| {
+                help::list(
+                    ui,
+                    "clearance-zones-list-3",
+                    help::LIST_HEIGHT,
+                    egui::ScrollArea::vertical(),
+                    |ui| {
                         let toggle = |list: &mut Vec<String>, id: &str, on: bool| {
                             if on {
                                 list.push(id.to_owned());
@@ -2189,7 +2239,8 @@ pub fn route_choice(
                                 }
                             });
                         }
-                    });
+                    },
+                );
             });
         });
     });
@@ -2234,9 +2285,12 @@ pub fn circuit_choice(
                     .small()
                     .weak(),
             );
-            egui::ScrollArea::vertical()
-                .max_height(LIST_HEIGHT)
-                .show(ui, |ui| {
+            help::list(
+                ui,
+                "clearance-zones-list-4",
+                help::LIST_HEIGHT,
+                egui::ScrollArea::vertical(),
+                |ui| {
                     for n in &names {
                         let mut on = check.circuits.contains(n);
                         if ui.checkbox(&mut on, shown(n)).changed() {
@@ -2249,7 +2303,8 @@ pub fn circuit_choice(
                             changed = true;
                         }
                     }
-                });
+                },
+            );
         });
     });
     changed

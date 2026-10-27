@@ -280,11 +280,13 @@ impl StringChecksWindow {
         let mut run = false;
         let mut changed = false;
         let stale = self.out_of_date(model);
-        egui::Window::new("String checks")
-            .open(&mut open)
-            .default_width(900.0)
-            .default_height(640.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::StringChecks,
+            "String checks",
+            [900.0, 640.0],
+            &mut open,
+            |ui| {
                 help::body(ui, "string-checks-window", |ui| {
                     ui.label(
                         egui::RichText::new(
@@ -323,7 +325,8 @@ impl StringChecksWindow {
                     );
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if changed {
             self.save(model);
@@ -411,7 +414,7 @@ impl StringChecksWindow {
         let mut remove = None;
         egui::Grid::new("string-check-rules")
             .striped(true)
-            .spacing([10.0, 4.0])
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 for h in [
                     "rule",
@@ -564,10 +567,12 @@ impl StringChecksWindow {
                 save_csv("string-checks.csv", &report.report.csv(&report.rules));
             }
         });
-        egui::ScrollArea::vertical()
-            .max_height(360.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
+        help::list(
+            ui,
+            "string-checks-list-1",
+            500.0,
+            egui::ScrollArea::vertical().auto_shrink([false, false]),
+            |ui| {
                 // Every row (those asked for), only those in view drawn
                 // (2026-10-26).
                 let rows: Vec<_> = report
@@ -576,8 +581,8 @@ impl StringChecksWindow {
                     .iter()
                     .filter(|r| !self.only_failures || !r.pass)
                     .collect();
-                let mut table =
-                    crate::rows_in_view::Table::new(ui, "string-check-rows", 10).spacing(12.0, 3.0);
+                let mut table = crate::rows_in_view::Table::new(ui, "string-check-rows", 10)
+                    .spacing(help::GRID_SPACING[0], help::GRID_SPACING[1]);
                 table.header(
                     ui,
                     &[
@@ -654,7 +659,8 @@ impl StringChecksWindow {
                         });
                     }
                 });
-            });
+            },
+        );
     }
 }
 

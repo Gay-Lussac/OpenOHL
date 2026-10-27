@@ -14,6 +14,7 @@ use crate::selection::Selection;
 
 mod alignments;
 mod backgrounds_lines;
+mod check_windows;
 mod checks_spacers;
 mod clearances;
 mod display_codes;

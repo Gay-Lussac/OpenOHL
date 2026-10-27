@@ -718,6 +718,10 @@ fn the_clearances_tab_puts_the_results_first() {
     harness.run();
     let head = harness.get_by_label_contains("violation").rect();
     assert!(head.bottom() <= harness.get_by_label("Edit rules").rect().top());
+    // Below the rule editor (scrolled to: the page's items have more
+    // room since 2026-10-27).
+    harness.get_by_label("Vertical…").scroll_to_me();
+    harness.run();
     harness.get_by_label("Vertical…").click();
     harness.run_steps(3);
     assert!(

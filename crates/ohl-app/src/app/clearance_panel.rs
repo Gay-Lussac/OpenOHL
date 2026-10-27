@@ -33,6 +33,191 @@ pub(super) fn clearance_frame(ctx: &egui::Context, r: &mut Ready, tab_open: bool
     }
 }
 
+/// The check windows that were pages until 2026-10-27 — Distance between
+/// conductors (and under unequal wind), Performed checks, Structure loads
+/// —: windows like every check window, docked with their 📌
+/// ([`crate::check_help::window`]).
+pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
+    use crate::dockable::Panel;
+    use crate::phase_distance::Kind;
+    for kind in [Kind::Span, Kind::UnequalWind] {
+        let (panel, w) = match kind {
+            Kind::Span => (Panel::PhaseDistance, &mut r.phase_distance),
+            Kind::UnequalWind => (Panel::UnequalWind, &mut r.unequal_wind),
+        };
+        let mut open = w.open;
+        let model = &r.model;
+        let out =
+            crate::check_help::window(ctx, panel, kind.title(), [1050.0, 780.0], &mut open, |ui| {
+                w.ui(ui, model)
+            });
+        w.open = open;
+        w.apply_values(&mut r.model);
+        if let Some(out) = out {
+            r.phase_distance_out(out, kind);
+        }
+    }
+    let mut open = r.check_library.open;
+    let out = crate::check_help::window(
+        ctx,
+        Panel::CheckLibrary,
+        Panel::CheckLibrary.name(),
+        [1050.0, 640.0],
+        &mut open,
+        |ui| r.check_library.ui(ui, &r.model),
+    );
+    r.check_library.open = open;
+    if let Some(out) = out {
+        r.check_library_out(out);
+    }
+    r.loads.poll();
+    let mut open = r.loads.open;
+    let go = crate::check_help::window(
+        ctx,
+        Panel::Loads,
+        Panel::Loads.name(),
+        [1150.0, 700.0],
+        &mut open,
+        |ui| r.loads.ui(ui, &r.model),
+    );
+    r.loads.open = open;
+    if let Some(Some(id)) = go {
+        r.go_to(Selection::Structure(id));
+    }
+    // Colour structures by usage: the views follow.
+    let marks = r.loads.usage_marks();
+    if marks != r.model.usage_marks {
+        r.model.usage_marks = marks;
+        r.view3d.dirty.insert(Layer::Structures);
+    }
+}
+
+impl Ready {
+    /// Shows a check result's weather case on its sections (`None`: none
+    /// any more), [`crate::result_case`].
+    pub(crate) fn show_result_case(&mut self, r: Option<crate::result_case::ResultCase>) {
+        if r.is_none() && self.model.result_case.is_none() {
+            return;
+        }
+        self.model.result_case = r;
+        self.result_case_changed();
+    }
+
+    /// The views draw the sections' cases again.
+    fn result_case_changed(&mut self) {
+        self.view3d.dirty.extend([
+            Layer::Wires,
+            Layer::OtherCases,
+            Layer::Structures,
+            Layer::Selection,
+        ]);
+        self.profile.invalidate();
+        self.xsections.invalidate();
+        self.drawings.invalidate_preview();
+    }
+
+    /// A finding of a Vertical or Radial clearances window clicked: its
+    /// span drawn in the weather case it was found in, and at its wind
+    /// when the case as drawn does not show that wind.
+    pub(crate) fn show_zone_finding(
+        &mut self,
+        measure: ohl_clearance::Measure,
+        p: &crate::clearance_zones::Picked,
+    ) {
+        use crate::model::WindDisplay;
+        let f = &p.finding;
+        let state = &p.state;
+        let case = self
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == state.name);
+        let jumper = f.section.starts_with("jumper:");
+        let sections = if jumper {
+            Vec::new()
+        } else {
+            vec![f.section.clone()]
+        };
+        let mut rc = crate::result_case::ResultCase::new(
+            crate::result_case::From::Zone(measure),
+            p.selection(),
+            sections,
+            case,
+            format!("found in {}", p.says()),
+            f.wire,
+        );
+        // The case as drawn: at its full wind from the side shown (both
+        // sides: both).
+        let drawn = f.arc.is_none()
+            && match state.side {
+                None => state.full <= 0.0,
+                Some(side) => {
+                    (state.pressure - state.full).abs() < 1e-9
+                        && (self.model.wind == WindDisplay::Both
+                            || self.model.wind.primary() == side)
+                }
+            };
+        if !drawn && !jumper {
+            rc.solve_wire(
+                &self.model.line,
+                &self.model.library,
+                &f.section,
+                f.span,
+                state.case.clone(),
+                f.arc,
+            );
+        }
+        self.show_result_case(Some(rc));
+    }
+
+    /// A finding of the Clearances page clicked: its wire (and the other
+    /// wire of a wire rule) drawn in the case checked.
+    pub(crate) fn show_clearance_finding(&mut self, f: &crate::clearance::Finding, case: &str) {
+        let section = |s: &Selection| match s {
+            Selection::Span { section, .. } => Some(section.clone()),
+            _ => None,
+        };
+        let sections = std::iter::once(&f.wire)
+            .chain(f.other.as_ref())
+            .filter_map(section)
+            .collect();
+        let k = self.model.cases.iter().position(|c| c.case.name == case);
+        let rc = crate::result_case::ResultCase::new(
+            crate::result_case::From::Clearances,
+            f.wire.clone(),
+            sections,
+            k,
+            format!("found in {case}"),
+            f.at,
+        );
+        self.show_result_case(Some(rc));
+    }
+
+    /// Every frame: the wire of a result's wind, when it came; the
+    /// result's case taken off once the selection changed or the window
+    /// (page) that drew it closed (`clearances_page`: the Clearances page
+    /// is open).
+    pub(super) fn result_case_frame(&mut self, clearances_page: bool) {
+        use crate::result_case::From;
+        let Some(rc) = self.model.result_case.as_mut() else {
+            return;
+        };
+        if rc.poll() {
+            self.view3d.dirty.insert(Layer::Selection);
+        }
+        let open = match rc.from {
+            From::Zone(ohl_clearance::Measure::Vertical) => self.vertical_clearances.open,
+            From::Zone(ohl_clearance::Measure::Radial) => self.radial_clearances.open,
+            From::Clearances => clearances_page,
+            From::PhaseDistance(crate::phase_distance::Kind::Span) => self.phase_distance.open,
+            From::PhaseDistance(crate::phase_distance::Kind::UnequalWind) => self.unequal_wind.open,
+        };
+        if !open || self.selection != rc.selection {
+            self.show_result_case(None);
+        }
+    }
+}
+
 /// What every clearance shown is measured to.
 pub(crate) const SURFACE_NOTE: &str =
     "Clearances to the conductor's surface (iced in a case with ice).";
@@ -43,7 +228,7 @@ impl Ready {
     /// What a Distance between conductors page (of `kind`) asks: a report
     /// saved, the result's weather case shown, its span gone to, its line
     /// drawn (and under unequal wind its two conductors at their winds).
-    pub(super) fn phase_distance_out(
+    pub(crate) fn phase_distance_out(
         &mut self,
         out: crate::phase_distance::Out,
         kind: crate::phase_distance::Kind,
@@ -51,19 +236,23 @@ impl Ready {
         if let Some((what, command)) = out.apply {
             self.perform(crate::edit::Action::Command { what, command });
         }
-        if let Some(name) = &out.case
-            && let Some(k) = self.model.cases.iter().position(|c| &c.case.name == name)
-            && k != self.case
-        {
-            // The first result's: the cases shown before kept, to come
-            // back when the page closes.
-            let before = self.model.shown(self.case);
-            let kept = self.cases_before_check.take().map_or(before, |(b, _)| b);
-            self.set_case(k);
-            self.cases_before_check = Some((kept, k));
-        }
+        let at = out.measure.as_ref().map(|m| m.0);
         if let Some(target) = out.go {
             self.go_to(target);
+            // The pair's sections drawn in the result's case (owner,
+            // 2026-10-27; the case shown for the line kept).
+            if let (Some(name), Some(at)) = (&out.case, at) {
+                let k = self.model.cases.iter().position(|c| &c.case.name == name);
+                let rc = crate::result_case::ResultCase::new(
+                    crate::result_case::From::PhaseDistance(kind),
+                    self.selection.clone(),
+                    out.sections.clone(),
+                    k,
+                    format!("found in {name}"),
+                    at,
+                );
+                self.show_result_case(Some(rc));
+            }
         }
         if let Some(m) = out.measure {
             // The view on the line's middle, close enough to read.
@@ -277,6 +466,9 @@ pub(crate) fn clearance_zone_out(
             cam.distance = cam.distance.min(80.0);
         }
         r.plan.centre_on(at);
+    }
+    if let Some(p) = out.picked {
+        r.show_zone_finding(measure, &p);
     }
 }
 
@@ -702,7 +894,11 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         }
     });
     if let Some(f) = go {
-        r.select(f.wire);
+        r.select(f.wire.clone());
+        if let Some(Ok(rep)) = &r.clearances.report {
+            let case = rep.case.clone();
+            r.show_clearance_finding(&f, &case);
+        }
         if let Some(cam) = r.view3d.camera.as_mut() {
             cam.target = f.at;
             cam.distance = cam.distance.min(80.0);
