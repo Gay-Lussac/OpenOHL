@@ -53,6 +53,8 @@ pub enum Panel {
     Thermal,
     /// Checks › Electrical › Line parameters.
     LineParameters,
+    /// Checks › Electrical › Magnetic field.
+    MagneticField,
     /// Checks › Analyses › Galloping ellipses.
     Galloping,
     /// Checks › Analyses › Wire tensions.
@@ -78,7 +80,7 @@ pub enum Panel {
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 22] = [
+    pub const ALL: [Panel; 23] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -91,6 +93,7 @@ impl Panel {
         Panel::SafetyVolumes,
         Panel::Thermal,
         Panel::LineParameters,
+        Panel::MagneticField,
         Panel::Galloping,
         Panel::WireTensions,
         Panel::StringChecks,
@@ -118,6 +121,7 @@ impl Panel {
             Panel::SafetyVolumes => "Safety volumes",
             Panel::Thermal => "Thermal rating",
             Panel::LineParameters => "Line parameters",
+            Panel::MagneticField => "Magnetic field",
             Panel::Galloping => "Galloping ellipses",
             Panel::WireTensions => "Wire tensions",
             Panel::StringChecks => "String checks",

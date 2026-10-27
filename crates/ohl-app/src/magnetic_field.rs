@@ -243,11 +243,13 @@ impl MagneticFieldWindow {
         let mut open = true;
         let mut run = false;
         let stale = self.out_of_date(model);
-        egui::Window::new("Magnetic field")
-            .open(&mut open)
-            .default_width(900.0)
-            .default_height(680.0)
-            .show(ctx, |ui| {
+        help::window(
+            ctx,
+            crate::dockable::Panel::MagneticField,
+            "Magnetic field",
+            [900.0, 680.0],
+            &mut open,
+            |ui| {
                 help::body(ui, "magnetic-field-window", |ui| {
                     ui.label(
                         egui::RichText::new(
@@ -298,7 +300,8 @@ impl MagneticFieldWindow {
                     }
                     self.job.status_ui(ui);
                 });
-            });
+            },
+        );
         self.open = open;
         if run {
             self.start(model, ctx);
@@ -318,7 +321,7 @@ impl MagneticFieldWindow {
         }
         egui::Grid::new("magnetic-field-currents")
             .striped(true)
-            .spacing([12.0, 3.0])
+            .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 for h in ["circuit", "system", "current", "load flow"] {
                     ui.strong(h);
@@ -609,55 +612,66 @@ impl MagneticFieldWindow {
                     });
             });
             plot(ui, &m.profiles[self.shown], m.limit_ut);
-            egui::Grid::new("magnetic-field-profiles")
-                .striped(true)
-                .spacing([12.0, 3.0])
-                .show(ui, |ui| {
-                    for h in [
-                        "span",
-                        "station m",
-                        "along the line m",
-                        "max µT",
-                        "at m",
-                        "limit line m",
-                        "",
-                    ] {
-                        ui.strong(h);
-                    }
-                    ui.end_row();
-                    for (k, p) in m.profiles.iter().enumerate() {
-                        if ui
-                            .selectable_label(k == self.shown, format!("{}–{}", p.from, p.to))
-                            .clicked()
-                        {
-                            self.shown = k;
-                        }
-                        ui.label(format!("{:.1}", p.at));
-                        ui.label(format!("{:.1}", p.along_line));
-                        ui.label(format!("{:.3}", p.max_ut));
-                        ui.label(format!("{:.1}", p.max_offset));
-                        ui.label(match p.limit {
-                            Some(l) => format!(
-                                "{:.1} … {:.1}{}",
-                                l.left,
-                                l.right,
-                                if l.beyond { " (beyond)" } else { "" }
-                            ),
-                            None if m.limit_ut.is_some() => "below the limit".into(),
-                            None => String::new(),
+            help::list(
+                ui,
+                "magnetic-field-profiles",
+                help::LIST_HEIGHT,
+                egui::ScrollArea::vertical().id_salt("magnetic-field-profiles-scroll"),
+                |ui| {
+                    egui::Grid::new("magnetic-field-profiles")
+                        .striped(true)
+                        .spacing(help::GRID_SPACING)
+                        .show(ui, |ui| {
+                            for h in [
+                                "span",
+                                "station m",
+                                "along the line m",
+                                "max µT",
+                                "at m",
+                                "limit line m",
+                                "",
+                            ] {
+                                ui.strong(h);
+                            }
+                            ui.end_row();
+                            for (k, p) in m.profiles.iter().enumerate() {
+                                if ui
+                                    .selectable_label(
+                                        k == self.shown,
+                                        format!("{}–{}", p.from, p.to),
+                                    )
+                                    .clicked()
+                                {
+                                    self.shown = k;
+                                }
+                                ui.label(format!("{:.1}", p.at));
+                                ui.label(format!("{:.1}", p.along_line));
+                                ui.label(format!("{:.3}", p.max_ut));
+                                ui.label(format!("{:.1}", p.max_offset));
+                                ui.label(match p.limit {
+                                    Some(l) => format!(
+                                        "{:.1} … {:.1}{}",
+                                        l.left,
+                                        l.right,
+                                        if l.beyond { " (beyond)" } else { "" }
+                                    ),
+                                    None if m.limit_ut.is_some() => "below the limit".into(),
+                                    None => String::new(),
+                                });
+                                if p.warnings.is_empty() {
+                                    ui.label("");
+                                } else {
+                                    ui.label(
+                                        egui::RichText::new(format!("⚠ {}", p.warnings.len()))
+                                            .color(ui.visuals().warn_fg_color),
+                                    )
+                                    .on_hover_text(p.warnings.join("\n"));
+                                }
+                                ui.end_row();
+                            }
                         });
-                        if p.warnings.is_empty() {
-                            ui.label("");
-                        } else {
-                            ui.label(
-                                egui::RichText::new(format!("⚠ {}", p.warnings.len()))
-                                    .color(ui.visuals().warn_fg_color),
-                            )
-                            .on_hover_text(p.warnings.join("\n"));
-                        }
-                        ui.end_row();
-                    }
-                });
+                },
+            );
             for w in &m.profiles[self.shown].warnings {
                 ui.label(
                     egui::RichText::new(w)
@@ -669,48 +683,56 @@ impl MagneticFieldWindow {
         if !m.points.is_empty() {
             ui.separator();
             ui.strong("Points");
-            egui::Grid::new("magnetic-field-points")
-                .striped(true)
-                .spacing([12.0, 3.0])
-                .show(ui, |ui| {
-                    for h in [
-                        "name",
-                        "x m",
-                        "y m",
-                        "z m",
-                        "height m",
-                        "B µT",
-                        "largest µT",
-                        "margin µT",
-                    ] {
-                        ui.strong(h);
-                    }
-                    ui.end_row();
-                    for p in &m.points {
-                        ui.label(&p.name);
-                        ui.label(format!("{:.2}", p.x));
-                        ui.label(format!("{:.2}", p.y));
-                        ui.label(format!("{:.2}", p.z));
-                        ui.label(format!("{:.2}", p.height));
-                        ui.label(format!("{:.4}", p.b_ut));
-                        ui.label(format!("{:.4}", p.major_ut));
-                        match p.margin_ut {
-                            Some(x) if x < 0.0 => {
-                                ui.label(
-                                    egui::RichText::new(format!("{x:.4}"))
-                                        .color(ui.visuals().error_fg_color),
-                                );
+            help::list(
+                ui,
+                "magnetic-field-points",
+                help::LIST_HEIGHT,
+                egui::ScrollArea::vertical().id_salt("magnetic-field-points-scroll"),
+                |ui| {
+                    egui::Grid::new("magnetic-field-points")
+                        .striped(true)
+                        .spacing(help::GRID_SPACING)
+                        .show(ui, |ui| {
+                            for h in [
+                                "name",
+                                "x m",
+                                "y m",
+                                "z m",
+                                "height m",
+                                "B µT",
+                                "largest µT",
+                                "margin µT",
+                            ] {
+                                ui.strong(h);
                             }
-                            Some(x) => {
-                                ui.label(format!("{x:.4}"));
+                            ui.end_row();
+                            for p in &m.points {
+                                ui.label(&p.name);
+                                ui.label(format!("{:.2}", p.x));
+                                ui.label(format!("{:.2}", p.y));
+                                ui.label(format!("{:.2}", p.z));
+                                ui.label(format!("{:.2}", p.height));
+                                ui.label(format!("{:.4}", p.b_ut));
+                                ui.label(format!("{:.4}", p.major_ut));
+                                match p.margin_ut {
+                                    Some(x) if x < 0.0 => {
+                                        ui.label(
+                                            egui::RichText::new(format!("{x:.4}"))
+                                                .color(ui.visuals().error_fg_color),
+                                        );
+                                    }
+                                    Some(x) => {
+                                        ui.label(format!("{x:.4}"));
+                                    }
+                                    None => {
+                                        ui.label("—");
+                                    }
+                                }
+                                ui.end_row();
                             }
-                            None => {
-                                ui.label("—");
-                            }
-                        }
-                        ui.end_row();
-                    }
-                });
+                        });
+                },
+            );
         }
     }
 }
