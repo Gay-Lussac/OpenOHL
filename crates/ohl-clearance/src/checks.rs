@@ -512,7 +512,7 @@ pub(crate) static FULL_CELLS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// How far from wire `wire` in plan a point can count for `rule`'s point
-/// check ([`PointCheck::eval`]) with the measures `measures` (vertical,
+/// check (`PointCheck::eval`) with the measures `measures` (vertical,
 /// radial) in a set reaching `reach`, m — for [`WireSet::within`]:
 /// - radial: a point is taken within the wire's reach (its largest
 ///   requirement and the search margin, at most `reach`) of the
