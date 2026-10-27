@@ -193,6 +193,10 @@ pub struct Solved {
     /// The same case with the wind from the other side, when both sides
     /// are shown ([`WindDisplay::Both`]) and the case has wind.
     pub mirror: Option<Box<Solved>>,
+    /// Counted up ([`next_serial`]) whenever it is made or solved again:
+    /// another serial, another solution (the Tables page's rows,
+    /// [`crate::tables::TablePage::cached_rows`]).
+    pub serial: u64,
 }
 
 /// Which side the wind of the weather cases comes from, looking ahead
@@ -329,6 +333,7 @@ impl Solved {
             bundles: Default::default(),
             ready: false,
             mirror: None,
+            serial: next_serial(),
         }
     }
 
@@ -349,12 +354,14 @@ impl Solved {
             live,
             ready: true,
             mirror: None,
+            serial: 0,
         };
         s.refresh(line);
         s
     }
 
     fn refresh(&mut self, line: &Line) {
+        self.serial = next_serial();
         // The shapes as they were: kept for the sections that stop solving.
         let mut before = std::mem::take(&mut self.last_solved);
         for shape in std::mem::take(&mut self.shapes) {

@@ -267,6 +267,84 @@ pub struct TablePage {
     pub color: Option<(ColorCell, crate::color_tool::ColorTool)>,
     /// The structure picker, open for a structure's type (Structures).
     pub type_picker: Option<(TypeCell, crate::structure_picker::Picker)>,
+    /// The rows shown and what they were built from
+    /// ([`TablePage::cached_rows`]; 2026-10-27: built every frame before).
+    rows: Option<(RowsKey, Arc<Vec<Row>>)>,
+}
+
+/// What a table's rows are built from: the table and weather case, the
+/// line (its version: every edit counts it up), the library files, the
+/// ground, each weather case's solution ([`crate::model::Solved::serial`]),
+/// the cases sections are drawn in, the model's files, the plugin columns
+/// and whether the project can be edited.
+struct RowsKey {
+    kind: TableKind,
+    case: usize,
+    line: u64,
+    libraries: u64,
+    ground: (u64, usize),
+    editable: bool,
+    solutions: Vec<u64>,
+    display_cases: BTreeMap<String, Vec<usize>>,
+    /// The model's files the rows name: its file, weather cases,
+    /// structure types, insulators.
+    files: (PathBuf, [Option<PathBuf>; 3]),
+    plugin_columns: Vec<PluginColumn>,
+}
+
+/// The ground's revision and surface (its address).
+fn ground_of(model: &Model) -> (u64, usize) {
+    (
+        model.revisions.ground,
+        model.ground.as_ref().map_or(0, |g| Arc::as_ptr(g) as usize),
+    )
+}
+
+impl RowsKey {
+    fn of(kind: TableKind, model: &Model, case: usize) -> Self {
+        Self {
+            kind,
+            case,
+            line: model.line_version,
+            libraries: model.revisions.libraries,
+            ground: ground_of(model),
+            editable: model.can_edit().is_ok(),
+            solutions: model.cases.iter().map(|c| c.serial).collect(),
+            display_cases: model.display_cases.clone(),
+            files: (
+                model.sources.file.clone(),
+                [
+                    model.sources.weather.clone(),
+                    model.sources.structures.clone(),
+                    model.sources.insulators.clone(),
+                ],
+            ),
+            plugin_columns: model.plugin_columns.clone(),
+        }
+    }
+
+    /// Whether the rows built for `self` are those of `kind` now (compared
+    /// without copying anything).
+    fn matches(&self, kind: TableKind, model: &Model, case: usize) -> bool {
+        self.kind == kind
+            && self.case == case
+            && self.line == model.line_version
+            && self.libraries == model.revisions.libraries
+            && self.ground == ground_of(model)
+            && self.solutions.len() == model.cases.len()
+            && self
+                .solutions
+                .iter()
+                .zip(&model.cases)
+                .all(|(s, c)| *s == c.serial)
+            && self.display_cases == model.display_cases
+            && self.files.0 == model.sources.file
+            && self.files.1[0] == model.sources.weather
+            && self.files.1[1] == model.sources.structures
+            && self.files.1[2] == model.sources.insulators
+            && self.plugin_columns == model.plugin_columns
+            && self.editable == model.can_edit().is_ok()
+    }
 }
 
 /// A structure's type cell the structure picker writes to (with its
@@ -453,6 +531,20 @@ impl TablePage {
         self.confirm = None;
     }
 
+    /// The rows of `kind` in weather case `case`: built when what they
+    /// are built from changed ([`RowsKey`]), else those kept (display
+    /// only: the same rows either way).
+    pub fn cached_rows(&mut self, kind: TableKind, model: &Model, case: usize) -> Arc<Vec<Row>> {
+        if let Some((key, rows)) = &self.rows
+            && key.matches(kind, model, case)
+        {
+            return Arc::clone(rows);
+        }
+        let rows = Arc::new(kind.rows(model, case));
+        self.rows = Some((RowsKey::of(kind, model, case), Arc::clone(&rows)));
+        rows
+    }
+
     /// What Apply does: the changes, or — when deletions take other objects
     /// and that was not confirmed — `None` (the list is in `confirm`).
     pub fn prepare(
@@ -523,7 +615,7 @@ impl TablePage {
         for cells in &mut self.added {
             cells.resize(columns.len(), String::new());
         }
-        let rows = kind.rows(model, case);
+        let rows = self.cached_rows(kind, model, case);
         let mut action = None;
         let mut apply = false;
         let mut confirmed = false;

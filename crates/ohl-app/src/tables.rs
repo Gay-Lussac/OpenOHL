@@ -20,6 +20,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use eframe::egui;
 use ohl_line::{SectionPoint, Stringing, Structure};
@@ -29,6 +30,8 @@ use crate::editors::{SectionForm, StringForm, StructureForm};
 use crate::model::Model;
 use crate::selection::Selection;
 
+#[cfg(test)]
+mod cache_tests;
 mod changes;
 mod columns;
 mod library_tables;
