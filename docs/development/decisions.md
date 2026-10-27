@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Screens said plainly and one rule for every voltage (owner, 2026-10-27)**
+
+- A code's horizontal distance (a lamp post's b = 5 m + 0.01 m/kV in plan,
+  a crowd corridor, buildings outside the overpass zone) had to be written
+  as "vertical 1000 m within a band of ±b", one rule per voltage since the
+  band was one number, and showed as an absurd 1000 m requirement (owner:
+  "not right"; asked 2026-10-21, decided now: keep the screen, say it
+  plainly; "group the voltages under one rule"). A rule may now be a
+  **screen** (`screen = true`): its vertical requirement is b by the wire's
+  voltage, every point of its classes within b in plan reported; the
+  results give the distance in plan and b ("6.10 m in plan, within b =
+  8.80 m") instead of a vertical clearance. Results unchanged otherwise
+  (the same points are reported). A real horizontal clearance measure was
+  offered and not chosen.
+- A design-code plugin's rules for some voltages at one distance (a class
+  table giving one rule per distance with its voltages) are merged into
+  one rule with a table by voltage, as rules for one voltage each already
+  were (2026-10-20/21): a wire at a voltage the table does not list takes
+  its next higher row (the larger distance; it had no rule before).
+
 **Plugins may suggest system styles: colour, line code per phase, phase angle (owner, 2026-10-27)**
 
 - A utility's line-modelling standard gives the circuits' colours by

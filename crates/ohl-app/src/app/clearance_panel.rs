@@ -561,12 +561,13 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
                         ..Default::default()
                     };
                     job.append(&format!("{}{other}", f.wire.describe()), 0.0, strong);
+                    let how = match f.band {
+                        Some(b) => ohl_clearance::zone::screen_text(b, f.at, f.target),
+                        None => format!("{} {:.2} m < {:.2} m", f.measure, f.distance, f.required),
+                    };
                     job.append(
                         &format!(
-                            "\n{} {:.2} m < {:.2} m — {}{class}{}",
-                            f.measure,
-                            f.distance,
-                            f.required,
+                            "\n{how} — {}{class}{}",
                             f.rule,
                             if f.count > 1 {
                                 format!(" ({} below)", f.count)

@@ -825,6 +825,9 @@ pub(crate) fn box_distance(p: P3, a: P3, b: P3) -> f64 {
 #[derive(Debug, Clone)]
 pub struct PointCheck {
     rule: Rule,
+    /// The widest band in plan of its wires (a screen's differs by
+    /// voltage), m.
+    band: f64,
     classes: [bool; 256],
     /// One result per wire of the set.
     pub results: Vec<WireResult>,
@@ -856,14 +859,20 @@ impl PointCheck {
         for &c in classes {
             mask[c as usize] = true;
         }
+        let results: Vec<WireResult> = wires
+            .wires
+            .iter()
+            .map(|w| WireResult::with(rule.required(w.kv())))
+            .collect();
+        let band = results
+            .iter()
+            .filter_map(|r| r.required.band)
+            .fold(rule.vertical_band, f64::max);
         Self {
             rule: rule.clone(),
+            band,
             classes: mask,
-            results: wires
-                .wires
-                .iter()
-                .map(|w| WireResult::with(rule.required(w.kv())))
-                .collect(),
+            results,
             groups: None,
             group_violations: Vec::new(),
             taken: 0,
@@ -959,7 +968,7 @@ impl PointCheck {
             return false;
         }
         let p = [x, y, z];
-        let band = self.rule.vertical_band;
+        let widest = self.band;
         let Some(cell) = wires.cells.get(&(cell_of(x), cell_of(y))) else {
             return true;
         };
@@ -978,10 +987,10 @@ impl PointCheck {
                 && box_distance(p, block.lo, block.hi) - block.radius - block.allowance
                     <= wires.reach;
             let vertical = self.measures[0]
-                && !(x < block.lo[0] - band
-                    || x > block.hi[0] + band
-                    || y < block.lo[1] - band
-                    || y > block.hi[1] + band)
+                && !(x < block.lo[0] - widest
+                    || x > block.hi[0] + widest
+                    || y < block.lo[1] - widest
+                    || y > block.hi[1] + widest)
                 && block.vertical_low(z, depth) <= wires.reach;
             let ids = if radial || vertical { ids } else { &[] };
             ids.iter().map(move |&id| {
@@ -1070,7 +1079,8 @@ impl PointCheck {
             }
             if self.measures[0] {
                 // Within the zone's width in plan only (its bounding box
-                // first).
+                // first): the wire's own (a screen's by its voltage).
+                let band = required.band.unwrap_or(self.rule.vertical_band);
                 let outside = x < a[0].min(b[0]) - band
                     || x > a[0].max(b[0]) + band
                     || y < a[1].min(b[1]) - band
@@ -1472,7 +1482,7 @@ pub(crate) fn ground_wire(
     let bundle = wire.bundle_radius();
     // To the surface.
     let off = wire.allowance();
-    let band = rule.vertical_band;
+    let band = result.required.band.unwrap_or(rule.vertical_band);
     // The smallest clearances so far (with the bound).
     let best = |r: &WireResult, m: usize| -> f64 {
         let own = if m == 0 { r.vertical } else { r.radial };
@@ -1835,7 +1845,7 @@ mod reference;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{RuleSet, Target};
+    use crate::rules::{RuleSet, SCREEN_DISTANCE, Target};
     use ohl_terrain::SurveyPoint;
 
     fn straight(section: &str, phase: &str, from: P3, to: P3) -> Wire {
@@ -1875,6 +1885,51 @@ mod tests {
 
     fn rule(text: &str) -> Rule {
         RuleSet::parse(text).unwrap().rules.remove(0)
+    }
+
+    /// A screen (owner, 2026-10-27): its vertical requirement is the half
+    /// width b of a band in plan by the wire's voltage (here 5 m + 0.01
+    /// m/kV: 6.1 m at 110 kV, 8.8 m at 380 kV); every point of its classes
+    /// within b in plan is reported, at any height; one rule for every
+    /// voltage; written back as it was read.
+    #[test]
+    fn a_screen_reports_every_point_within_its_band_by_voltage() {
+        let s = rule(
+            "[[rule]]\nname = \"b\"\ntarget = \"points\"\nclasses = [33]\nscreen = true\n\
+             vertical = { base = \"5 m\", per_kv = \"0.01 m\", above_kv = 0 }",
+        );
+        assert!(s.screen);
+        let r110 = s.required(Some(110.0));
+        assert_eq!(r110.vertical, Some(SCREEN_DISTANCE));
+        assert!((r110.band.unwrap() - 6.1).abs() < 1e-9);
+        assert!((s.required(Some(380.0)).band.unwrap() - 8.8).abs() < 1e-9);
+        let text = "[[rule]]\nname = \"b\"\ntarget = \"points\"\nclasses = [33]\nscreen = true\n\
+             vertical = { base = \"5 m\", per_kv = \"0.01 m\", above_kv = 0 }";
+        let set = RuleSet::parse(text).unwrap();
+        assert_eq!(RuleSet::parse(&set.to_toml()).unwrap().rules[0], s);
+        let at = |kv: f64, y: f64| -> u64 {
+            let w = Wire {
+                potential: Some(ac(kv)),
+                ..straight("S", "L1", [0.0, 0.0, 30.0], [100.0, 0.0, 30.0])
+            };
+            // Reaching as far as the screen asks (as the checks set it).
+            let set = WireSet::new(vec![w], SCREEN_DISTANCE + 1.0);
+            let mut pc = PointCheck::new(&s, &[33], &set);
+            // 25 m below the wire: any height counts.
+            pc.visit(&set, 50.0, y, 5.0, 33);
+            pc.results[0].vertical_violations
+        };
+        // 7 m beside: within 8.8 m at 380 kV, beyond 6.1 m at 110 kV.
+        assert_eq!(at(380.0, 7.0), 1);
+        assert_eq!(at(110.0, 7.0), 0);
+        assert_eq!(at(110.0, 6.0), 1);
+        // Not a screen without a vertical requirement or a point target.
+        assert!(
+            RuleSet::parse(
+                "[[rule]]\nname = \"x\"\ntarget = \"ground\"\nscreen = true\nvertical = 5.0"
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -159,6 +159,7 @@ pub fn first_rule() -> ZoneRule {
         surface: None,
         wires: ohl_clearance::Wires::Both,
         width: None,
+        screen: false,
     }
 }
 
@@ -1468,17 +1469,24 @@ impl ZoneWindow {
                         c.cell(|ui| ui.link(span.describe()).on_hover_text(tip).clicked());
                     clicked |=
                         c.cell(|ui| cell(ui, egui::RichText::new(&report.rules[f.rule].name)));
+                    // A screen: the band b and the distance in plan, said
+                    // as such (owner, 2026-10-27).
+                    let plan = (f.wire[0] - f.target[0]).hypot(f.wire[1] - f.target[1]);
                     clicked |= c.cell(|ui| {
-                        num(ui, |ui| {
-                            cell(ui, egui::RichText::new(format!("{:.2}", f.required)))
+                        num(ui, |ui| match f.band {
+                            Some(b) => cell(ui, egui::RichText::new(format!("b {b:.2} in plan"))),
+                            None => cell(ui, egui::RichText::new(format!("{:.2}", f.required))),
                         })
                     });
                     clicked |= c.cell(|ui| {
                         num(ui, |ui| {
                             cell(
                                 ui,
-                                egui::RichText::new(format!("{:.2}", f.distance))
-                                    .color(ui.visuals().error_fg_color),
+                                egui::RichText::new(match f.band {
+                                    Some(_) => format!("{plan:.2} in plan"),
+                                    None => format!("{:.2}", f.distance),
+                                })
+                                .color(ui.visuals().error_fg_color),
                             )
                         })
                     });
@@ -1563,13 +1571,21 @@ fn result_banner(ui: &mut egui::Ui, report: &Report) -> Option<(Selection, [f64;
             } else {
                 "✔ Every span clear".to_owned()
             };
-            format!(
-                "{lead} — worst margin {margin:+.2} m: {}, case {case} ({}, {:.2} m of {:.2} m)",
-                finding_span(f).describe(),
-                report.rules[f.rule].name,
-                f.distance,
-                f.required
-            )
+            match f.band {
+                Some(b) => format!(
+                    "{lead} — {}, case {case} ({}: {})",
+                    finding_span(f).describe(),
+                    report.rules[f.rule].name,
+                    ohl_clearance::zone::screen_text(b, f.wire, f.target)
+                ),
+                None => format!(
+                    "{lead} — worst margin {margin:+.2} m: {}, case {case} ({}, {:.2} m of {:.2} m)",
+                    finding_span(f).describe(),
+                    report.rules[f.rule].name,
+                    f.distance,
+                    f.required
+                ),
+            }
         }
         None if failing => "✖ Spans below a rule".to_owned(),
         None => "✔ Every span clear (nothing within reach of the rules)".to_owned(),

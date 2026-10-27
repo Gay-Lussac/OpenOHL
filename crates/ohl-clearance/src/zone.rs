@@ -143,6 +143,10 @@ pub struct ZoneRule {
     /// Vertical: its own half width of the zone across the line, m
     /// (`None`: the window's, [`Zone::width`]).
     pub width: Option<f64>,
+    /// A screen ([`Rule::screen`]): the distance is the half width of a
+    /// band in plan, every point within it reported (kept as the rule
+    /// file has it).
+    pub screen: bool,
 }
 
 impl ZoneRule {
@@ -182,6 +186,7 @@ impl ZoneRule {
                 surface: matches!(target, Target::Ground)
                     .then(|| self.surface.clone())
                     .flatten(),
+                screen: self.screen,
                 target,
             }
         };
@@ -344,6 +349,7 @@ pub fn from_rule_set(
                 surface: rule.surface.clone(),
                 wires: rule.wires,
                 width,
+                screen: rule.screen,
             };
             // The ground half of a row written as two rules.
             if let Some(last) = out.rules.last_mut()
@@ -638,6 +644,15 @@ pub fn solve_states(
     Ok(out)
 }
 
+/// A screen rule's finding in words (owner, 2026-10-27: "say it
+/// plainly"): the distance in plan between the wire and the point, within
+/// the band b — instead of a vertical clearance against a requirement no
+/// point can meet.
+pub fn screen_text(band: f64, wire: [f64; 3], target: [f64; 3]) -> String {
+    let plan = (wire[0] - target[0]).hypot(wire[1] - target[1]);
+    format!("{plan:.2} m in plan, within b = {band:.2} m")
+}
+
 /// One clearance below its requirement (or the lowest found for a rule).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZoneFinding {
@@ -667,6 +682,10 @@ pub struct ZoneFinding {
     /// from the downward vertical about the span's attachment axis,
     /// positive to the right looking along the span.
     pub arc: Option<f64>,
+    /// A screen rule ([`crate::Rule::screen`]): its band in plan, m — the
+    /// finding is a point within it, the required distance no distance
+    /// of a code ([`screen_text`]).
+    pub band: Option<f64>,
 }
 
 impl ZoneFinding {
@@ -906,8 +925,14 @@ pub fn check_zones(
             .iter()
             .map(|w| p.def.required(w.kv()).largest())
             .fold(0.0, f64::max);
+        // The widest band (a screen's by the wires' voltages).
+        let band = p
+            .wires
+            .iter()
+            .filter_map(|w| p.def.required(w.kv()).band)
+            .fold(p.def.vertical_band, f64::max);
         let reach = (largest + p.def.search_margin)
-            .max(p.def.vertical_band)
+            .max(band)
             .min(zone.search.unwrap_or(f64::INFINITY));
         let mut group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
         // A span's pieces in every state together: passed over as one
@@ -1033,8 +1058,13 @@ pub fn check_zones(
         type Lowest = Option<(Hit, usize, f64, Option<usize>)>;
         let mut best: Vec<Lowest> = vec![None; groups_n];
         let mut ground_counts = vec![0u64; groups_n];
+        // A screen's band in plan per span (its wires' voltage).
+        let mut bands: Vec<Option<f64>> = vec![None; groups_n];
         for (r, state, g, arc) in &results {
             let (state, g, arc) = (*state, *g, *arc);
+            if vertical && r.required.band.is_some() {
+                bands[g] = r.required.band;
+            }
             let (hit, n, required) = if vertical {
                 (r.vertical, r.vertical_violations, r.required.vertical)
             } else {
@@ -1068,6 +1098,7 @@ pub fn check_zones(
                 count: count.max(1),
                 state,
                 arc: arc.map(|a| arcs[a].arc.angle_of(hit.wire).to_degrees()),
+                band: bands[g],
             };
             let low = &mut report.lowest[p.rule];
             if low.as_ref().is_none_or(|l| f.distance < l.distance) {
@@ -1268,6 +1299,7 @@ mod tests {
             surface: None,
             wires: Wires::Both,
             width: None,
+            screen: false,
         }
     }
 
@@ -1691,6 +1723,7 @@ mod tests {
         // So does a rule's own width in the narrow zone.
         let own = [ZoneRule {
             width: Some(2.5),
+            screen: false,
             ..rules[0].clone()
         }];
         let (_, v) = check(
@@ -1772,6 +1805,7 @@ mod tests {
                 surface: None,
                 wires: Wires::Both,
                 width: None,
+                screen: false,
             },
             ZoneRule {
                 name: "Ground points".into(),
@@ -1784,6 +1818,7 @@ mod tests {
                 wires: Wires::Sections,
                 // Its own half width.
                 width: Some(4.0),
+                screen: false,
             },
             ZoneRule {
                 name: "Terrain, earth wires".into(),
@@ -1795,6 +1830,7 @@ mod tests {
                 surface: None,
                 wires: Wires::Jumpers,
                 width: None,
+                screen: false,
             },
         ];
         let scope = CheckScope {

@@ -46,6 +46,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
+            screen: false,
         },
         ZoneRule {
             name: "points".into(),
@@ -57,6 +58,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
+            screen: false,
         },
     ]
 }

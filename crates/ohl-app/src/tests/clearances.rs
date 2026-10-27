@@ -223,6 +223,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
+            screen: false,
         });
     }
     harness.run();
@@ -305,6 +306,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
+            screen: false,
         });
     }
     harness.run();

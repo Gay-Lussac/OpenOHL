@@ -828,8 +828,12 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `jumpers` or `both`); since 2026-10-23 a ground rule's `surface` (a
   terrain surface of the project by name; none: the checks' surface;
   `Rule::surface`, `ZoneRule::surface`; the checks take the named
-  surfaces as `ZoneTargets::surfaces` / `CaseTargets::surfaces`). Still
-  version 1: older files read the same.
+  surfaces as `ZoneTargets::surfaces` / `CaseTargets::surfaces`); since
+  2026-10-27 `screen = true` (`Rule::screen`, `ZoneRule::screen`): the
+  vertical requirement is the half width b of a band in plan by the
+  wire's voltage, every point within it reported (`Required::band`,
+  required `SCREEN_DISTANCE`; `ZoneFinding::band`, `zone::screen_text`).
+  Still version 1: older files read the same.
 - `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
   2026-10-20 `arc` (bool, default false; written only when true, so a
   file without it is written as before and older programs read it) —
