@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 /// A `[[cable]]` block of a wire file: its id, its data (to compare) and
 /// its text.
 #[derive(Debug, Clone)]
-pub(super) struct Block {
+pub(crate) struct Block {
     pub id: String,
     pub data: toml::Table,
     pub text: String,
@@ -17,7 +17,7 @@ pub(super) struct Block {
 
 /// A wire file split into its head (before the first `[[cable]]`) and its
 /// cable blocks; none when it does not read or holds no cable.
-pub(super) fn cable_blocks(text: &str) -> Option<(String, Vec<Block>)> {
+pub(crate) fn cable_blocks(text: &str) -> Option<(String, Vec<Block>)> {
     let mut head = String::new();
     let mut blocks: Vec<String> = Vec::new();
     for line in text.split_inclusive('\n') {

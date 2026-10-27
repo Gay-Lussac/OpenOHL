@@ -626,8 +626,11 @@ impl Cable {
                 )));
             }
         }
+        // A unit mistake is off by far more; a solid wire fills its circle
+        // and rounded data may put it a hair over (50.3 mm² at 8.00 mm):
+        // 1 % allowed (owner report 2026-10-27).
         let circle = std::f64::consts::FRAC_PI_4 * self.diameter.si() * self.diameter.si();
-        if self.area().si() > circle {
+        if self.area().si() > circle * 1.01 {
             return Err(error(format!(
                 "area {:.1} mm² exceeds the area of the {:.2} mm diameter circle ({:.1} mm²)",
                 self.area().square_millimeters(),
@@ -1100,6 +1103,13 @@ mod tests {
         let mut c = drake();
         c.outer.thermal_expansion = 23.0; // forgot the e-6
         assert!(c.validate().is_err());
+
+        // A solid wire filling its circle, its data rounded: taken.
+        let mut c = drake();
+        c.core = None;
+        c.diameter = Length::from_millimeters(8.0);
+        c.outer.area = Area::from_square_meters(50.3e-6);
+        assert!(c.validate().is_ok(), "{:?}", c.validate());
 
         let mut c = drake();
         c.outer.area = Area::from_square_meters(402.9e-3); // 1000x too large

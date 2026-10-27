@@ -44,7 +44,7 @@ use serde_json::Value;
 
 use crate::projects::ImportedProject;
 
-mod entries;
+pub(crate) mod entries;
 mod towers;
 
 pub use towers::{SetChoice, SetState, SharedSet, SharedTower};

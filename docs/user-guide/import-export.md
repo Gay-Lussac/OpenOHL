@@ -154,6 +154,16 @@ A **project plugin** reads another program's project file into a new OpenOHL pro
 
 **Clip in** (`--clip-in`, or the window's tick): sections the reader left in the blocks are clipped in at their stringing condition, so each span keeps its length — as programs that sag a section with a ruling span and then solve it with fixed lengths do.
 
+**Safe mode** (2026-10-27; built, in active development, not approved yet): an export with faults is imported as far as it reads, never refused for one fault, and every fault is said in the notes as a `warning:` — check them, things may be missing or need mending:
+
+- an empty value where a list or a number is expected: left out (the field's default);
+- an id given twice (two structures of the same name): the later ones kept as `<id>-2`, `-3`… (what refers to the id keeps the first);
+- an object that does not read on its own (a structure, a section, a jumper…): left out, by id;
+- a line that reads but does not check: two sections joined by a jumper but given different electrical systems **of the same voltage** — the later takes the first's system and phase (every wire and jumper kept); otherwise the object whose removal gets past the check is left out, a jumper first;
+- a wire file the wire library would refuse: the cables that load are kept, each once (a cable given twice: the first); a cable that does not load is left out, and the sections on it find no wire.
+
+A reader that meets a file cut off or broken part-way reads up to the fault and says where (the plugin's own notes).
+
 ### Into an existing project
 
 File › Import › **Another project into this one…** (2026-10-25) reads
