@@ -132,12 +132,13 @@ pub fn list<R>(
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     let height = list_height(ui.ctx(), id, default);
-    let inner = scroll.max_height(height).show(ui, add).inner;
-    // The handle: a short grip across, the cursor saying it resizes.
-    let (rect, r) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width().max(40.0), 8.0),
-        egui::Sense::drag(),
-    );
+    let out = scroll.max_height(height).show(ui, add);
+    let (inner, inner_width) = (out.inner, out.inner_rect.width());
+    // The handle: a short grip across, the cursor saying it resizes; as
+    // wide as the list (not the space left: a window sized to its content
+    // would widen itself every frame and move its buttons).
+    let width = inner_width.max(40.0);
+    let (rect, r) = ui.allocate_exact_size(egui::vec2(width, 8.0), egui::Sense::drag());
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, LIST_HANDLE));
     let r = r
         .on_hover_cursor(egui::CursorIcon::ResizeVertical)
