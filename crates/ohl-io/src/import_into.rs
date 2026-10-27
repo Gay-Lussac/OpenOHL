@@ -93,7 +93,7 @@ impl ImportMode {
         match self {
             Self::Replace => {
                 "What is in both becomes the imported one, and what the project has between the \
-                 import's towers but the import has not (structures, sections, jumpers) is \
+                 import's structures but the import has not (structures, sections, jumpers) is \
                  removed; the line outside that stretch stays."
             }
             Self::Add => {
@@ -932,7 +932,7 @@ fn variant(
     );
     if joined.is_empty() && !found.matched.is_empty() {
         out.notes.push(
-            "the import's towers in both are not joined by its sections or alignments: it \
+            "the import's structures in both are not joined by its sections or alignments: it \
              covers no stretch of the project's line, nothing is removed"
                 .into(),
         );
@@ -1313,7 +1313,7 @@ fn structure_types(
             .collect();
         if !users.is_empty() && users.iter().all(|u| in_both.contains(u)) {
             out.notes.push(format!(
-                "structure type {tid} ({name}): only at towers in both, where the project's \
+                "structure type {tid} ({name}): only at structures in both, where the project's \
                  types are kept; not added"
             ));
             continue;

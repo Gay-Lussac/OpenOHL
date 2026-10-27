@@ -216,20 +216,20 @@ later state of the same line, a variant of part of it:
    what refers to it following; never the default). *All:* settles every
    one alike. What is the same in both is left as it is; the rest is
    added. The ids the import's objects were given are listed.
-7. **Towers in both** (2026-10-27): a structure of the import within the
+7. **Structures in both** (2026-10-27): a structure of the import within the
    tolerance of one of the project's — of its id or another — is kept
-   **once**, each tower with its choice: **take the imported one** (the
-   default in Replace mode: the imported tower as it is — position,
+   **once**, each structure with its choice: **take the imported one** (the
+   default in Replace mode: the imported structure as it is — position,
    orientation, type, sets — under the project's id; the project's sets
    it lacks stay on it where what the line keeps still hangs on them,
-   else they go with the project's tower) or **keep the project's** (the
+   else they go with the project's structure) or **keep the project's** (the
    default in Add mode: its id, position, orientation and type, the
    import's sets settled one by one). It is listed in one line (its sets
    in each, how many the same, at other places, taken from the import or
    kept for what stays); opened, it shows every set number of either side
    by side — the project's and the imported wire point (in still air, in
-   world coordinates, so towers turned differently in the two files
-   compare right) and how far apart they are. When the project's tower is
+   world coordinates, so structures turned differently in the two files
+   compare right) and how far apart they are. When the project's structure is
    kept:
    - a set **only in the import**: **add** (the default) or **leave out**
      (the imported sections and jumpers at it are left out with it);
@@ -239,33 +239,33 @@ later state of the same line, a variant of part of it:
      default; the imported sections at that set hang on the project's),
      **take the imported one** (it replaces the project's wire point and
      strings of that set) or **add the imported one under a new number**
-     (a free number on the tower; the imported sections at it follow).
+     (a free number on the structure; the imported sections at it follow).
 
-   A set added brings the imported tower's wire point and the strings
-   above it, up to the structure points, as the project tower's own items
-   (a structure point of the project's tower at the same place is used
-   instead of a new one); labels are made unique on the tower and string
-   directions turned into the project tower's axes. The imported tower is
+   A set added brings the imported structure's wire point and the strings
+   above it, up to the structure points, as the project structure's own items
+   (a structure point of the project's structure at the same place is used
+   instead of a new one); labels are made unique on the structure and string
+   directions turned into the project structure's axes. The imported structure is
    taken as it is in effect, merged with its type from the import's own
    files, since its wire points may be in its type file. Its type file is
-   not added when only towers in both kept as the project's use it.
+   not added when only structures in both kept as the project's use it.
 
 **Replace: a variant of a stretch** (2026-10-27). An export that holds
-only part of the line — a few towers moved, one added, others gone — is
+only part of the line — a few structures moved, one added, others gone — is
 taken as the new state of that part: the line outside it stays, inside it
-the import's towers, sections and jumpers take the place of the
+the import's structures, sections and jumpers take the place of the
 project's.
 
-- **The stretch** is found from the towers in both. Two of them the
-  import goes between with no other tower in both between them — along
-  its sections, over its own new towers too (a section ending at a new
-  strain tower, the next going on from it), or along its alignments when
+- **The stretch** is found from the structures in both. Two of them the
+  import goes between with no other structure in both between them — along
+  its sections, over its own new structures too (a section ending at a new
+  strain structure, the next going on from it), or along its alignments when
   it has no section — mark a gap. The project's structures in that gap,
   along its alignments (in station order) or along its sections, are not
   in the import: they are **removed**. A project without a route still
-  has its sections; a single tower in both covers nothing.
+  has its sections; a single structure in both covers nothing.
 - **Sections removed**: those at a removed structure, and those over
-  towers in both only whose every span the import covers; a section the
+  structures in both only whose every span the import covers; a section the
   import has at the same place (the same structures and sets) is settled
   as appearing in both instead. A section that runs out of the stretch
   through a removed structure is **split at the stretch's end**
@@ -276,18 +276,18 @@ project's.
   removed like the others (the owner's default, 2026-10-27): keep them
   in the list when the variant only left out an unchanged circuit.
 - **Jumpers removed**: those at a removed structure or on a tap of a
-  removed section, and those whose every end is at a tower in both
-  inside the stretch. Jumpers at the **stretch's ends** (towers in both
+  removed section, and those whose every end is at a structure in both
+  inside the stretch. Jumpers at the **stretch's ends** (structures in both
   next to a structure that stays) are kept: they join what stays outside
-  to what comes in. The sections and jumpers that stay at an end tower
-  hang on the imported tower's set of their number; a set the imported
-  tower has not is kept from the project's tower.
-- **A tower of another id at the same place** takes the imported id (it
-  is the import's tower); what refers to it — sections, jumpers outside
+  to what comes in. The sections and jumpers that stay at an end structure
+  hang on the imported structure's set of their number; a set the imported
+  structure has not is kept from the project's structure.
+- **A structure of another id at the same place** takes the imported id (it
+  is the import's structure); what refers to it — sections, jumpers outside
   the stretch, alignment points — follows. Unless the project gives that
-  id to another structure, or the tower is set to keep the project's.
-- **A tower near none of the project's** (beyond the tolerance) is
-  added; the project's tower it replaces in the design is removed with
+  id to another structure, or the structure is set to keep the project's.
+- **A structure near none of the project's** (beyond the tolerance) is
+  added; the project's structure it replaces in the design is removed with
   the stretch.
 - **The alignment**: an imported alignment with two or more points in
   common with one of the project's (on the same route) replaces the part
@@ -339,7 +339,7 @@ structures' types would be in no type file of the project afterwards.
 Other library files are compared by name.
 
 The window keeps to the screen: what is to settle scrolls, and the
-summary line (added, taken, removed, towers in both), **Import** and the
+summary line (added, taken, removed, structures in both), **Import** and the
 status stay in sight below it.
 
 **Import** writes the library files, then the line as one change (one
@@ -361,7 +361,7 @@ ohl project import-into FILE --into project.ohl --user ann --plugin DIR [--forma
 
 It prints the plan — the mode, what each route became, what is added and
 the same, what is removed (`removed: structures …; sections …; jumpers
-…`, then each with why and its key), the towers in both with their
+…`, then each with why and its key), the structures in both with their
 choice, sets and keys, what appears in both with its key, the ids given,
 the library files written, the notes — then writes it (not with
 `--dry-run`) and says whether the project's wire library loads.

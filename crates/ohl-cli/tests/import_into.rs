@@ -113,7 +113,7 @@ fn a_branch_is_imported_into_its_main_line() {
     let out = ohl(&dir, &dry);
     let t = text(&out);
     assert!(out.status.success(), "{t}");
-    assert!(t.contains("towers in both"), "{t}");
+    assert!(t.contains("structures in both"), "{t}");
     assert!(
         t.contains("T3: 2 sets in the project's, 3 in the imported"),
         "{t}"
