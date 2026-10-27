@@ -969,12 +969,31 @@ fn variant(
             v
         })
         .collect();
+    // The import's spans from a structure in both: its project id, the
+    // far end's id as imported and where it stands.
+    let their_spans: Vec<stretch::TheirSpan> = imported
+        .line
+        .sections
+        .iter()
+        .flat_map(|s| s.points.windows(2))
+        .flat_map(|w| [(&w[0], &w[1]), (&w[1], &w[0])])
+        .filter_map(|(a, b)| {
+            let from = found.matched.get(&a.structure)?.clone();
+            let far = imported.line.structure(&b.structure)?;
+            Some(stretch::TheirSpan {
+                from,
+                to: b.structure.clone(),
+                to_position: far.position,
+            })
+        })
+        .collect();
     out.removed = stretch::removals(
         existing,
         &found,
         &joined,
         &their_sections,
         &their_jumpers,
+        &their_spans,
         &options.kept,
     );
     if joined.is_empty() && !found.matched.is_empty() {
@@ -2773,6 +2792,77 @@ mod tests {
             p.notes
         );
         p.line.validate().unwrap();
+    }
+
+    /// A spur the variant draws again to a structure the project has
+    /// twice (owner report 2026-10-27, a substation 20 m from its older
+    /// copy): the project's spur from T8 to the older copy `Sold`, 20 m
+    /// from the variant's `S`, is replaced — its section removed, and
+    /// `Sold`, left with nothing, too; a spur ending far from any of the
+    /// import's (`Far`, 80 m off a 300 m span) stays.
+    #[test]
+    fn a_span_to_an_older_copy_of_the_far_end_is_replaced() {
+        let (mut ours, mut theirs) = project_and_variant();
+        let x8 = 300.0 * 7.0;
+        let add = |line: &mut Line, t: Value, sec: Value| {
+            line.structures.push(serde_json::from_value(t).unwrap());
+            line.sections.push(serde_json::from_value(sec).unwrap());
+        };
+        add(
+            &mut ours,
+            tower("Sold", x8 + 20.0, 300.0, 500.0, &[1]),
+            section("E1", "A", &[("T8", 21), ("Sold", 1)], 10e3),
+        );
+        add(
+            &mut ours,
+            tower("Far", x8 - 80.0, -300.0, 500.0, &[1]),
+            section("E2", "B", &[("T8", 31), ("Far", 1)], 10e3),
+        );
+        ours.validate().unwrap();
+        // The variant's T8 with its ahead sets, the spur to S and another
+        // spur away from Far.
+        let t8 = theirs.structures.iter().position(|s| s.id == "T8").unwrap();
+        theirs.structures[t8] =
+            serde_json::from_value(tower("T8", x8, 0.0, 500.0, &[1, 11, 21, 31])).unwrap();
+        add(
+            &mut theirs,
+            tower("S", x8, 300.0, 500.0, &[1]),
+            section("E1", "A", &[("T8", 21), ("S", 1)], 10e3),
+        );
+        add(
+            &mut theirs,
+            tower("U", x8, -300.0, 500.0, &[1]),
+            section("E3", "B", &[("T8", 31), ("U", 1)], 10e3),
+        );
+        theirs.validate().unwrap();
+        let p = plan(
+            &ours,
+            &[],
+            &imported(theirs.clone()),
+            &ImportOptions::default(),
+        )
+        .unwrap();
+        let r = p.removed.iter().find(|r| r.id == "E1").unwrap();
+        assert!(r.why.contains("20.0 m from the import's S"), "{}", r.why);
+        assert!(!r.keep && !r.fixed);
+        let old = p.removed.iter().find(|r| r.id == "Sold").unwrap();
+        assert_eq!(old.kind, "structure");
+        assert!(!p.removed.iter().any(|r| r.id == "E2" || r.id == "Far"));
+        assert!(p.line.structure("Sold").is_none());
+        assert!(p.line.structure("Far").is_some());
+        assert!(p.line.sections.iter().any(|s| s.id == "E2"));
+        p.line.validate().unwrap();
+        // Chosen to keep: the section stays, and so does Sold.
+        let mut keep = ImportOptions::default();
+        keep.kept.insert("remove:section:E1".into());
+        let p = plan(&ours, &[], &imported(theirs), &keep).unwrap();
+        assert!(
+            p.line
+                .sections
+                .iter()
+                .any(|s| s.id == "E1" && s.points[1].structure == "Sold")
+        );
+        assert!(p.line.structure("Sold").is_some());
     }
 
     /// Replace (the default): the variant replaces T3–T8. Outside it the

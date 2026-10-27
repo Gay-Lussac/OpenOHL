@@ -173,6 +173,23 @@ pub(super) fn find(ours: &Line, theirs: &Line, tolerance: f64) -> Found {
     }
 }
 
+/// A span of the import's leaving a structure in both.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct TheirSpan {
+    /// The structure in both, by the project's id.
+    pub from: String,
+    /// Its far end, by the import's id.
+    pub to: String,
+    /// Where the far end stands.
+    pub to_position: [f64; 3],
+}
+
+/// How far, as a share of the span's length, the far end of a project's
+/// span may stand from the import's span's from the same structure for
+/// the import to replace it (owner, 2026-10-27: a substation present
+/// twice, 20 m apart, the old spans to its other copy left).
+pub const REPLACED_SPAN_END: f64 = 0.1;
+
 /// One thing of the project the import removes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Removed {
@@ -224,6 +241,7 @@ pub(super) fn removals(
     joined: &BTreeSet<(String, String)>,
     their_sections: &BTreeSet<Vec<(String, u32)>>,
     their_jumpers: &BTreeSet<Vec<(String, u32)>>,
+    their_spans: &[TheirSpan],
     kept: &BTreeSet<String>,
 ) -> Vec<Removed> {
     let mut out: Vec<Removed> = found
@@ -261,6 +279,8 @@ pub(super) fn removals(
         }
     }
     let mut sections: BTreeSet<String> = BTreeSet::new();
+    // The far ends of spans the import replaces (project id → why).
+    let mut replaced_ends: BTreeMap<String, String> = BTreeMap::new();
     for s in &ours.sections {
         let place: Vec<(String, u32)> = s
             .points
@@ -315,16 +335,22 @@ pub(super) fn removals(
                 w[0].structure == w[1].structure
                     || joined.contains(&pair(&w[0].structure, &w[1].structure))
             });
-            if !(over_matched && spans_joined) {
+            if over_matched && spans_joined {
+                Removed::new(
+                    "section",
+                    &s.id,
+                    "in the stretch the import covers, not in it",
+                    kept,
+                    false,
+                )
+            } else if let Some((why, far)) = replaced_spans(ours, s, &mine, joined, their_spans) {
+                for f in far {
+                    replaced_ends.entry(f.0).or_insert(f.1);
+                }
+                Removed::new("section", &s.id, &why, kept, false)
+            } else {
                 continue;
             }
-            Removed::new(
-                "section",
-                &s.id,
-                "in the stretch the import covers, not in it",
-                kept,
-                false,
-            )
         };
         if !r.keep {
             sections.insert(s.id.clone());
@@ -392,7 +418,77 @@ pub(super) fn removals(
             more = true;
         }
     }
+    // A far end of a replaced span left with nothing (an old copy of the
+    // import's structure there): removed too.
+    for (x, why) in replaced_ends {
+        let used = ours
+            .sections
+            .iter()
+            .any(|s| !sections.contains(&s.id) && s.points.iter().any(|p| p.structure == x))
+            || ours
+                .jumpers
+                .iter()
+                .any(|j| !jumpers.contains(&j.id) && j.points().any(|p| p.structure == x));
+        if !used {
+            out.push(Removed::new("structure", &x, &why, kept, false));
+        }
+    }
     out
+}
+
+/// Whether every span of the project's section `s` is one the import
+/// covers: joined by it, or from a structure in both to a structure the
+/// import does not have but standing near the far end of one of the
+/// import's spans from that structure ([`REPLACED_SPAN_END`] of the span) —
+/// at least one of the latter. Why, in words, and the far ends (with
+/// why, for each a structure left with nothing); none: not replaced.
+fn replaced_spans(
+    ours: &Line,
+    s: &ohl_line::Section,
+    mine: &BTreeSet<&str>,
+    joined: &BTreeSet<(String, String)>,
+    their_spans: &[TheirSpan],
+) -> Option<(String, Vec<(String, String)>)> {
+    let mut why = None;
+    let mut far = Vec::new();
+    for w in s.points.windows(2) {
+        let (a, b) = (w[0].structure.as_str(), w[1].structure.as_str());
+        if a == b || joined.contains(&pair(a, b)) {
+            continue;
+        }
+        let (m, x) = match (mine.contains(a), mine.contains(b)) {
+            (true, false) => (a, b),
+            (false, true) => (b, a),
+            _ => return None,
+        };
+        let (pm, px) = (ours.structure(m)?.position, ours.structure(x)?.position);
+        let length = (px[0] - pm[0]).hypot(px[1] - pm[1]);
+        let near = their_spans
+            .iter()
+            .filter(|t| t.from == m)
+            .map(|t| {
+                let d = (t.to_position[0] - px[0]).hypot(t.to_position[1] - px[1]);
+                (d, t)
+            })
+            .filter(|(d, _)| *d <= REPLACED_SPAN_END * length)
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let (d, t) = near?;
+        far.push((
+            x.to_owned(),
+            format!(
+                "left with nothing: the import's {} stands {d:.1} m from it (an older copy)",
+                t.to
+            ),
+        ));
+        why.get_or_insert_with(|| {
+            format!(
+                "on a span the import replaces: from {m} to {x}, which stands {d:.1} m from the \
+                 import's {} at the end of its span from {m}",
+                t.to
+            )
+        });
+    }
+    why.map(|w| (w, far))
 }
 
 /// The removals not kept taken out of `line`: the structures (alignment

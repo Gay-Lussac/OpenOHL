@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Replace mode: a span drawn again to an older copy of its far end (owner, 2026-10-27)**
+
+- Owner report: importing a by-pass variant left three earth wires
+  between the substation and the first tower, where one should stay. The
+  project held the substation twice, 20 m apart (two lines' exports), and
+  the variant drew its spans to the other copy, so the old spans were not
+  inside the stretch.
+- A project section from a structure in both to a structure the import
+  lacks is now removed when the import has a span from the same structure
+  ending within 10 % of the span's length of the project's far end
+  (`REPLACED_SPAN_END`); the far end goes too when nothing else hangs on
+  it. Listed with the reason and keepable, removed by default (as the
+  owner wanted here).
+
 **Internal clearances: a string's end only with an electrified volume (owner, 2026-10-27)**
 
 - While a string has no electrified volume, the internal clearance check

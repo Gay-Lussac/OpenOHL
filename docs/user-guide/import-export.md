@@ -275,6 +275,13 @@ project's.
   says so. Sections of a circuit the import does not carry at all are
   removed like the others (the owner's default, 2026-10-27): keep them
   in the list when the variant only left out an unchanged circuit.
+- **Spans drawn again to a moved end** (2026-10-27): a section of the
+  project from a structure in both to one the import does not have is
+  removed too when the import has a span from that same structure ending
+  within 10 % of the span's length of it — an older copy of the far end
+  (e.g. a substation the project holds twice, 20 m apart, the variant
+  drawn to the other copy). The far end is removed with it when nothing
+  else hangs on it. Both are listed (keep them there).
 - **Jumpers removed**: those at a removed structure or on a tap of a
   removed section, and those whose every end is at a structure in both
   inside the stretch. Jumpers at the **stretch's ends** (structures in both
