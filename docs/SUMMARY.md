@@ -56,6 +56,7 @@
 - [Jumpers](theory/jumpers.md)
 - [Thermal rating](theory/thermal.md)
 - [Line parameters](theory/line-parameters.md)
+- [Magnetic field](theory/magnetic-field.md)
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)
 - [Wind on lattice structures: faces, solidity, shielding](theory/structure-wind.md)

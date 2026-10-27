@@ -350,6 +350,8 @@ pub struct Ready {
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
     /// Checks › Electrical › Line parameters (2026-10-27).
     pub line_parameters: crate::line_parameters::LineParametersWindow,
+    /// Checks › Electrical › Magnetic field (2026-10-27).
+    pub magnetic_field: crate::magnetic_field::MagneticFieldWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
     /// Checks › Internal clearances….
@@ -550,6 +552,7 @@ impl Ready {
             galloping: Default::default(),
             wire_tensions: Default::default(),
             line_parameters: Default::default(),
+            magnetic_field: Default::default(),
             string_checks: Default::default(),
             internal_clearances: Default::default(),
             plans: Default::default(),
@@ -2377,6 +2380,7 @@ impl eframe::App for App {
                         .wire_tensions
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
+                ready.magnetic_field.ui(&ctx, &ready.model);
                 let out = ready.line_parameters.ui(&ctx, &ready.model);
                 if let Some(settings) = out.settings {
                     let command = ready

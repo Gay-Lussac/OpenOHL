@@ -752,6 +752,18 @@ pub(super) fn menus(
                 r.line_parameters.show(r.case);
                 ui.close();
             }
+            if ui
+                .button("Magnetic field…")
+                .on_hover_text(
+                    "The magnetic flux density of the line's currents (Biot–Savart): profiles \
+                     across the line, values at given points, an optional limit with the margin; \
+                     3D from the wires as solved in a weather case, or 2D",
+                )
+                .clicked()
+            {
+                r.magnetic_field.show(r.case);
+                ui.close();
+            }
         });
         ui.separator();
         ui.label(egui::RichText::new("Analyses").strong());

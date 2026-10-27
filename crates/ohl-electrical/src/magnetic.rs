@@ -1054,7 +1054,7 @@ pub fn run(
             earth.extend(m);
         }
         notes.push(
-            "earth wire currents: induced by the phases on an infinitely long earth wire earthed everywhere (−Z_ee⁻¹ Z_ep I_p per span, from its mean cross-section) — an approximation: the towers' earthing and the earth wires' ends are not modelled".into(),
+            "earth wire currents: induced by the phases on an infinitely long earth wire earthed everywhere (I_e = −inv(Z_ee) · Z_ep · I_p per span, from its mean cross-section) — an approximation: the towers' earthing and the earth wires' ends are not modelled".into(),
         );
     } else if line.sections.iter().any(|s| s.system.is_none()) {
         notes.push("earth wires carry no current (earth wire currents off)".into());

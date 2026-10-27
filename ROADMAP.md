@@ -290,7 +290,9 @@ design: the conductors where they hang (in a weather case or a chosen
 sag), their bundles, the wire data, the earth wires, the other lines
 nearby. **Draft (owner, 2026-10-27; to discuss).** Steps 0 and 1 (the
 cross-sections and the line parameters) **built, in active development,
-not approved yet** (2026-10-27, owner's choice of the first part).
+not approved yet** (2026-10-27, owner's choice of the first part); step 4
+(the magnetic field) built in part, in active development, not approved
+yet (2026-10-27).
 
 **Where it lives.** A headless engine crate `ohl-electrical` (no GUI, no
 plugin calls) for what is textbook and general — line parameters, the
@@ -420,6 +422,24 @@ core staying independent of them.
    - **Phase arrangement.** Later: the arrangement of phases on a
      double-circuit structure that gives the smallest field (the NISV's
      optimisation duty for old lines), tried over the permutations.
+   - *Built in part (2026-10-27; built, in active development, not
+     approved yet):* `ohl electrical magnetic` and Checks › Electrical ›
+     Magnetic field…, [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/magnetic-field.md),
+     8 validation cases (electrical-030…037). Built: 3D on the solved
+     wires (finite segments, subconductors, phasors; B and the cycle's
+     largest value), 2D at the station or the span's mean with warnings
+     (line angle over 5°, differently arranged structures), currents
+     given or the thermal rating (command line) with a direction per
+     circuit, frequencies combined, induced earth wire currents (infinite
+     earth wire), profiles (every span's lowest point by default), grids,
+     points from a CSV, an optional limit with margins and the limit
+     line's extent, the modelled length rule said. Not yet: the isolines
+     drawn (cross-section panel, 3D view), places of sensitive use as
+     project objects, the thermal rating in the window, crossings and
+     other lines, the earth wires per span with the towers' earthing,
+     the phase arrangement search, the site data sheet's numbers, a
+     limit from a plugin's parameter file, a published profile in the
+     validation.
    - **Validation.** Closed forms (one infinite straight conductor; a
      balanced three-phase flat line, whose field falls as 1/d²), a finite
      segment against numerical integration, published profiles (to find:

@@ -313,6 +313,27 @@ capacitances (the stretches in parallel at one voltage), 1.4 % higher on
 that line — the case checks the textbook's value, computed from the
 program's own matrices.
 
+### Magnetic field (`benchmarks/electrical/magnetic.toml`)
+
+Calculations `electrical.magnetic_segments` (straight finite segments,
+the program's closed form of Biot–Savart, phasors) and
+`electrical.magnetic_2d` (infinite straight parallel conductors); adapters
+in `crates/ohl-validation/src/electrical.rs`. Methods: [Magnetic
+field](../theory/magnetic-field.md).
+
+| Case | Source | Printed | Tolerance |
+|---|---|---|---|
+| electrical-030 | closed form μ0 I/(2π d) | one infinite conductor, 1000 A at 10 m: 20 µT (2D) | \( 10^{-12} \) |
+| electrical-031 | the same | a 200 km segment at 10 m | \( 10^{-8} \) |
+| electrical-032, 033 | Biot–Savart integrated by quadrature (`reference_magnetic.py`) | a segment seen beyond its end; an oblique one: components and B | \( 10^{-9} \) |
+| electrical-034 | the same, the ellipse by sampling the cycle | a sagging wire in three pieces beside a second phase at −120°: components, B, the cycle's largest value | \( 10^{-8} \) |
+| electrical-035 | the three conductors' closed forms summed (`reference_magnetic.py`) | a balanced flat line near it: B, the largest value | \( 10^{-9} \)–\( 10^{-8} \) |
+| electrical-036, 037 | the far field √3 μ0 I s/(2π d²) | a balanced flat line at 4 km and 8 km (a quarter: 1/d²) | \( 10^{-4} \) |
+
+No openly published field profile with all its inputs was found yet (to
+look for: IEC 62110's examples, CIGRE brochures, papers with
+measurements).
+
 ## What the cases showed
 
 - The code agreed with every independent reference to the tolerances
