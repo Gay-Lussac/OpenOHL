@@ -985,6 +985,7 @@ fn local_project_import_through_the_app() {
             path: xml.into(),
             format: None,
             options: Default::default(),
+            libraries: Vec::new(),
             into: into.clone(),
             user: crate::files::user(),
             clip_in: false,

@@ -451,3 +451,15 @@ fn the_export_window_shows_the_sheet_template_and_a_sheet() {
     h.get_by_label_contains("Sheet 1 of");
     shot(&mut h, "drawings-sheet-template");
 }
+
+/// The library files that may be added to an import
+/// ([`ohl_io::projects::LIBRARY_EXTENSIONS`]) are the project's libraries
+/// with their extensions, but the structure loads.
+#[test]
+fn added_library_kinds_are_the_projects() {
+    let projects: Vec<(&str, &str)> = crate::model::PROJECT_LIBRARIES
+        .into_iter()
+        .filter(|(k, _)| *k != "loads")
+        .collect();
+    assert_eq!(projects, ohl_io::projects::LIBRARY_EXTENSIONS.to_vec());
+}

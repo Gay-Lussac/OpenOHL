@@ -10,6 +10,23 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Library files the export lacks are added on project import (owner, 2026-10-27)**
+
+- An export cut off before its cable data imported with no cables and
+  every section unsolved. File › New project from another program… and
+  Import › Another project into this one… now have **Add library
+  files…** (files picked; their kind from the extension,
+  `ohl_io::projects::LIBRARY_EXTENSIONS`: the project's library kinds
+  but the structure loads); the command line `--library FILE`
+  (repeatable) on `ohl project import-from` and `import-into`.
+- They are added to what the plugin read before anything else
+  (`ImportedProject::add_libraries`): before *clip in*, which needs the
+  wire types; a file of the same kind and name as one read replaces it;
+  each is noted. Into an existing project they are therefore merged by
+  the rules of the import's own files (cables by id into the project's
+  wire file). A file of no library kind is refused before reading.
+- No format changes.
+
 **Replace mode: sections crossing the stretch's end are split; circuits the variant lacks are removed (owner, 2026-10-27)**
 
 - A project section running through a tower the variant removes and on

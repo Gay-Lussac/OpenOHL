@@ -1028,6 +1028,7 @@ fn a_project_is_created_from_another_programs_file() {
             path: file,
             format: None,
             options: [("name".to_owned(), "Imported".to_owned())].into(),
+            libraries: Vec::new(),
             into: into.clone(),
             user: crate::files::user(),
             clip_in: true,
@@ -1046,5 +1047,85 @@ fn a_project_is_created_from_another_programs_file() {
     assert!(r.model.line.sections.iter().all(|s| s.stringing.clipped()));
     // Its libraries are the project's: five weather cases.
     assert_eq!(r.model.cases.len(), 5);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// File › New project from another program with **Add library files…**:
+/// an export cut off before its cable data (a bundle with the line and
+/// its weather cases only) and the wire file added: it is the project's,
+/// noted, and every section clips in.
+#[test]
+fn a_cut_off_export_gets_its_wire_file_added() {
+    let dir = root().join("plugins/examples/project-bundle");
+    if !dir
+        .join("target/wasm32-wasip2/release/project_bundle.wasm")
+        .exists()
+    {
+        assert!(
+            ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+            "project-bundle plugin not built"
+        );
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!("ohl-app-import-libs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let ex = root().join("examples/synthetic-line");
+    let bundle = serde_json::json!({
+        "line": serde_json::from_str::<serde_json::Value>(
+            &std::fs::read_to_string(ex.join("synthetic-line.ohl.json")).unwrap()).unwrap(),
+        "libraries": [
+            {"kind": "weather", "name": "weather-cases.ohlwc",
+             "text": std::fs::read_to_string(ex.join("weather-cases.ohlwc")).unwrap()},
+        ],
+    });
+    let file = tmp.join("line.ohlb");
+    std::fs::write(&file, bundle.to_string()).unwrap();
+    let wires = tmp.join("wires.ohlw");
+    std::fs::copy(root().join("libraries/cables/acsr-examples.ohlw"), &wires).unwrap();
+    let mut app = App::empty(Sources::default(), None);
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    app.plugins.folders = vec![dir];
+    app.plugins.refresh();
+    app.file_action = Some(crate::files::FileAction::ImportProject);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| app);
+    h.step();
+    h.step();
+    h.get_by_label("Add library files…");
+    let into = tmp.join("imported.ohl");
+    h.state_mut()
+        .plugins
+        .create_project(crate::plugins::ProjectImport {
+            path: file,
+            format: None,
+            options: Default::default(),
+            libraries: vec![wires],
+            into: into.clone(),
+            user: crate::files::user(),
+            clip_in: true,
+        });
+    run_until(&mut h, |a| {
+        a.ready()
+            .is_some_and(|r| r.model.sources.file == into && !r.model.cases.is_empty())
+    });
+    h.step();
+    let app = h.state_mut();
+    let notes = &app.import_notes.as_ref().unwrap().1;
+    assert!(
+        notes
+            .iter()
+            .any(|n| n == "library file wires.ohlw (cables) added"),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|n| n.contains("not clipped in")),
+        "{notes:?}"
+    );
+    let r = app.ready().unwrap();
+    assert!(r.model.line.sections.iter().all(|s| s.stringing.clipped()));
+    let s = r.model.session().unwrap();
+    assert_eq!(s.library_files("cables").unwrap().len(), 1);
     let _ = std::fs::remove_dir_all(&tmp);
 }

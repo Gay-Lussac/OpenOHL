@@ -338,10 +338,74 @@ pub struct ImportProjectWindow {
     pub format: String,
     /// Options, `KEY=VALUE` separated by commas.
     pub options: String,
+    /// Library files the export lacks, added (kind from the extension).
+    pub libraries: Vec<PathBuf>,
     /// Clip the sections in at their stringing condition.
     pub clip_in: bool,
     /// Why the last attempt failed.
     pub error: Option<String>,
+}
+
+/// The hover text of **Add library files…**.
+pub const ADD_LIBRARIES_TIP: &str = "Library files the export lacks (e.g. an export cut off \
+     before its cable data): wire types .ohlw, clearance rules .ohlr, structure types .ohls, \
+     insulators .ohli, weather cases .ohlwc, load cases .ohllc…; the kind from the extension. \
+     They are written into the project with the import (a file of the same name as one read \
+     replaces it).";
+
+/// **Add library files…** and the files added, each with a button to take
+/// it out (File › New project from another program, Import › Another
+/// project into this one); whether the list changed.
+pub fn library_files_ui(ui: &mut egui::Ui, files: &mut Vec<PathBuf>) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        if ui
+            .button("Add library files…")
+            .on_hover_text(ADD_LIBRARIES_TIP)
+            .clicked()
+        {
+            let exts: Vec<&str> = ohl_io::projects::LIBRARY_EXTENSIONS
+                .iter()
+                .map(|(_, e)| *e)
+                .collect();
+            if let Some(picked) = rfd::FileDialog::new()
+                .add_filter("OpenOHL library files", &exts)
+                .pick_files()
+            {
+                for p in picked {
+                    if !files.contains(&p) {
+                        files.push(p);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if files.is_empty() {
+            ui.label(egui::RichText::new("none added").weak());
+        }
+    });
+    let mut remove = None;
+    for (i, f) in files.iter().enumerate() {
+        ui.horizontal(|ui| {
+            if ui.small_button("×").on_hover_text("Take it out").clicked() {
+                remove = Some(i);
+            }
+            let kind = ohl_io::projects::library_kind(f);
+            let name = f
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            match kind {
+                Some(k) => ui.label(format!("{name} ({k})")),
+                None => crate::menu::error_label(ui, format!("{name}: not a library file")),
+            }
+            .on_hover_text(f.display().to_string());
+        });
+    }
+    if let Some(i) = remove {
+        files.remove(i);
+        changed = true;
+    }
+    changed
 }
 
 impl ImportProjectWindow {
@@ -410,6 +474,7 @@ impl ImportProjectWindow {
                     "Each span keeps the length of its condition (sections the reader left in \
                          the blocks)",
                 );
+                library_files_ui(ui, &mut self.libraries);
                 if let Some(e) = &self.error {
                     crate::menu::error_label(ui, e);
                 }
@@ -445,6 +510,7 @@ impl ImportProjectWindow {
                         path: file.clone(),
                         format: (!self.format.trim().is_empty()).then(|| self.format.trim().into()),
                         options,
+                        libraries: self.libraries.clone(),
                         into,
                         user: user(),
                         clip_in: self.clip_in,

@@ -34,6 +34,8 @@ pub struct ImportInto {
     format: String,
     /// Options, `KEY=VALUE` separated by commas.
     options: String,
+    /// Library files the export lacks, added (kind from the extension).
+    libraries: Vec<PathBuf>,
     /// Clip the sections in at their stringing condition.
     clip_in: bool,
     /// The project read.
@@ -229,6 +231,12 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                 &mut w.clip_in,
                 "Clip the sections in at their stringing condition",
             );
+            if crate::files::library_files_ui(ui, &mut w.libraries) && w.read.is_some() {
+                w.status = Some((
+                    "Library files changed: read the file again to bring them in.".into(),
+                    false,
+                ));
+            }
             ui.horizontal(|ui| {
                 if plugins.reading_project {
                     ui.spinner();
@@ -243,6 +251,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                             path: file.clone(),
                             format: (!w.format.is_empty()).then(|| w.format.clone()),
                             options,
+                            libraries: w.libraries.clone(),
                             clip_in: w.clip_in,
                         }),
                         Err(e) => w.status = Some((e, true)),
