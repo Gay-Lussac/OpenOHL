@@ -1,7 +1,7 @@
 ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('ViewDefinition [StructuralAnalysisView]'),'2;1');
-FILE_NAME('every-profile.ifc','1970-01-01T00:00:00',(''),(''),'OpenOHL ohl-structure-export 0.0.1','OpenOHL','');
+FILE_NAME('every-profile.ifc','1970-01-01T00:00:00',(''),(''),'OpenOHL ohl-structure-export 0.0.2','OpenOHL','');
 FILE_SCHEMA(('IFC4'));
 ENDSEC;
 DATA;

@@ -3478,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-app"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "eframe",
@@ -3527,7 +3527,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-background"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "image",
  "ohl-core",
@@ -3540,7 +3540,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-bom"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-cables",
  "ohl-core",
@@ -3553,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-cables"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "serde",
@@ -3562,7 +3562,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-clearance"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-cables",
  "ohl-core",
@@ -3578,7 +3578,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-cli"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "image",
@@ -3615,7 +3615,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-core"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "criterion",
  "serde",
@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-crs"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "crs-definitions",
  "proj4rs",
@@ -3632,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-drawing"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "image",
  "miniz_oxide 0.8.9",
@@ -3650,7 +3650,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-io"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-background",
  "ohl-cables",
@@ -3672,7 +3672,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-lidar"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "las",
  "ohl-core",
@@ -3684,7 +3684,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-line"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "nalgebra",
  "ohl-cables",
@@ -3700,7 +3700,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-loads"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-cables",
  "ohl-core",
@@ -3716,7 +3716,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-plugins"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "serde",
@@ -3727,7 +3727,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-pointcloud"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "las",
  "laz",
@@ -3739,7 +3739,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-py"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "pyo3",
@@ -3747,7 +3747,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-render"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bytemuck",
  "nalgebra",
@@ -3759,7 +3759,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-sagtension"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "criterion",
  "ohl-cables",
@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-sections"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "serde",
@@ -3778,7 +3778,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-server"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "futures-util",
  "getrandom 0.3.4",
@@ -3803,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-session"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "base64",
  "ohl-cables",
@@ -3822,7 +3822,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-spotting"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-bom",
  "ohl-cables",
@@ -3836,7 +3836,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structure-app"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "eframe",
@@ -3863,7 +3863,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structure-edit"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "ohl-sections",
@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structure-export"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "ohl-core",
@@ -3890,7 +3890,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structure-link"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-cables",
  "ohl-clearance",
@@ -3907,7 +3907,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structure-loads"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "ohl-structures",
@@ -3918,7 +3918,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structure-tests"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-cables",
  "ohl-core",
@@ -3940,7 +3940,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structures"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "serde",
@@ -3950,7 +3950,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-structures-fe"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "criterion",
  "nalgebra",
@@ -3963,14 +3963,14 @@ dependencies = [
 
 [[package]]
 name = "ohl-terrain"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "spade",
 ]
 
 [[package]]
 name = "ohl-thermal"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-cables",
  "ohl-clearance",
@@ -3984,7 +3984,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-validation"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "nalgebra",
  "ohl-cables",
@@ -4008,7 +4008,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-weather"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "serde",
@@ -4017,7 +4017,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-wirefe"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "nalgebra",
  "ohl-core",
@@ -4025,7 +4025,7 @@ dependencies = [
 
 [[package]]
 name = "ohl-wireloads"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ohl-core",
  "serde",
