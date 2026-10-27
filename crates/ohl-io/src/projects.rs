@@ -271,6 +271,25 @@ pub fn line_safe(json: &str) -> Result<(Line, Vec<String>), String> {
 /// phase instead (nothing left out). Expected cost: one check per object
 /// tried; at most 1000 mends.
 pub(crate) fn mend(line: &mut Line, notes: &mut Vec<String>) {
+    mend_preferring(line, notes, &|_: &str| false);
+}
+
+/// [`mend`], the names of the sections `preferred` says win (owner,
+/// 2026-10-27: a variant imported in Replace mode is the new state): of
+/// two joined sections, one preferred and one not, the other takes the
+/// preferred one's system and phase — and counts as preferred from then
+/// on, so the names run along the whole conductor.
+pub(crate) fn mend_preferring(
+    line: &mut Line,
+    notes: &mut Vec<String>,
+    preferred: &dyn Fn(&str) -> bool,
+) {
+    let mut won: std::collections::BTreeSet<String> = line
+        .sections
+        .iter()
+        .filter(|s| preferred(&s.id))
+        .map(|s| s.id.clone())
+        .collect();
     use ohl_line::JumperEnd;
     for _ in 0..1000 {
         let Err(e) = line.validate() else { return };
@@ -321,13 +340,18 @@ pub(crate) fn mend(line: &mut Line, notes: &mut Vec<String>) {
         );
         // Two joined sections given different systems of the same voltage
         // (an export naming one conductor two ways): the later takes the
-        // first's system and phase — every wire and jumper kept.
-        if let Some((a, b)) = joined_pair(&msg)
-            && let (Some(sa), Some(sb)) = (
-                line.sections.iter().find(|s| s.id == a).cloned(),
-                line.sections.iter().find(|s| s.id == b).cloned(),
-            )
-        {
+        // first's system and phase (the preferred one's, when only one is)
+        // — every wire and jumper kept.
+        if let Some((a, b)) = joined_pair(&msg).map(|(a, b)| {
+            if won.contains(&b) && !won.contains(&a) {
+                (b, a)
+            } else {
+                (a, b)
+            }
+        }) && let (Some(sa), Some(sb)) = (
+            line.sections.iter().find(|s| s.id == a).cloned(),
+            line.sections.iter().find(|s| s.id == b).cloned(),
+        ) {
             let kv = |s: &ohl_line::Section| {
                 s.system
                     .as_ref()
@@ -347,12 +371,15 @@ pub(crate) fn mend(line: &mut Line, notes: &mut Vec<String>) {
                 if past {
                     notes.push(format!(
                         "warning: section {b} given the system and phase of section {a} ({} {}), \
-                         joined to it: the export gave {} {}",
+                         joined to it: it had {} {}",
                         sa.system.as_deref().unwrap_or(""),
                         sa.phase_label,
                         sb.system.as_deref().unwrap_or(""),
                         sb.phase_label
                     ));
+                    if won.contains(&a) {
+                        won.insert(b.clone());
+                    }
                     *line = t;
                     continue;
                 }
@@ -605,5 +632,72 @@ mod tests {
         lib.add_toml(Path::new("w.ohlw"), &libs[0].2).unwrap();
         assert!(lib.get(&first.id).is_some());
         assert_eq!(lib.skipped().len(), 2, "{:?}", lib.skipped());
+    }
+
+    /// Two joined sections (a shared attachment or a jumper) with different phases of one
+    /// system: mended to one phase — the first's, or the preferred one's
+    /// (a variant in Replace mode), said.
+    #[test]
+    fn joined_sections_take_one_phase_the_preferred_one() {
+        let base: Line = serde_json::from_value(example()).unwrap();
+        // Joined by a shared attachment (a strain tower's wire point both
+        // end at) or a jumper: the first such pair with a system.
+        let n = base.sections.len();
+        let j = (0..n)
+            .flat_map(|a| (0..n).map(move |b| (a, b)))
+            .find(|&(a, b)| {
+                let (sa, sb) = (&base.sections[a], &base.sections[b]);
+                a != b
+                    && sa.system.is_some()
+                    && (sa.points.iter().any(|p| sb.points.contains(p))
+                        || base.jumpers.iter().any(|j| match (&j.from, &j.to) {
+                            (ohl_line::JumperEnd::Wire(x), ohl_line::JumperEnd::Wire(y)) => {
+                                (sa.points.contains(x) && sb.points.contains(y))
+                                    || (sa.points.contains(y) && sb.points.contains(x))
+                            }
+                            _ => false,
+                        }))
+            })
+            .expect("two joined sections");
+        let (a, b) = j;
+        let system = base.sections[a].system.clone().unwrap();
+        let phases: Vec<String> = base
+            .systems
+            .iter()
+            .find(|x| x.id == system)
+            .unwrap()
+            .phases
+            .iter()
+            .map(|p| p.label.clone())
+            .collect();
+        let other = phases
+            .iter()
+            .find(|p| **p != base.sections[a].phase_label)
+            .unwrap()
+            .clone();
+        let mut line = base.clone();
+        line.sections[b].system = Some(system.clone());
+        line.sections[b].phase_label = other.clone();
+        assert!(line.validate().is_err());
+        let (ida, idb) = (line.sections[a].id.clone(), line.sections[b].id.clone());
+        // Preferred: the other one's phase wins.
+        let mut m = line.clone();
+        let mut notes = Vec::new();
+        mend_preferring(&mut m, &mut notes, &|id: &str| id == idb);
+        assert!(m.validate().is_ok(), "{notes:?}");
+        assert_eq!(m.sections[a].phase_label, other);
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains(&format!("section {ida} given"))),
+            "{notes:?}"
+        );
+        // No preference: one phase all the same, said.
+        let mut m = line.clone();
+        let mut notes = Vec::new();
+        mend(&mut m, &mut notes);
+        assert!(m.validate().is_ok(), "{notes:?}");
+        assert_eq!(m.sections[a].phase_label, m.sections[b].phase_label);
+        assert!(!notes.is_empty());
     }
 }

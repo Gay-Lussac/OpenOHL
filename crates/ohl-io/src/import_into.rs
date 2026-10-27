@@ -854,7 +854,20 @@ pub fn plan(
     // (owner, 2026-10-27): a merged line that does not check is mended as
     // safe mode mends a plugin's (e.g. a variant labelling the phases of a
     // conductor the project continues otherwise), each mend said.
-    crate::projects::mend(&mut out.line, &mut out.notes);
+    // In Replace mode the variant is the new state: along a joined
+    // conductor its names win (owner, 2026-10-27).
+    let imported_sections: BTreeSet<String> = match options.mode {
+        ImportMode::Replace => scratch
+            .line()
+            .sections
+            .iter()
+            .map(|s| s.id.clone())
+            .collect(),
+        ImportMode::Add => BTreeSet::new(),
+    };
+    crate::projects::mend_preferring(&mut out.line, &mut out.notes, &|id: &str| {
+        imported_sections.contains(id)
+    });
     if let Err(e) = out.line.validate() {
         out.notes
             .push(format!("the merged line does not check yet: {e}"));

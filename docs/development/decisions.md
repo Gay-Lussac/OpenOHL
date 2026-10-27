@@ -33,7 +33,11 @@ of Parts A, B and C).
   Import. It is now mended as safe mode mends a plugin's line (the later
   section of a joined pair takes the first's system and phase, same
   voltage; else the joining jumper is left out), each mend said in the
-  notes, to be checked afterwards.
+  notes, to be checked afterwards. **In Replace mode the variant's names
+  win** (owner, 2026-10-27: the variant is the new state): a project
+  section joined to an imported one takes the imported one's system and
+  phase, and the names run along the whole conductor (the project's
+  sections outside the stretch too); in Add mode the project's win.
 - Versions › Project lines › Working tree: a project line with nothing
   of its own committed and uncommitted work was drawn joined to its
   source twice (its start ring and its open dot); the open dot now follows

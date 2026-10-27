@@ -277,6 +277,14 @@ project's.
 - **Cables in both with other data**: the imported one replaces the
   project's in the project's wire file, under its id (default in
   Replace mode).
+- **Names along a conductor** (2026-10-27): where an imported section
+  and a project section are one conductor (joined by a jumper or a
+  shared attachment) but name different circuits or phases of the same
+  voltage — a variant reconnecting circuits, a by-pass —, the import's
+  names win: the project's sections joined to it take its system and
+  phase, along the whole conductor (outside the stretch too), each change
+  listed in the notes to be checked. (In Add mode the project's names
+  win; different voltages: the joining jumper is left out, said.)
 
 In **Add** mode nothing is removed and what is in both stays the
 project's unless chosen otherwise.
