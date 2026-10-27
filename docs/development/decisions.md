@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**LiDAR class schemes never block the points; plugins may ship them (owner, 2026-10-27)**
+
+- Since the old names were dropped (2026-10-26), a class scheme file still
+  in the old format stopped the LiDAR import (app and `ohl pointcloud
+  import --classes`), and a point cloud that had stored one stopped the
+  whole project from opening. Now a scheme that cannot be read is not
+  used: the import goes on with the standard classes (ASPRS) and says so;
+  a cloud whose stored scheme no longer reads opens with the standard
+  classes, said in the load log. The points keep their class numbers;
+  a scheme chosen later (Class colours) names and colours them.
+- Plugins may ship class schemes as files (`[[class-scheme]] file = …` in
+  the manifest, inside the plugin's folder), offered as **From a plugin**
+  in the LiDAR import and in Class colours.
+
 **Another project into this one: towers in both, cables by id (owner, 2026-10-27)**
 
 Found when combining several exports of neighbouring lines that share

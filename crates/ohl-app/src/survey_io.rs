@@ -30,6 +30,8 @@ pub struct ImportDialog {
     pub chunk: f64,
     /// Class scheme (`.ohlc`) stored with a new cloud.
     pub scheme: Option<PathBuf>,
+    /// The class schemes the plugins in use ship: plugin, name, file.
+    pub plugin_schemes: Vec<(String, String, PathBuf)>,
     /// Why it cannot start.
     pub error: Option<String>,
 }
@@ -166,6 +168,7 @@ impl ImportDialog {
                 .class_scheme
                 .clone()
                 .filter(|p| !p.as_os_str().is_empty()),
+            plugin_schemes: Vec::new(),
             error: project_of(model).err(),
         }
     }
@@ -252,6 +255,20 @@ impl ImportDialog {
                                     .add_filter("Class scheme", &[ohl_lidar::classes::CLASS_FILE_EXTENSION])
                                     .pick_file();
                             }
+                            if !self.plugin_schemes.is_empty() {
+                                ui.menu_button("From a plugin", |ui| {
+                                    for (plugin, name, p) in &self.plugin_schemes {
+                                        if ui
+                                            .button(format!("{plugin}: {name}"))
+                                            .on_hover_text(p.display().to_string())
+                                            .clicked()
+                                        {
+                                            self.scheme = Some(p.clone());
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
                         });
                         ui.end_row();
                     }
@@ -279,18 +296,14 @@ impl ImportDialog {
                     .add_enabled(!self.files.is_empty() && !self.cloud.trim().is_empty(), egui::Button::new("Import"))
                     .clicked()
                 {
-                    let scheme = match &self.scheme {
-                        Some(p) => match std::fs::read_to_string(p)
-                            .map_err(|e| e.to_string())
-                            .and_then(|t| ohl_lidar::ClassScheme::parse(&t).map(|_| t))
-                        {
-                            Ok(t) => Some(t),
-                            Err(e) => {
-                                self.error = Some(format!("class scheme: {e}"));
-                                return;
-                            }
+                    // A class scheme that cannot be used never stops the
+                    // import: the standard classes then, said when done.
+                    let (scheme, unused) = match &self.scheme {
+                        Some(p) => match ohl_lidar::ClassScheme::text_for_import(p) {
+                            Ok(t) => (Some(t), None),
+                            Err(e) => (None, Some(e)),
                         },
-                        None => None,
+                        None => (None, None),
                     };
                     let (files, name, crs, chunk) =
                         (self.files.clone(), self.cloud.trim().to_owned(), self.crs.clone(), self.chunk);
@@ -298,7 +311,15 @@ impl ImportDialog {
                         format!("Importing {} files into \"{name}\"", files.len()),
                         true,
                         ctx,
-                        move |report| import(&file, &files, &name, &crs, chunk, scheme.as_deref(), report),
+                        move |report| {
+                            import(&file, &files, &name, &crs, chunk, scheme.as_deref(), report).map(|done| match &unused {
+                                Some(e) => format!(
+                                    "{done}\n⚠ class scheme not used ({e}): imported with the standard classes; \
+                                     choose a scheme in Line › Terrain"
+                                ),
+                                None => done,
+                            })
+                        },
                     ));
                 }
             });

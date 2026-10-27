@@ -633,6 +633,25 @@ impl Plugins {
             .collect()
     }
 
+    /// The LiDAR class schemes the plugins in use ship
+    /// (`[[class-scheme]]`): plugin, name, file.
+    pub fn class_schemes(&self) -> Vec<(String, String, PathBuf)> {
+        self.listed
+            .iter()
+            .filter(|l| self.enabled(l))
+            .filter_map(|l| l.found.manifest.as_ref().ok())
+            .flat_map(|m| {
+                m.class_schemes.iter().map(move |t| {
+                    let name = t
+                        .file
+                        .file_stem()
+                        .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                    (m.plugin.name.clone(), name, m.dir.join(&t.file))
+                })
+            })
+            .collect()
+    }
+
     /// The directories of the check plugins in use.
     pub fn check_dirs(&self) -> Vec<PathBuf> {
         self.listed

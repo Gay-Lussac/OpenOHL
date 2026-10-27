@@ -48,6 +48,7 @@ impl ClassWindow {
         open: &mut bool,
         model: &mut Model,
         default_scheme: Option<&PathBuf>,
+        plugin_schemes: &[(String, String, PathBuf)],
     ) -> Option<ClassAction> {
         let mut action = None;
         let file = model.sources.class_scheme.clone();
@@ -85,6 +86,26 @@ impl ClassWindow {
                             Ok(_) => action = Some(ClassAction::UseForProject(Some(p))),
                             Err(e) => self.status = Some((e, true)),
                         }
+                    }
+                    if !plugin_schemes.is_empty() {
+                        ui.menu_button("From a plugin", |ui| {
+                            for (plugin, name, p) in plugin_schemes {
+                                if ui
+                                    .button(format!("{plugin}: {name}"))
+                                    .on_hover_text(p.display().to_string())
+                                    .clicked()
+                                {
+                                    match ClassScheme::load(p) {
+                                        Ok(_) => {
+                                            action =
+                                                Some(ClassAction::UseForProject(Some(p.clone())))
+                                        }
+                                        Err(e) => self.status = Some((e, true)),
+                                    }
+                                    ui.close();
+                                }
+                            }
+                        });
                     }
                     if ui
                         .add_enabled(file.is_some() && self.dirty, egui::Button::new("Save"))
