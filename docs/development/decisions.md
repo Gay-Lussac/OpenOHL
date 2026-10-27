@@ -10,6 +10,28 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Imports get everything in, the rules are checked afterwards; curves held flat (owner, 2026-10-27)**
+
+- The owner: "what's important is that the imports get everything in; the
+  rules are to be checked afterwards." A wire file is no longer refused
+  for one faulty wire type: the wire library leaves that wire type out
+  with its reason (`Library::skipped`) and loads the rest; the import
+  keeps the file as the export gave it (safe mode no longer strips
+  cables), and the reasons are shown when the library loads (app load
+  log and library page, `ohl line` warnings).
+- A stress-strain curve that stops rising before 1 % strain, without a
+  range given (every PLS-CADD export; an OPGW's aluminium layer turning
+  at 0.63 %), was refused. The owner chose to accept it and hold the
+  curve flat from where it stops rising: the layer takes no more load
+  beyond, the wire stretches more (conservative for clearances, marked as
+  such in the theory page), said when the library loads and warned about
+  in every state beyond it. With a range given, a curve that turns inside
+  it is still left out (the data contradict themselves).
+- Versions › Project lines › Working tree: a project line with nothing
+  of its own committed and uncommitted work was drawn joined to its
+  source twice (its start ring and its open dot); the open dot now follows
+  its start ring (owner report).
+
 **Another project into this one: Replace mode for a variant, a window that fits (owner, 2026-10-27)**
 
 - **The window was too big**: with many objects in both, Import went off

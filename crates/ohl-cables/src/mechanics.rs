@@ -118,6 +118,37 @@ struct Curves {
     /// Upper end of the curves' validity, unit strain (mechanical); none:
     /// not given (no range warning).
     max_strain: Option<f64>,
+    /// Without a range given: where the initial / creep curve stops
+    /// rising before 1 % strain, unit strain — the curve held flat beyond
+    /// (owner, 2026-10-27; conservative: the layer takes no more load,
+    /// the wire stretches more).
+    flat: [Option<f64>; 2],
+}
+
+impl Curves {
+    /// The initial curve's load at `strain` (held flat beyond its turn).
+    fn initial_at(&self, strain: f64) -> f64 {
+        poly(
+            &self.initial,
+            self.flat[0].map_or(strain, |f| strain.min(f)),
+        )
+    }
+
+    /// The creep curve's load (the initial curve's without one).
+    fn creep_at(&self, strain: f64) -> f64 {
+        match &self.creep {
+            Some(c) => poly(c, self.flat[1].map_or(strain, |f| strain.min(f))),
+            None => self.initial_at(strain),
+        }
+    }
+
+    /// Where the first of its curves is held flat, unit strain.
+    fn held_from(&self) -> Option<f64> {
+        match self.flat {
+            [Some(a), Some(b)] => Some(a.min(b)),
+            [a, b] => a.or(b),
+        }
+    }
 }
 
 fn poly(c: &[f64], x: f64) -> f64 {
@@ -142,17 +173,31 @@ pub struct RangeExceeded {
     pub strain: f64,
     /// The curves' validity limit, unit strain.
     pub max_strain: f64,
+    /// The limit is where a curve stops rising (no range given): held
+    /// flat beyond it, not extrapolated.
+    pub held: bool,
 }
 
 impl std::fmt::Display for RangeExceeded {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} strain {:.4} % beyond its curves' range ({:.4} %): the polynomial is extrapolated",
-            self.component,
-            self.strain * 100.0,
-            self.max_strain * 100.0
-        )
+        if self.held {
+            write!(
+                f,
+                "{} strain {:.4} % beyond where its curve stops rising ({:.4} %): held flat there \
+                 (conservative: the wire stretches more)",
+                self.component,
+                self.strain * 100.0,
+                self.max_strain * 100.0
+            )
+        } else {
+            write!(
+                f,
+                "{} strain {:.4} % beyond its curves' range ({:.4} %): the polynomial is extrapolated",
+                self.component,
+                self.strain * 100.0,
+                self.max_strain * 100.0
+            )
+        }
     }
 }
 
@@ -198,15 +243,14 @@ impl ComponentMechanics {
         let load = match state {
             MaterialState::Initial => {
                 if strain >= 0.0 {
-                    poly(&c.initial, strain)
+                    c.initial_at(strain)
                 } else {
                     elastic_from(0.0)
                 }
             }
             MaterialState::Creep => {
-                let curve = c.creep.as_ref().unwrap_or(&c.initial);
                 if strain >= 0.0 {
-                    poly(curve, strain)
+                    c.creep_at(strain)
                 } else {
                     elastic_from(0.0)
                 }
@@ -219,7 +263,7 @@ impl ComponentMechanics {
                 // the low end on the initial state, continuous at zero.
                 let line = elastic_from(permanent[index]);
                 let envelope = if strain >= 0.0 {
-                    poly(&c.initial, strain)
+                    c.initial_at(strain)
                 } else {
                     elastic_from(0.0)
                 };
@@ -419,11 +463,17 @@ impl Mechanics {
         self.mechanical_strains(strain, temperature)
             .zip(&self.components)
             .filter_map(|(e, c)| {
-                let max_strain = c.curves.as_ref()?.max_strain?;
+                let curves = c.curves.as_ref()?;
+                let (max_strain, held) = match (curves.max_strain, curves.held_from()) {
+                    (Some(m), _) => (m, false),
+                    (None, Some(h)) => (h, true),
+                    (None, None) => return None,
+                };
                 (e > max_strain).then_some(RangeExceeded {
                     component: c.label,
                     strain: e,
                     max_strain,
+                    held,
                 })
             })
             .collect()
@@ -468,6 +518,45 @@ pub fn curve_offset(cable: &Cable) -> Option<f64> {
         }
     }
     (worst > 1.0).then_some(worst)
+}
+
+/// One line on the cables whose curves stop rising before 1 % strain and
+/// are held flat from there (no range given; owner, 2026-10-27), or
+/// `None`.
+pub fn curve_turn_warning(library: &crate::Library) -> Option<String> {
+    let mut found = Vec::new();
+    for cable in library.iter() {
+        let Ok(m) = Mechanics::from_cable(cable) else {
+            continue;
+        };
+        for c in &m.components {
+            if let Some(h) = c.curves.as_ref().and_then(Curves::held_from) {
+                found.push(format!("{} {} at {:.2} %", cable.id, c.label, h * 100.0));
+            }
+        }
+    }
+    (!found.is_empty()).then(|| {
+        format!(
+            "stress-strain curves that stop rising before 1 % strain, held flat from there \
+             (conservative: the wire stretches more; a warning where a state goes beyond): {}",
+            found.join(", ")
+        )
+    })
+}
+
+/// Everything worth saying about a loaded wire library, one line each:
+/// the cables left out ([`crate::Library::skipped`]), the curves held
+/// flat ([`curve_turn_warning`]), the curves not starting at zero
+/// ([`curve_offset_warning`]).
+pub fn library_warnings(library: &crate::Library) -> Vec<String> {
+    let mut out: Vec<String> = library
+        .skipped()
+        .iter()
+        .map(|s| format!("left out (the sections on it find no wire): {s}"))
+        .collect();
+    out.extend(curve_turn_warning(library));
+    out.extend(curve_offset_warning(library));
+    out
 }
 
 /// One line on the cables whose curves do not start at zero
@@ -534,8 +623,9 @@ fn convert(
     // whatever unit the coefficients use, or tension cannot be inverted.
     let given = data.max_strain.map(|m| m / strain_scale);
     let max_strain = given.unwrap_or(0.01);
-    let curves = Curves {
+    let mut curves = Curves {
         max_strain: given,
+        flat: [None, None],
         initial: to_load(&data.initial),
         creep: data.creep.as_deref().map(to_load),
         final_stiffness: stress * area * data.final_modulus * strain_scale,
@@ -547,21 +637,47 @@ fn convert(
         return Err(error("final modulus must be positive".into()));
     }
     // Curves must rise over their validity range, or tension cannot be
-    // inverted to strain.
-    for (name, c) in [
+    // inverted to strain. Without a range given (every PLS-CADD export):
+    // a curve that stops rising before 1 % is held flat from there (owner,
+    // 2026-10-27) — near the top of a strong core's range, an aluminium
+    // layer's fit may turn — and said ([`curve_turn_warning`]); from
+    // zero it is refused.
+    let mut flat = [None, None];
+    for (i, (name, c)) in [
         ("initial", Some(&curves.initial)),
         ("creep", curves.creep.as_ref()),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let Some(c) = c else { continue };
-        if let Some(k) =
-            (0..=100).find(|&k| poly_derivative(c, max_strain * k as f64 / 100.0) <= 0.0)
-        {
+        let Some(k) = (0..=100).find(|&k| poly_derivative(c, max_strain * k as f64 / 100.0) <= 0.0)
+        else {
+            continue;
+        };
+        if given.is_some() || k == 0 {
             return Err(error(format!(
                 "{name} curve stops rising at {:.4} % strain (inside its validity range)",
                 max_strain * k as f64
             )));
         }
+        // The turn between the last rising step and this one (bisection,
+        // 60 halvings: far below any data's precision).
+        let (mut lo, mut hi) = (
+            max_strain * (k - 1) as f64 / 100.0,
+            max_strain * k as f64 / 100.0,
+        );
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            if poly_derivative(c, mid) > 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        flat[i] = Some(lo);
     }
+    curves.flat = flat;
     Ok(curves)
 }
 
@@ -875,8 +991,53 @@ mod tests {
             "initial = [0.0, 250.0, -110.0, 40.0, -8.0]",
             "initial = [0.0, 300.0, -400.0]",
         );
+        // Inside a range the cable gives: left out, said.
         let mut library = Library::default();
-        let error = library.add_toml(Path::new("t.toml"), &text).unwrap_err();
-        assert!(error.to_string().contains("stops rising"), "{error}");
+        library.add_toml(Path::new("t.toml"), &text).unwrap();
+        assert!(library.get("synthetic").is_none());
+        assert!(
+            library.skipped()[0].contains("stops rising"),
+            "{:?}",
+            library.skipped()
+        );
+    }
+
+    /// Without a range given (as PLS-CADD exports): a curve that turns
+    /// before 1 % is held flat from there (owner, 2026-10-27), said, and
+    /// a state beyond it warned about.
+    #[test]
+    fn a_curve_turning_without_a_range_is_held_flat() {
+        let text = SYNTHETIC
+            .replace(
+                "initial = [0.0, 250.0, -110.0, 40.0, -8.0]",
+                "initial = [0.0, 300.0, -400.0]",
+            )
+            .replace("max_strain = 0.9\n", "");
+        let mut library = Library::default();
+        library.add_toml(Path::new("t.toml"), &text).unwrap();
+        assert!(library.skipped().is_empty(), "{:?}", library.skipped());
+        let w = curve_turn_warning(&library).unwrap();
+        // 300 − 800 ε = 0 at ε = 0.375 %.
+        assert!(
+            w.contains("synthetic outer at 0.37 %") || w.contains("synthetic outer at 0.38 %"),
+            "{w}"
+        );
+        let cable = library.get("synthetic").unwrap();
+        let m = Mechanics::from_cable(cable).unwrap();
+        let t = m.reference_temperature;
+        // Beyond the turn the outer layer's load stays at its peak: the
+        // load grows by the core alone.
+        let peak = m.components[0].load(0.00375, &MaterialState::Initial, 0);
+        let past = m.components[0].load(0.006, &MaterialState::Initial, 0);
+        assert!(
+            (peak - past).abs() < 1e-6 * peak.abs().max(1.0),
+            "{peak} {past}"
+        );
+        let beyond = m.beyond_range(0.006, t);
+        assert!(
+            beyond.iter().any(|b| b.held && b.component == "outer"),
+            "{beyond:?}"
+        );
+        assert!(beyond[0].to_string().contains("held flat"));
     }
 }

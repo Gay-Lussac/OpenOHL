@@ -22,9 +22,7 @@ type Parse = fn(&str) -> Result<(), String>;
 fn formats() -> Vec<(&'static str, Parse)> {
     vec![
         ("libraries/cables/acsr-examples.ohlw", |t| {
-            ohl_cables::Library::default()
-                .add_toml(Path::new("x.ohlw"), t)
-                .map_err(|e| e.to_string())
+            ohl_cables::Library::check_toml(Path::new("x.ohlw"), t).map_err(|e| e.to_string())
         }),
         ("libraries/objects/templates.ohlload", |t| {
             ohl_line::ObjectLibrary::parse(t).map(drop)

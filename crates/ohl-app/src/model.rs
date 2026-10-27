@@ -2201,7 +2201,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     }
     let lib_path = library_path(&sources);
     let library = ohl_cables::Library::load(&lib_path).map_err(|e| e.to_string())?;
-    if let Some(w) = ohl_cables::mechanics::curve_offset_warning(&library) {
+    for w in ohl_cables::mechanics::library_warnings(&library) {
         log.push(format!("wire library: {w}"));
     }
     step(

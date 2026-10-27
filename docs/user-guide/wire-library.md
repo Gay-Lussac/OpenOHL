@@ -112,14 +112,17 @@ Any number of coefficients (at least two) is accepted; published curves are usua
 
 ## Validation when loading
 
-OpenOHL refuses a library with any of these problems, naming the wire type and the field:
+A wire type with any of these problems is **left out**, with its reason, and the rest of the file still loads (2026-10-27: what is imported is kept as it came, the rules checked afterwards; a file is no longer refused for one wire type). The reasons are listed in the app's load log and the library page, and as warnings by `ohl line`; the sections on a wire type left out find no wire until it is mended. The library page (and the format checks) stay strict: a file you edit and save with such a problem is refused there, naming it:
 
-- unknown fields, missing required fields, unknown units, duplicate `id`s, `id` with characters other than letters, digits, `-`, `_`;
+- unknown fields, missing required fields, unknown units, an `id` given twice (the first kept), `id` with characters other than letters, digits, `-`, `_`;
 - non-positive `diameter`, `mass_per_length`, `rated_tensile_strength`, `area`;
 - `modulus` outside 1–500 GPa or `thermal_expansion` outside 0–50×10⁻⁶ /K (catches mm² vs m², MPa vs GPa, a missing `e-6`);
-- total area larger than the area of a circle of the given diameter;
-- a curve that stops rising before `max_strain`; a non-positive `final_modulus`; components with different `reference_temperature`s;
-- a `format` other than `"ohl-wire"`, or a `version` newer than supported.
+- total area more than 1 % larger than the area of a circle of the given diameter (a solid wire fills its circle; rounded data may put it a hair over);
+- a curve that stops rising before `max_strain` (when given) or at zero strain; a non-positive `final_modulus`; components with different `reference_temperature`s.
+
+**A curve that stops rising before 1 % strain, without `max_strain`** (as in every PLS-CADD export: e.g. the aluminium layer of an OPGW with a strong steel core turning near its breaking load) is accepted and **held flat from where it stops rising**: that layer takes no more load beyond it, the other layer takes the rest — the wire stretches more than the polynomial would say, so sags are larger (conservative for clearances; see [Sag-tension › The curves' range](../theory/sagtension.md)). It is said when the library loads, and every state beyond it is warned about as beyond the curves' range ("held flat").
+
+A file that is not a wire library — not TOML, a `format` other than `"ohl-wire"`, or a `version` newer than supported — is refused.
 
 ## Minimal example (homogeneous, linear)
 
