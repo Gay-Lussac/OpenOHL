@@ -1027,6 +1027,36 @@ fn structures_and_sections_take_weather_groups() {
     assert!(f.takes(Some("T3"), None, "max temperature"));
 }
 
+/// The soil resistivity measured at a structure (owner, 2026-10-27):
+/// typed in the Structures table, kept on the structure; 0 or less
+/// refused; emptied, not measured.
+#[test]
+fn structures_take_an_soil_resistivity_ohm_m() {
+    use crate::tables::TableKind;
+    let model = synthetic_project("structure-soil");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let kind = TableKind::Structures;
+    set_cell(&mut harness, kind, "T2", "soil ρ Ω·m", "-3");
+    let e = apply_table(&mut harness, kind, false).unwrap_err();
+    assert!(e.contains("more than 0"), "{e}");
+    set_cell(&mut harness, kind, "T2", "soil ρ Ω·m", "12.5");
+    apply_table(&mut harness, kind, false).unwrap();
+    let line = &harness.state_mut().ready().unwrap().model.line;
+    assert_eq!(
+        line.structure("T2").unwrap().soil_resistivity_ohm_m,
+        Some(12.5)
+    );
+    assert_eq!(line.structure("T3").unwrap().soil_resistivity_ohm_m, None);
+    assert!(line.to_json().contains("\"soil_resistivity_ohm_m\": 12.5"));
+    set_cell(&mut harness, kind, "T2", "soil ρ Ω·m", "");
+    apply_table(&mut harness, kind, false).unwrap();
+    let line = &harness.state_mut().ready().unwrap().model.line;
+    assert_eq!(line.structure("T2").unwrap().soil_resistivity_ohm_m, None);
+}
+
 /// Alignment points with the tools: added on the ground (into the nearest
 /// segment; a route following its structures gets points under them
 /// first), moved in the Edit window, deleted.

@@ -375,6 +375,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `description` | string | — | free text | — |
 | `height_adjust` | f64 | m | typed: feet above the ground at `position` (may be negative) | — |
 | `weather_groups` | `[string]` | — | its weather case groups: a check with the structure override takes here only its cases in them (2026-10-25); not read by the solve | `.ohlwc` `[[group]] name` |
+| `soil_resistivity_ohm_m` | f64? | Ω·m | soil resistivity measured at the structure (2026-10-27; line file version 11 when set; OHL XML attribute `soil_resistivity_ohm_m`); the line parameters take on each span the geometric mean of its two structures' (one measured: that one; none: the line's `electrical`) | — |
 | `points` | `[StructurePoint]` | — | points where strings hang | — |
 | `wires` | `[WirePoint]` | — | wire points | — |
 | `strings` | `[InsulatorString]` | — | strings | labels of points / wire points |

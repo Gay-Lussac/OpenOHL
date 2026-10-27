@@ -396,6 +396,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         members,
         routes,
         weather_groups,
+        soil_resistivity_ohm_m,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -406,6 +407,9 @@ fn write_structure(out: &mut String, s: &Structure) {
     opt_text(out, "extension", extension.as_deref());
     if *height_adjust != 0.0 {
         attr(out, "height_adjust", &num(*height_adjust));
+    }
+    if let Some(r) = soil_resistivity_ohm_m {
+        attr(out, "soil_resistivity_ohm_m", &num(*r));
     }
     nonempty(out, "description", description);
     if points.is_empty()
@@ -1402,6 +1406,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "type",
             "extension",
             "height_adjust",
+            "soil_resistivity_ohm_m",
             "description",
         ],
         &[
@@ -1625,6 +1630,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 Ok(text(g, "name")?.to_owned())
             })
             .collect::<Result<_, String>>()?,
+        soil_resistivity_ohm_m: optional(e, "soil_resistivity_ohm_m")?,
         id,
         fields: read_fields(e)?,
     })

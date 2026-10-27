@@ -64,6 +64,12 @@ pub(super) const STRUCTURES: &[Column] = &[
         Yes,
         "its weather case groups (Line › Criteria › Weather case groups…), ticked: a check with the structure override ticked takes here only its cases in these groups (e.g. a wind study's lower winds); empty: the check's cases",
     ),
+    (
+        "soil ρ Ω·m",
+        80.0,
+        Yes,
+        "the soil resistivity measured at it, Ω·m; the line parameters take on each span the geometric mean of its two structures' (one measured: that one); empty: not measured (the line's)",
+    ),
 ];
 
 pub(super) const SECTIONS: &[Column] = &[

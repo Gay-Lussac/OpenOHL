@@ -350,7 +350,7 @@ pub fn cross_section(
     let line = src.line;
     let axis = Axis::of(line, span)?;
     let phases = line.section_phases().map_err(|e| e.to_string())?;
-    let (rho, assumed) = line.electrical.soil_resistivity();
+    let (rho, assumed) = line.span_soil_resistivity(&span.from, &span.to);
     let mut notes = Vec::new();
     let t_station = match at {
         StationAt::Fraction(f) => f * axis.length,

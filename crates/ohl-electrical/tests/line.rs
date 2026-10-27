@@ -228,3 +228,49 @@ fn earth_wire_and_methods() {
         assert!((s.z0_transposed - with.z0_transposed).norm() < 5e-2 * with.z0_transposed.norm());
     }
 }
+
+/// Soil resistivities measured at the structures (owner, 2026-10-27): a
+/// span takes the geometric mean of its two structures' (one measured:
+/// that one; none: the line's). Measured the same everywhere gives what
+/// the line's own value gives; a span without either is said assumed.
+#[test]
+fn soil_resistivity_measured_at_the_structures() {
+    let (line, library) = example();
+    let solved = shapes(&line, &library, 40.0);
+    let z0 = |l: &Line| {
+        let p = ohl_electrical::run(l, &library, &solved, Temperature::from_celsius(40.0), None);
+        let c = p
+            .circuits
+            .iter()
+            .find(|c| c.key.circuit == "North")
+            .unwrap()
+            .clone();
+        (c.sequence().unwrap().z0_transposed, p.notes)
+    };
+    let mut given = line.clone();
+    given.electrical.soil_resistivity_ohm_m = Some(400.0);
+    let mut measured = line.clone();
+    for s in &mut measured.structures {
+        s.soil_resistivity_ohm_m = Some(400.0);
+    }
+    let (a, notes_given) = z0(&given);
+    let (b, notes_measured) = z0(&measured);
+    assert!((a - b).norm() < 1e-12 * a.norm());
+    assert!(!notes_given.iter().any(|n| n.contains("assumed")));
+    assert!(!notes_measured.iter().any(|n| n.contains("assumed")));
+    assert!(notes_measured.iter().any(|n| n.contains("measured at 3 structures")));
+    // T1 100, T2 400: the first span 200 Ω·m; T3 not measured: the
+    // second span takes T2's.
+    let mut mixed = line.clone();
+    mixed.structures[0].soil_resistivity_ohm_m = Some(100.0);
+    mixed.structures[1].soil_resistivity_ohm_m = Some(400.0);
+    assert_eq!(mixed.span_soil_resistivity("T1", "T2"), (200.0, false));
+    assert_eq!(mixed.span_soil_resistivity("T2", "T3"), (400.0, false));
+    assert_eq!(line.span_soil_resistivity("T1", "T2"), (100.0, true));
+    let (_, notes) = z0(&line);
+    assert!(notes.iter().any(|n| n.contains("not set on 2 of 2 spans")), "{notes:?}");
+    // A resistivity of 0 is refused.
+    let mut zero = line.clone();
+    zero.structures[0].soil_resistivity_ohm_m = Some(0.0);
+    assert!(zero.validate().is_err());
+}

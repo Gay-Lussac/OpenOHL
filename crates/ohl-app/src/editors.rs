@@ -68,6 +68,9 @@ pub struct StructureForm {
     pub routes: Vec<String>,
     /// Its weather case groups ([`ohl_line::Structure::weather_groups`]).
     pub weather_groups: Vec<String>,
+    /// The soil resistivity measured at it, Ω·m
+    /// ([`ohl_line::Structure::soil_resistivity_ohm_m`]).
+    pub soil_resistivity_ohm_m: Option<f64>,
     /// A new route's name being typed.
     pub new_route: String,
     /// A new route to make with it.

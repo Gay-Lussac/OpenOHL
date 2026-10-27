@@ -44,7 +44,8 @@ pub struct ParametersArgs {
     /// the line's setting.
     #[arg(long)]
     pub height: Option<String>,
-    /// Soil resistivity, Ω·m (default: the line's, else 100 Ω·m assumed).
+    /// The line's soil resistivity, Ω·m (default: the line's, else 100 Ω·m
+    /// assumed); spans at structures with a measured one take theirs.
     #[arg(long)]
     pub soil: Option<f64>,
     /// Earth return: carson_series, complex_depth or carson_first_terms
@@ -144,7 +145,7 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
         case.temperature.celsius()
     );
     println!(
-        "earth return: {}; soil {rho} Ω·m{}; height: {}",
+        "earth return: {}; soil (the line's) {rho} Ω·m{}; height: {}",
         p.method.describe(),
         if assumed { " (assumed)" } else { "" },
         line.electrical.mean_height.describe()

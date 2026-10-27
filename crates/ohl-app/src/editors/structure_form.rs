@@ -48,6 +48,7 @@ impl StructureForm {
             along_line: along.is_some(),
             routes: Vec::new(),
             weather_groups: Vec::new(),
+            soil_resistivity_ohm_m: None,
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -153,6 +154,7 @@ impl StructureForm {
             along_line: false,
             routes: s.routes.clone(),
             weather_groups: s.weather_groups.clone(),
+            soil_resistivity_ohm_m: s.soil_resistivity_ohm_m,
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -227,6 +229,7 @@ impl StructureForm {
                 points: self.global_points(),
                 routes: self.routes.clone(),
                 weather_groups: self.weather_groups.clone(),
+                soil_resistivity_ohm_m: self.soil_resistivity_ohm_m,
                 ..Structure::new(id.clone(), self.position)
             }
         } else {
@@ -262,6 +265,7 @@ impl StructureForm {
             s.description = self.description.trim().to_owned();
             s.routes = self.routes.clone();
             s.weather_groups.clone_from(&self.weather_groups);
+            s.soil_resistivity_ohm_m = self.soil_resistivity_ohm_m;
             // Its own points as in the window (in its axes, turned and
             // moved with it); a linked one keeps its joint, its offset
             // following a move (owner decision 2026-10-21).
@@ -450,6 +454,29 @@ pub(super) fn structure_ui(
                         .desired_width(200.0)
                         .hint_text("what it is (free text)"),
                 );
+                ui.end_row();
+                ui.label("soil resistivity");
+                ui.horizontal(|ui| {
+                    const TIP: &str = "The soil resistivity measured at this structure. The \
+                                       line parameters take on each span the geometric mean \
+                                       of its two structures' (one measured: that one; none: \
+                                       the line's). Unticked: not measured";
+                    let mut on = f.soil_resistivity_ohm_m.is_some();
+                    if ui.checkbox(&mut on, "measured").on_hover_text(TIP).changed() {
+                        f.soil_resistivity_ohm_m = on.then_some(100.0);
+                    }
+                    if let Some(r) = &mut f.soil_resistivity_ohm_m {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(r)
+                                .range(0.1..=1e6)
+                                .speed(1.0)
+                                .max_decimals(3)
+                                .suffix(" Ω·m"),
+                        )
+                        .on_hover_text(TIP);
+                    }
+                });
                 ui.end_row();
                 // Its routes: from the alignment it stands on, or its own.
                 ui.label("routes").on_hover_text(

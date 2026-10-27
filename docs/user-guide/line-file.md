@@ -58,6 +58,7 @@ Files of version 2 and before may also have the line's own `alignment` (read as 
 | `routes` | no | The routes it is on, given: needed when it stands on no alignment (a crossing line); empty: those of the alignments it stands on. |
 | `height_adjust` | no | With a `type`: height of the type's feet above the ground at `position` (foundations), metres; default 0. |
 | `weather_groups` | no | Its weather case groups (`[[group]]` names of the weather case file): a check with the **structure override** ticked takes at this structure only its cases that are in these groups (2026-10-25; e.g. a wind study's lower winds — the LeV's explanations allow them down to 300 N/m² for the conductors' distances to the structures). Nothing is solved again for them. |
+| `soil_resistivity_ohm_m` | no | The soil resistivity measured at it, Ω·m (2026-10-27, line file version 11 when written; the Structures table's **soil ρ Ω·m** column). The [line parameters](../theory/line-parameters.md) take on each span the geometric mean of its two structures' values (one measured: that one; none: the line's `electrical` value). |
 | `points` | no | Attachment points, where strings hang: `{ "label", "position": [x, y, z] }`, on a typed structure also `"joint"`, `"offset"`, `"unlinked"` (below). |
 | `wires` | no | Wire points: `{ "label", "position": [x, y, z], "set": n }` (below). |
 | `strings` | no | Strings between them (below). |

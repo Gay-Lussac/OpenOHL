@@ -795,6 +795,13 @@ pub(super) fn structure_cells(
         .trim()
         .to_owned();
     form.weather_groups = group_list(c, TableKind::Structures, model, name)?;
+    form.soil_resistivity_ohm_m = opt_num(
+        &c.get(TableKind::Structures.column("soil ρ Ω·m")),
+        &format!("{name} soil resistivity"),
+    )?;
+    if form.soil_resistivity_ohm_m.is_some_and(|r| r <= 0.0) {
+        return Err(format!("{name}: a soil resistivity is more than 0 Ω·m"));
+    }
     // Routes typed: its own, unless they are those of the alignments it
     // stands on (then left to them).
     let col = TableKind::Structures.column("routes");

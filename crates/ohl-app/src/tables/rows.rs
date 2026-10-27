@@ -192,6 +192,9 @@ impl TableKind {
                         },
                         s.description.clone(),
                         s.weather_groups.join("; "),
+                        s.soil_resistivity_ohm_m
+                            .map(|r| f(r, 3))
+                            .unwrap_or_default(),
                     ],
                 })
                 .collect(),

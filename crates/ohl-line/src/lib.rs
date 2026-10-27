@@ -1351,6 +1351,12 @@ pub struct Structure {
     /// solved again for them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weather_groups: Vec<String>,
+    /// The soil resistivity measured at the structure, Ω·m (owner,
+    /// 2026-10-27); none: not measured. The line parameters take on each
+    /// span the geometric mean of its two structures' (one measured: that
+    /// one; none: the line's [`electrical::ElectricalSettings`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soil_resistivity_ohm_m: Option<f64>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1392,6 +1398,8 @@ struct StructureFile {
     routes: Vec<String>,
     #[serde(default)]
     weather_groups: Vec<String>,
+    #[serde(default)]
+    soil_resistivity_ohm_m: Option<f64>,
     #[serde(default)]
     fields: Fields,
 }
@@ -1439,6 +1447,7 @@ impl From<StructureFile> for Structure {
             members: f.members,
             routes: f.routes,
             weather_groups: f.weather_groups,
+            soil_resistivity_ohm_m: f.soil_resistivity_ohm_m,
             fields: f.fields,
         }
     }
@@ -3360,7 +3369,7 @@ impl Line {
 
     /// Serialises to pretty JSON at the oldest version that holds the
     /// line, so an older program still reads it: 11 with electrical
-    /// settings other than the defaults, else 10 with the simplified
+    /// settings other than the defaults or a soil resistivity at a structure, else 10 with the simplified
     /// in-the-blocks model or a jumper given by its tension, else 9 with
     /// local winds, else
     /// 8 with strings' own volumes, else 7 (a line of an older version
@@ -3376,7 +3385,14 @@ impl Line {
         let sheaves =
             !self.solver.blocks.is_default() || self.jumpers.iter().any(|j| j.tension.is_some());
         let written = match (sheaves, winds, shapes) {
-            _ if !self.electrical.is_default() => LINE_FILE_VERSION,
+            _ if !self.electrical.is_default()
+                || self
+                    .structures
+                    .iter()
+                    .any(|s| s.soil_resistivity_ohm_m.is_some()) =>
+            {
+                LINE_FILE_VERSION
+            }
             (true, _, _) => BEFORE_ELECTRICAL_VERSION,
             (false, true, _) => BEFORE_SHEAVES_VERSION,
             (false, false, true) => BEFORE_WIND_FACTORS_VERSION,
@@ -3392,6 +3408,21 @@ impl Line {
             )
         } else {
             text
+        }
+    }
+
+    /// The soil resistivity on the span between structures `from` and
+    /// `to`, Ω·m, and whether it is the assumed default: the geometric
+    /// mean of the two structures' measured values (one measured: that
+    /// one), else the line's ([`electrical::ElectricalSettings`]), else
+    /// assumed. Geometric: the earth return's depth goes with the square
+    /// root of the resistivity and the impedance with its logarithm.
+    pub fn span_soil_resistivity(&self, from: &str, to: &str) -> (f64, bool) {
+        let at = |id: &str| self.structure(id).and_then(|s| s.soil_resistivity_ohm_m);
+        match (at(from), at(to)) {
+            (Some(a), Some(b)) => ((a * b).sqrt(), false),
+            (Some(r), None) | (None, Some(r)) => (r, false),
+            (None, None) => self.electrical.soil_resistivity(),
         }
     }
 
@@ -3608,6 +3639,15 @@ impl Line {
         let invalid = |m: String| Err(LineError::Invalid(m));
         self.bimetallic.validate().map_err(LineError::Invalid)?;
         self.electrical.validate().map_err(LineError::Invalid)?;
+        if let Some(s) = self.structures.iter().find(|s| {
+            s.soil_resistivity_ohm_m
+                .is_some_and(|r| !(r.is_finite() && r > 0.0))
+        }) {
+            return invalid(format!(
+                "structure {}: soil resistivity must be a number of Ω·m > 0",
+                s.id
+            ));
+        }
         ohl_core::files::check_header(
             Some(&self.format),
             Some(self.version),
