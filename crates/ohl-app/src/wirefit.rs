@@ -13,7 +13,8 @@ use ohl_clearance::wirefit::{FitParams, SpanFit, WireCollector};
 use ohl_clearance::{Wire, wires_of};
 
 use crate::check_help as help;
-use crate::job::{Job, or_dash, save_csv};
+use crate::check_ui;
+use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -160,156 +161,176 @@ impl WireFitWindow {
         let mut again = false;
         let stale = self.out_of_date(model);
         let mut open = self.open;
+        let why = model
+            .cloud
+            .is_none()
+            .then(|| "no point cloud in this model".to_owned());
+        let findings = match &self.job.result {
+            Some(Ok(r)) => Some(r.iter().filter(|r| matches!(r.fit, Some(Ok(_)))).count()),
+            _ => None,
+        };
         help::window(
             ctx,
             crate::dockable::Panel::AsBuiltWires,
             "As-built wires",
-            [800.0, 600.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                // Run in the footer at the bottom left, always visible
-                // (owner, 2026-10-21); the rest scrolls above it.
-                help::body(ui, "wirefit-window", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("model at °C");
-                        crate::style::field(
+                if let Some(what) = &stale {
+                    again = crate::revision::banner(ui, what, !self.job.running());
+                }
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    WINDOW,
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
                             ui,
-                            egui::DragValue::new(&mut self.temperature).speed(0.5),
-                        );
-                        ui.label("points within m: across");
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut self.params.lateral)
-                                .speed(0.05)
-                                .range(0.05..=10.0),
-                        );
-                        ui.label("up/down");
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut self.params.vertical)
-                                .speed(0.1)
-                                .range(0.1..=30.0),
-                        );
-                        ui.checkbox(&mut self.estimate, "temperature at the survey");
-                    });
-                    let rows = match &self.job.result {
-                        None => {
-                            ui.label(
                             "Catenaries fitted to the LiDAR points of the wire classes, span by \
-                             span, against the model in still air; the conductor temperature \
-                             at the survey from the model's sags.",
+                             span, against the model in still air.",
+                            "The conductor temperature at the survey from the model's sags; \
+                             the difference of the sag and of the mid-span height between the \
+                             fitted wire and the model.",
                         );
-                            return;
-                        }
-                        Some(Err(e)) => {
-                            crate::menu::error_label(ui, e);
-                            return;
-                        }
-                        Some(Ok(r)) => r,
-                    };
-                    if let Some(what) = &stale {
-                        again = crate::revision::banner(ui, what, !self.job.running());
-                    }
-                    ui.horizontal(|ui| {
+                        ui.separator();
+                        check_ui::section(ui, 4, "Settings", None);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("model at °C");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.temperature).speed(0.5),
+                            );
+                            ui.label("points within m: across");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.params.lateral)
+                                    .speed(0.05)
+                                    .range(0.05..=10.0),
+                            );
+                            ui.label("up/down");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.params.vertical)
+                                    .speed(0.1)
+                                    .range(0.1..=30.0),
+                            );
+                            ui.checkbox(&mut self.estimate, "temperature at the survey");
+                        });
+                    }),
+                    check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
+                        let rows = match &self.job.result {
+                            None => {
+                                ui.label(
+                                    egui::RichText::new("No run yet: Run at the bottom.").weak(),
+                                );
+                                return;
+                            }
+                            Some(Err(e)) => {
+                                crate::menu::error_label(ui, e);
+                                return;
+                            }
+                            Some(Ok(r)) => r,
+                        };
                         let fitted = rows.iter().filter(|r| matches!(r.fit, Some(Ok(_)))).count();
                         let temps: Vec<f64> = rows.iter().filter_map(|r| r.temperature).collect();
-                        ui.label(format!(
-                            "fitted {fitted} of {} spans{}",
-                            rows.len(),
-                            if temps.is_empty() {
-                                String::new()
-                            } else {
-                                format!(
-                                    "; survey temperature: mean {:.1} °C",
-                                    temps.iter().sum::<f64>() / temps.len() as f64
-                                )
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(format!(
+                                "fitted {fitted} of {} spans{}",
+                                rows.len(),
+                                if temps.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(
+                                        "; survey temperature: mean {:.1} °C",
+                                        temps.iter().sum::<f64>() / temps.len() as f64
+                                    )
+                                }
+                            ));
+                            if ui
+                                .button("Export fits CSV…")
+                                .on_hover_text("Every span fitted, every value, as a CSV file")
+                                .clicked()
+                            {
+                                save_csv("as-built-wires.csv", &csv(rows));
                             }
-                        ));
-                        if ui.button("Export CSV…").clicked() {
-                            save_csv("as-built-wires.csv", &csv(rows));
-                        }
-                    });
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            egui::Grid::new("wirefit-rows")
-                                .striped(true)
-                                .spacing(help::GRID_SPACING)
-                                .show(ui, |ui| {
-                                    for h in [
-                                        "span",
-                                        "points",
-                                        "rms m",
-                                        "sag m",
-                                        "model sag m",
-                                        "Δsag m",
-                                        "Δmid m",
-                                        "°C",
-                                    ] {
-                                        ui.strong(h);
-                                    }
-                                    ui.end_row();
-                                    for r in rows {
-                                        if ui
-                                            .link(format!(
-                                                "{} span {}",
-                                                r.wire.section, r.wire.span
-                                            ))
-                                            .on_hover_text("Go to this span")
-                                            .clicked()
-                                        {
-                                            go = Some(Selection::Span {
-                                                section: r.wire.section.clone(),
-                                                span: r.wire.span,
-                                            });
-                                        }
-                                        match &r.fit {
-                                            None => {
-                                                ui.label("too few points");
-                                            }
-                                            Some(Err(e)) => {
-                                                crate::menu::error_label(ui, e);
-                                            }
-                                            Some(Ok(f)) => {
-                                                ui.label(f.fit.points.to_string());
-                                                for v in [
-                                                    f.fit.rms,
-                                                    f.sag,
-                                                    f.model_sag,
-                                                    f.sag - f.model_sag,
-                                                    f.mid_difference,
-                                                ] {
-                                                    ui.label(
-                                                        egui::RichText::new(format!("{v:.3}"))
-                                                            .monospace(),
-                                                    );
-                                                }
-                                                ui.label(or_dash(r.temperature, 1));
-                                            }
-                                        }
-                                        ui.end_row();
-                                    }
-                                });
                         });
-                });
-                help::footer(ui, "wirefit-window", |ui| {
-                    again |= help::run_button(
+                        use check_ui::{Cell, Col};
+                        let table: Vec<check_ui::Row> = rows
+                            .iter()
+                            .map(|r| {
+                                let span = Cell::span(&r.wire.section, r.wire.span);
+                                let cells = match &r.fit {
+                                    None => vec![span, Cell::text("too few points")],
+                                    Some(Err(e)) => vec![span, Cell::text(e).bad(true)],
+                                    Some(Ok(f)) => vec![
+                                        span,
+                                        Cell::sorted(f.fit.points.to_string(), f.fit.points as f64),
+                                        Cell::num(Some(f.fit.rms), 3),
+                                        Cell::num(Some(f.sag), 3),
+                                        Cell::num(Some(f.model_sag), 3),
+                                        Cell::num(Some(f.sag - f.model_sag), 3),
+                                        Cell::num(Some(f.mid_difference), 3),
+                                        Cell::num(r.temperature, 1),
+                                    ],
+                                };
+                                check_ui::Row::new(cells, false)
+                            })
+                            .collect();
+                        if let Some(k) = check_ui::ResultTable::new(
+                            "wirefit-rows",
+                            vec![
+                                Col::text("Span"),
+                                Col::num("Points"),
+                                Col::num("rms [m]"),
+                                Col::num("Sag [m]"),
+                                Col::num("Model sag [m]"),
+                                Col::num("Δsag [m]"),
+                                Col::num("Δmid [m]"),
+                                Col::num("Temperature [°C]"),
+                            ],
+                        )
+                        .rows(table)
+                        .no_filter()
+                        .csv("as-built-table.csv")
+                        .ui(ui)
+                        {
+                            let r = &rows[k];
+                            go = Some(Selection::Span {
+                                section: r.wire.section.clone(),
+                                span: r.wire.span,
+                            });
+                        }
+                    }),
+                }
+                help::footer(ui, WINDOW, |ui| {
+                    again |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
+                        &mut self.job,
+                        why.clone(),
                         "Read the wire points and fit a catenary in every span",
                         None,
+                        |_| {},
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );
         self.open = open;
-        if again {
+        if again && why.is_none() {
             self.start(model, ctx);
         }
         go
     }
 }
+
+/// The id of the window's body, tabs and footer.
+const WINDOW: &str = "wirefit-window";
 
 fn csv(rows: &[Row]) -> String {
     use std::fmt::Write as _;

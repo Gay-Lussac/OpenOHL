@@ -22,8 +22,13 @@ use ohl_line::electrical::{
 };
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::{Job, save_csv};
+
 use crate::model::Model;
+
+/// The id of the window's body, tabs and footer.
+const WINDOW: &str = "line-parameters-window";
 
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
@@ -118,41 +123,67 @@ impl LineParametersWindow {
             ctx,
             crate::dockable::Panel::LineParameters,
             "Line parameters",
-            [900.0, 600.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                help::body(ui, "line-parameters-window", |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "Series impedance with earth return (the earth wires reduced out) \
-                             and shunt capacitance of every circuit, from the wires where they \
-                             hang in a weather case: positive and zero sequence per km and in \
-                             total, the ideally transposed line's; how much the sequences \
+                let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+                let why = names
+                    .is_empty()
+                    .then(|| "no weather case in the model".to_owned());
+                let findings = match &self.job.result {
+                    Some(Ok(a)) => Some(a.parameters.circuits.len()),
+                    _ => None,
+                };
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    WINDOW,
+                    findings,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
+                            "Series impedance with earth return and shunt capacitance of every \
+                             circuit, from the wires where they hang in a weather case.",
+                            "The earth wires reduced out; positive and zero sequence per km and \
+                             in total, the ideally transposed line's; how much the sequences \
                              couple as built. Built, in active development, not approved yet.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    if let Some(s) = settings_ui(ui, model) {
-                        out.settings = Some(s);
-                    }
-                    ui.separator();
-                    self.results_ui(ui, &stale, &mut run);
-                });
-                help::footer(ui, "line-parameters-window", |ui| {
-                    let names: Vec<String> =
-                        model.cases.iter().map(|c| c.case.name.clone()).collect();
-                    ui.label("Weather case");
-                    crate::job::case_combo(ui, "line-parameters-case", &names, &mut self.case);
-                    let why = names.is_empty().then_some("no weather case in the model");
-                    run |= help::run_button(
+                        );
+                        ui.separator();
+                        // The weather case: in the scope (it was in the
+                        // footer until 2026-10-27).
+                        check_ui::section(ui, 2, "Scope", None);
+                        check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .cases(check_ui::Cases::One(&names, &mut self.case))
+                            .ui(ui);
+                        ui.separator();
+                        check_ui::section(ui, 4, "Settings", None);
+                        if let Some(s) = settings_ui(ui, model) {
+                            out.settings = Some(s);
+                        }
+                    }),
+                    check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
+                        egui::ScrollArea::both()
+                            .id_salt("line-parameters-results")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.results_ui(ui, &stale, &mut run));
+                    }),
+                }
+                help::footer(ui, WINDOW, |ui| {
+                    run |= check_ui::job_footer(
                         ui,
-                        !self.job.running(),
-                        "Compute the line parameters from the wires as solved in this weather \
-                         case (the conductor temperature for the resistances is the case's)",
-                        why,
+                        &mut self.job,
+                        why.clone(),
+                        "Compute the line parameters from the wires as solved in the weather case \
+                         chosen (the conductor temperature for the resistances is the case's)",
+                        None,
+                        |_| {},
                     );
-                    self.job.status_ui(ui);
                 });
             },
         );

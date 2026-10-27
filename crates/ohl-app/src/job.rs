@@ -128,21 +128,6 @@ impl<T: Send + 'static> Job<T> {
         self.cancel = None;
         self.generation += 1;
     }
-
-    /// A spinner while it runs, else how long the last run took.
-    pub fn status_ui(&self, ui: &mut egui::Ui) {
-        if let Some((t, _)) = &self.running {
-            ui.spinner();
-            ui.label(format!("{:.1} s", t.elapsed().as_secs_f64()));
-            ui.ctx().request_repaint_after(Duration::from_millis(200));
-        } else if let Some(t) = self.took {
-            ui.label(
-                egui::RichText::new(format!("computed in {t:.1?}"))
-                    .small()
-                    .weak(),
-            );
-        }
-    }
 }
 
 /// Text for a value in a table, `-` without one.

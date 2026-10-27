@@ -30,6 +30,7 @@ use ohl_electrical::magnetic::{
 };
 
 use crate::check_help as help;
+use crate::check_ui;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 
@@ -120,6 +121,9 @@ impl Default for MagneticFieldWindow {
 /// The project setting holding the window's inputs (per project line:
 /// `app.magnetic_field.<line>`).
 pub const SETTING: &str = "app.magnetic_field";
+
+/// The id of the window's body, tabs and footer.
+const WINDOW: &str = "magnetic-field-window";
 
 /// The window's inputs as kept in the project (JSON).
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
@@ -413,58 +417,84 @@ impl MagneticFieldWindow {
             ctx,
             crate::dockable::Panel::MagneticField,
             "Magnetic field",
-            [900.0, 680.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
-                help::body(ui, "magnetic-field-window", |ui| {
-                    ui.label(
-                        egui::RichText::new(
+                let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+                let why = if names.is_empty() {
+                    Some("no weather case in the model".to_owned())
+                } else if !self.currents.values().any(|c| c.0 > 0.0) {
+                    Some("give a circuit a current (2 Scope)".to_owned())
+                } else {
+                    None
+                };
+                // Two tabs (owner, 2026-10-27): the setup scrolls, the
+                // results fill theirs; Run in the footer, always visible.
+                let tab = check_ui::tabs(
+                    ui,
+                    WINDOW,
+                    None,
+                    self.job.generation,
+                    why.is_some() && !self.job.running(),
+                );
+                match tab {
+                    check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        check_ui::section(ui, 1, "What it checks", None);
+                        help::explain(
+                            ui,
                             "The magnetic flux density (µT, the rms of the vector) of the line's \
-                             currents, from the wires where they hang in a weather case: 3D from \
-                             the solved wires (Biot–Savart for every straight piece, bundles \
-                             subconductor by subconductor) or 2D (infinite straight conductors). \
-                             A limit is yours to give; none is built in. Built, in active \
-                             development, not approved yet.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    self.inputs_ui(ui, model);
-                    ui.separator();
-                    self.results_ui(ui, &stale, &mut run);
-                });
-                help::footer(ui, "magnetic-field-window", |ui| {
-                    let names: Vec<String> =
-                        model.cases.iter().map(|c| c.case.name.clone()).collect();
-                    ui.label("Weather case");
-                    crate::job::case_combo(ui, "magnetic-field-case", &names, &mut self.case);
-                    let why = if names.is_empty() {
-                        Some("no weather case in the model")
-                    } else if !self.currents.values().any(|c| c.0 > 0.0) {
-                        Some("give a circuit a current")
-                    } else {
-                        None
-                    };
-                    if let Some(p) = &self.progress {
+                             currents, from the wires where they hang in a weather case.",
+                            "3D from the solved wires (Biot–Savart for every straight piece, \
+                             bundles subconductor by subconductor) or 2D (infinite straight \
+                             conductors). A limit is yours to give; none is built in. Built, in \
+                             active development, not approved yet.",
+                        );
+                        ui.separator();
+                        // The weather case: in the scope (it was in the
+                        // footer until 2026-10-27); the circuits' currents
+                        // under it.
+                        check_ui::section(ui, 2, "Scope", None);
+                        check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .cases(check_ui::Cases::One(&names, &mut self.case))
+                            .ui(ui);
+                        self.inputs_ui(ui, model);
+                    }),
+                    check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
+                        egui::ScrollArea::both()
+                            .id_salt("magnetic-field-results")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.results_ui(ui, &stale, &mut run));
+                    }),
+                }
+                help::footer(ui, WINDOW, |ui| {
+                    let running = self.progress.as_ref().map(|p| {
                         let total = p.total.load(Ordering::Relaxed).max(1);
                         let done = p.done.load(Ordering::Relaxed);
-                        ui.add(
-                            egui::ProgressBar::new(done as f32 / total as f32)
-                                .text(format!("{done} of {total} points"))
-                                .desired_width(220.0),
+                        let mut pr = check_ui::Progress::of(
+                            self.job.elapsed().unwrap_or_default(),
+                            done,
+                            total,
                         );
-                        if help::stop_button(ui, "Stop: the previous results stay") {
-                            p.cancel.store(true, Ordering::Relaxed);
+                        pr.text = format!("{done} of {total} points; {}", pr.text);
+                        pr
+                    });
+                    let f = check_ui::RunFooter {
+                        running,
+                        why_not: why.clone(),
+                        hover: "Compute the field from the wires as solved in the weather case \
+                                chosen",
+                        scope: None,
+                        info: self.job.took.map(|t| format!("computed in {t:.1?}")),
+                    };
+                    match check_ui::run_footer(ui, f, |_| {}) {
+                        check_ui::Action::Run => run = true,
+                        check_ui::Action::Stop => {
+                            if let Some(p) = &self.progress {
+                                p.cancel.store(true, Ordering::Relaxed);
+                            }
                         }
-                    } else {
-                        run |= help::run_button(
-                            ui,
-                            !self.job.running(),
-                            "Compute the field from the wires as solved in this weather case",
-                            why,
-                        );
+                        check_ui::Action::None => {}
                     }
-                    self.job.status_ui(ui);
                 });
             },
         );

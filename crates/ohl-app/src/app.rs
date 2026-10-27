@@ -2249,11 +2249,15 @@ impl eframe::App for App {
                 crate::preset_edits::window(&ctx, ready, &self.plugins);
                 crate::import_into::window(&ctx, ready, &mut self.plugins);
                 crate::wire_colours::window(&ctx, ready, &self.plugins);
-                let go = [
-                    ready.galloping.ui(&ctx, &ready.model),
-                    ready.wirefit.ui(&ctx, &ready.model),
-                ];
-                if let Some(target) = go.into_iter().flatten().next() {
+                let galloping = ready.galloping.ui(&ctx, &ready.model);
+                let wirefit = ready.wirefit.ui(&ctx, &ready.model);
+                if let Some(target) = galloping {
+                    // The span drawn in the results' weather case.
+                    ready.go_to(target.clone());
+                    if let Some(case) = ready.galloping.result_case() {
+                        ready.show_check_case(crate::dockable::Panel::Galloping, target, &case);
+                    }
+                } else if let Some(target) = wirefit {
                     ready.go_to(target);
                 }
                 // The vegetation panel (its plugin presets read once).

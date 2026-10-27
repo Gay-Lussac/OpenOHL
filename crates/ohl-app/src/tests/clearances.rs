@@ -163,9 +163,12 @@ fn the_checks_menu_opens_the_galloping_window() {
         assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    // A pair's span link goes to the span.
+    // Every pair shown (Only violations unticked); a pair's span goes to
+    // the span, named from 1 (2026-10-27: "S1 span 2" is the second).
+    crate::check_ui::set_only_violations(&harness.ctx, "galloping-rows", false);
+    harness.run();
     harness
-        .query_all_by_label("S1 span 1")
+        .query_all_by_label("S1 span 2")
         .next()
         .unwrap()
         .click();
