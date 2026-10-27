@@ -504,10 +504,47 @@ fn cell_of(v: f64) -> i64 {
     (v / CELL).floor() as i64
 }
 
+/// Tests: the cells as wide as before 2026-10-27 (every segment within
+/// the whole reach), to compare the results with (the results are the
+/// same either way: other tests running meanwhile are only slower).
+#[cfg(test)]
+pub(crate) static FULL_CELLS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// How far from wire `wire` in plan a point can count for `rule`'s point
+/// check ([`PointCheck::eval`]) with the measures `measures` (vertical,
+/// radial) in a set reaching `reach`, m — for [`WireSet::within`]:
+/// - radial: a point is taken within the wire's reach (its largest
+///   requirement and the search margin, at most `reach`) of the
+///   subconductors' surface, so within that and the wire's outer radius
+///   of its centre line;
+/// - vertical: within the band in plan of the centre line (the rule's, a
+///   screen's by the wire's voltage), at any height.
+///
+/// A screen's vertical requirement ([`crate::rules::SCREEN_DISTANCE`])
+/// thus no longer widens the cells: only its band does (2026-10-27).
+pub fn plan_reach(rule: &Rule, wire: &Wire, reach: f64, measures: [bool; 2]) -> f64 {
+    #[cfg(test)]
+    if FULL_CELLS.load(std::sync::atomic::Ordering::Relaxed) {
+        return f64::INFINITY;
+    }
+    let required = rule.required(wire.kv());
+    let mut plan: f64 = 0.0;
+    if measures[1] {
+        let r = (required.radial_reach() + rule.search_margin).min(reach);
+        plan = plan.max(r + wire.outer_radius());
+    }
+    if measures[0] {
+        plan = plan.max(required.band.unwrap_or(rule.vertical_band));
+    }
+    // Rounding at the edge: never narrower than a point the tests take.
+    plan + 1e-6
+}
+
 impl WireSet {
     /// Indexes `wires` for queries up to `reach` (m) away.
     pub fn new(wires: Vec<Wire>, reach: f64) -> Self {
-        Self::build(wires, reach, None)
+        Self::build(wires, reach, None, None)
     }
 
     /// [`WireSet::new`] with the cells' segments in blocks by group:
@@ -517,10 +554,22 @@ impl WireSet {
     /// only the speed changes (within a wire the segments keep their
     /// order, and the wires' order does not matter to the results).
     pub fn grouped(wires: Vec<Wire>, reach: f64, group: &[usize]) -> Self {
-        Self::build(wires, reach, Some(group))
+        Self::build(wires, reach, Some(group), None)
     }
 
-    fn build(wires: Vec<Wire>, reach: f64, group: Option<&[usize]>) -> Self {
+    /// [`WireSet::new`] (with `group`: [`WireSet::grouped`]) listing wire
+    /// `w`'s segments only in the cells within `plan[w]` of them in plan,
+    /// m (at most the reach and the wire's outer radius, as without): the
+    /// distance in plan beyond which no point can count for the check
+    /// using the set ([`plan_reach`]). Only the speed changes: a point
+    /// farther than that from a segment in plan is passed over by that
+    /// check's own tests (2026-10-27: a screen's 1000 m vertical
+    /// requirement listed every segment in some 40 000 cells).
+    pub fn within(wires: Vec<Wire>, reach: f64, group: Option<&[usize]>, plan: &[f64]) -> Self {
+        Self::build(wires, reach, group, Some(plan))
+    }
+
+    fn build(wires: Vec<Wire>, reach: f64, group: Option<&[usize]>, plan: Option<&[f64]>) -> Self {
         let radii: Vec<f64> = wires.iter().map(Wire::bundle_radius).collect();
         let allowances: Vec<f64> = wires.iter().map(Wire::allowance).collect();
         let extents: Vec<(f64, f64)> = wires.iter().map(Wire::vertical_extent).collect();
@@ -534,7 +583,11 @@ impl WireSet {
             let g = group.map(|g| g.get(w).copied().unwrap_or(usize::MAX - w));
             // Subconductors reach out by the bundle radius, their surface
             // by the allowance.
-            let reach = reach + wire.outer_radius();
+            let full = reach + wire.outer_radius();
+            let reach = match plan.and_then(|p| p.get(w)) {
+                Some(&p) if p >= 0.0 => p.min(full),
+                _ => full,
+            };
             for (k, s) in wire.points.windows(2).enumerate() {
                 let id = segments.len() as u32;
                 segments.push((w as u32, k as u32));
@@ -1050,6 +1103,8 @@ impl PointCheck {
                 lower >= b.d[m] && (b.bad[m] == stamp || req.is_none_or(|r| lower >= r))
             };
             if self.measures[1] {
+                // A screen's within its band ([`Required::radial_reach`]).
+                let reach = (required.radial_reach() + self.rule.search_margin).min(wires.reach);
                 let lower = box_distance(p, a, b) - radius - off;
                 if lower <= reach && !idle(1, lower, best) {
                     // The centre line first: subconductors only when within

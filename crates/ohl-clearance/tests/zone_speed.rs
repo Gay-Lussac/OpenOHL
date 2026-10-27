@@ -9,7 +9,7 @@
 //! (default 10⁶) within ±40 m of the line, read from memory: the time of
 //! the solves, of the ground check and of the point check, with the wind
 //! stepped and on the swing arc. Ignored by default; run with
-//! `SPANS=600 POINTS=1000000 STEP=10 cargo test -p ohl-clearance --release
+//! `SPANS=600 POINTS=1000000 STEP=10 [SCREEN=1] cargo test -p ohl-clearance --release
 //! --test zone_speed -- --ignored --nocapture`.
 
 use std::fmt::Write;
@@ -190,6 +190,28 @@ fn rules() -> Vec<ZoneRule> {
     ]
 }
 
+/// A screen (`SCREEN=1`, owner 2026-10-27): every point of class 6
+/// within 5 m + 0.01 m/kV of a wire in plan, at any height (a design
+/// code's horizontal distance).
+fn screen() -> ZoneRule {
+    ZoneRule {
+        name: "Screen".into(),
+        voltages: Vec::new(),
+        cases: Vec::new(),
+        distance: Requirement::Formula {
+            base: 5.0,
+            per_kv: 0.01,
+            above_kv: 0.0,
+        },
+        classes: vec![6],
+        ground: false,
+        surface: None,
+        wires: ohl_clearance::Wires::Sections,
+        width: None,
+        screen: true,
+    }
+}
+
 #[test]
 #[ignore]
 fn speed() {
@@ -208,7 +230,17 @@ fn speed() {
         "{spans} spans, {} sections, {n} points, {threads} threads\n",
         line.sections.len()
     );
-    let rules = rules();
+    let mut rules = rules();
+    // With a screen (`SCREEN=1`): one point in seven of class 6.
+    let mut points = points;
+    if env("SCREEN", 0) == 1 {
+        rules.push(screen());
+        for (k, p) in points.iter_mut().enumerate() {
+            if k % 7 == 0 {
+                p.1 = 6;
+            }
+        }
+    }
     for (what, wind) in [
         (
             format!("steps {step} Pa"),
@@ -261,7 +293,17 @@ fn speed() {
         let arcs_made = t.elapsed();
         for measure in [Measure::Vertical, Measure::Radial] {
             let zone = Zone::new(measure);
-            for (k, rule) in rules.iter().enumerate() {
+            // Each rule alone, then all of them in one check (a preset's
+            // rules: one pass through the points).
+            let mut runs: Vec<(String, Vec<ZoneRule>)> = rules
+                .iter()
+                .map(|r| (r.name.clone(), vec![r.clone()]))
+                .collect();
+            runs.push(("all rules".into(), rules.clone()));
+            for (k, (name, these)) in runs.iter().enumerate() {
+                if measure == Measure::Radial && these.iter().any(|r| r.screen) {
+                    continue;
+                }
                 let t = Instant::now();
                 let mut feed = |_: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
                     for (p, c) in &points {
@@ -272,7 +314,7 @@ fn speed() {
                 let report = check_zones(
                     &line,
                     &zone,
-                    std::slice::from_ref(rule),
+                    these,
                     &states,
                     &solved.shapes,
                     &solved.jumpers,
@@ -287,13 +329,17 @@ fn speed() {
                 )
                 .unwrap();
                 let took = t.elapsed();
-                let low = report.lowest[0].as_ref().map_or(f64::NAN, |f| f.distance);
+                let low = report
+                    .lowest
+                    .iter()
+                    .flatten()
+                    .map(|f| f.distance)
+                    .fold(f64::NAN, f64::min);
                 let _ = writeln!(
                     text,
-                    "{what}: {} solves in {solving:.2?} (arcs {arcs_made:.2?}); {} {}: {took:.2?}{}; lowest {low:.3} m, {} spans below",
+                    "{what}: {} solves in {solving:.2?} (arcs {arcs_made:.2?}); {} {name}: {took:.2?}{}; lowest {low:.3} m, {} spans below",
                     states.len(),
                     measure.as_str(),
-                    rules[k].name,
                     if k == 1 {
                         format!(
                             " ({:.2} µs a point)",

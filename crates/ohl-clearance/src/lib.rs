@@ -205,6 +205,78 @@ mod tests {
         .unwrap()
     }
 
+    /// The Clearances tab's check of a weather case (2026-10-27): each
+    /// point rule's wires listed only as far in plan as a point counts,
+    /// and its own reach — the results of before, bit for bit (rules of
+    /// different reaches, vertical and radial, a band).
+    #[test]
+    fn a_case_check_with_narrow_cells_gives_the_results_of_before() {
+        let (line, _) = example();
+        let wires = wires_of(&line, &solved(40.0), &[]);
+        let set = RuleSet::parse(
+            "[[rule]]\nname = \"near\"\ntarget = \"points\"\nclasses = [5]\nvertical = 4.0\n\
+             radial = 3.0\nvertical_band = 2.0\n\
+             [[rule]]\nname = \"far\"\ntarget = \"points\"\nclasses = [5, 6]\nradial = 12.0\n\
+             search_margin = \"8 m\"",
+        )
+        .unwrap();
+        let classes = vec![vec![5u8], vec![5u8, 6]];
+        let voltages = voltages_of(&line).unwrap();
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let points: Vec<([f64; 3], u8)> = (0..30_000)
+            .map(|_| {
+                (
+                    [
+                        -50.0 + next() * 1400.0,
+                        -60.0 + next() * 600.0,
+                        470.0 + next() * 70.0,
+                    ],
+                    5 + (next() * 2.0) as u8,
+                )
+            })
+            .collect();
+        let run = |full: bool| {
+            checks::FULL_CELLS.store(full, std::sync::atomic::Ordering::Relaxed);
+            let mut feed = |cs: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+                for (p, c) in &points {
+                    if cs.contains(c) {
+                        visit(p[0], p[1], p[2], *c);
+                    }
+                }
+                Ok(())
+            };
+            let out = check_case(
+                &set.rules,
+                "any",
+                &wires,
+                CaseTargets {
+                    voltages: &voltages,
+                    other_voltages: &[],
+                    ground: None,
+                    surfaces: &[],
+                    point_classes: &classes,
+                    points: Some(&mut feed),
+                    other_wires: &[],
+                },
+            )
+            .unwrap();
+            checks::FULL_CELLS.store(false, std::sync::atomic::Ordering::Relaxed);
+            out
+        };
+        let (now, before) = (run(false), run(true));
+        assert_eq!(now, before);
+        assert!(now.iter().any(|c| match &c.outcome {
+            Outcome::Wires(r) => r.iter().any(|r| r.radial.is_some()),
+            _ => false,
+        }));
+    }
+
     #[test]
     fn flat_ground_clearance_is_the_lowest_wire_point() {
         let shapes = solved(15.0);

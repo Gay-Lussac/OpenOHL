@@ -114,6 +114,16 @@ pub fn run_zone_check(
             return Err("no section of the rules' voltages in the circuits chosen".into());
         }
     }
+    // The routes and alignments chosen only (owner, 2026-10-27): their
+    // sections (and the jumpers between them) solved and checked.
+    if let Some((on, _)) = check.wires_on(line) {
+        sections.retain(|id| on.contains(id));
+        if sections.is_empty() {
+            return Err(
+                "no section of the rules' voltages on the routes and alignments chosen".into(),
+            );
+        }
+    }
     // Every section by the method chosen.
     let own;
     let line = match check.method {
@@ -222,6 +232,116 @@ pub fn run_zone_check(
         solving,
         checking: started.elapsed(),
     })
+}
+
+/// Where a run's time went, in a few plain lines (owner, 2026-10-27:
+/// which parameters make a run slow, measured, not guessed): the solves,
+/// reading the points, checking them (every rule in one pass), the rules
+/// that took longest with their wires and their reach in plan, and hints
+/// from the numbers measured.
+pub fn breakdown(r: &ZoneCheckResult) -> Vec<String> {
+    let t = &r.zone.timing;
+    let secs = |d: Duration| d.as_secs_f64();
+    let mut out = vec![format!(
+        "solving: {:.1} s — {} section(s) in {} wind position(s)",
+        secs(r.solving),
+        r.sections.len(),
+        r.states.len()
+    )];
+    out.push(format!("indexing the wires: {:.1} s", secs(t.preparing)));
+    if r.zone.points > 0 || t.reading > Duration::ZERO {
+        out.push(format!(
+            "reading the points: {:.1} s — {} point(s) of the rules' classes around the wires",
+            secs(t.reading),
+            millions(r.zone.points)
+        ));
+        out.push(format!(
+            "checking them: {:.1} s — every rule in one pass",
+            secs(t.checking)
+        ));
+    }
+    // The slowest rules first.
+    let mut parts: Vec<&crate::zone::PartTiming> = t.parts.iter().collect();
+    parts.sort_by_key(|p| std::cmp::Reverse(p.took));
+    for p in parts.iter().take(5) {
+        let name = r.rules.get(p.rule).map_or("?", |r| r.name.as_str());
+        out.push(if p.ground {
+            format!(
+                "  \"{name}\" to the ground: {:.1} s, {} wire(s){}",
+                secs(p.took),
+                p.wires,
+                arcs_text(p.arcs)
+            )
+        } else {
+            format!(
+                "  \"{name}\" to the points: {:.1} s (all cores), {} wire(s){}, points within \
+                 {:.1} m in plan",
+                secs(p.took),
+                p.wires,
+                arcs_text(p.arcs),
+                p.plan
+            )
+        });
+    }
+    out.extend(hints(r));
+    out
+}
+
+/// The hints of a run's numbers: what would make it faster.
+fn hints(r: &ZoneCheckResult) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cases: Vec<&str> = r.states.iter().map(|s| s.name.as_str()).collect();
+    cases.sort_unstable();
+    cases.dedup();
+    let windy = r.states.iter().filter(|s| s.side.is_some()).count();
+    if !cases.is_empty() && windy > 2 * cases.len() {
+        out.push(format!(
+            "hint: {} wind positions for {} weather case(s): every wire is solved and checked \
+             in each — a larger wind step (or the swing arc alone) is faster",
+            r.states.len(),
+            cases.len()
+        ));
+    }
+    let t = &r.zone.timing;
+    if let Some(p) = t
+        .parts
+        .iter()
+        .filter(|p| !p.ground)
+        .max_by(|a, b| a.plan.total_cmp(&b.plan))
+        && p.plan > 15.0
+    {
+        let name = r.rules.get(p.rule).map_or("?", |r| r.name.as_str());
+        out.push(format!(
+            "hint: \"{name}\" takes points up to {:.1} m from the wires in plan: each is \
+             checked against every wire piece that near",
+            p.plan
+        ));
+    }
+    if t.reading > t.checking.max(r.solving) && r.zone.points > 0 {
+        out.push(
+            "hint: reading the point cloud took longest — a smaller search distance reads \
+             fewer points"
+                .into(),
+        );
+    }
+    out
+}
+
+fn arcs_text(n: usize) -> String {
+    if n == 0 {
+        String::new()
+    } else {
+        format!(" and {n} swing arc(s)")
+    }
+}
+
+/// "71.3 M", "9 412".
+pub fn millions(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1} M", n as f64 / 1e6)
+    } else {
+        n.to_string()
+    }
 }
 
 /// The nominal voltages of the line's sections, kV (0: earthed), lowest

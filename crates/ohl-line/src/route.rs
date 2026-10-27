@@ -841,6 +841,51 @@ impl Line {
         (sections, jumpers)
     }
 
+    /// The sections and jumpers on the routes `routes` or the alignments
+    /// `alignments` (ids; a check of a part of the line, owner
+    /// 2026-10-27): those with a structure on one of them — a structure on
+    /// a route as [`Line::structure_routes`] gives it, on an alignment as
+    /// [`Line::alignment_views`] places it (tied to one of its points, the
+    /// nearest of its route's, or beside it). A section reaching from a
+    /// route chosen into another is taken whole (it is solved as one).
+    pub fn wires_on(
+        &self,
+        routes: &[String],
+        alignments: &[String],
+    ) -> (
+        std::collections::BTreeSet<String>,
+        std::collections::BTreeSet<String>,
+    ) {
+        let on_route = self.structure_routes();
+        let near = self.near_alignments();
+        let chosen = |id: &str| -> bool {
+            on_route
+                .get(id)
+                .is_some_and(|rs| rs.iter().any(|r| routes.contains(r)))
+                || near.get(id).is_some_and(|ks| {
+                    ks.iter()
+                        .any(|&k| alignments.contains(&self.alignments[k].id))
+                })
+        };
+        let sections = self
+            .sections
+            .iter()
+            .filter(|s| s.points.iter().any(|p| chosen(&p.structure)))
+            .map(|s| s.id.clone())
+            .collect();
+        let jumpers = self
+            .jumpers
+            .iter()
+            .filter(|j| {
+                let mut at = self.end_structures(&j.from);
+                at.extend(self.end_structures(&j.to));
+                at.iter().any(|s| chosen(s))
+            })
+            .map(|j| j.id.clone())
+            .collect();
+        (sections, jumpers)
+    }
+
     /// Reads older files into the current form.
     ///
     /// Version 2 and before: their routes (each its own alignment, with
