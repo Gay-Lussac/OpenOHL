@@ -133,8 +133,34 @@ pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
 
 /// Usage of every member; `strength`: the load case's strength factor.
 pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<MemberUsage> {
+    member_usage_with(model, solution, strength, None)
+}
+
+/// Usage of every member with the capacities `given` by a method outside
+/// the core (a plugin's `member-capacity` export, 2026-10-27; one per
+/// member, in order; [`crate::capacity::capacity_inputs`] what it
+/// received): they replace the model's own method for every member they
+/// give a capacity (a member's `capacity_tension` and
+/// `capacity_compression` still win; one they give none falls back to
+/// the simple check); their notes are said per member as assumptions.
+/// None: the model's own method ([`member_usage`]).
+pub fn member_usage_with(
+    model: &Model,
+    solution: &Solution,
+    strength: f64,
+    given: Option<&[crate::asce10::Capacity]>,
+) -> Vec<MemberUsage> {
     (0..model.members.len())
-        .map(|idx| usage_of(model, solution, idx, &solution.members[idx], strength))
+        .map(|idx| {
+            usage_of(
+                model,
+                solution,
+                idx,
+                &solution.members[idx],
+                strength,
+                given.map(|g| g.get(idx).cloned().unwrap_or_default()),
+            )
+        })
         .map(|mut u| {
             if solution.kept_active.contains(&u.member) {
                 u.governs = if u.governs.is_empty() {
@@ -155,6 +181,7 @@ fn usage_of(
     idx: usize,
     f: &crate::solve::MemberForces,
     strength: f64,
+    given: Option<crate::asce10::Capacity>,
 ) -> MemberUsage {
     {
         {
@@ -178,18 +205,23 @@ fn usage_of(
             let n = f.axial;
             let kn = |x: f64| x / 1000.0;
             // The design method's capacities (none: the simple check).
-            let asce = (model.analysis.capacity == CapacityMethod::Asce10
-                && s.yield_strength.is_some())
-            .then(|| {
-                let partner = m
-                    .design
-                    .crossing
-                    .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
-                crate::asce10::capacity(model, idx, partner)
+            let external = given.is_some();
+            let asce = given.or_else(|| {
+                (model.analysis.capacity == CapacityMethod::Asce10 && s.yield_strength.is_some())
+                    .then(|| {
+                        let partner = m
+                            .design
+                            .crossing
+                            .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
+                        crate::asce10::capacity(model, idx, partner)
+                    })
             });
             let mut assumed: &[String] = &[];
             let mut extra = String::new();
-            if model.analysis.capacity == CapacityMethod::Asce10 && s.yield_strength.is_none() {
+            if !external
+                && model.analysis.capacity == CapacityMethod::Asce10
+                && s.yield_strength.is_none()
+            {
                 extra = format!(" ({NO_YIELD})");
             }
             // Axial: (ratio, words).

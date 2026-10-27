@@ -43,6 +43,10 @@ pub struct FeArgs {
     /// design code, unsafe compared with design codes).
     #[arg(long)]
     capacity: Option<String>,
+    /// A plugin giving member capacities (its folder; its
+    /// `member-capacity` export): `--capacity` names its method.
+    #[arg(long, requires = "capacity")]
+    capacity_plugin: Option<PathBuf>,
     /// Members printed per case, worst first.
     #[arg(long, default_value_t = 10)]
     top: usize,
@@ -208,9 +212,33 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     if args.linear {
         model.analysis.nonlinear = false;
     }
-    if let Some(c) = &args.capacity {
+    if let Some(c) = &args.capacity
+        && args.capacity_plugin.is_none()
+    {
         model.analysis.capacity = ohl_structures_fe::CapacityMethod::parse(c)?;
     }
+    let plugin = match &args.capacity_plugin {
+        None => None,
+        Some(dir) => {
+            let host = ohl_plugins::WasmHost::new().map_err(|e| e.to_string())?;
+            let method = args.capacity.clone().unwrap_or_default();
+            let methods = host
+                .member_capacity_methods(dir)
+                .map_err(|e| e.to_string())?;
+            if !methods.iter().any(|m| m.name == method) {
+                return Err(format!(
+                    "{}: no member-capacity method \"{method}\" (it gives: {})",
+                    dir.display(),
+                    methods
+                        .iter()
+                        .map(|m| m.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            Some((host, dir.clone(), method))
+        }
+    };
     let weight = if model.analysis.self_weight {
         args.weight_factor
     } else {
@@ -297,13 +325,23 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             nodal,
             self_weight: weight,
         };
-        let (s, usage) = ohl_structures_fe::analyse(
+        let (s, mut usage) = ohl_structures_fe::analyse(
             &model,
             &loads,
             args.strength,
             &ohl_structures_fe::default_budget(),
         )
         .map_err(|e| format!("{case}: {e}"))?;
+        if let Some((host, dir, method)) = &plugin {
+            let given = plugin_capacities(host, dir, method, args.strength, &model, &s)
+                .map_err(|e| format!("{case}: {e}"))?;
+            usage = ohl_structures_fe::check::member_usage_with(
+                &model,
+                &s,
+                args.strength,
+                Some(&given),
+            );
+        }
         let (worst_node, worst_d) = s
             .displacements
             .iter()
@@ -337,10 +375,16 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ohl_structures_fe::convergence_note(&s) {
             println!("  {note}");
         }
-        println!(
-            "  {}",
-            ohl_structures_fe::check::capacity_note(&model, &usage)
-        );
+        match &plugin {
+            None => println!(
+                "  {}",
+                ohl_structures_fe::check::capacity_note(&model, &usage)
+            ),
+            Some((_, dir, method)) => println!(
+                "  member capacities: method {method} of the plugin in {} (not checked by OpenOHL)",
+                dir.display()
+            ),
+        }
         let mut sorted: Vec<&ohl_structures_fe::MemberUsage> =
             usage.iter().filter(|u| u.usage.is_some()).collect();
         sorted.sort_by(|a, b| b.usage.unwrap_or(0.0).total_cmp(&a.usage.unwrap_or(0.0)));
@@ -382,6 +426,58 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         println!("written to {}", out.display());
     }
     Ok(())
+}
+
+/// The capacities of `model`'s members in solution `s` by `method` of the
+/// plugin in `dir` (its `member-capacity` export), one per member.
+fn plugin_capacities(
+    host: &ohl_plugins::WasmHost,
+    dir: &Path,
+    method: &str,
+    strength: f64,
+    model: &Model,
+    s: &ohl_structures_fe::Solution,
+) -> Result<Vec<ohl_structures_fe::asce10::Capacity>, String> {
+    let inputs: Vec<ohl_plugins::MemberInput> =
+        ohl_structures_fe::capacity::capacity_inputs(model, s)
+            .into_iter()
+            .map(|c| ohl_plugins::MemberInput {
+                id: c.id,
+                kind: c.kind,
+                shape: c.shape,
+                dimensions: c.dimensions,
+                area: c.area,
+                iy: c.iy,
+                iz: c.iz,
+                iv: c.iv,
+                wy: c.wy,
+                wz: c.wz,
+                e: c.e,
+                fy: c.fy,
+                fu: c.fu,
+                length: c.length,
+                k: c.k,
+                lk: c.lk,
+                design: c.design,
+                axial: c.axial,
+                moments: c.moments.to_vec(),
+                partner_axial: c.partner_axial,
+            })
+            .collect();
+    let results = host
+        .member_capacities(dir, method, strength, &inputs)
+        .map_err(|e| e.to_string())?;
+    Ok(results
+        .into_iter()
+        .map(|r| ohl_structures_fe::asce10::Capacity {
+            compression: r.compression.map(|c| (c, r.compression_governs.clone())),
+            tension: r.tension.map(|t| (t, r.tension_governs.clone())),
+            kl_r: None,
+            compression_assumed: r.notes.clone(),
+            tension_assumed: r.notes,
+            limit: None,
+        })
+        .collect())
 }
 
 /// `ohl structures pole`.

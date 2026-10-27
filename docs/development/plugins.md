@@ -656,6 +656,45 @@ as long as the same computation built into OpenOHL (0.8 s against
 0.65–0.9 s; with nearby pairs, about 10 500, 0.9 s against 0.65–0.7 s), plus
 about 0.3 s to load the plugin once.
 
+## Member capacities
+
+*2026-10-27; built, in active development, not approved yet.* A plugin
+may give **member capacities by a design method** through the optional
+export `member-capacity` (`crates/ohl-plugins/wit/code.wit`: the
+`member-capacity-plugin` world, or `export
+ohl:plugin/member-capacity@0.1.0` beside another world; extension point
+`member-capacity`; additive to 0.3 — a plugin without it loads as
+before). The core has a method of its own (ASCE 10-97, the default) and
+the simple check ([theory](../theory/structures-fe.md#member-capacity-methods));
+a plugin adds other codes. **OpenOHL solves and computes the usage, the
+plugin gives the capacities**:
+
+- `methods()`: its methods, each a name and a description.
+- `member-capacities(method, strength, members)`: one result per member,
+  in order. Each `member-input` carries the member's id and kind, its
+  profile's shape and dimensions (m), area and second moments (y, z,
+  minor principal), elastic moduli, E, f_y and f_u (Pa), length, `k` and
+  `lk`, its **design data** as a TOML table (the keys of
+  `[member.design]`, SI numbers, the crossing partner by id —
+  `ohl_structures_fe::capacity::design_toml`), its axial force and end
+  moments in this load case, and the crossing partner's axial force.
+  Each `member-result` gives a compression and a tension capacity (N,
+  none: no capacity) with what governs each in words, and notes.
+- The host (`WasmHost::member_capacity_methods`,
+  `WasmHost::member_capacities`) refuses a list of another length and a
+  capacity that is not a positive number, naming the plugin. The core
+  (`ohl_structures_fe::capacity::capacity_inputs`,
+  `check::member_usage_with`) uses the capacities in place of its own
+  method; a member's `capacity_tension` / `capacity_compression` still
+  win; the notes appear per member in what governs.
+- `ohl structures fe MODEL --capacity METHOD --capacity-plugin DIR` uses
+  it (the notes say "member capacities: method … of the plugin in …");
+  choosing a plugin method in OHL-Structure and OHL-Design: not yet.
+
+The test plugin `plugins/tests/member-capacity` gives an invented
+method (`area-yield`: area × yield both ways, not a design code) to prove
+the interface (host test, CLI test).
+
 ## String limits: what a plugin sees
 
 A string may carry limits — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits)). Absent means not given: nothing checks it. Given, OpenOHL's String checks compare it with the solved string (since 2026-10-24), and a plugin (or a report, or a script) may check it too, where its rules need it. What it gets:

@@ -10,6 +10,27 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Member-capacity extension point for plugins (owner, 2026-10-27)**
+
+- Approved with the design data ("go ahead with the changes"); secondary
+  once ASCE 10-97 went into the core, built after it so that other codes
+  can come as plugins. Optional export `member-capacity` (`code.wit`,
+  additive to 0.3, found by name): `methods()` and
+  `member-capacities(method, strength, members)`; per member the
+  section, material, length, `k`/`lk`, the design data as a TOML table
+  (SI numbers), the forces of the load case and the crossing partner's
+  force; per member back the compression and tension capacities with what
+  governs them, and notes. OpenOHL computes the usage (one rule for every
+  method); a member's own capacities still win. Test plugin
+  `plugins/tests/member-capacity` (an invented area × yield method), host
+  and CLI tests; `ohl structures fe --capacity METHOD --capacity-plugin
+  DIR`.
+- Not yet: choosing a plugin's method in OHL-Structure and in OHL-Design's
+  structure check (the setting would name the plugin and method); the
+  methods' list in the plugin manager.
+- To confirm: the design data passed as a TOML table rather than a
+  record (one format for the plugin to read, the same keys as the files).
+
 **ASCE 10-97 member capacities in the core, the default (owner, 2026-10-27)**
 
 - The owner, verbatim: "For the tower the asce 10-97 should be an option

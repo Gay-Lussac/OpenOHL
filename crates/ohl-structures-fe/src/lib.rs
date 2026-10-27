@@ -29,6 +29,7 @@
 //! formulation and its references.
 
 pub mod asce10;
+pub mod capacity;
 pub mod check;
 pub mod design;
 pub mod drawn;
