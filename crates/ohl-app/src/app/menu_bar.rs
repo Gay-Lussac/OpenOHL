@@ -739,6 +739,21 @@ pub(super) fn menus(
             ui.close();
         }
         ui.separator();
+        ui.menu_button("Electrical", |ui| {
+            if ui
+                .button("Line parameters…")
+                .on_hover_text(
+                    "Series impedance with earth return (Carson), the earth wires reduced out, \
+                     and capacitance per circuit: positive and zero sequence per km and in total, \
+                     from the wires as solved in a weather case",
+                )
+                .clicked()
+            {
+                r.line_parameters.show(r.case);
+                ui.close();
+            }
+        });
+        ui.separator();
         ui.label(egui::RichText::new("Analyses").strong());
         if ui
             .button("Galloping ellipses…")

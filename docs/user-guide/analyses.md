@@ -618,3 +618,72 @@ Sections with creep or load conditions need their weather cases:
 `--weather`.
 
 Desktop app: **Checks › As-built wires…**.
+
+## Electrical: line parameters
+
+*Built, in active development, not approved yet* (roadmap O18, 2026-10-27).
+The series impedance with earth return and the capacitance of every
+circuit, from the wires where they hang in a weather case — the same
+geometry as the mechanical design. Methods, assumptions and validation:
+[Line parameters](../theory/line-parameters.md).
+
+**What it needs:** the sections' systems and phases (Line › Electrical
+systems; sections of no system are taken as earthed earth wires), the
+wire types' electrical data (`[cable.electrical]`: AC resistance, geometric
+mean radius — see [Wire library](wire-library.md#electrical-data-cableelectrical)),
+and the line's **electrical settings**:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Soil resistivity | none: **100 Ω·m assumed**, said with every result | homogeneous earth along the line, Ω·m |
+| Earth return | Carson's series | or the complex depth, or Carson's first terms ("modified Carson") |
+| Height in a span | the solved wire's average | or the attachment height minus 2/3 of the sag |
+
+**In OHL-Design:** Checks › Electrical › **Line parameters…**. The
+settings at the top are the line's (each change one undoable command,
+kept in the project). Choose the weather case in the footer (the wires as
+solved in it; its temperature is the conductors' for the resistances) and
+**Run**. The table gives per circuit the positive and zero sequence
+R, X (Ω/km) and B (µS/km) of the ideally transposed line and the totals;
+the + button shows the circuit's stretches (consecutive spans with the same
+sections). Hover a circuit to see how much its sequences couple as built
+(a line not transposed). The coupling rows give the zero sequence mutual
+impedance between circuits sharing spans. **Export CSV…** writes the
+table with the notes. The results are marked out of date when the line
+changes, like the other checks.
+
+**On the command line:**
+
+```text
+ohl electrical parameters LINE.ohl.json|PROJECT.ohl
+    [--weather CASES.ohlwc --case NAME | --temperature 20]
+    [--height solved|mean] [--soil OHM_M]
+    [--earth carson_series|complex_depth|carson_first_terms]
+    [--terrain FILE | --surface NAME]
+    [--section ID]… [--matrices] [--cross-sections] [--csv OUT.csv]
+    [--library WIRES.ohlw]
+```
+
+Without a weather case the wires hang in still air at `--temperature`
+(20 °C by default). `--height`, `--soil` and `--earth` override the
+line's settings for this run (`mean` is the two-thirds rule).
+`--terrain` (a terrain file) or `--surface` (a terrain surface of the
+project, `ohl surface list`) gives the ground under the spans; without
+one the ground is straight between the structures' feet, which over a
+valley lies above the wires: such a span's wires are left out, said in the
+notes, and the circuit's totals are short of it (the note says so too).
+`--section` keeps only the stretches holding those sections;
+`--matrices` prints each circuit's phase matrices per km (R + jX, and C in
+nF/km); `--cross-sections` every span's wires (offset to the right of the
+line, height above the ground). Try it on the synthetic example:
+
+```text
+ohl electrical parameters examples/electrical/double-circuit.ohl.json \
+    --library examples/electrical/wires.ohlw --cross-sections
+```
+
+Not yet: other lines in the corridor, soil resistivity along the route,
+a transposition plan, the terrain in the window (the ground is taken
+straight between the structures' feet there) and the point cloud's ground,
+the fields and audible noise
+(plugins, roadmap O18).

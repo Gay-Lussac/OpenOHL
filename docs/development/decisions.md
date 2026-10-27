@@ -10,6 +10,51 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Electrical module, first part: cross-sections and line parameters (owner, 2026-10-27; roadmap O18 steps 0 and 1)**
+
+- A headless crate `ohl-electrical` (no GUI, no plugin calls). The
+  **cross-section** (`CrossSection`) is the one record the electrical
+  calculations share: per span of the line, at a station or as the span's
+  mean, every conductor and earth wire with its offset (to the right
+  looking ahead), height above the ground under it, bundle, wire data
+  (diameter, GMR, AC resistance at the case's temperature) and system,
+  phase, circuit, voltage, frequency, angle; the ground (elevation, slope
+  across, soil resistivity). Other lines' wires: an empty extension point.
+  Serialisable, for the plugins later; the plugin interface is unchanged.
+- **Line parameters**: series impedance with earth return by **Carson's
+  series** (default; the asymptotic expansion above a = 15), or the
+  **complex depth** (Deri et al. 1981), or **Carson's first terms**
+  (modified Carson, for comparison); earth wires reduced out by Kron
+  (**continuously earthed**, an assumption); capacitance from potential
+  coefficients with images (perfect earth, ε₀); bundles as one
+  equivalent wire. Per span, summed per circuit (phases of one system with
+  one circuit name) by phase, so a transposition along the line is in the
+  totals; stretches of the same sections; sequence values of the ideally
+  transposed line and the coupling of the sequences as built; zero
+  sequence coupling between circuits on the same spans.
+- **Height in a span**: the solved wire's exact average (default) or the
+  textbook attachment height minus 2/3 of the sag — a line setting.
+- **Soil resistivity**: a new line setting (with the earth return method
+  and the height rule: `Line.electrical`, line file **version 11** when
+  not the defaults, project meta row `electrical`, OHL XML
+  `<electrical>`). Not given: **100 Ω·m assumed**, the value the IEEE
+  distribution test feeders assume (IEEE PES DSAS, "Radial Distribution
+  Test Feeders", 2000), said in every result and in the window — never a
+  hidden constant. One value per line; along the route later.
+- **Capacitance over a transposition**: the program averages the
+  capacitances (stretches in parallel at one voltage); textbooks average
+  the potential coefficients (equal charges) — 0.7–1.4 % apart on the
+  lines checked. The program's choice is the physical one; the validation
+  case checks the textbook value from the program's matrices. *To confirm
+  by the owner.*
+- Frequency from the system, 50 Hz when it gives none (said); DC systems
+  left out of the AC parameters (said).
+- `ohl electrical parameters` and Checks › Electrical › Line parameters…
+  (the Analysis items of OHL-Design are in its Checks menu). Validated
+  against Kersting's Example 4.1 as printed in Overbye's open ECEN 667
+  lecture (2019), Overbye's triple-bundle example, and Carson's integral
+  by quadrature (13 cases); see [Line parameters](../theory/line-parameters.md).
+
 **A check plugin may suggest its check's weather (owner, 2026-10-27)**
 
 - The owner: the LeV unequal wind check should take 10 °C + 650 Pa by

@@ -340,7 +340,7 @@ impl MeanHeight {
     }
 }
 
-/// The line's electrical settings (Analysis › Electrical; line file
+/// The line's electrical settings (Checks › Electrical; line file
 /// version 11 when not the defaults): what the line parameters need
 /// besides the wires and systems.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]

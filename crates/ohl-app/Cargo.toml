@@ -38,6 +38,7 @@ ohl-structure-loads.workspace = true
 ohl-structure-link.workspace = true
 ohl-sections.workspace = true
 ohl-thermal.workspace = true
+ohl-electrical.workspace = true
 ohl-bom.workspace = true
 ohl-spotting.workspace = true
 ohl-plugins.workspace = true

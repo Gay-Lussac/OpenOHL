@@ -51,6 +51,14 @@ pub struct ParametersArgs {
     /// (default: the line's setting).
     #[arg(long)]
     pub earth: Option<String>,
+    /// Terrain file for the ground under the spans (default: straight
+    /// between the structures' feet).
+    #[arg(long, conflicts_with = "surface")]
+    pub terrain: Option<PathBuf>,
+    /// A terrain surface of the project file (`ohl surface list`) for the
+    /// ground under the spans.
+    #[arg(long)]
+    pub surface: Option<String>,
     /// Only the stretches holding this section (repeatable).
     #[arg(long)]
     pub section: Vec<String>,
@@ -114,7 +122,20 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
             Err(e) => println!("  section {} not solved: {e}", section.id),
         }
     }
-    let p = ohl_electrical::run(&line, &library, &shapes, case.temperature, None);
+    let terrain = match (&a.terrain, &a.surface) {
+        (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
+        (None, Some(name)) => {
+            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
+            let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
+            Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
+        }
+        (None, None) => None,
+    };
+    let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
+    let ground: Option<&dyn Fn(f64, f64) -> Option<f64>> = terrain
+        .as_ref()
+        .map(|_| &height as &dyn Fn(f64, f64) -> Option<f64>);
+    let p = ohl_electrical::run(&line, &library, &shapes, case.temperature, ground);
     let (rho, assumed) = line.electrical.soil_resistivity();
     println!(
         "Line parameters of {} in \"{}\" ({:.1} °C)",

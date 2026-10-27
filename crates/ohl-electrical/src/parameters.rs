@@ -489,7 +489,14 @@ pub fn line_parameters(
         let mut total = Totals::zero(n);
         let mut incomplete = 0usize;
         for (span, cs, ms) in &with {
+            // Its wires in the span (some may have been left out).
+            let present = cs.wires.iter().any(|w| {
+                w.phase
+                    .as_ref()
+                    .is_some_and(|p| p.system == key.system && p.circuit == key.circuit)
+            });
             let Some(m) = ms.iter().find(|m| m.frequency_hz == *f) else {
+                incomplete += usize::from(present);
                 continue;
             };
             let at: Vec<Option<usize>> = order
@@ -501,6 +508,7 @@ pub fn line_parameters(
                 })
                 .collect();
             if at.iter().all(Option::is_none) {
+                incomplete += usize::from(present);
                 continue;
             }
             let Some(at) = at.into_iter().collect::<Option<Vec<usize>>>() else {
@@ -532,7 +540,7 @@ pub fn line_parameters(
         }
         if incomplete > 0 {
             notes.push(format!(
-                "{}: {incomplete} span(s) without all its phases left out",
+                "{}: {incomplete} span(s) without all its phases left out (see the notes on its wires); its totals are short of them",
                 key.label()
             ));
         }
