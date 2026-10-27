@@ -10,6 +10,19 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Replace mode: sections crossing the stretch's end are split; circuits the variant lacks are removed (owner, 2026-10-27)**
+
+- A project section running through a tower the variant removes and on
+  beyond the stretch's end was removed whole, the part outside too. Now
+  it is split at the end: its spans with an end outside the stretch stay
+  as a section of their own (the first piece under its id; span points,
+  local winds and stringing of those spans kept — a clipped-in section's
+  lengths, a sag in a span left out taken in the ruling span;
+  `Section::piece`), the part inside goes.
+- Inside the stretch, the sections of a circuit the variant does not carry
+  at all (e.g. one the variant re-equips a tower without) stay removed by
+  default, as for the others; the list offers to keep them.
+
 **Imports get everything in, the rules are checked afterwards; curves held flat (owner, 2026-10-27)**
 
 - The owner: "what's important is that the imports get everything in; the

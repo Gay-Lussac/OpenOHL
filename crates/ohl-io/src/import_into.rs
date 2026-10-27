@@ -944,8 +944,18 @@ fn variant(
     {
         out.notes.push(format!(
             "section {} of the project ran out of the stretch the import covers through a \
-             removed structure: removed with it (keep that structure to keep it)",
-            r.id
+             removed structure: split at the stretch's end, {} kept outside it as {}",
+            r.id,
+            if r.pieces.len() == 1 {
+                "its part"
+            } else {
+                "its parts"
+            },
+            if r.pieces.len() == 1 {
+                "a section of its own (same id)".to_owned()
+            } else {
+                format!("{} sections (the first under its id)", r.pieces.len())
+            }
         ));
     }
     let mut line = existing.clone();
@@ -2621,6 +2631,48 @@ mod tests {
         let mut out: Vec<String> = v.iter().map(|x| id(x).clone()).collect();
         out.sort();
         out
+    }
+
+    /// A project section running through a removed tower and on beyond
+    /// the stretch's end (circuit B strung from T5 to T10 in one, through
+    /// T8) is split at the end (owner, 2026-10-27): its part T8–T10 stays,
+    /// under its id, the part inside goes; the line checks.
+    #[test]
+    fn a_section_crossing_the_stretch_is_split_at_its_end() {
+        let (mut ours, theirs) = project_and_variant();
+        let through = section(
+            "B34",
+            "B",
+            &[
+                ("T5", 31),
+                ("T6", 11),
+                ("T6b", 11),
+                ("T7", 11),
+                ("T8", 11),
+                ("T9", 11),
+                ("T10", 11),
+            ],
+            25e3,
+        );
+        ours.sections.retain(|s| s.id != "B3" && s.id != "B4");
+        ours.sections.push(serde_json::from_value(through).unwrap());
+        ours.jumpers.retain(|j| j.id != "JB8");
+        ours.validate().unwrap();
+        let p = plan(&ours, &[], &imported(theirs), &ImportOptions::default()).unwrap();
+        let r = p.removed.iter().find(|r| r.id == "B34").unwrap();
+        assert_eq!(r.pieces, [(4, 6)], "{r:?}");
+        assert!(r.why.contains("split"), "{}", r.why);
+        let kept = p.line.sections.iter().find(|s| s.id == "B34").unwrap();
+        let at: Vec<&str> = kept.points.iter().map(|q| q.structure.as_str()).collect();
+        assert_eq!(at, ["T8", "T9", "T10"]);
+        assert!(
+            p.notes
+                .iter()
+                .any(|n| n.contains("split at the stretch's end")),
+            "{:?}",
+            p.notes
+        );
+        p.line.validate().unwrap();
     }
 
     /// Replace (the default): the variant replaces T3–T8. Outside it the

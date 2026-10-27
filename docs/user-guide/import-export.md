@@ -251,8 +251,13 @@ project's.
   towers in both only whose every span the import covers; a section the
   import has at the same place (the same structures and sets) is settled
   as appearing in both instead. A section that runs out of the stretch
-  through a removed structure goes with it (a note says so: keep that
-  structure to keep it).
+  through a removed structure is **split at the stretch's end**
+  (2026-10-27): its part outside the stretch stays as a section of its
+  own (the first under its id; its spans, span points and stringing —
+  a clipped-in section's lengths — kept), the part inside goes; a note
+  says so. Sections of a circuit the import does not carry at all are
+  removed like the others (the owner's default, 2026-10-27): keep them
+  in the list when the variant only left out an unchanged circuit.
 - **Jumpers removed**: those at a removed structure or on a tap of a
   removed section, and those whose every end is at a tower in both
   inside the stretch. Jumpers at the **stretch's ends** (towers in both

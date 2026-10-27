@@ -2635,6 +2635,74 @@ pub fn bundle_point(q: Point, a: Point, b: Point, offset: [f64; 2]) -> Point {
 }
 
 impl Section {
+    /// The piece of this section from point `from` to point `to` (spans
+    /// `from..to`), as section `id` (owner, 2026-10-27: a section split
+    /// where an imported variant's stretch ends): its span points, spreads
+    /// and local winds of those spans (renumbered), its stringing — a
+    /// clipped-in section's lengths of those spans, a sag given in a span
+    /// outside the piece taken in the ruling span instead. A spread with an
+    /// end outside the piece is left out. `None` when the range holds no
+    /// span.
+    pub fn piece(&self, from: usize, to: usize, id: &str) -> Option<Self> {
+        if !(from < to && to < self.points.len()) {
+            return None;
+        }
+        let spans = from..to;
+        let mut x = self.clone();
+        x.id = id.to_owned();
+        x.points = self.points[from..=to].to_vec();
+        x.span_points = self
+            .span_points
+            .iter()
+            .filter(|p| spans.contains(&p.span))
+            .map(|p| SpanPoint {
+                span: p.span - from,
+                ..p.clone()
+            })
+            .collect();
+        let labels: std::collections::BTreeSet<&str> =
+            x.span_points.iter().map(|p| p.label.as_str()).collect();
+        x.spreads = self
+            .spreads
+            .iter()
+            .filter(|o| labels.contains(o.from.as_str()) && labels.contains(o.to.as_str()))
+            .cloned()
+            .collect();
+        x.wind_factors = self
+            .wind_factors
+            .iter()
+            .filter(|w| spans.contains(&w.span))
+            .map(|w| SpanWind {
+                span: w.span - from,
+                ..*w
+            })
+            .collect();
+        x.stringing = match &self.stringing {
+            Stringing::UnstressedLengths {
+                lengths,
+                temperature,
+                sagged,
+            } => Stringing::UnstressedLengths {
+                lengths: lengths
+                    .get(spans.clone())
+                    .map_or_else(Vec::new, <[f64]>::to_vec),
+                temperature: *temperature,
+                sagged: sagged.clone(),
+            },
+            Stringing::Sag {
+                sag,
+                temperature,
+                span,
+            } => Stringing::Sag {
+                sag: *sag,
+                temperature: *temperature,
+                span: span.filter(|k| spans.contains(k)).map(|k| k - from),
+            },
+            t => t.clone(),
+        };
+        Some(x)
+    }
+
     /// Gives it the wire points `points`: its span points (with their
     /// objects, and so what hangs on them), a sagged span and clipped
     /// lengths keep their span — found by its two ends — at its new
@@ -4388,6 +4456,57 @@ mod tests {
         // Saved only when set.
         let text = example().to_json();
         assert!(!text.contains("\"bundle\": 1,\n      \"bundle_spacing"));
+    }
+
+    #[test]
+    fn a_section_piece_keeps_its_spans() {
+        let line = example();
+        let s = line
+            .sections
+            .iter()
+            .find(|s| s.points.len() >= 4)
+            .expect("a section of three spans or more")
+            .clone();
+        let mut s = s;
+        s.stringing = Stringing::UnstressedLengths {
+            lengths: (0..s.points.len() - 1).map(|k| 300.0 + k as f64).collect(),
+            temperature: 10.0,
+            sagged: None,
+        };
+        s.span_points = vec![
+            SpanPoint {
+                label: "m0".into(),
+                span: 0,
+                ..Default::default()
+            },
+            SpanPoint {
+                label: "m2".into(),
+                span: 2,
+                ..Default::default()
+            },
+        ];
+        let p = s.piece(1, s.points.len() - 1, "x").unwrap();
+        assert_eq!(p.id, "x");
+        assert_eq!(p.points, s.points[1..].to_vec());
+        let Stringing::UnstressedLengths { lengths, .. } = &p.stringing else {
+            panic!("clipped in")
+        };
+        assert_eq!(lengths[0], 301.0);
+        assert_eq!(lengths.len(), s.points.len() - 2);
+        assert_eq!(p.span_points.len(), 1);
+        assert_eq!(
+            (p.span_points[0].label.as_str(), p.span_points[0].span),
+            ("m2", 1)
+        );
+        // A sag in a span left out: taken in the ruling span.
+        s.stringing = Stringing::Sag {
+            sag: 10.0,
+            temperature: 10.0,
+            span: Some(0),
+        };
+        let p = s.piece(1, s.points.len() - 1, "x").unwrap();
+        assert!(matches!(p.stringing, Stringing::Sag { span: None, .. }));
+        assert!(s.piece(2, 2, "y").is_none());
     }
 
     #[test]
