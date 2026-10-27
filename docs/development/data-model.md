@@ -862,7 +862,9 @@ design data `[member.design]`, `Member::design`, module `design`;
 (`"asce10-97"`, the default: module `asce10`, `asce10::capacity` per
 member, its assumptions in `MemberUsage::governs` after
 `check::ASSUMED`) or `Simple` (`"simple"`, `check::SIMPLE`);
-`check::capacity_note`; a material's `ultimate`, `Section::ultimate`; in a
+`check::capacity_note`; `check::axial_member` — single angles and members
+with a design class axial unless `single_angle_moments`; bolts with
+`count = 0`: holes only; a material's `ultimate`, `Section::ultimate`; in a
 structure file the same `[analysis]` key, raised to version 8 by
 OHL-Structure when set) and
 poles `.ohlp` (`ohl-pole`) next to the `.ohls`
