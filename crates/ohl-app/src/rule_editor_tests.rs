@@ -690,6 +690,46 @@ fn remove_all_rules_asks_and_undoes() {
     );
 }
 
+/// The Clearances tab (usability pass 2026-10-27): the rule file named,
+/// "not checked yet" before a run, the results above the rule editor, the
+/// ground and LiDAR clearance windows reachable from it.
+#[test]
+fn the_clearances_tab_puts_the_results_first() {
+    let (mut harness, _file) = harness_with_rules("clearances-order");
+    harness.get_by_label("Rule file");
+    let hint = harness.get_by_label_contains("Not checked yet").rect();
+    let edit = harness.get_by_label("Edit rules").rect();
+    assert!(hint.bottom() <= edit.top());
+    harness.get_by_label("Run").click();
+    for _ in 0..200 {
+        harness.step();
+        if harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .clearances
+            .report
+            .is_some()
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    let head = harness.get_by_label_contains("violation").rect();
+    assert!(head.bottom() <= harness.get_by_label("Edit rules").rect().top());
+    harness.get_by_label("Vertical…").click();
+    harness.run_steps(3);
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .vertical_clearances
+            .open
+    );
+}
+
 /// The Clearances tab's Run: in its footer, under the rules, running the
 /// check of the rule file.
 #[test]

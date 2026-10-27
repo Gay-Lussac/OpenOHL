@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Clearances tab: a usability pass (owner, 2026-10-27)**
+
+The UI review of 2026-10-26 had skipped "Clearances tab rework". Looked
+at as a line engineer's page; nothing removed, results and formats
+unchanged:
+
+- **Results before the editor**: the violations came after the rule
+  editor (long when opened), so a run's answer was below the fold. Now:
+  the rule file, the results, then Edit rules, then the ground windows.
+- **The rule file named**: the dropdown had no label; now "Rule file",
+  its number of rules beside it, and **Add…** for another file (before,
+  only offered while there was none).
+- **No box in a box**: the violations had their own scroll area inside
+  the tab's (cut off, two scroll bars); they now scroll with the tab,
+  like the other check windows' bodies above their Run footer.
+- **One violation, two lines**: the wire (and the other one) strong on
+  the first; clearance found < required, rule and class on the second
+  (the single long line was cut off in the narrow tab).
+- **Before the first run** the tab says "Not checked yet" and what Run
+  does (it showed nothing).
+- **Vertical… / Radial…** (the ground and LiDAR clearance windows) are
+  reachable from the tab also when a rule file is kept.
+- Clicking a violation selects only its wire (clearing a multiple
+  selection) as the other "go to" links do.
+- Not done: screenshots for the docs (none taken in this pass).
+
 **Several objects selected: Shift and Cmd/Ctrl+click (owner, 2026-10-27)**
 
 - The selection held one object. Now Shift+click adds, Cmd+click
