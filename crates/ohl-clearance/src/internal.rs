@@ -1176,14 +1176,12 @@ fn pieces_at(
                     // 2026-10-27): without one its wire point is the
                     // conductor's clamp, measured with the conductor (to
                     // its surface, nearer than the bare point).
-                    let electrified = fits
-                        .get(&(structure, st.label.as_str()))
-                        .is_some_and(|f| {
-                            f.volumes
-                                .shapes
-                                .iter()
-                                .any(|x| x.state == ElectricalState::Electrified)
-                        });
+                    let electrified = fits.get(&(structure, st.label.as_str())).is_some_and(|f| {
+                        f.volumes
+                            .shapes
+                            .iter()
+                            .any(|x| x.state == ElectricalState::Electrified)
+                    });
                     // A string shared by two sections (a TAK's): once.
                     if electrified && labels.insert(st.label.clone()) {
                         out.push(Piece {
