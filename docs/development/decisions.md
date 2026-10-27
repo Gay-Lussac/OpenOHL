@@ -10,6 +10,23 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Electric and magnetic fields in the core, magnetic field first (owner, 2026-10-27)**
+
+- The owner asked for a field calculation like EFC-400, the magnetic
+  field first. Biot–Savart and the line charges are textbook, so the
+  fields join the line parameters in `ohl-electrical`; an ordinance's
+  limits and rules (for Switzerland the NISV: 1 µT at places of sensitive
+  use, the thermal limit current, the governing load-flow directions)
+  come from a plugin's parameter file. The hvlbuzz plugin stays for the
+  audible noise and as a cross-check of the fields. Draft in ROADMAP O18
+  steps 4 (magnetic field) and 5 (electric field); reference the BAFU's
+  NISV enforcement guide (2007 draft, sections 2.4, 8.1.4, 8.7).
+
+**LiDAR clearance checks: speed accepted as it is (owner, 2026-10-27)**
+
+- "I think the speed up is good now": the point reading keeps its exact
+  corridor (no coarser corridor; the points-read count stays as it is).
+
 **Replace mode: a span drawn again to an older copy of its far end (owner, 2026-10-27)**
 
 - Owner report: importing a by-pass variant left three earth wires

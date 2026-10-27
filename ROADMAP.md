@@ -293,12 +293,14 @@ cross-sections and the line parameters) **built, in active development,
 not approved yet** (2026-10-27, owner's choice of the first part).
 
 **Where it lives.** A headless engine crate `ohl-electrical` (no GUI, no
-plugin calls) for what is textbook and general — line parameters and the
-load flow —, a window in OHL-Design (Analysis › Electrical…) and `ohl
-electrical …` commands; **field and noise calculations through
-plugins**, so that a utility or a research group brings its own method
-and its own limits (an ordinance's limits in its country's plugin, e.g.
-the LeV plugin), the core staying independent of them.
+plugin calls) for what is textbook and general — line parameters, the
+load flow and the electric and magnetic fields (2026-10-27: the fields
+moved into the core, "magnetic field first") —, a window in OHL-Design
+(Checks › Electrical) and `ohl electrical …` commands; **the limits and
+rules of an ordinance and the noise methods through plugins**, so that a
+utility or a research group brings its own limits (an ordinance's limits
+in its country's plugin, e.g. the LeV plugin) and its own methods, the
+core staying independent of them.
 
 **What the core gives every electrical calculation (one data model):**
 - **Cross-sections of the line** at any station (or a span's lowest
@@ -318,7 +320,7 @@ the LeV plugin), the core staying independent of them.
   value, 100 Ω·m assumed when not given, said). Not yet: other lines'
   wires (an empty extension point), soil resistivity along the route, the
   terrain under the spans (straight between the feet), the plugin
-  extension point (with step 4).
+  extension point (with step 6).
 - **Operating data per system**: voltage (rated, highest), current per
   circuit (given, from the load flow, or the thermal rating's ampacity),
   phase sequence and transposition along the line.
@@ -353,7 +355,88 @@ the LeV plugin), the core staying independent of them.
 3. [ ] **Exchange** — the parameters exported for network calculation
    programs in an open format (to choose: CIM/CGMES line parameters, or a
    simple table).
-4. [ ] **Electric and magnetic fields, audible noise — a plugin for
+4. [ ] **Magnetic field (core; first of the fields — owner, 2026-10-27:
+   "magnetic field first", a tool like EFC-400 to start from).** Draft,
+   to discuss. The magnetic flux density is textbook (Biot–Savart), so
+   the calculation is in the core like the line parameters; the limits
+   and the rules of an ordinance (which current, which places, which
+   limit) come from a plugin's parameter file (for Switzerland the NIS
+   ordinance, NISV: in the LeV plugin or one of its own), never typed
+   into the core. Reference for what an ordinance asks: the BAFU's NISV
+   enforcement guide for high-voltage lines (2007 draft for trial, still
+   current; sections 2.4 and 8.1.4), kept in the owner's documents.
+   - **Method (3D).** Each conductor and earth wire as solved in a
+     weather case (the polylines the solver gives: sag, line angles and
+     finite lengths as they are), a bundle subconductor by
+     subconductor, carrying a complex current (rms magnitude and phase
+     angle); the field of each straight segment in closed form
+     (Biot–Savart for a finite segment), summed as phasors per
+     component; reported as the rms of the vector,
+     \( B = \sqrt{|B_x|^2 + |B_y|^2 + |B_z|^2} \) (as the NISV asks;
+     the largest value over the cycle — the ellipse's major axis — given
+     beside it). The ground's return currents left out at first (their
+     image lies at the complex depth, hundreds of metres down at 50 Hz:
+     said as an assumption and its size estimated in the theory page);
+     the line's own wires only, then other lines in the corridor (the
+     cross-sections' extension point). A **2D variant** on the
+     cross-sections (infinite straight parallel conductors at the span's
+     mean height) for quick profiles, refused or warned where the NISV
+     guide says 2D is not valid: within reach of a line angle over 5°,
+     near crossings, on spans between differently arranged structures.
+   - **Currents.** Per circuit: given (A), the wire's thermal rating
+     (the ampacity OpenOHL already computes; the NISV's governing current
+     is the thermal limit current at 40 °C and 0.5 m/s wind), or later
+     the load flow (step 2). The direction of the load flow per circuit
+     as a sign (the NISV's governing combination of directions; BAFU's
+     LFS spreadsheet finds it from operating data); balanced phases, no
+     harmonics; phase angles from the systems (L1 0°, L2 −120°, L3 +120°
+     by default, a transformer's fixed shift added, e.g. Yd11 +30°).
+     Systems of two frequencies (16.7 Hz rail, 50 Hz) computed apart and
+     added as \( \sqrt{B_{16.7}^2 + B_{50}^2} \).
+   - **Where.** Profiles across the line at stations (every span's
+     lowest point by default, ±50 m, 1 m above the ground — heights as
+     the parameter file says), grids on a horizontal or vertical plane
+     (isolines: the 1 µT line of the NISV), and given points: **places
+     of sensitive use** (OMEN) as point objects of the project, typed or
+     taken from the survey's buildings class or a building file, each
+     with its use and height(s). The modelled length: the whole line, or
+     at least five times the 1 µT reach before and after (the NISV
+     guide's rule), checked and said.
+   - **Earth wire currents** (the NISV guide: optional, included when
+     the program computes them): first from the impedance matrix the
+     line parameters already give (an infinitely long earth wire,
+     earthed everywhere: \( I_e = -Z_{ee}^{-1} Z_{ep} I_p \)), then
+     per span with the towers' earthing (a finite earth wire, the
+     footing resistances: Nguyen, Liebermann, Schegner, TU Dresden 2024
+     — needs a measured earthing resistance per structure, not the soil
+     resistivity column).
+   - **Results.** A window (Checks › Electrical › Magnetic field…) and
+     `ohl electrical magnetic`: the profiles plotted (B against the
+     distance from the axis, per station), the isolines drawn on the
+     cross-section panel and in plan on the 3D view, the values at the
+     OMEN in a table with the limit and the margin, CSV; out of date like
+     the other checks. The NISV form's numbers (the 1 µT line's width per
+     span) for the site data sheet.
+   - **Phase arrangement.** Later: the arrangement of phases on a
+     double-circuit structure that gives the smallest field (the NISV's
+     optimisation duty for old lines), tried over the permutations.
+   - **Validation.** Closed forms (one infinite straight conductor; a
+     balanced three-phase flat line, whose field falls as 1/d²), a finite
+     segment against numerical integration, published profiles (to find:
+     IEC 62110 annex examples, CIGRE TB 375 and the papers validated
+     against measurements, e.g. Bürgi et al. 2017 for Swiss lines);
+     comparison with the owner's EFC-400 results kept local (real lines).
+5. [ ] **Electric field (core, after the magnetic field).** The charges
+   from the potential coefficients the line parameters already have
+   (\( q = P^{-1} V \), images in a ground plane, the earth wires at
+   zero potential), the field of the line charges and their images at
+   1 m above the ground; the NISV's governing state for it (the highest
+   operating voltage, the largest sag, a circuit that compensates
+   another taken as switched off and earthed), a slope across as a
+   tilted plane; 2D enough (the guide), 3D with the solved wires later.
+   Validation as above (closed forms, published profiles, the owner's
+   results kept local).
+6. [ ] **Audible noise and a cross-check of the fields — a plugin for
    hvlbuzz.** [hvlbuzz](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html)
    (FKH, Switzerland; a Python library on a Rust core, `ebl`) computes the
    electric field (V/m), the magnetic flux density (µT, RMS and complex)
@@ -385,7 +468,7 @@ the LeV plugin), the core staying independent of them.
      `cross-sections` (the cross-section record sent, tables and drawings
      given back), so any field or noise method can be added the same way
      (also, for instance, radio interference or surface gradient).
-5. [ ] **Corona and surface gradient** in the core or the plugin: the
+7. [ ] **Corona and surface gradient** in the core or the plugin: the
    conductor surface gradient per subconductor (Markt–Mengele or a charge
    simulation), the onset gradient (Peek) and the margin, per section —
    to decide whether it belongs to the plugin above.
@@ -399,6 +482,8 @@ the plugin's own tests.
 > impedance, or simply a basic load flow.
 > **Owner:** (2026-10-27) Draft the electrical module ideas, including a
 > plugin for hvlbuzz.
+> **Owner:** (2026-10-27) Find technical information on EFC-400 or
+> something similar to start from; draft it, magnetic field first.
 
 ## Unfinished or approximate (known limitations)
 
