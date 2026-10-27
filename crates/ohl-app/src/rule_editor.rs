@@ -1177,7 +1177,7 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
                 };
                 ui.strong(format!("{plugin}: {}", p.name));
                 crate::menu::message(ui, p.description.as_str(), None);
-                crate::check_help::list(ui, "rule-preset-preview", 420.0, egui::ScrollArea::vertical().id_salt("rule-preset-preview"), |ui| {
+                crate::check_help::list(ui, "rule-preset-preview", 300.0, egui::ScrollArea::vertical().id_salt("rule-preset-preview"), |ui| {
                         // Grouped by target; each rule with the cases it
                         // uses (the project's names).
                         let rules = shown.as_ref().unwrap_or(&p.rules);
