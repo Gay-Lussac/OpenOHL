@@ -69,7 +69,7 @@ fn parameters_of_the_example() {
     ]);
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{text}");
-    assert!(text.contains("soil 250 Ω·m;"), "{text}");
+    assert!(text.contains("soil (the line's) 250 Ω·m;"), "{text}");
     assert!(
         text.contains("complex depth") && text.contains("2/3 of the sag"),
         "{text}"
