@@ -10,6 +10,46 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Another project into this one: Replace mode for a variant, a window that fits (owner, 2026-10-27)**
+
+- **The window was too big**: with many objects in both, Import went off
+  the screen and the window did not scroll. Now what is to settle
+  scrolls (its height kept to the screen), and the summary line, Import
+  and the status stay below it.
+- **Replace mode, the default** (`ohl_io::import_into::ImportMode`;
+  `ohl project import-into --mode replace|add`): "usually each thing that
+  is the same in both should be replaced by the new one", and an import
+  that covers part of the line is a variant of that stretch — the line
+  outside it kept, inside it the import's towers, sections and jumpers
+  instead of the project's. What appears in both defaults to the
+  imported one (cables too: the imported cable replaces the project's in
+  its wire file, under its id; *keep both* stays a choice, never the
+  default). A tower in both is the imported tower (choice per tower,
+  key `tower:<id>`); the project's sets it lacks stay on it where what
+  the line keeps hangs on them. A tower of another id at the same place
+  takes the imported id, what refers to it following.
+- **The stretch**: two towers in both the import goes between with no
+  other tower in both between them (along its sections, over its own new
+  towers too; along its alignments when it has no section) mark a gap;
+  the project's structures in that gap along its alignments or sections
+  are removed, with the sections at them and those over towers in both
+  only whose spans the import covers, and the jumpers at them or with
+  every end inside the stretch. Jumpers and sections at the stretch's end
+  towers that go on outside are kept. A section that runs out of the
+  stretch through a removed structure goes with it (a note says so).
+  Every removal is listed with why and a choice to keep it (key
+  `remove:structure|section|jumper:<id>`). An imported alignment on one
+  of the project's replaces the part between their first and last points
+  in common.
+- **Add mode** is the behaviour before: the project's kept, nothing
+  removed.
+- Checked on a real export pair (a variant of a stretch of a line, kept
+  out of the repository): the stretch's three structures not in the
+  variant and their sections and jumpers removed, the tower at the same
+  place under the variant's id, the new tower added, the line checks;
+  the sections that do not solve are only those on two cables whose ids
+  the wire library refuses (spaces in the id, from the export).
+
 **Safe mode for projects from other programs; solid wires filling their circle (owner, 2026-10-27)**
 
 - Exports with faults (an id given twice, empty values, joined sections

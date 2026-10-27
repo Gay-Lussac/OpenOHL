@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use eframe::egui;
-use ohl_io::import_into::{ImportOptions, ImportPlan, Resolution, SetState, Twice};
+use ohl_io::import_into::{ImportMode, ImportOptions, ImportPlan, Resolution, SetState, Twice};
 use ohl_io::projects::ImportedProject;
 
 use crate::app::Ready;
@@ -141,13 +141,23 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
         .id(egui::Id::new("import-into-project"))
         .open(&mut open)
         .default_width(760.0)
+        .vscroll(false)
         .show(ctx, |ui| {
+            // The window fits the screen: what is to settle scrolls, the
+            // Import button stays below it (room kept for it, the summary
+            // and the status).
+            let body = (ctx.content_rect().bottom() - ui.cursor().top() - 140.0).max(120.0);
+            egui::ScrollArea::vertical()
+                .id_salt("import-into-body")
+                .max_height(body)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
             ui.label(
                 egui::RichText::new(
                     "Another program's file (a project plugin reads it) brought into this \
-                     project: you say which project line it goes into and whether its routes \
-                     are this project's, and settle what appears in both. Nothing is changed \
-                     until Import.",
+                     project: you say how, which project line it goes into and whether its \
+                     routes are this project's, and settle what appears in both. Nothing is \
+                     changed until Import.",
                 )
                 .small()
                 .weak(),
@@ -155,9 +165,21 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
             if let Err(why) = &editable {
                 crate::menu::error_label(ui, format!("read-only: {why}"));
             }
-            // 1. The file.
+            // 1. How.
             ui.separator();
-            ui.label(egui::RichText::new("1. The file").strong());
+            ui.label(egui::RichText::new("1. How").strong());
+            for m in ImportMode::ALL {
+                if ui
+                    .radio_value(&mut w.how.mode, m, m.words())
+                    .changed()
+                {
+                    w.stale = true;
+                }
+                ui.label(egui::RichText::new(m.sentence()).small().weak());
+            }
+            // 2. The file.
+            ui.separator();
+            ui.label(egui::RichText::new("2. The file").strong());
             if formats.is_empty() {
                 crate::menu::error_label(
                     ui,
@@ -228,9 +250,6 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                 }
             });
             let Some(read) = &w.read else {
-                if let Some((t, e)) = &w.status {
-                    crate::menu::message(ui, t.as_str(), e.then_some(ui.visuals().error_fg_color));
-                }
                 return;
             };
             ui.label(format!(
@@ -242,9 +261,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                 read.libraries.len()
             ));
 
-            // 2. Where it goes.
+            // 3. Where it goes.
             ui.separator();
-            ui.label(egui::RichText::new("2. Into which project line?").strong());
+            ui.label(egui::RichText::new("3. Into which project line?").strong());
             ui.radio_value(
                 &mut w.into_new,
                 false,
@@ -266,13 +285,21 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                 );
             });
 
-            // 3. The routes.
+            // 4. The routes.
             ui.separator();
-            ui.label(egui::RichText::new("3. Its routes").strong());
+            ui.label(egui::RichText::new("4. Its routes").strong());
+            // Not chosen: as the plan made it.
+            let made = match &w.plan {
+                Some((Ok(p), _)) => p.routes.clone(),
+                _ => BTreeMap::new(),
+            };
             for ir in &read.line.routes {
                 let now = match w.how.routes.get(&ir.id) {
                     Some(x) => x.clone(),
-                    None => routes.contains(&ir.id).then(|| ir.id.clone()),
+                    None => made
+                        .get(&ir.id)
+                        .cloned()
+                        .unwrap_or_else(|| routes.contains(&ir.id).then(|| ir.id.clone())),
                 };
                 ui.horizontal(|ui| {
                     ui.label(format!(
@@ -320,9 +347,6 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                 ui.label("in plan are the same place.");
             });
 
-            // 4. What appears twice.
-            ui.separator();
-            ui.label(egui::RichText::new("4. What appears in both").strong());
             let Some((plan, _)) = &w.plan else {
                 return;
             };
@@ -342,6 +366,15 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                     .collect::<Vec<_>>()
                     .join(", ")
             };
+            // 5. What the import removes (Replace).
+            if plan.mode == ImportMode::Replace {
+                ui.separator();
+                ui.label(egui::RichText::new("5. What the import removes").strong());
+                removals(ui, plan, &mut w.how, &mut w.stale);
+            }
+            // 6. What appears twice.
+            ui.separator();
+            ui.label(egui::RichText::new("6. What appears in both").strong());
             ui.label(format!("Added: {}.", words(&plan.added)));
             ui.label(format!(
                 "The same in both (left as they are): {}.",
@@ -445,11 +478,22 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
                         });
                 });
             }
+                });
+            // Always in sight: what the import does, Import, the status.
             ui.separator();
+            let ready = match &w.plan {
+                Some((Ok(p), _)) => {
+                    ui.label(summary(p));
+                    true
+                }
+                _ => false,
+            };
             ui.horizontal(|ui| {
                 go = ui
                     .add_enabled(
-                        editable.is_ok() && !(w.into_new && w.new_name.trim().is_empty()),
+                        ready
+                            && editable.is_ok()
+                            && !(w.into_new && w.new_name.trim().is_empty()),
                         egui::Button::new("Import"),
                     )
                     .clicked();
@@ -477,14 +521,97 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
     }
 }
 
-/// The towers in both: one line each, opened to their sets side by side
-/// (the project's and the imported wire point, world, m; how far apart),
-/// each set of the import with its choices.
+/// One line on what the import does (below the scroll area, beside
+/// Import).
+fn summary(p: &ImportPlan) -> String {
+    let n = |m: &BTreeMap<&'static str, usize>| m.values().sum::<usize>();
+    let removed = p.removed.iter().filter(|r| !r.keep).count();
+    let taken = p
+        .duplicates
+        .iter()
+        .filter(|d| d.resolution == Resolution::TakeImported)
+        .count()
+        + p.shared
+            .iter()
+            .filter(|t| t.resolution == Resolution::TakeImported)
+            .count();
+    format!(
+        "{}: {} added, {} taken from the import, {} removed, {} towers in both, {} the same.",
+        match p.mode {
+            ImportMode::Replace => "Replace",
+            ImportMode::Add => "Add",
+        },
+        n(&p.added),
+        taken,
+        removed,
+        p.shared.len(),
+        n(&p.identical)
+    )
+}
+
+/// What the import removes (Replace): the project's structures, sections
+/// and jumpers in the stretch it covers that it has not, each removed or
+/// kept (one at a removed structure goes with it).
+fn removals(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale: &mut bool) {
+    if plan.removed.is_empty() {
+        ui.label("Nothing: the import covers no stretch of this line without its objects.");
+        return;
+    }
+    ui.label(
+        egui::RichText::new(
+            "This project's objects between the import's towers that the import has not; the \
+             line outside that stretch stays.",
+        )
+        .small()
+        .weak(),
+    );
+    egui::Grid::new("import-into-removed-grid")
+        .striped(true)
+        .num_columns(4)
+        .spacing([10.0, 4.0])
+        .show(ui, |ui| {
+            for h in ["", "this project's", "why", ""] {
+                ui.strong(h);
+            }
+            ui.end_row();
+            for r in &plan.removed {
+                ui.label(r.kind);
+                ui.label(&r.id);
+                ui.label(&r.why);
+                if r.fixed {
+                    ui.label("removed with it");
+                } else {
+                    let mut keep = r.keep;
+                    egui::ComboBox::from_id_salt(("import-into-remove", &r.key))
+                        .selected_text(if keep { "keep" } else { "remove" })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut keep, false, "remove");
+                            ui.selectable_value(&mut keep, true, "keep");
+                        });
+                    if keep != r.keep {
+                        if keep {
+                            how.kept.insert(r.key.clone());
+                        } else {
+                            how.kept.remove(&r.key);
+                        }
+                        *stale = true;
+                    }
+                }
+                ui.end_row();
+            }
+        });
+}
+
+/// The towers in both: one line each with its choice (this project's
+/// tower or the imported one), opened to their sets side by side (the
+/// project's and the imported wire point, world, m; how far apart), each
+/// set of the import with its choices when the project's tower is kept.
 fn towers(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale: &mut bool) {
     ui.label(
         egui::RichText::new(format!(
-            "Towers in both ({}): kept once, as this project's (its id, position, orientation \
-             and type); the import's sets settled one by one.",
+            "Towers in both ({}): kept once — this project's (its id, position, orientation and \
+             type; the import's sets settled one by one) or the imported one (this project's \
+             sets it lacks kept where what stays hangs on them).",
             plan.shared.len()
         ))
         .strong(),
@@ -499,6 +626,23 @@ fn towers(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale: 
         .max_height(260.0)
         .show(ui, |ui| {
             for t in &plan.shared {
+                let taken = t.resolution == Resolution::TakeImported;
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt(("import-into-tower-choice", &t.key))
+                        .selected_text(t.resolution.words())
+                        .show_ui(ui, |ui| {
+                            for res in [Resolution::KeepExisting, Resolution::TakeImported] {
+                                if ui
+                                    .selectable_label(t.resolution == res, res.words())
+                                    .clicked()
+                                {
+                                    how.choices.insert(t.key.clone(), res);
+                                    *stale = true;
+                                }
+                            }
+                        });
+                    ui.label(&t.existing);
+                });
                 egui::CollapsingHeader::new(t.summary())
                     .id_salt(("import-into-tower", &t.key))
                     .show(ui, |ui| {
@@ -519,6 +663,19 @@ fn towers(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale: 
                                         s.distance().map_or(String::new(), |d| format!("{d:.2} m")),
                                     );
                                     match (s.state, s.choice) {
+                                        (SetState::OnlyExisting, _) if taken => {
+                                            ui.label(if s.kept_for.is_empty() {
+                                                "this project's only: gone".to_owned()
+                                            } else {
+                                                format!(
+                                                    "this project's only: kept for {}",
+                                                    s.kept_for.join(", ")
+                                                )
+                                            });
+                                        }
+                                        (_, None) if taken => {
+                                            ui.label("the imported one");
+                                        }
                                         (SetState::OnlyExisting, _) => {
                                             ui.label("this project's only");
                                         }
@@ -657,7 +814,7 @@ mod tests {
     }
 
     /// The import (as a project plugin gives it) with its first section
-    /// strung 1 kN harder; the choice for it given, if any.
+    /// strung 1 kN harder, added (Add); the choice for it given, if any.
     fn read_harder(r: &mut Ready, choice: Option<Resolution>) -> (String, f64) {
         let mut line = r.model.session().unwrap().export();
         let id = line.sections[0].id.clone();
@@ -667,6 +824,7 @@ mod tests {
             temperature: 15.0,
         };
         r.import_into.show();
+        r.import_into.how.mode = ImportMode::Add;
         r.import_into.file = Some(PathBuf::from("other.xml"));
         r.import_into.read = Some(Box::new(ImportedProject {
             line,
@@ -689,7 +847,7 @@ mod tests {
     fn a_section_in_both_is_taken_from_the_import() {
         let mut h = harness("import-into");
         let (_, before) = read_harder(h.state_mut().ready().unwrap(), None);
-        h.run_steps(3);
+        h.run_steps(6);
         let plan = |h: &mut Harness<'static, App>| {
             let r = h.state_mut().ready().unwrap();
             r.import_into.plan.as_ref().unwrap().0.clone().unwrap()
@@ -697,14 +855,16 @@ mod tests {
         let p = plan(&mut h);
         assert_eq!(p.duplicates.len(), 1, "{:?}", p.duplicates);
         assert_eq!(p.duplicates[0].differences, ["stringing"]);
+        h.get_by_label("take the imported one").scroll_to_me();
+        h.run_steps(2);
         h.get_by_label("take the imported one").click();
-        h.run_steps(3);
+        h.run_steps(6);
         assert_eq!(
             plan(&mut h).duplicates[0].resolution,
             Resolution::TakeImported
         );
         h.get_by_label("Import").click();
-        h.run_steps(3);
+        h.run_steps(6);
         let r = h.state_mut().ready().unwrap();
         assert!(!r.import_into.open, "{:?}", r.import_into.status);
         assert!((tension(r) - before - 1000.0).abs() < 1e-9);
@@ -725,9 +885,9 @@ mod tests {
             r.import_into.new_name = "imported".into();
             (line, t)
         };
-        h.run_steps(3);
+        h.run_steps(6);
         h.get_by_label("Import").click();
-        h.run_steps(3);
+        h.run_steps(6);
         let r = h.state_mut().ready().unwrap();
         assert_eq!(
             r.model.project_line(),
@@ -759,6 +919,7 @@ mod tests {
             w.position[2] += 3.0;
             t3.wires.push(w);
             r.import_into.show();
+            r.import_into.how.mode = ImportMode::Add;
             r.import_into.file = Some(PathBuf::from("branch.xml"));
             r.import_into.read = Some(Box::new(ImportedProject {
                 line,
@@ -767,7 +928,7 @@ mod tests {
             }));
             r.import_into.stale = true;
         }
-        h.run_steps(3);
+        h.run_steps(6);
         {
             let r = h.state_mut().ready().unwrap();
             let p = r.import_into.plan.as_ref().unwrap().0.clone().unwrap();
@@ -775,9 +936,11 @@ mod tests {
             assert_eq!(p.shared.len(), 1);
             assert_eq!(p.shared[0].existing, "T3");
         }
-        h.get_by_label_contains("T3: 3 sets in the project's, 4 in the imported")
-            .click();
-        h.run_steps(3);
+        let header = "T3: 3 sets in the project's, 4 in the imported";
+        h.get_by_label_contains(header).scroll_to_me();
+        h.run_steps(2);
+        h.get_by_label_contains(header).click();
+        h.run_steps(6);
         h.get_by_label("9");
         assert_eq!(h.get_all_by_label("the same attachment").count(), 3);
         {
@@ -787,12 +950,90 @@ mod tests {
             assert_eq!(s9.choice, Some(ohl_io::import_into::SetChoice::Add));
         }
         h.get_by_label("Import").click();
-        h.run_steps(3);
+        h.run_steps(6);
         let r = h.state_mut().ready().unwrap();
         assert!(!r.import_into.open, "{:?}", r.import_into.status);
         let t3 = r.model.session().unwrap().export();
         let t3 = t3.structure("T3").unwrap();
         assert_eq!(t3.wire_at_set(9).unwrap().label, "W9");
         assert_eq!(t3.wires.len(), 4);
+    }
+
+    /// A small screen (1280 × 720) and many things in both: forty free
+    /// alignment points of the project a metre higher in the import, the
+    /// first section strung harder, every tower's wires lower. What is to
+    /// settle scrolls; Import stays on screen. The mode is the first
+    /// choice: Add keeps the project's, Replace (the default) takes the
+    /// imported ones; Import in Replace mode takes them, one change.
+    #[test]
+    fn the_window_fits_a_small_screen() {
+        let model = crate::tests::synthetic_project_with("import-into-small", |l| {
+            for k in 0..40 {
+                l.alignment_points.push(ohl_line::AlignmentPoint::free(
+                    &format!("F{k}"),
+                    [5000.0 + 10.0 * k as f64, 0.0, 500.0],
+                ));
+            }
+        });
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1280.0, 720.0))
+            .build_eframe(|_| App::with_model(model, None));
+        h.run();
+        {
+            let r = h.state_mut().ready().unwrap();
+            let (_, _) = read_harder(r, None);
+            r.import_into.how.mode = ImportMode::Replace;
+            let read = r.import_into.read.as_mut().unwrap();
+            for p in &mut read.line.alignment_points {
+                if p.id.starts_with('F') {
+                    p.position[2] += 1.0;
+                }
+            }
+            for s in &mut read.line.structures {
+                for w in &mut s.wires {
+                    w.position[2] -= 0.2;
+                }
+            }
+        }
+        h.run_steps(6);
+        let plan = |h: &mut Harness<'static, App>| {
+            let r = h.state_mut().ready().unwrap();
+            r.import_into.plan.as_ref().unwrap().0.clone().unwrap()
+        };
+        let p = plan(&mut h);
+        assert_eq!(p.mode, ImportMode::Replace);
+        assert!(p.duplicates.len() > 40, "{}", p.duplicates.len());
+        assert!(
+            p.duplicates
+                .iter()
+                .all(|d| d.resolution == Resolution::TakeImported)
+        );
+        // Add: the project's kept.
+        h.get_by_label(ImportMode::Add.words()).click();
+        h.run_steps(6);
+        let p = plan(&mut h);
+        assert_eq!(p.mode, ImportMode::Add);
+        assert!(
+            p.duplicates
+                .iter()
+                .all(|d| d.resolution == Resolution::KeepExisting)
+        );
+        h.get_by_label(ImportMode::Replace.words()).click();
+        h.run_steps(6);
+        assert_eq!(plan(&mut h).mode, ImportMode::Replace);
+        let import = h.get_by_label("Import").rect();
+        assert!(
+            import.min.y >= 0.0 && import.max.y <= 720.0 && import.max.x <= 1280.0,
+            "{import:?}"
+        );
+        h.get_by_label("Import").click();
+        h.run_steps(6);
+        let r = h.state_mut().ready().unwrap();
+        assert!(!r.import_into.open, "{:?}", r.import_into.status);
+        let line = r.model.session().unwrap().export();
+        assert_eq!(line.alignment_point("F0").unwrap().position[2], 501.0);
+        r.model.undo().unwrap();
+        let line = r.model.session().unwrap().export();
+        assert_eq!(line.alignment_point("F0").unwrap().position[2], 500.0);
     }
 }

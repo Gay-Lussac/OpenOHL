@@ -75,11 +75,19 @@ pub enum ProjectCommand {
         /// Clip the sections in at their stringing condition.
         #[arg(long)]
         clip_in: bool,
+        /// replace: the import is a variant of the stretch it covers —
+        /// what is in both taken from it, what the project has there and
+        /// it has not removed (listed); add: what is in both kept as the
+        /// project's, nothing removed.
+        #[arg(long, default_value = "replace")]
+        mode: String,
         /// KEY=CHOICE (repeatable), KEY as listed: a duplicate
         /// (`section:S1`, `cable:x`, `library:weather/w.ohlwc`)
-        /// keep|imported|both; a set of a tower in both (`tower:T3:set:2`)
+        /// keep|imported|both; a tower in both (`tower:T3`) keep|imported;
+        /// a set of a tower kept as the project's (`tower:T3:set:2`)
         /// add|leave (only in the import) or keep|imported|new (at another
-        /// place).
+        /// place); a removal (`remove:structure:T7`, `remove:section:S2`,
+        /// `remove:jumper:J1`) remove|keep.
         #[arg(long = "choose")]
         choose: Vec<String>,
         /// ID=existing|new|ROUTE (repeatable): an imported route is the
@@ -246,16 +254,23 @@ fn report(a: &Applied) {
     );
 }
 
-/// The import's options from the command line: the choices
-/// (`KEY=keep|imported|both`, a tower's set `KEY=add|leave|keep|imported|new`),
-/// the routes (`ID=existing|new|ROUTE`), the tolerance.
+/// The import's options from the command line: the mode
+/// (`replace|add`), the choices (`KEY=keep|imported|both`, a tower's set
+/// `KEY=add|leave|keep|imported|new`, a removal `KEY=remove|keep`), the
+/// routes (`ID=existing|new|ROUTE`), the tolerance.
 pub fn import_options(
+    mode: &str,
     choose: &[String],
     routes: &[String],
     tolerance: f64,
 ) -> Result<ohl_io::import_into::ImportOptions, String> {
-    use ohl_io::import_into::{Resolution, SetChoice};
+    use ohl_io::import_into::{ImportMode, Resolution, SetChoice};
+    let mode = ImportMode::ALL
+        .into_iter()
+        .find(|m| m.word() == mode.trim())
+        .ok_or_else(|| format!("--mode \"{mode}\": replace or add"))?;
     let mut how = ohl_io::import_into::ImportOptions {
+        mode,
         tolerance,
         ..Default::default()
     };
@@ -264,7 +279,17 @@ pub fn import_options(
             .rsplit_once('=')
             .ok_or_else(|| format!("--choose \"{c}\": KEY=CHOICE"))?;
         let (k, v) = (k.trim().to_owned(), v.trim());
-        if k.starts_with("tower:") {
+        if k.starts_with("remove:") {
+            match v {
+                "keep" => {
+                    how.kept.insert(k);
+                }
+                "remove" => {
+                    how.kept.remove(&k);
+                }
+                _ => return Err(format!("--choose \"{c}\": a removal is remove or keep")),
+            }
+        } else if k.starts_with("tower:") && k.contains(":set:") {
             let set = match v {
                 "add" => SetChoice::Add,
                 "leave" => SetChoice::LeaveOut,
@@ -366,6 +391,15 @@ pub fn import_into(
     Ok(())
 }
 
+/// Ids joined by commas, or "none".
+fn list(ids: &[&str]) -> String {
+    if ids.is_empty() {
+        "none".into()
+    } else {
+        ids.join(", ")
+    }
+}
+
 /// The plan of an import, in words.
 fn print_import_plan(p: &ohl_io::import_into::ImportPlan) {
     use ohl_io::import_into::SetState;
@@ -378,26 +412,71 @@ fn print_import_plan(p: &ohl_io::import_into::ImportPlan) {
             .collect::<Vec<_>>()
             .join(", ")
     };
+    println!("mode: {}", p.mode.words());
+    for (r, to) in &p.routes {
+        match to {
+            Some(e) => println!("route {r}: the project's route {e}"),
+            None => println!("route {r}: a new route"),
+        }
+    }
     println!("added: {}", words(&p.added));
     println!("the same in both: {}", words(&p.identical));
+    if !p.removed.is_empty() {
+        let gone = |kind: &str| -> Vec<&str> {
+            p.removed
+                .iter()
+                .filter(|r| r.kind == kind && !r.keep)
+                .map(|r| r.id.as_str())
+                .collect()
+        };
+        println!(
+            "removed: structures {}; sections {}; jumpers {}",
+            list(&gone("structure")),
+            list(&gone("section")),
+            list(&gone("jumper"))
+        );
+        for r in &p.removed {
+            println!(
+                "  {} {}: {}: {}   [{}]{}",
+                r.kind,
+                r.id,
+                r.why,
+                if r.keep { "kept" } else { "removed" },
+                r.key,
+                if r.fixed {
+                    " (goes with its structure)"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
     for (s, t) in &p.missing_types {
         println!(
             "structure {s}: its type {t} is in no structure type file of the project after the import"
         );
     }
     if !p.shared.is_empty() {
-        println!("towers in both (kept once, as the project's):");
+        println!("towers in both (kept once):");
     }
     for t in &p.shared {
-        println!("  {}", t.summary());
+        println!("  {}   [{}]: {}", t.summary(), t.key, t.resolution.words());
         let at = |x: Option<[f64; 3]>| {
             x.map_or("—".to_owned(), |p| {
                 format!("({:.2}, {:.2}, {:.2})", p[0], p[1], p[2])
             })
         };
         for s in &t.sets {
+            let taken = t.resolution == ohl_io::import_into::Resolution::TakeImported;
             let what = match (s.state, s.choice) {
+                (SetState::OnlyExisting, _) if taken && s.kept_for.is_empty() => {
+                    "the project's only: gone".to_owned()
+                }
+                (SetState::OnlyExisting, _) if taken => {
+                    format!("the project's only: kept for {}", s.kept_for.join(", "))
+                }
                 (SetState::OnlyExisting, _) => "the project's only".to_owned(),
+                (_, None) if taken && s.imported.is_some() => "the imported one".to_owned(),
                 (SetState::Same, _) => "the same".to_owned(),
                 (_, Some(c)) => match s.new_set {
                     Some(n) => format!("{} ({n})", c.words()),
@@ -515,6 +594,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             options,
             plugin,
             clip_in,
+            mode,
             choose,
             routes,
             tolerance,
@@ -528,7 +608,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
                 &crate::io_run::options(&options)?,
                 clip_in,
             )?;
-            let how = import_options(&choose, &routes, tolerance)?;
+            let how = import_options(&mode, &choose, &routes, tolerance)?;
             import_into(&read, &into, &user, &how, dry_run)?;
         }
         ProjectCommand::ImportFile {

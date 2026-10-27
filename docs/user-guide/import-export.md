@@ -169,38 +169,51 @@ A reader that meets a file cut off or broken part-way reads up to the fault and 
 File › Import › **Another project into this one…** (2026-10-25) reads
 another program's project file the same way and brings it into the
 project open — other lines of the same project, a neighbouring line, a
-later state of the same line:
+later state of the same line, a variant of part of it:
 
-1. **The file**: the format (default: from the extension), options,
+1. **How** (2026-10-27): **Replace what the import covers (a variant)**,
+   the default, or **Add to the project (keep the project's)** — see
+   below.
+2. **The file**: the format (default: from the extension), options,
    *clip in*; **Read the file** (in the background; nothing changes yet).
-2. **Into which project line?** The line you work on (one change,
+3. **Into which project line?** The line you work on (one change,
    undoable), or **a new project line made from it** (named; you then work
    on it — to look at the import apart and bring it into another line
    later with Versions › Bring in changes).
-3. **Its routes**: each of the import's routes is **this project's route
+4. **Its routes**: each of the import's routes is **this project's route
    …** (its alignments join that route) or **a new route** (renamed if
    its id is taken). A route of an id the project has is taken to be the
-   same by default.
-4. **What appears in both**: an object of the **same id** with other
+   same by default; in Replace mode otherwise the project's route whose
+   alignment points the import's meet (two or more within the tolerance).
+5. **What the import removes** (Replace mode): see below.
+6. **What appears in both**: an object of the **same id** with other
    values, or of another id **at the same place** — an alignment point
    nearer than the tolerance in plan (1 m by default), a section over the
    same structures and sets, a jumper between the same ends — and a
    library file of the same name with another text. Each is listed with
-   what differs and settled: **keep the project's** (the default: the
-   imported one left out, what the import attached to it attached to the
-   project's), **take the imported one** (it replaces the project's,
-   under the project's id) or **keep both** (the imported one under an id
-   of its own, `P12 (2)`, what refers to it following). *All:* settles
-   every one alike. What is the same in both is left as it is; the rest
-   is added. The ids the import's objects were given are listed.
-5. **Towers in both** (2026-10-27): a structure of the import within the
+   what differs and settled: **keep the project's** (the default in Add
+   mode: the imported one left out, what the import attached to it
+   attached to the project's), **take the imported one** (the default in
+   Replace mode: it replaces the project's, under the project's id) or
+   **keep both** (the imported one under an id of its own, `P12 (2)`,
+   what refers to it following; never the default). *All:* settles every
+   one alike. What is the same in both is left as it is; the rest is
+   added. The ids the import's objects were given are listed.
+7. **Towers in both** (2026-10-27): a structure of the import within the
    tolerance of one of the project's — of its id or another — is kept
-   **once, as the project's**: its id, position, orientation and type. It
-   is listed in one line (its sets in each, how many the same, at other
-   places, taken from the import); opened, it shows every set number of
-   either side by side — the project's and the imported wire point (in
-   still air, in world coordinates, so towers turned differently in the
-   two files compare right) and how far apart they are:
+   **once**, each tower with its choice: **take the imported one** (the
+   default in Replace mode: the imported tower as it is — position,
+   orientation, type, sets — under the project's id; the project's sets
+   it lacks stay on it where what the line keeps still hangs on them,
+   else they go with the project's tower) or **keep the project's** (the
+   default in Add mode: its id, position, orientation and type, the
+   import's sets settled one by one). It is listed in one line (its sets
+   in each, how many the same, at other places, taken from the import or
+   kept for what stays); opened, it shows every set number of either side
+   by side — the project's and the imported wire point (in still air, in
+   world coordinates, so towers turned differently in the two files
+   compare right) and how far apart they are. When the project's tower is
+   kept:
    - a set **only in the import**: **add** (the default) or **leave out**
      (the imported sections and jumpers at it are left out with it);
    - a set in both **at the same place** (within the tolerance): the same
@@ -218,7 +231,55 @@ later state of the same line:
    directions turned into the project tower's axes. The imported tower is
    taken as it is in effect, merged with its type from the import's own
    files, since its wire points may be in its type file. Its type file is
-   not added when only towers in both use it.
+   not added when only towers in both kept as the project's use it.
+
+**Replace: a variant of a stretch** (2026-10-27). An export that holds
+only part of the line — a few towers moved, one added, others gone — is
+taken as the new state of that part: the line outside it stays, inside it
+the import's towers, sections and jumpers take the place of the
+project's.
+
+- **The stretch** is found from the towers in both. Two of them the
+  import goes between with no other tower in both between them — along
+  its sections, over its own new towers too (a section ending at a new
+  strain tower, the next going on from it), or along its alignments when
+  it has no section — mark a gap. The project's structures in that gap,
+  along its alignments (in station order) or along its sections, are not
+  in the import: they are **removed**. A project without a route still
+  has its sections; a single tower in both covers nothing.
+- **Sections removed**: those at a removed structure, and those over
+  towers in both only whose every span the import covers; a section the
+  import has at the same place (the same structures and sets) is settled
+  as appearing in both instead. A section that runs out of the stretch
+  through a removed structure goes with it (a note says so: keep that
+  structure to keep it).
+- **Jumpers removed**: those at a removed structure or on a tap of a
+  removed section, and those whose every end is at a tower in both
+  inside the stretch. Jumpers at the **stretch's ends** (towers in both
+  next to a structure that stays) are kept: they join what stays outside
+  to what comes in. The sections and jumpers that stay at an end tower
+  hang on the imported tower's set of their number; a set the imported
+  tower has not is kept from the project's tower.
+- **A tower of another id at the same place** takes the imported id (it
+  is the import's tower); what refers to it — sections, jumpers outside
+  the stretch, alignment points — follows. Unless the project gives that
+  id to another structure, or the tower is set to keep the project's.
+- **A tower near none of the project's** (beyond the tolerance) is
+  added; the project's tower it replaces in the design is removed with
+  the stretch.
+- **The alignment**: an imported alignment with two or more points in
+  common with one of the project's (on the same route) replaces the part
+  of it between the first and the last of them; the project's points
+  taken off it that are on no other alignment leave the line.
+- **Every removal is listed** (structures, sections, jumpers, with why),
+  each **remove** (default) or **keep**; one at a removed structure goes
+  with it.
+- **Cables in both with other data**: the imported one replaces the
+  project's in the project's wire file, under its id (default in
+  Replace mode).
+
+In **Add** mode nothing is removed and what is in both stays the
+project's unless chosen otherwise.
 
 **Kept apart without asking**: a structure of the **same id further
 away** than the tolerance is another structure: it comes in under an id
@@ -235,9 +296,11 @@ compared cable by cable, so the project keeps one of each cable. A cable
 the project has with the same data is left out; a new cable is added to
 the project's wire file (the first by name when it has several, said in a
 note); a cable of the project's id with other data is listed — **keep the
-project's** (the default; the imported sections use it) or **keep both**
-(the imported one under a new id, `cable-2`, added likewise; the imported
-sections and jumpers name it). A project without a wire file gets the
+project's** (the default in Add mode; the imported sections use it),
+**take the imported one** (the default in Replace mode: it replaces the
+project's cable in its file, under its id) or **keep both** (the imported
+one under a new id, `cable-2`, added likewise; the imported sections and
+jumpers name it). A project without a wire file gets the
 import's as it is. A cable the wire library would refuse is left out
 with a note, so the library keeps loading. Structure type files are
 compared by type id; a type file whose name is taken by another type is
@@ -245,7 +308,12 @@ added under a name of its own. Before **Import** the window says which
 structures' types would be in no type file of the project afterwards.
 Other library files are compared by name.
 
-**Import** writes the library files, then the line as one change. The
+The window keeps to the screen: what is to settle scrolls, and the
+summary line (added, taken, removed, towers in both), **Import** and the
+status stay in sight below it.
+
+**Import** writes the library files, then the line as one change (one
+Undo takes the whole line back; the library files written stay). The
 coordinate systems must be the same (else reproject one first). The
 renames are made with the project's own rename (what refers to an object
 follows as when it is renamed by hand).
@@ -256,11 +324,15 @@ development):
 ```bash
 ohl project import-into FILE --into project.ohl --user ann --plugin DIR [--format F] \
     [--option KEY=VALUE] [--clip-in] [--tolerance M] [--route ID=existing|new|ROUTE] \
-    [--choose KEY=keep|imported|both] [--choose tower:T3:set:2=add|leave|keep|imported|new] [--dry-run]
+    [--mode replace|add] [--choose KEY=keep|imported|both] [--choose tower:T3=keep|imported] \
+    [--choose tower:T3:set:2=add|leave|keep|imported|new] \
+    [--choose remove:structure:T7=remove|keep] [--dry-run]
 ```
 
-It prints the plan — what is added and the same, the towers in both with
-their sets and keys, what appears in both with its key, the ids given,
+It prints the plan — the mode, what each route became, what is added and
+the same, what is removed (`removed: structures …; sections …; jumpers
+…`, then each with why and its key), the towers in both with their
+choice, sets and keys, what appears in both with its key, the ids given,
 the library files written, the notes — then writes it (not with
 `--dry-run`) and says whether the project's wire library loads.
 

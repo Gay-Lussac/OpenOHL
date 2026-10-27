@@ -32,6 +32,21 @@
 //!   commands, so whatever refers to an object follows as it does when
 //!   one is renamed by hand.
 //!
+//! - **Two modes** ([`ImportMode`], owner 2026-10-27). *Replace* (the
+//!   default): the import is a variant of what it covers — what appears
+//!   in both is settled by taking the imported one (a tower in both is
+//!   the imported tower, the project's sets it lacks kept where what
+//!   stays still hangs on them; a tower of another id at the same place
+//!   takes the imported id, what refers to it following), and the
+//!   project's structures, sections and jumpers in the stretch the
+//!   import covers that it does not hold are removed (the stretch: see
+//!   the `stretch` module; each removal listed as a [`Removed`], to keep
+//!   instead). An imported route not given is the project's route of
+//!   its id, else the one whose alignment points it meets; an imported
+//!   alignment on one of the project's alignments (two points or more in
+//!   common) replaces the part of it between the first and last of them.
+//!   *Add*: what is in both kept as the project's, nothing removed.
+//!
 //! The result is the merged line and the library files to write
 //! ([`ImportPlan`]); the caller writes it as one change (the session's
 //! `ReplaceLine`).
@@ -45,9 +60,60 @@ use serde_json::Value;
 use crate::projects::ImportedProject;
 
 pub(crate) mod entries;
+mod stretch;
 mod towers;
 
+pub use stretch::Removed;
 pub use towers::{SetChoice, SetState, SharedSet, SharedTower};
+
+/// How the import is done (owner, 2026-10-27).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ImportMode {
+    /// A variant of what the import covers: what is in both taken from
+    /// the import, what the project has in the stretch the import covers
+    /// and the import has not removed.
+    #[default]
+    Replace,
+    /// Added to the project: what is in both kept as the project's,
+    /// nothing removed.
+    Add,
+}
+
+impl ImportMode {
+    /// In words, for the window.
+    pub fn words(self) -> &'static str {
+        match self {
+            Self::Replace => "Replace what the import covers (a variant)",
+            Self::Add => "Add to the project (keep the project's)",
+        }
+    }
+
+    /// One sentence on what it does.
+    pub fn sentence(self) -> &'static str {
+        match self {
+            Self::Replace => {
+                "What is in both becomes the imported one, and what the project has between the \
+                 import's towers but the import has not (structures, sections, jumpers) is \
+                 removed; the line outside that stretch stays."
+            }
+            Self::Add => {
+                "The import's objects are added; what is in both stays the project's (another \
+                 choice per object), nothing is removed."
+            }
+        }
+    }
+
+    /// The word of the command line (`--mode`).
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Replace => "replace",
+            Self::Add => "add",
+        }
+    }
+
+    /// Both, in the window's order.
+    pub const ALL: [Self; 2] = [Self::Replace, Self::Add];
+}
 
 /// How a duplicate is settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -106,19 +172,25 @@ pub struct Duplicate {
 }
 
 impl Duplicate {
-    /// The resolutions it has, in the window's order: a cable is kept as
-    /// the project's or both (the imported one under a new id).
+    /// The resolutions it has, in the window's order (a cable taken from
+    /// the import replaces the project's under its id, in the project's
+    /// wire file; kept both, the imported one gets a new id).
     pub fn choices(&self) -> &'static [Resolution] {
-        match self.kind {
-            "cable" => &[Resolution::KeepExisting, Resolution::KeepBoth],
-            _ => &Resolution::ALL,
-        }
+        &Resolution::ALL
     }
 }
 
 /// What the import does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportPlan {
+    /// The mode it was made in.
+    pub mode: ImportMode,
+    /// What each imported route became: the project's route, or none (a
+    /// new route).
+    pub routes: BTreeMap<String, Option<String>>,
+    /// The project's objects the import removes (Replace), each with the
+    /// choice to keep it.
+    pub removed: Vec<Removed>,
     /// What appears twice, in the order the kinds are merged.
     pub duplicates: Vec<Duplicate>,
     /// The towers in both, their sets compared.
@@ -131,7 +203,9 @@ pub struct ImportPlan {
     pub identical: BTreeMap<&'static str, usize>,
     /// Objects added, by kind.
     pub added: BTreeMap<&'static str, usize>,
-    /// Imported objects given another id: kind, from, to.
+    /// Imported objects given another id: kind, from, to; the project's
+    /// structures given the id of the imported tower at their place
+    /// (Replace) as kind `structure (the project's)`.
     pub renamed: Vec<(&'static str, String, String)>,
     /// The merged line.
     pub line: Line,
@@ -144,6 +218,8 @@ pub struct ImportPlan {
 /// How the import is to be done.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ImportOptions {
+    /// Replace (the default) or add.
+    pub mode: ImportMode,
     /// Per imported route (its id), the project's route it is (none: a
     /// new route); a route not given is the project's route of the same
     /// id, else new.
@@ -151,8 +227,12 @@ pub struct ImportOptions {
     /// Alignment points and structures nearer than this in plan are the
     /// same place, m (0: [`DEFAULT_TOLERANCE`]).
     pub tolerance: f64,
-    /// The choices, by [`Duplicate::key`].
+    /// The choices, by [`Duplicate::key`] and [`SharedTower::key`] (a
+    /// tower in both: the project's kept, or the imported one taken).
+    /// Not given: the project's (Add) or the imported one (Replace).
     pub choices: BTreeMap<String, Resolution>,
+    /// The removals chosen to keep, by [`Removed::key`].
+    pub kept: BTreeSet<String>,
     /// The choices for the sets of towers in both, by [`SharedSet::key`]
     /// (`tower:<imported id>:set:<n>`; not given: the default, the first
     /// of [`SharedSet::choices`]).
@@ -190,7 +270,11 @@ pub fn plan(
     } else {
         DEFAULT_TOLERANCE
     };
+    let replace = options.mode == ImportMode::Replace;
     let mut out = ImportPlan {
+        mode: options.mode,
+        routes: BTreeMap::new(),
+        removed: Vec::new(),
         duplicates: Vec::new(),
         shared: Vec::new(),
         missing_types: Vec::new(),
@@ -201,16 +285,25 @@ pub fn plan(
         libraries: Vec::new(),
         notes: Vec::new(),
     };
+    // Not chosen: the project's (Add), the imported one (Replace).
+    let default = if replace {
+        Resolution::TakeImported
+    } else {
+        Resolution::KeepExisting
+    };
+    let choose = |key: &str| options.choices.get(key).copied().unwrap_or(default);
+    // Replace: the stretch the import covers cleared of what the import
+    // has not, the project's towers at the import's places under the
+    // import's ids.
+    let ours = if replace {
+        variant(existing, imported, tolerance, options, &choose, &mut out)?
+    } else {
+        existing.clone()
+    };
+    let existing = &ours;
     let mut scratch = Scratch::new(&imported.line)?;
     // Ids taken in the project and given out so far.
     let mut taken: BTreeMap<&'static str, BTreeSet<String>> = BTreeMap::new();
-    let choose = |key: &str| {
-        options
-            .choices
-            .get(key)
-            .copied()
-            .unwrap_or(Resolution::KeepExisting)
-    };
     // The structures as they are in effect, each line with its own
     // library files (a tower's sets may live in its type).
     let ours_in_effect = towers::effective(existing, existing_libs);
@@ -225,15 +318,26 @@ pub fn plan(
         ids(existing.routes.iter().map(|r| r.id.clone()).collect()),
     );
     for r in scratch.line().routes.clone() {
-        // Not said: the project's route of the same id, if any.
+        // Not said: the project's route of the same id, if any; in
+        // Replace mode else the one whose alignment points it meets.
         let said = match options.routes.get(&r.id) {
             Some(x) => x.clone(),
             None => existing
                 .routes
                 .iter()
                 .any(|x| x.id == r.id)
-                .then(|| r.id.clone()),
+                .then(|| r.id.clone())
+                .or_else(|| {
+                    replace
+                        .then(|| route_met(existing, scratch.line(), &r.id, tolerance))
+                        .flatten()
+                }),
         };
+        out.routes.insert(
+            r.id.clone(),
+            said.clone()
+                .filter(|e| existing.routes.iter().any(|x| x.id == *e)),
+        );
         match said {
             Some(e) if existing.routes.iter().any(|x| x.id == e) => {
                 if r.id != e {
@@ -333,9 +437,20 @@ pub fn plan(
                     continue;
                 }
                 if let (Some(e), Some(i)) = (ours_in_effect.get(eid), theirs_in_effect.get(&id)) {
-                    out.shared.push(towers::compare(e, i, tolerance, |k| {
-                        options.sets.get(k).copied()
-                    }));
+                    let mut t = towers::compare(e, i, tolerance, |k| options.sets.get(k).copied());
+                    // The project's tower kept (its sets settled one by
+                    // one), or the imported one taken (as it is).
+                    t.resolution = match choose(&t.key) {
+                        Resolution::TakeImported => Resolution::TakeImported,
+                        _ => Resolution::KeepExisting,
+                    };
+                    if t.resolution == Resolution::TakeImported {
+                        for s in &mut t.sets {
+                            s.choice = None;
+                            s.new_set = None;
+                        }
+                    }
+                    out.shared.push(t);
                 }
                 if *eid != id {
                     scratch.rename(kind, word, &id, eid, &mut out)?;
@@ -392,7 +507,13 @@ pub fn plan(
     // both given new numbers or left out, the cables given new ids.
     let mut line = scratch.line().clone();
     let mut handled: BTreeSet<(String, String)> = BTreeSet::new();
-    let shared = out.shared.clone();
+    // The towers kept as the project's (their types kept).
+    let shared: Vec<SharedTower> = out
+        .shared
+        .iter()
+        .filter(|t| t.resolution == Resolution::KeepExisting)
+        .cloned()
+        .collect();
     let types = structure_types(
         existing_libs,
         imported,
@@ -454,6 +575,8 @@ pub fn plan(
     // id, or (sections, jumpers) the same place once the structures are
     // matched. A section, jumper or alignment of the same id elsewhere
     // (other structures, another route) is another object, kept apart.
+    // Imported alignment → the project's it is spliced into (Replace).
+    let mut spliced: Vec<(String, String)> = Vec::new();
     for (kind, word) in [
         (None, "system"),
         (Some(Kind::Alignment), "alignment"),
@@ -483,6 +606,16 @@ pub fn plan(
             }
         };
         for (id, value) in theirs {
+            // Replace: an alignment on one of the project's (two points or
+            // more in common) replaces the part of it between them.
+            if replace
+                && word == "alignment"
+                && let Some(eid) = splice_target(existing, scratch.line(), &id)
+            {
+                spliced.push((id.clone(), eid));
+                settled.insert((word, id.clone()), Resolution::KeepExisting);
+                continue;
+            }
             // An alignment of a route said to be the project's: by id.
             let same_id = ours.iter().find(|o| o.0 == id);
             let elsewhere = same_id.is_some_and(|o| {
@@ -556,6 +689,8 @@ pub fn plan(
     // The merged line: the project's, the imported objects added or
     // replacing as settled; the project's settings kept.
     let theirs = scratch.line().clone();
+    let (their_structures, their_alignments) =
+        (theirs.structures.clone(), theirs.alignments.clone());
     let mut line = existing.clone();
     let keep = |word: &'static str, id: &str| -> bool {
         // Added, or settled by taking the imported one or keeping both.
@@ -619,7 +754,7 @@ pub fn plan(
         |c| keep("circuit", &c.id),
     );
     // The towers in both: the project's, with the imported sets added as
-    // chosen.
+    // chosen; or the imported one taken as it is.
     for t in &out.shared {
         let (Some(ours), Some(theirs)) = (
             ours_in_effect.get(&t.existing),
@@ -627,13 +762,37 @@ pub fn plan(
         ) else {
             continue;
         };
-        if let Some(s) = line.structures.iter_mut().find(|s| s.id == t.existing) {
+        let Some(s) = line.structures.iter_mut().find(|s| s.id == t.existing) else {
+            continue;
+        };
+        if t.resolution == Resolution::TakeImported {
+            if let Some(i) = their_structures.iter().find(|x| x.id == t.existing) {
+                *s = i.clone();
+            }
+        } else {
             let notes = towers::apply(t, s, ours, theirs);
             out.notes.extend(notes);
         }
     }
     // An alignment of a route said to be the project's that adds points
-    // to it: kept as the import gives it (a route may hold several).
+    // to it: kept as the import gives it (a route may hold several);
+    // in Replace mode one on the project's alignment spliced into it.
+    let before: BTreeSet<String> = existing
+        .alignment_points
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    for (i, e) in &spliced {
+        let Some(a) = their_alignments.iter().find(|a| a.id == *i) else {
+            continue;
+        };
+        if let Some(note) = splice(&mut line, e, &a.points, &before) {
+            out.notes.push(note);
+        }
+    }
+    // The taken towers keep the project's sets they lack where what stays
+    // hangs on them.
+    keep_sets(&mut line, &mut out, &ours_in_effect, &theirs_in_effect);
     out.line = line;
 
     // Library files: by kind and name (wire and structure type files
@@ -697,6 +856,313 @@ pub fn plan(
     }
     out.notes.extend(imported.notes.iter().cloned());
     Ok(out)
+}
+
+/// Replace mode: the project line with the stretch the import covers
+/// cleared of what the import has not (the removals listed in `out`), and
+/// the project's towers at the import's places of another id given the
+/// imported id (what refers to them following) unless the project has
+/// that id or the tower is chosen to stay the project's.
+fn variant(
+    existing: &Line,
+    imported: &ImportedProject,
+    tolerance: f64,
+    options: &ImportOptions,
+    choose: &dyn Fn(&str) -> Resolution,
+    out: &mut ImportPlan,
+) -> Result<Line, String> {
+    let found = stretch::find(existing, &imported.line, tolerance);
+    let joined = stretch::joins(&imported.line, &found.matched);
+    // The import's sections and jumpers by the project's ids (an imported
+    // structure not matched never meets one of the project's).
+    let map = |s: &str| {
+        found
+            .matched
+            .get(s)
+            .cloned()
+            .unwrap_or_else(|| format!("\u{0}{s}"))
+    };
+    let their_sections: BTreeSet<Vec<(String, u32)>> = imported
+        .line
+        .sections
+        .iter()
+        .map(|s| {
+            s.points
+                .iter()
+                .map(|p| (map(&p.structure), p.set))
+                .collect()
+        })
+        .collect();
+    let their_jumpers: BTreeSet<Vec<(String, u32)>> = imported
+        .line
+        .jumpers
+        .iter()
+        .map(|j| {
+            let mut v: Vec<(String, u32)> =
+                j.points().map(|p| (map(&p.structure), p.set)).collect();
+            v.sort();
+            v
+        })
+        .collect();
+    out.removed = stretch::removals(
+        existing,
+        &found,
+        &joined,
+        &their_sections,
+        &their_jumpers,
+        &options.kept,
+    );
+    if joined.is_empty() && !found.matched.is_empty() {
+        out.notes.push(
+            "the import's towers in both are not joined by its sections or alignments: it \
+             covers no stretch of the project's line, nothing is removed"
+                .into(),
+        );
+    }
+    for r in out
+        .removed
+        .iter()
+        .filter(|r| r.kind == "section" && !r.keep && r.why.contains("crosses"))
+    {
+        out.notes.push(format!(
+            "section {} of the project ran out of the stretch the import covers through a \
+             removed structure: removed with it (keep that structure to keep it)",
+            r.id
+        ));
+    }
+    let mut line = existing.clone();
+    stretch::remove(&mut line, &out.removed);
+    let mut ids: BTreeSet<String> = line.structures.iter().map(|s| s.id.clone()).collect();
+    let mut renames = Vec::new();
+    for (i, e) in &found.matched {
+        if i == e || ids.contains(i) || choose(&format!("tower:{i}")) != Resolution::TakeImported {
+            continue;
+        }
+        ids.remove(e);
+        ids.insert(i.clone());
+        renames.push((e.clone(), i.clone()));
+    }
+    if renames.is_empty() {
+        return Ok(line);
+    }
+    let mut s = Scratch::new(&line)?;
+    for (e, i) in renames {
+        s.session
+            .apply(
+                USER,
+                Command::Rename {
+                    kind: Kind::Structure,
+                    id: e.clone(),
+                    new_id: i.clone(),
+                },
+            )
+            .map_err(|x| format!("the project's structure {e} → {i}: {x}"))?;
+        out.renamed.push(("structure (the project's)", e, i));
+    }
+    Ok(s.line().clone())
+}
+
+/// Replace mode: the project's route the imported route `id` meets — the
+/// one with the most alignment points within `tolerance` of the imported
+/// route's (two at least).
+fn route_met(existing: &Line, theirs: &Line, id: &str, tolerance: f64) -> Option<String> {
+    let points = |line: &Line, route: &str| -> Vec<[f64; 2]> {
+        line.alignments
+            .iter()
+            .filter(|a| a.route == route)
+            .flat_map(|a| &a.points)
+            .filter_map(|p| line.alignment_point(p))
+            .map(|p| [p.position[0], p.position[1]])
+            .collect()
+    };
+    let theirs = points(theirs, id);
+    existing
+        .routes
+        .iter()
+        .map(|r| {
+            let ours = points(existing, &r.id);
+            let n = theirs
+                .iter()
+                .filter(|p| {
+                    ours.iter()
+                        .any(|q| (q[0] - p[0]).hypot(q[1] - p[1]) < tolerance)
+                })
+                .count();
+            (n, r.id.clone())
+        })
+        .filter(|(n, _)| *n >= 2)
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, r)| r)
+}
+
+/// Replace mode: the project's alignment of the same route the imported
+/// alignment `id` has the most points in common with (two at least; its
+/// points already given the project's ids where at the same place).
+fn splice_target(existing: &Line, theirs: &Line, id: &str) -> Option<String> {
+    let a = theirs.alignment_by_id(id)?;
+    existing
+        .alignments
+        .iter()
+        .filter(|e| e.route == a.route)
+        .map(|e| {
+            let n = a.points.iter().filter(|p| e.points.contains(p)).count();
+            (n, e.id.clone())
+        })
+        .filter(|(n, _)| *n >= 2)
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, e)| e)
+}
+
+/// The points of the project's alignment `id` from the first to the last
+/// it has in common with the imported points `theirs` replaced by those
+/// of the import between them (and the import's beyond them where the
+/// project's alignment ends there). Points that then are on no alignment
+/// leave the line: the project's taken off, the import's not used
+/// (`before`: the project's points before the import). A note when
+/// anything changed.
+fn splice(
+    line: &mut Line,
+    id: &str,
+    theirs: &[String],
+    before: &BTreeSet<String>,
+) -> Option<String> {
+    let k = line.alignments.iter().position(|a| a.id == id)?;
+    let ours = line.alignments[k].points.clone();
+    let common = |q: &[String]| -> Vec<(usize, usize)> {
+        q.iter()
+            .enumerate()
+            .filter_map(|(a, p)| ours.iter().position(|x| x == p).map(|i| (a, i)))
+            .collect()
+    };
+    let mut q = theirs.to_vec();
+    let mut c = common(&q);
+    if c.len() < 2 {
+        return None;
+    }
+    if c[0].1 > c[c.len() - 1].1 {
+        q.reverse();
+        c = common(&q);
+    }
+    let ((a0, i0), (a1, i1)) = (c[0], c[c.len() - 1]);
+    let mut new: Vec<String> = Vec::new();
+    if i0 == 0 {
+        new.extend(q[..a0].iter().cloned());
+    }
+    new.extend(ours[..i0].iter().cloned());
+    new.extend(q[a0..=a1].iter().cloned());
+    new.extend(ours[i1 + 1..].iter().cloned());
+    if i1 + 1 == ours.len() {
+        new.extend(q[a1 + 1..].iter().cloned());
+    }
+    let mut seen = BTreeSet::new();
+    new.retain(|p| seen.insert(p.clone()));
+    if new == ours {
+        return None;
+    }
+    let dropped: Vec<String> = ours[i0..=i1]
+        .iter()
+        .filter(|p| !new.contains(p))
+        .cloned()
+        .collect();
+    line.alignments[k].points = new;
+    let on: BTreeSet<String> = line
+        .alignments
+        .iter()
+        .flat_map(|a| a.points.iter().cloned())
+        .collect();
+    line.alignment_points
+        .retain(|p| on.contains(&p.id) || (before.contains(&p.id) && !dropped.contains(&p.id)));
+    Some(format!(
+        "alignment {id}: from {} to {} the import's points ({}){}",
+        ours[i0],
+        ours[i1],
+        a1 - a0 + 1,
+        if dropped.is_empty() {
+            String::new()
+        } else {
+            format!("; the project's {} taken off", dropped.join(", "))
+        }
+    ))
+}
+
+/// The towers taken from the import keep the project's sets they lack
+/// where what stays in the merged `line` (a section, jumper or circuit
+/// start) still hangs on them; each set only the project's says what
+/// hangs on it ([`SharedSet::kept_for`], none: it went with the
+/// project's tower).
+fn keep_sets(
+    line: &mut Line,
+    out: &mut ImportPlan,
+    ours_in_effect: &BTreeMap<String, ohl_line::Structure>,
+    theirs_in_effect: &BTreeMap<String, ohl_line::Structure>,
+) {
+    for k in 0..out.shared.len() {
+        let t = &out.shared[k];
+        if t.resolution != Resolution::TakeImported {
+            continue;
+        }
+        let (Some(o), Some(i)) = (
+            ours_in_effect.get(&t.existing),
+            theirs_in_effect.get(&t.imported),
+        ) else {
+            continue;
+        };
+        let mut users: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        let mut hang = |set: u32, what: String| {
+            let u = users.entry(set).or_default();
+            if !u.contains(&what) {
+                u.push(what);
+            }
+        };
+        for s in &line.sections {
+            for p in s.points.iter().filter(|p| p.structure == t.existing) {
+                hang(p.set, format!("section {}", s.id));
+            }
+        }
+        for j in &line.jumpers {
+            for p in j.points().filter(|p| p.structure == t.existing) {
+                hang(p.set, format!("jumper {}", j.id));
+            }
+        }
+        for p in line
+            .circuit_starts
+            .iter()
+            .filter(|p| p.structure == t.existing)
+        {
+            hang(p.set, "a circuit start".into());
+        }
+        let missing: Vec<u32> = users
+            .keys()
+            .filter(|n| i.wire_at_set(**n).is_none() && o.wire_at_set(**n).is_some())
+            .copied()
+            .collect();
+        let carry = SharedTower {
+            sets: t
+                .sets
+                .iter()
+                .filter(|s| missing.contains(&s.set))
+                .map(|s| SharedSet {
+                    choice: Some(SetChoice::Add),
+                    new_set: None,
+                    ..s.clone()
+                })
+                .collect(),
+            ..t.clone()
+        };
+        if let Some(st) = line.structures.iter_mut().find(|s| s.id == carry.existing)
+            && !carry.sets.is_empty()
+        {
+            let notes = towers::apply(&carry, st, i, o);
+            out.notes.extend(notes);
+        }
+        for s in out.shared[k]
+            .sets
+            .iter_mut()
+            .filter(|s| s.state == SetState::OnlyExisting)
+        {
+            s.kept_for = users.get(&s.set).cloned().unwrap_or_default();
+        }
+    }
 }
 
 /// The project's library files as they are after the import: its own,
@@ -964,6 +1430,8 @@ fn cables(
     // project's wire file.
     let mut added: BTreeMap<String, toml::Table> = BTreeMap::new();
     let mut into_ours = String::new();
+    // The project's wire files changed (a cable taken from the import).
+    let mut edited: BTreeMap<String, String> = BTreeMap::new();
     for (name, head, blocks) in readable {
         handled.insert(("cables".into(), name.clone()));
         let mut body = String::new();
@@ -985,10 +1453,7 @@ fn cables(
                 }
                 Some((file, e)) => {
                     let key = format!("cable:{}", b.id);
-                    let resolution = match choose(&key) {
-                        Resolution::KeepExisting => Resolution::KeepExisting,
-                        _ => Resolution::KeepBoth,
-                    };
+                    let resolution = choose(&key);
                     out.duplicates.push(Duplicate {
                         key,
                         kind: "cable",
@@ -999,6 +1464,21 @@ fn cables(
                         resolution,
                     });
                     if resolution == Resolution::KeepExisting {
+                        continue;
+                    }
+                    if resolution == Resolution::TakeImported {
+                        // In the project's file, in the place of its own.
+                        let Some(t) = edited.get(file).cloned().or_else(|| {
+                            our_files.iter().find(|f| f.0 == *file).map(|f| f.1.clone())
+                        }) else {
+                            continue;
+                        };
+                        let mut new = b.text.clone();
+                        while e.text.ends_with("\n\n") && !new.ends_with("\n\n") {
+                            new.push('\n');
+                        }
+                        edited.insert(file.clone(), t.replacen(&e.text, &new, 1));
+                        added.insert(b.id.clone(), b.data.clone());
                         continue;
                     }
                     let new = free_apart(&b.id, &ids, &BTreeSet::new());
@@ -1056,7 +1536,7 @@ fn cables(
                 our_files.len()
             ));
         }
-        let mut t = text.clone();
+        let mut t = edited.remove(name).unwrap_or_else(|| text.clone());
         if !t.ends_with('\n') {
             t.push('\n');
         }
@@ -1065,6 +1545,9 @@ fn cables(
         }
         t.push_str(&into_ours);
         out.libraries.push(("cables".into(), name.clone(), t));
+    }
+    for (name, text) in edited {
+        out.libraries.push(("cables".into(), name, text));
     }
     given
 }
@@ -1329,18 +1812,20 @@ mod tests {
         }
     }
 
+    /// Add mode, nothing chosen.
+    fn add() -> ImportOptions {
+        ImportOptions {
+            mode: ImportMode::Add,
+            ..Default::default()
+        }
+    }
+
     /// The same line imported again: everything the same, nothing twice,
     /// the line unchanged.
     #[test]
     fn the_same_line_changes_nothing() {
         let line = example();
-        let p = plan(
-            &line,
-            &[],
-            &imported(line.clone()),
-            &ImportOptions::default(),
-        )
-        .unwrap();
+        let p = plan(&line, &[], &imported(line.clone()), &add()).unwrap();
         assert!(p.duplicates.is_empty(), "{:?}", p.duplicates);
         assert!(p.added.is_empty(), "{:?}", p.added);
         assert_eq!(p.identical["structure"], line.structures.len());
@@ -1356,26 +1841,14 @@ mod tests {
         let id = line.structures[1].id.clone();
         let mut other = line.clone();
         let mut ses = Scratch::new(&other).unwrap();
-        let mut sink = plan(
-            &line,
-            &[],
-            &imported(line.clone()),
-            &ImportOptions::default(),
-        )
-        .unwrap();
+        let mut sink = plan(&line, &[], &imported(line.clone()), &add()).unwrap();
         ses.rename(Kind::Structure, "structure", &id, "X2", &mut sink)
             .unwrap();
         other = ses.line().clone();
         drop(ses);
         let s = other.structures.iter_mut().find(|s| s.id == "X2").unwrap();
         s.position[0] += 0.3;
-        let p = plan(
-            &line,
-            &[],
-            &imported(other.clone()),
-            &ImportOptions::default(),
-        )
-        .unwrap();
+        let p = plan(&line, &[], &imported(other.clone()), &add()).unwrap();
         assert!(p.duplicates.is_empty(), "{:?}", p.duplicates);
         assert_eq!(p.shared.len(), 1);
         let t = &p.shared[0];
@@ -1398,7 +1871,7 @@ mod tests {
         let id = line.structures[1].id.clone();
         let mut other = line.clone();
         other.structures[1].position[0] += 50.0;
-        let p = plan(&line, &[], &imported(other), &ImportOptions::default()).unwrap();
+        let p = plan(&line, &[], &imported(other), &add()).unwrap();
         assert!(p.shared.iter().all(|t| t.existing != id));
         assert!(
             p.duplicates.iter().all(|d| d.kind != "structure"),
@@ -1491,13 +1964,7 @@ mod tests {
     #[test]
     fn a_set_only_in_the_import_is_added() {
         let (ours, theirs) = junction();
-        let p = plan(
-            &ours,
-            &[],
-            &imported(theirs.clone()),
-            &ImportOptions::default(),
-        )
-        .unwrap();
+        let p = plan(&ours, &[], &imported(theirs.clone()), &add()).unwrap();
         assert!(p.duplicates.is_empty(), "{:?}", p.duplicates);
         assert_eq!(p.shared.len(), 1, "{:?}", p.shared);
         let t = &p.shared[0];
@@ -1549,7 +2016,7 @@ mod tests {
 
         let leave = ImportOptions {
             sets: [("tower:T3:set:2".to_owned(), SetChoice::LeaveOut)].into(),
-            ..Default::default()
+            ..add()
         };
         let p = plan(&ours, &[], &imported(theirs), &leave).unwrap();
         assert!(p.line.structure("T3").unwrap().wire_at_set(2).is_none());
@@ -1594,7 +2061,7 @@ mod tests {
                     .map(|c| ("tower:T3:set:11".to_owned(), c))
                     .into_iter()
                     .collect(),
-                ..Default::default()
+                ..add()
             };
             let p = plan(&ours, &[], &imported(theirs.clone()), &o).unwrap();
             p.line.validate().unwrap();
@@ -1691,15 +2158,13 @@ mod tests {
             "cables.ohlw".into(),
             wires(&[("x", ""), ("y", "other"), ("z", "")]),
         )];
-        let p = plan(&line, &ours, &theirs, &ImportOptions::default()).unwrap();
+        let p = plan(&line, &ours, &theirs, &add()).unwrap();
         let d: Vec<&Duplicate> = p.duplicates.iter().filter(|d| d.kind == "cable").collect();
         assert_eq!(d.len(), 1, "{:?}", p.duplicates);
         assert_eq!(d[0].key, "cable:y");
         assert_eq!(d[0].differences, ["name"]);
-        assert_eq!(
-            d[0].choices(),
-            [Resolution::KeepExisting, Resolution::KeepBoth]
-        );
+        assert_eq!(d[0].choices(), Resolution::ALL);
+        assert_eq!(d[0].resolution, Resolution::KeepExisting);
         assert_eq!(p.identical["cable"], 1);
         assert_eq!(p.added["cable"], 1);
         assert_eq!(p.libraries.len(), 1);
@@ -1730,7 +2195,7 @@ mod tests {
                 ),
             ]
             .into(),
-            ..Default::default()
+            ..add()
         };
         let p = plan(&line, &ours, &theirs, &both).unwrap();
         assert_eq!(p.libraries.len(), 1);
@@ -1741,7 +2206,18 @@ mod tests {
         assert!(p.renamed.contains(&("cable", "y".into(), "y-2".into())));
         assert_eq!(p.line.sections[0].cable, "y-2");
 
-        let p = plan(&line, &[], &theirs, &ImportOptions::default()).unwrap();
+        // Replace: the imported y takes the place of the project's in its
+        // file, under its id; one of each cable.
+        let p = plan(&line, &ours, &theirs, &ImportOptions::default()).unwrap();
+        let d = p.duplicates.iter().find(|d| d.kind == "cable").unwrap();
+        assert_eq!(d.resolution, Resolution::TakeImported);
+        assert_eq!(p.libraries.len(), 1);
+        let lib = load(&p);
+        assert_eq!(lib.len(), 3);
+        assert_eq!(lib.get("y").unwrap().name, "other");
+        assert_eq!(p.line.sections[0].cable, "y");
+
+        let p = plan(&line, &[], &theirs, &add()).unwrap();
         assert_eq!(p.libraries, theirs.libraries);
     }
 
@@ -1787,7 +2263,7 @@ mod tests {
         for l in theirs.libraries.iter_mut().filter(|l| l.1 == file) {
             l.2 = format!("# the import's own\n{}", l.2);
         }
-        let p = plan(&line, &libs, &theirs, &ImportOptions::default()).unwrap();
+        let p = plan(&line, &libs, &theirs, &add()).unwrap();
         assert!(
             p.duplicates.iter().all(|d| d.kind != "library file"),
             "{:?}",
@@ -1837,7 +2313,7 @@ mod tests {
         for l in theirs.libraries.iter_mut().filter(|l| l.1 == file) {
             l.2 = entries::with_id(&l.2, "other-type").unwrap();
         }
-        let p = plan(&line, &libs, &theirs, &ImportOptions::default()).unwrap();
+        let p = plan(&line, &libs, &theirs, &add()).unwrap();
         assert!(
             p.duplicates.iter().all(|d| d.kind != "library file"),
             "{:?}",
@@ -1858,7 +2334,7 @@ mod tests {
         );
         // Without T9 the merged line resolves with the files after it.
         theirs.line.structures.retain(|s| s.id != "T9");
-        let p = plan(&line, &libs, &theirs, &ImportOptions::default()).unwrap();
+        let p = plan(&line, &libs, &theirs, &add()).unwrap();
         assert!(p.missing_types.is_empty());
         assert!(
             !p.notes.iter().any(|n| n.contains("does not")),
@@ -1874,13 +2350,7 @@ mod tests {
     fn another_line_is_added_and_its_route_chosen() {
         let line = example();
         let mut ses = Scratch::new(&line).unwrap();
-        let mut sink = plan(
-            &line,
-            &[],
-            &imported(line.clone()),
-            &ImportOptions::default(),
-        )
-        .unwrap();
+        let mut sink = plan(&line, &[], &imported(line.clone()), &add()).unwrap();
         let ids: Vec<(Kind, &str, String)> = line
             .structures
             .iter()
@@ -1923,7 +2393,7 @@ mod tests {
         // Its routes said to be new: added under ids of their own.
         let new = ImportOptions {
             routes: other.routes.iter().map(|r| (r.id.clone(), None)).collect(),
-            ..Default::default()
+            ..add()
         };
         let p = plan(&line, &[], &imported(other.clone()), &new).unwrap();
         assert!(
@@ -1933,7 +2403,7 @@ mod tests {
         );
         assert_eq!(p.line.structures.len(), 2 * line.structures.len());
         assert_eq!(p.line.routes.len(), line.routes.len() * 2);
-        let p = plan(&line, &[], &imported(other), &ImportOptions::default()).unwrap();
+        let p = plan(&line, &[], &imported(other), &add()).unwrap();
         assert_eq!(p.line.routes.len(), line.routes.len());
         assert!(
             p.line
@@ -1949,6 +2419,386 @@ mod tests {
         );
     }
 
+    /// A tower of the synthetic straight line: one string per set (sets
+    /// 1 and 21 on the left, 11 and 31 on the right; 21 and 31 half a
+    /// metre ahead), world positions, turned across the line.
+    fn tower(id: &str, x: f64, y: f64, z: f64, sets: &[u32]) -> Value {
+        let mut points = Vec::new();
+        let mut strings = Vec::new();
+        let mut wires = Vec::new();
+        for &n in sets {
+            let side = if n % 20 == 1 { -6.0 } else { 6.0 };
+            let ahead = if n > 20 { 0.5 } else { 0.0 };
+            points.push(serde_json::json!({
+                "label": format!("A{n}"), "position": [x + ahead, y + side, z + 30.0]
+            }));
+            strings.push(serde_json::json!({
+                "label": format!("S{n}"), "top": format!("A{n}"), "wire": format!("W{n}"),
+                "length": 3.5, "weight": 900.0
+            }));
+            wires.push(serde_json::json!({
+                "label": format!("W{n}"), "position": [x + ahead, y + side, z + 26.5], "set": n
+            }));
+        }
+        serde_json::json!({
+            "id": id, "position": [x, y, z], "orientation_deg": -90.0,
+            "points": points, "strings": strings, "wires": wires
+        })
+    }
+
+    /// A section of circuit `c` (A: phase L1, B: L2) over (structure,
+    /// set).
+    fn section(id: &str, c: &str, points: &[(&str, u32)], tension: f64) -> Value {
+        serde_json::json!({
+            "id": id, "cable": "acsr-drake-26-7", "circuit_name": c,
+            "phase_label": if c == "A" { "L1" } else { "L2" }, "system": "ex220",
+            "points": points.iter().map(|(s, n)| serde_json::json!({"structure": s, "set": n}))
+                .collect::<Vec<_>>(),
+            "stringing": {"kind": "tension", "horizontal_tension": tension, "temperature": 15.0}
+        })
+    }
+
+    fn jumper(id: &str, at: &str, from: u32, to: u32) -> Value {
+        serde_json::json!({
+            "id": id, "cable": "acsr-drake-26-7", "sag": 1.5, "temperature": 15.0,
+            "from": {"structure": at, "set": from}, "to": {"structure": at, "set": to}
+        })
+    }
+
+    /// A line of the example's header and system: one route `route`, one
+    /// alignment through a point tied to each structure.
+    fn straight(
+        route: &str,
+        prefix: &str,
+        structures: Vec<Value>,
+        sections: Vec<Value>,
+        jumpers: Vec<Value>,
+    ) -> Line {
+        let mut v = json(&example());
+        let points: Vec<Value> = structures
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "id": format!("{prefix}{}", s["id"].as_str().unwrap()),
+                    "position": s["position"], "structure": s["id"]
+                })
+            })
+            .collect();
+        v["routes"] = serde_json::json!([{"id": route, "name": route}]);
+        v["alignments"] = serde_json::json!([{
+            "id": route, "name": route, "route": route,
+            "points": points.iter().map(|p| p["id"].clone()).collect::<Vec<_>>()
+        }]);
+        v["alignment_points"] = Value::Array(points);
+        v["structures"] = Value::Array(structures);
+        v["sections"] = Value::Array(sections);
+        v["jumpers"] = Value::Array(jumpers);
+        let line: Line = serde_json::from_value(v).unwrap();
+        line.validate().unwrap();
+        line
+    }
+
+    /// The project: towers T1…T10 300 m apart along a straight route and
+    /// T6b between T6 and T7, strain towers T3, T5 and T8 (sets 1/11 back,
+    /// 21/31 ahead), two circuits (A on sets 1/21, B on 11/31) in four
+    /// sections each, jumpers at each strain tower. The variant covers T3
+    /// to T8: T3 (its ahead sets only), T4 (its wires 2 m higher), T5 and
+    /// T8 (its back sets only) the same towers, V6 at T6's place, V7 13 m
+    /// beside T7; T6b and T7 not in it; its sections T3–T5 (A strung
+    /// harder) and T5–V6–V7–T8, the jumper of circuit A at T5 only.
+    fn project_and_variant() -> (Line, Line) {
+        let x = |k: f64| 300.0 * (k - 1.0);
+        let all = [1, 11, 21, 31];
+        let ours = straight(
+            "main",
+            "P",
+            vec![
+                tower("T1", x(1.0), 0.0, 500.0, &[1, 11]),
+                tower("T2", x(2.0), 0.0, 500.0, &[1, 11]),
+                tower("T3", x(3.0), 0.0, 500.0, &all),
+                tower("T4", x(4.0), 0.0, 500.0, &[1, 11]),
+                tower("T5", x(5.0), 0.0, 500.0, &all),
+                tower("T6", x(6.0), 0.0, 500.0, &[1, 11]),
+                tower("T6b", x(6.5), 0.0, 500.0, &[1, 11]),
+                tower("T7", x(7.0), 0.0, 500.0, &[1, 11]),
+                tower("T8", x(8.0), 0.0, 500.0, &all),
+                tower("T9", x(9.0), 0.0, 500.0, &[1, 11]),
+                tower("T10", x(10.0), 0.0, 500.0, &[1, 11]),
+            ],
+            ["A", "B"]
+                .iter()
+                .flat_map(|c| {
+                    let (b, a) = if *c == "A" { (1, 21) } else { (11, 31) };
+                    [
+                        section(
+                            &format!("{c}1"),
+                            c,
+                            &[("T1", b), ("T2", b), ("T3", b)],
+                            25e3,
+                        ),
+                        section(
+                            &format!("{c}2"),
+                            c,
+                            &[("T3", a), ("T4", b), ("T5", b)],
+                            25e3,
+                        ),
+                        section(
+                            &format!("{c}3"),
+                            c,
+                            &[("T5", a), ("T6", b), ("T6b", b), ("T7", b), ("T8", b)],
+                            25e3,
+                        ),
+                        section(
+                            &format!("{c}4"),
+                            c,
+                            &[("T8", a), ("T9", b), ("T10", b)],
+                            25e3,
+                        ),
+                    ]
+                })
+                .collect(),
+            ["3", "5", "8"]
+                .iter()
+                .flat_map(|t| {
+                    [
+                        jumper(&format!("JA{t}"), &format!("T{t}"), 1, 21),
+                        jumper(&format!("JB{t}"), &format!("T{t}"), 11, 31),
+                    ]
+                })
+                .collect(),
+        );
+        let theirs = straight(
+            "variant",
+            "Q",
+            vec![
+                tower("T3", x(3.0), 0.0, 500.0, &[21, 31]),
+                tower("T4", x(4.0), 0.0, 502.0, &[1, 11]),
+                tower("T5", x(5.0), 0.0, 500.0, &all),
+                tower("V6", x(6.0), 0.0, 500.0, &[1, 11]),
+                tower("V7", x(7.0), 13.0, 500.0, &[1, 11]),
+                tower("T8", x(8.0), 0.0, 500.0, &[1, 11]),
+            ],
+            ["A", "B"]
+                .iter()
+                .flat_map(|c| {
+                    let (b, a) = if *c == "A" { (1, 21) } else { (11, 31) };
+                    let t = if *c == "A" { 26e3 } else { 25e3 };
+                    [
+                        section(&format!("{c}2"), c, &[("T3", a), ("T4", b), ("T5", b)], t),
+                        section(
+                            &format!("{c}3"),
+                            c,
+                            &[("T5", a), ("V6", b), ("V7", b), ("T8", b)],
+                            25e3,
+                        ),
+                    ]
+                })
+                .collect(),
+            vec![jumper("JA5", "T5", 1, 21)],
+        );
+        (ours, theirs)
+    }
+
+    fn ids<T>(v: &[T], id: impl Fn(&T) -> &String) -> Vec<String> {
+        let mut out: Vec<String> = v.iter().map(|x| id(x).clone()).collect();
+        out.sort();
+        out
+    }
+
+    /// Replace (the default): the variant replaces T3–T8. Outside it the
+    /// line stays (T1, T2, T9, T10, the sections there, the jumpers at
+    /// the stretch's ends T3 and T8); T3, T4, T5, T8 are the imported
+    /// towers (T4 2 m higher), T3 and T8 keeping the project's back and
+    /// ahead sets the sections outside hang on; T6 becomes V6 (the
+    /// imported tower at its place); T6b and T7 are removed with the
+    /// sections over them and the jumper of circuit B at T5 (inside, not
+    /// in the import); V7 is added; the import's sections replace the
+    /// project's inside; the alignment runs through V7. The line checks
+    /// and solves; every removal is listed.
+    #[test]
+    fn a_variant_replaces_its_stretch() {
+        let (ours, theirs) = project_and_variant();
+        let p = plan(&ours, &[], &imported(theirs), &ImportOptions::default()).unwrap();
+        assert_eq!(p.mode, ImportMode::Replace);
+        let removed: Vec<(&str, &str, bool)> = p
+            .removed
+            .iter()
+            .map(|r| (r.kind, r.id.as_str(), r.fixed))
+            .collect();
+        assert_eq!(
+            removed,
+            [
+                ("structure", "T6b", false),
+                ("structure", "T7", false),
+                ("section", "A3", true),
+                ("section", "B3", true),
+                ("jumper", "JB5", false),
+            ],
+            "{:?}",
+            p.removed
+        );
+        assert!(
+            p.removed
+                .iter()
+                .all(|r| r.key == format!("remove:{}:{}", r.kind, r.id))
+        );
+        assert!(
+            p.renamed
+                .contains(&("structure (the project's)", "T6".into(), "V6".into()))
+        );
+        assert_eq!(p.routes["variant"], Some("main".to_owned()));
+        let l = &p.line;
+        assert_eq!(
+            ids(&l.structures, |s| &s.id),
+            ["T1", "T10", "T2", "T3", "T4", "T5", "T8", "T9", "V6", "V7"]
+        );
+        assert_eq!(
+            ids(&l.sections, |s| &s.id),
+            ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4"]
+        );
+        assert_eq!(
+            ids(&l.jumpers, |j| &j.id),
+            ["JA3", "JA5", "JA8", "JB3", "JB8"]
+        );
+        // The import's sections inside: A2 strung harder, A3 over V7.
+        let a2 = l.sections.iter().find(|s| s.id == "A2").unwrap();
+        assert!(matches!(
+            a2.stringing,
+            ohl_line::Stringing::Tension { horizontal_tension, .. } if horizontal_tension == 26e3
+        ));
+        let a3 = l.sections.iter().find(|s| s.id == "A3").unwrap();
+        assert_eq!(a3.points[2].structure, "V7");
+        // The imported towers; the ends keep the project's sets the
+        // sections and jumpers outside hang on.
+        let t4 = l.structure("T4").unwrap();
+        assert_eq!(t4.wire_at_set(1).unwrap().position[2], 528.5);
+        for t in ["T3", "T8"] {
+            let s = l.structure(t).unwrap();
+            for n in [1, 11, 21, 31] {
+                assert!(s.wire_at_set(n).is_some(), "{t} set {n}");
+            }
+        }
+        let t3 = p.shared.iter().find(|t| t.existing == "T3").unwrap();
+        assert_eq!(t3.resolution, Resolution::TakeImported);
+        let s1 = t3.sets.iter().find(|s| s.set == 1).unwrap();
+        assert_eq!(s1.state, SetState::OnlyExisting);
+        assert_eq!(s1.kept_for, ["section A1", "jumper JA3"]);
+        // The alignment through the import's points between T3 and T8.
+        let a = &l.alignments[0];
+        assert_eq!(
+            a.points,
+            [
+                "PT1", "PT2", "PT3", "PT4", "PT5", "PT6", "QV7", "PT8", "PT9", "PT10"
+            ]
+        );
+        assert_eq!(l.alignment_points.len(), 10);
+        assert_eq!(l.routes.len(), 1);
+        l.validate().unwrap();
+        solves(l);
+        assert!(
+            !p.notes.iter().any(|n| n.contains("does not")),
+            "{:?}",
+            p.notes
+        );
+    }
+
+    /// Add: the same variant only added — nothing removed, the project's
+    /// towers kept (T6 keeps its id), V7 and the import's sections over it
+    /// added apart; the route a new one.
+    #[test]
+    fn a_variant_added_removes_nothing() {
+        let (ours, theirs) = project_and_variant();
+        let p = plan(&ours, &[], &imported(theirs), &add()).unwrap();
+        assert!(p.removed.is_empty());
+        assert!(p.line.structure("T6b").is_some() && p.line.structure("T7").is_some());
+        assert!(p.line.structure("V6").is_none() && p.line.structure("V7").is_some());
+        assert!(
+            p.shared
+                .iter()
+                .all(|t| t.resolution == Resolution::KeepExisting)
+        );
+        assert_eq!(
+            p.line
+                .structure("T4")
+                .unwrap()
+                .wire_at_set(1)
+                .unwrap()
+                .position[2],
+            526.5
+        );
+        assert!(p.line.sections.iter().any(|s| s.id == "A3-2"));
+        assert_eq!(p.routes["variant"], None);
+        assert_eq!(p.line.routes.len(), 2);
+    }
+
+    /// Replace with choices: T7 and the jumper JB5 kept instead of
+    /// removed (the sections over T6b still go with it), T4 kept as the
+    /// project's tower. The line checks.
+    #[test]
+    fn a_removal_can_be_kept() {
+        let (ours, theirs) = project_and_variant();
+        let o = ImportOptions {
+            kept: ["remove:structure:T7", "remove:jumper:JB5"]
+                .map(String::from)
+                .into(),
+            choices: [("tower:T4".to_owned(), Resolution::KeepExisting)].into(),
+            ..Default::default()
+        };
+        let p = plan(&ours, &[], &imported(theirs), &o).unwrap();
+        let keep: Vec<&str> = p
+            .removed
+            .iter()
+            .filter(|r| r.keep)
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(keep, ["T7", "JB5"]);
+        assert!(p.line.structure("T7").is_some());
+        assert!(p.line.structure("T6b").is_none());
+        assert!(p.line.jumpers.iter().any(|j| j.id == "JB5"));
+        assert!(
+            !p.line
+                .sections
+                .iter()
+                .any(|s| s.points.iter().any(|q| q.structure == "T6b"))
+        );
+        assert_eq!(
+            p.line
+                .structure("T4")
+                .unwrap()
+                .wire_at_set(1)
+                .unwrap()
+                .position[2],
+            526.5
+        );
+        p.line.validate().unwrap();
+    }
+
+    /// Replace with a branch meeting the line at one tower: the imported
+    /// junction tower taken (its turned axes too), the project's sets the
+    /// main line hangs on the same attachments; one tower in both covers
+    /// no stretch, nothing is removed. The line checks and solves.
+    #[test]
+    fn a_branch_in_replace_mode_removes_nothing() {
+        let (ours, theirs) = junction();
+        let p = plan(
+            &ours,
+            &[],
+            &imported(theirs.clone()),
+            &ImportOptions::default(),
+        )
+        .unwrap();
+        assert!(p.removed.is_empty(), "{:?}", p.removed);
+        assert_eq!(p.shared[0].resolution, Resolution::TakeImported);
+        let t3 = p.line.structure("T3").unwrap();
+        assert_eq!(
+            t3.orientation_deg,
+            theirs.structure("T3").unwrap().orientation_deg
+        );
+        assert_eq!(p.line.sections.len(), ours.sections.len() + 1);
+        p.line.validate().unwrap();
+        solves(&p.line);
+    }
+
     /// Library files: the same text left, another text a duplicate (kept
     /// both: under "name (2).ext"); another coordinate system refused.
     #[test]
@@ -1962,7 +2812,7 @@ mod tests {
         ];
         let both = ImportOptions {
             choices: [("library:cables/w.ohlw".to_owned(), Resolution::KeepBoth)].into(),
-            ..Default::default()
+            ..add()
         };
         let p = plan(&line, &ours, &theirs, &both).unwrap();
         assert_eq!(p.duplicates.len(), 1);
@@ -1972,6 +2822,6 @@ mod tests {
         far.crs = "EPSG:2056".into();
         let mut near = line;
         near.crs = "EPSG:21781".into();
-        assert!(plan(&near, &[], &imported(far), &ImportOptions::default()).is_err());
+        assert!(plan(&near, &[], &imported(far), &add()).is_err());
     }
 }
