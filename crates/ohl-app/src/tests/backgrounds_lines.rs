@@ -1221,3 +1221,76 @@ fn a_map_is_taken_first_by_the_plans() {
     model.backgrounds = crate::backgrounds::load(&file, &mut log);
     assert_eq!(model.backgrounds.plan_layers(), None);
 }
+
+/// A line started from another is drawn just below it, whatever their
+/// names, and never takes its revisions (owner report 2026-10-27: a
+/// variant started from "live" was drawn above it).
+#[test]
+fn the_working_tree_draws_a_line_below_its_origin() {
+    use ohl_server::Op;
+    let mut m = synthetic_project("tree-origin");
+    let shift = |m: &mut model::Model, id: &str, dx: f64| {
+        let p = m.line.structure(id).unwrap().position;
+        m.apply(
+            "shift",
+            ohl_session::Command::MoveStructure {
+                id: id.into(),
+                position: [p[0] + dx, p[1], p[2]],
+            },
+        )
+        .unwrap();
+    };
+    let op = |m: &mut model::Model, op: Op| {
+        m.project_op("op", op).unwrap();
+    };
+    op(
+        &mut m,
+        Op::Commit {
+            message: "start".into(),
+        },
+    );
+    op(
+        &mut m,
+        Op::CreateLine {
+            name: "live".into(),
+            from: "main".into(),
+        },
+    );
+    switch(&mut m, "live");
+    shift(&mut m, "T5", 1.0);
+    op(
+        &mut m,
+        Op::Commit {
+            message: "live work".into(),
+        },
+    );
+    // Its name sorts before "live".
+    op(
+        &mut m,
+        Op::CreateLine {
+            name: "a variant".into(),
+            from: "live".into(),
+        },
+    );
+    switch(&mut m, "a variant");
+    shift(&mut m, "T6", 1.0);
+    op(
+        &mut m,
+        Op::Commit {
+            message: "variant work".into(),
+        },
+    );
+    let s = m.session().unwrap();
+    let tree = crate::working_tree::Tree::layout(
+        &s.revisions().unwrap(),
+        &s.lines().unwrap(),
+        &[],
+        &|l| s.has_uncommitted(l).unwrap(),
+    );
+    let names: Vec<&str> = tree.lanes.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(names, ["main", "live", "a variant"]);
+    let lanes = crate::working_tree::lanes_by_name(&tree);
+    assert_eq!(lanes["main"], ["start"]);
+    assert_eq!(lanes["live"], ["live work"]);
+    assert_eq!(lanes["a variant"], ["variant work"]);
+}

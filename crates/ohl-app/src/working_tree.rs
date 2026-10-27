@@ -81,7 +81,33 @@ impl Tree {
                     .collect(),
             });
         }
-        for l in lines {
+        // Claimed in the order they were made (the main line first): a
+        // line made later never takes the revisions of the one it started
+        // from (owner report 2026-10-27).
+        let mut made: Vec<&LineInfo> = lines.iter().collect();
+        made.sort_by(|a, b| {
+            (!a.is_main(), &a.time, &a.name).cmp(&(!b.is_main(), &b.time, &b.name))
+        });
+        // Made in the same second: a line still after the one it started
+        // from (its note "from LINE").
+        for _ in 0..made.len() {
+            let mut moved = false;
+            for i in 0..made.len() {
+                let from = made[i].note.strip_prefix("from ").map(str::trim);
+                if let Some(p) = from.and_then(|f| made.iter().position(|l| l.name == f))
+                    && p > i
+                {
+                    let l = made.remove(i);
+                    made.insert(p, l);
+                    moved = true;
+                    break;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        for l in made {
             let lane = tree.lanes.len();
             tree.lanes.push(Lane {
                 name: l.name.clone(),
@@ -103,6 +129,7 @@ impl Tree {
                 at = tree.nodes[k].revision.parents.first().cloned();
             }
         }
+        tree.order_by_origin();
         if tree.nodes.iter().any(|n| n.lane == usize::MAX) {
             let lane = tree.lanes.len();
             tree.lanes.push(Lane {
@@ -118,6 +145,85 @@ impl Tree {
             }
         }
         tree
+    }
+
+    /// The lanes drawn each just below the line it started from (its
+    /// note "from LINE", else the lane its history meets), children in the
+    /// order they were made; the main line first.
+    fn order_by_origin(&mut self) {
+        let n = self.lanes.len();
+        let by_name: HashMap<&str, usize> = self
+            .lanes
+            .iter()
+            .enumerate()
+            .map(|(k, l)| (l.name.as_str(), k))
+            .collect();
+        let parent: Vec<Option<usize>> = (0..n)
+            .map(|k| {
+                let l = self.lanes[k].line.as_ref()?;
+                if l.is_main() {
+                    return None;
+                }
+                if let Some(&p) = l
+                    .note
+                    .strip_prefix("from ")
+                    .and_then(|f| by_name.get(f.trim()))
+                    && p != k
+                {
+                    return Some(p);
+                }
+                // Where its history meets another's: the first revision
+                // along first parents that another lane claimed.
+                let mut at = self.lanes[k].head.clone();
+                while let Some(id) = at {
+                    let &i = self.index.get(&id)?;
+                    let node = &self.nodes[i];
+                    if node.lane != k && node.lane != usize::MAX {
+                        return Some(node.lane);
+                    }
+                    at = node.revision.parents.first().cloned();
+                }
+                None
+            })
+            .collect();
+        let mut order: Vec<usize> = Vec::with_capacity(n);
+        let mut placed = vec![false; n];
+        // Depth first from the roots (lanes are already in the order made).
+        fn visit(k: usize, parent: &[Option<usize>], placed: &mut [bool], order: &mut Vec<usize>) {
+            if placed[k] {
+                return;
+            }
+            placed[k] = true;
+            order.push(k);
+            for c in 0..parent.len() {
+                if parent[c] == Some(k) {
+                    visit(c, parent, placed, order);
+                }
+            }
+        }
+        for k in 0..n {
+            if parent[k].is_none_or(|p| p == k) {
+                visit(k, &parent, &mut placed, &mut order);
+            }
+        }
+        for k in 0..n {
+            visit(k, &parent, &mut placed, &mut order);
+        }
+        let mut new_of = vec![0; n];
+        for (new, &old) in order.iter().enumerate() {
+            new_of[old] = new;
+        }
+        let lanes = std::mem::take(&mut self.lanes);
+        let mut slots: Vec<Option<Lane>> = lanes.into_iter().map(Some).collect();
+        self.lanes = order
+            .iter()
+            .map(|&old| slots[old].take().expect("each once"))
+            .collect();
+        for node in &mut self.nodes {
+            if node.lane != usize::MAX {
+                node.lane = new_of[node.lane];
+            }
+        }
     }
 
     /// Columns used (with the one of uncommitted work).
