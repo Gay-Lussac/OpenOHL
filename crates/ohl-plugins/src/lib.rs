@@ -197,6 +197,9 @@ pub enum PluginError {
         function: &'static str,
         /// The limit that was exceeded.
         limit: Duration,
+        /// Whether the plugin's manifest asks for more than it was given
+        /// (not allowed yet).
+        held: bool,
     },
     /// Error from the WebAssembly runtime (compilation, instantiation, a trap
     /// or exceeding the memory cap).
@@ -225,11 +228,18 @@ impl fmt::Display for PluginError {
                 plugin,
                 function,
                 limit,
-            } => write!(
-                f,
-                "plugin {plugin}: {function} did not finish within {limit:?} and was interrupted \
-                 (endless loop or too much work for one call)"
-            ),
+                held,
+            } => {
+                write!(
+                    f,
+                    "plugin {plugin}: {function} did not finish within {limit:?} and was interrupted \
+                     (endless loop or too much work for one call)"
+                )?;
+                if *held {
+                    write!(f, "\n{}", held_note(plugin))?;
+                }
+                Ok(())
+            }
             Self::Runtime(message) => write!(f, "plugin runtime error: {message}"),
         }
     }
@@ -1054,7 +1064,7 @@ impl WasmHost {
     pub fn load(&self, dir: &Path) -> Result<WasmPlugin, PluginError> {
         let mut p = self.prepare(dir, None)?;
         let instance = bindings::Plugin::instantiate(&mut p.store, &p.component, &self.linker)
-            .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         Ok(WasmPlugin {
             manifest: p.manifest,
             store: p.store,
@@ -1068,7 +1078,7 @@ impl WasmHost {
     pub fn load_io(&self, dir: &Path) -> Result<WasmIoPlugin, PluginError> {
         let mut p = self.prepare(dir, Some(("io", "a file-format plugin")))?;
         let instance = io_bindings::IoPlugin::instantiate(&mut p.store, &p.component, &self.linker)
-            .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         Ok(WasmIoPlugin {
             manifest: p.manifest,
             store: p.store,
@@ -1083,7 +1093,7 @@ impl WasmHost {
         let mut p = self.prepare(dir, Some(("terrain", "a terrain plugin")))?;
         let instance =
             terrain_bindings::TerrainPlugin::instantiate(&mut p.store, &p.component, &self.linker)
-                .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         Ok(WasmTerrainPlugin {
             manifest: p.manifest,
             store: p.store,
@@ -1098,7 +1108,7 @@ impl WasmHost {
         let mut p = self.prepare(dir, Some(("project", "a project plugin")))?;
         let instance =
             project_bindings::ProjectPlugin::instantiate(&mut p.store, &p.component, &self.linker)
-                .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         Ok(WasmProjectPlugin {
             manifest: p.manifest,
             store: p.store,
@@ -1117,8 +1127,7 @@ impl WasmHost {
     /// its own, none without it.
     pub fn load_code(&self, dir: &Path) -> Result<WasmCodePlugin, PluginError> {
         let mut p = self.prepare(dir, Some((DESIGN_CODE, "a design-code plugin")))?;
-        let fail =
-            |e, p: &Prepared| classify(e, &p.manifest.plugin.name, "instantiation", p.limits);
+        let fail = |e, p: &Prepared| classify(e, &p.manifest, "instantiation", p.limits);
         let has = |name: &str| p.component.get_export_index(None, name).is_some();
         let (wind, rules) = (has(STRUCTURE_WIND_EXPORT), has(RULE_PRESETS_EXPORT));
         let component_instance = self
@@ -1180,20 +1189,18 @@ impl WasmCodePlugin {
     /// Calls `describe`.
     pub fn describe(&mut self) -> Result<CodeInfo, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         match &self.instance {
             CodeInstance::Plain(i) => i.call_describe(&mut self.store),
             CodeInstance::Wind(i) => i.call_describe(&mut self.store).map(code_info),
         }
-        .map_err(|e| classify(e, &name, "describe", limits))
+        .map_err(|e| classify(e, &self.manifest, "describe", limits))
     }
 
     /// Calls `generate` with a parameter file's text (inner `Err`: the
     /// plugin's own error, about the file).
     pub fn generate(&mut self, parameters: &str) -> Result<Result<Generated, String>, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         match &self.instance {
             CodeInstance::Plain(i) => i.call_generate(&mut self.store, parameters),
@@ -1201,7 +1208,7 @@ impl WasmCodePlugin {
                 .call_generate(&mut self.store, parameters)
                 .map(|r| r.map(generated)),
         }
-        .map_err(|e| classify(e, &name, "generate", limits))
+        .map_err(|e| classify(e, &self.manifest, "generate", limits))
     }
 
     /// Whether the plugin exports `structure-wind` (built for it).
@@ -1221,11 +1228,10 @@ impl WasmCodePlugin {
             return Ok(Ok(None));
         };
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         i.ohl_plugin_structure_wind()
             .call_structure_wind(&mut self.store, parameters)
-            .map_err(|e| classify(e, &name, "structure-wind", limits))
+            .map_err(|e| classify(e, &self.manifest, "structure-wind", limits))
     }
 
     /// Whether the plugin exports `rule-presets` (built for it).
@@ -1245,11 +1251,10 @@ impl WasmCodePlugin {
             return Ok(Ok(Vec::new()));
         };
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         i.ohl_plugin_rule_presets()
             .call_rule_presets(&mut self.store, parameters)
-            .map_err(|e| classify(e, &name, "rule-presets", limits))
+            .map_err(|e| classify(e, &self.manifest, "rule-presets", limits))
     }
 }
 
@@ -1303,7 +1308,7 @@ impl WasmHost {
     ) -> Result<WasmCheckPlugin, PluginError> {
         let instance =
             check_bindings::CheckPlugin::instantiate(&mut store, &component, &self.linker)
-                .map_err(|e| classify(e, &manifest.plugin.name, "instantiation", limits))?;
+                .map_err(|e| classify(e, &manifest, "instantiation", limits))?;
         Ok(WasmCheckPlugin {
             manifest,
             component,
@@ -1358,9 +1363,9 @@ impl WasmCheckPlugin {
         ) -> wasmtime::Result<T>,
     ) -> Result<T, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let (name, limits) = (self.manifest.plugin.name.clone(), self.limits);
+        let limits = self.limits;
         f(self.instance.ohl_plugin_check(), &mut self.store)
-            .map_err(|e| classify(e, &name, function, limits))
+            .map_err(|e| classify(e, &self.manifest, function, limits))
     }
 
     /// Calls `checks`.
@@ -1546,7 +1551,7 @@ impl WasmHost {
             return Ok(out);
         }
         let name = p.manifest.plugin.name.clone();
-        let fail = |e, p: &Prepared, what| classify(e, &p.manifest.plugin.name, what, p.limits);
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest, what, p.limits);
         let instance = self
             .linker
             .instantiate(&mut p.store, &p.component)
@@ -1557,7 +1562,7 @@ impl WasmHost {
         let given = export
             .ohl_plugin_sheet_templates()
             .call_sheet_templates(&mut p.store)
-            .map_err(|e| classify(e, &name, "sheet-templates", p.limits))?
+            .map_err(|e| classify(e, &p.manifest, "sheet-templates", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         out.extend(given.into_iter().map(|t| {
             TemplatePreset {
@@ -1694,12 +1699,11 @@ impl WasmProjectPlugin {
     /// Calls `describe`.
     pub fn describe(&mut self) -> Result<PluginInfo, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         let info = self
             .instance
             .call_describe(&mut self.store)
-            .map_err(|e| classify(e, &name, "describe", limits))?;
+            .map_err(|e| classify(e, &self.manifest, "describe", limits))?;
         // Same WIT record, generated once per world.
         Ok(PluginInfo {
             name: info.name,
@@ -1711,12 +1715,11 @@ impl WasmProjectPlugin {
     /// Calls `formats` (their id, description, extension).
     pub fn formats(&mut self) -> Result<Vec<(String, String, String)>, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         let formats = self
             .instance
             .call_formats(&mut self.store)
-            .map_err(|e| classify(e, &name, "formats", limits))?;
+            .map_err(|e| classify(e, &self.manifest, "formats", limits))?;
         Ok(formats
             .into_iter()
             .map(|f| (f.id, f.description, f.extension))
@@ -1731,11 +1734,10 @@ impl WasmProjectPlugin {
         options: &[(String, String)],
     ) -> Result<Result<Project, String>, PluginError> {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         self.instance
             .call_import_project(&mut self.store, format, data, options)
-            .map_err(|e| classify(e, &name, "import-project", limits))
+            .map_err(|e| classify(e, &self.manifest, "import-project", limits))
     }
 }
 
@@ -1760,12 +1762,11 @@ impl WasmTerrainPlugin {
     /// Calls `describe`.
     pub fn describe(&mut self) -> Result<PluginInfo, PluginError> {
         self.arm();
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         let info = self
             .instance
             .call_describe(&mut self.store)
-            .map_err(|e| classify(e, &name, "describe", limits))?;
+            .map_err(|e| classify(e, &self.manifest, "describe", limits))?;
         // Same WIT record, generated once per world.
         Ok(PluginInfo {
             name: info.name,
@@ -1777,12 +1778,11 @@ impl WasmTerrainPlugin {
     /// Calls `formats`.
     pub fn formats(&mut self) -> Result<Vec<Format>, PluginError> {
         self.arm();
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         let formats = self
             .instance
             .call_formats(&mut self.store)
-            .map_err(|e| classify(e, &name, "formats", limits))?;
+            .map_err(|e| classify(e, &self.manifest, "formats", limits))?;
         // Same WIT record, generated once per world.
         Ok(formats
             .into_iter()
@@ -1810,11 +1810,10 @@ impl WasmTerrainPlugin {
         options: &[(String, String)],
     ) -> Result<Result<Vec<Surface>, String>, PluginError> {
         self.arm();
-        let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
         self.instance
             .call_import_surfaces(&mut self.store, format, data, options)
-            .map_err(|e| classify(e, &name, "import-surfaces", limits))
+            .map_err(|e| classify(e, &self.manifest, "import-surfaces", limits))
     }
 }
 
@@ -1837,7 +1836,7 @@ impl WasmIoPlugin {
     }
 
     fn classify(&self, error: wasmtime::Error, function: &'static str) -> PluginError {
-        classify(error, &self.manifest.plugin.name, function, self.limits)
+        classify(error, &self.manifest, function, self.limits)
     }
 
     /// Calls `describe`.
@@ -1904,19 +1903,42 @@ pub struct WasmPlugin {
 /// interruption, so callers learn *why* the call stopped.
 fn classify(
     error: wasmtime::Error,
-    plugin: &str,
+    manifest: &Manifest,
     function: &'static str,
     limits: Limits,
 ) -> PluginError {
+    // A plugin held below what its manifest asks (not allowed yet) mostly
+    // fails as a trap when its memory runs out: say so, the trap alone
+    // does not tell the user what to do.
+    let asked = manifest.limits;
+    let held = asked
+        .seconds
+        .is_some_and(|s| Duration::from_secs(s) > limits.call_timeout)
+        || asked
+            .memory_mib
+            .is_some_and(|m| m.saturating_mul(1 << 20) > limits.max_memory_bytes as u64);
     if error.downcast_ref::<Trap>() == Some(&Trap::Interrupt) {
         PluginError::Timeout {
-            plugin: plugin.to_owned(),
+            plugin: manifest.plugin.name.clone(),
             function,
             limit: limits.call_timeout,
+            held,
         }
+    } else if held {
+        PluginError::Runtime(format!("{}\n{error:#}", held_note(&manifest.plugin.name)))
     } else {
         error.into()
     }
+}
+
+/// The advice for a plugin that failed while held below its manifest's
+/// `[limits]`.
+fn held_note(plugin: &str) -> String {
+    format!(
+        "plugin {plugin} asks for more time or memory than it was given: \
+         allow it in the plugin manager (OHL-Design: File › Plugins › Plugin manager…, \
+         \"Allow…\") and try again"
+    )
 }
 
 impl WasmPlugin {
@@ -1931,7 +1953,7 @@ impl WasmPlugin {
     }
 
     fn classify(&self, error: wasmtime::Error, function: &'static str) -> PluginError {
-        classify(error, &self.manifest.plugin.name, function, self.limits)
+        classify(error, &self.manifest, function, self.limits)
     }
 
     /// Calls the plugin's `describe` export.
@@ -2044,6 +2066,37 @@ mod tests {
         ));
         let fs = manifest("0.3", "[permissions]\nfilesystem = [\"/tmp\"]");
         assert!(fs.check_permissions().is_err());
+    }
+
+    /// A plugin failing while held below its manifest's `[limits]` (not
+    /// allowed yet) says how to allow it: out of memory it fails as a
+    /// plain trap (owner 2026-10-27, a large file through a project
+    /// plugin).
+    #[test]
+    fn a_held_plugin_says_how_to_allow_it() {
+        let greedy = manifest("0.3", "[limits]\nseconds = 300\nmemory-mib = 3072");
+        let trap = || wasmtime::Error::msg("wasm `unreachable` instruction executed");
+        let e = classify(trap(), &greedy, "import-project", Limits::default()).to_string();
+        assert!(
+            e.contains("unreachable") && e.contains("File › Plugins"),
+            "{e}"
+        );
+        let given = Limits {
+            call_timeout: Duration::from_secs(300),
+            max_memory_bytes: 3072 << 20,
+        };
+        let e = classify(trap(), &greedy, "import-project", given).to_string();
+        assert!(!e.contains("File › Plugins"), "allowed: {e}");
+        let plain = manifest("0.3", "");
+        let e = classify(trap(), &plain, "import-project", Limits::default()).to_string();
+        assert!(!e.contains("File › Plugins"), "asks nothing: {e}");
+        let timeout = PluginError::Timeout {
+            plugin: "t".into(),
+            function: "import-project",
+            limit: Duration::from_secs(5),
+            held: true,
+        };
+        assert!(timeout.to_string().contains("File › Plugins"));
     }
 
     /// M6 and L1 (security review 2026-10-26): a manifest asking for more
