@@ -49,6 +49,7 @@ pub mod octree;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ohl_core::budget::Budget;
 use ohl_lidar::{Corridor, LidarPoint};
@@ -168,6 +169,24 @@ pub trait PointSource {
         visit: &mut dyn FnMut(f64, f64, f64, u8),
     ) -> Result<Stats, String>;
 
+    /// [`PointSource::visit`], saying how far it has got in `progress`
+    /// (by default the points visited only).
+    fn visit_with(
+        &self,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        progress: Option<&ReadProgress>,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, String> {
+        self.visit(area, classes, budget, &mut |x, y, z, c| {
+            if let Some(p) = progress {
+                p.visited.fetch_add(1, Ordering::Relaxed);
+            }
+            visit(x, y, z, c)
+        })
+    }
+
     /// Number of points, when known without reading them.
     fn points(&self) -> Option<u64> {
         None
@@ -258,9 +277,46 @@ pub fn visit_around(
     budget: &Budget,
     visit: &mut dyn FnMut(f64, f64, f64, u8),
 ) -> Result<Stats, String> {
+    visit_around_with(spec, polylines, reach, classes, budget, None, visit)
+}
+
+/// [`visit_around`], saying how far it has got in `progress` (a
+/// project's cloud; a COPC file or tiles count the points visited only).
+pub fn visit_around_with(
+    spec: &str,
+    polylines: &[Vec<[f64; 2]>],
+    reach: f64,
+    classes: &[u8],
+    budget: &Budget,
+    progress: Option<&ReadProgress>,
+    visit: &mut dyn FnMut(f64, f64, f64, u8),
+) -> Result<Stats, String> {
     let source = open_source(spec)?;
     let corridor = Corridor::new(polylines, reach);
-    source.visit(Some(&corridor), Some(classes), budget, visit)
+    source.visit_with(Some(&corridor), Some(classes), budget, progress, visit)
+}
+
+/// How far a read has got (owner, 2026-10-27: a progress bar in the
+/// clearance windows): the points of the blocks to read (known once they
+/// are listed, 0 before or when the source cannot tell) and of those
+/// decoded so far; the points handed on. Shared with the window showing
+/// it.
+#[derive(Debug, Default)]
+pub struct ReadProgress {
+    /// Points of the blocks to read.
+    pub total: AtomicU64,
+    /// Points of the blocks decoded so far.
+    pub done: AtomicU64,
+    /// Points handed to the visitor so far.
+    pub visited: AtomicU64,
+}
+
+impl ReadProgress {
+    /// The share done (0–1), when the total is known.
+    pub fn share(&self) -> Option<f64> {
+        let total = self.total.load(Ordering::Relaxed);
+        (total > 0).then(|| (self.done.load(Ordering::Relaxed) as f64 / total as f64).min(1.0))
+    }
 }
 
 /// A block read at a level of detail: its summary and the counts of its
@@ -1308,10 +1364,17 @@ impl Store {
             };
             selected.push(((id, cx, cy, class, count, z0, None), read));
         }
-        self.decode_levels(cloud, &selected, &run, &mut stats, &mut |p, class, _| {
-            visit(p[0], p[1], p[2], class);
-            true
-        })?;
+        self.decode_levels(
+            cloud,
+            &selected,
+            &run,
+            &mut stats,
+            None,
+            &mut |p, class, _| {
+                visit(p[0], p[1], p[2], class);
+                true
+            },
+        )?;
         Ok(stats)
     }
 
@@ -1330,6 +1393,20 @@ impl Store {
         area: Option<&Corridor>,
         classes: Option<&[u8]>,
         budget: &Budget,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, StoreError> {
+        self.visit_with(cloud, area, classes, budget, None, visit)
+    }
+
+    /// [`Store::visit`], saying how far it has got in `progress`: the
+    /// points of the blocks listed, then of each batch decoded.
+    pub fn visit_with(
+        &self,
+        cloud: &CloudInfo,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        progress: Option<&ReadProgress>,
         visit: &mut dyn FnMut(f64, f64, f64, u8),
     ) -> Result<Stats, StoreError> {
         let run = budget.start();
@@ -1405,11 +1482,18 @@ impl Store {
         }
         // Blocks outside the area's chunk range were not even listed.
         stats.skipped = total - selected.len();
-        self.decode_selected(
+        if let Some(p) = progress {
+            let n: usize = selected.iter().map(|s| s.4).sum();
+            p.total.store(n as u64, Ordering::Relaxed);
+        }
+        let whole: Vec<(Selected, Read)> =
+            selected.iter().map(|s| (s.clone(), Read::Whole)).collect();
+        self.decode_levels(
             cloud,
-            &selected,
+            &whole,
             &run,
             &mut stats,
+            progress,
             &mut |p, class, local| {
                 local.is_none_or(|a| a.contains(p[0], p[1])) && {
                     visit(p[0], p[1], p[2], class);
@@ -1504,7 +1588,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let whole: Vec<(Selected, Read)> =
             selected.iter().map(|s| (s.clone(), Read::Whole)).collect();
-        self.decode_levels(cloud, &whole, run, stats, visit)
+        self.decode_levels(cloud, &whole, run, stats, None, visit)
     }
 
     /// Decodes the blocks `selected`, each as its [`Read`] says, in
@@ -1517,6 +1601,7 @@ impl Store {
         selected: &[(Selected, Read)],
         run: &ohl_core::budget::Run<'_>,
         stats: &mut Stats,
+        progress: Option<&ReadProgress>,
         visit: &mut BlockVisitor<'_>,
     ) -> Result<(), StoreError> {
         let units = (cloud.chunk_size / cloud.scale).round() as i64;
@@ -1603,6 +1688,10 @@ impl Store {
                     if visit(p, meta.3, None) {
                         stats.points_visited += 1;
                     }
+                }
+                if let Some(p) = progress {
+                    p.done.fetch_add(meta.4 as u64, Ordering::Relaxed);
+                    p.visited.store(stats.points_visited, Ordering::Relaxed);
                 }
             }
             start = end;
@@ -1748,6 +1837,19 @@ impl PointSource for CloudSource {
     ) -> Result<Stats, String> {
         self.store
             .visit(&self.cloud, area, classes, budget, visit)
+            .map_err(|e| e.to_string())
+    }
+
+    fn visit_with(
+        &self,
+        area: Option<&Corridor>,
+        classes: Option<&[u8]>,
+        budget: &Budget,
+        progress: Option<&ReadProgress>,
+        visit: &mut dyn FnMut(f64, f64, f64, u8),
+    ) -> Result<Stats, String> {
+        self.store
+            .visit_with(&self.cloud, area, classes, budget, progress, visit)
             .map_err(|e| e.to_string())
     }
 

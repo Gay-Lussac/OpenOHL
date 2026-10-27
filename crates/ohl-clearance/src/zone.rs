@@ -53,7 +53,8 @@ use crate::rules::{
 pub use crate::zone_arc::{ARC_TOLERANCE, ArcCase, ZoneArc, arc_cases, arc_polylines, zone_arcs};
 use crate::zone_arc::{ArcPointCheck, arc_ground, arcs_of_rule};
 pub use crate::zone_run::{
-    PointReader, ZoneCheckResult, breakdown, line_voltages, millions, run_zone_check,
+    BASE_TIME_LIMIT, PointReader, SECONDS_PER_MILLION_POINTS, ZoneCheckResult, breakdown,
+    line_voltages, millions, run_zone_check, time_limit, time_limit_text,
 };
 use ohl_line::jumper::JumperShape;
 
@@ -1649,6 +1650,17 @@ mod tests {
         assert!(plan > 5.0 && plan < 10.0, "{plan}");
     }
 
+    /// The time limit scales with the work (owner, 2026-10-27): 900 s, and
+    /// 20 s more per million LiDAR points of the rules' classes.
+    #[test]
+    fn the_time_limit_grows_with_the_points() {
+        assert_eq!(time_limit(0).as_secs(), 900);
+        assert_eq!(time_limit(71_000_000).as_secs(), 2320);
+        assert!(
+            time_limit_text(71_000_000).starts_with("39 min (900 s + 20 s per million of 71.0 M")
+        );
+    }
+
     /// The whole check: the points through the caller's reader, the
     /// circuits chosen.
     #[test]
@@ -1699,6 +1711,42 @@ mod tests {
         })
         .unwrap_err();
         assert!(none.contains("circuits chosen"), "{none}");
+        // The routes and alignments chosen (2026-10-27): their sections
+        // only; none of the line: refused.
+        let mut part = line.clone();
+        part.sections
+            .iter_mut()
+            .find(|s| s.id == "S3")
+            .unwrap()
+            .points
+            .retain(|p| p.structure != "T3");
+        let main = run_zone_check(
+            &part,
+            &library,
+            Zone::new(Measure::Vertical),
+            &CheckScope {
+                alignments: vec!["main".into()],
+                ..CheckScope::default()
+            },
+            vec![rule(5.0, &[5])],
+            states.clone(),
+            None,
+            Some(&read),
+            None,
+            &[],
+            None,
+            &Budget::new(),
+            &AtomicUsize::new(0),
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(main.sections, ["S1", "S2"]);
+        let nowhere = run(&CheckScope {
+            routes: vec!["nowhere".into()],
+            ..CheckScope::default()
+        })
+        .unwrap_err();
+        assert!(nowhere.contains("routes and alignments"), "{nowhere}");
     }
 
     /// A rule by voltage: each wire meets the row of its system's nominal

@@ -22,6 +22,10 @@ pub(super) fn clearance_input(
         ground: m.ground.clone(),
         surfaces: Default::default(),
         corridor: 60.0,
+        check: Default::default(),
+        progress: Default::default(),
+        cancel: Default::default(),
+        points: 0,
     }
 }
 
@@ -52,6 +56,15 @@ fn clearance_violations_of_the_shown_case() {
     .unwrap();
     assert!(low.findings.is_empty(), "{:?}", low.findings);
     assert_eq!(low.rules.len(), 1);
+    // The circuits chosen (owner, 2026-10-27: as in the windows): only
+    // their wires; one the line has not: refused.
+    let circuit = m.line.sections[0].circuit_name.clone();
+    let mut input = clearance_input(&m, ohl_clearance::RuleSet::ground(100.0).rules);
+    input.check.circuits = vec![circuit.clone()];
+    let one = crate::clearance::run(&input).unwrap();
+    assert!(!one.findings.is_empty() && one.findings.len() <= high.findings.len());
+    input.check.circuits = vec!["no such circuit".into()];
+    assert!(crate::clearance::run(&input).is_err());
 }
 
 /// The Clearances tab finds the example rules next to the model; checks run

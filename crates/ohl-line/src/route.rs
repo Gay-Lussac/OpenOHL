@@ -1255,6 +1255,32 @@ mod tests {
         assert!((a - b).abs() < 1e-9, "{a} vs {b}");
     }
 
+    /// A check of a part of the line (owner, 2026-10-27): the sections
+    /// and jumpers with a structure on a route or an alignment chosen;
+    /// a route as all of its alignments; none chosen: nothing.
+    #[test]
+    fn wires_on_routes_and_alignments() {
+        let line = crate::tests::example();
+        let (all, jumpers) = line.wires_on(&["main".into(), "branch".into()], &[]);
+        assert_eq!(all.len(), line.sections.len());
+        assert_eq!(jumpers.len(), line.jumpers.len());
+        // The branch section S3 from T3 (on both routes) is on both;
+        // started at T6 it is on the branch only.
+        let mut line = line;
+        let s3 = line.sections.iter_mut().find(|s| s.id == "S3").unwrap();
+        s3.points.retain(|p| p.structure != "T3");
+        let ids = |v: &[&str]| -> std::collections::BTreeSet<String> {
+            v.iter().map(|s| (*s).to_owned()).collect()
+        };
+        let (main, _) = line.wires_on(&["main".into()], &[]);
+        assert_eq!(main, ids(&["S1", "S2"]));
+        let (branch, _) = line.wires_on(&["branch".into()], &[]);
+        assert_eq!(branch, ids(&["S1", "S2", "S3"]));
+        // The alignment of the route alone: the same.
+        assert_eq!(line.wires_on(&[], &["main".into()]).0, main);
+        assert!(line.wires_on(&[], &[]).0.is_empty());
+    }
+
     #[test]
     fn stationing_offsets_and_angles() {
         let line = crate::tests::example();

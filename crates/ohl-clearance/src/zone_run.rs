@@ -234,6 +234,45 @@ pub fn run_zone_check(
     })
 }
 
+/// The time limit of a run for small lines, s: it stops a run that hangs,
+/// not a large healthy one ([`time_limit`]).
+pub const BASE_TIME_LIMIT: f64 = 900.0;
+/// What the time limit grows by per million LiDAR points of the rules'
+/// classes in the point cloud, s (owner, 2026-10-27: the limit scales
+/// with the work). Measured 2026-10-27 (10 cores): about 2 s per million
+/// such points on a real project (71 M points, 21 M of them around the
+/// wires, a design code's every vertical or radial rule, 31 or 53 wind
+/// positions); ten times that leaves room for a slower computer and
+/// finer wind steps.
+pub const SECONDS_PER_MILLION_POINTS: f64 = 20.0;
+
+/// The time limit of a run reading `points` LiDAR points of the rules'
+/// classes: [`BASE_TIME_LIMIT`] + [`SECONDS_PER_MILLION_POINTS`] per
+/// million — 900 s without points, 2320 s for 71 million.
+pub fn time_limit(points: u64) -> Duration {
+    Duration::from_secs_f64(BASE_TIME_LIMIT + SECONDS_PER_MILLION_POINTS * points as f64 / 1e6)
+}
+
+/// The time limit in words, before Run and when it is reached: "39 min
+/// (900 s + 20 s per million of 71.0 M LiDAR points)".
+pub fn time_limit_text(points: u64) -> String {
+    let t = time_limit(points).as_secs_f64();
+    let shown = if t >= 120.0 {
+        format!("{:.0} min", t / 60.0)
+    } else {
+        format!("{t:.0} s")
+    };
+    if points == 0 {
+        format!("{shown} (no LiDAR points to read)")
+    } else {
+        format!(
+            "{shown} ({BASE_TIME_LIMIT:.0} s + {SECONDS_PER_MILLION_POINTS:.0} s per million of {} \
+             LiDAR points of the rules' classes)",
+            millions(points)
+        )
+    }
+}
+
 /// Where a run's time went, in a few plain lines (owner, 2026-10-27:
 /// which parameters make a run slow, measured, not guessed): the solves,
 /// reading the points, checking them (every rule in one pass), the rules

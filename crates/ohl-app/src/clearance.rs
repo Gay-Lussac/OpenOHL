@@ -91,6 +91,16 @@ pub struct Input {
     pub surfaces: crate::model::NamedSurfaces,
     /// Half width of the corridor around the spans for points, m.
     pub corridor: f64,
+    /// The circuits, routes and alignments checked (the rule file's
+    /// `[check]`, as the clearance windows keep theirs).
+    pub check: ohl_clearance::CheckScope,
+    /// How far the reading of the points has got.
+    pub progress: Arc<ohl_pointcloud::ReadProgress>,
+    /// Stop.
+    pub cancel: ohl_core::budget::CancelToken,
+    /// LiDAR points of the rules' classes in the cloud (the time limit,
+    /// [`ohl_clearance::zone::time_limit`]).
+    pub points: u64,
 }
 
 fn wire_selection(w: &Wire) -> Selection {
@@ -153,7 +163,22 @@ pub fn run(input: &Input) -> Result<Report, String> {
     {
         rule.check_voltages(&voltages, &[])?;
     }
-    let wires = ohl_clearance::wires_of(line, &input.shapes, &input.jumpers);
+    let mut wires = ohl_clearance::wires_of(line, &input.shapes, &input.jumpers);
+    // The circuits, routes and alignments chosen only (owner, 2026-10-27).
+    let on = input.check.wires_on(line);
+    wires.retain(|w| {
+        input.check.takes_circuit(&w.circuit)
+            && on.as_ref().is_none_or(|(sections, jumpers)| {
+                match w.section.strip_prefix("jumper:") {
+                    Some(j) => jumpers.contains(j),
+                    None => sections.contains(&w.section),
+                }
+            })
+    });
+    if wires.is_empty() && (!input.check.circuits.is_empty() || on.is_some()) {
+        return Err("no wire of the circuits, routes and alignments chosen".into());
+    }
+    let limit = ohl_clearance::zone::time_limit(input.points);
     let point_classes: Vec<Vec<u8>> = input
         .rules
         .iter()
@@ -168,10 +193,30 @@ pub fn run(input: &Input) -> Result<Report, String> {
         };
         let source = ohl_pointcloud::open_source(spec)?;
         let corridor = ohl_lidar::Corridor::along_spans(line, input.corridor);
-        // Exit clause: ~1 s per 10⁷ points decoded; 10 min is far beyond
-        // any line.
-        let budget = ohl_core::budget::Budget::new().time_limit(Duration::from_secs(600));
-        let stats = source.visit(Some(&corridor), Some(classes), &budget, visit)?;
+        // Exit clause: 900 s and 20 s per million points of the rules'
+        // classes (owner, 2026-10-27: it scales with the work); Stop.
+        let budget = ohl_core::budget::Budget::new()
+            .time_limit(limit)
+            .cancel_token(input.cancel.clone());
+        let stats = source
+            .visit_with(
+                Some(&corridor),
+                Some(classes),
+                &budget,
+                Some(&input.progress),
+                visit,
+            )
+            .map_err(|e| {
+                if !input.cancel.is_cancelled() && started.elapsed() >= limit {
+                    format!(
+                        "{e} — the time limit of {} was reached: fewer rules, a narrower \
+                         corridor or fewer routes make the check faster",
+                        ohl_clearance::zone::time_limit_text(input.points)
+                    )
+                } else {
+                    e
+                }
+            })?;
         visited = Some(stats.points_visited);
         Ok(())
     };
@@ -287,7 +332,16 @@ pub struct Clearances {
     /// What the rules take where they give none (the project's default
     /// values).
     pub defaults: ohl_clearance::rules::RuleDefaults,
+    /// The circuits, routes and alignments checked: the chosen rule
+    /// file's `[check]` (owner, 2026-10-27: as the clearance windows).
+    pub check: ohl_clearance::CheckScope,
     running: Option<Receiver<Result<Report, String>>>,
+    /// The running check's progress, start and Stop.
+    progress: Option<(
+        Arc<ohl_pointcloud::ReadProgress>,
+        Instant,
+        ohl_core::budget::CancelToken,
+    )>,
 }
 
 impl Clearances {
@@ -330,10 +384,15 @@ impl Clearances {
     /// Chooses rule file `k` (reads it).
     pub fn choose(&mut self, k: usize) {
         self.chosen = Some(k);
-        self.rules = self
+        let set = self
             .files
             .get(k)
-            .map(|p| RuleSet::load_with(p, &self.defaults).map(|r| r.rules));
+            .map(|p| RuleSet::load_with(p, &self.defaults));
+        self.check = match &set {
+            Some(Ok(s)) => s.check.clone().unwrap_or_default(),
+            _ => Default::default(),
+        };
+        self.rules = set.map(|r| r.map(|r| r.rules));
         self.report = None;
         self.stale = true;
     }
@@ -355,6 +414,42 @@ impl Clearances {
         self.running.is_some()
     }
 
+    /// The running check's progress: the share of the points read (when
+    /// known), the points checked, the seconds since Run.
+    pub fn progress(&self) -> Option<(Option<f64>, u64, f64)> {
+        let (p, since, _) = self.progress.as_ref()?;
+        Some((
+            p.share(),
+            p.visited.load(std::sync::atomic::Ordering::Relaxed),
+            since.elapsed().as_secs_f64(),
+        ))
+    }
+
+    /// Stops the running check (its report says so).
+    pub fn stop(&self) {
+        if let Some((_, _, c)) = &self.progress {
+            c.cancel();
+        }
+    }
+
+    /// Keeps the circuits, routes and alignments chosen in the rule
+    /// file's `[check]` (read again, written back; a project's working
+    /// copy then goes into the project as the windows' do).
+    pub fn save_check(&mut self) -> Result<(), String> {
+        let Some(path) = self.chosen.and_then(|k| self.files.get(k)) else {
+            return Ok(());
+        };
+        let mut set = RuleSet::load(path)?;
+        let mut check = set.check.clone().unwrap_or_default();
+        check.circuits = self.check.circuits.clone();
+        check.routes = self.check.routes.clone();
+        check.alignments = self.check.alignments.clone();
+        set.check = Some(check).filter(|c| !c.is_empty());
+        set.save(path)?;
+        self.stale = true;
+        Ok(())
+    }
+
     /// Takes a finished check's report; true when one arrived.
     pub fn poll(&mut self) -> bool {
         let Some(rx) = &self.running else {
@@ -373,12 +468,14 @@ impl Clearances {
                 }
                 self.report = Some(r);
                 self.running = None;
+                self.progress = None;
                 true
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.report = Some(Err("the check stopped".into()));
                 self.running = None;
+                self.progress = None;
                 true
             }
         }
@@ -395,6 +492,7 @@ impl Clearances {
         };
         self.stale = false;
         let input = input(rules.clone());
+        self.progress = Some((input.progress.clone(), Instant::now(), input.cancel.clone()));
         let (tx, rx) = channel();
         let ctx = ctx.clone();
         std::thread::spawn(move || {

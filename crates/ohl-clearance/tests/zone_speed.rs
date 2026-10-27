@@ -350,6 +350,13 @@ fn speed() {
                     },
                     report.findings.len()
                 );
+                // As it goes (a slow run stopped still shows the others).
+                eprint!(
+                    "{}",
+                    text.lines()
+                        .last()
+                        .map_or(String::new(), |l| format!("{l}\n"))
+                );
             }
         }
     }

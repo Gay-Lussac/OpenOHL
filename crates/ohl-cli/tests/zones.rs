@@ -151,6 +151,38 @@ fn zones_by_a_rule_file_with_its_check() {
     );
     assert!(stdout.contains("method fe, points within 30 m"), "{stdout}");
     assert!(stdout.contains("1 wind position(s)"), "{stdout}");
+    // The time limit and where the time went (2026-10-27).
+    assert!(
+        stdout.contains("time limit: 15 min (900 s + 20 s per million"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("reading the points:"), "{stdout}");
+    // A route chosen: only its sections; an unknown one refused.
+    let routed = |route: &str| {
+        ohl(&[
+            "zones",
+            &text(&line),
+            "--rules",
+            &text(&rules),
+            "--weather",
+            &text(&weather),
+            "--no-cloud",
+            "--terrain",
+            &text(&survey),
+            "--route",
+            route,
+        ])
+    };
+    let main = routed("main");
+    let said = String::from_utf8_lossy(&main.stdout);
+    assert!(said.contains("solved 3 section(s)"), "{said}");
+    let nowhere = routed("nowhere");
+    assert_eq!(nowhere.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&nowhere.stderr).contains("--route nowhere: no such route"),
+        "{}",
+        String::from_utf8_lossy(&nowhere.stderr)
+    );
     let rows = std::fs::read_to_string(&csv).unwrap();
     let tree: Vec<&str> = rows
         .lines()
