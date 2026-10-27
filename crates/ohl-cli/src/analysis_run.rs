@@ -903,6 +903,9 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         &budget,
     )?;
     let (points, work) = (check.points, check.work);
+    for w in check.warnings() {
+        println!("  warning: {w}");
+    }
     if params.fall_in && check.without_ground > 0 {
         println!(
             "  {} points without a tree base (no fall-in check): {} with no ground below them, {} with no ground point within {} m",

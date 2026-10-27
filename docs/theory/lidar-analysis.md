@@ -362,7 +362,8 @@ reported.
 As built (2026-10-20): \\( c_{\text{req}} \\) is one distance or a
 required clearance by voltage, as the clearance rules write it — a table "up to
 kV → distance" (the first row whose voltage is not exceeded; above the
-last row its distance) or \\( c_0 + c_1 (U - U_0) \\) above \\( U_0 \\) —
+last row its distance, **on the unsafe side**: a warning in the report
+names the spans, 2026-10-27 — extend the table) or \\( c_0 + c_1 (U - U_0) \\) above \\( U_0 \\) —
 evaluated for each span at the nominal voltage \\( U \\) of its wire's
 system (an earthed wire at 0 kV). The search reaches the largest of the
 spans' distances. The fall-in allowance \\( A \\) takes the same forms.
