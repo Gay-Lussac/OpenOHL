@@ -1499,6 +1499,9 @@ impl Ready {
             };
             match result {
                 Ok(()) => {
+                    // What reads the library files reads them again (the
+                    // load types table's rows).
+                    self.model.revisions.libraries += 1;
                     self.status = Some((
                         format!("{} saved in the project", kind.replace('-', " ")),
                         false,

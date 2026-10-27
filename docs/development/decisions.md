@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**The Tables page keeps its rows (owner, 2026-10-27)**
+
+- A table's rows were built every frame (each structure's sections
+  counted, routes and circuits found, the load types read from the
+  project file). Now they are kept and built again only when what they
+  are built from changed (`TablePage::cached_rows`, key `RowsKey`: the
+  table and weather case, the line's version, the library files'
+  revision, the ground, each case's solution, the display cases, the
+  model's files, the plugin columns, editable). For that a solution has
+  a serial (`Solved::serial`, new whenever a case is made or solved
+  again), and saving the project's load types counts the library
+  revision up. Display only: the same rows; filter, sort and Apply
+  unchanged. Measured in performance.md (Tables page).
+
 **The server encodes each broadcast once (owner, 2026-10-27)**
 
 - Left open on 2026-10-26 (see "Not done" there): every broadcast

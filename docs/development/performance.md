@@ -115,6 +115,16 @@ Plan: what is in view, half-pixel thinning, structures' names at every zoom (ove
 
 An idle window asks for no frame. Only these ask for frames while they run: a camera key held (every frame), chunks or point cloud nodes still to build or read (every frame, 50 ms), a structure file open in the structure application (its file looked at twice a second), solving in the background, jobs and servers (their own intervals).
 
+### Tables page
+
+The rows of a table are kept while what they are built from is the same (`tables::TablePage::cached_rows`, 2026-10-27; before, built every frame): the table and weather case, the line's version (every edit counts it up), the library files' revision, the ground, each weather case's solution (`Solved::serial`, counted up whenever a case is made or solved again), the cases sections are drawn in, the model's files, the plugin columns and whether the project can be edited. Display only: the rows are the same either way (a test compares them with rows built anew after an edit, a solve and another case). The page's frames, headless without a renderer:
+
+```bash
+cargo test --release -p ohl-app --bin ohl-design tables_frame_benchmark -- --ignored --nocapture
+```
+
+Synthetic example (Apple M-series, release, median of 60 frames of the page alone, before → after): Structures 0.142 → 0.133 ms, Sections 0.129 → 0.118, Strings 0.302 → 0.287, Conductor paths 0.084 → 0.054, Circuits 0.062 → 0.049, Routes 0.051 → 0.039, Alignment points 0.110 → 0.098, Weather cases 0.134 → 0.125, Point and spread load types 0.217 → 0.193 ms (that table read the project's library files from the project file every frame). The example has a handful of rows per table, so what remains is egui drawing the cells; the rows' cost grows with the line (every structure's sections counted, the routes, the circuits found), and is now paid once per change.
+
 ## Edit benchmark (desktop application)
 
 `bench::edit_benchmark` changes one section's stringing (as the span tool
