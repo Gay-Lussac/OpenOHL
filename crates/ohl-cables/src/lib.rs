@@ -703,24 +703,34 @@ struct LibraryFile {
     /// Format version (optional; 1).
     #[serde(default)]
     version: Option<u32>,
-    cable: Vec<Cable>,
 }
 
 /// A set of cables loaded from library files, indexed by id.
 #[derive(Debug, Clone, Default)]
 pub struct Library {
     cables: BTreeMap<String, Cable>,
+    /// The cables left out ([`Library::skipped`]).
+    skipped: Vec<String>,
 }
 
 impl Library {
-    /// Parses one library document and adds its cables. Every cable is
-    /// validated; duplicate ids are rejected.
+    /// Parses one library document and adds its cables, each validated.
+    /// A cable that does not read or does not check, or whose id is
+    /// taken, is **left out and listed** ([`Library::skipped`]), the
+    /// others still added (owner, 2026-10-27: what is imported is kept as
+    /// it came, the rules checked afterwards; one faulty cable no longer
+    /// stops a library). A file that is not a wire library is refused.
     pub fn add_toml(&mut self, path: &Path, text: &str) -> Result<(), CableError> {
         let library_error = |message: String| CableError::Library {
             path: path.to_owned(),
             message,
         };
-        let file: LibraryFile = toml::from_str(text).map_err(|e| library_error(e.to_string()))?;
+        let mut table: toml::Table =
+            toml::from_str(text).map_err(|e| library_error(e.to_string()))?;
+        let cables = table.remove("cable");
+        let file: LibraryFile = toml::Value::Table(table)
+            .try_into()
+            .map_err(|e: toml::de::Error| library_error(e.to_string()))?;
         ohl_core::files::check_header(
             file.format.as_deref(),
             file.version,
@@ -729,17 +739,65 @@ impl Library {
             "wire library",
         )
         .map_err(library_error)?;
-        for cable in file.cable {
-            cable.validate()?;
+        let items = match cables {
+            None => Vec::new(),
+            Some(toml::Value::Array(a)) => a,
+            Some(_) => return Err(library_error("cable: a list of [[cable]] tables".into())),
+        };
+        let name = path.display();
+        for item in items {
+            let id = item
+                .get("id")
+                .and_then(toml::Value::as_str)
+                .unwrap_or("(no id)")
+                .to_owned();
+            let cable: Cable = match item.try_into() {
+                Ok(c) => c,
+                Err(e) => {
+                    let e: toml::de::Error = e;
+                    self.skipped.push(format!(
+                        "{name}: wire type {id} does not read: {}",
+                        e.message()
+                    ));
+                    continue;
+                }
+            };
+            if let Err(e) = cable.validate() {
+                self.skipped.push(format!("{name}: {e}"));
+                continue;
+            }
             if self.cables.contains_key(&cable.id) {
-                return Err(library_error(format!(
-                    "duplicate wire type id {}",
+                self.skipped.push(format!(
+                    "{name}: wire type {} given twice: the first kept",
                     cable.id
-                )));
+                ));
+                continue;
             }
             self.cables.insert(cable.id.clone(), cable);
         }
         Ok(())
+    }
+
+    /// Checks one wire file **strictly** (an editor, a validation): as
+    /// [`Library::add_toml`], but any wire type it would leave out is an
+    /// error naming it — loading is tolerant, checking is not.
+    pub fn check_toml(path: &Path, text: &str) -> Result<(), CableError> {
+        let mut l = Self::default();
+        l.add_toml(path, text)?;
+        if l.skipped.is_empty() {
+            Ok(())
+        } else {
+            Err(CableError::Library {
+                path: path.to_owned(),
+                message: l.skipped.join("; "),
+            })
+        }
+    }
+
+    /// The cables left out while loading, each with its reason (empty:
+    /// none): not read, not checked, or an id given twice.
+    pub fn skipped(&self) -> &[String] {
+        &self.skipped
     }
 
     /// Loads a wire library file, or every `*.ohlw` file of a directory.
@@ -797,6 +855,17 @@ impl Library {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Why `text` (one wire file) is refused, or a cable of it left out
+    /// (owner, 2026-10-27: a faulty cable is left out and said, the file
+    /// still read); none when everything loads.
+    fn refused(text: &str) -> Option<String> {
+        let mut l = Library::default();
+        match l.add_toml(Path::new("t.ohlw"), text) {
+            Err(e) => Some(e.to_string()),
+            Ok(()) => (!l.skipped().is_empty()).then(|| l.skipped().join("; ")),
+        }
+    }
 
     fn assert_close(actual: f64, expected: f64, rel_tol: f64) {
         assert!(
@@ -988,20 +1057,11 @@ mod tests {
         );
         assert!((e.geometric_mean_radius.unwrap().millimeters() - 11.779).abs() < 1e-9);
         for bad in ["solar_absorptivity = 1.5", "resistivity = 3"] {
-            assert!(
-                Library::default()
-                    .add_toml(Path::new("t.ohlw"), &text(bad))
-                    .is_err(),
-                "{bad}"
-            );
+            assert!(refused(&text(bad)).is_some(), "{bad}");
         }
         // A geometric mean radius larger than the cable: a unit mistake.
         let big = text("").replace("11.779 mm", "11.779 m");
-        assert!(
-            Library::default()
-                .add_toml(Path::new("t.ohlw"), &big)
-                .is_err()
-        );
+        assert!(refused(&big).is_some());
     }
 
     #[test]
@@ -1074,11 +1134,8 @@ mod tests {
         lib.add_toml(Path::new("a.ohlw"), &text("15 °C")).unwrap();
         let c = lib.get("c").unwrap();
         assert_close(c.mass_reference_temperature().celsius(), 15.0, 1e-12);
-        let mut bad = Library::default();
-        let e = bad
-            .add_toml(Path::new("b.ohlw"), &text("500 °C"))
-            .unwrap_err();
-        assert!(e.to_string().contains("reference_temperature"), "{e}");
+        let e = refused(&text("500 °C")).unwrap();
+        assert!(e.contains("reference_temperature"), "{e}");
     }
 
     #[test]
@@ -1135,13 +1192,16 @@ mod tests {
         "#;
         let mut library = Library::default();
         library.add_toml(Path::new("a.toml"), one).unwrap();
-        assert!(library.add_toml(Path::new("b.toml"), one).is_err());
-        let unknown = one.replace("kind = \"aac\"", "kind = \"aac\"\nunknown = 1");
+        // The second left out and said; the first kept.
+        library.add_toml(Path::new("b.toml"), one).unwrap();
         assert!(
-            Library::default()
-                .add_toml(Path::new("c.toml"), &unknown)
-                .is_err()
+            library.skipped()[0].contains("given twice"),
+            "{:?}",
+            library.skipped()
         );
+        assert!(library.get("x").is_some());
+        let unknown = one.replace("kind = \"aac\"", "kind = \"aac\"\nunknown = 1");
+        assert!(refused(&unknown).unwrap().contains("does not read"));
     }
 
     #[test]
@@ -1173,13 +1233,7 @@ mod tests {
         )
         .unwrap();
         let bad_id = ok.replace("id = \"acsr-drake-26-7\"", "id = \"acsr drake\"");
-        assert!(
-            Library::default()
-                .add_toml(Path::new("a.ohlw"), &bad_id)
-                .unwrap_err()
-                .to_string()
-                .contains("letters, digits")
-        );
+        assert!(refused(&bad_id).unwrap().contains("letters, digits"));
         let bad_format = ok.replace("format = \"ohl-wire\"", "format = \"something-else\"");
         assert!(
             Library::default()

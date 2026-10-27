@@ -388,45 +388,25 @@ fn mend(line: &mut Line, notes: &mut Vec<String>) {
     }
 }
 
-/// Safe mode for the wire files a plugin gives (owner, 2026-10-27): a file
-/// the wire library would refuse keeps the cables that load, each once
-/// (a cable given twice: the first), the others left out and said in the
-/// notes — the project's wire library keeps loading, the sections on a
-/// cable left out find no wire.
+/// Safe mode for the wire files a plugin gives (owner, 2026-10-27:
+/// the import gets everything in, the rules are checked afterwards): the
+/// files are kept as the plugin gave them; what the wire library will
+/// leave out when it loads them (a cable that does not check, an id given
+/// twice) is said in the notes, and the curves it holds flat.
 fn safe_cables(libraries: &mut [(String, String, String)], notes: &mut Vec<String>) {
-    for (kind, name, text) in libraries.iter_mut() {
+    for (kind, name, text) in libraries.iter() {
         if kind != "cables" {
             continue;
         }
-        let path = Path::new(name.as_str());
-        let first = match ohl_cables::Library::default().add_toml(path, text) {
-            Ok(_) => continue,
-            Err(e) => e.to_string(),
-        };
-        let Some((head, blocks)) = crate::import_into::entries::cable_blocks(text) else {
-            notes.push(format!("warning: wire file {name} does not load ({first})"));
-            continue;
-        };
-        let mut kept = head.clone();
-        let mut ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for b in blocks {
-            if !ids.insert(b.id.clone()) {
-                notes.push(format!(
-                    "warning: wire file {name}: cable {} given twice; the first kept",
-                    b.id
-                ));
-                continue;
-            }
-            match ohl_cables::Library::default().add_toml(path, &format!("{head}{}", b.text)) {
-                Ok(_) => kept.push_str(&b.text),
-                Err(e) => notes.push(format!(
-                    "warning: wire file {name}: cable {} left out: it does not load ({e}); the \
-                     sections on it find no wire",
-                    b.id
-                )),
-            }
+        let mut lib = ohl_cables::Library::default();
+        match lib.add_toml(Path::new(name.as_str()), text) {
+            Ok(()) => notes.extend(
+                ohl_cables::mechanics::library_warnings(&lib)
+                    .into_iter()
+                    .map(|w| format!("warning: wire file {name}: {w}")),
+            ),
+            Err(e) => notes.push(format!("warning: wire file {name} does not read ({e})")),
         }
-        *text = kept;
     }
 }
 
@@ -597,10 +577,10 @@ mod tests {
         assert!(line_safe("[1, 2]").is_err());
     }
 
-    /// A wire file the library would refuse keeps the cables that load,
-    /// each once.
+    /// A wire file with faults is kept whole (the import gets everything
+    /// in); what the library leaves out when it loads it is said.
     #[test]
-    fn a_faulty_wire_file_keeps_the_cables_that_load() {
+    fn a_faulty_wire_file_is_kept_whole_and_said() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let good =
             std::fs::read_to_string(root.join("libraries/cables/acsr-examples.ohlw")).unwrap();
@@ -611,18 +591,19 @@ mod tests {
             .replacen(&format!("id = \"{}\"", first.id), "id = \"broken\"", 1)
             .replace("diameter = ", "diameter = \"0.1 mm\"\nx_diameter = ");
         let text = format!("{head}{}{}{broken}", first.text, first.text);
-        let mut libs = vec![("cables".to_owned(), "w.ohlw".to_owned(), text)];
+        let mut libs = vec![("cables".to_owned(), "w.ohlw".to_owned(), text.clone())];
         let mut notes = Vec::new();
         safe_cables(&mut libs, &mut notes);
-        let text = notes.join("\n");
+        assert_eq!(libs[0].2, text, "kept as given");
+        let said = notes.join("\n");
         assert!(
-            text.contains(&format!("cable {} given twice", first.id)),
-            "{text}"
+            said.contains(&format!("wire type {} given twice", first.id)),
+            "{said}"
         );
-        assert!(text.contains("cable broken left out"), "{text}");
-        let lib = ohl_cables::Library::default()
-            .add_toml(Path::new("w.ohlw"), &libs[0].2)
-            .map(|_| ());
-        assert!(lib.is_ok(), "{lib:?}");
+        assert!(said.contains("broken"), "{said}");
+        let mut lib = ohl_cables::Library::default();
+        lib.add_toml(Path::new("w.ohlw"), &libs[0].2).unwrap();
+        assert!(lib.get(&first.id).is_some());
+        assert_eq!(lib.skipped().len(), 2, "{:?}", lib.skipped());
     }
 }

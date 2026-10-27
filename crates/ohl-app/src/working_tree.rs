@@ -361,7 +361,16 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                         let at = pos(k, now);
                         let color = lane_color(&tree, k);
                         if let Some(&h) = lane.head.as_ref().and_then(|h| tree.index.get(h)) {
-                            let from = pos(tree.nodes[h].lane, tree.nodes[h].col);
+                            // From its head; a line with nothing of its own
+                            // committed: from its start ring on its own lane
+                            // (drawn below), so it joins its source once
+                            // (owner, 2026-10-27: not twice).
+                            let own = tree.nodes.iter().any(|n| n.lane == k);
+                            let from = if own || lane.line.is_none() {
+                                pos(tree.nodes[h].lane, tree.nodes[h].col)
+                            } else {
+                                pos(k, tree.nodes[h].col)
+                            };
                             painter.add(egui::Shape::dashed_line(
                                 &[from, at],
                                 egui::Stroke::new(1.5, color),

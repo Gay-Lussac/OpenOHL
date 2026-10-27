@@ -689,9 +689,9 @@ impl LibraryKind {
     pub fn check(self, path: &Path, text: &str) -> Result<(), String> {
         use ohl_structures::LibraryItem;
         match self {
-            LibraryKind::Cables => ohl_cables::Library::default()
-                .add_toml(path, text)
-                .map_err(|e| e.to_string()),
+            LibraryKind::Cables => {
+                ohl_cables::Library::check_toml(path, text).map_err(|e| e.to_string())
+            }
             LibraryKind::WeatherCases => ohl_weather::WeatherCases::parse(text).map(|_| ()),
             LibraryKind::LoadCases => ohl_loads::LoadCases::parse(text).map(|_| ()),
             LibraryKind::StructureTypes => ohl_structures::StructureType::parse(path, text)
@@ -915,9 +915,10 @@ impl LibraryPage {
         self.warning = match (&self.file, self.text(), self.kind) {
             (Some(path), Some(text), LibraryKind::Cables) if self.error.is_none() => {
                 let mut lib = ohl_cables::Library::default();
-                lib.add_toml(path, &text)
-                    .ok()
-                    .and_then(|_| ohl_cables::mechanics::curve_offset_warning(&lib))
+                lib.add_toml(path, &text).ok().and_then(|_| {
+                    let w = ohl_cables::mechanics::library_warnings(&lib);
+                    (!w.is_empty()).then(|| w.join("\n"))
+                })
             }
             _ => None,
         };

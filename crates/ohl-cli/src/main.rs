@@ -1876,6 +1876,9 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
             line.solver.blocks.describe()
         );
         let library = ohl_cables::Library::load(library).map_err(|e| e.to_string())?;
+        for w in ohl_cables::mechanics::library_warnings(&library) {
+            eprintln!("warning: wire library: {w}");
+        }
         // Formats first: a wrong format or plugin fails before solving.
         let export_options = io_run::options(export_options)?;
         let mut formats = if export.is_empty() {
