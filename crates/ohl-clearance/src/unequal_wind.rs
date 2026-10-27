@@ -737,6 +737,43 @@ mod tests {
         assert!(p.margin() > 0.0);
     }
 
+    /// The same pair mirrored (the second conductor 6 m on the other
+    /// side): the same closest approach, 3.2 m, now with the wind from the
+    /// left — both sides are checked (owner question 2026-10-26).
+    #[test]
+    fn the_mirrored_pair_is_found_from_the_other_side() {
+        let mirrored: Vec<WindLevel> = solved(500.0, 100.0)
+            .into_iter()
+            .map(|mut l| {
+                for c in &mut l.conductors {
+                    for p in &mut c.wire.points {
+                        p[1] = -p[1];
+                    }
+                }
+                // Mirrored, the wind from the right is the wind from the
+                // left.
+                l.side = match l.side {
+                    WindSide::Right => WindSide::Left,
+                    WindSide::Left => WindSide::Right,
+                };
+                l
+            })
+            .collect();
+        let pairs = check(
+            &UnequalWindSettings::default(),
+            &mirrored,
+            &Budget::new(),
+            || Ok(TestCode),
+        )
+        .unwrap();
+        assert_eq!(pairs.len(), 1);
+        let p = &pairs[0];
+        assert!((p.distance - 3.2).abs() < 1e-6, "{p:?}");
+        assert_eq!(p.side, WindSide::Left);
+        assert_eq!(p.pressure, [500.0, 300.0]);
+        assert!((p.required - 2.64).abs() < 1e-9, "{}", p.required);
+    }
+
     /// A step that does not reach the case: the case's wind still taken.
     #[test]
     fn the_case_wind_is_reached() {

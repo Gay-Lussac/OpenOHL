@@ -86,7 +86,6 @@ land. An end-to-end test does its steps through the UI
 
 ### O3. Usability review — items not yet decided
 From the review of 2026-10-18 (quick wins are being done now):
-- **3D and Plan side by side** by default (today Plan is a tab behind 3D).
 - **One name per object** across both apps and the docs (string /
   insulator / attachment point / structure point …), with a glossary.
   *Built (in active development, not approved yet): the terms agreed on
@@ -127,8 +126,12 @@ From the review of 2026-10-18 (quick wins are being done now):
   them, is refused with the fix.*
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
-- **Option "tools act on left-click"** (today a right-click uses a tool;
-  left-click selects). Default unchanged. *Built (in active development,
+  *Open (owner, 2026-10-27: stays on the roadmap; needs a robust way to
+  know which set goes where, see 3. below).*
+- **Tools act on left-click** — *done: since the UI review of 2026-10-26
+  a left-click acts with the tool held (Select held: it selects) and a
+  right-click opens the object's menu, in every view (the option of
+  2026-10-19 is no longer needed).* Before: *Built (in active development,
   not approved yet): a tick in the Tools menu and Help › Controls; on, a
   left-click uses the tool held (Select held: it selects) and a
   right-click selects, in the 3D, plan and profile views; drags unchanged
@@ -147,6 +150,9 @@ From the review of 2026-10-18 (quick wins are being done now):
 >    number does not work between suspension and tension structures).
 > 4. Tools on left-click option: go ahead.
 > 5. Searchable coordinate-system picker: yes.
+> **Owner:** (2026-10-27) 3D and Plan stay as they are (point removed).
+> One name per object: yes — to be finished across both apps and the
+> docs. "String all sets…" stays open. Tools on left-click: done.
 
 ### O13. Conductor jump when ice drops suddenly (ice shedding)
 When ice falls off a span at once, the conductor jumps upwards and can
@@ -277,35 +283,103 @@ orthophotos or maps…, the kind turned in the menu); the route and
 situation plans and the key map take the maps first. Later: links to
 public map services.
 
-### O18. Electrical module: line parameters and a basic load flow
-Electrical calculations from the line as it is modelled, in an engine crate
-of their own (headless first, then a window in OHL-Design), so that the
-designer gets the line's electrical data from the same geometry as its
-mechanical design. Proposed (to discuss; nothing built):
-1. [ ] **Line parameters** — per circuit and section, from the conductors'
-   positions on the structures (or the mean height in the span), the
-   bundles and the wire data: series impedance (resistance at a
-   temperature, inductive reactance) with earth return, the earth wires
-   included and reduced out, as phase matrices and as positive, negative
-   and zero sequence values; shunt capacitance and susceptance; mutual
-   coupling between circuits on the same structures and with parallel
-   lines nearby; transposition (a transposition plan along the line, or
-   ideally transposed). Inputs to add as data: each wire's resistance and
-   geometric mean radius (or what they are computed from) in the wire
-   library, the soil resistivity along the route.
-2. [ ] **Basic load flow** — a small network of buses and the project's
-   lines (with their computed parameters), generators or a slack bus,
-   loads and transformers as simple models; voltages, currents, power
-   flows and losses, steady state, balanced first (unbalanced from the
-   phase matrices later). Results beside the thermal rating (the current
-   a line carries against its ampacity).
+### O18. Electrical module: line parameters, load flow, fields and noise
+Electrical calculations from the line as it is modelled, so the designer
+gets the line's electrical data from the same geometry as its mechanical
+design: the conductors where they hang (in a weather case or a chosen
+sag), their bundles, the wire data, the earth wires, the other lines
+nearby. **Draft (owner, 2026-10-27; to discuss, nothing built).**
+
+**Where it lives.** A headless engine crate `ohl-electrical` (no GUI, no
+plugin calls) for what is textbook and general — line parameters and the
+load flow —, a window in OHL-Design (Analysis › Electrical…) and `ohl
+electrical …` commands; **field and noise calculations through
+plugins**, so that a utility or a research group brings its own method
+and its own limits (an ordinance's limits in its country's plugin, e.g.
+the LeV plugin), the core staying independent of them.
+
+**What the core gives every electrical calculation (one data model):**
+- **Cross-sections of the line** at any station (or a span's lowest
+  point, or where a clearance is smallest): every conductor and earth
+  wire there in the plane across the line — position (horizontal, height
+  above the ground under it), bundle (subconductors, spacing,
+  arrangement), wire (diameter, resistance at a temperature, geometric
+  mean radius), its circuit, system and phase (voltage, frequency, phase
+  angle), the ground (height, slope across, soil resistivity) — and
+  other lines' wires in the corridor. The same `CrossSection` record for
+  the parameters, the fields and the noise, exported and given to
+  plugins.
+- **Operating data per system**: voltage (rated, highest), current per
+  circuit (given, from the load flow, or the thermal rating's ampacity),
+  phase sequence and transposition along the line.
+
+1. [ ] **Line parameters** (core) — per circuit and section, from the
+   cross-sections (mean height in the span, or several stations
+   averaged): series impedance with earth return (Carson, or its complex
+   depth approximation) and the earth wires reduced out, as phase
+   matrices and as positive, negative and zero sequence values; shunt
+   capacitance and susceptance (potential coefficients with images);
+   mutual coupling between circuits on the same structures and with
+   parallel lines; transposition (a plan along the line, or ideal).
+   Data to add: each wire's resistance and geometric mean radius (the
+   wire library has `[cable.electrical]` already), soil resistivity along
+   the route.
+2. [ ] **Basic load flow** (core) — buses, the project's lines with their
+   parameters, a slack bus, generators, loads and transformers as simple
+   models; voltages, currents, power flows and losses in steady state,
+   balanced first (Newton–Raphson), unbalanced from the phase matrices
+   later. The current each line carries set beside its thermal rating
+   (ampacity, existing) and usable as the current of the field
+   calculation.
 3. [ ] **Exchange** — the parameters exported for network calculation
-   programs in an open format.
-Methods from textbooks and papers (cited in a new theory page), validated
-against worked examples with their published values, as every module.
+   programs in an open format (to choose: CIM/CGMES line parameters, or a
+   simple table).
+4. [ ] **Electric and magnetic fields, audible noise — a plugin for
+   hvlbuzz.** [hvlbuzz](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html)
+   (FKH, Switzerland; a Python library on a Rust core, `ebl`) computes the
+   electric field (V/m), the magnetic flux density (µT, RMS and complex)
+   and corona audible noise (dB(A), BPA method) of AC and DC lines from
+   the phase systems' geometry, bundles, voltages and currents, guard
+   wires, terrain slope and soil resistivity, at any points, with contour
+   lines. A plugin would:
+   - take the core's cross-sections (above) at the stations asked
+     (every span's lowest point, a list, or a profile along the line), the
+     voltages (rated or highest) and the currents (given, load flow, or
+     ampacity) — every input from the project, nothing typed twice;
+   - call hvlbuzz for profiles across the line (e.g. ±50 m at 1 m above
+     ground) and at given points (sensitive places: houses from the
+     cadastral or 3D-building data, the survey's buildings class), in
+     the weather cases asked (rain/fair weather for the noise);
+   - give back tables and profiles (plotted in a window, exported), the
+     field and noise contours drawn on the cross-section, and values
+     against limits **given in the plugin's parameter file** (an
+     ordinance's installation or exposure limits, never typed from
+     memory; for Switzerland the NIS ordinance, in the LeV plugin or a
+     plugin of its own).
+   - Built as a **Python plugin** first (hvlbuzz is a Python library; the
+     Python console and plugins need the build with Python, not the
+     current release builds), or as a WebAssembly plugin on the Rust core
+     `ebl` if its licence and API allow. *To check before building: the
+     licence of hvlbuzz and ebl (not stated on the documentation page),
+     the method's validity range, and their published validation.*
+   - A small core addition for it: a plugin extension point
+     `cross-sections` (the cross-section record sent, tables and drawings
+     given back), so any field or noise method can be added the same way
+     (also, for instance, radio interference or surface gradient).
+5. [ ] **Corona and surface gradient** in the core or the plugin: the
+   conductor surface gradient per subconductor (Markt–Mengele or a charge
+   simulation), the onset gradient (Peek) and the margin, per section —
+   to decide whether it belongs to the plugin above.
+
+Methods from textbooks and papers (cited in a new theory page), each
+validated against worked examples with their published values; the
+plugins' methods validated by their authors, the comparison values in
+the plugin's own tests.
 > **Owner:** (2026-10-26) Before the first release, put on the roadmap an
 > electrical module for the necessary electrical calculations, like the
 > impedance, or simply a basic load flow.
+> **Owner:** (2026-10-27) Draft the electrical module ideas, including a
+> plugin for hvlbuzz.
 
 ## Unfinished or approximate (known limitations)
 
