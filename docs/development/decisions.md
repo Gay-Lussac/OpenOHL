@@ -10,6 +10,22 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Plugins may suggest wire colours (owner, 2026-10-27)**
+
+- The owner asked for a utility's wire colour table (by owner, voltage,
+  frequency and phase) to come from its plugin. Plugins could not set or
+  suggest colours: a new optional export `wire-colours` (extension point
+  `wire-colours`), additive to interface version 0.3 like
+  `sheet-templates` (plugins built before are unchanged). The host sends
+  one group per circuit, phase and system with what the line knows (the
+  system's owner, number, voltage, frequency, AC/DC) and the plugin's own
+  column values; the plugin returns a colour or none per group.
+- Applied only when asked (Line › Sections › Wire colours from a
+  plugin…): shown first, for the sections without a colour of their own
+  (default) or every section, written as the sections' own colours in one
+  command. Nothing is coloured behind the user's back, and a project
+  opened without the plugin keeps its colours.
+
 **A plugin held below its asked limits says so when it fails (owner report, 2026-10-27)**
 
 - Since the security review (2026-10-26, M6) a WebAssembly plugin whose

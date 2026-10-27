@@ -132,6 +132,22 @@ pub const SHEET_TEMPLATES_EXPORT: &str = "ohl:plugin/sheet-templates@0.1.0";
 /// manifest).
 pub const SHEET_TEMPLATES: &str = "sheet-templates";
 
+mod wire_colours_bindings {
+    wasmtime::component::bindgen!({
+        world: "wire-colours-export",
+        path: "wit",
+    });
+}
+
+pub use wire_colours_bindings::exports::ohl::plugin::wire_colours::WireGroup;
+
+/// Export name of the optional `wire-colours` interface of any plugin.
+pub const WIRE_COLOURS_EXPORT: &str = "ohl:plugin/wire-colours@0.1.0";
+
+/// Extension point of plugins suggesting wire colours (the
+/// `wire-colours` export).
+pub const WIRE_COLOURS: &str = "wire-colours";
+
 mod check_bindings {
     wasmtime::component::bindgen!({
         world: "check-plugin",
@@ -1580,6 +1596,61 @@ impl WasmHost {
         Ok(out)
     }
 
+    /// The colours the plugin in `dir` suggests for `groups` (one each, in
+    /// order; `None`: no suggestion), from its `wire-colours` export. A
+    /// plugin built without it gives none (`Ok` of all `None`); its own
+    /// error comes back as an `Err` naming it, as does a list of another
+    /// length or a colour that is not `#rrggbb`.
+    pub fn wire_colours(
+        &self,
+        dir: &Path,
+        groups: &[WireGroup],
+    ) -> Result<Vec<Option<String>>, PluginError> {
+        // Code: only a WebAssembly plugin whose entry is there.
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(vec![None; groups.len()]);
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component
+            .get_export_index(None, WIRE_COLOURS_EXPORT)
+            .is_none()
+        {
+            return Ok(vec![None; groups.len()]);
+        }
+        let name = p.manifest.plugin.name.clone();
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest, what, p.limits);
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        let export = wire_colours_bindings::WireColoursExport::new(&mut p.store, &instance)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_wire_colours()
+            .call_wire_colours(&mut p.store, groups)
+            .map_err(|e| classify(e, &p.manifest, "wire-colours", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        if given.len() != groups.len() {
+            return Err(PluginError::Runtime(format!(
+                "plugin {name}: {} wire colours for {} groups",
+                given.len(),
+                groups.len()
+            )));
+        }
+        for c in given.iter().flatten() {
+            let ok =
+                c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit());
+            if !ok {
+                return Err(PluginError::Runtime(format!(
+                    "plugin {name}: wire colour \"{c}\" is not #rrggbb"
+                )));
+            }
+        }
+        Ok(given)
+    }
+
     /// Loads the plugin in `dir` in the world of each extension point its
     /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
     /// none of these: the minimal `plugin` world) and says what it
@@ -2313,6 +2384,59 @@ mod tests {
         // The host still works after the interruption.
         let mut other = host.load(&dir).unwrap();
         assert_eq!(other.describe().unwrap().name, "runaway");
+    }
+
+    /// A plugin suggests wire colours from its `wire-colours` export, one
+    /// per group in order (none where it has none); its error names it; a
+    /// plugin built without the export gives none.
+    #[test]
+    fn plugins_suggest_wire_colours() {
+        let Some(dir) = built_plugin("tests/wire-colours") else {
+            return;
+        };
+        let group = |circuit: &str, phase: &str, owner: &str, system: bool| WireGroup {
+            circuit: circuit.into(),
+            phase: phase.into(),
+            system: system.then(|| "s1".into()),
+            system_name: String::new(),
+            owner: owner.into(),
+            number: String::new(),
+            voltage_kv: system.then_some(220.0),
+            frequency_hz: system.then_some(50.0),
+            dc: false,
+            fields: Vec::new(),
+            sections: 1,
+        };
+        let mut pale = group("c1", "L2", "Utility A", true);
+        pale.fields = vec![("tint".into(), "pale".into())];
+        let groups = [
+            group("c1", "L1", "Utility A", true),
+            pale,
+            group("c2", "L1", "Utility B", true),
+            group("ew", "", "", false),
+        ];
+        let host = WasmHost::new().unwrap();
+        let got = host.wire_colours(&dir, &groups).unwrap();
+        assert_eq!(
+            got,
+            [
+                Some("#ff0000".to_owned()),
+                Some("#80ff80".to_owned()),
+                None,
+                Some("#ff8000".to_owned())
+            ]
+        );
+        let e = host
+            .wire_colours(&dir, &[group("fail", "L1", "", true)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("wire-colours") && e.contains("fail"), "{e}");
+        if let Some(old) = built_plugin("tests/code-old") {
+            assert_eq!(
+                host.wire_colours(&old, &groups).unwrap(),
+                [None, None, None, None]
+            );
+        }
     }
 
     /// A plugin gives sheet templates from its `sheet-templates` export

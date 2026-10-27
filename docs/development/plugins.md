@@ -501,6 +501,54 @@ own). The test plugin `plugins/tests/sheet-presets` gives one template
 from its code (an A1 with an SVG logo) and one from its manifest
 (invented values).
 
+## Wire colour presets
+
+*Added 2026-10-27 (built, in active development, not approved yet).* Any
+plugin may **suggest wire colours**: e.g. a utility's colour table, by
+owner, voltage, frequency and phase. Extension point `wire-colours` in
+the manifest, and the optional export `wire-colours` of `plugin.wit`
+(world `wire-colour-plugin`: `describe` and `wire-colours`, or add
+`export wire-colours;` to any world — e.g. an inline world that
+`include`s the plugin's own and adds it), additive to
+`ohl:plugin@0.1.0`: the interface version stays **0.3**, plugins built
+before load unchanged and suggest none.
+
+```wit
+interface wire-colours {
+    record wire-group {
+        circuit: string,            // the circuit's name ("": none)
+        phase: string,              // the phase label ("": none)
+        system: option<string>,     // the electrical system; none: earthed
+        system-name: string,
+        owner: string,              // the system's owner (free text)
+        number: string,             // its number in the owner's register
+        voltage-kv: option<f64>,
+        frequency-hz: option<f64>,
+        dc: bool,
+        fields: list<tuple<string, string>>,  // the plugin's own columns
+        sections: u32,              // how many sections the group has
+    }
+    // One colour per group, in order: "#rrggbb", or none.
+    wire-colours: func(groups: list<wire-group>) -> result<list<option<string>>, string>;
+}
+```
+
+The host sends **one group per circuit, phase and system** of the line
+(`crate::wire_colours::groups` in the app). `fields` holds the values of
+the plugin's own table columns ([Table columns](#table-columns)) on the
+system and on the group's sections, by column name (the section's value
+when both give one): a plugin that needs to know more than the line holds
+(e.g. whether a circuit is the utility's, a partner's or a third party's)
+adds a column for it. Nothing is coloured on its own: **Line › Sections
+› Wire colours from a plugin…** shows each group with the colour
+suggested, for the sections without a colour of their own or every
+section, and **Apply** writes them as the sections' own colours (one
+command, undone as one). The host (`ohl_plugins::WasmHost::wire_colours`)
+looks for the export by name (`ohl:plugin/wire-colours@0.1.0`, world
+`wire-colours-export`); a list of another length, or a colour that is
+not `#rrggbb`, is refused with the plugin's name. The test plugin
+`plugins/tests/wire-colours` suggests colours from an invented table.
+
 ## Check plugins
 
 A plugin that runs a check implements the `check` interface

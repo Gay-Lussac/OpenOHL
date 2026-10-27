@@ -212,3 +212,64 @@ world sheet-template-plugin {
 world sheet-templates-export {
     export sheet-templates;
 }
+
+/// Wire colours a plugin suggests (optional export of any plugin,
+/// extension point `wire-colours`), e.g. a utility's colour table by
+/// owner, voltage, frequency and phase. The host sends one group per
+/// circuit and phase of the line and applies what comes back only when
+/// the user asks (Line › Sections › Wire colours from a plugin…), as the
+/// sections' own colours. Added 2026-10-27 to interface version 0.3
+/// without changing anything else: plugins built before load as they are,
+/// and give none.
+interface wire-colours {
+    /// The sections of one circuit and phase, with what is known about
+    /// their electrical system.
+    record wire-group {
+        /// The circuit's name ("": none).
+        circuit: string,
+        /// The phase label (e.g. "L1", "UU"; "": none).
+        phase: string,
+        /// The electrical system's id; none: earthed (earth wire, OPGW).
+        system: option<string>,
+        /// The system's name ("" without one).
+        system-name: string,
+        /// Who owns the system (free text, "" without one).
+        owner: string,
+        /// Its number in the owner's register ("" without one).
+        number: string,
+        /// Nominal voltage, kV (none: earthed).
+        voltage-kv: option<f64>,
+        /// AC frequency, Hz (none: not given, or DC).
+        frequency-hz: option<f64>,
+        /// Direct current.
+        dc: bool,
+        /// The plugin's own column values on the system and the group's
+        /// sections (column name, value; the section's value when both
+        /// give one).
+        fields: list<tuple<string, string>>,
+        /// How many sections the group has.
+        sections: u32,
+    }
+
+    /// One colour per group, in the order given: "#rrggbb", or none (no
+    /// suggestion: the section keeps its colour). The error says why
+    /// there are none.
+    wire-colours: func(groups: list<wire-group>) -> result<list<option<string>>, string>;
+}
+
+/// A plugin that suggests wire colours only (extension point
+/// `wire-colours`).
+world wire-colour-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export wire-colours;
+}
+
+/// The `wire-colours` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world wire-colours-export {
+    export wire-colours;
+}

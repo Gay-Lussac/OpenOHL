@@ -623,6 +623,16 @@ impl Plugins {
             .collect()
     }
 
+    /// The plugins in use suggesting wire colours (extension point
+    /// `wire-colours`): name, folder.
+    pub fn wire_colour_dirs(&self) -> Vec<(String, PathBuf)> {
+        self.listed
+            .iter()
+            .filter(|l| self.enabled(l) && l.found.provides(ohl_plugins::WIRE_COLOURS))
+            .map(|l| (l.found.name(), l.found.dir.clone()))
+            .collect()
+    }
+
     /// The directories of the check plugins in use.
     pub fn check_dirs(&self) -> Vec<PathBuf> {
         self.listed
