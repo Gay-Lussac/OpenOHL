@@ -1697,3 +1697,37 @@ fn the_magnetic_field_window_runs_and_goes_out_of_date() {
     r.model.line_version += 1;
     assert!(r.magnetic_field.out_of_date(&r.model).is_some());
 }
+
+/// The Magnetic field window's inputs are kept in the project (owner,
+/// 2026-10-27): a current and a limit set, written into the project's
+/// setting for the line worked on, and read back by a window opened anew.
+#[test]
+fn the_magnetic_field_inputs_are_kept_in_the_project() {
+    let model = crate::tests::session_edits::synthetic_project("magnetic-kept");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let label = {
+        let r = harness.state_mut().ready().unwrap();
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        let label = circuits[0].label();
+        r.magnetic_field.set_current(&label, 650.0);
+        r.magnetic_field.set_limit(Some(1.0));
+        label
+    };
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let session = r.model.session().unwrap();
+    let key = format!(
+        "{}.{}",
+        crate::magnetic_field::SETTING,
+        session.current_line()
+    );
+    let text = session.setting(&key).unwrap().unwrap();
+    assert!(text.contains("650") && text.contains(&label), "{text}");
+    let mut fresh = crate::magnetic_field::MagneticFieldWindow::default();
+    fresh.keep(&mut r.model, &egui::Context::default());
+    assert_eq!(fresh.current_of(&label), Some(650.0));
+    assert_eq!(fresh.limit(), Some(1.0));
+}

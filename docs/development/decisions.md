@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Magnetic field window: its inputs kept in the project (owner, 2026-10-27)**
+
+- "Save the window inputs with the project": the case, currents and
+  directions, model, earth wires, profiles, limit and points are a project
+  setting per project line (`app.magnetic_field.<line>`), written when they
+  change (not while dragging or typing), read when the project opens or
+  the line worked on changes. The points are kept as the CSV's text, so
+  they travel with the project and do not depend on a file path. A read-
+  only user keeps changes for the session.
+
 **Check windows: one design, room to breathe, the result's weather case (owner, 2026-10-27)**
 
 - The owner: some check windows could be sent to a panel, others were
