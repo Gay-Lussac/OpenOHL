@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Vegetation: a voltage above a distance table's last row warns in the report (owner, 2026-10-27)**
+
+- Asked whether Vegetation should refuse it like the clearance rules: "Yes
+  it should drop a warning in the report". The span is still checked with
+  the last row's distance (on the unsafe side, said), and the report
+  lists the spans and the voltage (`VegetationCheck::warnings`, printed by
+  `ohl` and shown with the window's notes). The clearance rules keep
+  refusing such a voltage before any check.
+
 **Magnetic field window: its inputs kept in the project (owner, 2026-10-27)**
 
 - "Save the window inputs with the project": the case, currents and

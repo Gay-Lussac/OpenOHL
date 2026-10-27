@@ -427,6 +427,8 @@ pub struct VegetationCheck {
     /// Per span: the required clearance and the fall-in allowance, m.
     required: Arc<Vec<f64>>,
     allowance: Arc<Vec<f64>>,
+    /// Spans whose voltage is above a table's last row, in words.
+    beyond: Vec<String>,
 }
 
 impl VegetationCheck {
@@ -461,6 +463,36 @@ impl VegetationCheck {
         };
         let required = by(&params.clearance_by_voltage, params.clearance);
         let allowance = by(&params.allowance_by_voltage, params.fall_allowance);
+        // A voltage above a table's last row takes the last row's distance
+        // (owner, 2026-10-27: checked, with a warning in the report — on the
+        // unsafe side, the table does not reach the voltage).
+        let mut beyond = Vec::new();
+        for (what, rule) in [
+            ("required clearance", &params.clearance_by_voltage),
+            ("fall-in allowance", &params.allowance_by_voltage),
+        ] {
+            let Some(rule) = rule else { continue };
+            let mut by_kv: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+            for sp in &positions.spans {
+                let kv = sp.wire.kv().unwrap_or(0.0);
+                if let Err(e) = rule.at(kv) {
+                    by_kv.entry(e).or_default().push(format!(
+                        "{} span {}",
+                        sp.wire.section,
+                        sp.wire.span + 1
+                    ));
+                }
+            }
+            for (e, spans) in by_kv {
+                beyond.push(format!(
+                    "{what}: {e}; the last row's distance is used — on the unsafe side, extend \
+                     the table ({} span{}: {})",
+                    spans.len(),
+                    if spans.len() == 1 { "" } else { "s" },
+                    spans.join(", ")
+                ));
+            }
+        }
         if params.clearance_by_voltage.is_some() {
             params.clearance = required.iter().copied().fold(0.0, f64::max);
         }
@@ -487,7 +519,15 @@ impl VegetationCheck {
             scratch: Vec::new(),
             required: Arc::new(required),
             allowance: Arc::new(allowance),
+            beyond,
         }
+    }
+
+    /// Warnings for the report: the spans whose voltage is above the last
+    /// row of a distance table (checked with the last row's distance, on
+    /// the unsafe side).
+    pub fn warnings(&self) -> &[String] {
+        &self.beyond
     }
 
     /// The required clearance applied to each span, m (by its wire's
@@ -1231,8 +1271,23 @@ mod tests {
             keep_all: true,
             ..plain()
         };
-        let mut c = VegetationCheck::new(wires.clone(), &[5], params);
+        let mut c = VegetationCheck::new(wires.clone(), &[5], params.clone());
         assert_eq!(c.required(), &[7.0, 9.0]);
+        assert!(c.warnings().is_empty());
+        // A table ending at 220 kV (owner, 2026-10-27): the 380 kV span
+        // takes the last row's 7 m, with a warning in the report.
+        let short = VegetationParams {
+            clearance_by_voltage: Some(crate::rules::Requirement::ByVoltage(vec![(220.0, 7.0)])),
+            ..params
+        };
+        let s = VegetationCheck::new(wires.clone(), &[5], short);
+        assert_eq!(s.required(), &[7.0, 7.0]);
+        assert_eq!(s.warnings().len(), 1, "{:?}", s.warnings());
+        assert!(
+            s.warnings()[0].contains("380 kV span 1") && s.warnings()[0].contains("unsafe side"),
+            "{:?}",
+            s.warnings()
+        );
         for y in [0.0, 100.0] {
             c.visit(None, 150.0, y, 12.0, 5);
         }
