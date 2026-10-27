@@ -4006,6 +4006,7 @@ dependencies = [
  "ohl-clearance",
  "ohl-core",
  "ohl-crs",
+ "ohl-electrical",
  "ohl-line",
  "ohl-loads",
  "ohl-sagtension",

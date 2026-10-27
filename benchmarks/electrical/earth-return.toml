@@ -1,0 +1,159 @@
+# The earth return term between two wires, against an independent
+# evaluation of Carson's integral by numerical quadrature
+# (benchmarks/electrical/reference_electrical.py: scipy's adaptive
+# quadrature, a different method from the program's series and asymptotic
+# expansion). They guard the formulas, not the homogeneous-earth model
+# itself. No openly published table of Carson's terms with their inputs was
+# found (an open page, Vismor's "Carson's Equations", tabulates the
+# parameter a for "distance 100 ft" without saying whether it is the self
+# term's height or a distance to an image: not used).
+#
+# Outputs: dr_ohm_per_km, dx_ohm_per_km — the term ΔZ beyond the perfect
+# earth's j·ωμ0/2π·ln(D'/d), Ω/km; a — Carson's parameter. Lengths in m.
+# Cases from power frequency to 50 kHz and from 0.5 to 1000 Ω·m (a from
+# 0.02 to 28: the series and, above a = 15, the asymptotic expansion).
+
+[[case]]
+id = "electrical-010"
+title = "Carson: self term, 20 m high, 50 Hz, 100 Ω·m"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+[case.inputs]
+hi = "20 m"
+hj = "20 m"
+x = "0 m"
+frequency = 50
+resistivity = 100
+[case.expected]
+a = { value = 0.0794767, rel_tol = 1e-5 }
+dr_ohm_per_km = { value = 0.0471883562, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 0.200124683, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-011"
+title = "Carson: mutual term, 20 m and 26 m high, 7.5 m apart across, 50 Hz, 100 Ω·m"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+[case.inputs]
+hi = "20 m"
+hj = "26 m"
+x = "7.5 m"
+frequency = 50
+resistivity = 100
+[case.expected]
+dr_ohm_per_km = { value = 0.0468849056, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 0.190861233, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-012"
+title = "Carson: mutual term, wires 40 m apart across, 10 Ω·m"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+[case.inputs]
+hi = "12 m"
+hj = "30 m"
+x = "40 m"
+frequency = 50
+resistivity = 10
+[case.expected]
+dr_ohm_per_km = { value = 0.0423871024, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 0.109854631, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-013"
+title = "Carson: railway frequency 16.7 Hz over rock (1000 Ω·m)"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+[case.inputs]
+hi = "25 m"
+hj = "25 m"
+x = "0 m"
+frequency = 16.7
+resistivity = 1000
+[case.expected]
+dr_ohm_per_km = { value = 0.0163072757, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 0.0972317077, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-014"
+title = "Carson: sea water (0.5 Ω·m), a = 1.7"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+[case.inputs]
+hi = "30 m"
+hj = "30 m"
+x = "0 m"
+frequency = 50
+resistivity = 0.5
+[case.expected]
+dr_ohm_per_km = { value = 0.0261249891, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 0.043745307, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-015"
+title = "Carson: 5 kHz harmonic, 60 m apart across, a = 3.0"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+[case.inputs]
+hi = "15 m"
+hj = "18 m"
+x = "60 m"
+frequency = 5000
+resistivity = 20
+[case.expected]
+dr_ohm_per_km = { value = 1.73018409, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 1.70323046, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-016"
+title = "Carson: 50 kHz, a = 28 (asymptotic expansion)"
+calculation = "electrical.earth_return"
+reference = "Carson's integral by quadrature (benchmarks/electrical/reference_electrical.py)"
+notes = "Above a = 15 the program takes Carson's asymptotic expansion: within 1e-6 of the integral there"
+[case.inputs]
+hi = "40 m"
+hj = "35 m"
+x = "120 m"
+frequency = 50000
+resistivity = 10
+[case.expected]
+a = { value = 28.1168, rel_tol = 1e-5 }
+dr_ohm_per_km = { value = 1.74064171, rel_tol = 1e-5 }
+dx_ohm_per_km = { value = 1.67893824, rel_tol = 1e-5 }
+
+# The complex depth, against its own closed form evaluated independently
+# (the reference script). It differs from Carson's integral by 1 % (R) and
+# 2 % (X) of the term in electrical-020 and up to 3 % in electrical-021
+# (printed by the script): the method's known accuracy, not checked here.
+
+[[case]]
+id = "electrical-020"
+title = "Complex depth: mutual term, 50 Hz, 100 Ω·m"
+calculation = "electrical.earth_return"
+reference = "Deri, Tevan, Semlyen, Castanheira, IEEE Trans. PAS-100 (8), 1981: the closed form evaluated by benchmarks/electrical/reference_electrical.py"
+[case.inputs]
+hi = "20 m"
+hj = "26 m"
+x = "7.5 m"
+frequency = 50
+resistivity = 100
+earth_return = "complex_depth"
+[case.expected]
+dr_ohm_per_km = { value = 0.04738023, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 0.195083661, rel_tol = 1e-6 }
+
+[[case]]
+id = "electrical-021"
+title = "Complex depth: mutual term, 5 kHz, 20 Ω·m"
+calculation = "electrical.earth_return"
+reference = "Deri, Tevan, Semlyen, Castanheira, IEEE Trans. PAS-100 (8), 1981: the closed form evaluated by benchmarks/electrical/reference_electrical.py"
+[case.inputs]
+hi = "15 m"
+hj = "18 m"
+x = "60 m"
+frequency = 5000
+resistivity = 20
+earth_return = "complex_depth"
+[case.expected]
+dr_ohm_per_km = { value = 1.71586938, rel_tol = 1e-6 }
+dx_ohm_per_km = { value = 1.65696699, rel_tol = 1e-6 }

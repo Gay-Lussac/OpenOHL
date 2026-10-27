@@ -1,0 +1,135 @@
+# Line parameters against published worked examples.
+#
+# Source of electrical-001 to -003: W. H. Kersting, "Distribution System
+# Modeling and Analysis", Example 4.1 (a 60 Hz three-phase overhead line with
+# one neutral), as reproduced with its numbers in T. Overbye, "ECEN 667 Power
+# System Stability, Lecture 4", Texas A&M University, 2019, slides 13–21,
+# https://overbye.engr.tamu.edu/wp-content/uploads/sites/146/2019/09/ECEN667_2019_Lect4.pdf
+# (openly published lecture notes). Inputs from the slides: phases Linnet
+# (GMR 0.0244 ft, 0.306 Ω/mile, radius 0.0300 ft), neutral 4/0 6/1 ACSR
+# (GMR 0.00814 ft, 0.592 Ω/mile, radius 0.0235 ft), 100 Ω·m, 60 Hz; the
+# distances the slides give (a–b 2.5 ft, a–n 5.66 ft = √32, phases 29 ft
+# high, the neutral 25 ft: 2·29 ft and 54.148 ft to the images). Phase c at
+# 7.0 ft from a: the spacing of the IEEE test feeders' configuration ID-500
+# (2.5 ft and 4.5 ft between the phases; IEEE PES Distribution System
+# Analysis Subcommittee, "Radial Distribution Test Feeders", 2000, Figure 1,
+# https://ewh.ieee.org/soc/pes/dsacom/testfeeders/testfeeders.pdf), the
+# neutral 4.0 ft across from a. The slides compute the earth return with
+# Carson's first terms (D_kk' = 658.5·√(ρ/f) m, R_k' = 9.869e-7·f Ω/m):
+# the program's carson_first_terms. Tolerances: the printed rounding
+# (0.0001 Ω/mile) and the slides' rounded constants (658.5 against the
+# program's 2·e^(1/2−γ)/√(ωμ0/ρ) = 850.6 m: 0.00007 Ω/mile in X; ε0 as
+# 8.85e-12 in the slides' 11.177 mile/µF: 0.05 %).
+
+[[case]]
+id = "electrical-001"
+title = "Kersting Ex. 4.1: phase impedance matrix, neutral reduced out (Carson's first terms)"
+calculation = "electrical.parameters"
+reference = "W. H. Kersting, Distribution System Modeling and Analysis, Example 4.1, as printed in T. Overbye, ECEN 667 Lecture 4 (Texas A&M, 2019), slide 16 (Zp in Ω/mile)"
+notes = "Outputs in Ω per mile. Geometry from the slides' distances and the IEEE ID-500 spacing (see the file's head)"
+[case.inputs]
+frequency = 60
+resistivity = 100
+earth_return = "carson_first_terms"
+per_length = "1 mi"
+conductors = [
+    { name = "a", x = "0 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "b", x = "2.5 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "c", x = "7.0 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "n", x = "4.0 ft", y = "25 ft", gmr = "0.00814 ft", radius = "0.0235 ft", resistance = "0.592 Ω/mi", earthed = true },
+]
+[case.expected]
+z_aa_r = { value = 0.4576, abs_tol = 0.0002 }
+z_aa_x = { value = 1.0780, abs_tol = 0.0002 }
+z_ab_r = { value = 0.1560, abs_tol = 0.0002 }
+z_ab_x = { value = 0.5017, abs_tol = 0.0002 }
+z_ac_r = { value = 0.1535, abs_tol = 0.0002 }
+z_ac_x = { value = 0.3849, abs_tol = 0.0002 }
+z_bb_r = { value = 0.4666, abs_tol = 0.0002 }
+z_bb_x = { value = 1.0482, abs_tol = 0.0002 }
+z_bc_r = { value = 0.1580, abs_tol = 0.0002 }
+z_bc_x = { value = 0.4236, abs_tol = 0.0002 }
+z_cc_r = { value = 0.4615, abs_tol = 0.0002 }
+z_cc_x = { value = 1.0651, abs_tol = 0.0002 }
+
+[[case]]
+id = "electrical-002"
+title = "Kersting Ex. 4.1 continued: potential coefficients and capacitance, neutral reduced out"
+calculation = "electrical.parameters"
+reference = "T. Overbye, ECEN 667 Lecture 4 (Texas A&M, 2019), slides 20–21 ('Continuing the previous example': Pp in mile/µF, Cp in µF/mile), on Kersting's Example 4.1"
+notes = "Pp per µF (mile/µF), C in µF per mile. The slides' Cp entries cc (0.0137) and bc (-0.0030) are not the inverse of their own printed Pp (which gives 0.0143 and -0.0031, as the program does): left out. Their Pp ac is printed 15.84 above and 15.87 below the diagonal: 15.86 ± 0.03 taken"
+[case.inputs]
+frequency = 60
+resistivity = 100
+earth_return = "carson_first_terms"
+per_length = "1 mi"
+conductors = [
+    { name = "a", x = "0 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "b", x = "2.5 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "c", x = "7.0 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "n", x = "4.0 ft", y = "25 ft", gmr = "0.00814 ft", radius = "0.0235 ft", resistance = "0.592 Ω/mi", earthed = true },
+]
+[case.expected]
+p_aa = { value = 77.12, rel_tol = 0.0015 }
+p_ab = { value = 26.79, rel_tol = 0.0015 }
+p_ac = { value = 15.86, abs_tol = 0.05 }
+p_bb = { value = 75.17, rel_tol = 0.0015 }
+p_bc = { value = 19.80, rel_tol = 0.0015 }
+p_cc = { value = 76.29, rel_tol = 0.0015 }
+c_aa = { value = 0.0150, abs_tol = 0.00008 }
+c_ab = { value = -0.0049, abs_tol = 0.00008 }
+c_ac = { value = -0.0018, abs_tol = 0.00008 }
+c_bb = { value = 0.0158, abs_tol = 0.00008 }
+
+[[case]]
+id = "electrical-003"
+title = "Kersting Ex. 4.1: sequence impedances of the phase matrix"
+calculation = "electrical.parameters"
+reference = "Symmetrical components (Fortescue) of the published Zp of Kersting Ex. 4.1 (Overbye, ECEN 667 Lecture 4, 2019, slide 16), evaluated by benchmarks/electrical/reference_electrical.py: the program's sequence transform of its own matrix against the transform of the published one"
+notes = "Ω per mile. No published sequence values were found in an open source for this example; the reference applies the transform to the published matrix. The tolerance is the matrix's (0.0002 Ω/mile per entry, at most 0.0006 in a sum of three)"
+[case.inputs]
+frequency = 60
+resistivity = 100
+earth_return = "carson_first_terms"
+per_length = "1 mi"
+conductors = [
+    { name = "a", x = "0 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "b", x = "2.5 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "c", x = "7.0 ft", y = "29 ft", gmr = "0.0244 ft", radius = "0.0300 ft", resistance = "0.306 Ω/mi" },
+    { name = "n", x = "4.0 ft", y = "25 ft", gmr = "0.00814 ft", radius = "0.0235 ft", resistance = "0.592 Ω/mi", earthed = true },
+]
+[case.expected]
+z1_r = { value = 0.306067, abs_tol = 0.0006 }
+z1_x = { value = 0.627033, abs_tol = 0.0006 }
+z0_r = { value = 0.773567, abs_tol = 0.0006 }
+z0_x = { value = 1.937233, abs_tol = 0.0006 }
+z2_built_r = { value = 0.306067, abs_tol = 0.0006 }
+z2_built_x = { value = 0.627033, abs_tol = 0.0006 }
+
+# Source of electrical-004: T. Overbye, ECEN 667 Lecture 4 (Texas A&M,
+# 2019), slides 7–8: a balanced, uniformly transposed 60 Hz line, phases
+# 10 m apart in a row, each a bundle of three on a triangle of 0.3 m, the
+# subconductors of 1.5 cm radius (GMR 0.78 × radius, as the slide takes it)
+# and 0.06 Ω/km: R = 0.02 Ω/km, L = 9.63e-7 H/m, C = 1.17e-11 F/m (three
+# figures). The slide's formulas leave out the earth; here the wires are
+# 1000 m above it, which changes these values by less than 0.01 %.
+
+[[case]]
+id = "electrical-004"
+title = "Overbye: transposed line with triple bundles, positive sequence R, L, C"
+calculation = "electrical.parameters"
+reference = "T. Overbye, ECEN 667 Lecture 4 (Texas A&M, 2019), slides 7–8: R = 0.02 Ω/km, L = 9.63e-7 H/m, C = 1.17e-11 F/m"
+notes = "Per metre: l1_mh in mH/m (9.63e-4), c1_uf_textbook in µF/m (1.17e-5), z1_r in Ω/m (2e-5). Tolerances: the printed three figures. The slide (as textbooks do) averages the potential coefficients over the transposition, taking the charges equal along the line: c1_uf_textbook. The program averages the capacitances (the stretches in parallel at the same voltages): its c1_uf is 1.4 % higher here (1.187e-5), the difference of the two models, not checked against the slide"
+[case.inputs]
+frequency = 60
+resistivity = 100
+per_length = "1 m"
+conductors = [
+    { name = "a", x = "0 m", y = "1000 m", gmr = "0.0117 m", radius = "0.015 m", resistance = "0.06 Ω/km", bundle = 3, spacing = "0.3 m" },
+    { name = "b", x = "10 m", y = "1000 m", gmr = "0.0117 m", radius = "0.015 m", resistance = "0.06 Ω/km", bundle = 3, spacing = "0.3 m" },
+    { name = "c", x = "20 m", y = "1000 m", gmr = "0.0117 m", radius = "0.015 m", resistance = "0.06 Ω/km", bundle = 3, spacing = "0.3 m" },
+]
+[case.expected]
+l1_mh = { value = 9.63e-4, rel_tol = 0.006 }
+c1_uf_textbook = { value = 1.17e-5, rel_tol = 0.005 }
+z1_r = { value = 2.0e-5, rel_tol = 0.001 }
