@@ -409,6 +409,15 @@ struct LineArgs {
     /// solved in the same weather with the same libraries.
     #[arg(long)]
     other_line: Vec<PathBuf>,
+    /// Check the clearance rules only on the sections and jumpers on this
+    /// route, by id (repeatable; with `--clearance-alignment`: on either;
+    /// `ohl drawing` takes `--route` for the route drawn).
+    #[arg(long = "clearance-route")]
+    routes: Vec<String>,
+    /// Check the clearance rules only on the sections and jumpers on this
+    /// alignment, by id (repeatable).
+    #[arg(long = "clearance-alignment")]
+    alignments: Vec<String>,
     /// Write every clearance found (per rule, wire and measure) as CSV.
     #[arg(long)]
     clearance_csv: Option<PathBuf>,
@@ -1822,6 +1831,8 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         clearance,
         rules,
         other_line,
+        routes,
+        alignments,
         clearance_csv,
         drawings,
         hscale,
@@ -2120,7 +2131,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 }
             }
         }
-        let prepared = clearance_run::prepare(
+        let mut prepared = clearance_run::prepare(
             &line,
             &clearance_run::Options {
                 terrain: terrain.as_deref(),
@@ -2140,6 +2151,15 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                     .then_some(file.as_path()),
             },
         )?;
+        if !routes.is_empty() || !alignments.is_empty() {
+            zones_run::known_routes(
+                &line,
+                routes,
+                alignments,
+                ["--clearance-route", "--clearance-alignment"],
+            )?;
+            prepared.scope = Some(line.wires_on(routes, alignments));
+        }
         let mut clearance_rows = String::from(clearance_run::CSV_HEADER);
         // Outputs (viewer, CSV, drawings) show the first case.
         let mut first: Option<(WeatherCase, Vec<ohl_line::solve::SectionShape>)> = None;

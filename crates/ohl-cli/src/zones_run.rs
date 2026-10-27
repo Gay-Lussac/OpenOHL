@@ -144,9 +144,11 @@ pub struct ZonesArgs {
     /// clearance) as CSV.
     #[arg(long)]
     pub csv: Option<PathBuf>,
-    /// Stop after this many seconds (solving and reading the points).
-    #[arg(long, default_value_t = 600.0)]
-    pub time_limit: f64,
+    /// Stop after this many seconds (solving and reading the points)
+    /// (default: 900 s and 20 s more per million LiDAR points of the
+    /// rules' classes in the cloud, as the desktop windows).
+    #[arg(long)]
+    pub time_limit: Option<f64>,
 }
 
 /// `ohl zones`: 0 with no violation, 1 with violations, 2 on an error.
@@ -200,12 +202,14 @@ pub fn known_routes(
     line: &ohl_line::Line,
     routes: &[String],
     alignments: &[String],
+    flags: [&str; 2],
 ) -> Result<(), String> {
     for r in routes {
         if !line.routes.iter().any(|x| &x.id == r) {
             let ids: Vec<&str> = line.routes.iter().map(|x| x.id.as_str()).collect();
             return Err(format!(
-                "--route {r}: no such route (routes: {})",
+                "{} {r}: no such route (routes: {})",
+                flags[0],
                 ids.join(", ")
             ));
         }
@@ -214,7 +218,8 @@ pub fn known_routes(
         if !line.alignments.iter().any(|x| &x.id == a) {
             let ids: Vec<&str> = line.alignments.iter().map(|x| x.id.as_str()).collect();
             return Err(format!(
-                "--alignment {a}: no such alignment (alignments: {})",
+                "{} {a}: no such alignment (alignments: {})",
+                flags[1],
                 ids.join(", ")
             ));
         }
@@ -367,22 +372,10 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
     own.rules = libs.named("rules", &args.rules).0;
     own.weather = args.weather.as_deref().map(|w| libs.named("weather", w).0);
     let args = &own;
-    if !(args.time_limit.is_finite() && args.time_limit > 0.0) {
+    if args.time_limit.is_some_and(|t| !(t.is_finite() && t > 0.0)) {
         return Err("--time-limit must be > 0 s".into());
     }
-    let limit = Duration::from_secs_f64(args.time_limit);
-    let budget = Budget::new().time_limit(limit);
     let started = Instant::now();
-    let stopped = |e: String| {
-        if started.elapsed() >= limit {
-            format!(
-                "the check stopped at the time limit of {} s (--time-limit): {e}",
-                args.time_limit
-            )
-        } else {
-            e
-        }
-    };
     let (library, insulators, structures) = (&libs.cables, &libs.insulators, &libs.structures);
     let (mut line, _) = crate::project::load_resolved(&args.file, structures, insulators)?;
     let library = ohl_cables::Library::load(library).map_err(|e| e.to_string())?;
@@ -468,7 +461,12 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
             .map_err(|e| format!("--circuits: {e}"))?;
     }
     if !args.routes.is_empty() || !args.alignments.is_empty() {
-        known_routes(&line, &args.routes, &args.alignments)?;
+        known_routes(
+            &line,
+            &args.routes,
+            &args.alignments,
+            ["--route", "--alignment"],
+        )?;
         check.routes = args.routes.clone();
         check.alignments = args.alignments.clone();
     }
@@ -516,6 +514,39 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
     }
     let wants_ground = rules.iter().any(|r| r.ground && r.surface.is_none());
     let wants_points = rules.iter().any(|r| !r.classes.is_empty());
+    // The time limit: given, else scaled with the LiDAR points of the
+    // rules' classes (owner, 2026-10-27).
+    let points: u64 = match cloud.as_deref().filter(|_| wants_points) {
+        Some(spec) => ohl_pointcloud::open_source(spec)
+            .ok()
+            .and_then(|s| s.class_counts())
+            .unwrap_or_default()
+            .iter()
+            .filter(|(c, _)| rules.iter().any(|r| r.classes.contains(c)))
+            .map(|(_, n)| n)
+            .sum(),
+        None => 0,
+    };
+    let limit = match args.time_limit {
+        Some(t) => Duration::from_secs_f64(t),
+        None => zone::time_limit(points),
+    };
+    let limit_text = match args.time_limit {
+        Some(t) => format!("{t} s (--time-limit)"),
+        None => format!("{} (--time-limit to change)", zone::time_limit_text(points)),
+    };
+    let budget = Budget::new().time_limit(limit);
+    let stopped = |e: String| {
+        if started.elapsed() >= limit {
+            format!(
+                "the check stopped at its time limit of {limit_text}: {e} — a larger wind step, \
+                 fewer rules or weather cases, a smaller search distance or --route/--alignment \
+                 make it faster"
+            )
+        } else {
+            e
+        }
+    };
     let ground = if wants_ground {
         ground_of(
             args,
@@ -579,6 +610,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         }
     );
 
+    println!("time limit: {limit_text}");
     let read = |polylines: &[Vec<[f64; 2]>],
                 reach: f64,
                 classes: &[u8],

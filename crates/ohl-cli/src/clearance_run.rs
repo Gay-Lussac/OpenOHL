@@ -65,6 +65,13 @@ pub struct Prepared {
     /// Section potentials of this line and of the other lines.
     voltages: Vec<Option<Potential>>,
     other_voltages: Vec<Option<Potential>>,
+    /// The sections and jumpers on the routes and alignments chosen
+    /// (`--route`, `--alignment`; [`ohl_line::Line::wires_on`]); none:
+    /// every wire.
+    pub scope: Option<(
+        std::collections::BTreeSet<String>,
+        std::collections::BTreeSet<String>,
+    )>,
 }
 
 impl Prepared {
@@ -411,6 +418,7 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         other_lines,
         voltages,
         other_voltages,
+        scope: None,
     })
 }
 
@@ -527,7 +535,14 @@ pub fn check(
     env: &mut ohl_clearance::Envelope,
 ) -> Result<CaseWires, String> {
     let rules = &p.rules;
-    let wires = wires_of(line, shapes, jumpers);
+    let mut wires = wires_of(line, shapes, jumpers);
+    // The routes and alignments chosen only (owner, 2026-10-27).
+    if let Some((sections, jumpers)) = &p.scope {
+        wires.retain(|w| match w.section.strip_prefix("jumper:") {
+            Some(j) => jumpers.contains(j),
+            None => sections.contains(&w.section),
+        });
+    }
     if rules.is_empty() {
         return Ok(CaseWires {
             case: case.name.clone(),

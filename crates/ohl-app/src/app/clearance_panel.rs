@@ -290,6 +290,7 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     let scope = m.scope();
+    let check = r.clearances.check.clone();
     r.clearances.start(ctx, |rules| crate::clearance::Input {
         // The surfaces the ground rules name (read on the check's thread).
         surfaces: crate::model::NamedSurfaces::of(
@@ -317,11 +318,26 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
                 .collect(),
             None => solved.jumpers.clone(),
         },
+        // The LiDAR points of the rules' classes (the time limit).
+        points: m.cloud.as_ref().map_or(0, |_| {
+            let classes: Vec<u8> = rules
+                .iter()
+                .flat_map(|r| r.point_classes(|role| m.scheme.codes_with_role(role)))
+                .collect();
+            m.class_counts
+                .iter()
+                .filter(|(c, _)| classes.contains(c))
+                .map(|(_, n)| n)
+                .sum()
+        }),
         rules,
         scheme: m.scheme.clone(),
         cloud: m.cloud.clone(),
         ground: m.ground_for_checks(),
         corridor: m.sources.corridor,
+        check: check.clone(),
+        progress: Default::default(),
+        cancel: Default::default(),
     });
 }
 
@@ -402,8 +418,34 @@ pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 None,
             );
             ui.checkbox(&mut c.auto, "after every edit");
-            if c.running() {
+            if let Some((share, visited, elapsed)) = c.progress() {
                 ui.spinner();
+                // The points read (owner, 2026-10-27), and Stop.
+                match share {
+                    Some(f) => {
+                        ui.add(
+                            egui::ProgressBar::new(f as f32)
+                                .desired_width(120.0)
+                                .text(format!("{:.0} % of the points", f * 100.0)),
+                        );
+                        let left = (f > 0.02).then(|| elapsed / f * (1.0 - f));
+                        ui.label(match left {
+                            Some(l) => format!("{elapsed:.0} s, about {l:.0} s left"),
+                            None => format!("{elapsed:.0} s"),
+                        });
+                    }
+                    None => {
+                        ui.label(format!(
+                            "{elapsed:.0} s; {} points checked",
+                            ohl_clearance::zone::millions(visited)
+                        ));
+                    }
+                }
+                if crate::check_help::stop_button(ui, "Stop this check") {
+                    c.stop();
+                }
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(200));
             }
         });
     }
@@ -496,6 +538,34 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     }
     if add {
         add_rule_file(r);
+    }
+    // The circuits, routes and alignments checked: kept in the rule
+    // file's `[check]`, as the vertical and radial windows keep theirs
+    // (owner, 2026-10-27).
+    let mut scope_changed = false;
+    ui.horizontal_wrapped(|ui| {
+        let c = &mut r.clearances;
+        scope_changed |= crate::clearance_zones::circuit_choice(
+            ui,
+            "clearances-circuits",
+            &r.model.line,
+            &mut c.check,
+        );
+    });
+    scope_changed |= crate::clearance_zones::route_choice(
+        ui,
+        "clearances-routes",
+        &r.model.line,
+        &mut r.clearances.check,
+    );
+    if scope_changed {
+        let saved = r
+            .clearances
+            .save_check()
+            .and_then(|()| r.model.store_libraries().map(|_| ()));
+        if let Err(e) = saved {
+            r.status = Some((format!("rule file not saved: {e}"), true));
+        }
     }
     let c = &mut r.clearances;
     let mut check = false;

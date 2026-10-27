@@ -54,10 +54,10 @@ pub const GUIDE: &str = "user-guide/desktop-app";
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
 
-/// Exit clause of a check: solving every wind position and reading the
-/// points. The synthetic line takes milliseconds; a long line with fine
-/// steps a few minutes.
-const TIME_BUDGET: Duration = Duration::from_secs(900);
+// Exit clause of a check: solving every wind position and reading the
+// points, 900 s and 20 s more per million LiDAR points of the rules'
+// classes (`zone::time_limit`, owner 2026-10-27: the limit scales with
+// the work; said before Run and when it is reached).
 
 /// Height of the scrolling lists (rules, results), points.
 const LIST_HEIGHT: f32 = 220.0;
@@ -93,6 +93,10 @@ struct Running {
     rx: Receiver<Result<Report, String>>,
     done: Arc<AtomicUsize>,
     total: usize,
+    /// How far the reading of the points has got.
+    read: Arc<ohl_pointcloud::ReadProgress>,
+    /// When the reading began (seen here).
+    reading_since: Option<Instant>,
     cancel: CancelToken,
     started: Instant,
     /// Stopped by the user: the previous results stay.
@@ -134,6 +138,10 @@ pub struct ZoneWindow {
     loaded_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
     /// Reports arrived (a new one to draw).
     generation: u64,
+    /// LiDAR points of the rules' classes in the cloud (for the time
+    /// limit), and what a run will do, in words: updated as shown.
+    points: u64,
+    estimate: String,
     /// What the views draw of this window: shown (open with a report),
     /// the report's generation.
     drawn: Option<(bool, u64)>,
@@ -199,6 +207,8 @@ impl ZoneWindow {
             rules_hash: (None, None),
             generation: 0,
             drawn: None,
+            points: 0,
+            estimate: String::new(),
         }
     }
 
@@ -557,13 +567,32 @@ impl ZoneWindow {
         let (tx, rx) = channel();
         let ctx = ctx.clone();
         let (d, c) = (done.clone(), cancel.clone());
+        let read = Arc::new(ohl_pointcloud::ReadProgress::default());
+        let progress = read.clone();
+        let points = cloud.as_ref().map_or(0, |_| rule_points(model, &rules));
         self.stamp.started(model.revision());
         self.rules_hash.0 = Some(self.settings_hash());
         std::thread::spawn(move || {
             let surfaces = named.read();
             let r = run(
-                &line, &library, zone, &check, rules, states, arc, cloud, ground, &surfaces, scope,
-                &d, &c, &filter,
+                &line,
+                &library,
+                zone,
+                &check,
+                rules,
+                states,
+                arc,
+                cloud,
+                ground,
+                &surfaces,
+                scope,
+                &Progress {
+                    done: &d,
+                    cancel: &c,
+                    read: &progress,
+                    points,
+                },
+                &filter,
             );
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -572,6 +601,8 @@ impl ZoneWindow {
             rx,
             done,
             total,
+            read,
+            reading_since: None,
             cancel,
             started: Instant::now(),
             stopped: false,
@@ -833,6 +864,7 @@ impl ZoneWindow {
                     });
                 }
             });
+            self.update_estimate(model);
             run |= help::footer(ui, footer, |ui| self.run_ui(ui));
         });
         out.guide = guide;
@@ -854,6 +886,78 @@ impl ZoneWindow {
         }
         self.marks_out(&mut out);
         out
+    }
+
+    /// What a run will do, before Run (owner, 2026-10-27: which
+    /// parameters make it slow): the wind positions solved, the sections,
+    /// the widest reach of a rule, the LiDAR points of the rules' classes
+    /// and the time limit.
+    fn update_estimate(&mut self, model: &Model) {
+        self.points = model
+            .cloud
+            .as_ref()
+            .map_or(0, |_| rule_points(model, &self.rules));
+        let cases: Vec<ohl_weather::WeatherCase> =
+            model.cases.iter().map(|c| c.case.clone()).collect();
+        let states = zone::wind_states(
+            &cases,
+            |n| self.rules.iter().any(|r| r.applies(n)),
+            &self.wind,
+        );
+        let mut sections = zone::sections_needed(&model.line, &self.rules);
+        sections.retain(|id| {
+            model
+                .line
+                .sections
+                .iter()
+                .find(|s| &s.id == id)
+                .is_some_and(|s| self.check.takes_circuit(&s.circuit_name))
+        });
+        if let Some((on, _)) = self.check.wires_on(&model.line) {
+            sections.retain(|id| on.contains(id));
+        }
+        let voltages = line_voltages(model);
+        let margin = model.line.defaults.clearance_search_margin;
+        let widest = self
+            .rules
+            .iter()
+            .filter(|r| !r.classes.is_empty())
+            .map(|r| {
+                let d = r.distance.largest(&voltages);
+                match self.zone.measure {
+                    // In plan: the zone's width (a screen: its band).
+                    Measure::Vertical if r.screen => (d, r),
+                    Measure::Vertical => (r.width.unwrap_or(self.zone.width), r),
+                    Measure::Radial => (d + margin, r),
+                }
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        let mut text = format!(
+            "{} wind position(s) × {} section(s); {} rule(s)",
+            states.len(),
+            sections.len(),
+            self.rules.len()
+        );
+        if let Some((d, r)) = widest {
+            text.push_str(&format!(
+                "; points counted up to {d:.1} m from the wires in plan (\"{}\")",
+                r.name
+            ));
+        }
+        if self.points > 0 {
+            text.push_str(&format!(
+                "; {} LiDAR points of the rules' classes in the cloud",
+                zone::millions(self.points)
+            ));
+        }
+        text.push_str(&format!(
+            "; time limit {}",
+            zone::time_limit_text(self.points)
+                .split(" (")
+                .next()
+                .unwrap_or_default()
+        ));
+        self.estimate = text;
     }
 
     /// Writes the rule file; the project's working copy goes into the
@@ -1001,54 +1105,10 @@ impl ZoneWindow {
 
     /// The circuits checked and the calculation method.
     fn check_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let mut names: Vec<String> = model
-            .line
-            .sections
-            .iter()
-            .map(|s| s.circuit_name.clone())
-            .collect();
-        names.extend(self.check.circuits.iter().cloned());
-        names.sort();
-        names.dedup();
-        let shown = |n: &str| {
-            if n.is_empty() {
-                "(no circuit name)".to_owned()
-            } else {
-                n.to_owned()
-            }
-        };
         ui.horizontal(|ui| {
-            ui.label("Circuits");
-            let title = match self.check.circuits.len() {
-                0 => "every circuit".to_owned(),
-                1 => shown(&self.check.circuits[0]),
-                n => format!("{n} circuits"),
-            };
-            ui.push_id((self.title(), "circuits"), |ui| {
-                crate::menu::options_menu(ui, &title, |ui| {
-                    ui.label(
-                        egui::RichText::new("None ticked: every circuit")
-                            .small()
-                            .weak(),
-                    );
-                    egui::ScrollArea::vertical()
-                        .max_height(LIST_HEIGHT)
-                        .show(ui, |ui| {
-                            for n in &names {
-                                let mut on = self.check.circuits.contains(n);
-                                if ui.checkbox(&mut on, shown(n)).changed() {
-                                    if on {
-                                        self.check.circuits.push(n.clone());
-                                        self.check.circuits.sort();
-                                    } else {
-                                        self.check.circuits.retain(|c| c != n);
-                                    }
-                                    self.dirty = true;
-                                }
-                            }
-                        });
-                });
-            });
+            if circuit_choice(ui, (self.title(), "circuits"), &model.line, &mut self.check) {
+                self.dirty = true;
+            }
             ui.label("Solved by");
             let name = |m: Option<Method>| match m {
                 None => "each section's calculation",
@@ -1070,11 +1130,16 @@ impl ZoneWindow {
                      cable condition)",
                 );
         });
+        if route_choice(ui, (self.title(), "routes"), &model.line, &mut self.check) {
+            self.dirty = true;
+        }
         help::explain(
             ui,
-            "Circuits: those checked (none ticked: every one). Solved by: each section's own \
+            "Circuits: those checked (none ticked: every one). Routes: the routes and alignments \
+             checked (none ticked: the whole line). Solved by: each section's own \
              calculation, or one method for all.",
-            "Only the sections of the circuits ticked are solved and checked. Finite elements \
+            "Only the sections of the circuits ticked, on the routes and alignments ticked, are \
+             solved and checked (a section with a structure on one of them, whole). Finite elements \
              solve each section with its strings swinging; ruling span is the classic \
              approximation; each section keeps its cable condition (initial, final).",
         );
@@ -1297,12 +1362,35 @@ impl ZoneWindow {
     fn run_ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut run = false;
         let mut stop_now = false;
-        match &self.running {
+        match &mut self.running {
             Some(r) => {
                 ui.spinner();
                 let done = r.done.load(Ordering::Relaxed);
                 let elapsed = r.started.elapsed().as_secs_f64();
-                if done < r.total {
+                let read = r.read.share();
+                if read.is_some() && r.reading_since.is_none() {
+                    r.reading_since = Some(Instant::now());
+                }
+                if let (Some(share), Some(since)) = (read, r.reading_since) {
+                    // The points read: blocks decoded of those listed.
+                    let visited = r.read.visited.load(Ordering::Relaxed);
+                    ui.add(
+                        egui::ProgressBar::new(share as f32)
+                            .desired_width(140.0)
+                            .text(format!("{:.0} % of the points", share * 100.0)),
+                    );
+                    let reading = since.elapsed().as_secs_f64();
+                    let left = (share > 0.02).then(|| reading / share * (1.0 - share));
+                    ui.label(match left {
+                        Some(left) => format!(
+                            "{elapsed:.0} s, about {left:.0} s left; {} points checked",
+                            zone::millions(visited)
+                        ),
+                        None => {
+                            format!("{elapsed:.0} s; {} points checked", zone::millions(visited))
+                        }
+                    });
+                } else if done < r.total {
                     ui.add(
                         egui::ProgressBar::new(done as f32 / r.total.max(1) as f32)
                             .desired_width(140.0)
@@ -1313,7 +1401,9 @@ impl ZoneWindow {
                         None => format!("{elapsed:.0} s"),
                     });
                 } else {
-                    ui.label(format!("checking the clearances… {elapsed:.0} s"));
+                    ui.label(format!(
+                        "indexing the wires, checking the ground… {elapsed:.0} s"
+                    ));
                 }
                 if help::stop_button(ui, "Stop this check: the previous results stay") {
                     r.cancel.cancel();
@@ -1335,6 +1425,13 @@ impl ZoneWindow {
                         ui.visuals().warn_fg_color,
                         egui::RichText::new(format!("Before Run: {w}")).small(),
                     );
+                } else if self.report.is_none() {
+                    // What a run will do, and its time limit.
+                    ui.label(egui::RichText::new(&self.estimate).small().weak())
+                        .on_hover_text(format!(
+                            "The run stops at its time limit: {}",
+                            zone::time_limit_text(self.points)
+                        ));
                 }
                 if let Some(Ok(r)) = &self.report {
                     ui.label(
@@ -1393,6 +1490,20 @@ impl ZoneWindow {
             report.zone.points
         );
         ui.label(egui::RichText::new(head).small().weak());
+        // Where the time went, measured (owner, 2026-10-27).
+        egui::CollapsingHeader::new(
+            egui::RichText::new(format!(
+                "Where the time went ({:.1} s)",
+                (report.solving + report.checking).as_secs_f64()
+            ))
+            .small(),
+        )
+        .id_salt((self.title(), "timing"))
+        .show(ui, |ui| {
+            for l in zone::breakdown(report) {
+                ui.label(egui::RichText::new(l).small().weak());
+            }
+        });
         let mut notes: Vec<String> = Vec::new();
         for (k, low) in report.zone.lowest.iter().enumerate() {
             let name = &report.rules[k].name;
@@ -1628,26 +1739,37 @@ fn run(
     ground: Option<Arc<ohl_terrain::Terrain>>,
     surfaces: &[(String, Arc<ohl_terrain::Terrain>)],
     scope: Option<std::collections::BTreeSet<String>>,
-    done: &AtomicUsize,
-    cancel: &CancelToken,
+    progress: &Progress,
     filter: &ohl_weather::CaseFilter,
 ) -> Result<Report, String> {
     let surfaces: Vec<(String, &ohl_terrain::Terrain)> = surfaces
         .iter()
         .map(|(n, t)| (n.clone(), t.as_ref()))
         .collect();
+    let limit = zone::time_limit(progress.points);
     let budget = Budget::new()
-        .time_limit(TIME_BUDGET)
-        .cancel_token(cancel.clone());
+        .time_limit(limit)
+        .cancel_token(progress.cancel.clone());
+    let started = Instant::now();
     let read = |polylines: &[Vec<[f64; 2]>],
                 reach: f64,
                 classes: &[u8],
                 budget: &Budget,
                 visit: &mut dyn FnMut(f64, f64, f64, u8)| {
         let spec = cloud.as_deref().unwrap_or_default();
-        ohl_pointcloud::visit_around(spec, polylines, reach, classes, budget, visit).map(|_| ())
+        ohl_pointcloud::visit_around_with(
+            spec,
+            polylines,
+            reach,
+            classes,
+            budget,
+            Some(progress.read),
+            visit,
+        )
+        .map(|_| ())
     };
-    zone::run_zone_check(
+    let done = progress.done;
+    let result = zone::run_zone_check(
         line,
         library,
         zone,
@@ -1662,7 +1784,42 @@ fn run(
         &budget,
         done,
         filter,
-    )
+    );
+    // The time limit reached: said, with what to change.
+    result.map_err(|e| {
+        if !progress.cancel.is_cancelled() && started.elapsed() >= limit {
+            format!(
+                "{e} — the time limit of {} was reached: a larger wind step, fewer rules or \
+                 weather cases, a smaller search distance or fewer routes make the check faster",
+                zone::time_limit_text(progress.points)
+            )
+        } else {
+            e
+        }
+    })
+}
+
+/// What a run reports its progress to, and what it may take.
+struct Progress<'a> {
+    /// Wind positions solved.
+    done: &'a AtomicUsize,
+    /// Stop.
+    cancel: &'a CancelToken,
+    /// Points read.
+    read: &'a ohl_pointcloud::ReadProgress,
+    /// LiDAR points of the rules' classes in the cloud (the time limit).
+    points: u64,
+}
+
+/// The LiDAR points of the rules' classes in the model's point cloud
+/// (counted without reading them).
+pub fn rule_points(model: &Model, rules: &[ZoneRule]) -> u64 {
+    model
+        .class_counts
+        .iter()
+        .filter(|(c, _)| rules.iter().any(|r| r.classes.contains(c)))
+        .map(|(_, n)| n)
+        .sum()
 }
 
 /// The seconds left to solve `total` positions after `done` in
@@ -1955,6 +2112,142 @@ fn targets_ui(
                                 changed = true;
                             }
                         });
+                    }
+                });
+        });
+    });
+    changed
+}
+
+/// The routes and alignments checked (owner, 2026-10-27): a menu as the
+/// circuits', a route ticked with all of it, an alignment alone; none
+/// ticked: the whole line. Kept as the circuits are, in the rule file's
+/// `[check]` (and in the Clearances tab's settings). True when changed.
+pub fn route_choice(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    line: &ohl_line::Line,
+    check: &mut CheckScope,
+) -> bool {
+    if line.routes.is_empty() && line.alignments.is_empty() {
+        return false;
+    }
+    let mut changed = false;
+    let name = |id: &str, name: &str| {
+        if name.is_empty() || name == id {
+            id.to_owned()
+        } else {
+            format!("{name} ({id})")
+        }
+    };
+    ui.horizontal(|ui| {
+        ui.label("Routes");
+        let title = match (check.routes.len(), check.alignments.len()) {
+            (0, 0) => "the whole line".to_owned(),
+            (1, 0) => format!("route {}", check.routes[0]),
+            (0, 1) => format!("alignment {}", check.alignments[0]),
+            (r, a) => format!("{r} route(s), {a} alignment(s)"),
+        };
+        ui.push_id(id, |ui| {
+            crate::menu::options_menu(ui, &title, |ui| {
+                ui.label(
+                    egui::RichText::new("None ticked: the whole line")
+                        .small()
+                        .weak(),
+                );
+                egui::ScrollArea::vertical()
+                    .max_height(LIST_HEIGHT)
+                    .show(ui, |ui| {
+                        let toggle = |list: &mut Vec<String>, id: &str, on: bool| {
+                            if on {
+                                list.push(id.to_owned());
+                                list.sort();
+                                list.dedup();
+                            } else {
+                                list.retain(|x| x != id);
+                            }
+                        };
+                        for r in &line.routes {
+                            let mut on = check.routes.contains(&r.id);
+                            if ui.checkbox(&mut on, name(&r.id, &r.name)).changed() {
+                                toggle(&mut check.routes, &r.id, on);
+                                changed = true;
+                            }
+                            let whole = on;
+                            ui.indent(("alignments", &r.id), |ui| {
+                                for a in line.alignments.iter().filter(|a| a.route == r.id) {
+                                    let mut on = whole || check.alignments.contains(&a.id);
+                                    let label = format!("alignment {}", name(&a.id, &a.name));
+                                    if ui
+                                        .add_enabled(!whole, egui::Checkbox::new(&mut on, label))
+                                        .on_disabled_hover_text("The whole route is ticked")
+                                        .changed()
+                                    {
+                                        toggle(&mut check.alignments, &a.id, on);
+                                        changed = true;
+                                    }
+                                }
+                            });
+                        }
+                    });
+            });
+        });
+    });
+    changed
+}
+
+/// The circuits checked: a menu of the line's circuits (none ticked:
+/// every one), kept in the rule file's `[check]` — the vertical and radial
+/// windows' and the Clearances tab's alike. True when changed.
+pub fn circuit_choice(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    line: &ohl_line::Line,
+    check: &mut CheckScope,
+) -> bool {
+    let mut changed = false;
+    let mut names: Vec<String> = line
+        .sections
+        .iter()
+        .map(|s| s.circuit_name.clone())
+        .collect();
+    names.extend(check.circuits.iter().cloned());
+    names.sort();
+    names.dedup();
+    let shown = |n: &str| {
+        if n.is_empty() {
+            "(no circuit name)".to_owned()
+        } else {
+            n.to_owned()
+        }
+    };
+    ui.label("Circuits");
+    let title = match check.circuits.len() {
+        0 => "every circuit".to_owned(),
+        1 => shown(&check.circuits[0]),
+        n => format!("{n} circuits"),
+    };
+    ui.push_id(id, |ui| {
+        crate::menu::options_menu(ui, &title, |ui| {
+            ui.label(
+                egui::RichText::new("None ticked: every circuit")
+                    .small()
+                    .weak(),
+            );
+            egui::ScrollArea::vertical()
+                .max_height(LIST_HEIGHT)
+                .show(ui, |ui| {
+                    for n in &names {
+                        let mut on = check.circuits.contains(n);
+                        if ui.checkbox(&mut on, shown(n)).changed() {
+                            if on {
+                                check.circuits.push(n.clone());
+                                check.circuits.sort();
+                            } else {
+                                check.circuits.retain(|c| c != n);
+                            }
+                            changed = true;
+                        }
                     }
                 });
         });
