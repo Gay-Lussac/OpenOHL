@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Clearance rules by voltage in the application: the Clearances tab's
+//! Clearance rules by voltage in the application: the Clearances window's
 //! rule editor (a table "up to kV", a base plus an amount per kV, their
 //! preview, Undo), the clearance windows' rule rows, and a design-code
 //! plugin's rule preset loaded into the rule file; the voltage filter
@@ -15,7 +15,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use ohl_clearance::RuleSet;
 use ohl_clearance::rules::Requirement;
 
-use crate::app::{App, Tab};
+use crate::app::App;
 use crate::tests::{root, synthetic_project};
 
 const RULES: &str = r#"format = "ohl-clearance-rules"
@@ -34,7 +34,7 @@ target = "same_line"
 radial = "3 m" # phase to phase
 "#;
 
-/// A project with rule file `test.ohlr`, the Clearances tab shown and its
+/// A project with rule file `test.ohlr`, the Clearances window open and its
 /// editor open; the file's path.
 fn harness_with_rules(name: &str) -> (Harness<'static, App>, std::path::PathBuf) {
     harness_with(name, RULES)
@@ -56,7 +56,7 @@ fn harness_with(name: &str, text: &str) -> (Harness<'static, App>, std::path::Pa
     {
         let r = app.ready().unwrap();
         r.clearances.refresh(&r.model, None);
-        r.open_page = Some((Tab::Clearances, None));
+        r.clearances.open = true;
     }
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
@@ -71,7 +71,7 @@ fn rules_of(file: &std::path::Path) -> RuleSet {
     RuleSet::load(file).unwrap()
 }
 
-/// The Clearances tab's editor: the ground's distance turned into a table
+/// The Clearances window's editor: the ground's distance turned into a table
 /// (a row added for the voltage above it), the wires' into base + per kV;
 /// the preview gives the distance at 0 and 220 kV (the synthetic line's);
 /// each change written in place (comments kept) as a logged command that
@@ -143,7 +143,7 @@ fn the_rule_editor_sets_distances_by_voltage() {
         text.contains("radial = { base = \"3 m\", per_kv = \"0.01 m\", above_kv = 50.0 }"),
         "{text}"
     );
-    // The Clearances tab's check reads the new rules.
+    // The Clearances window's check reads the new rules.
     let r = harness.state_mut().ready().unwrap();
     let rules = r.clearances.rules.clone().unwrap().unwrap();
     assert_eq!(
@@ -385,7 +385,7 @@ fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
     {
         let r = app.ready().unwrap();
         r.clearances.refresh(&r.model, None);
-        r.open_page = Some((Tab::Clearances, None));
+        r.clearances.open = true;
     }
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
@@ -690,11 +690,11 @@ fn remove_all_rules_asks_and_undoes() {
     );
 }
 
-/// The Clearances tab (usability pass 2026-10-27): the rule file named,
+/// The Clearances window (usability pass 2026-10-27): the rule file named,
 /// "not checked yet" before a run, the results above the rule editor, the
 /// ground and LiDAR clearance windows reachable from it.
 #[test]
-fn the_clearances_tab_puts_the_results_first() {
+fn the_clearances_window_puts_the_results_first() {
     let (mut harness, _file) = harness_with_rules("clearances-order");
     harness.get_by_label("Rule file");
     let hint = harness.get_by_label_contains("Not checked yet").rect();
@@ -716,7 +716,7 @@ fn the_clearances_tab_puts_the_results_first() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     harness.run();
-    let head = harness.get_by_label_contains("violation").rect();
+    let head = harness.get_by_label_contains("violations (").rect();
     assert!(head.bottom() <= harness.get_by_label("Edit rules").rect().top());
     // Below the rule editor (scrolled to: the page's items have more
     // room since 2026-10-27).
@@ -734,10 +734,10 @@ fn the_clearances_tab_puts_the_results_first() {
     );
 }
 
-/// The Clearances tab's Run: in its footer, under the rules, running the
+/// The Clearances window's Run: in its footer, under the rules, running the
 /// check of the rule file.
 #[test]
-fn the_clearances_tab_runs_from_its_footer() {
+fn the_clearances_window_runs_from_its_footer() {
     let (mut harness, _file) = harness_with_rules("clearances-footer");
     let run = harness.get_by_label("Run").rect();
     let edit = harness.get_by_label("Edit rules").rect();

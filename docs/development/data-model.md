@@ -935,7 +935,7 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `CheckScope::wires_on` / `ohl_line::Line::wires_on`) — what the
   desktop clearance windows and `ohl zones` solve and read (both through
   `ohl_clearance::zone::run_zone_check`), and since 2026-10-27 the
-  circuits, routes and alignments the Clearances tab checks with that
+  circuits, routes and alignments the Clearances window checks with that
   rule file; `ohl line` ignores it (`--clearance-route`,
   `--clearance-alignment` instead).
 - Speed (2026-10-27, results unchanged): `checks::WireSet::within` lists
@@ -1103,7 +1103,7 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   in 64 × 64 tiles) bounds `ground_check` / `ground_check_with`, which
   checks the wires on every core. `checks_reference.rs` keeps the
   earlier code for the tests that compare them.
-- The Clearances tab's rule editor (`ohl-app` `rule_editor`) edits a rule
+- The Clearances window's rule editor (`ohl-app` `rule_editor`) edits a rule
   file in place with `toml_edit` (names, `vertical`, `radial`, rules
   added and removed, a value's trailing comment kept; an unchanged
   requirement keeps its text); a project's rule file is written as one
@@ -1183,7 +1183,7 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - **Rule presets** of design-code plugins (optional `rule-presets`
   export, 2026-10-20) are rule files of any targets with a description and
   optional weather cases (`ohl_io::codes::RulePresetChecked`); the app
-  reads them from the plugins when the Clearances tab's Load preset…
+  reads them from the plugins when the Clearances window's Load preset…
   opens (merged into the chosen rule file or replacing its rules, the
   preset's tables copied as written); `ohl code generate` and `ohl code
   rule-presets --out` write them as `<plugin>-rules-<name>.ohlr` (and

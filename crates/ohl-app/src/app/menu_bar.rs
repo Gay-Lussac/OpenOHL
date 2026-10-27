@@ -323,6 +323,10 @@ pub(super) fn menus(
         for tab in Tab::VIEWS.into_iter().filter(|t| !t.advanced()) {
             page(ui, tab);
         }
+        // A window like the check windows since 2026-10-27 (owner: "yes
+        // standardise"), ticked here as when it was a page.
+        ui.checkbox(&mut r.clearances.open, "Clearances")
+            .on_hover_text("The Clearances window: the wire clearance check's results and rules");
         crate::menu::options_menu(ui, "Advanced", |ui| {
             for tab in Tab::VIEWS.into_iter().filter(|t| t.advanced()) {
                 page(ui, tab);
@@ -687,8 +691,8 @@ pub(super) fn menus(
             ui.label(
                 egui::RichText::new(
                     "Between the wires of this line and to exclusion zones: the rules of a \
-                     rule file (.ohlr), in the weather case shown; results on the Clearances \
-                     page (other lines: `ohl line --other-line`)",
+                     rule file (.ohlr), in the weather case shown; results in the Clearances \
+                     window (other lines: `ohl line --other-line`)",
                 )
                 .small()
                 .weak(),
@@ -721,7 +725,7 @@ pub(super) fn menus(
                 add_rule_file(r);
             }
             if ui.button("Show results").clicked() {
-                open_page(dock, Tab::Clearances);
+                r.clearances.open = true;
                 ui.close();
             }
         });
@@ -960,7 +964,7 @@ pub(super) fn run_command(
         Command::RunChecks => {
             r.clearances.stale = true;
             start_clearance_check(ctx, r);
-            open_page(dock, Tab::Clearances);
+            r.clearances.open = true;
         }
         Command::Library(k) => open_page(dock, Tab::Library(k)),
         Command::Save => r.save_all(),

@@ -11,7 +11,7 @@ the starter's invented values, not those of any regulation.
 ## Steps
 
 1. **Wire clearances.** **Checks › Wire clearances › Check wire
-   clearances** (also on the quick bar). The **Clearances** page shows
+   clearances** (also on the quick bar). The **Clearances** window shows
    the result for the weather case shown first (*everyday*), with the
    starter's rule file *starter-clearance-rules* chosen: per rule its
    lowest clearance — *Ground* (7 m) and *Phase to phase* (2 m) — and no

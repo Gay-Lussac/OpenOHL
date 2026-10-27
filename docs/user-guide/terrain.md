@@ -93,7 +93,7 @@ radial = "4.5 m"
 | `vertical`, `radial` | Required clearances (at least one): a distance, or depending on the voltage (below). |
 | `pair_voltage` | Wire rules: the voltage of a pair of wires is the `higher` of the two systems' nominal voltages (default), their `sum`, or the `difference` — the actual voltage between the two conductors from phase angles and DC polarities. |
 | `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m); points farther away in plan are left out entirely (no slanting or 3D distance). For the ground: the highest ground within this distance (default 0: straight below the wire). The distance is the wire's height over the point at the point's place along the wire, and it is drawn vertical, from the point straight up to that height (2026-10-22). |
-| `screen` | `true`: a **screen** (2026-10-27) — a horizontal distance of a code the rule has no measure for (e.g. a lamp post's 5 m + 0.01 m/kV in plan): the `vertical` requirement is then the half width b of a band in plan (fixed or by the wire's voltage), and every point of the rule's classes within b of the wire in plan is reported, at any height. The results say it plainly — "6.10 m in plan, within b = 8.80 m" — and give the distance in plan and b (the windows, the Clearances tab, the plan's labels, `ohl zones` and its CSV), not a vertical clearance. Points targets only. One rule for every voltage (its b by voltage). |
+| `screen` | `true`: a **screen** (2026-10-27) — a horizontal distance of a code the rule has no measure for (e.g. a lamp post's 5 m + 0.01 m/kV in plan): the `vertical` requirement is then the half width b of a band in plan (fixed or by the wire's voltage), and every point of the rule's classes within b of the wire in plan is reported, at any height. The results say it plainly — "6.10 m in plan, within b = 8.80 m" — and give the distance in plan and b (the windows, the Clearances window, the plan's labels, `ohl zones` and its CSV), not a vertical clearance. Points targets only. One rule for every voltage (its b by voltage). |
 | `vertical_depth` | Vertical clearances to points and the ground: the depth along the line of the area under the wire (`vertical_band` its half width across), e.g. `"0.2 m"`. The clearance is the shortest vertical distance between the wire and a point of the area: a point is compared with the wire's lowest point within that depth around it (its highest for a point above the wire). Default 0: the wire straight above the point. |
 | `voltages` | Optional: only the wires of these nominal voltages are checked, e.g. `[220]` (kV; `0` for earthed wires); default: all. Wire rules: the first wire of a pair. A distance by voltage (a table or base + per kV) needs none: one rule covers every voltage (2026-10-21; [A rule's voltages](desktop-app.md#a-rules-voltages)). |
 | `wires` | Which wires are checked: `"sections"` (the spans), `"jumpers"`, or `"both"` (default). |
@@ -157,7 +157,7 @@ Design-code plugins may give such rule files as **clearance presets**
 for those windows ([Design codes](design-codes.md#clearance-presets)),
 and **rule presets** for any rule set — ground, objects, crossings, wire
 to wire ([Design codes](design-codes.md#rule-presets)). In the desktop
-application the Clearances tab's **Edit rules** and the clearance windows
+application the Clearances window's **Edit rules** and the clearance windows
 set every distance in the three forms below
 ([Distances by voltage](desktop-app.md#distances-by-voltage)).
 

@@ -203,7 +203,7 @@ impl Command {
         match self {
             Command::RunChecks => Some(
                 "The rules of the clearance rule file (Checks › Wire clearances) in the \
-                 weather case shown; results on the Clearances page. The ground and LiDAR \
+                 weather case shown; results in the Clearances window. The ground and LiDAR \
                  points: Checks › Ground clearances",
             ),
             Command::FitViews => Some("Show the whole line in the 3D view and the plan"),

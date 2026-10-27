@@ -187,3 +187,165 @@ fn a_phase_distance_result_draws_its_pair_in_its_case() {
     h.run();
     assert!(h.state_mut().ready().unwrap().model.result_case.is_none());
 }
+
+/// The note beside a result (owner, 2026-10-27): in its wire's colour
+/// (the section's display colour), not white, without a box.
+#[test]
+fn a_result_note_is_in_its_wire_colour() {
+    let mut h = window();
+    let r = h.state_mut().ready().unwrap();
+    let a = r.model.line.sections[0].id.clone();
+    let rc = crate::result_case::ResultCase::new(
+        crate::result_case::From::PhaseDistance(crate::phase_distance::Kind::Span),
+        crate::selection::Selection::Span {
+            section: a.clone(),
+            span: 0,
+        },
+        vec![a.clone()],
+        Some(0),
+        "found in a case".into(),
+        [0.0; 3],
+    );
+    r.show_result_case(Some(rc));
+    let styles = crate::wire_style::Styles::new(&r.model.line, r.model.section_display.coloring);
+    let wire = styles.section(&a).color;
+    assert_ne!(wire, [255, 255, 255], "the example's wire is not white");
+    assert_eq!(r.model.result_case.as_ref().unwrap().colour, wire);
+}
+
+/// Drags the list handle at `from` down by `dy` px (in steps of 20 px).
+fn drag_handle(h: &mut Harness<'_, App>, from: egui::Pos2, dy: f32) {
+    h.input_mut().events.extend([
+        egui::Event::PointerMoved(from),
+        egui::Event::PointerButton {
+            pos: from,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        },
+    ]);
+    h.step();
+    let steps = (dy / 20.0).round() as i32;
+    for k in 1..=steps {
+        let at = from + egui::vec2(0.0, 20.0 * k as f32);
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.step();
+    }
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from + egui::vec2(0.0, dy),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run();
+}
+
+/// The Clearances window (a page until 2026-10-27; owner: "yes
+/// standardise"): opened by Checks › Wire clearances › Show results (no
+/// page any more), docked with 📌, floated with ⬈; its violations drawn
+/// while it is open, taken off when it closes, back when it opens again.
+#[test]
+fn the_clearances_window_docks_and_its_marks_follow_it() {
+    let mut h = window();
+    assert!(!h.state_mut().ready().unwrap().clearances.open);
+    h.get_by_label("Checks").click();
+    h.run();
+    h.get_by_label_contains("Wire clearances").hover();
+    h.run();
+    h.get_by_label("Show results").click();
+    h.run();
+    h.run();
+    assert!(h.state_mut().ready().unwrap().clearances.open);
+    let tab = Tab::Tool(Panel::Clearances);
+    assert!(h.state_mut().dock().find_tab(&tab).is_none(), "floating");
+    // Its check run from its footer.
+    h.get_by_label("Run").click();
+    let started = std::time::Instant::now();
+    loop {
+        h.step();
+        let r = h.state_mut().ready().unwrap();
+        if r.clearances.report.is_some() && !r.clearances.running() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no report in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.run();
+    let marks = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let n = match &r.clearances.report {
+            Some(Ok(rep)) => rep.findings.len(),
+            _ => panic!("no report"),
+        };
+        (n, r.view3d.marks.len(), r.plan.marks.len())
+    };
+    let (n, shown, plan) = marks(&mut h);
+    assert!(n > 0, "the example rules find violations");
+    assert_eq!((shown, plan), (n, n), "drawn while open");
+    // Docked: still drawn; floated again: still drawn.
+    h.get_by_label("Dock as a panel").click();
+    h.run();
+    h.run();
+    assert!(h.state_mut().dock().find_tab(&tab).is_some(), "docked");
+    assert_eq!(marks(&mut h).1, n);
+    h.get_by_label("Float").click();
+    h.run();
+    h.run();
+    assert!(h.state_mut().dock().find_tab(&tab).is_none(), "floating");
+    assert_eq!(marks(&mut h).1, n);
+    // Closed: taken off; opened again: back.
+    h.state_mut().ready().unwrap().clearances.open = false;
+    h.run();
+    assert_eq!(marks(&mut h).1, 0, "taken off when closed");
+    h.state_mut().ready().unwrap().clearances.open = true;
+    h.run();
+    assert_eq!(marks(&mut h).1, n, "back when opened again");
+}
+
+/// Spot structures (owner, 2026-10-27: "keep it standard too"): a check
+/// window like the others, docked with 📌.
+#[test]
+fn spot_structures_docks_as_a_panel() {
+    let mut h = window();
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.spot.open(&r.model);
+    }
+    h.run();
+    let tab = Tab::Tool(Panel::Spot);
+    assert!(h.state_mut().dock().find_tab(&tab).is_none(), "floating");
+    h.get_by_label("Dock as a panel").click();
+    h.run();
+    h.run();
+    assert!(h.state_mut().dock().find_tab(&tab).is_some(), "docked");
+    h.get_by_label("Run");
+    h.get_by_label("Float").click();
+    h.run();
+    h.run();
+    assert!(h.state_mut().dock().find_tab(&tab).is_none(), "floating");
+}
+
+/// A settings window's list (Criteria › Default values; owner,
+/// 2026-10-27: "yes if the list is scrollable and risks getting big"):
+/// its handle dragged down 100 px makes it 100 px taller.
+#[test]
+fn a_settings_list_is_made_taller() {
+    let mut h = window();
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.defaults_window = Some((r.model.line.defaults, None));
+    }
+    h.run();
+    h.run();
+    let height =
+        |h: &Harness<'_, App>| crate::check_help::list_height(&h.ctx, "default-values", 0.0);
+    assert_eq!(height(&h), 0.0, "not dragged yet");
+    let handle = h
+        .query_all_by_label(crate::check_help::LIST_HANDLE)
+        .next()
+        .expect("a handle under the default values")
+        .rect();
+    drag_handle(&mut h, handle.center(), 100.0);
+    let taller = height(&h);
+    assert!((taller - 520.0).abs() < 1.0, "{taller}");
+}

@@ -76,11 +76,15 @@ pub enum Panel {
     Loads,
     /// Bill of materials › Wires.
     BillOfMaterials,
+    /// Checks › Wire clearances › Show results (a page until 2026-10-27).
+    Clearances,
+    /// Line › Structures › Spot structures.
+    Spot,
 }
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 23] = [
+    pub const ALL: [Panel; 25] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -104,6 +108,8 @@ impl Panel {
         Panel::CheckLibrary,
         Panel::Loads,
         Panel::BillOfMaterials,
+        Panel::Clearances,
+        Panel::Spot,
     ];
 
     /// A name until its window gave its title.
@@ -132,6 +138,8 @@ impl Panel {
             Panel::CheckLibrary => "Performed checks",
             Panel::Loads => "Structure loads",
             Panel::BillOfMaterials => "Bill of materials: wires",
+            Panel::Clearances => "Clearances",
+            Panel::Spot => "Spot structures",
         }
     }
 }

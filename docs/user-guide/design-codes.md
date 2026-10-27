@@ -94,7 +94,7 @@ preset covers every voltage. OpenOHL checks each preset like any rule file
 (at least one rule; each weather case a rule names among the preset's;
 names unique).
 
-In the desktop application the Clearances tab's **Edit rules › Load
+In the desktop application the Clearances window's **Edit rules › Load
 preset…** lists the rule presets of the design-code plugins turned on,
 read with the parameter file chosen in Line › Criteria › Design code (none
 chosen: an empty one), shows one with its distances at the project's
@@ -229,7 +229,7 @@ file is left as it is: the code's file holds your cases and the new
 ones. The model then uses them: the weather cases are solved, and
 Structure loads uses the load cases. The code's clearance presets go into the project's rule and
 weather case files (for the clearance windows' Load preset…; its rule
-presets are read when the Clearances tab's Load preset… opens), its wind
+presets are read when the Clearances window's Load preset… opens), its wind
 factors for structures into the project line's cross-section library. The
 code's notes are shown in the window. In OHL-Structure, **Load cases ›
 Load cases from a design code…** writes the wind factors into the section

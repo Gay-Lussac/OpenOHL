@@ -3,18 +3,18 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Clearances: the check run every frame, the windows' requests, the rule
-//! files, the Clearances panel.
+//! files, the Clearances window.
 
 use super::*;
 
 /// Clearances: takes a finished check, starts one when the model changed
 /// (with "check after edits" on) or no check ran yet. Its violations are
-/// drawn while the Clearances tab is open (docked or moved too), taken off
-/// the views once it is closed, back when it is opened again (as the
-/// vegetation panel's layers).
-pub(super) fn clearance_frame(ctx: &egui::Context, r: &mut Ready, tab_open: bool) {
+/// drawn while the Clearances window is open (docked or behind another tab
+/// too), taken off the views once it is closed, back when it is opened
+/// again (as the other check windows' marks).
+pub(super) fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
     let arrived = r.clearances.poll();
-    let shown = tab_open && r.clearances.report.is_some();
+    let shown = r.clearances.open && r.clearances.report.is_some();
     if (arrived || r.clearances_drawn != Some(shown))
         && (shown || r.marks_from == MarksFrom::Clearances)
     {
@@ -40,6 +40,18 @@ pub(super) fn clearance_frame(ctx: &egui::Context, r: &mut Ready, tab_open: bool
 pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
     use crate::dockable::Panel;
     use crate::phase_distance::Kind;
+    // The Clearances window (a page until 2026-10-27; owner: "yes
+    // standardise").
+    let mut open = r.clearances.open;
+    crate::check_help::window(
+        ctx,
+        Panel::Clearances,
+        Panel::Clearances.name(),
+        [560.0, 720.0],
+        &mut open,
+        |ui| clearance_panel(ui, r),
+    );
+    r.clearances.open = open;
     for kind in [Kind::Span, Kind::UnequalWind] {
         let (panel, w) = match kind {
             Kind::Span => (Panel::PhaseDistance, &mut r.phase_distance),
@@ -95,9 +107,12 @@ pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
 impl Ready {
     /// Shows a check result's weather case on its sections (`None`: none
     /// any more), [`crate::result_case`].
-    pub(crate) fn show_result_case(&mut self, r: Option<crate::result_case::ResultCase>) {
+    pub(crate) fn show_result_case(&mut self, mut r: Option<crate::result_case::ResultCase>) {
         if r.is_none() && self.model.result_case.is_none() {
             return;
+        }
+        if let Some(rc) = r.as_mut() {
+            rc.colour_from(&self.model.line, self.model.section_display.coloring);
         }
         self.model.result_case = r;
         self.result_case_changed();
@@ -170,7 +185,7 @@ impl Ready {
         self.show_result_case(Some(rc));
     }
 
-    /// A finding of the Clearances page clicked: its wire (and the other
+    /// A finding of the Clearances window clicked: its wire (and the other
     /// wire of a wire rule) drawn in the case checked.
     pub(crate) fn show_clearance_finding(&mut self, f: &crate::clearance::Finding, case: &str) {
         let section = |s: &Selection| match s {
@@ -195,9 +210,8 @@ impl Ready {
 
     /// Every frame: the wire of a result's wind, when it came; the
     /// result's case taken off once the selection changed or the window
-    /// (page) that drew it closed (`clearances_page`: the Clearances page
-    /// is open).
-    pub(super) fn result_case_frame(&mut self, clearances_page: bool) {
+    /// that drew it closed.
+    pub(super) fn result_case_frame(&mut self) {
         use crate::result_case::From;
         let Some(rc) = self.model.result_case.as_mut() else {
             return;
@@ -208,7 +222,7 @@ impl Ready {
         let open = match rc.from {
             From::Zone(ohl_clearance::Measure::Vertical) => self.vertical_clearances.open,
             From::Zone(ohl_clearance::Measure::Radial) => self.radial_clearances.open,
-            From::Clearances => clearances_page,
+            From::Clearances => self.clearances.open,
             From::PhaseDistance(crate::phase_distance::Kind::Span) => self.phase_distance.open,
             From::PhaseDistance(crate::phase_distance::Kind::UnequalWind) => self.unequal_wind.open,
         };
@@ -534,14 +548,14 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
 }
 
 /// The three ways to check clearances, in words (the Checks menu and the
-/// Clearances page).
+/// Clearances window).
 pub const CLEARANCES_ABOUT: &str = "To the ground and LiDAR points: rules typed in the \
      windows below. Between the wires of this line: the rules of a rule file, run by Check \
      wire clearances.";
 
 /// Checks › Wire clearances › Add a rule file: a clearance rule file
 /// (.ohlr) chosen on the computer, kept in the project (next to a line
-/// file) and chosen on the Clearances page.
+/// file) and chosen in the Clearances window.
 pub(super) fn add_rule_file(r: &mut Ready) {
     let Some(from) = rfd::FileDialog::new()
         .add_filter(
@@ -564,7 +578,7 @@ pub(super) fn add_rule_file(r: &mut Ready) {
             {
                 r.clearances.choose(k);
             }
-            r.open_page = Some((Tab::Clearances, None));
+            r.clearances.open = true;
             (
                 format!("rule file {}", crate::menu::file_label(&r.model, &to)),
                 false,
@@ -593,15 +607,15 @@ pub(super) fn keep_rule_file(
     Ok(to)
 }
 
-/// The Clearances tab: rule file, the violations of the shown case (click
-/// one to go there).
+/// The Clearances window: rule file, the violations of the shown case
+/// (click one to go there).
 pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     // Run in the footer at the bottom left, always visible (owner,
     // 2026-10-21); the rest scrolls above it.
     let mut check =
-        crate::check_help::body(ui, "clearances-page", |ui| clearance_panel_body(ui, r));
+        crate::check_help::body(ui, "clearances-window", |ui| clearance_panel_body(ui, r));
     if !r.clearances.files.is_empty() {
-        crate::check_help::footer(ui, "clearances-page", |ui| {
+        crate::check_help::footer(ui, "clearances-window", |ui| {
             let c = &mut r.clearances;
             check |= crate::check_help::run_button(
                 ui,
@@ -647,7 +661,7 @@ pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     }
 }
 
-/// The Clearances tab above its footer: true to run the check (Run again).
+/// The Clearances window above its footer: true to run the check (Run again).
 pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     r.clearances.set_defaults(&r.model.line.defaults);
     if r.clearances.files.is_empty() {
@@ -795,57 +809,65 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
             }
             // The violations first, then the rules and notes they were
             // found with (all there, below).
-            {
-                for f in &rep.findings {
-                    let other = f
-                        .other
-                        .as_ref()
-                        .map_or(String::new(), |o| format!(" – {}", o.describe()));
-                    let class = f.class.map_or(String::new(), |k| {
-                        format!(
-                            ", class {k}{}",
-                            r.model
-                                .scheme
-                                .class(k)
-                                .map_or(String::new(), |d| format!(" {}", d.name))
-                        )
-                    });
-                    // What, then by how much: two lines (the tab is
-                    // narrow; one line was cut off).
-                    let mut job = egui::text::LayoutJob::default();
-                    let strong = egui::TextFormat {
-                        color: ui.visuals().strong_text_color(),
-                        ..Default::default()
-                    };
-                    let weak = egui::TextFormat {
-                        font_id: egui::FontId::proportional(11.0),
-                        color: ui.visuals().weak_text_color(),
-                        ..Default::default()
-                    };
-                    job.append(&format!("{}{other}", f.wire.describe()), 0.0, strong);
-                    let how = match f.band {
-                        Some(b) => ohl_clearance::zone::screen_text(b, f.at, f.target),
-                        None => format!("{} {:.2} m < {:.2} m", f.measure, f.distance, f.required),
-                    };
-                    job.append(
-                        &format!(
-                            "\n{how} — {}{class}{}",
-                            f.rule,
-                            if f.count > 1 {
-                                format!(" ({} below)", f.count)
-                            } else {
-                                String::new()
+            crate::check_help::list(
+                ui,
+                "clearances-findings",
+                crate::check_help::LIST_HEIGHT,
+                egui::ScrollArea::vertical().auto_shrink([false, true]),
+                |ui| {
+                    for f in &rep.findings {
+                        let other = f
+                            .other
+                            .as_ref()
+                            .map_or(String::new(), |o| format!(" – {}", o.describe()));
+                        let class = f.class.map_or(String::new(), |k| {
+                            format!(
+                                ", class {k}{}",
+                                r.model
+                                    .scheme
+                                    .class(k)
+                                    .map_or(String::new(), |d| format!(" {}", d.name))
+                            )
+                        });
+                        // What, then by how much: two lines (one line was cut
+                        // off in a narrow window or tab).
+                        let mut job = egui::text::LayoutJob::default();
+                        let strong = egui::TextFormat {
+                            color: ui.visuals().strong_text_color(),
+                            ..Default::default()
+                        };
+                        let weak = egui::TextFormat {
+                            font_id: egui::FontId::proportional(11.0),
+                            color: ui.visuals().weak_text_color(),
+                            ..Default::default()
+                        };
+                        job.append(&format!("{}{other}", f.wire.describe()), 0.0, strong);
+                        let how = match f.band {
+                            Some(b) => ohl_clearance::zone::screen_text(b, f.at, f.target),
+                            None => {
+                                format!("{} {:.2} m < {:.2} m", f.measure, f.distance, f.required)
                             }
-                        ),
-                        0.0,
-                        weak,
-                    );
-                    let selected = r.selection == f.wire;
-                    if ui.selectable_label(selected, job).clicked() {
-                        go = Some(f.clone());
+                        };
+                        job.append(
+                            &format!(
+                                "\n{how} — {}{class}{}",
+                                f.rule,
+                                if f.count > 1 {
+                                    format!(" ({} below)", f.count)
+                                } else {
+                                    String::new()
+                                }
+                            ),
+                            0.0,
+                            weak,
+                        );
+                        let selected = r.selection == f.wire;
+                        if ui.selectable_label(selected, job).clicked() {
+                            go = Some(f.clone());
+                        }
                     }
-                }
-            }
+                },
+            );
             ui.separator();
             for (rule, text) in &rep.rules {
                 ui.label(egui::RichText::new(format!("{rule}: {text}")).small());

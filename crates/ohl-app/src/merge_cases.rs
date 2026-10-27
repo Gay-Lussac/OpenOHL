@@ -383,6 +383,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
         .collapsible(false)
         .default_width(560.0)
         .show(ctx, |ui| {
+            // The shared spacing (owner, 2026-10-27).
+            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
             ui.label(
                 egui::RichText::new(
                     "Weather cases with the same weather (temperature, ice, wind and what \
@@ -399,9 +401,12 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             if groups.is_empty() {
                 ui.label("No two weather cases have the same weather.");
             }
-            egui::ScrollArea::vertical()
-                .max_height(360.0)
-                .show(ui, |ui| {
+            crate::check_help::list(
+                ui,
+                "merge-cases",
+                360.0,
+                egui::ScrollArea::vertical(),
+                |ui| {
                     for (k, g) in groups.iter_mut().enumerate() {
                         ui.horizontal(|ui| {
                             ui.checkbox(&mut g.on, "");
@@ -423,7 +428,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                             ui.label(format!("merges {}", others.join(", ")));
                         });
                     }
-                });
+                },
+            );
             if let Some((m, error)) = &w.status {
                 if *error {
                     crate::menu::error_label(ui, m);

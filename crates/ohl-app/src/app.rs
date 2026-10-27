@@ -51,8 +51,6 @@ pub enum Tab {
     Properties,
     /// Layers, weather cases, load log.
     Model,
-    /// Clearance violations.
-    Clearances,
     /// A library editor.
     Library(crate::library::LibraryKind),
     /// A table of the line.
@@ -78,7 +76,7 @@ pub enum Tab {
 /// Where a tab's context menu moves it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place {
-    /// With the pages on the left (Model, Clearances, Next steps).
+    /// With the pages on the left (Model, Next steps).
     Left,
     /// With Properties, on the right.
     Right,
@@ -88,14 +86,13 @@ pub enum Place {
 
 impl Tab {
     /// The pages of the View menu (library pages: the Libraries menu).
-    pub const VIEWS: [Tab; 10] = [
+    pub const VIEWS: [Tab; 9] = [
         Tab::NextSteps,
         Tab::View3d,
         Tab::Plan,
         Tab::Profile,
         Tab::Properties,
         Tab::Model,
-        Tab::Clearances,
         Tab::Lod,
         Tab::People,
         Tab::Roles,
@@ -115,7 +112,6 @@ impl Tab {
             Tab::Profile => "Profile",
             Tab::Properties => "Properties",
             Tab::Model => "Model",
-            Tab::Clearances => "Clearances",
             Tab::Library(k) => k.title(),
             Tab::Table(k) => k.title(),
             Tab::Lod => "Level of detail",
@@ -166,7 +162,7 @@ pub enum PluginRequest {
 /// is out of date, [`crate::revision::frame`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarksFrom {
-    /// The Clearances tab.
+    /// The Clearances window.
     Clearances,
     /// A vertical or radial clearance window.
     Zone(ohl_clearance::Measure),
@@ -374,7 +370,7 @@ pub struct Ready {
     pub lidar_ground: crate::job::Job<Option<ohl_terrain::Terrain>>,
     /// The check whose clearance violations the views draw.
     pub marks_from: MarksFrom,
-    /// The Clearances tab's violations drawn (the tab open with a
+    /// The Clearances window's violations drawn (the window open with a
     /// report); `None` before the first frame.
     pub clearances_drawn: Option<bool>,
     /// The ground is to be built again from the LiDAR ground classes
@@ -420,7 +416,7 @@ pub struct Ready {
     pub open_project: Option<std::path::PathBuf>,
     /// Line › Criteria › Design code.
     pub design_code: crate::codes::DesignCodeWindow,
-    /// The Clearances tab's rule editor and its rule presets.
+    /// The Clearances window's rule editor and its rule presets.
     pub rule_editor: crate::rule_editor::RuleEditor,
     /// Plugin manager › Presets…: a plugin's presets edited in the project.
     pub preset_editor: crate::preset_edits::PresetEditor,
@@ -720,11 +716,7 @@ pub fn default_dock() -> DockState<Tab> {
     let [centre, _] = tree.split_right(NodeIndex::root(), 0.74, vec![Tab::Properties]);
     // The left column wide enough for Next steps' titles beside their
     // links (2026-10-25: at 0.2 they broke every few letters).
-    let [centre, _] = tree.split_left(
-        centre,
-        0.28,
-        vec![Tab::Model, Tab::Clearances, Tab::NextSteps],
-    );
+    let [centre, _] = tree.split_left(centre, 0.28, vec![Tab::Model, Tab::NextSteps]);
     tree.split_below(centre, 0.66, vec![Tab::Profile]);
     dock
 }
@@ -2086,11 +2078,10 @@ impl eframe::App for App {
                 edit_keys(ui.ctx(), ready);
                 {
                     let _t = crate::perf::span("hooks: clearances");
-                    let tab_open = self.dock.find_tab(&Tab::Clearances).is_some();
-                    clearance_frame(ui.ctx(), ready, tab_open);
+                    clearance_frame(ui.ctx(), ready);
                     // A result's weather case on its spans: until the
                     // selection or its window changes.
-                    ready.result_case_frame(tab_open);
+                    ready.result_case_frame();
                 }
                 {
                     let _t = crate::perf::span("hooks: popups");

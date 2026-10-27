@@ -196,7 +196,7 @@ struct Args {
     /// User editing the project (default: the login name).
     #[arg(long)]
     user: Option<String>,
-    /// Clearance rules (.ohlr) for the Clearances tab; default: the only
+    /// Clearance rules (.ohlr) for the Clearances window; default: the only
     /// .ohlr next to the file.
     #[arg(long)]
     rules: Option<PathBuf>,

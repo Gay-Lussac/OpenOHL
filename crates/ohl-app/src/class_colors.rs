@@ -56,6 +56,8 @@ impl ClassWindow {
             .open(open)
             .default_width(720.0)
             .show(ctx, |ui| {
+                // The shared spacing (owner, 2026-10-27).
+                ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
                 ui.label(format!(
                     "Scheme: {} — {}",
                     model.scheme.name,
@@ -148,12 +150,15 @@ impl ClassWindow {
                     .chain(model.scheme.classes.iter().map(|c| c.code))
                     .collect();
                 let mut changed = false;
-                egui::ScrollArea::vertical()
-                    .max_height(440.0)
-                    .show(ui, |ui| {
+                crate::check_help::list(
+                    ui,
+                    "class-colours",
+                    440.0,
+                    egui::ScrollArea::vertical(),
+                    |ui| {
                         egui::Grid::new("class-colours")
                             .striped(true)
-                            .spacing([12.0, 3.0])
+                            .spacing(crate::check_help::GRID_SPACING)
                             .show(ui, |ui| {
                                 for h in ["class", "name", "roles", "points", "colour", ""] {
                                     ui.strong(h);
@@ -194,7 +199,8 @@ impl ClassWindow {
                                     ui.end_row();
                                 }
                             });
-                    });
+                    },
+                );
                 if changed {
                     self.dirty = true;
                     action = Some(ClassAction::Recolor);

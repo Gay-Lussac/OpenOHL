@@ -149,7 +149,10 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     egui::Window::new("Versions")
         .open(&mut open)
         .default_width(820.0)
-        .show(ctx, |ui| w.ui(ui, r, &mut ops));
+        .show(ctx, |ui| {
+            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
+            w.ui(ui, r, &mut ops)
+        });
     w.open = open;
     if let Some(name) = w.switch_to.take() {
         r.switch_line(&name);
@@ -431,13 +434,15 @@ impl VersionsWindow {
         if snap.revisions.is_empty() {
             weak(ui, "No revision yet: commit the working state.");
         }
-        egui::ScrollArea::vertical()
-            .id_salt("revisions")
-            .max_height(360.0)
-            .show(ui, |ui| {
+        crate::check_help::list(
+            ui,
+            "versions-revisions",
+            360.0,
+            egui::ScrollArea::vertical().id_salt("revisions"),
+            |ui| {
                 egui::Grid::new("version-revisions")
                     .striped(true)
-                    .spacing([10.0, 3.0])
+                    .spacing(crate::check_help::GRID_SPACING)
                     .show(ui, |ui| {
                         for rev in snap.revisions.iter().take(500) {
                             let labels: Vec<String> = snap
@@ -529,7 +534,8 @@ impl VersionsWindow {
                             ui.end_row();
                         }
                     });
-            });
+            },
+        );
     }
 
     fn changes_page(&mut self, ui: &mut egui::Ui, r: &Ready, snap: &Snapshot) {
@@ -562,10 +568,12 @@ impl VersionsWindow {
             }
         };
         ui.label(egui::RichText::new(format!("{title}: {}", d.summary())).strong());
-        egui::ScrollArea::vertical()
-            .id_salt("diff")
-            .max_height(300.0)
-            .show(ui, |ui| {
+        crate::check_help::list(
+            ui,
+            "versions-diff",
+            300.0,
+            egui::ScrollArea::vertical().id_salt("diff"),
+            |ui| {
                 for o in &d.objects {
                     let head = format!("{} {} {}", o.change.as_str(), o.kind.as_str(), o.id);
                     if o.fields.is_empty() {
@@ -595,7 +603,8 @@ impl VersionsWindow {
                         l.lines.1
                     ));
                 }
-            });
+            },
+        );
         let case = model.cases.get(r.case).map(|c| c.case.clone());
         ui.horizontal(|ui| {
             if ui
@@ -827,10 +836,12 @@ impl VersionsWindow {
                 .hint_text("comment for approve / reject")
                 .desired_width(420.0),
         );
-        egui::ScrollArea::vertical()
-            .id_salt("reviews")
-            .max_height(360.0)
-            .show(ui, |ui| {
+        crate::check_help::list(
+            ui,
+            "versions-reviews",
+            360.0,
+            egui::ScrollArea::vertical().id_salt("reviews"),
+            |ui| {
                 for rv in &snap.reviews {
                     ui.group(|ui| {
                         ui.label(
@@ -907,7 +918,8 @@ impl VersionsWindow {
                         });
                     });
                 }
-            });
+            },
+        );
     }
 
     fn rights_page(

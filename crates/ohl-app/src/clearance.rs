@@ -313,10 +313,13 @@ pub fn rule_files(model: &Model, given: Option<&Path>) -> Vec<PathBuf> {
     out
 }
 
-/// The Clearances tab's state: the rule file, the last report, the check
-/// running.
+/// The Clearances window's state: the rule file, the last report, the
+/// check running.
 #[derive(Default)]
 pub struct Clearances {
+    /// The window is open (Checks › Wire clearances › Show results, View ›
+    /// Clearances; a page until 2026-10-27).
+    pub open: bool,
     /// Rule files found.
     pub files: Vec<PathBuf>,
     /// The chosen one (index in `files`).

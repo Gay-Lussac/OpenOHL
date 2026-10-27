@@ -1695,10 +1695,12 @@ impl View3d {
             }
         }
         // A check result's weather case (and wind), said beside its
-        // finding in the selection's colour without a box; its wire at the
-        // finding's wind dashed, when the case drawn does not show it.
+        // finding in its wire's colour without a box (owner, 2026-10-27:
+        // view notes in the object's colour); its wire at the finding's
+        // wind dashed, when the case drawn does not show it.
         if let Some(rc) = &model.result_case {
-            let colour = egui::Color32::WHITE;
+            let [r, g, b] = rc.colour;
+            let colour = egui::Color32::from_rgb(r, g, b);
             for w in &rc.wires {
                 let shown: Vec<Option<egui::Pos2>> = w.iter().map(|p| screen(*p)).collect();
                 for run in shown.split(Option::is_none) {

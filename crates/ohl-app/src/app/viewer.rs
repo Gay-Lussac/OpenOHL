@@ -125,7 +125,6 @@ impl TabViewer for Viewer<'_> {
             Tab::CrossSection(_) => "tab cross-section",
             Tab::Properties => "tab properties",
             Tab::Model => "tab model",
-            Tab::Clearances => "tab clearances",
             _ => "tab other",
         });
         // A measuring tool held: the views find what is under the cursor
@@ -288,10 +287,6 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Model => {
                 model_panel(ui, r, self.layer_groups);
-                None
-            }
-            Tab::Clearances => {
-                clearance_panel(ui, r);
                 None
             }
             Tab::NextSteps => {
@@ -552,7 +547,7 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
 /// (Properties), if there is one.
 pub(super) fn page_group(dock: &DockState<Tab>, place: Place) -> Option<egui_dock::NodePath> {
     let wanted: &[Tab] = match place {
-        Place::Left => &[Tab::Model, Tab::Clearances, Tab::NextSteps],
+        Place::Left => &[Tab::Model, Tab::NextSteps],
         Place::Right => &[Tab::Properties],
         Place::Window => &[],
     };

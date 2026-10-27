@@ -269,7 +269,7 @@ rule-presets;`); extension point `design-code` as before.
   `check_rule_presets` check each preset as OpenOHL reads it (a rule file
   with at least one rule; its weather cases, when given; every case a rule
   or a case pair names among them; names unique).
-- Used by: the desktop application's Clearances tab, **Edit rules › Load
+- Used by: the desktop application's Clearances window, **Edit rules › Load
   preset…** (the enabled design-code plugins, read on a worker thread with
   the Design code window's parameter file; previewed; merged or replacing
   the rules, one command); `ohl code rule-presets --plugin DIR [--params
