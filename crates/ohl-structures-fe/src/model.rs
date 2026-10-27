@@ -16,6 +16,7 @@
 //! drag = 1.0                # member wind: drag factor on the profiles (default 1)
 //! stabilise = true          # hold joint directions without stiffness (default)
 //! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
+//! single_angle_moments = false  # true: a single angle's frame end moments in its usage (version 4)
 //!
 
 //! [[material]]
@@ -86,13 +87,14 @@ use crate::units::Moment;
 
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
-/// Newest format version read. Version 3 adds a member's `bending` (a
+/// Newest format version read. Version 4 (2026-10-27) adds `[analysis]
+/// single_angle_moments`; versions 1 to 3 read as before. Version 3 adds a member's `bending` (a
 /// tension-only member that also bends, as a frame: a tower program's
 /// tension-only beam) and `check = false` (a member not design-checked: a
 /// modelling member, a tower program's fictitious member). Version 2 adds
 /// the member kind `tension` (a truss in tension only); versions 1 and 2
 /// read as before.
-pub const MODEL_FILE_VERSION: u32 = 3;
+pub const MODEL_FILE_VERSION: u32 = 4;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
@@ -119,6 +121,8 @@ struct AnalysisFile {
     stabilise: bool,
     #[serde(default = "one")]
     dead_load_factor: f64,
+    #[serde(default)]
+    single_angle_moments: bool,
 }
 
 impl Default for AnalysisFile {
@@ -129,6 +133,7 @@ impl Default for AnalysisFile {
             drag: 1.0,
             stabilise: true,
             dead_load_factor: 1.0,
+            single_angle_moments: false,
         }
     }
 }
@@ -656,6 +661,11 @@ pub struct Analysis {
     /// model (bolts, plates, galvanising: typically 1.1–1.4 on lattice
     /// towers, more on light bracing); a member's own replaces it.
     pub dead_load_factor: f64,
+    /// Add a single angle's frame end moments to its usage (version 4;
+    /// default false: a single angle — a profile `equal_angle` or
+    /// `unequal_angle` — is checked for its axial force only, as lattice
+    /// tower practice checks it, [`crate::check`]).
+    pub single_angle_moments: bool,
 }
 
 impl Default for Analysis {
@@ -666,6 +676,7 @@ impl Default for Analysis {
             drag: 1.0,
             stabilise: true,
             dead_load_factor: 1.0,
+            single_angle_moments: false,
         }
     }
 }
@@ -881,6 +892,7 @@ impl Model {
                 drag: file.analysis.drag,
                 stabilise: file.analysis.stabilise,
                 dead_load_factor: file.analysis.dead_load_factor,
+                single_angle_moments: file.analysis.single_angle_moments,
             },
             nodes,
             sections,

@@ -15,7 +15,11 @@
 //!   curve, no imperfections; a design code's buckling curve gives the
 //!   allowable compression to write in the section or the member instead.
 //! - **Frames**: linear interaction N/N_c + M_y/M_y,c + M_z/M_z,c with the
-//!   largest end moments (the allowable moments, else W × yield).
+//!   largest end moments (the allowable moments, else W × yield) — except
+//!   **single angles** (a profile `equal_angle` or `unequal_angle`),
+//!   checked for their axial force only, as lattice tower practice checks
+//!   them (2026-10-27; [`is_single_angle`]); `[analysis]
+//!   single_angle_moments = true` adds their end moments as before.
 //! - **Cables**: tension only.
 //! - **Tension-only members**: tension as trusses; their compression —
 //!   never above their own buckling load, which the solver caps
@@ -191,7 +195,7 @@ fn usage_of(
                     )
                 })
             };
-            if !m.is_frame() {
+            if !m.is_frame() || (is_single_angle(s) && !model.analysis.single_angle_moments) {
                 return MemberUsage {
                     member: idx,
                     usage: axial.as_ref().map(|a| a.0),
@@ -244,6 +248,19 @@ fn usage_of(
             }
         }
     }
+}
+
+/// Whether a section is a single angle: its profile an `equal_angle` or
+/// `unequal_angle` of the section library. A frame of such a section is
+/// checked for its axial force only unless `[analysis]
+/// single_angle_moments` (the end moments of a lattice tower's angles
+/// modelled as frames are secondary: tower practice designs them axially,
+/// the connections' eccentricity in the effective slenderness).
+pub fn is_single_angle(s: &crate::model::Section) -> bool {
+    matches!(
+        s.profile.as_ref().map(|p| &p.shape),
+        Some(ohl_sections::Shape::EqualAngle { .. } | ohl_sections::Shape::UnequalAngle { .. })
+    )
 }
 
 /// The member using most of its capacity (a usage that is not a number

@@ -945,3 +945,38 @@ fn member_wind_on_a_truss_bar() {
         assert!(close(r.force[0], 0.5 * 700.0 * 0.2 * 8.0, 1e-9), "{r:?}");
     }
 }
+
+/// A portal of single angles (frames): by default each member is checked
+/// for its axial force only (tower practice, 2026-10-27);
+/// `single_angle_moments = true` adds the end moments as before. A tube
+/// portal keeps its interaction either way.
+#[test]
+fn single_angles_are_checked_axially_by_default() {
+    let lib = ohl_sections::SectionLibrary::parse(
+        "[[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n\
+         [[section]]\nid = \"L100\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"200 mm\"\nt = \"20 mm\"\n\
+         [[section]]\nid = \"T200\"\nshape = \"circular_hollow\"\nmaterial = \"steel\"\n\
+         d = \"200 mm\"\nt = \"8 mm\"\n",
+    )
+    .unwrap();
+    let run = |section: &str, extra: &str| {
+        let m = Model::parse_with(&portal(section, extra), &lib).unwrap();
+        let loads = Loads {
+            nodal: m.loads.clone(),
+            self_weight: 0.0,
+        };
+        analyse(&m, &loads, 1.0, &default_budget()).unwrap().1
+    };
+    let axial = run("L100", "");
+    let both = run("L100", "single_angle_moments = true\n");
+    for (a, b) in axial.iter().zip(&both) {
+        assert!(
+            !a.governs.contains("My") && b.governs.contains("My"),
+            "{a:?} {b:?}"
+        );
+        assert!(a.usage.unwrap() < b.usage.unwrap());
+    }
+    let tube = run("T200", "");
+    assert!(tube.iter().all(|u| u.governs.contains("My")), "{tube:?}");
+}
