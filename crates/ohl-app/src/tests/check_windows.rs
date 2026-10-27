@@ -10,6 +10,7 @@
 use super::*;
 use crate::app::Tab;
 use crate::dockable::Panel;
+use egui_kittest::kittest::NodeT;
 
 fn window() -> Harness<'static, App> {
     let mut h = Harness::builder()
@@ -348,4 +349,110 @@ fn a_settings_list_is_made_taller() {
     drag_handle(&mut h, handle.center(), 100.0);
     let taller = height(&h);
     assert!((taller - 520.0).abs() < 1.0, "{taller}");
+}
+
+/// Internal clearances (owner, 2026-10-27: "Internal clearances should be
+/// just under the wire clearance"): in the Checks menu's Wire clearances
+/// submenu, no more among the Analyses; it opens the window.
+#[test]
+fn internal_clearances_is_under_wire_clearances() {
+    let mut h = window();
+    h.get_by_label("Checks").click();
+    h.run();
+    // Not in the Checks menu itself (the submenu is closed).
+    assert!(h.query_by_label("Internal clearances…").is_none());
+    h.query_all_by_label_contains("Wire clearances")
+        .next()
+        .expect("the Wire clearances submenu")
+        .hover();
+    h.run();
+    h.run();
+    h.get_by_label("Internal clearances…").click();
+    h.run();
+    assert!(h.state_mut().ready().unwrap().internal_clearances.open);
+}
+
+/// Internal clearances refuses a rule whose distance is not set (a new
+/// rule's 0 m), as the ground windows do: Run greyed, "Before Run: …"
+/// says why, Setup shown; a distance set, Run is offered.
+#[test]
+fn internal_clearances_refuses_a_rule_without_a_distance() {
+    let mut h = window();
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.internal_clearances.show(&r.model);
+        r.internal_clearances.rules = vec![ohl_clearance::internal::InternalRule::blank("a")];
+    }
+    h.run();
+    h.run();
+    h.get_by_label_contains("Before Run: \"a\"");
+    assert!(h.get_by_label("Run").accesskit_node().is_disabled());
+    assert_eq!(
+        crate::check_ui::current_tab(&h.ctx, "internal-clearances-window"),
+        crate::check_ui::Tab::Setup
+    );
+    h.state_mut().ready().unwrap().internal_clearances.rules[0].distance =
+        ohl_clearance::rules::Requirement::Fixed(1.5);
+    h.run();
+    assert!(!h.get_by_label("Run").accesskit_node().is_disabled());
+    assert!(h.query_by_label_contains("Before Run").is_none());
+}
+
+/// What the Stop test's window keeps: its job, the run's token, whether
+/// Results is shown.
+type StopState = (
+    crate::job::Job<u32>,
+    Option<ohl_core::budget::CancelToken>,
+    bool,
+);
+
+/// Stop in every check (2026-10-27): a run under way is stopped by the
+/// footer's Stop — the job no longer runs, its token is cancelled, the
+/// previous results stay; Results opens by itself when a run ends.
+#[test]
+fn stop_cancels_a_run_and_a_new_result_opens_results() {
+    let mut h = Harness::new_ui_state(
+        |ui, s: &mut StopState| {
+            let tab = crate::check_ui::tabs(ui, "stop-test", None, s.0.generation, false);
+            s.2 = tab == crate::check_ui::Tab::Results;
+            s.0.poll();
+            if crate::check_ui::job_footer(ui, &mut s.0, None, "run", None, |_| {}) {
+                let token = s.0.cancel_token();
+                s.1 = Some(token.clone());
+                let ctx = ui.ctx().clone();
+                s.0.start(&ctx, move || {
+                    // Until cancelled (at most 30 s).
+                    for _ in 0..3000 {
+                        if token.is_cancelled() {
+                            return Err("cancelled".into());
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Ok(7)
+                });
+            }
+        },
+        (crate::job::Job::default(), None, false),
+    );
+    h.run();
+    assert!(!h.state().2, "Setup first");
+    h.get_by_label("Run").click();
+    h.run_steps(2);
+    assert!(h.state().0.running());
+    h.get_by_label("Stop").click();
+    h.run_steps(2);
+    assert!(!h.state().0.running(), "stopped");
+    assert!(h.state().1.as_ref().unwrap().is_cancelled());
+    assert!(h.state().0.result.is_none(), "no new result");
+    // A run that ends: Results opens by itself.
+    h.state_mut().0.start(&egui::Context::default(), || Ok(1));
+    for _ in 0..200 {
+        h.step();
+        if h.state().0.result.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    h.run();
+    assert!(h.state().2, "Results opened after the run");
 }

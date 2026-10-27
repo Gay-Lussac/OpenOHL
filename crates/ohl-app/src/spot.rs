@@ -192,27 +192,27 @@ impl SpotWindow {
             ctx,
             crate::dockable::Panel::Spot,
             crate::dockable::Panel::Spot.name(),
-            [680.0, 600.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
                 // Run in the footer at the bottom left, always visible
                 // (owner, 2026-10-21); the rest scrolls above it.
                 help::body(ui, "spot-window", |ui| self.ui(ui, model));
                 help::footer(ui, "spot-window", |ui| {
-                    if self.running() {
-                        ui.spinner();
-                        if help::stop_button(ui, "Stop spotting")
-                            && let Some((token, _)) = &self.running
-                        {
-                            token.cancel();
+                    // The shared Run footer (2026-10-27).
+                    let f = crate::check_ui::RunFooter {
+                        running: self.running().then(crate::check_ui::Progress::default),
+                        hover: "Spot the least-cost structures along the route",
+                        ..Default::default()
+                    };
+                    match crate::check_ui::run_footer(ui, f, |_| {}) {
+                        crate::check_ui::Action::Run => self.start(model, ui.ctx()),
+                        crate::check_ui::Action::Stop => {
+                            if let Some((token, _)) = &self.running {
+                                token.cancel();
+                            }
                         }
-                    } else if help::run_button(
-                        ui,
-                        true,
-                        "Spot the least-cost structures along the route",
-                        None,
-                    ) {
-                        self.start(model, ui.ctx());
+                        crate::check_ui::Action::None => {}
                     }
                 });
             },

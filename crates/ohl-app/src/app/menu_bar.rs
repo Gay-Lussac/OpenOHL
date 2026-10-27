@@ -728,6 +728,22 @@ pub(super) fn menus(
                 r.clearances.open = true;
                 ui.close();
             }
+            // Within the model too (owner, 2026-10-27: "Internal clearances
+            // should be just under the wire clearance"): the wires to the
+            // structure.
+            ui.separator();
+            if ui
+                .button("Internal clearances…")
+                .on_hover_text(
+                    "At each structure with a body (detail 2 or 3): the conductors near it, its \
+                     jumpers and its strings' live ends against its members, by rules, per \
+                     weather case",
+                )
+                .clicked()
+            {
+                r.internal_clearances.show(&r.model);
+                ui.close();
+            }
         });
         ui.separator();
         ui.label(egui::RichText::new("Thermal rating").strong());
@@ -801,18 +817,6 @@ pub(super) fn menus(
             .clicked()
         {
             r.string_checks.show(&r.model);
-            ui.close();
-        }
-        if ui
-            .button("Internal clearances…")
-            .on_hover_text(
-                "At each structure with a body (detail 2 or 3): the conductors near it, its \
-                 jumpers and its strings' live ends against its members, by rules, per weather \
-                 case",
-            )
-            .clicked()
-        {
-            r.internal_clearances.show(&r.model);
             ui.close();
         }
         // The checks of the check plugins in use, in their own submenus

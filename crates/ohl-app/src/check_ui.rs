@@ -25,8 +25,6 @@
 //! - [`Kept`]: a window's setup kept in the project, a project setting
 //!   per project line (`app.<check>.<line>`), as the magnetic field's.
 
-#![allow(dead_code)] // TEMP while windows move over
-
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -62,18 +60,12 @@ fn tab_key(id: &str) -> egui::Id {
     egui::Id::new(("check-tab", id))
 }
 
-/// The tab window `id` shows (tests, and windows that need it before
-/// drawing [`tabs`]).
+/// The tab window `id` shows (tests).
+#[cfg(test)]
 pub fn current_tab(ctx: &egui::Context, id: &str) -> Tab {
     ctx.data(|d| d.get_temp::<TabState>(tab_key(id)))
         .map(|s| s.tab)
         .unwrap_or_default()
-}
-
-/// Shows tab `tab` of window `id` (a window that wants its results
-/// shown, tests).
-pub fn set_tab(ctx: &egui::Context, id: &str, tab: Tab) {
-    ctx.data_mut(|d| d.get_temp_mut_or_default::<TabState>(tab_key(id)).tab = tab);
 }
 
 /// The **Setup** and **Results (n)** tabs of check window `id`, drawn at
@@ -853,14 +845,8 @@ fn view_key(id: &str) -> egui::Id {
     egui::Id::new(("result-table-view", id))
 }
 
-/// Whether table `id` shows only the violations.
-pub fn only_violations(ctx: &egui::Context, id: &str) -> bool {
-    ctx.data(|d| d.get_temp::<View>(view_key(id)))
-        .unwrap_or_default()
-        .only
-}
-
 /// Sets *Only violations* of table `id` (tests).
+#[cfg(test)]
 pub fn set_only_violations(ctx: &egui::Context, id: &str, only: bool) {
     ctx.data_mut(|d| d.get_temp_mut_or_default::<View>(view_key(id)).only = only);
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Checks › **Internal clearances…** (roadmap O6, first part; owner,
+//! Checks › Wire clearances › **Internal clearances…** (roadmap O6, first part; owner,
 //! 2026-10-25): the electrified parts at each structure — the conductors
 //! near it, its jumpers, its strings' live ends and the electrified
 //! volumes on its strings (second part: the String library's shapes) —
