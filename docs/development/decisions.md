@@ -10,6 +10,33 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**Structure solver guards: implausible displacements, stalled P-Delta (owner, 2026-10-27)**
+
+- From a comparison of the structure analysis with a commercial tower
+  program on a real line's lattice towers (kept privately): a
+  near-mechanism (a joint whose four members lie 0.1° off one plane,
+  above the stabilisation threshold of about 0.06°) solved "successfully"
+  with displacements of 200 km and usages of 50 000 %, and P-Delta on
+  another tower stalled at 6.4·10⁻⁸ after 200 iterations (tolerance
+  10⁻⁹).
+- **Implausible displacements are an error**: a joint moving more than
+  half the structure's size (`IMPLAUSIBLE_SHARE`) is not returned; with
+  stabilisation on, the solve is repeated with the translations held at a
+  looser threshold (1.2·10⁻⁵ of the joint's largest stiffness, about 0.2°,
+  justified by coordinates rounded to four significant digits: 5 mm at
+  10–99 m over a 1.5 m member) and refused ("implausible displacements …",
+  naming the joints) when they still move that far. A buckling failure is
+  retried the same way. A model that solves plausibly is unchanged bit for
+  bit; the looser threshold, when used, is said in the notes.
+- **A P-Delta solve stopped just above the tolerance is accepted** when
+  the out-of-balance forces are below 10⁻⁶ of the loads, flagged
+  (`Solution::stalled`) and said in the notes with the residual reached;
+  chosen over the full tangent (quadratic convergence) as the smaller
+  change. Above 10⁻⁶ it stays refused. Theory page: Second order, Joint
+  stabilisation.
+- To confirm: the limit of half the structure's size (an error, no
+  warning level below it), and 1.2·10⁻⁵ for the second try.
+
 **Check windows: Setup and Results tabs, shared parts, Internal clearances under Wire clearances (owner, 2026-10-27)**
 
 - The second review of the check windows (what is inside them: the order

@@ -59,7 +59,16 @@ use crate::model::{Model, cross, norm, sub};
 /// A direction with less than this share of a joint's largest stiffness
 /// (eigenvalue of Σ eeᵀ: the squared sine of the angle out of the plane
 /// or the line, so about 0.06°) has none.
-const FREE: f64 = 1e-6;
+pub(crate) const FREE: f64 = 1e-6;
+/// The looser threshold of a second try (B1, 2026-10-27): a direction
+/// with less than this share (about 0.2°) has none. Used only when a
+/// solve with the joints stabilised at [`FREE`] (or not at all) moved
+/// joints implausibly far ([`crate::solve::FeError::Implausible`]): a
+/// model whose joint coordinates were rounded to four significant digits
+/// (5 mm at 10–99 m, about 0.2° across a 1.5 m member) has joints meant
+/// to lie in a plane lying up to that far off it, with a spurious,
+/// tiny stiffness out of the plane instead of none.
+pub(crate) const FREE_ROUNDED: f64 = 1.2e-5;
 /// A unit direction this close to a structure axis (1 − cos) is that
 /// axis.
 const ON_AXIS: f64 = 1e-9;
@@ -127,8 +136,10 @@ pub struct Stabilised {
 /// of its own (module docs), in node order. `inactive`: per member, left
 /// out of the model (a tension-only member gone slack; empty: none) — a
 /// joint whose members are all inactive is held in every direction its
-/// supports do not hold.
-pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
+/// supports do not hold. A translation is free with less than
+/// `threshold` of the joint's largest stiffness ([`FREE`], or
+/// [`FREE_ROUNDED`] on the second try of a near-mechanism).
+pub(crate) fn find_with(model: &Model, inactive: &[bool], threshold: f64) -> Vec<Stabilisation> {
     let n_nodes = model.nodes.len();
     let mut at_node: Vec<Vec<usize>> = vec![Vec::new(); n_nodes];
     // Joints with members, active or not (they have equations).
@@ -189,7 +200,7 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
                 s[(d, d)] += 1.0;
             }
         }
-        for (direction, axis) in free_directions(s, |d| !held(d)) {
+        for (direction, axis) in free_directions(s, threshold, |d| !held(d)) {
             out.push(Stabilisation {
                 node: n,
                 rotation: false,
@@ -251,7 +262,7 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
         let n = chain.iter().copied().min().unwrap_or(start);
         let fixed = model.nodes[n].fixed;
         let s = a * a.transpose();
-        for (direction, axis) in free_directions(Matrix3::identity() - s, |d| !fixed[3 + d]) {
+        for (direction, axis) in free_directions(Matrix3::identity() - s, FREE, |d| !fixed[3 + d]) {
             out.push(Stabilisation {
                 node: n,
                 rotation: true,
@@ -293,7 +304,7 @@ pub(crate) fn free_translations(model: &Model, n: usize) -> Vec<[f64; 3]> {
             s[(d, d)] += 1.0;
         }
     }
-    free_directions(s, |d| !held(d))
+    free_directions(s, FREE, |d| !held(d))
         .into_iter()
         .map(|(d, _)| d)
         .collect()
@@ -424,17 +435,21 @@ fn cross_norm(a: Vector3<f64>, b: Vector3<f64>) -> f64 {
 }
 
 /// The free directions of the symmetric stiffness pattern `s` (its
-/// eigenvectors with an eigenvalue below `FREE` × the largest), each as
+/// eigenvectors with an eigenvalue below `threshold` × the largest), each as
 /// a structure axis when one lies in the free space (and `may(axis)`),
 /// else as unit directions completing them.
-fn free_directions(s: Matrix3<f64>, may: impl Fn(usize) -> bool) -> Vec<([f64; 3], Option<usize>)> {
+fn free_directions(
+    s: Matrix3<f64>,
+    threshold: f64,
+    may: impl Fn(usize) -> bool,
+) -> Vec<([f64; 3], Option<usize>)> {
     let eig = SymmetricEigen::new(s);
     let largest = eig.eigenvalues.max();
     if largest.is_nan() || largest <= 0.0 {
         return Vec::new();
     }
     let mut free: Vec<Vector3<f64>> = (0..3)
-        .filter(|&c| eig.eigenvalues[c] <= FREE * largest)
+        .filter(|&c| eig.eigenvalues[c] <= threshold * largest)
         .map(|c| eig.eigenvectors.column(c).into_owned())
         .collect();
     let mut out = Vec::new();
@@ -479,20 +494,20 @@ mod tests {
         let d = Vector3::new(1.0, 0.0, 1.0).normalize();
         let s = ex * ex.transpose() + ez * ez.transpose() + d * d.transpose();
         assert_eq!(
-            free_directions(s, |_| true),
+            free_directions(s, FREE, |_| true),
             vec![([0.0, 1.0, 0.0], Some(1))]
         );
         // One member along x: y and z, both exactly.
         let s = ex * ex.transpose();
         assert_eq!(
-            free_directions(s, |_| true),
+            free_directions(s, FREE, |_| true),
             vec![([0.0, 1.0, 0.0], Some(1)), ([0.0, 0.0, 1.0], Some(2))]
         );
         // A skew plane: one skew direction, its normal.
         let a = Vector3::new(1.0, 0.0, 0.0);
         let b = Vector3::new(0.0, 0.1, 1.0).normalize();
         let s = a * a.transpose() + b * b.transpose();
-        let f = free_directions(s, |_| true);
+        let f = free_directions(s, FREE, |_| true);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].1, None);
         let n = Vector3::from(f[0].0);
@@ -501,6 +516,6 @@ mod tests {
         let s = a * a.transpose()
             + b * b.transpose()
             + Vector3::new(0.0, 1.0, 0.0) * Vector3::new(0.0, 1.0, 0.0).transpose();
-        assert!(free_directions(s, |_| true).is_empty());
+        assert!(free_directions(s, FREE, |_| true).is_empty());
     }
 }

@@ -144,6 +144,35 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
     Some(text)
 }
 
+/// How the solve converged in words, when it is worth saying (none:
+/// converged to its tolerance, joints stabilised as usual): iterations
+/// stopped by an exit clause with the forces out of balance by less than
+/// [`solve::STALL_ACCEPTED`] of the loads, accepted ([`Solution::stalled`]);
+/// joints stabilised at the looser threshold of rounded coordinates after
+/// a first solve moved them implausibly far
+/// ([`Solution::rounded_stabilisation`]).
+pub fn convergence_note(solution: &Solution) -> Option<String> {
+    let mut parts = Vec::new();
+    if solution.stalled {
+        parts.push(format!(
+            "iterations stopped after {} with the forces out of balance by {:.1e} of the loads \
+             (above the tolerance, below {:.0e}): accepted",
+            solution.iterations,
+            solution.residual,
+            solve::STALL_ACCEPTED
+        ));
+    }
+    if solution.rounded_stabilisation {
+        parts.push(
+            "joints moved implausibly far (a near-mechanism): directions with less than about \
+             0.2° of stiffness held, as for coordinates rounded to four digits — check the \
+             stabilised joints"
+                .to_owned(),
+        );
+    }
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
 /// The tension-only members of a solution in words (none: the model has
 /// none): how many of them went slack and how many are bowed (at their
 /// buckling load, [`MemberForces::bowed`]) and how many solves the
@@ -249,6 +278,8 @@ pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
 
 #[cfg(test)]
 mod bending_tests;
+#[cfg(test)]
+mod guard_tests;
 #[cfg(test)]
 mod held_limit_tests;
 #[cfg(test)]

@@ -326,6 +326,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ohl_structures_fe::kept_active_note(&model, &s) {
             println!("  {note}");
         }
+        if let Some(note) = ohl_structures_fe::convergence_note(&s) {
+            println!("  {note}");
+        }
         let mut sorted: Vec<&ohl_structures_fe::MemberUsage> =
             usage.iter().filter(|u| u.usage.is_some()).collect();
         sorted.sort_by(|a, b| b.usage.unwrap_or(0.0).total_cmp(&a.usage.unwrap_or(0.0)));
