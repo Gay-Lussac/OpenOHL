@@ -10,6 +10,33 @@ of Parts A, B and C).
 
 ## 2026-10-27
 
+**One name per object: a sweep (owner, 2026-10-27, partial)**
+
+"Same object, same name everywhere": user-visible texts of both
+applications and the user guide searched for the synonyms the glossary
+retires (pylon, tower, structure point, angle point, shield/ground wire,
+strain/wire section, insulator string, span wind, eccentricity, height
+extension, cable condition…). Found and aligned (texts only; keys such as
+`tower:T3:set:2`, ids and file formats unchanged):
+
+- *structure point* → **attachment point**: the Add string tool's hover
+  text, the Display options label "Attachment points (label)", Next
+  steps, the user guide (String wire, broken-wire loads, Another project
+  into this one).
+- *angle point* → **alignment point**: the cross-section window and its
+  station note, the user guide (Cross-section view).
+- *tower* → **structure** in Another project into this one: the
+  window's "Structures in both", `ohl project import-into`'s plan
+  ("structures in both"), its note on a type used only there, the user
+  guide; the CLI test follows.
+
+Proposed for the glossary (used in the applications, not in it; not
+changed): **exclusion zone** (Clearance zones), **display weather cases**
+(the cases drawn), **quick bar** / **hotbar** (two names in use for the
+tool bar), **clamp** as the object on a wire (the glossary retires it
+only as a point). Not swept in this pass: the decision log's old
+entries (kept), comments and rustdoc, the theory pages.
+
 **Clearances tab: a usability pass (owner, 2026-10-27)**
 
 The UI review of 2026-10-26 had skipped "Clearances tab rework". Looked

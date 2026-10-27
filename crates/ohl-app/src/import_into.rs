@@ -545,7 +545,7 @@ fn summary(p: &ImportPlan) -> String {
             .filter(|t| t.resolution == Resolution::TakeImported)
             .count();
     format!(
-        "{}: {} added, {} taken from the import, {} removed, {} towers in both, {} the same.",
+        "{}: {} added, {} taken from the import, {} removed, {} structures in both, {} the same.",
         match p.mode {
             ImportMode::Replace => "Replace",
             ImportMode::Add => "Add",
@@ -568,7 +568,7 @@ fn removals(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale
     }
     ui.label(
         egui::RichText::new(
-            "This project's objects between the import's towers that the import has not; the \
+            "This project's objects between the import's structures that the import has not; the \
              line outside that stretch stays.",
         )
         .small()
@@ -618,7 +618,7 @@ fn removals(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale
 fn towers(ui: &mut egui::Ui, plan: &ImportPlan, how: &mut ImportOptions, stale: &mut bool) {
     ui.label(
         egui::RichText::new(format!(
-            "Towers in both ({}): kept once — this project's (its id, position, orientation and \
+            "Structures in both ({}): kept once — this project's (its id, position, orientation and \
              type; the import's sets settled one by one) or the imported one (this project's \
              sets it lacks kept where what stays hangs on them).",
             plan.shared.len()

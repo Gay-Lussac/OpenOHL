@@ -1396,7 +1396,7 @@ fn panel_ui(
             "station {}{}",
             ohl_drawing::format_station(placed.station),
             if placed.angle_point {
-                " (angle point: along the bisector)"
+                " (alignment point: along the bisector)"
             } else {
                 ""
             }
@@ -1835,7 +1835,7 @@ pub fn dialog_ui(
                     )
                     .on_hover_text(
                         "From the alignment's start; the plane is perpendicular to the \
-                         alignment there (at an angle point: along the bisector)",
+                         alignment there (at an alignment point: along the bisector)",
                     );
                     ui.label(
                         egui::RichText::new(format!(

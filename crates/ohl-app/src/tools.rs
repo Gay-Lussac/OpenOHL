@@ -27,7 +27,7 @@ pub enum Tool {
     Edit,
     /// Click the ground: a new structure there.
     AddStructure,
-    /// Click a structure point or a wire point: a new string
+    /// Click an attachment point or a wire point: a new string
     /// hanging from it (a structure elsewhere: from its top).
     AddString,
     /// Click strings in line order, Enter: a new section.
@@ -212,7 +212,7 @@ impl Tool {
                 "click an alignment point (the structure stands on it; its window puts others on the alignment's other points too) or the ground to add a structure there"
             }
             Tool::AddString => {
-                "click a structure point or a wire point to hang a new string from it; or two span points: a spacer between them"
+                "click an attachment point or a wire point to hang a new string from it; or two span points: a spacer between them"
             }
             Tool::StringWire => {
                 "click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"

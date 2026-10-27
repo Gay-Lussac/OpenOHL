@@ -136,7 +136,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
                     line.structures.len()
                 )
             } else {
-                "strings (a type brings its own; Add string on a structure point)".into()
+                "strings (a type brings its own; Add string on an attachment point)".into()
             },
             go: Go::Hold(Tool::AddString),
             link: "Hold Add string",

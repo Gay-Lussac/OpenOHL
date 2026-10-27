@@ -148,7 +148,7 @@ impl SectionDisplay {
             ui.end_row();
             for (name, ticks) in [
                 ("Structure id", &mut self.structure_label),
-                ("Structure points (label)", &mut self.point_label),
+                ("Attachment points (label)", &mut self.point_label),
                 ("String tops (hangs from)", &mut self.insulator_label),
                 ("Library labels (strings)", &mut self.library_label),
                 ("Alignment points (name)", &mut self.alignment_point_label),

@@ -160,7 +160,7 @@ impl SharedTower {
             let kept = n(&|s| s.state == SetState::OnlyExisting && !s.kept_for.is_empty());
             let gone = n(&|s| s.state == SetState::OnlyExisting && s.kept_for.is_empty());
             return format!(
-                "{name}: the imported tower ({theirs} set{}), {ours} in the project's, {same} the \
+                "{name}: the imported structure ({theirs} set{}), {ours} in the project's, {same} the \
                  same, {differ} at other places; of the project's own {kept} kept (what stays \
                  hangs on them), {gone} gone",
                 if theirs == 1 { "" } else { "s" }
@@ -398,7 +398,7 @@ pub(super) fn apply(
                     let other = number(n);
                     if other.is_none() {
                         notes.push(format!(
-                            "{} set {n}: hangs with set {} on the imported tower; added without its set",
+                            "{} set {n}: hangs with set {} on the imported structure; added without its set",
                             tower.existing, s.set
                         ));
                     }

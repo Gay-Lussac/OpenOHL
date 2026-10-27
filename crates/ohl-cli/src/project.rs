@@ -467,7 +467,7 @@ fn print_import_plan(p: &ohl_io::import_into::ImportPlan) {
         );
     }
     if !p.shared.is_empty() {
-        println!("towers in both (kept once):");
+        println!("structures in both (kept once):");
     }
     for t in &p.shared {
         println!("  {}   [{}]: {}", t.summary(), t.key, t.resolution.words());
