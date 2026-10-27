@@ -356,7 +356,7 @@ core staying independent of them.
    programs in an open format (to choose: CIM/CGMES line parameters, or a
    simple table).
 4. [ ] **Magnetic field (core; first of the fields — owner, 2026-10-27:
-   "magnetic field first", a tool like EFC-400 to start from).** Draft,
+   "magnetic field first").** Draft,
    to discuss. The magnetic flux density is textbook (Biot–Savart), so
    the calculation is in the core like the line parameters; the limits
    and the rules of an ordinance (which current, which places, which
@@ -424,8 +424,8 @@ core staying independent of them.
      balanced three-phase flat line, whose field falls as 1/d²), a finite
      segment against numerical integration, published profiles (to find:
      IEC 62110 annex examples, CIGRE TB 375 and the papers validated
-     against measurements, e.g. Bürgi et al. 2017 for Swiss lines);
-     comparison with the owner's EFC-400 results kept local (real lines).
+     against measurements, e.g. Bürgi et al. 2017 for Swiss lines); the
+     validation rests on public sources and closed forms.
 5. [ ] **Electric field (core, after the magnetic field).** The charges
    from the potential coefficients the line parameters already have
    (\( q = P^{-1} V \), images in a ground plane, the earth wires at
@@ -434,8 +434,7 @@ core staying independent of them.
    operating voltage, the largest sag, a circuit that compensates
    another taken as switched off and earthed), a slope across as a
    tilted plane; 2D enough (the guide), 3D with the solved wires later.
-   Validation as above (closed forms, published profiles, the owner's
-   results kept local).
+   Validation as above (closed forms, published profiles).
 6. [ ] **Audible noise and a cross-check of the fields — a plugin for
    hvlbuzz.** [hvlbuzz](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html)
    (FKH, Switzerland; a Python library on a Rust core, `ebl`) computes the
@@ -482,8 +481,8 @@ the plugin's own tests.
 > impedance, or simply a basic load flow.
 > **Owner:** (2026-10-27) Draft the electrical module ideas, including a
 > plugin for hvlbuzz.
-> **Owner:** (2026-10-27) Find technical information on EFC-400 or
-> something similar to start from; draft it, magnetic field first.
+> **Owner:** (2026-10-27) Draft the fields, magnetic field first, from
+> the public theory; go ahead.
 
 ## Unfinished or approximate (known limitations)
 

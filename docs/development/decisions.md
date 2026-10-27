@@ -12,7 +12,7 @@ of Parts A, B and C).
 
 **Electric and magnetic fields in the core, magnetic field first (owner, 2026-10-27)**
 
-- The owner asked for a field calculation like EFC-400, the magnetic
+- The owner asked for the electric and magnetic fields, the magnetic
   field first. Biot–Savart and the line charges are textbook, so the
   fields join the line parameters in `ohl-electrical`; an ordinance's
   limits and rules (for Switzerland the NISV: 1 µT at places of sensitive
