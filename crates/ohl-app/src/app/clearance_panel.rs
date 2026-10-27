@@ -457,37 +457,48 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         p.file_name()
             .map_or(String::new(), |n| n.to_string_lossy().into_owned())
     };
+    // The rule file checked: named, with its number of rules (usability
+    // pass 2026-10-27: the results come next, the rule editor after them).
     let mut chosen = c.chosen;
-    egui::ComboBox::from_id_salt("rule-file")
-        .selected_text(
-            chosen
-                .and_then(|k| c.files.get(k))
-                .map_or("choose rules…".into(), |p| name(p)),
-        )
-        .width(220.0)
-        .show_ui(ui, |ui| {
-            for (k, p) in c.files.iter().enumerate() {
-                ui.selectable_value(&mut chosen, Some(k), name(p))
-                    .on_hover_text(p.display().to_string());
-            }
-        });
+    let mut add = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Rule file");
+        egui::ComboBox::from_id_salt("rule-file")
+            .selected_text(
+                chosen
+                    .and_then(|k| c.files.get(k))
+                    .map_or("choose rules…".into(), |p| name(p)),
+            )
+            .width(200.0)
+            .show_ui(ui, |ui| {
+                for (k, p) in c.files.iter().enumerate() {
+                    ui.selectable_value(&mut chosen, Some(k), name(p))
+                        .on_hover_text(p.display().to_string());
+                }
+            })
+            .response
+            .on_hover_text("The clearance rule file Run checks (several may be kept)");
+        if let Some(Ok(rules)) = &c.rules {
+            ui.label(egui::RichText::new(format!("{} rules", rules.len())).weak());
+        }
+        add = ui
+            .small_button("Add…")
+            .on_hover_text("Another clearance rule file (.ohlr) kept in the project")
+            .clicked();
+    });
     if chosen != c.chosen
         && let Some(k) = chosen
     {
         c.choose(k);
     }
-    let mut check = false;
-    match &c.rules {
-        Some(Err(e)) => {
-            crate::menu::error_label(ui, e);
-        }
-        Some(Ok(rules)) => {
-            ui.label(egui::RichText::new(format!("{} rules", rules.len())).small());
-        }
-        None => {}
+    if let Some(Err(e)) = &c.rules {
+        crate::menu::error_label(ui, e);
     }
-    crate::rule_editor::ui(ui, r);
+    if add {
+        add_rule_file(r);
+    }
     let c = &mut r.clearances;
+    let mut check = false;
     if c.stale
         && !c.running()
         && c.report.is_some()
@@ -513,15 +524,16 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
             } else {
                 ui.colored_label(ui.visuals().error_fg_color, head);
             }
-            for (rule, text) in &rep.rules {
-                ui.label(egui::RichText::new(format!("{rule}: {text}")).small());
+            if n > 0 {
+                ui.label(
+                    egui::RichText::new("Click one to select its wire and go there.")
+                        .small()
+                        .weak(),
+                );
             }
-            for note in &rep.notes {
-                ui.label(egui::RichText::new(note).small().weak());
-            }
-            ui.label(egui::RichText::new(SURFACE_NOTE).small().weak());
-            ui.separator();
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            // The violations first, then the rules and notes they were
+            // found with (all there, below).
+            {
                 for f in &rep.findings {
                     let other = f
                         .other
@@ -536,37 +548,90 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
                                 .map_or(String::new(), |d| format!(" {}", d.name))
                         )
                     });
-                    let text = format!(
-                        "{}{other} — {}: {} {:.2} m < {:.2} m{class}{}",
-                        f.wire.describe(),
-                        f.rule,
-                        f.measure,
-                        f.distance,
-                        f.required,
-                        if f.count > 1 {
-                            format!(" ({} below)", f.count)
-                        } else {
-                            String::new()
-                        }
+                    // What, then by how much: two lines (the tab is
+                    // narrow; one line was cut off).
+                    let mut job = egui::text::LayoutJob::default();
+                    let strong = egui::TextFormat {
+                        color: ui.visuals().strong_text_color(),
+                        ..Default::default()
+                    };
+                    let weak = egui::TextFormat {
+                        font_id: egui::FontId::proportional(11.0),
+                        color: ui.visuals().weak_text_color(),
+                        ..Default::default()
+                    };
+                    job.append(&format!("{}{other}", f.wire.describe()), 0.0, strong);
+                    job.append(
+                        &format!(
+                            "\n{} {:.2} m < {:.2} m — {}{class}{}",
+                            f.measure,
+                            f.distance,
+                            f.required,
+                            f.rule,
+                            if f.count > 1 {
+                                format!(" ({} below)", f.count)
+                            } else {
+                                String::new()
+                            }
+                        ),
+                        0.0,
+                        weak,
                     );
                     let selected = r.selection == f.wire;
-                    if ui
-                        .selectable_label(selected, egui::RichText::new(text).small())
-                        .clicked()
-                    {
+                    if ui.selectable_label(selected, job).clicked() {
                         go = Some(f.clone());
                     }
                 }
-            });
+            }
+            ui.separator();
+            for (rule, text) in &rep.rules {
+                ui.label(egui::RichText::new(format!("{rule}: {text}")).small());
+            }
+            for note in &rep.notes {
+                ui.label(egui::RichText::new(note).small().weak());
+            }
+            ui.label(egui::RichText::new(SURFACE_NOTE).small().weak());
         }
         None if c.running() => {
             ui.label("checking…");
         }
-        None => {}
+        None => {
+            ui.label(
+                egui::RichText::new(
+                    "Not checked yet: Run (below) checks the wires against these rules in the \
+                     weather case shown.",
+                )
+                .weak(),
+            );
+        }
     }
+    ui.separator();
+    crate::rule_editor::ui(ui, r);
+    // To the ground and the LiDAR points: the other two clearance checks,
+    // also from here (before: only while no rule file was kept).
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new("To the ground and LiDAR points:")
+                .small()
+                .weak(),
+        );
+        if ui
+            .small_button("Vertical…")
+            .on_hover_text("Checks › Ground clearances › Vertical clearances")
+            .clicked()
+        {
+            r.vertical_clearances.show(&r.model);
+        }
+        if ui
+            .small_button("Radial…")
+            .on_hover_text("Checks › Ground clearances › Radial clearances")
+            .clicked()
+        {
+            r.radial_clearances.show(&r.model);
+        }
+    });
     if let Some(f) = go {
-        r.selection = f.wire;
-        r.view3d.dirty.insert(Layer::Selection);
+        r.select(f.wire);
         if let Some(cam) = r.view3d.camera.as_mut() {
             cam.target = f.at;
             cam.distance = cam.distance.min(80.0);
