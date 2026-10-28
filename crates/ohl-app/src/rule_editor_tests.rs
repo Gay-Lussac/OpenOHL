@@ -62,8 +62,6 @@ fn harness_with(name: &str, text: &str) -> (Harness<'static, App>, std::path::Pa
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| app);
     harness.run();
-    harness.get_by_label("Edit rules").click();
-    harness.run();
     (harness, file)
 }
 
@@ -107,10 +105,14 @@ fn the_rule_editor_sets_distances_by_voltage() {
         rules_of(&file).rules[0].vertical,
         Some(Requirement::ByVoltage(vec![(220.0, 7.0), (320.0, 7.0)]))
     );
-    // Wires: one distance → base + per kV.
+    // Wires (its row clicked: its fields below the table): one distance
+    // → base + per kV.
+    // (The column of that name first.)
+    harness.query_all_by_label("Wires").last().unwrap().click();
+    harness.run();
     harness
         .query_all_by_label("Base + per kV")
-        .nth(1)
+        .next()
         .unwrap()
         .click_accesskit();
     harness.run();
@@ -220,7 +222,7 @@ fn add_a_rule_takes_a_distance_by_voltage() {
 }
 
 /// A design-code plugin's rule preset (the test plugin
-/// `plugins/tests/code-presets`, when built): listed in Load preset…,
+/// `plugins/tests/code-presets`, when built): listed in Preset ▾,
 /// previewed with its distances at the line's voltages, merged into the
 /// rule file as one command (its weather case added to the model).
 #[test]
@@ -246,7 +248,6 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
         app.plugins.refresh();
     }
     harness.run();
-    harness.get_by_label("Load preset…").click();
     let started = std::time::Instant::now();
     while harness
         .state_mut()
@@ -274,14 +275,14 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
         let w = &mut harness.state_mut().ready().unwrap().rule_editor.presets;
         assert_eq!(w.list.len(), 1);
         assert_eq!(w.list[0].plugin, "code-presets");
-        w.chosen = Some((0, 0));
     }
+    crate::rule_table::choose_preset(&harness.ctx, "clearance-rules", 0, 0);
     harness.run();
     // The preview: 6 m + 0.01 m/kV → 8.20 m at 220 kV; crossings: the
     // 420 kV row (4.5 m) at 220 kV.
     harness.get_by_label_contains("220 kV: 8.20 m");
     harness.get_by_label_contains("220 kV: 4.50 m");
-    harness.get_by_label("Merge into test.ohlr").click();
+    harness.get_by_label("Merge").click();
     harness.run();
     harness.run();
     let set = rules_of(&file);
@@ -301,7 +302,7 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
 
 /// The Swiss LeV plugin's rule presets (when this checkout has
 /// `local-data/plugins/lev-ch`, built with the `rule-presets` export), read
-/// as Load preset… reads them and merged into a rule file: the law's span
+/// as Preset ▾ reads them and merged into a rule file: the law's span
 /// line ground clearance, 7.5 m + 0.01 m/kV (9.7 m at 220 kV).
 #[test]
 fn the_lev_rule_presets_load_into_the_rule_file() {
@@ -343,8 +344,12 @@ fn the_lev_rule_presets_load_into_the_rule_file() {
                     .any(|r| r.name.starts_with("Ground vertical"))
             })
             .unwrap();
-        r.rule_editor.presets.chosen = Some((0, k));
-        crate::rule_editor::apply_preset(r, crate::rule_editor::Load::Merge);
+        let pick = crate::rule_table::PresetPick {
+            group: "lev-ch".into(),
+            preset: list[k].clone(),
+            how: crate::rule_editor::Load::Merge,
+        };
+        crate::rule_editor::apply_preset(r, pick);
     }
     harness.run();
     let set = rules_of(&file);
@@ -391,8 +396,6 @@ fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| app);
     harness.run();
-    harness.get_by_label("Edit rules").click();
-    harness.run();
     let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"p\"\n\
                  [[rule]]\nname = \"Preset ground\"\ntarget = \"ground\"\nvertical = \"8 m\"\n\
                  cases = [\"Utility 80 °C\"]\n";
@@ -416,16 +419,15 @@ fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
         // As the plugins gave them (the project's edits applied to them).
         w.original = w.list.clone();
         w.asked = true;
-        w.open = true;
-        w.chosen = Some((0, 0));
         let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
         (names, r.model.session().unwrap().log().unwrap().len())
     };
+    crate::rule_table::choose_preset(&harness.ctx, "clearance-rules", 0, 0);
     harness.run();
     harness.get_by_label_contains(
         "weather case \"Utility 80 °C\": uses your case \"max temperature\"",
     );
-    harness.get_by_label("Merge into test.ohlr").click();
+    harness.get_by_label("Merge").click();
     harness.run();
     harness.run();
     let set = rules_of(&file);
@@ -491,20 +493,22 @@ vertical = "6 m"
         harness.state_mut().ready().unwrap().rule_editor.rules[1].voltages,
         vec![220.0]
     );
-    // Two toggles (the table rules), the first off, the older one on.
-    let toggles: Vec<bool> = harness
-        .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
-        .map(|n| ticked(&n))
-        .collect();
-    assert_eq!(toggles, vec![false, true]);
-    // The older rule's voltages shown; the plain rule's filter: every
-    // voltage.
-    harness.get_by_label("220 kV");
-    harness.get_by_label("every voltage");
+    // The first table rule's toggle (its fields below the table): off.
+    let toggles = |h: &Harness<'_, App>| -> Vec<bool> {
+        h.query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
+            .map(|n| ticked(&n))
+            .collect()
+    };
+    assert_eq!(toggles(&harness), vec![false]);
+    // The older one's: on, its voltage ticked (and said in its row).
+    harness.get_by_label("Older table").click();
+    harness.run();
+    assert_eq!(toggles(&harness), vec![true]);
+    assert_eq!(harness.query_all_by_label("220 kV").count(), 2);
     // Unticked: the filter cleared in the file.
     harness
         .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
-        .nth(1)
+        .next()
         .unwrap()
         .click_accesskit();
     harness.run();
@@ -538,8 +542,9 @@ fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
         r.vertical_clearances.show(&r.model);
     }
     harness.run();
-    // The first rule: one distance.
-    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
+    // The first rule: one distance (its row says every voltage, its
+    // fields offer the voltages).
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 2);
     assert_eq!(
         harness
             .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
@@ -551,7 +556,7 @@ fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
         w.rules[0].distance = Requirement::ByVoltage(vec![(400.0, 7.0)]);
     }
     harness.run();
-    assert_eq!(harness.query_all_by_label("every voltage").count(), 0);
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
     assert!(!ticked(
         &harness.get_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
     ));
@@ -570,7 +575,7 @@ fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
         .get_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
         .click();
     harness.run();
-    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 2);
 }
 
 /// "Merge rules by voltage": offered only with rules alike but for one
@@ -643,25 +648,18 @@ radial = "3 m"
     );
 }
 
-/// "Remove all rules", beside Add rule and Load preset…: asks first
+/// "Remove all rules", above the rule table: asks first
 /// (Keep them leaves them), then removes every rule of the file (its
 /// other tables kept); Undo brings them back.
 #[test]
 fn remove_all_rules_asks_and_undoes() {
     let (mut harness, file) = harness_with_rules("remove-all-rules");
-    // After Add rule and Load preset…, on their row (wrapped to the next
-    // one in the narrow tab).
-    let (add, load, all) = (
-        harness.get_by_label("Add rule").rect(),
-        harness.get_by_label("Load preset…").rect(),
+    // Above the table's own buttons.
+    let (add, all) = (
+        harness.get_by_label("Add rule…").rect(),
         harness.get_by_label("Remove all rules").rect(),
     );
-    assert!(add.right() < load.left());
-    assert!(
-        (load.right() < all.left() && (load.center().y - all.center().y).abs() < 2.0)
-            || (all.top() >= load.bottom() && all.top() - load.bottom() < 12.0),
-        "{load:?} {all:?}"
-    );
+    assert!(all.bottom() <= add.top(), "{all:?} {add:?}");
     harness.get_by_label("Remove all rules").click();
     harness.run();
     harness.get_by_label("Remove all 2 rules of this file?");
@@ -699,12 +697,12 @@ fn remove_all_rules_asks_and_undoes() {
 fn the_clearances_window_has_setup_and_results_tabs() {
     let (mut harness, _file) = harness_with_rules("clearances-order");
     harness.get_by_label("Rule file");
-    harness.get_by_label("Edit rules");
+    harness.get_by_label("Add rule…");
     harness.get_by_label("Results").click();
     harness.run();
     harness.get_by_label_contains("Not checked yet");
     assert!(
-        harness.query_by_label("Edit rules").is_none(),
+        harness.query_by_label("Add rule…").is_none(),
         "Setup hidden"
     );
     harness.get_by_label("Setup").click();
@@ -753,7 +751,7 @@ fn the_clearances_window_has_setup_and_results_tabs() {
 fn the_clearances_window_runs_from_its_footer() {
     let (mut harness, _file) = harness_with_rules("clearances-footer");
     let run = harness.get_by_label("Run").rect();
-    let edit = harness.get_by_label("Edit rules").rect();
+    let edit = harness.get_by_label("Add rule…").rect();
     assert!(run.top() > edit.bottom());
     harness.get_by_label("Run").click();
     harness.step();

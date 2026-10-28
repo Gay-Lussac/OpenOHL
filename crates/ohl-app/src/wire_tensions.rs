@@ -70,8 +70,6 @@ pub struct WireTensionsWindow {
     pub rules: Vec<TensionRule>,
     /// What was done last, in words (an error: true).
     pub status: Option<(String, bool)>,
-    /// The plugin preset chosen in the dropdown (plugin, preset).
-    plugin_preset: Option<(usize, usize)>,
     /// The check.
     pub(crate) job: Job<Report>,
     /// Counted up with each answer.
@@ -172,12 +170,6 @@ impl WireTensionsWindow {
             Ok(()) => (format!("kept in {}", file.display()), false),
             Err(e) => (e, true),
         });
-    }
-
-    /// Takes the tension rules of a preset (only those: presets are per
-    /// check), their weather cases matched to the project's.
-    pub fn take_preset(&mut self, set: &RuleSet) {
-        self.rules = set.tension_rules.clone();
     }
 
     /// Starts a check: each weather case of the rules solved in the
@@ -326,8 +318,7 @@ impl WireTensionsWindow {
                         );
                         ui.separator();
                         check_ui::section(ui, 3, "Rules", None);
-                        self.presets_ui(ui, model, presets, &mut out);
-                        changed |= self.rules_ui(ui, model);
+                        changed |= self.rules_ui(ui, model, presets, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
                                 crate::menu::error_label(ui, text.as_str());
@@ -368,70 +359,18 @@ impl WireTensionsWindow {
         out
     }
 
-    /// The plugin presets for this check (those with tension rules, or
-    /// declaring `checks = ["tension"]`): only their tension rules loaded.
-    fn presets_ui(
+    /// The rules in the shared rule table (owner, 2026-10-28): one row
+    /// each, the selected one's fields below it, the presets for this
+    /// check (only their tension rules), Import / Export; whether one
+    /// changed.
+    fn rules_ui(
         &mut self,
         ui: &mut egui::Ui,
-        model: &mut Model,
+        model: &Model,
         presets: &[crate::rule_editor::PluginPresets],
         out: &mut Out,
-    ) {
+    ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Tension);
-        ui.horizontal(|ui| {
-            ui.label("Plugin preset");
-            crate::rule_editor::preset_dropdown(
-                ui,
-                "wire-tensions-plugin-preset",
-                presets,
-                move |p| part.lists(&p.rules),
-                &mut self.plugin_preset,
-            );
-            let chosen = self.plugin_preset.and_then(|(i, k)| {
-                let pp = presets.get(i)?;
-                Some((pp.plugin.clone(), pp.presets.as_ref().ok()?.get(k)?.clone()))
-            });
-            let Some((plugin, p)) = chosen else {
-                return;
-            };
-            let (p, cases) = match crate::preset_cases::for_project(model, &p, part) {
-                Ok((adapted, plan)) => (adapted, plan.lines()),
-                Err(e) => {
-                    self.status = Some((format!("preset {}: {e}", p.name), true));
-                    return;
-                }
-            };
-            let preview: Vec<String> = p.rules.tension_rules.iter().map(rule_text).collect();
-            if ui
-                .button("Load")
-                .on_hover_text(format!(
-                    "{}\n{}\n{}\nIts tension rules replace those listed; your weather cases of \
-                     the same weather are used, the others created",
-                    p.description,
-                    preview.join("\n"),
-                    cases.join("\n")
-                ))
-                .clicked()
-            {
-                self.take_preset(&p.rules);
-                self.save(model);
-                let mut text = format!(
-                    "preset {plugin} {}: {} tension rule(s) loaded",
-                    p.name,
-                    p.rules.tension_rules.len()
-                );
-                for line in &cases {
-                    text = format!("{text}\n{line}");
-                }
-                self.status = Some((text, false));
-                out.plugin_preset = Some((plugin, p));
-            }
-        });
-    }
-
-    /// The rules, one row each; whether one changed.
-    fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> bool {
-        let mut changed = false;
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
         let groups = crate::case_groups::groups(model);
         let mut types: Vec<String> = model
@@ -445,87 +384,120 @@ impl WireTensionsWindow {
         let mut systems: Vec<String> = model.line.systems.iter().map(|s| s.id.clone()).collect();
         systems.push("none".into());
         let circuits: Vec<String> = model.line.circuits.iter().map(|c| c.name.clone()).collect();
-        let mut remove = None;
-        egui::Grid::new("wire-tension-rules")
-            .striped(true)
-            .spacing(help::GRID_SPACING)
-            .show(ui, |ui| {
-                for h in ["rule", "weather cases", "factor of RTS", "tension", "wires", ""] {
-                    ui.strong(h);
-                }
-                ui.end_row();
-                for (k, r) in self.rules.iter_mut().enumerate() {
-                    changed |= ui
-                        .add(egui::TextEdit::singleline(&mut r.name).desired_width(180.0))
-                        .lost_focus();
-                    let shown = if r.cases.is_empty() {
-                        "every case".to_owned()
-                    } else {
-                        r.cases.join(", ")
-                    };
-                    crate::menu::options_menu(ui, &shown, |ui| {
-                        changed |= crate::case_groups::pick_names(ui, &groups, &mut r.cases);
-                        changed |= ticks(ui, &cases, &mut r.cases);
-                    });
-                    let mut f = r.factor;
-                    let response = crate::style::field(ui,
-                        egui::DragValue::new(&mut f)
-                            .range(0.0..=1.0)
-                            .speed(0.005)
-                            .max_decimals(3),
-                    );
-                    if response.changed() {
-                        r.factor = f;
-                    }
-                    changed |= response.drag_stopped() || response.lost_focus();
-                    if r.factor <= 0.0 {
-                        ui.label(
-                            egui::RichText::new("set the factor")
-                                .color(ui.visuals().warn_fg_color),
+        let t = check_ui::RuleTable::new("wire-tension-rules", &mut self.rules, &[])
+            .add(
+                "A tension rule",
+                "for every wire in every case; set its factor of the RTS",
+                |n| TensionRule::blank(&format!("rule {}", n + 1)),
+            )
+            .presets(model, presets, part, |set| {
+                set.tension_rules.iter().map(rule_text).collect()
+            })
+            .ui(ui, |ui, _, r| {
+                let mut changed = false;
+                egui::Grid::new("wire-tension-rule")
+                    .num_columns(2)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        ui.label("Weather cases");
+                        crate::menu::options_menu(
+                            ui,
+                            &crate::rule_table::cases_words(&r.cases),
+                            |ui| {
+                                changed |=
+                                    crate::case_groups::pick_names(ui, &groups, &mut r.cases);
+                                changed |= ticks(ui, &cases, &mut r.cases);
+                            },
                         );
-                    }
-                    egui::ComboBox::from_id_salt(("wire-tension-measure", k))
-                        .selected_text(r.measure.describe())
-                        .show_ui(ui, |ui| {
-                            for m in [TensionMeasure::Max, TensionMeasure::Horizontal] {
-                                changed |= ui
-                                    .selectable_value(&mut r.measure, m, m.describe())
-                                    .changed();
+                        ui.end_row();
+                        ui.label("Factor of RTS");
+                        ui.horizontal(|ui| {
+                            let mut f = r.factor;
+                            let response = crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut f)
+                                    .range(0.0..=1.0)
+                                    .speed(0.005)
+                                    .max_decimals(3),
+                            );
+                            if response.changed() {
+                                r.factor = f;
+                            }
+                            changed |= response.drag_stopped() || response.lost_focus();
+                            if r.factor <= 0.0 {
+                                ui.label(
+                                    egui::RichText::new("set the factor")
+                                        .color(ui.visuals().warn_fg_color),
+                                );
                             }
                         });
-                    crate::menu::options_menu(ui, &r.targets.describe(), |ui| {
-                        ui.label(
-                            egui::RichText::new("None ticked: every wire; a wire counts when it is in every list ticked")
+                        ui.end_row();
+                        ui.label("Tension");
+                        egui::ComboBox::from_id_salt("wire-tension-measure")
+                            .selected_text(r.measure.describe())
+                            .show_ui(ui, |ui| {
+                                for m in [TensionMeasure::Max, TensionMeasure::Horizontal] {
+                                    changed |= ui
+                                        .selectable_value(&mut r.measure, m, m.describe())
+                                        .changed();
+                                }
+                            });
+                        ui.end_row();
+                        ui.label("Wires");
+                        crate::menu::options_menu(ui, &r.targets.describe(), |ui| {
+                            ui.label(
+                                egui::RichText::new(
+                                    "None ticked: every wire; a wire counts when it is in every \
+                                     list ticked",
+                                )
                                 .small()
                                 .weak(),
-                        );
-                        ui.label(egui::RichText::new("Wire types").strong());
-                        changed |= ticks(ui, &types, &mut r.targets.wire_types);
-                        ui.label(egui::RichText::new("Electrical systems").strong());
-                        changed |= ticks(ui, &systems, &mut r.targets.systems);
-                        ui.label(egui::RichText::new("Circuits").strong());
-                        changed |= ticks(ui, &circuits, &mut r.targets.circuits);
+                            );
+                            ui.label(egui::RichText::new("Wire types").strong());
+                            changed |= ticks(ui, &types, &mut r.targets.wire_types);
+                            ui.label(egui::RichText::new("Electrical systems").strong());
+                            changed |= ticks(ui, &systems, &mut r.targets.systems);
+                            ui.label(egui::RichText::new("Circuits").strong());
+                            changed |= ticks(ui, &circuits, &mut r.targets.circuits);
+                        });
+                        ui.end_row();
                     });
-                    if ui.small_button("×").on_hover_text("Remove this rule").clicked() {
-                        remove = Some(k);
-                    }
-                    ui.end_row();
-                }
+                changed
             });
-        if let Some(k) = remove {
-            self.rules.remove(k);
-            changed = true;
+        let mut changed = t.changed;
+        if let Some(pick) = t.preset {
+            match pick.taken(model, part) {
+                Ok((p, lines)) => {
+                    let done = crate::rule_table::merge(
+                        &mut self.rules,
+                        p.rules.tension_rules.clone(),
+                        pick.how,
+                    );
+                    self.status = Some((pick.said(&done, &lines), false));
+                    out.plugin_preset = Some((pick.group, p));
+                    changed = true;
+                }
+                Err(e) => self.status = Some((e, true)),
+            }
         }
-        if ui
-            .button("Add rule")
-            .on_hover_text("A rule for every wire in every case; set its factor of the RTS")
-            .clicked()
+        if t.import
+            && let Some(p) = crate::rule_table::import_file()
         {
-            self.rules.push(TensionRule::blank(&format!(
-                "rule {}",
-                self.rules.len() + 1
-            )));
-            changed = true;
+            match RuleSet::load(&p) {
+                Ok(set) => {
+                    self.rules = set.tension_rules;
+                    changed = true;
+                }
+                Err(e) => self.status = Some((e, true)),
+            }
+        }
+        if t.export
+            && let Some(p) = crate::rule_table::export_file("tension-rules.ohlr")
+        {
+            self.status = Some(match self.rule_set().save(&p) {
+                Ok(()) => (format!("exported to {}", p.display()), false),
+                Err(e) => (e, true),
+            });
         }
         changed
     }
@@ -630,6 +602,31 @@ pub fn rule_text(r: &TensionRule) -> String {
         },
         r.targets.describe()
     )
+}
+
+/// A tension rule as a row of the shared rule table.
+impl check_ui::RuleRow for TensionRule {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn name_mut(&mut self) -> &mut String {
+        &mut self.name
+    }
+
+    fn summary(&self, _: &[f64]) -> check_ui::Summary {
+        check_ui::Summary {
+            target: format!("tension, {}", self.measure.describe()),
+            voltages: "-".into(),
+            cases: crate::rule_table::cases_words(&self.cases),
+            distance: if self.problem().is_some() {
+                "not set".into()
+            } else {
+                format!("{} × RTS", self.factor)
+            },
+            wires: self.targets.describe(),
+        }
+    }
 }
 
 /// A tick per item of `all`, `chosen` the ticked; whether one changed (the

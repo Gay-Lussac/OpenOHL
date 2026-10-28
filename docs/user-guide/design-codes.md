@@ -72,7 +72,7 @@ them like any such file (each rule's weather cases among the preset's),
 and writes each as `<plugin>-<name>.ohlr` among the project's rule files
 and `<plugin>-<name>.ohlwc` among its weather case files (next to a line
 file; `ohl code generate`: next to the weather case file). In a window,
-**Load preset…** takes one in a click: its rules replace the window's,
+**Preset** (a dropdown) (*This project*) takes one: its rules merged into the window's or replacing them,
 its weather cases are matched to the project's ([A preset's weather
 cases](#a-presets-weather-cases)) and those with no equal created; you can change
 everything afterwards (see [Vertical and radial
@@ -94,8 +94,8 @@ preset covers every voltage. OpenOHL checks each preset like any rule file
 (at least one rule; each weather case a rule names among the preset's;
 names unique).
 
-In the desktop application the Clearances window's **Edit rules › Load
-preset…** lists the rule presets of the design-code plugins turned on,
+In the desktop application the **Preset** (a dropdown) of every check window's rule
+table (2026-10-28) lists the rule presets of the design-code plugins turned on,
 read with the parameter file chosen in Line › Criteria › Design code (none
 chosen: an empty one), shows one with its distances at the project's
 voltages, and **merges** it into the rule file chosen (a rule of the same
@@ -139,9 +139,9 @@ clearances](terrain.md#internal-clearance-rules-internal_rule), 2026-10-25) and 
 
 ### A preset's weather cases
 
-When a preset is applied in the desktop application — the rule editor's
-Load preset…, the Vertical and Radial clearance windows (Load preset…
-and Plugin preset), the vegetation panel — its weather cases are
+When a preset is applied in the desktop application — the **Preset** (a dropdown) of
+the rule tables (the Clearances window, the Vertical and Radial clearance
+windows, Wire tensions, String checks, Internal clearances), the vegetation panel — its weather cases are
 matched to the project's **by weather first, then by name** (the owner's
 rule of 2026-10-21):
 
@@ -228,8 +228,8 @@ under their names (one taken by a case of other values: `"<name>
 file is left as it is: the code's file holds your cases and the new
 ones. The model then uses them: the weather cases are solved, and
 Structure loads uses the load cases. The code's clearance presets go into the project's rule and
-weather case files (for the clearance windows' Load preset…; its rule
-presets are read when the Clearances window's Load preset… opens), its wind
+weather case files (for the rule tables' **Preset** (a dropdown), under *This project*;
+its rule presets are read when a check window with rules opens), its wind
 factors for structures into the project line's cross-section library. The
 code's notes are shown in the window. In OHL-Structure, **Load cases ›
 Load cases from a design code…** writes the wind factors into the section

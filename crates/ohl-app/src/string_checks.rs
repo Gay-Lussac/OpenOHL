@@ -67,8 +67,6 @@ pub struct StringChecksWindow {
     pub status: Option<(String, bool)>,
     /// The structure and section overrides of its cases.
     pub overrides: crate::case_groups::Overrides,
-    /// The plugin preset chosen in the dropdown (plugin, preset).
-    plugin_preset: Option<(usize, usize)>,
     /// The check.
     pub(crate) job: Job<Report>,
     /// Counted up with each answer.
@@ -320,8 +318,7 @@ impl StringChecksWindow {
                         );
                         ui.separator();
                         check_ui::section(ui, 3, "Rules", None);
-                        self.presets_ui(ui, model, presets, &mut out);
-                        changed |= self.rules_ui(ui, model);
+                        changed |= self.rules_ui(ui, model, presets, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
                                 crate::menu::error_label(ui, text.as_str());
@@ -362,70 +359,18 @@ impl StringChecksWindow {
         out
     }
 
-    /// The plugin presets for this check (those with string rules, or
-    /// declaring `checks = ["strings"]`): only their string rules loaded.
-    fn presets_ui(
+    /// The rules in the shared rule table (owner, 2026-10-28): one row
+    /// each, the selected one's fields below it, the presets for this
+    /// check (only their string rules), Import / Export; whether one
+    /// changed.
+    fn rules_ui(
         &mut self,
         ui: &mut egui::Ui,
-        model: &mut Model,
+        model: &Model,
         presets: &[crate::rule_editor::PluginPresets],
         out: &mut Out,
-    ) {
+    ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Strings);
-        ui.horizontal(|ui| {
-            ui.label("Plugin preset");
-            crate::rule_editor::preset_dropdown(
-                ui,
-                "string-checks-plugin-preset",
-                presets,
-                move |p| part.lists(&p.rules),
-                &mut self.plugin_preset,
-            );
-            let chosen = self.plugin_preset.and_then(|(i, k)| {
-                let pp = presets.get(i)?;
-                Some((pp.plugin.clone(), pp.presets.as_ref().ok()?.get(k)?.clone()))
-            });
-            let Some((plugin, p)) = chosen else {
-                return;
-            };
-            let (p, cases) = match crate::preset_cases::for_project(model, &p, part) {
-                Ok((adapted, plan)) => (adapted, plan.lines()),
-                Err(e) => {
-                    self.status = Some((format!("preset {}: {e}", p.name), true));
-                    return;
-                }
-            };
-            let preview: Vec<String> = p.rules.string_rules.iter().map(rule_text).collect();
-            if ui
-                .button("Load")
-                .on_hover_text(format!(
-                    "{}\n{}\n{}\nIts string rules replace those listed; your weather cases of \
-                     the same weather are used, the others created",
-                    p.description,
-                    preview.join("\n"),
-                    cases.join("\n")
-                ))
-                .clicked()
-            {
-                self.rules = p.rules.string_rules.clone();
-                self.save(model);
-                let mut text = format!(
-                    "preset {plugin} {}: {} string rule(s) loaded",
-                    p.name,
-                    p.rules.string_rules.len()
-                );
-                for line in &cases {
-                    text = format!("{text}\n{line}");
-                }
-                self.status = Some((text, false));
-                out.plugin_preset = Some((plugin, p));
-            }
-        });
-    }
-
-    /// The rules, one row each; whether one changed.
-    fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> bool {
-        let mut changed = false;
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
         let groups = crate::case_groups::groups(model);
         let mut voltages: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
@@ -435,122 +380,120 @@ impl StringChecksWindow {
             .collect();
         voltages.sort_by(f64::total_cmp);
         voltages.dedup();
-        let mut remove = None;
-        egui::Grid::new("string-check-rules")
-            .striped(true)
-            .spacing(help::GRID_SPACING)
-            .show(ui, |ui| {
-                for h in [
-                    "rule",
-                    "weather cases",
-                    "strings",
-                    "voltages",
-                    "load",
-                    "own swing",
-                    "uplift",
-                    "rule's swing limits °",
-                    "",
-                ] {
-                    ui.strong(h);
-                }
-                ui.end_row();
-                for (k, r) in self.rules.iter_mut().enumerate() {
-                    changed |= ui
-                        .add(egui::TextEdit::singleline(&mut r.name).desired_width(160.0))
-                        .lost_focus();
-                    let shown = if r.cases.is_empty() {
-                        "every case".to_owned()
-                    } else {
-                        r.cases.join(", ")
-                    };
-                    crate::menu::options_menu(ui, &shown, |ui| {
-                        changed |= crate::case_groups::pick_names(ui, &groups, &mut r.cases);
-                        changed |= ticks(ui, &cases, &mut r.cases);
-                    });
-                    egui::ComboBox::from_id_salt(("string-check-kind", k))
-                        .selected_text(r.strings.describe())
-                        .show_ui(ui, |ui| {
-                            for kind in
-                                [StringKind::All, StringKind::Suspension, StringKind::Strain]
-                            {
-                                changed |= ui
-                                    .selectable_value(&mut r.strings, kind, kind.describe())
-                                    .changed();
+        let t = check_ui::RuleTable::new("string-check-rules", &mut self.rules, &voltages)
+            .add(
+                "A string rule",
+                "for every string in every case: their own limits and uplift",
+                |n| StringRule::blank(&format!("rule {}", n + 1)),
+            )
+            .presets(model, presets, part, |set| {
+                set.string_rules.iter().map(rule_text).collect()
+            })
+            .ui(ui, |ui, _, r| {
+                let mut changed = false;
+                egui::Grid::new("string-check-rule")
+                    .num_columns(2)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        ui.label("Weather cases");
+                        crate::menu::options_menu(
+                            ui,
+                            &crate::rule_table::cases_words(&r.cases),
+                            |ui| {
+                                changed |=
+                                    crate::case_groups::pick_names(ui, &groups, &mut r.cases);
+                                changed |= ticks(ui, &cases, &mut r.cases);
+                            },
+                        );
+                        ui.end_row();
+                        ui.label("Strings");
+                        egui::ComboBox::from_id_salt("string-check-kind")
+                            .selected_text(r.strings.describe())
+                            .show_ui(ui, |ui| {
+                                for kind in
+                                    [StringKind::All, StringKind::Suspension, StringKind::Strain]
+                                {
+                                    changed |= ui
+                                        .selectable_value(&mut r.strings, kind, kind.describe())
+                                        .changed();
+                                }
+                            });
+                        ui.end_row();
+                        ui.label("Voltages");
+                        changed |= crate::rule_table::voltages_menu(
+                            ui,
+                            &voltages,
+                            &mut r.voltages,
+                            "None ticked: every voltage (0 kV: earth wires)",
+                        );
+                        ui.end_row();
+                        ui.label("Checks");
+                        ui.horizontal_wrapped(|ui| {
+                            changed |= ui
+                                .checkbox(&mut r.load, "load")
+                                .on_hover_text("The strings' own maximum load")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut r.swing, "own swing")
+                                .on_hover_text("The strings' own swing limits")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut r.uplift, "uplift")
+                                .on_hover_text(
+                                    "Suspension strings going slack, or pushed beyond the \
+                                     compression they may take",
+                                )
+                                .changed();
+                        });
+                        ui.end_row();
+                        ui.label("Rule's swing limits");
+                        ui.horizontal_wrapped(|ui| {
+                            for (label, v) in [
+                                ("vertical", &mut r.max_swing_deg),
+                                ("across", &mut r.max_swing_across_deg),
+                                ("along", &mut r.max_swing_along_deg),
+                            ] {
+                                changed |= angle(ui, label, v);
                             }
                         });
-                    let shown = if r.voltages.is_empty() {
-                        "every voltage".to_owned()
-                    } else {
-                        r.voltages
-                            .iter()
-                            .map(|v| format!("{v} kV"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    };
-                    crate::menu::options_menu(ui, &shown, |ui| {
-                        ui.label(
-                            egui::RichText::new("None ticked: every voltage (0 kV: earth wires)")
-                                .small()
-                                .weak(),
-                        );
-                        for v in &voltages {
-                            let mut on = r.voltages.iter().any(|x| (x - v).abs() < 1e-6);
-                            if ui.checkbox(&mut on, format!("{v} kV")).changed() {
-                                if on {
-                                    r.voltages.push(*v);
-                                } else {
-                                    r.voltages.retain(|x| (x - v).abs() >= 1e-6);
-                                }
-                                changed = true;
-                            }
-                        }
+                        ui.end_row();
                     });
-                    changed |= ui
-                        .checkbox(&mut r.load, "")
-                        .on_hover_text("The strings' own maximum load")
-                        .changed();
-                    changed |= ui
-                        .checkbox(&mut r.swing, "")
-                        .on_hover_text("The strings' own swing limits")
-                        .changed();
-                    changed |= ui
-                        .checkbox(&mut r.uplift, "")
-                        .on_hover_text(
-                            "Suspension strings going slack, or pushed beyond the compression \
-                             they may take",
-                        )
-                        .changed();
-                    ui.horizontal(|ui| {
-                        for (label, v) in [
-                            ("vertical", &mut r.max_swing_deg),
-                            ("across", &mut r.max_swing_across_deg),
-                            ("along", &mut r.max_swing_along_deg),
-                        ] {
-                            changed |= angle(ui, label, v);
-                        }
-                    });
-                    if ui
-                        .small_button("×")
-                        .on_hover_text("Remove this rule")
-                        .clicked()
-                    {
-                        remove = Some(k);
-                    }
-                    ui.end_row();
-                }
+                changed
             });
-        if let Some(k) = remove {
-            self.rules.remove(k);
-            changed = true;
+        let mut changed = t.changed;
+        if let Some(pick) = t.preset {
+            match pick.taken(model, part) {
+                Ok((p, lines)) => {
+                    let done = crate::rule_table::merge(
+                        &mut self.rules,
+                        p.rules.string_rules.clone(),
+                        pick.how,
+                    );
+                    self.status = Some((pick.said(&done, &lines), false));
+                    out.plugin_preset = Some((pick.group, p));
+                    changed = true;
+                }
+                Err(e) => self.status = Some((e, true)),
+            }
         }
-        if ui
-            .button("Add rule")
-            .on_hover_text("A rule for every string in every case: their own limits and uplift")
-            .clicked()
+        if t.import
+            && let Some(p) = crate::rule_table::import_file()
         {
-            self.rules
-                .push(StringRule::blank(&format!("rule {}", self.rules.len() + 1)));
-            changed = true;
+            match RuleSet::load(&p) {
+                Ok(set) => {
+                    self.rules = set.string_rules;
+                    changed = true;
+                }
+                Err(e) => self.status = Some((e, true)),
+            }
+        }
+        if t.export
+            && let Some(p) = crate::rule_table::export_file("string-rules.ohlr")
+        {
+            self.status = Some(match self.rule_set().save(&p) {
+                Ok(()) => (format!("exported to {}", p.display()), false),
+                Err(e) => (e, true),
+            });
         }
         changed
     }
@@ -713,6 +656,27 @@ pub fn rule_text(r: &StringRule) -> String {
         },
         r.describe_checks()
     )
+}
+
+/// A string rule as a row of the shared rule table.
+impl check_ui::RuleRow for StringRule {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn name_mut(&mut self) -> &mut String {
+        &mut self.name
+    }
+
+    fn summary(&self, _: &[f64]) -> check_ui::Summary {
+        check_ui::Summary {
+            target: self.strings.describe().to_owned(),
+            voltages: crate::rule_table::voltages_words(&self.voltages),
+            cases: crate::rule_table::cases_words(&self.cases),
+            distance: self.describe_checks(),
+            wires: "strings".into(),
+        }
+    }
 }
 
 /// A tick per item of `all`, `chosen` the ticked; whether one changed (the

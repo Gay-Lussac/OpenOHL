@@ -85,6 +85,7 @@ mod result_case;
 mod revision;
 mod rows_in_view;
 mod rule_editor;
+mod rule_table;
 mod safety_volume;
 mod sagging_panel;
 mod scene;

@@ -2245,7 +2245,6 @@ impl eframe::App for App {
                     ready.preset_editor.open_on(&plugin, Some(dir));
                 }
                 crate::codes::window(&ctx, ready, &self.plugins);
-                crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
                 crate::preset_edits::window(&ctx, ready, &self.plugins);
                 crate::import_into::window(&ctx, ready, &mut self.plugins);
                 crate::wire_colours::window(&ctx, ready, &self.plugins);
@@ -2268,6 +2267,7 @@ impl eframe::App for App {
                     || ready.wire_tensions.open
                     || ready.string_checks.open
                     || ready.internal_clearances.open
+                    || ready.clearances.open
                 {
                     crate::rule_editor::ensure_presets(&ctx, ready, &self.plugins);
                 }

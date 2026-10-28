@@ -179,16 +179,12 @@ fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
         2
     );
     // Its name typed in its row.
-    let field = h
-        .query_all_by_value("Rule 2")
-        .next()
-        .expect("the new row's name");
+    // (Its field below the table.)
+    let field = h.get_by_label("Rule name");
+    assert_eq!(field.value().as_deref(), Some("Rule 2"));
     field.focus();
     h.run();
-    h.query_all_by_value("Rule 2")
-        .next()
-        .unwrap()
-        .type_text(" high");
+    h.get_by_label("Rule name").type_text(" high");
     h.run();
     h.run();
     {

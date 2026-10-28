@@ -274,7 +274,7 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
             })
             .collect();
         done.push_str(&format!(
-            "; clearance presets {} (Vertical / Radial clearances… › Load preset…)",
+            "; clearance presets {} (Vertical / Radial clearances… › 3 Rules › Preset)",
             names.join(", ")
         ));
     }

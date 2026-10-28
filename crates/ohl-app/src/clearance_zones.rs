@@ -12,7 +12,7 @@
 //! rules are kept with the project, in a rule file of its clearance rules
 //! (`<model>.vertical-clearances.ohlr`, `<model>.radial-clearances.ohlr`;
 //! next to a line file), which `ohl line --rules` reads too.
-//! **Load preset…** takes the rules of a design code's preset (kept in the
+//! **Preset ▾** (the shared [`crate::check_ui::RuleTable`]) takes the rules of a design code's preset (kept in the
 //! project's rule files when the code generated, with a weather case file
 //! of the same name: the cases its rules name, matched to the project's by
 //! physics first, then by name, and created where none is the same:
@@ -156,7 +156,6 @@ pub struct ZoneWindow {
     loaded: bool,
     dirty: bool,
     status: Option<(String, bool)>,
-    confirm: Option<usize>,
     running: Option<Running>,
     /// The last check's report.
     pub report: Option<Result<Report, String>>,
@@ -164,10 +163,6 @@ pub struct ZoneWindow {
     /// window's rules and settings ([`crate::revision`]).
     stamp: crate::revision::Stamp,
     rules_hash: (Option<u64>, Option<u64>),
-    /// The plugin preset chosen in the dropdown (plugin, preset).
-    pub plugin_preset: Option<(usize, usize)>,
-    /// A plugin preset loaded this frame, for [`Out::plugin_preset`].
-    loaded_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
     /// Reports arrived (a new one to draw).
     generation: u64,
     /// LiDAR points of the rules' classes in the cloud (for the time
@@ -231,11 +226,8 @@ impl ZoneWindow {
             loaded: false,
             dirty: false,
             status: None,
-            confirm: None,
             running: None,
             report: None,
-            plugin_preset: None,
-            loaded_preset: None,
             stamp: Default::default(),
             rules_hash: (None, None),
             generation: 0,
@@ -428,137 +420,41 @@ impl ZoneWindow {
         zone::to_rule_set(self.title(), &self.zone, &self.wind, &self.check, &set)
     }
 
-    /// The presets of the project: its rule files (but the clearance
-    /// windows' own) with a weather case file of the same name, that have
-    /// a rule of this window's measure — (name shown, rule file, weather
-    /// case file).
-    pub fn presets(&self, model: &Model) -> Vec<(String, PathBuf, PathBuf)> {
-        let Some(work) = model.library_dir.as_ref().filter(|_| model.editing.is_ok()) else {
-            return Vec::new();
-        };
-        let Ok(entries) = std::fs::read_dir(work.join("rules")) else {
-            return Vec::new();
-        };
-        let mut files: Vec<PathBuf> = entries
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                ohl_core::files::has_extension(p, ohl_clearance::rules::RULE_FILE_EXTENSION)
-            })
-            .collect();
-        files.sort();
-        let mut out = Vec::new();
-        for r in files {
-            let name = r
-                .file_name()
-                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            if name.ends_with("-clearances.ohlr") {
-                continue;
-            }
-            let stem = r
-                .file_stem()
-                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            let w = work
-                .join("weather")
-                .join(format!("{stem}.{}", ohl_weather::WEATHER_FILE_EXTENSION));
-            if !w.is_file() {
-                continue;
-            }
-            let Ok(set) = RuleSet::load(&r) else {
-                continue;
-            };
-            if crate::preset_cases::Part::of(self.zone.measure).lists(&set) {
-                let shown = if set.name.is_empty() {
-                    name
-                } else {
-                    set.name.clone()
-                };
-                out.push((shown, r, w));
-            }
-        }
-        out
-    }
-
-    /// Takes a preset: its rules replace those shown; its weather cases are
-    /// matched to the project's ([`crate::preset_cases`]: an equivalent
-    /// case used, the rules naming it), the others added to the model's
-    /// weather case file
-    /// (or its file is used for the model when the model has none).
-    pub fn load_preset(&mut self, model: &Model, rules: &Path, weather: &Path, out: &mut Out) {
-        let mut set = match RuleSet::load_with(rules, &(&model.line.defaults).into()) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Some((e, true));
-                return;
-            }
-        };
-        // Only this window's rules and the weather cases they name (owner,
-        // 2026-10-21: presets are per check), matched to the project's:
-        // the same weather used (the rules naming the project's), the
-        // others created.
-        let part = crate::preset_cases::Part::of(self.zone.measure);
-        let matched = std::fs::read_to_string(weather)
-            .map_err(|e| format!("{}: {e}", weather.display()))
-            .and_then(|text| {
-                let wc = ohl_weather::WeatherCases::parse(&text)
-                    .map_err(|e| format!("{}: {e}", weather.display()))?;
-                let names = part.cases(&set, &wc);
-                let text = crate::preset_cases::keep_cases_text(&text, &names)?;
-                let wc = ohl_weather::WeatherCases::parse(&text)?;
-                let plan =
-                    crate::preset_cases::Plan::new(&crate::preset_cases::project_cases(model), &wc);
-                let text = plan.weather_text(&text)?;
-                Ok((plan, text))
-            });
-        set.rules.retain(|r| part.takes(r));
-        set.vegetation = None;
-        let (plan, weather_text) = match matched {
-            Ok(x) => x,
-            Err(e) => {
-                self.status = Some((e, true));
-                return;
-            }
-        };
-        plan.rename_rule_set(&mut set);
-        self.take(model, &set);
-        self.dirty = true;
-        let have: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let added = match &model.sources.weather {
-            None => {
-                out.weather_use = Some(weather.to_path_buf());
-                Ok("its weather cases are used for the model".to_owned())
-            }
-            Some(file) => {
-                let tmp = std::env::temp_dir().join(format!(
-                    "ohl-preset-cases-{}.{}",
-                    std::process::id(),
-                    ohl_weather::WEATHER_FILE_EXTENSION
-                ));
-                let added = std::fs::write(&tmp, &weather_text)
-                    .map_err(|e| format!("{}: {e}", tmp.display()))
-                    .and_then(|()| add_missing_cases(file, &tmp, &have));
-                let _ = std::fs::remove_file(&tmp);
-                added.map(|added| {
-                    if added.is_empty() {
-                        "its weather cases are in the model".to_owned()
-                    } else {
-                        out.weather_saved = Some(file.clone());
-                        format!("weather cases added to the model: {}", added.join(", "))
+    /// Takes a preset chosen in *Preset ▾* (a plugin's or the project's):
+    /// only this window's part of it, the weather cases its rules name
+    /// matched to the project's (an equivalent case used, the rules naming
+    /// it); merged into the rules (a rule of the same name replaced) or
+    /// replacing them with its wind and what it solves. Its cases missing
+    /// from the model go to [`Out::plugin_preset`] (added by the
+    /// application).
+    pub fn take_preset(&mut self, model: &Model, pick: check_ui::PresetPick, out: &mut Out) {
+        let measure = self.zone.measure;
+        let part = crate::preset_cases::Part::of(measure);
+        match pick.taken(model, part) {
+            Ok((p, lines)) => {
+                let done = match pick.how {
+                    crate::rule_editor::Load::Replace => {
+                        // Its rules, wind and what it solves.
+                        self.take(model, &p.rules);
+                        format!("{} {} rule(s) loaded", self.rules.len(), measure.as_str())
                     }
-                })
+                    crate::rule_editor::Load::Merge => {
+                        let theirs = zone::from_rule_set(
+                            &p.rules,
+                            measure,
+                            |role| model.scheme.codes_with_role(role),
+                            &line_voltages(model),
+                        )
+                        .rules;
+                        crate::rule_table::merge(&mut self.rules, theirs, pick.how)
+                    }
+                };
+                self.status = Some((pick.said(&done, &lines), false));
+                out.plugin_preset = Some((pick.group, p));
+                self.dirty = true;
             }
-        };
-        let (mut text, error) = match added {
-            Ok(m) => (format!("preset {}: {m}", set.name), false),
-            Err(e) => (format!("preset {}: {e}", set.name), true),
-        };
-        for line in plan.lines() {
-            text = format!("{text}\n{line}");
+            Err(e) => self.status = Some((e, true)),
         }
-        if let Some((notes, _)) = &self.status {
-            text = format!("{text}\n{notes}");
-        }
-        self.status = Some((text, error));
     }
 
     /// Starts a check.
@@ -710,103 +606,6 @@ impl ZoneWindow {
         (self.report.as_ref(), self.running.is_some())
     }
 
-    /// The presets of the design-code plugins for this window (those for
-    /// its check, [`crate::preset_cases::Part`]): a dropdown grouped by
-    /// plugin, the preset's rules of this measure previewed by target with
-    /// their cases, then loaded (they replace those listed; the weather
-    /// cases they name matched to the project's, the others created).
-    fn plugin_presets_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        model: &Model,
-        presets: &[crate::rule_editor::PluginPresets],
-    ) {
-        let measure = self.zone.measure;
-        // Only the presets for this window, and only its part of one
-        // (owner, 2026-10-21: presets are per check).
-        let part = crate::preset_cases::Part::of(measure);
-        let ours = move |p: &ohl_io::codes::RulePresetChecked| part.lists(&p.rules);
-        let mut lines: Vec<String> = Vec::new();
-        ui.horizontal(|ui| {
-            ui.label("Plugin preset");
-            crate::rule_editor::preset_dropdown(
-                ui,
-                &format!("{}-plugin-preset", self.title()),
-                presets,
-                ours,
-                &mut self.plugin_preset,
-            );
-            let chosen = self.plugin_preset.and_then(|(i, k)| {
-                let pp = presets.get(i)?;
-                Some((pp.plugin.clone(), pp.presets.as_ref().ok()?.get(k)?.clone()))
-            });
-            let Some((plugin, p)) = chosen else {
-                return;
-            };
-            // This window's rules, their weather cases matched to the
-            // project's (the same weather used, the rules naming the
-            // project's).
-            let (p, cases) = match crate::preset_cases::for_project(model, &p, part) {
-                Ok((adapted, plan)) => (adapted, plan.lines()),
-                Err(e) => {
-                    lines.push(format!("preset {}: {e}", p.name));
-                    return;
-                }
-            };
-            let voltages = ohl_clearance::zone::line_voltages(&model.line);
-            // Grouped by target, each rule with its distance and cases.
-            let mut preview: Vec<String> = Vec::new();
-            for (group, list) in crate::preset_cases::grouped(&p.rules.rules) {
-                preview.push(format!("— {group} —"));
-                for x in list {
-                    let q = match measure {
-                        Measure::Vertical => x.vertical.as_ref(),
-                        Measure::Radial => x.radial.as_ref(),
-                    };
-                    if let Some(q) = q {
-                        preview.push(format!(
-                            "{}: {} ({})",
-                            x.name,
-                            crate::requirement_ui::preview_text(q, &voltages),
-                            crate::preset_cases::cases_label(x)
-                        ));
-                    }
-                }
-            }
-            if ui
-                .button("Load")
-                .on_hover_text(format!(
-                    "{}\n{}\n{}\nIts {} rules replace those listed; your weather cases of the \
-                     same weather are used, the others created",
-                    p.description,
-                    preview.join("\n"),
-                    cases.join("\n"),
-                    measure.as_str()
-                ))
-                .clicked()
-            {
-                self.take(model, &p.rules);
-                self.dirty = true;
-                let mut text = format!(
-                    "preset {plugin} {}: {} {} rule(s) loaded",
-                    p.name,
-                    p.rules.rules.len(),
-                    measure.as_str()
-                );
-                for line in &cases {
-                    text = format!("{text}\n{line}");
-                }
-                self.status = Some((text, false));
-                self.loaded_preset = Some((plugin, p));
-            }
-            lines = cases;
-        });
-        // What Load does with its weather cases.
-        for line in lines {
-            ui.label(egui::RichText::new(line).small().weak());
-        }
-    }
-
     /// The window.
     pub fn ui(
         &mut self,
@@ -814,10 +613,7 @@ impl ZoneWindow {
         model: &mut Model,
         presets: &[crate::rule_editor::PluginPresets],
     ) -> Out {
-        let mut out = Out {
-            plugin_preset: self.loaded_preset.take(),
-            ..Out::default()
-        };
+        let mut out = Out::default();
         if self.poll() {
             self.generation += 1;
         }
@@ -827,7 +623,6 @@ impl ZoneWindow {
         }
         let mut open = true;
         let mut run = false;
-        let mut preset = None;
         let panel = match self.zone.measure {
             Measure::Vertical => crate::dockable::Panel::VerticalClearances,
             Measure::Radial => crate::dockable::Panel::RadialClearances,
@@ -886,10 +681,7 @@ impl ZoneWindow {
                         "Rules",
                         Some("clearances-rules-and-presets"),
                     ));
-                    self.plugin_presets_ui(ui, model, presets);
-                    if let Some(chosen) = self.rules_ui(ui, model) {
-                        preset = Some(chosen);
-                    }
+                    self.rules_ui(ui, model, presets, &mut out);
                     ui.separator();
                     check_ui::section(ui, 4, "Settings", None);
                     guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
@@ -917,9 +709,6 @@ impl ZoneWindow {
         });
         out.guide = guide;
         self.open = open;
-        if let Some((r, w)) = preset {
-            self.load_preset(model, &r, &w, &mut out);
-        }
         if !open && let Some(r) = &self.running {
             // Closing the window stops its check.
             r.cancel.cancel();
@@ -1227,9 +1016,19 @@ impl ZoneWindow {
         }
     }
 
-    /// The rules; a preset chosen (rule file, weather case file).
-    fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<(PathBuf, PathBuf)> {
-        let mut preset = None;
+    /// The rules in the shared rule table (owner, 2026-10-28): one row
+    /// each, the selected one's fields below it (its distance with the
+    /// preview at the line's voltages), one *Preset ▾* (the design-code
+    /// plugins' presets for this window, then the project's: only its
+    /// part of one, the weather cases they name matched to the project's,
+    /// the others created), Import / Export.
+    fn rules_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        presets: &[crate::rule_editor::PluginPresets],
+        out: &mut Out,
+    ) {
         help::explain(
             ui,
             "A rule: the voltage, the weather cases, the distance and the targets — LiDAR \
@@ -1238,92 +1037,112 @@ impl ZoneWindow {
              Weather cases: those the rule applies in (none ticked: every case). Distance: one \
              value, a table \"up to kV: distance\" or a base plus an amount per kV. Targets: the \
              LiDAR classes ticked (by number and name of the class scheme, with their colours) \
-             and the ground surface of the checks. A preset (a design code's) replaces the rules \
-             with its own, with its wind and what it solves.",
+             and the ground surface of the checks. A preset (a design code's) is merged into \
+             the rules (a rule of the same name replaced) or replaces them, with its wind and \
+             what it solves.",
         );
-        ui.horizontal(|ui| {
-            if ui
-                .button("Add rule")
-                .on_hover_text(
-                    "A new row at the end of the table: set its distance and its targets \
-                     there (edited in place, kept with the project)",
-                )
-                .clicked()
-            {
-                self.rules.push(ZoneRule {
-                    name: format!("Rule {}", self.rules.len() + 1),
+        let measure = self.zone.measure;
+        let part = crate::preset_cases::Part::of(measure);
+        let voltages = line_voltages(model);
+        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+        let groups = crate::case_groups::groups(model);
+        let classes = cloud_classes(model, &self.rules);
+        let zone_width = self.zone.width;
+        let preview_voltages = voltages.clone();
+        let t = check_ui::RuleTable::new(self.title(), &mut self.rules, &voltages)
+            .add(
+                "A rule",
+                "a new row at the end of the table: set its distance and its targets below it",
+                |n| ZoneRule {
+                    name: format!("Rule {}", n + 1),
                     ground: false,
                     ..first_rule()
-                });
-                self.dirty = true;
-            }
-            ui.push_id((self.title(), "presets"), |ui| {
-                ui.menu_button("Load preset…", |ui| {
-                    let list = self.presets(model);
-                    if list.is_empty() {
-                        ui.label(
-                            egui::RichText::new(
-                                "No preset in the project: a design code gives them when it \
-                                 generates (Line › Criteria › Design code).",
-                            )
-                            .small()
-                            .weak(),
-                        );
-                    }
-                    for (name, r, w) in list {
-                        let file = r
-                            .file_name()
-                            .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                        if ui
-                            .button(name)
-                            .on_hover_text(format!(
-                                "{file}: its rules replace those listed; its weather cases go \
-                                 to the model where missing"
-                            ))
-                            .clicked()
-                        {
-                            preset = Some((r, w));
+                },
+            )
+            .keep_one()
+            .presets(model, presets, part, move |set| {
+                // Grouped by target, each rule with its distance and cases.
+                let mut lines = Vec::new();
+                for (group, list) in crate::preset_cases::grouped(&set.rules) {
+                    lines.push(format!("— {group} —"));
+                    for x in list {
+                        let q = match measure {
+                            Measure::Vertical => x.vertical.as_ref(),
+                            Measure::Radial => x.radial.as_ref(),
+                        };
+                        if let Some(q) = q {
+                            lines.push(format!(
+                                "{}: {} ({})",
+                                x.name,
+                                crate::requirement_ui::preview_text(q, &preview_voltages),
+                                crate::preset_cases::cases_label(x)
+                            ));
                         }
                     }
-                });
-            });
-            if ui
-                .button("Import…")
-                .on_hover_text("Rules from a rule file (.ohlr): they replace those listed")
-                .clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter(
-                        "Clearance rules",
-                        &[ohl_clearance::rules::RULE_FILE_EXTENSION],
-                    )
-                    .pick_file()
-            {
-                match RuleSet::load_with(&p, &(&model.line.defaults).into()) {
-                    Ok(set) => {
-                        self.take(model, &set);
-                        self.dirty = true;
-                    }
-                    Err(e) => self.status = Some((e, true)),
                 }
+                lines
+            })
+            .ui(ui, |ui, k, r| {
+                let mut changed = false;
+                egui::Grid::new(("zone-rule", measure.as_str()))
+                    .num_columns(2)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        ui.label("Targets");
+                        changed |= targets_ui(ui, (measure, k), r, &classes, model);
+                        ui.end_row();
+                        ui.label("Voltages");
+                        changed |= voltage_ui(ui, (measure, k), r, &voltages);
+                        ui.end_row();
+                        ui.label("Weather cases");
+                        changed |= cases_ui(ui, (measure, k), r, &cases, &groups);
+                        ui.end_row();
+                        ui.label("Distance");
+                        changed |= crate::requirement_ui::requirement_ui(
+                            ui,
+                            ("zone-distance", measure.as_str(), k),
+                            &mut r.distance,
+                            &voltages,
+                        );
+                        ui.end_row();
+                        if measure == Measure::Vertical {
+                            ui.label("Width [m]").on_hover_text(
+                                "The rule's own half width of the zone across the line (none: \
+                                 the window's)",
+                            );
+                            changed |= width_ui(ui, r, zone_width);
+                            ui.end_row();
+                        }
+                        ui.label("Wires");
+                        changed |= wires_ui(ui, (measure, k), r);
+                        ui.end_row();
+                    });
+                changed
+            });
+        self.dirty |= t.changed;
+        if let Some(pick) = t.preset {
+            self.take_preset(model, pick, out);
+        }
+        if t.import
+            && let Some(p) = crate::rule_table::import_file()
+        {
+            match RuleSet::load_with(&p, &(&model.line.defaults).into()) {
+                Ok(set) => {
+                    self.take(model, &set);
+                    self.dirty = true;
+                }
+                Err(e) => self.status = Some((e, true)),
             }
-            if ui
-                .button("Export…")
-                .on_hover_text("The rules as a rule file (.ohlr), for ohl line --rules too")
-                .clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter(
-                        "Clearance rules",
-                        &[ohl_clearance::rules::RULE_FILE_EXTENSION],
-                    )
-                    .set_file_name(format!("{}-clearances.ohlr", self.zone.measure.as_str()))
-                    .save_file()
-            {
-                self.status = Some(match self.rule_set().save(&p) {
-                    Ok(()) => (format!("exported to {}", p.display()), false),
-                    Err(e) => (e, true),
-                });
-            }
-        });
+        }
+        if t.export
+            && let Some(p) =
+                crate::rule_table::export_file(&format!("{}-clearances.ohlr", measure.as_str()))
+        {
+            self.status = Some(match self.rule_set().save(&p) {
+                Ok(()) => (format!("exported to {}", p.display()), false),
+                Err(e) => (e, true),
+            });
+        }
         if let Some((text, error)) = &self.status {
             if *error {
                 crate::menu::error_label(ui, text.as_str());
@@ -1331,119 +1150,7 @@ impl ZoneWindow {
                 crate::menu::message(ui, egui::RichText::new(text.as_str()).small(), None);
             }
         }
-        if self.rules.is_empty() {
-            // (Never left so: a window always has a rule.)
-            return preset;
-        }
-        let voltages = line_voltages(model);
-        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let groups = crate::case_groups::groups(model);
-        let classes = cloud_classes(model, &self.rules);
-        let mut remove = None;
-        let mut duplicate = None;
-        let n = self.rules.len();
-        help::list(
-            ui,
-            (self.title(), "rules"),
-            help::LIST_HEIGHT,
-            egui::ScrollArea::both()
-                .id_salt((self.title(), "rules"))
-                .auto_shrink([false, true]),
-            |ui| {
-                egui::Grid::new((self.title(), "rule-grid"))
-                    .striped(true)
-                    .spacing(help::GRID_SPACING)
-                    .show(ui, |ui| {
-                        let vertical = self.zone.measure == Measure::Vertical;
-                        for h in [
-                            "Name",
-                            "Voltages",
-                            "Weather cases",
-                            "Distance",
-                            "Width [m]",
-                            "Wires",
-                            "Targets",
-                            "",
-                        ] {
-                            if h == "Width [m]" {
-                                if vertical {
-                                    ui.strong(h).on_hover_text(
-                                        "The rule's own half width of the zone across the \
-                                         line (none: the window's)",
-                                    );
-                                }
-                                continue;
-                            }
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for (k, r) in self.rules.iter_mut().enumerate() {
-                            self.dirty |= ui
-                                .add_sized([150.0, 20.0], egui::TextEdit::singleline(&mut r.name))
-                                .changed();
-                            self.dirty |= voltage_ui(ui, (self.zone.measure, k), r, &voltages);
-                            self.dirty |= cases_ui(ui, (self.zone.measure, k), r, &cases, &groups);
-                            self.dirty |= crate::requirement_ui::requirement_ui(
-                                ui,
-                                ("zone-distance", self.zone.measure.as_str(), k),
-                                &mut r.distance,
-                                &voltages,
-                            );
-                            if vertical {
-                                self.dirty |= width_ui(ui, r, self.zone.width);
-                            }
-                            self.dirty |= wires_ui(ui, (self.zone.measure, k), r);
-                            self.dirty |=
-                                targets_ui(ui, (self.zone.measure, k), r, &classes, model);
-                            ui.horizontal(|ui| {
-                                if ui.small_button("Duplicate").clicked() {
-                                    duplicate = Some(k);
-                                }
-                                if ui
-                                    .add_enabled(n > 1, egui::Button::new("Remove").small())
-                                    .on_disabled_hover_text(
-                                        "The window always has a rule: change this one",
-                                    )
-                                    .clicked()
-                                {
-                                    remove = Some(k);
-                                }
-                            });
-                            ui.end_row();
-                        }
-                    });
-            },
-        );
-        if let Some(k) = duplicate {
-            let mut r = self.rules[k].clone();
-            r.name.push_str(" (copy)");
-            self.rules.insert(k + 1, r);
-            self.dirty = true;
-        }
-        if remove.is_some() {
-            self.confirm = remove;
-        }
-        if let Some(k) = self.confirm
-            && k < self.rules.len()
-        {
-            ui.horizontal(|ui| {
-                ui.colored_label(
-                    ui.visuals().warn_fg_color,
-                    format!("Remove the rule \"{}\"?", self.rules[k].name),
-                );
-                if ui.button("Remove").clicked() {
-                    self.rules.remove(k);
-                    self.confirm = None;
-                    self.dirty = true;
-                }
-                if ui.button("Keep").clicked() {
-                    self.confirm = None;
-                }
-            });
-        }
-        preset
     }
-
     /// The Run row; true to start a check.
     fn run_ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut run = false;
@@ -1895,6 +1602,57 @@ fn cloud_classes(model: &Model, rules: &[ZoneRule]) -> Vec<(u8, String)> {
             )
         })
         .collect()
+}
+
+/// A clearance window's rule as a row of the shared rule table.
+impl check_ui::RuleRow for ZoneRule {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn name_mut(&mut self) -> &mut String {
+        &mut self.name
+    }
+
+    fn summary(&self, _: &[f64]) -> check_ui::Summary {
+        use ohl_clearance::Wires;
+        let mut target: Vec<String> = Vec::new();
+        if self.ground {
+            target.push(match &self.surface {
+                Some(n) => format!("TIN {n}"),
+                None => "ground".into(),
+            });
+        }
+        if !self.classes.is_empty() {
+            let list: Vec<String> = self.classes.iter().map(|c| c.to_string()).collect();
+            target.push(format!(
+                "class{} {}",
+                if self.classes.len() == 1 { "" } else { "es" },
+                list.join(", ")
+            ));
+        }
+        let distance = crate::rule_table::distance_words(&self.distance);
+        check_ui::Summary {
+            target: if target.is_empty() {
+                "choose its targets".into()
+            } else {
+                target.join(" + ")
+            },
+            voltages: crate::rule_table::voltages_words(&self.voltages),
+            cases: crate::rule_table::cases_words(&self.cases),
+            distance: if self.screen {
+                format!("screen, band {distance}")
+            } else {
+                distance
+            },
+            wires: match self.wires {
+                Wires::Both => "sections + jumpers",
+                Wires::Sections => "sections",
+                Wires::Jumpers => "jumpers",
+            }
+            .into(),
+        }
+    }
 }
 
 /// The voltages of a rule ([`crate::requirement_ui::voltage_filter_ui`]):

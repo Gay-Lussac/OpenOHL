@@ -1191,13 +1191,15 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - **Clearance presets** of design-code plugins are such rule files,
   `<plugin>-<name>.ohlr` among the project's rule files, each with a
   weather case file of the same name among its weather case files (the
-  cases its rules name); the windows' Load preset… lists them.
+  cases its rules name); the rule tables' Preset dropdown lists them (*This project*).
 - **Rule presets** of design-code plugins (optional `rule-presets`
   export, 2026-10-20) are rule files of any targets with a description and
   optional weather cases (`ohl_io::codes::RulePresetChecked`); the app
-  reads them from the plugins when the Clearances window's Load preset…
-  opens (merged into the chosen rule file or replacing its rules, the
-  preset's tables copied as written); `ohl code generate` and `ohl code
+  reads them from the plugins when a check window with rules
+  opens (the rule tables' Preset dropdown; in the Clearances window merged into
+  the chosen rule file or replacing its rules, the preset's tables copied
+  as written); the project's own presets are read into the same form
+  (`ohl-app` `rule_table`, 2026-10-28); `ohl code generate` and `ohl code
   rule-presets --out` write them as `<plugin>-rules-<name>.ohlr` (and
   `.ohlwc`). Applied in the app, a preset's weather cases are matched to
   the project's by physics first, then by name (2026-10-21, `ohl-app`

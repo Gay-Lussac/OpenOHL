@@ -466,9 +466,8 @@ cases](design-codes.md#a-presets-weather-cases). **Apply preset** puts
 the values in (edit them freely after), creates the cases to create in
 the project's weather cases (one change of the project, undone by Undo)
 and ticks the preset's cases — your own where they are used.
-The same dropdown lists the presets in the rule editor's **Load preset…**
-and in the vertical and radial clearance windows (**Plugin preset**,
-then **Load**).
+The rule tables of the other check windows list them in their one
+**Preset** (a dropdown) (previewed, then **Merge** or **Replace**).
 
 **Saving.** **Save in Performed checks** keeps the run — its settings,
 weather cases, per-span results, worst points and every grow-in and

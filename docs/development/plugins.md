@@ -248,7 +248,7 @@ rule-presets;`); extension point `design-code` as before.
 - `rule-presets(parameters)` returns a list of **rule-preset** records,
   or an error string. `parameters` is the user's parameter file (as
   `generate` reads it) or **empty** when the user gave none (the app's
-  Load preset… without a parameter file chosen): a plugin whose presets
+  Preset dropdown without a parameter file chosen): a plugin whose presets
   come from its own data gives them anyway, one that needs the file says
   so in its error.
 - A **rule-preset**: `name` (unique among the plugin's rule presets),
@@ -269,8 +269,8 @@ rule-presets;`); extension point `design-code` as before.
   `check_rule_presets` check each preset as OpenOHL reads it (a rule file
   with at least one rule; its weather cases, when given; every case a rule
   or a case pair names among them; names unique).
-- Used by: the desktop application's Clearances window, **Edit rules › Load
-  preset…** (the enabled design-code plugins, read on a worker thread with
+- Used by: the desktop application's rule tables, **Preset** (a dropdown) (the
+  Clearances window and every check window with rules) (the enabled design-code plugins, read on a worker thread with
   the Design code window's parameter file; previewed; merged or replacing
   the rules, one command); `ohl code rule-presets --plugin DIR [--params
   FILE] [--out DIR]` (lists, writes `<plugin>-rules-<name>.ohlr` / `.ohlwc`);
@@ -395,7 +395,7 @@ with its own cases) plus a `[vegetation]` table.
 ### Matching a preset's weather cases
 
 Wherever the desktop application applies a preset with weather cases —
-the rule editor's Load preset…, the Vertical / Radial clearance windows
+the rule tables' Preset dropdown (the Clearances window), the Vertical / Radial clearance windows
 (the project's preset files and the plugin presets), the vegetation
 panel — its cases are matched to the project's **by physics first, then
 by name** (owner, 2026-10-21; `ohl-app`'s `preset_cases`):

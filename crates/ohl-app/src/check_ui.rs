@@ -22,6 +22,9 @@
 //! - [`run_footer`]: Run, Stop (every check), the progress and the time
 //!   left, "Before Run: …" when Run is grey, the scope in one line, then
 //!   what the window adds (overrides, *Save in Performed checks*).
+//! - [`RuleTable`] (*3 Rules*): one compact row per rule, the selected
+//!   rule's editor below the table, one *Preset ▾* with Merge / Replace,
+//!   Import / Export ([`crate::rule_table`]).
 //! - [`Kept`]: a window's setup kept in the project, a project setting
 //!   per project line (`app.<check>.<line>`), as the magnetic field's.
 
@@ -32,6 +35,8 @@ use eframe::egui;
 
 use crate::check_help as help;
 use crate::tick_list::{self, Item};
+
+pub use crate::rule_table::{PresetPick, RuleRow, RuleTable, Summary};
 
 // ---------------------------------------------------------------- tabs
 

@@ -18,7 +18,7 @@
 //!   so.
 //!
 //! Every place that applies a preset goes through here: the rule editor's
-//! Load preset…, the Vertical / Radial clearance windows (plugin presets
+//! Preset ▾ ([`crate::rule_table`]), the clearance windows (plugin presets
 //! and the project's preset files), the vegetation panel. Each lists only
 //! the presets for its check and takes only its **part** of one ([`Part`],
 //! owner, 2026-10-21: presets are per check): the vertical window the
@@ -235,7 +235,9 @@ impl Plan {
         out
     }
 
-    /// The rules of `set` naming the project's cases.
+    /// The rules of `set` naming the project's cases (the presets go in
+    /// by their text, [`Plan::rules_text`]; tests).
+    #[cfg(test)]
     pub fn rename_rule_set(&self, set: &mut RuleSet) {
         for r in &mut set.rules {
             r.cases = self.entries(&r.cases);

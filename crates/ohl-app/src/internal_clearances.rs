@@ -67,8 +67,6 @@ pub struct InternalClearancesWindow {
     pub status: Option<(String, bool)>,
     /// The structure and section overrides of its cases.
     pub overrides: crate::case_groups::Overrides,
-    /// The plugin preset chosen in the dropdown (plugin, preset).
-    plugin_preset: Option<(usize, usize)>,
     /// The check.
     pub(crate) job: Job<Report>,
     /// Counted up with each answer.
@@ -465,8 +463,7 @@ impl InternalClearancesWindow {
                         );
                         ui.separator();
                         check_ui::section(ui, 3, "Rules", None);
-                        self.presets_ui(ui, model, presets, &mut out);
-                        changed |= self.rules_ui(ui, model);
+                        changed |= self.rules_ui(ui, model, presets, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
                                 crate::menu::error_label(ui, text.as_str());
@@ -507,76 +504,18 @@ impl InternalClearancesWindow {
         out
     }
 
-    /// The plugin presets for this check (those with internal rules, or
-    /// declaring `checks = ["internal"]`): only their internal rules
-    /// loaded.
-    fn presets_ui(
+    /// The rules in the shared rule table (owner, 2026-10-28): one row
+    /// each, the selected one's fields below it (its distance with the
+    /// preview at the line's voltages), the presets for this check (only
+    /// their internal rules), Import / Export; whether one changed.
+    fn rules_ui(
         &mut self,
         ui: &mut egui::Ui,
-        model: &mut Model,
+        model: &Model,
         presets: &[crate::rule_editor::PluginPresets],
         out: &mut Out,
-    ) {
+    ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Internal);
-        ui.horizontal(|ui| {
-            ui.label("Plugin preset");
-            crate::rule_editor::preset_dropdown(
-                ui,
-                "internal-clearances-plugin-preset",
-                presets,
-                move |p| part.lists(&p.rules),
-                &mut self.plugin_preset,
-            );
-            let chosen = self.plugin_preset.and_then(|(i, k)| {
-                let pp = presets.get(i)?;
-                Some((pp.plugin.clone(), pp.presets.as_ref().ok()?.get(k)?.clone()))
-            });
-            let Some((plugin, p)) = chosen else {
-                return;
-            };
-            let (p, cases) = match crate::preset_cases::for_project(model, &p, part) {
-                Ok((adapted, plan)) => (adapted, plan.lines()),
-                Err(e) => {
-                    self.status = Some((format!("preset {}: {e}", p.name), true));
-                    return;
-                }
-            };
-            let preview: Vec<String> = p
-                .rules
-                .internal_rules
-                .iter()
-                .map(|r| format!("{}: {}", r.name, r.describe_parts()))
-                .collect();
-            if ui
-                .button("Load")
-                .on_hover_text(format!(
-                    "{}\n{}\n{}\nIts internal rules replace those listed; your weather cases \
-                     of the same weather are used, the others created",
-                    p.description,
-                    preview.join("\n"),
-                    cases.join("\n")
-                ))
-                .clicked()
-            {
-                self.rules = p.rules.internal_rules.clone();
-                self.save(model);
-                let mut text = format!(
-                    "preset {plugin} {}: {} internal rule(s) loaded",
-                    p.name,
-                    p.rules.internal_rules.len()
-                );
-                for line in &cases {
-                    text = format!("{text}\n{line}");
-                }
-                self.status = Some((text, false));
-                out.plugin_preset = Some((plugin, p));
-            }
-        });
-    }
-
-    /// The rules, one row each; whether one changed.
-    fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> bool {
-        let mut changed = false;
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
         let groups = crate::case_groups::groups(model);
         let mut voltages: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
@@ -586,160 +525,162 @@ impl InternalClearancesWindow {
             .collect();
         voltages.sort_by(f64::total_cmp);
         voltages.dedup();
-        let mut remove = None;
-        egui::Grid::new("internal-clearance-rules")
-            .striped(true)
-            .spacing(help::GRID_SPACING)
-            .show(ui, |ui| {
-                for h in [
-                    "rule",
-                    "weather cases",
-                    "voltages",
-                    "conductors",
-                    "jumpers",
-                    "string ends",
-                    "shapes",
-                    "reach m",
-                    "distance",
-                    "with wind",
-                    "",
-                ] {
-                    ui.strong(h);
-                }
-                ui.end_row();
-                for (k, r) in self.rules.iter_mut().enumerate() {
-                    changed |= ui
-                        .add(egui::TextEdit::singleline(&mut r.name).desired_width(150.0))
-                        .lost_focus();
-                    let shown = if r.cases.is_empty() {
-                        "every case".to_owned()
-                    } else {
-                        r.cases.join(", ")
-                    };
-                    crate::menu::options_menu(ui, &shown, |ui| {
-                        changed |= crate::case_groups::pick_names(ui, &groups, &mut r.cases);
-                        for c in &cases {
-                            let mut on = r.cases.contains(c);
-                            if ui.checkbox(&mut on, c).changed() {
-                                r.cases.retain(|x| x != c);
-                                if on {
-                                    r.cases.push(c.clone());
+        let t = check_ui::RuleTable::new("internal-clearance-rules", &mut self.rules, &voltages)
+            .add(
+                "An internal rule",
+                "for every electrified part in every case: set its distance",
+                |n| InternalRule::blank(&format!("rule {}", n + 1)),
+            )
+            .presets(model, presets, part, |set| {
+                set.internal_rules
+                    .iter()
+                    .map(|r| format!("{}: {}", r.name, r.describe_parts()))
+                    .collect()
+            })
+            .ui(ui, |ui, k, r| {
+                let mut changed = false;
+                egui::Grid::new("internal-clearance-rule")
+                    .num_columns(2)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        ui.label("Weather cases");
+                        crate::menu::options_menu(
+                            ui,
+                            &crate::rule_table::cases_words(&r.cases),
+                            |ui| {
+                                changed |=
+                                    crate::case_groups::pick_names(ui, &groups, &mut r.cases);
+                                for c in &cases {
+                                    let mut on = r.cases.contains(c);
+                                    if ui.checkbox(&mut on, c).changed() {
+                                        r.cases.retain(|x| x != c);
+                                        if on {
+                                            r.cases.push(c.clone());
+                                        }
+                                        changed = true;
+                                    }
                                 }
-                                changed = true;
-                            }
-                        }
-                    });
-                    let shown = if r.voltages.is_empty() {
-                        "every voltage".to_owned()
-                    } else {
-                        r.voltages
-                            .iter()
-                            .map(|v| format!("{v} kV"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    };
-                    crate::menu::options_menu(ui, &shown, |ui| {
-                        ui.label(
-                            egui::RichText::new("None ticked: every voltage")
-                                .small()
-                                .weak(),
+                            },
                         );
-                        for v in &voltages {
-                            let mut on = r.voltages.iter().any(|x| (x - v).abs() < 1e-6);
-                            if ui.checkbox(&mut on, format!("{v} kV")).changed() {
-                                if on {
-                                    r.voltages.push(*v);
-                                } else {
-                                    r.voltages.retain(|x| (x - v).abs() >= 1e-6);
-                                }
+                        ui.end_row();
+                        ui.label("Voltages");
+                        changed |= crate::rule_table::voltages_menu(
+                            ui,
+                            &voltages,
+                            &mut r.voltages,
+                            "None ticked: every voltage",
+                        );
+                        ui.end_row();
+                        ui.label("Parts");
+                        ui.horizontal_wrapped(|ui| {
+                            changed |= ui
+                                .checkbox(&mut r.conductors, "conductors")
+                                .on_hover_text("The conductors within the reach along each span")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut r.jumpers, "jumpers")
+                                .on_hover_text("The jumpers ending at the structure")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut r.string_ends, "string ends")
+                                .on_hover_text(
+                                    "The strings' live ends (their wire points), as points: the \
+                                     fittings' size not counted unless given as shapes — on the \
+                                     unsafe side",
+                                )
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut r.shapes, "shapes")
+                                .on_hover_text(
+                                    "The volumes on the strings (Line › Structures › String \
+                                     shapes): the electrified ones checked, every part against \
+                                     the grounded ones",
+                                )
+                                .changed();
+                        });
+                        ui.end_row();
+                        ui.label("Reach [m]");
+                        let resp = crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut r.reach)
+                                .range(1.0..=200.0)
+                                .speed(0.5),
+                        )
+                        .on_hover_text("How far along each span from its clamp, in plan");
+                        changed |= resp.drag_stopped() || resp.lost_focus();
+                        ui.end_row();
+                        ui.label("Distance");
+                        changed |= crate::requirement_ui::requirement_ui(
+                            ui,
+                            ("internal-distance", k),
+                            &mut r.distance,
+                            &voltages,
+                        );
+                        ui.end_row();
+                        // A distance of its own in the cases with wind
+                        // (owner, 2026-10-19); none: the same.
+                        ui.label("With wind");
+                        ui.vertical(|ui| {
+                            let mut own = r.distance_wind.is_some();
+                            if ui
+                                .checkbox(&mut own, "a distance of its own")
+                                .on_hover_text(
+                                    "A distance of its own in the weather cases with wind (a \
+                                     wind pressure above 0); not ticked: the distance in every \
+                                     case",
+                                )
+                                .changed()
+                            {
+                                r.distance_wind = own.then(|| r.distance.clone());
                                 changed = true;
                             }
-                        }
+                            if let Some(d) = &mut r.distance_wind {
+                                changed |= crate::requirement_ui::requirement_ui(
+                                    ui,
+                                    ("internal-distance-wind", k),
+                                    d,
+                                    &voltages,
+                                );
+                            }
+                        });
+                        ui.end_row();
                     });
-                    changed |= ui
-                        .checkbox(&mut r.conductors, "")
-                        .on_hover_text("The conductors within the reach along each span")
-                        .changed();
-                    changed |= ui
-                        .checkbox(&mut r.jumpers, "")
-                        .on_hover_text("The jumpers ending at the structure")
-                        .changed();
-                    changed |= ui
-                        .checkbox(&mut r.string_ends, "")
-                        .on_hover_text(
-                            "The strings' live ends (their wire points), as points: the \
-                             fittings' size not counted unless given as shapes — on the unsafe \
-                             side",
-                        )
-                        .changed();
-                    changed |= ui
-                        .checkbox(&mut r.shapes, "")
-                        .on_hover_text(
-                            "The volumes on the strings (Line › Structures › String shapes): the \
-                             electrified ones checked, every part against the grounded ones",
-                        )
-                        .changed();
-                    let resp = crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut r.reach)
-                            .range(1.0..=200.0)
-                            .speed(0.5),
-                    );
-                    changed |= resp.drag_stopped() || resp.lost_focus();
-                    changed |= crate::requirement_ui::requirement_ui(
-                        ui,
-                        ("internal-distance", k),
-                        &mut r.distance,
-                        &voltages,
-                    );
-                    // A distance of its own in the cases with wind (owner,
-                    // 2026-10-19); none: the same.
-                    ui.horizontal(|ui| {
-                        let mut own = r.distance_wind.is_some();
-                        if ui
-                            .checkbox(&mut own, "")
-                            .on_hover_text(
-                                "A distance of its own in the weather cases with wind (a wind \
-                                 pressure above 0); not ticked: the distance in every case",
-                            )
-                            .changed()
-                        {
-                            r.distance_wind = own.then(|| r.distance.clone());
-                            changed = true;
-                        }
-                        if let Some(d) = &mut r.distance_wind {
-                            changed |= crate::requirement_ui::requirement_ui(
-                                ui,
-                                ("internal-distance-wind", k),
-                                d,
-                                &voltages,
-                            );
-                        }
-                    });
-                    if ui
-                        .small_button("×")
-                        .on_hover_text("Remove this rule")
-                        .clicked()
-                    {
-                        remove = Some(k);
-                    }
-                    ui.end_row();
-                }
+                changed
             });
-        if let Some(k) = remove {
-            self.rules.remove(k);
-            changed = true;
+        let mut changed = t.changed;
+        if let Some(pick) = t.preset {
+            match pick.taken(model, part) {
+                Ok((p, lines)) => {
+                    let done = crate::rule_table::merge(
+                        &mut self.rules,
+                        p.rules.internal_rules.clone(),
+                        pick.how,
+                    );
+                    self.status = Some((pick.said(&done, &lines), false));
+                    out.plugin_preset = Some((pick.group, p));
+                    changed = true;
+                }
+                Err(e) => self.status = Some((e, true)),
+            }
         }
-        if ui
-            .button("Add rule")
-            .on_hover_text("A rule for every electrified part in every case: set its distance")
-            .clicked()
+        if t.import
+            && let Some(p) = crate::rule_table::import_file()
         {
-            self.rules.push(InternalRule::blank(&format!(
-                "rule {}",
-                self.rules.len() + 1
-            )));
-            changed = true;
+            match RuleSet::load(&p) {
+                Ok(set) => {
+                    self.rules = set.internal_rules;
+                    changed = true;
+                }
+                Err(e) => self.status = Some((e, true)),
+            }
+        }
+        if t.export
+            && let Some(p) = crate::rule_table::export_file("internal-rules.ohlr")
+        {
+            self.status = Some(match self.rule_set().save(&p) {
+                Ok(()) => (format!("exported to {}", p.display()), false),
+                Err(e) => (e, true),
+            });
         }
         changed
     }
@@ -849,6 +790,34 @@ impl InternalClearancesWindow {
             out.go = Some(Selection::Structure(
                 report.report.rows[k].structure.clone(),
             ));
+        }
+    }
+}
+
+/// An internal clearance rule as a row of the shared rule table.
+impl check_ui::RuleRow for InternalRule {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn name_mut(&mut self) -> &mut String {
+        &mut self.name
+    }
+
+    fn summary(&self, _: &[f64]) -> check_ui::Summary {
+        let mut distance = crate::rule_table::distance_words(&self.distance);
+        if let Some(w) = &self.distance_wind {
+            distance = format!(
+                "{distance}; with wind {}",
+                crate::rule_table::distance_words(w)
+            );
+        }
+        check_ui::Summary {
+            target: "the structure's members".into(),
+            voltages: crate::rule_table::voltages_words(&self.voltages),
+            cases: crate::rule_table::cases_words(&self.cases),
+            distance,
+            wires: self.describe_parts(),
         }
     }
 }
