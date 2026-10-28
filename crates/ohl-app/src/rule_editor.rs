@@ -285,6 +285,9 @@ pub enum Load {
 pub struct PresetsWindow {
     /// The plugins were asked (read again with [`PresetsWindow::read`]).
     pub asked: bool,
+    /// The plugins asked (name, directory): read again when the enabled
+    /// design-code plugins change.
+    asked_for: Vec<(String, PathBuf)>,
     /// The presets read, per plugin, with the project's edits of their
     /// values ([`crate::preset_edits`]).
     pub list: Vec<PluginPresets>,
@@ -1478,14 +1481,19 @@ fn merge_ui(ui: &mut egui::Ui, e: &mut RuleEditor, voltages: &[f64]) {
 /// panel ([`preset_dropdown`]).
 pub fn ensure_presets(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plugins) {
     let w = &mut r.rule_editor.presets;
-    if w.list.is_empty() && !w.busy() && !w.asked {
-        let dirs: Vec<(String, PathBuf)> = crate::codes::choices(plugins)
-            .into_iter()
-            .filter(|c| c.problem.is_none())
-            .map(|c| (c.name, c.dir))
-            .collect();
+    let dirs: Vec<(String, PathBuf)> = crate::codes::choices(plugins)
+        .into_iter()
+        .filter(|c| c.problem.is_none())
+        .map(|c| (c.name, c.dir))
+        .collect();
+    // Once, and again when a plugin is added, removed, turned on or off.
+    if !w.busy() && ((w.list.is_empty() && !w.asked) || dirs != w.asked_for) {
         w.asked = true;
-        if !dirs.is_empty() {
+        w.asked_for = dirs.clone();
+        if dirs.is_empty() {
+            w.list.clear();
+            w.original.clear();
+        } else {
             w.read(dirs, r.design_code.params.clone());
         }
     }
