@@ -125,6 +125,16 @@ of Parts A, B and C).
   its removal colour is yellow, as ESTI 235 1.3.4 asks (first orange;
   owner, 2026-10-28: "Keep it yellow as per the esti requirements").
 
+**Tick menus scroll within the screen (owner, 2026-10-28)**
+
+- Owner: in Wire tensions the weather cases "are not scrollable and span
+  a bigger height than the screen". Every tick menu (`menu::options_menu`:
+  the weather cases of every check window, the display options) now
+  scrolls once taller than 80 % of the screen (a menu that was taller
+  when last shown; the others as before — a scroll area in every
+  submenu kept a button's click from reaching it); a tick still keeps it
+  open.
+
 **Magnetic field setup kept quick (owner, 2026-10-28)**
 
 - Owner: the setup page was laggy, "could it be applied once we start

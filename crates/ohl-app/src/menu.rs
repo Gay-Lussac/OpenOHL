@@ -15,16 +15,42 @@ use crate::tools::Tool;
 /// A menu (or a submenu) of options to tick, e.g. display options: ticking
 /// a box never closes it — several are often ticked in a row — only a
 /// click outside it or a command (which closes it itself) does. Every menu
-/// of display options is made with it.
+/// of display options is made with it. A long one (the weather cases of a
+/// large project) scrolls within the screen (owner, 2026-10-28): one taller
+/// than [`MENU_HEIGHT`] of the screen when last shown is shown in a scroll
+/// area (the others as before).
 pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) {
     use egui::containers::menu::{MenuButton, MenuConfig, SubMenuButton, is_in_menu};
     let config = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    let max = (ui.ctx().content_rect().height() * MENU_HEIGHT).max(200.0);
+    let key = ui.id().with(("options-menu-height", title));
+    let tall = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(key))
+        .is_some_and(|h| h > max);
+    let body = |ui: &mut egui::Ui| {
+        let (r, height) = if tall {
+            let out = egui::ScrollArea::vertical()
+                .id_salt(("options-menu", title))
+                .max_height(max)
+                .show(ui, add);
+            (out.inner, out.content_size.y)
+        } else {
+            let out = ui.scope(add);
+            (out.inner, out.response.rect.height())
+        };
+        ui.ctx().data_mut(|d| d.insert_temp(key, height));
+        r
+    };
     if is_in_menu(ui) {
-        SubMenuButton::new(title).config(config).ui(ui, add);
+        SubMenuButton::new(title).config(config).ui(ui, body);
     } else {
-        MenuButton::new(title).config(config).ui(ui, add);
+        MenuButton::new(title).config(config).ui(ui, body);
     }
 }
+
+/// The most of the screen's height a tick menu takes (it scrolls beyond).
+const MENU_HEIGHT: f32 = 0.8;
 
 /// Longest text shown whole in a window (characters, lines); longer text
 /// scrolls in a box of [`TEXT_BOX_HEIGHT`].
@@ -413,5 +439,57 @@ impl QuickBar {
         if ui.button("Default").clicked() {
             *self = QuickBar::default();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    /// A tick menu longer than the screen scrolls inside it (owner,
+    /// 2026-10-28): a tick keeps it open; the wheel brings the last box
+    /// onto the screen.
+    #[test]
+    fn a_long_tick_menu_scrolls_within_the_screen() {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(500.0, 400.0))
+            .build_ui_state(
+                |ui, ticks: &mut Vec<bool>| {
+                    super::options_menu(ui, "Weather cases", |ui| {
+                        for (k, on) in ticks.iter_mut().enumerate() {
+                            ui.checkbox(on, format!("case {k}"));
+                        }
+                    });
+                },
+                vec![false; 200],
+            );
+        h.run();
+        h.get_by_label("Weather cases").click();
+        h.run();
+        let first = h.get_by_label("case 0").rect();
+        assert!(first.top() < 400.0);
+        // A tick keeps it open and is kept.
+        h.get_by_label("case 1").click();
+        h.run();
+        assert!(h.state()[1]);
+        // The wheel over it scrolls to the last case, shown on the screen.
+        let at = first.center();
+        h.hover_at(at);
+        for _ in 0..40 {
+            h.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -400.0),
+                modifiers: egui::Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+            });
+            h.run();
+        }
+        let last = h.get_by_label("case 199").rect();
+        assert!(
+            last.bottom() <= 400.0 + 1.0 && last.top() >= 0.0,
+            "{last:?}"
+        );
     }
 }
