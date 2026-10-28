@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-28
 
+**The results table in the remaining windows (owner, 2026-10-28)**
+
+- `check_ui::ResultTable` (sortable, filling its tab, units in the
+  headers, search, group, CSV) now in Structure loads (its loads),
+  Bill of materials, Safety volumes, Line parameters, Thermal rating and
+  Performed checks; Galloping and As-built wires had it already.
+- Our choices, to confirm: Line parameters shows circuits, stretches and
+  couplings as rows of one table (grouped by circuit) instead of
+  expanding a circuit; Performed checks acts on the report selected
+  (actions above the table) instead of buttons in each row; Thermal
+  rating's heat terms (Joule, solar, convection, radiation)
+  are no longer shown on hover of a rating; the Structure loads' usage view stays its own table
+  (its colours by usage) for now.
+
 **The scope in every check window (owner, 2026-10-28)**
 
 - The shared scope picker (circuits, routes and alignments, sections)

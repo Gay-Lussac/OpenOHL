@@ -130,8 +130,9 @@ impl BomWindow {
             &mut open,
             |ui| {
                 // Run in the footer at the bottom left, always visible
-                // (owner, 2026-10-21); the rest scrolls above it.
-                help::body(ui, "bom-window", |ui| self.ui(ui, model));
+                // (owner, 2026-10-21); the table fills the room above it
+                // (2026-10-28, the shared results table).
+                crate::check_ui::results_area(ui, "bom-window", |ui| self.ui(ui, model));
                 help::footer(ui, "bom-window", |ui| {
                     // The shared Run footer (2026-10-27): Stop while it
                     // runs (the previous estimate stays).
@@ -221,51 +222,46 @@ fn table(ui: &mut egui::Ui, e: &CostEstimate) {
     } else {
         format!(" {}", e.currency)
     };
-    help::list(
-        ui,
-        "bom-table",
-        help::LIST_HEIGHT,
-        egui::ScrollArea::vertical().auto_shrink([false, true]),
-        |ui| {
-            // Every line, only those in view drawn (2026-10-26).
-            let unit_price = format!("unit price{currency}");
-            let amount = format!("amount{currency}");
-            let mut columns = vec![
-                ("category", ""),
-                ("item", ""),
-                ("quantity", ""),
-                ("unit", ""),
+    // The shared results table (owner, 2026-10-28): sortable, grouped by
+    // category, the currency in the headers, CSV; the totals under it.
+    use crate::check_ui::{Cell, Col};
+    let mut cols = vec![
+        Col::text("Category"),
+        Col::text("Item"),
+        Col::num("Quantity"),
+        Col::text("Unit"),
+    ];
+    if e.priced {
+        cols.push(Col::num(format!("Unit price [{}]", currency.trim())));
+        cols.push(Col::num(format!("Amount [{}]", currency.trim())));
+    }
+    let rows: Vec<crate::check_ui::Row> = e
+        .lines
+        .iter()
+        .map(|l| {
+            let mut cells = vec![
+                Cell::text(&l.category),
+                Cell::text(&l.item),
+                Cell::num(Some(l.quantity), if l.unit == "m" { 1 } else { 0 }),
+                Cell::text(&l.unit),
             ];
             if e.priced {
-                columns.push((unit_price.as_str(), ""));
-                columns.push((amount.as_str(), ""));
-            }
-            let mut table = crate::rows_in_view::Table::new(ui, "bom-table", columns.len());
-            table.header(ui, &columns);
-            table.rows(ui, e.lines.len(), None, |c, i| {
-                let l = &e.lines[i];
-                c.cell(|ui| ui.label(&l.category));
-                c.cell(|ui| ui.label(&l.item));
-                c.cell(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(if l.unit == "m" {
-                            format!("{:.1}", l.quantity)
-                        } else {
-                            format!("{}", l.quantity)
-                        })
-                    })
+                cells.push(match l.unit_price {
+                    Some(p) => Cell::num(Some(p), 2),
+                    None => Cell::text("no price").bad(true),
                 });
-                c.cell(|ui| ui.label(&l.unit));
-                if e.priced {
-                    c.cell(|ui| match l.unit_price {
-                        Some(p) => ui.label(format!("{p:.2}")),
-                        None => ui.colored_label(ui.visuals().warn_fg_color, "no price"),
-                    });
-                    c.cell(|ui| ui.label(l.amount.map_or(String::new(), |a| format!("{a:.2}"))));
-                }
-            });
-        },
-    );
+                cells.push(Cell::num(l.amount, 2));
+            }
+            crate::check_ui::Row::new(cells, false)
+        })
+        .collect();
+    crate::check_ui::ResultTable::new("bom-rows", cols)
+        .rows(rows)
+        .no_filter()
+        .group_by(&[0])
+        .csv("bill-of-materials-table.csv")
+        .below(90.0)
+        .ui(ui);
     ui.separator();
     ui.label(format!("Spans between structures: {}", e.bom.spans));
     if e.priced {

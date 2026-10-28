@@ -127,7 +127,7 @@ fn thermal_rating_window() {
     // The ampacities at once, in the Results tab.
     harness.get_by_label("Results").click();
     harness.run();
-    harness.get_by_label("summer noon at 80 °C");
+    harness.get_by_label("summer noon at 80 °C [A]");
     harness.get_by_label("Run").click();
     harness.step();
     run_until(&mut harness, |a| {
@@ -143,7 +143,7 @@ fn thermal_rating_window() {
     // S2 over the hill misses the 7 m ground rule even when cold.
     let s2 = limits.iter().find(|l| l.section == "S2").unwrap();
     assert_eq!(s2.result, Ok(ohl_thermal::limit::Limit::BelowRange));
-    harness.get_by_label("clearance limit");
+    harness.get_by_label("Clearance limit [°C]");
 }
 
 /// Checks › Bill of materials prices the typed example with the cost file

@@ -51,6 +51,8 @@ pub struct CheckLibraryWindow {
     message: Option<(String, bool)>,
     /// Each report's line state against now, for this line version.
     since: Option<(u64, Vec<Since>)>,
+    /// The report selected in the table (its name): its actions above it.
+    selected: Option<String>,
 }
 
 impl CheckLibraryWindow {
@@ -219,25 +221,73 @@ impl CheckLibraryWindow {
             ui.label("No check saved on this line yet: a check's window saves its run (Save).");
             return;
         }
-        egui::ScrollArea::both()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                egui::Grid::new("check-library-rows")
-                    .striped(true)
-                    .spacing(crate::check_help::GRID_SPACING)
-                    .show(ui, |ui| {
-                        for h in [
-                            "", "name", "check", "when", "by", "status", "line", "result", "note",
-                        ] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for r in shown {
-                            self.row(ui, r, &since, out);
-                            ui.end_row();
-                        }
-                    });
-            });
+        // The report selected: its actions, status and note (owner,
+        // 2026-10-28: the table itself the shared results table).
+        match shown
+            .iter()
+            .find(|r| self.selected.as_deref() == Some(r.id.as_str()))
+        {
+            Some(r) => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("Selected:");
+                    self.row(ui, r, &since, out);
+                });
+            }
+            None => {
+                ui.label(
+                    egui::RichText::new(
+                        "Click a report to open, export, rename, delete it or set its status and \
+                         note.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            }
+        }
+        use crate::check_ui::{Cell, Col};
+        let rows: Vec<crate::check_ui::Row> = shown
+            .iter()
+            .map(|r| {
+                let (line, same) = since
+                    .iter()
+                    .find(|s| s.0 == r.id)
+                    .map_or(("—".into(), false), |s| (s.1.clone(), s.2));
+                crate::check_ui::Row::new(
+                    vec![
+                        Cell::text(&r.id),
+                        Cell::text(&r.title),
+                        Cell::text(&r.time),
+                        Cell::text(&r.user),
+                        Cell::text(r.status.as_str()),
+                        Cell::text(line).bad(!same),
+                        Cell::text(&r.summary),
+                        Cell::text(if r.note.is_empty() { "—" } else { &r.note }),
+                    ],
+                    false,
+                )
+            })
+            .collect();
+        if let Some(k) = crate::check_ui::ResultTable::new(
+            "check-library-rows",
+            vec![
+                Col::text("Name"),
+                Col::text("Check"),
+                Col::text("When"),
+                Col::text("By"),
+                Col::text("Status"),
+                Col::text("Line").tip("What changed on the line since the check ran"),
+                Col::text("Result"),
+                Col::text("Note"),
+            ],
+        )
+        .rows(rows)
+        .no_filter()
+        .group_by(&[1, 4])
+        .csv("performed-checks.csv")
+        .ui(ui)
+        {
+            self.selected = shown.get(k).map(|r| r.id.clone());
+        }
     }
 
     fn row(&mut self, ui: &mut egui::Ui, r: &CheckReport, since: &[Since], out: &mut Out) {
