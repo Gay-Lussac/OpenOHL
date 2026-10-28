@@ -255,8 +255,14 @@ impl Scope {
             circuits: (!check.circuits.is_empty()).then(|| check.circuits.clone()),
             routes: check.routes.clone(),
             alignments: check.alignments.clone(),
-            sections: None,
+            sections: (!check.sections.is_empty()).then(|| check.sections.clone()),
         }
+    }
+
+    /// The sections of `line` it keeps; `None`: every one (the whole
+    /// line).
+    pub fn keeps(&self, line: &ohl_line::Line) -> Option<BTreeSet<String>> {
+        (!self.whole()).then(|| self.sections_of(line))
     }
 
     /// The scope picker `id` last showed for `check`, while `check` is
@@ -299,7 +305,30 @@ impl Scope {
         }
         check.routes = self.routes.clone();
         check.alignments = self.alignments.clone();
+        match &self.sections {
+            None => check.sections.clear(),
+            Some(c) if !c.is_empty() => {
+                check.sections = c.clone();
+                check.sections.sort();
+            }
+            Some(_) => {}
+        }
     }
+}
+
+/// The `[check]` of a check's rule file holding its scope and its
+/// structure and section overrides (none when it changes nothing).
+pub fn check_of(
+    scope: &Scope,
+    overrides: crate::case_groups::Overrides,
+) -> Option<ohl_clearance::rules::CheckScope> {
+    let mut check = ohl_clearance::rules::CheckScope {
+        structure_override: overrides.structures,
+        section_override: overrides.sections,
+        ..Default::default()
+    };
+    scope.write_check(&mut check);
+    Some(check).filter(|c| !c.is_empty())
 }
 
 /// A circuit's name as shown (`""`: the sections without one).

@@ -538,11 +538,35 @@ Wherever a distance rule is set — the Clearances window's rule editor, the cle
 
 A warning says what is missing — a distance not set, voltages not increasing, a project voltage above a table's last row ("the project has 380 kV above the last row (245 kV): add a row"); such a rule is not written, and a check refuses a table that does not reach a wire's voltage. For wire rules the voltage is the pair's (`pair_voltage`, see [Clearance rules](terrain.md#clearances-by-voltage)). The forms are written as the rule file's `"7 m"`, `{ by_voltage = [[up to kV, "distance"], …] }` and `{ base = …, per_kv = …, above_kv = … }`, read back exactly.
 
-Checks run **on demand**: **Check wire clearances** (Checks › Wire clearances, or the quick bar) or **Run** in the window's footer; tick "after every edit" (beside Run) to check again after each edit and change of weather case. The check runs in the background, with a progress bar of the LiDAR points read, the time left and **Stop** in the footer (2026-10-27); its time limit is the windows' (900 s and 20 s more per million LiDAR points of the rules' classes). **Circuits** and **Routes** in *2 Scope* (2026-10-27, as in the clearance windows: every circuit and the whole line unless ticked otherwise) choose the wires checked; they are kept in the rule file's `[check]` (`circuits`, `routes`, `alignments`). LiDAR points are read again from the project's point cloud each time, only those of the rules' classes in a corridor around the spans, so nothing more is kept in memory: on the 25 km line with 18.8 million such points a check takes a few seconds. The Results table shows each violation, worst first unless sorted otherwise: wire (span or jumper, and the other wire for wire rules), rule, vertical or radial clearance against the required clearance, the LiDAR class, how many points are too close. Clicking one selects the wire and brings the views to it. The violations are drawn in red in the 3D view (a line from the wire to the point too close; layer "Clearance violations") and circled in the plan.
+Checks run **on demand**: **Check wire clearances** (Checks › Wire clearances, or the quick bar) or **Run** in the window's footer; tick "after every edit" (beside Run) to check again after each edit and change of weather case. The check runs in the background, with a progress bar of the wind positions solved, then of the LiDAR points read, the time left and **Stop** in the footer (2026-10-27); its time limit is the windows' (900 s and 20 s more per million LiDAR points of the rules' classes). **Circuits** and **Routes** in *2 Scope* (2026-10-27, as in the clearance windows: every circuit and the whole line unless ticked otherwise) choose the wires checked; they are kept in the rule file's `[check]` (`circuits`, `routes`, `alignments`, and the weather cases in `cases`). LiDAR points are read from the project's point cloud once per run, only those of the rules' classes in a corridor around the spans, and every wind position is checked against them. The Results table shows each violation, worst first unless sorted otherwise ([above](#clearances)). Clicking one selects the wire and brings the views to it. The violations are drawn in red in the 3D view (a line from the wire to the point too close; layer "Clearance violations") and circled in the plan.
 
 Rules for other lines and rules across pairs of weather cases are run by `ohl line` only; the window says so.
 
 The **Analyses** entries of the Checks menu open windows that compute on demand in the background, each with a results table (click a span to go to it) and CSV export — see [Galloping, blowout, vegetation and as-built wires](analyses.md): **Galloping ellipses** (a `.ohlg` parameter file and a weather case), **Vegetation** (danger trees: the point cloud's vegetation classes near the wires of the cases ticked — blown left and right, along the swing arc, with unbalanced ice — growth, trees falling in about their root ball, isoclearance lines; drawn on the layers *Vegetation: grow-in*, *Vegetation: danger trees* and *Isoclearance lines*), **As-built wires** (catenaries fitted to the wire points, the temperature at the survey).
+
+#### The scope of a check
+
+Every check window says what it checks in *2 Scope* with the same picker
+(owner, 2026-10-28: "keep it standard between all tests"): **Circuits**,
+**Routes** (and their alignments) and, where a check takes them,
+**Sections** — each a tick menu that stays open, with a search field,
+*All* / *None* / *Invert* and a count — and the weather case(s) where the
+window chooses them; the scope in one line under it and in the footer
+beside Run. All ticked is the whole line (circuits and sections added
+later too); nothing ticked greys Run with the reason ("Before Run: the
+scope takes no section: tick a circuit"). Built, in active development:
+
+- **Wire tensions**, **String checks**, **Internal clearances**:
+  circuits, routes and sections; only the spans (strings, conductors) of
+  the sections in scope are checked. Kept in their rule file's `[check]`
+  (`circuits`, `routes`, `alignments`, `sections`), with the overrides.
+- **Galloping ellipses**, **As-built wires**: circuits, routes and
+  sections; kept in the project per project line (`app.galloping`,
+  `app.wirefit`).
+- **Distance between conductors** (and under unequal wind): circuits and
+  routes (the circuits as before, now in the shared picker); the pairs
+  with a span on the routes ticked; kept with the window's setup.
+- The clearance windows and Vegetation: as described with each window.
 
 #### The rule table
 

@@ -67,6 +67,10 @@ pub struct StringChecksWindow {
     pub status: Option<(String, bool)>,
     /// The structure and section overrides of its cases.
     pub overrides: crate::case_groups::Overrides,
+    /// What it checks: the circuits, routes and sections (owner,
+    /// 2026-10-28: the scope of every check window), kept in its rule
+    /// file's `[check]`.
+    pub scope: check_ui::Scope,
     /// The check.
     pub(crate) job: Job<Report>,
     /// Counted up with each answer.
@@ -114,6 +118,7 @@ impl StringChecksWindow {
                             structures: c.structure_override,
                             sections: c.section_override,
                         };
+                        self.scope = check_ui::Scope::of_check(&c);
                     }
                 }
                 Err(e) => self.status = Some((e, true)),
@@ -139,13 +144,8 @@ impl StringChecksWindow {
             rules: Vec::new(),
             wind: None,
             // The overrides ticked.
-            check: (self.overrides.structures || self.overrides.sections).then(|| {
-                ohl_clearance::CheckScope {
-                    structure_override: self.overrides.structures,
-                    section_override: self.overrides.sections,
-                    ..Default::default()
-                }
-            }),
+            // The scope and the overrides ticked.
+            check: check_ui::check_of(&self.scope, self.overrides),
             vegetation: None,
             checks: vec![PresetCheck::Strings],
             tension_rules: Vec::new(),
@@ -175,7 +175,10 @@ impl StringChecksWindow {
     /// Starts a check: each weather case of the rules solved in the
     /// background (as the line is), every string checked.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
-        if let Some(why) = self.why_not_run() {
+        if let Some(why) = self
+            .why_not_run()
+            .or_else(|| self.scope.why_not(&model.line))
+        {
             self.job.result = Some(Err(format!("not run: {why}")));
             return;
         }
@@ -195,6 +198,8 @@ impl StringChecksWindow {
         let library = model.library.clone();
         let rules = self.rules.clone();
         let filter = self.overrides.filter(model);
+        // The scope's sections only (none: the whole line).
+        let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
             let mut solved = Vec::new();
             let mut notes = Vec::new();
@@ -208,6 +213,7 @@ impl StringChecksWindow {
                         ))
                 {
                     match r {
+                        Ok(s) if keep.as_ref().is_some_and(|k| !k.contains(&s.section)) => {}
                         Ok(s) => shapes.push(s),
                         Err(e) => notes.push(format!(
                             "\"{}\": section {} not solved: {e}",
@@ -284,7 +290,10 @@ impl StringChecksWindow {
             [860.0, 760.0],
             &mut open,
             |ui| {
-                let why = self.why_not_run();
+                let why = self
+                    .why_not_run()
+                    .or_else(|| self.scope.why_not(&model.line));
+                let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
                 let findings = match &self.job.result {
                     Some(Ok(r)) => Some(r.report.failures().count()),
                     _ => None,
@@ -309,9 +318,15 @@ impl StringChecksWindow {
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
+                        if check_ui::ScopePicker::new("string-checks-scope", &model.line)
+                            .wires(&mut self.scope, true)
+                            .ui(ui)
+                        {
+                            changed = true;
+                        }
                         ui.label(
                             egui::RichText::new(
-                                "Each rule gives its strings, voltages and weather cases (3 Rules): circuits, routes and sections are not chosen here yet.",
+                                "Each rule gives its own strings, voltages and weather cases besides (3 Rules).",
                             )
                             .small()
                             .weak(),
@@ -340,7 +355,7 @@ impl StringChecksWindow {
                         &mut self.job,
                         why.clone(),
                         "Solve each weather case of the rules and check every string",
-                        None,
+                        Some(scope_words),
                         |ui| {
                             changed |= overrides.ui(ui);
                         },

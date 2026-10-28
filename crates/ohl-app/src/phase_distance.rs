@@ -423,6 +423,9 @@ pub struct PhaseDistanceWindow {
     pub cases: BTreeSet<usize>,
     /// Circuits ticked (none: all).
     pub circuits: Option<BTreeSet<String>>,
+    /// The circuits and routes checked (2026-10-28; the circuits the
+    /// same as [`Self::circuits`]): the pairs off the routes left out.
+    pub scope: check_ui::Scope,
     /// The settings (circuits: from `circuits`).
     pub settings: PhaseDistanceSettings,
     /// The plugin's choices (the k diagram).
@@ -481,6 +484,7 @@ impl PhaseDistanceWindow {
             file: None,
             cases: BTreeSet::new(),
             circuits: None,
+            scope: check_ui::Scope::default(),
             settings: PhaseDistanceSettings::default(),
             choices: Vec::new(),
             wind_step: DEFAULT_WIND_STEP,
@@ -1008,6 +1012,8 @@ impl PhaseDistanceWindow {
         };
         let wind_step = self.wind_step;
         let filter = self.overrides.filter(model);
+        // The routes chosen: the pairs with a span on them only.
+        let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
             let mut notes = Vec::new();
             let mut rows = Vec::new();
@@ -1178,6 +1184,9 @@ impl PhaseDistanceWindow {
                     });
                 }
             }
+            if let Some(k) = &keep {
+                rows.retain(|r| r.span.iter().any(|(s, _)| k.contains(s)));
+            }
             rows.sort_by(|a, b| a.margin().total_cmp(&b.margin()));
             params.diagram_name = diagram_name.clone();
             Ok(Report {
@@ -1240,6 +1249,7 @@ impl PhaseDistanceWindow {
         self.settings.nearby = params.nearby;
         self.settings.max_distance = params.max_distance;
         self.circuits = params.circuits.clone().map(|c| c.into_iter().collect());
+        self.scope.circuits = params.circuits.clone();
         self.values = Some((params.values_file.clone(), params.values_text.clone()));
         self.save_name = r.id.clone();
         self.picked = None;
@@ -1451,6 +1461,9 @@ impl PhaseDistanceWindow {
         if self.circuits.as_ref().is_some_and(|c| c.is_empty()) {
             return Some("tick a circuit (2 Scope)".into());
         }
+        if let Some(w) = self.scope.why_not(&model.line) {
+            return Some(w);
+        }
         None
     }
 
@@ -1466,6 +1479,7 @@ impl PhaseDistanceWindow {
         serde_json::json!({
             "cases": cases,
             "circuits": self.circuits,
+            "scope": self.scope,
             "spacing": self.settings.spacing,
             "nearby": self.settings.nearby,
             "max_distance": self.settings.max_distance,
@@ -1495,6 +1509,11 @@ impl PhaseDistanceWindow {
         if let Ok(c) = serde_json::from_value(get("circuits")) {
             self.circuits = c;
         }
+        // The scope (2026-10-28), else the circuits as kept before.
+        self.scope = serde_json::from_value(get("scope")).unwrap_or_else(|_| check_ui::Scope {
+            circuits: self.circuits.as_ref().map(|c| c.iter().cloned().collect()),
+            ..Default::default()
+        });
         if let Some(x) = get("spacing").as_f64() {
             self.settings.spacing = x;
         }
@@ -1989,55 +2008,18 @@ impl PhaseDistanceWindow {
                     );
                 });
             }
-            let all = circuit_names(model);
-            let ticked = |c: &Option<BTreeSet<String>>, n: &String| {
-                c.as_ref().is_none_or(|set| set.contains(n))
-            };
-            let n = all.iter().filter(|n| ticked(&self.circuits, n)).count();
-            let title = if n == all.len() {
-                "Circuits: all".to_owned()
-            } else {
-                format!("Circuits: {n} of {}", all.len())
-            };
-            crate::menu::options_menu(ui, &title, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.small_button("Select all").clicked() {
-                        self.circuits = None;
-                    }
-                    if ui.small_button("Select none").clicked() {
-                        self.circuits = Some(BTreeSet::new());
-                    }
-                });
-                help::list(
-                    ui,
-                    "phase-distance-list-3",
-                    420.0,
-                    egui::ScrollArea::vertical(),
-                    |ui| {
-                        for name in &all {
-                            let mut on = ticked(&self.circuits, name);
-                            let label = if name.is_empty() {
-                                "(no circuit name)"
-                            } else {
-                                name.as_str()
-                            };
-                            if ui.checkbox(&mut on, label).changed() {
-                                let set = self
-                                    .circuits
-                                    .get_or_insert_with(|| all.iter().cloned().collect());
-                                if on {
-                                    set.insert(name.clone());
-                                } else {
-                                    set.remove(name);
-                                }
-                                if set.len() == all.len() {
-                                    self.circuits = None;
-                                }
-                            }
-                        }
-                    },
-                );
-            });
+            // The circuits and routes (owner, 2026-10-28: the scope of every
+            // check window, the shared picker).
+            if check_ui::ScopePicker::new(self.kind.page(), &model.line)
+                .wires(&mut self.scope, false)
+                .ui(ui)
+            {
+                self.circuits = self
+                    .scope
+                    .circuits
+                    .as_ref()
+                    .map(|c| c.iter().cloned().collect());
+            }
             // Under unequal wind the closest approach is exact: no stations.
             if self.kind == Kind::Span {
                 ui.label("stations every");

@@ -2344,6 +2344,8 @@ impl eframe::App for App {
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
                 ready.magnetic_field.keep(&mut ready.model, &ctx);
+                ready.galloping.keep(&mut ready.model, &ctx);
+                ready.wirefit.keep(&mut ready.model, &ctx);
                 ready.vegetation.keep(&mut ready.model, &ctx);
                 ready.safety_volume.keep(&mut ready.model, &ctx);
                 ready.phase_distance.keep(&mut ready.model, &ctx);
