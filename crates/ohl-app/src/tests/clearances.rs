@@ -12,20 +12,14 @@ pub(super) fn clearance_input(
     rules: Vec<ohl_clearance::Rule>,
 ) -> crate::clearance::Input {
     crate::clearance::Input {
-        line: m.line.clone(),
-        case: m.cases[0].case.name.clone(),
-        shapes: m.cases[0].shapes.clone(),
-        jumpers: m.cases[0].jumpers.clone(),
-        rules,
-        scheme: m.scheme.clone(),
-        cloud: m.cloud.clone(),
-        ground: m.ground.clone(),
-        surfaces: Default::default(),
         corridor: 60.0,
-        check: Default::default(),
-        progress: Default::default(),
-        cancel: Default::default(),
-        points: 0,
+        ..crate::clearance::Input::one_case(
+            m,
+            &m.cases[0].case,
+            m.cases[0].shapes.clone(),
+            m.cases[0].jumpers.clone(),
+            rules,
+        )
     }
 }
 
@@ -65,6 +59,92 @@ fn clearance_violations_of_the_shown_case() {
     assert!(!one.findings.is_empty() && one.findings.len() <= high.findings.len());
     input.check.circuits = vec!["no such circuit".into()];
     assert!(crate::clearance::run(&input).is_err());
+}
+
+/// Wire clearances in every weather case of the rules (owner, 2026-10-28:
+/// on the ground windows' design): each case solved and checked, per rule
+/// and wire pair the lowest with the position that governs and how many
+/// positions are below; a case pair checked across its two cases; the
+/// cases ticked out of the scope not run. Invented distances (100 m: every
+/// pair below).
+#[test]
+fn wire_clearances_run_every_case_of_the_rules() {
+    let m = synthetic();
+    assert!(m.cases.len() >= 2);
+    let (c0, c1) = (m.cases[0].case.name.clone(), m.cases[1].case.name.clone());
+    let text = format!(
+        "[[rule]]\nname = \"phases\"\ntarget = \"same_line\"\nradial = 100.0\n\
+         [[rule]]\nname = \"pair\"\ntarget = \"same_line\"\nradial = 100.0\n\
+         case_pairs = [[\"{c0}\", \"{c1}\"]]\n"
+    );
+    let rules = ohl_clearance::RuleSet::parse(&text).unwrap().rules;
+    let cases: Vec<ohl_weather::WeatherCase> = m.cases.iter().map(|c| c.case.clone()).collect();
+    let states = ohl_clearance::zone::wind_states(&cases, |_| true, &Default::default());
+    let input = crate::clearance::Input {
+        states: states.clone(),
+        solved: None,
+        ..clearance_input(&m, rules.clone())
+    };
+    let rep = crate::clearance::run(&input).unwrap();
+    assert_eq!(rep.cases.len(), m.cases.len());
+    assert_eq!(rep.states.len(), states.len());
+    let every: Vec<&crate::clearance::Finding> =
+        rep.findings.iter().filter(|f| f.rule == "phases").collect();
+    assert!(!every.is_empty());
+    assert!(
+        every
+            .iter()
+            .all(|f| f.positions >= 1 && f.positions <= states.len())
+    );
+    assert!(every.iter().any(|f| f.positions == states.len()));
+    // The position that governs: the lowest of the pair over every one.
+    for f in &every {
+        assert_eq!(f.case, rep.states[f.state].describe());
+    }
+    // The case pair: across its two cases only, said as such.
+    let pair: Vec<&crate::clearance::Finding> =
+        rep.findings.iter().filter(|f| f.rule == "pair").collect();
+    assert!(!pair.is_empty());
+    assert!(
+        pair.iter()
+            .all(|f| f.case.contains(" × ") && f.case.starts_with(&c0)),
+        "{:?}",
+        pair.iter().map(|f| &f.case).collect::<Vec<_>>()
+    );
+    // One case alone: its pairs are among those of every case (the
+    // envelope adds, never loses one).
+    let one = crate::clearance::run(&clearance_input(&m, rules.clone())).unwrap();
+    let key = |f: &crate::clearance::Finding| {
+        (
+            f.rule.clone(),
+            f.measure,
+            f.wire.describe(),
+            f.other.as_ref().map(|o| o.describe()),
+        )
+    };
+    let all: std::collections::BTreeSet<_> = rep.findings.iter().map(key).collect();
+    assert!(
+        one.findings
+            .iter()
+            .filter(|f| f.rule == "phases")
+            .all(|f| all.contains(&key(f)))
+    );
+    assert!(one.findings.iter().all(|f| f.positions == 1));
+    // The scope's cases: the second one ticked out, its pair gone.
+    let mut input = crate::clearance::Input {
+        states: states.iter().filter(|s| s.name != c1).cloned().collect(),
+        solved: None,
+        ..clearance_input(&m, rules)
+    };
+    input.check.cases = vec![c0.clone()];
+    let rep = crate::clearance::run(&input).unwrap();
+    assert!(rep.cases.iter().all(|c| *c != c1));
+    assert!(!rep.findings.iter().any(|f| f.rule == "pair"));
+    assert!(
+        rep.notes.iter().any(|n| n.contains("no case pair")),
+        "{:?}",
+        rep.notes
+    );
 }
 
 /// The Clearances window finds the example rules next to the model; checks run

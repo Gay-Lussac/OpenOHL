@@ -145,13 +145,18 @@ method = "fe"                   # every section by finite elements ("rs": ruling
 search_distance = "30 m"        # LiDAR points farther from the wires are ignored
 routes = ["north"]              # route ids; with alignments none: the whole line (2026-10-27)
 alignments = ["A 2"]            # alignment ids, besides whole routes
+cases = ["hot*", "ice"]         # the Clearances window: the weather cases run; none: every case of the rules (2026-10-28)
 ```
 
 `routes` and `alignments` (2026-10-27; built, in active development, not
 approved yet): only the sections and jumpers with a structure on a route
 or an alignment named are solved and checked (a section reaching into
 another route is taken whole). The desktop windows and the Clearances
-tab keep their choice of circuits, routes and alignments here.
+tab keep their choice of circuits, routes and alignments here; the
+Clearances window its weather cases too (`cases`, 2026-10-28; built, in
+active development: names with `*` `?`, none: every case of the rules)
+and its wind in `[wind]` (its steps and sides; the swing arc is the
+ground windows' only).
 
 Design-code plugins may give such rule files as **clearance presets**
 for those windows ([Design codes](design-codes.md#clearance-presets)),

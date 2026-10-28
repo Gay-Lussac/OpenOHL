@@ -949,7 +949,20 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `ohl_clearance::zone::run_zone_check`), and since 2026-10-27 the
   circuits, routes and alignments the Clearances window checks with that
   rule file; `ohl line` ignores it (`--clearance-route`,
-  `--clearance-alignment` instead).
+  `--clearance-alignment` instead). Since 2026-10-28 `cases` (names,
+  `*` `?`; empty: every case of the rules, `CheckScope::takes_case`):
+  the weather cases the Clearances window runs (additive, optional:
+  a file without it reads as before; `ohl line` and `ohl zones` ignore
+  it); that window keeps its wind in `[wind]` (`stepped`, `step`,
+  `sides`; `arc` not used between wires).
+- Wire clearances across cases (2026-10-28, `ohl-clearance`):
+  `check_case_pairs(rules, cases, voltages) -> Vec<CasePairCheck>` checks
+  the rules between this line's wires with `case_pairs` across the cases
+  given (name, wires), as `ohl line --weather` does; `check_case` is
+  unchanged (a single case gives the same results). The app's
+  `clearance::Report` holds the cases and wind positions checked and per
+  rule, measure and wire pair the lowest finding (`Finding::case`,
+  `state`, `positions`).
 - Speed (2026-10-27, results unchanged): `checks::WireSet::within` lists
   each wire's segments only in the cells as far in plan as a point can
   count (`checks::plan_reach`: the radial reach and the outer radius, the

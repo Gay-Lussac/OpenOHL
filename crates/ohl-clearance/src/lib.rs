@@ -57,7 +57,8 @@ pub mod zone_arc;
 pub mod zone_run;
 
 pub use case::{
-    CaseTargets, Outcome, RuleCheck, Skipped, applies, check_case, lowest, voltages_of,
+    CasePairCheck, CaseTargets, Outcome, RuleCheck, Skipped, applies, check_case, check_case_pairs,
+    lowest, voltages_of,
 };
 pub use checks::{Hit, PairMode, PairResult, PointCheck, Wire, WireResult, WireSet, wires_of};
 pub use envelope::{Envelope, EnvelopeEntry};

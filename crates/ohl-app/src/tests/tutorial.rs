@@ -471,9 +471,10 @@ fn the_tutorial_builds_a_first_line() {
             r.clearances.files
         );
         let rep = r.clearances.report.clone().unwrap().unwrap();
-        // The case shown (everyday): the ground rule and the one between
-        // the wires (the other rule is for the maximum temperature).
-        assert_eq!(rep.rules.len(), 2, "{:?}", rep.notes);
+        // Every weather case of the rules (2026-10-28, not only the case
+        // shown): the ground rule, the one between the wires and the
+        // maximum temperature's.
+        assert_eq!(rep.rules.len(), 3, "{:?}", rep.notes);
         assert!(rep.findings.is_empty(), "{:?}", rep.rules);
     }
     // Checks › Ground clearances › Vertical clearances…: the first rule's

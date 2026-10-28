@@ -88,7 +88,10 @@
 //!   (2026-10-27, ids, default none: the whole line): only the sections
 //!   and jumpers on a route or an alignment named are solved and checked
 //!   ([`CheckScope::wires_on`]; `ohl zones` too, `--route`/`--alignment`
-//!   override them).
+//!   override them). `cases` (2026-10-28, names with `*` `?`, default
+//!   none: every case of the rules): the weather cases the desktop
+//!   Clearances window runs ([`CheckScope::takes_case`]); `ohl line` and
+//!   `ohl zones` ignore it.
 //!
 //! ## Clearances by voltage
 //!
@@ -811,6 +814,8 @@ struct RawCheck {
     routes: Vec<String>,
     #[serde(default)]
     alignments: Vec<String>,
+    #[serde(default)]
+    cases: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1246,6 +1251,10 @@ pub struct CheckScope {
     pub routes: Vec<String>,
     /// The alignments checked, by id (besides whole routes).
     pub alignments: Vec<String>,
+    /// The weather cases run, by name (`*` `?` wildcards; owner,
+    /// 2026-10-28: the Clearances window runs every case of its rules);
+    /// empty: every case of the rules.
+    pub cases: Vec<String>,
 }
 
 impl CheckScope {
@@ -1255,10 +1264,20 @@ impl CheckScope {
         self.circuits.is_empty()
             && self.routes.is_empty()
             && self.alignments.is_empty()
+            && self.cases.is_empty()
             && self.method.is_none()
             && self.search_distance.is_none()
             && !self.structure_override
             && !self.section_override
+    }
+
+    /// Whether weather case `name` is run (its list, or every case).
+    pub fn takes_case(&self, name: &str) -> bool {
+        self.cases.is_empty()
+            || self
+                .cases
+                .iter()
+                .any(|c| ohl_core::pattern::matches(c, name))
     }
 
     /// Whether a section of circuit `name` is checked.
@@ -1523,6 +1542,7 @@ impl RuleSet {
                     circuits: c.circuits,
                     routes: c.routes,
                     alignments: c.alignments,
+                    cases: c.cases,
                     method: c
                         .method
                         .as_deref()
@@ -1677,6 +1697,9 @@ impl RuleSet {
                     "alignments = {}",
                     list(c.alignments.iter().map(|n| quoted(n)))
                 );
+            }
+            if !c.cases.is_empty() {
+                let _ = writeln!(t, "cases = {}", list(c.cases.iter().map(|n| quoted(n))));
             }
             if let Some(m) = c.method {
                 let _ = writeln!(t, "method = \"{}\"", method_name(m));

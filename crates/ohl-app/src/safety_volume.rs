@@ -1042,7 +1042,7 @@ impl SafetyVolumeWindow {
                     stepped: s.wind.stepped(),
                     ..s.steps
                 };
-                help::wind_choice(ui, "safety-volume", &mut wind, false, full, true);
+                help::wind_choice(ui, "safety-volume", &mut wind, false, full, true, true);
                 s.wind = match (wind.arc, wind.stepped) {
                     (false, false) => WindMode::None,
                     (false, true) => WindMode::Steps,

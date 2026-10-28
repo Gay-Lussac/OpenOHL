@@ -10,6 +10,36 @@ of Parts A, B and C).
 
 ## 2026-10-28
 
+**Wire clearances on the ground windows' design (owner, 2026-10-28)**
+
+- The Clearances window runs **every weather case of its rules** (not
+  only the case shown): the cases in *2 Scope* (all by default; those
+  ticked out kept in the rule file's `[check] cases`, a new optional
+  field), the **wind** in *4 Settings* as in the ground windows (each
+  case's own, or the steps from still air to it, from the sides chosen;
+  kept in `[wind]`), every wind position solved on the check's thread,
+  the LiDAR points of the rules' classes read once, and each rule's
+  **case pairs** across their two cases (`ohl_clearance::check_case_pairs`,
+  as `ohl line --weather` does).
+- The results are the **envelope** over the positions: one row per rule,
+  measure and wire pair — Wire, Other wire, Rule, Measure, Required [m],
+  Found [m] (the lowest), Case (the case and wind, or the case pair, that
+  governs), Count (positions below) — CSV export; a row clicked draws its
+  case at its wind on the span and says it. The Distance between
+  conductors under unequal wind now says the pair's two winds with its
+  case.
+- Engine (`ohl-clearance`): only `check_case_pairs` and
+  `CheckScope::cases` added; `check_case` unchanged, so one case gives the
+  same results as before; tests for several cases with their envelope
+  and for case pairs.
+- Our choices, to confirm: a case pair takes each case **at its own
+  wind** (from each side checked), not at every step of the wind (the
+  steps of two cases against each other would multiply the positions);
+  the swing arc stays the ground windows' (not between wires); rules to
+  other lines are still checked by `ohl line --other-line` only; the
+  window's Count counts positions (and case pairs) below the rule, no
+  longer the points.
+
 **Check windows, phase 2: the shared rule table (owner, 2026-10-28)**
 
 - The owner approved the check-window standard (sections 2–4 of the

@@ -291,3 +291,216 @@ pub fn check_case(
     }
     Ok(out)
 }
+
+/// A wire rule with case pairs checked across two weather cases: the
+/// rule's wires (its parts, exclusion zones left out) in the first case
+/// against those in the second.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CasePairCheck {
+    /// Index of the rule.
+    pub rule: usize,
+    /// The first case (index in the cases given).
+    pub first: usize,
+    /// The second case (index in the cases given).
+    pub second: usize,
+    /// The rule's parts of the wires in the first case.
+    pub wires: Vec<Wire>,
+    /// The rule's parts of the wires in the second case.
+    pub others: Vec<Wire>,
+    /// The pairs found: `a` indexes [`CasePairCheck::wires`], `b`
+    /// [`CasePairCheck::others`].
+    pub pairs: Vec<PairResult>,
+}
+
+/// The rules between the wires of this line with case pairs
+/// (`case_pairs`, [`Skipped::AcrossCases`] in [`check_case`]): for each
+/// pair `[first, second]` (names, `*` `?` wildcards), every case of
+/// `cases` (name, its wires) matching the first against every one
+/// matching the second — the first wire in the first case, the second in
+/// the second, every ordered pair but a wire with itself, connected wires
+/// and (unless the rule asks) the same circuit and phase
+/// ([`PairMode::SameLineOtherCase`]), as `ohl line --weather` does. Rules
+/// to other lines are not checked here. A pair naming no case of `cases`
+/// gives nothing (the caller says so).
+pub fn check_case_pairs(
+    rules: &[Rule],
+    cases: &[(&str, &[Wire])],
+    voltages: &[Option<Potential>],
+) -> Vec<CasePairCheck> {
+    let paired: Vec<usize> = (0..rules.len())
+        .filter(|&k| {
+            !rules[k].case_pairs.is_empty() && matches!(rules[k].target, Target::SameLine { .. })
+        })
+        .collect();
+    // How far the wire-to-wire checks look, as in a case.
+    let reach = paired
+        .iter()
+        .map(|&k| rules[k].reach_in_plan(voltages, &[]))
+        .fold(0.0, f64::max);
+    let matching = |pattern: &str| -> Vec<usize> {
+        (0..cases.len())
+            .filter(|&c| ohl_core::pattern::matches(pattern, cases[c].0))
+            .collect()
+    };
+    let mut out = Vec::new();
+    for k in paired {
+        let rule = &rules[k];
+        let Target::SameLine { include_same_phase } = rule.target else {
+            continue;
+        };
+        for [first, second] in &rule.case_pairs {
+            for a in matching(first) {
+                for b in matching(second) {
+                    let wires = checked_parts(rule, cases[a].1);
+                    let set = WireSet::new(checked_parts(rule, cases[b].1), reach);
+                    let pairs = wire_pairs(
+                        rule,
+                        &wires,
+                        &set,
+                        PairMode::SameLineOtherCase { include_same_phase },
+                    );
+                    out.push(CasePairCheck {
+                        rule: k,
+                        first: a,
+                        second: b,
+                        wires,
+                        others: set.wires,
+                        pairs,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::envelope::Envelope;
+    use crate::rules::RuleSet;
+
+    /// A straight wire of section `section`, phase `phase`, 100 m along x
+    /// at `y`, height `z`.
+    fn wire(section: &str, phase: &str, y: f64, z: f64) -> Wire {
+        Wire {
+            section: section.into(),
+            span: 0,
+            circuit: "c".into(),
+            phase: phase.into(),
+            points: (0..=50).map(|k| [2.0 * k as f64, y, z]).collect(),
+            ends: vec![],
+            potential: None,
+            bundle: vec![],
+            surface_radius: 0.0,
+            polyline_error: 0.0,
+        }
+    }
+
+    /// Phase A over phase B, 2 m across and 6 m apart in height; in "ice"
+    /// every wire 3 m lower (the drop of an iced wire, invented).
+    fn wires(case: &str) -> Vec<Wire> {
+        let drop = if case == "ice" { 3.0 } else { 0.0 };
+        vec![
+            wire("A", "L1", 0.0, 20.0 - drop),
+            wire("B", "L2", 2.0, 14.0 - drop),
+        ]
+    }
+
+    fn targets<'a>() -> CaseTargets<'a> {
+        CaseTargets {
+            voltages: &[],
+            other_voltages: &[],
+            ground: None,
+            surfaces: &[],
+            point_classes: &[],
+            points: None,
+            other_wires: &[],
+        }
+    }
+
+    /// Several weather cases: each checked as one case (the same results
+    /// as checking it alone), the envelope keeping per wire pair the
+    /// lowest clearance with the case that governs it.
+    #[test]
+    fn every_case_of_the_rules_and_their_envelope() {
+        let set = RuleSet::parse(
+            "[[rule]]\nname = \"pp\"\ntarget = \"same_line\"\nradial = 7.0\n\
+             [[rule]]\nname = \"hot only\"\ntarget = \"same_line\"\nradial = 9.0\ncases = [\"hot\"]",
+        )
+        .unwrap();
+        let mut env = Envelope::default();
+        let mut alone = Vec::new();
+        for case in ["cold", "hot"] {
+            let w = wires(case);
+            let checks = check_case(&set.rules, case, &w, targets()).unwrap();
+            // A rule applies only in its cases.
+            assert_eq!(checks.len(), if case == "hot" { 2 } else { 1 });
+            for c in &checks {
+                let Outcome::Pairs(pairs) = &c.outcome else {
+                    panic!("{c:?}")
+                };
+                for p in pairs {
+                    env.add(
+                        c.rule,
+                        case,
+                        &c.wires[p.a].section,
+                        Some(&c.wires[p.b].section),
+                        &p.result,
+                    );
+                }
+            }
+            alone.push(checks);
+        }
+        // The same as one case at a time.
+        assert_eq!(
+            check_case(&set.rules, "cold", &wires("cold"), targets()).unwrap(),
+            alone[0]
+        );
+        let d = 2.0f64.hypot(6.0);
+        let e = env.violations(0);
+        assert_eq!(e.len(), 1);
+        let (hit, case) = e[0].radial.as_ref().unwrap();
+        assert!((hit.distance - d).abs() < 1e-9, "{}", hit.distance);
+        // Both cases alike: the first one keeps it.
+        assert_eq!(case, "cold");
+        assert_eq!(e[0].violated_in.iter().collect::<Vec<_>>(), ["cold", "hot"]);
+        assert_eq!(
+            env.violations(1)[0].violated_in.iter().collect::<Vec<_>>(),
+            ["hot"]
+        );
+    }
+
+    /// A rule with a case pair: skipped by each case, checked across
+    /// them — the iced upper wire over the cold lower one is 3 m nearer
+    /// than in either case alone; a pair naming no case run gives nothing.
+    #[test]
+    fn case_pairs_check_one_case_against_another() {
+        let set = RuleSet::parse(
+            "[[rule]]\nname = \"ice over cold\"\ntarget = \"same_line\"\nradial = 5.0\n\
+             case_pairs = [[\"ice\", \"cold\"], [\"wind\", \"cold\"]]",
+        )
+        .unwrap();
+        let (ice, cold) = (wires("ice"), wires("cold"));
+        let one = check_case(&set.rules, "ice", &ice, targets()).unwrap();
+        assert_eq!(one[0].outcome, Outcome::Skipped(Skipped::AcrossCases));
+        let cases: Vec<(&str, &[Wire])> = vec![("cold", &cold), ("ice", &ice)];
+        let found = check_case_pairs(&set.rules, &cases, &[]);
+        // Only [ice, cold]: no case "wind".
+        assert_eq!(found.len(), 1);
+        let c = &found[0];
+        assert_eq!((c.rule, c.first, c.second), (0, 1, 0));
+        // A (iced, z 17) to B (cold, z 14): 2 m across, 3 m down; B (iced,
+        // z 11) to A (cold, z 20): 9 m down.
+        let mut d: Vec<f64> = c
+            .pairs
+            .iter()
+            .map(|p| p.result.radial.unwrap().distance)
+            .collect();
+        d.sort_by(f64::total_cmp);
+        assert!((d[0] - 2.0f64.hypot(3.0)).abs() < 1e-9, "{d:?}");
+        assert!(c.pairs.iter().any(|p| p.result.violates()));
+        // Each case alone keeps 6.3 m: no violation without the pair.
+        assert!(2.0f64.hypot(6.0) > 5.0);
+    }
+}

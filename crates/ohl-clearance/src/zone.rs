@@ -2163,6 +2163,8 @@ mod tests {
             // Routes and alignments chosen (2026-10-27): kept too.
             routes: vec!["north".into()],
             alignments: vec!["A 2".into()],
+            // The weather cases run (2026-10-28): kept too.
+            cases: vec!["hot*".into()],
         };
         let set = to_rule_set("Window rules", &zone, &wind, &scope, &rows);
         assert_eq!(set.rules.len(), 4);
@@ -2172,7 +2174,8 @@ mod tests {
         assert!(
             text.contains(
                 "[check]\ncircuits = [\"North\", \"\"]\nroutes = [\"north\"]\n\
-                 alignments = [\"A 2\"]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
+                 alignments = [\"A 2\"]\ncases = [\"hot*\"]\nmethod = \"fe\"\n\
+                 search_distance = \"30 m\"\n\
                  section_override = true\n"
             ),
             "{text}"

@@ -929,7 +929,8 @@ impl ZoneWindow {
             .fold(0.0, f64::max);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                self.dirty |= help::wind_choice(ui, self.title(), &mut self.wind, true, full, true);
+                self.dirty |=
+                    help::wind_choice(ui, self.title(), &mut self.wind, true, full, true, true);
             });
             let n = if self.wind.stepped {
                 (full / self.wind.step.max(1.0)).ceil() as usize
