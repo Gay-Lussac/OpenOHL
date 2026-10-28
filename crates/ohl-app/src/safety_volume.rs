@@ -890,13 +890,13 @@ impl SafetyVolumeWindow {
                             crate::menu::error_label(ui, e);
                         }
                         Some(Ok(_)) => {
-                            // A few volumes: the table, the save and the
-                            // export scroll together in the tab.
+                            // The table in the room the save and the
+                            // export leave; they scroll under it.
+                            self.report_ui(ui);
                             egui::ScrollArea::vertical()
                                 .id_salt("safety-volume-results")
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
-                                    self.report_ui(ui);
                                     self.save_ui(ui, model, &mut out);
                                     if let Some(a) =
                                         help::heading(ui, "Export", "safety-volumes-export")
@@ -1323,46 +1323,51 @@ impl SafetyVolumeWindow {
                 "Saved without its meshes (too large): run it again to see and export them.",
             );
         }
-        egui::Grid::new("safety-volume-table")
-            .striped(true)
-            .num_columns(7)
-            .show(ui, |ui| {
-                for h in [
-                    "volume",
-                    "voltage",
-                    "distance, m",
-                    "triangles",
-                    "volume, m³",
-                    "outside by ≤, m",
-                    "time, s",
-                ] {
-                    ui.strong(h);
-                }
-                ui.end_row();
-                for (s, c) in v.volumes.iter().zip(&r.colors) {
-                    ui.horizontal(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                        ui.painter().rect_filled(
-                            rect,
-                            2.0,
-                            egui::Color32::from_rgb(c[0], c[1], c[2]),
-                        );
-                        ui.label(&s.name);
-                    });
-                    ui.label(s.kv.map_or("earthed".into(), |k| format!("{k} kV")));
-                    ui.label(format!("{:.2}", s.distance + s.margin));
-                    ui.label(s.mesh.triangles.len().to_string());
-                    ui.label(if r.meshes {
-                        format!("{:.0}", s.mesh.volume())
-                    } else {
-                        "-".into()
-                    });
-                    ui.label(format!("{:.3}", s.allowance));
-                    ui.label(format!("{:.2}", s.seconds));
-                    ui.end_row();
-                }
-            });
+        // The shared results table (owner, 2026-10-28): sortable, units in
+        // the headers, CSV (the colour of each volume: in the views).
+        use crate::check_ui::{Cell, Col};
+        let rows: Vec<crate::check_ui::Row> = v
+            .volumes
+            .iter()
+            .map(|s| {
+                crate::check_ui::Row::new(
+                    vec![
+                        Cell::text(&s.name),
+                        Cell::sorted(
+                            s.kv.map_or("earthed".into(), |k| format!("{k} kV")),
+                            s.kv.unwrap_or(0.0),
+                        ),
+                        Cell::num(Some(s.distance + s.margin), 2),
+                        Cell::sorted(
+                            s.mesh.triangles.len().to_string(),
+                            s.mesh.triangles.len() as f64,
+                        ),
+                        Cell::num(r.meshes.then(|| s.mesh.volume()), 0),
+                        Cell::num(Some(s.allowance), 3),
+                        Cell::num(Some(s.seconds), 2),
+                    ],
+                    false,
+                )
+            })
+            .collect();
+        crate::check_ui::ResultTable::new(
+            "safety-volume-rows",
+            vec![
+                Col::text("Volume"),
+                Col::num("Voltage"),
+                Col::num("Distance [m]"),
+                Col::num("Triangles"),
+                Col::num("Volume [m³]"),
+                Col::num("Outside by ≤ [m]")
+                    .tip("The most the mesh lies outside the exact volume where it is smooth"),
+                Col::num("Time [s]"),
+            ],
+        )
+        .rows(rows)
+        .no_filter()
+        .csv("safety-volumes.csv")
+        .below(260.0)
+        .ui(ui);
         ui.label(
             egui::RichText::new(
                 "Each mesh holds the whole exact volume (never inside it) and lies outside it by \

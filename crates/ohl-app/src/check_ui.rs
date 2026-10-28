@@ -779,6 +779,21 @@ impl Cell {
         }
     }
 
+    /// A cell of text that sorts by the number it starts with, when it
+    /// starts with one ("12.5 °C", "1 234 A" by 1), else by its text.
+    pub fn guess(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let lead: String = text
+            .trim()
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e'))
+            .collect();
+        match lead.parse::<f64>() {
+            Ok(v) if !lead.is_empty() => Self::sorted(text, v),
+            _ => Self::text(text),
+        }
+    }
+
     /// A cell shown as `text`, sorted by `v`.
     pub fn sorted(text: impl Into<String>, v: f64) -> Self {
         Self {
@@ -1099,7 +1114,13 @@ impl<'a> ResultTable<'a> {
                 .weak(),
             );
         }
-        let height = (ui.available_height() - self.below).max(80.0);
+        // The room left (in a scrolled body, which has no end: a list's).
+        let room = ui.available_height();
+        let height = if room.is_finite() {
+            (room - self.below).max(80.0)
+        } else {
+            help::LIST_HEIGHT
+        };
         egui::ScrollArea::both()
             .id_salt((self.id, "table"))
             .auto_shrink([false, false])

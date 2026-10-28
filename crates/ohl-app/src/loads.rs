@@ -558,76 +558,70 @@ impl LoadsPage {
                 },
             );
         }
+        // The shared results table (owner, 2026-10-28): sortable, units in
+        // the headers, searched, grouped by structure, CSV; a row clicked
+        // goes to its structure; incomplete loads in the warning colour.
         let filter = self.filter.trim().to_lowercase();
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                egui::Grid::new("structure-loads")
-                    .striped(true)
-                    .spacing(help::GRID_SPACING)
-                    .show(ui, |ui| {
-                        for h in [
-                            "structure",
-                            "point",
-                            "sets",
-                            "",
-                            "transverse kN",
-                            "longitudinal kN",
-                            "vertical kN",
-                            "sections",
-                        ] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for l in r
-                            .loads
-                            .iter()
-                            .filter(|l| {
-                                filter.is_empty() || l.structure.to_lowercase().contains(&filter)
-                            })
-                            .take(5000)
-                        {
-                            let missing: Vec<String> =
-                                r.missing_at(&l.structure).map(|m| m.short()).collect();
-                            let link = if missing.is_empty() {
-                                ui.link(&l.structure)
-                            } else {
-                                ui.link(egui::RichText::new(&l.structure).color(INCOMPLETE))
-                            };
-                            if link.on_hover_text("Go to this structure").clicked() {
-                                go = Some(l.structure.clone());
-                            }
-                            ui.label(&l.label);
-                            ui.label(
-                                l.sets
-                                    .iter()
-                                    .map(u32::to_string)
-                                    .collect::<Vec<_>>()
-                                    .join(" "),
-                            );
-                            ui.label("");
-                            let v = if self.unfactored { l.local } else { l.factored };
-                            for x in v {
-                                ui.label(
-                                    egui::RichText::new(format!("{:.2}", x / 1000.0)).monospace(),
-                                );
-                            }
-                            if missing.is_empty() {
-                                ui.label(l.sections.join(", "));
-                            } else {
-                                ui.colored_label(
-                                    INCOMPLETE,
-                                    format!(
-                                        "{} — incomplete: {}",
-                                        l.sections.join(", "),
-                                        missing.join(", ")
-                                    ),
-                                );
-                            }
-                            ui.end_row();
-                        }
-                    });
-            });
+        let shown: Vec<_> = r
+            .loads
+            .iter()
+            .filter(|l| filter.is_empty() || l.structure.to_lowercase().contains(&filter))
+            .collect();
+        use crate::check_ui::{Cell, Col};
+        let rows: Vec<crate::check_ui::Row> = shown
+            .iter()
+            .map(|l| {
+                let missing: Vec<String> = r.missing_at(&l.structure).map(|m| m.short()).collect();
+                let v = if self.unfactored { l.local } else { l.factored };
+                let sections = if missing.is_empty() {
+                    l.sections.join(", ")
+                } else {
+                    format!(
+                        "{} — incomplete: {}",
+                        l.sections.join(", "),
+                        missing.join(", ")
+                    )
+                };
+                crate::check_ui::Row::new(
+                    vec![
+                        Cell::text(&l.structure).bad(!missing.is_empty()),
+                        Cell::text(&l.label),
+                        Cell::text(
+                            l.sets
+                                .iter()
+                                .map(u32::to_string)
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                        ),
+                        Cell::num(Some(v[0] / 1000.0), 2),
+                        Cell::num(Some(v[1] / 1000.0), 2),
+                        Cell::num(Some(v[2] / 1000.0), 2),
+                        Cell::text(sections).bad(!missing.is_empty()),
+                    ],
+                    !missing.is_empty(),
+                )
+            })
+            .collect();
+        if let Some(k) = crate::check_ui::ResultTable::new(
+            "structure-loads-rows",
+            vec![
+                Col::text("Structure"),
+                Col::text("Point"),
+                Col::text("Sets"),
+                Col::num("Transverse [kN]"),
+                Col::num("Longitudinal [kN]"),
+                Col::num("Vertical [kN]"),
+                Col::text("Sections"),
+            ],
+        )
+        .rows(rows)
+        .no_filter()
+        .group_by(&[0])
+        .csv("structure-loads-table.csv")
+        .ui(ui)
+        {
+            go = shown.get(k).map(|l| l.structure.clone());
+        }
         go
     }
 

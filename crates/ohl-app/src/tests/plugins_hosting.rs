@@ -764,7 +764,7 @@ fn structure_loads_are_computed_and_shown() {
         assert!(results[0].failed.is_empty());
         assert!(!results[0].loads.is_empty());
     }
-    harness.get_by_label("transverse kN");
+    harness.get_by_label("Transverse [kN]");
     harness.get_all_by_label("T2").next().unwrap().click();
     harness.step();
     {

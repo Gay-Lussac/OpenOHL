@@ -90,7 +90,9 @@ impl Table {
         self.spacing.unwrap_or(ui.spacing().item_spacing)
     }
 
-    /// The header: each column's title (bold) with its tip.
+    /// The header: each column's title (bold) with its tip (tests; the
+    /// windows' tables draw theirs with [`Table::header_cells`]).
+    #[cfg(test)]
     pub fn header(&mut self, ui: &mut Ui, columns: &[(&str, &str)]) {
         self.header_cells(ui, |cells| {
             for (title, tip) in columns {

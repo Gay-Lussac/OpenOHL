@@ -12,8 +12,6 @@
 //! the notes (what was assumed); Export CSV. Out of date like the other
 //! checks when the line changes.
 
-use std::collections::BTreeSet;
-
 use eframe::egui;
 use ohl_electrical::LineParameters;
 use ohl_electrical::report::{self, Row};
@@ -56,8 +54,6 @@ pub struct LineParametersWindow {
     pub open: bool,
     /// The weather case (index into the model's cases).
     pub case: usize,
-    /// The circuits whose stretches are shown.
-    expanded: BTreeSet<String>,
     /// The run.
     pub(crate) job: Job<Answer>,
 }
@@ -168,10 +164,7 @@ impl LineParametersWindow {
                         }
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
-                        egui::ScrollArea::both()
-                            .id_salt("line-parameters-results")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| self.results_ui(ui, &stale, &mut run));
+                        self.results_ui(ui, &stale, &mut run);
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
@@ -229,105 +222,93 @@ impl LineParametersWindow {
                 save_csv("line-parameters.csv", &report::csv(p, &[]));
             }
         });
-        egui::Grid::new("line-parameters-table")
-            .striped(true)
-            .spacing(help::GRID_SPACING)
-            .show(ui, |ui| {
-                for h in [
-                    "",
-                    "circuit / stretch",
-                    "km",
-                    "R1 Ω/km",
-                    "X1 Ω/km",
-                    "B1 µS/km",
-                    "R0 Ω/km",
-                    "X0 Ω/km",
-                    "B0 µS/km",
-                    "Z1 total Ω",
-                    "Z0 total Ω",
-                ] {
-                    ui.strong(h);
-                }
-                ui.end_row();
-                let mut circuit_open = false;
-                for r in &rows {
-                    match r.kind {
-                        "circuit" => {
-                            circuit_open = self.expanded.contains(&r.circuit);
-                            let label = if circuit_open { "-" } else { "+" };
-                            if ui
-                                .small_button(label)
-                                .on_hover_text("Show or hide its stretches")
-                                .clicked()
-                            {
-                                if circuit_open {
-                                    self.expanded.remove(&r.circuit);
-                                } else {
-                                    self.expanded.insert(r.circuit.clone());
-                                }
-                            }
-                            let tip = match r.unbalance {
-                                Some(u) if u > 0.01 => format!(
-                                    "As built the sequences couple by {:.1} % of Z1: the line is \
-                                     not transposed; the values are those of the ideally \
-                                     transposed line",
-                                    100.0 * u
-                                ),
-                                _ => "Ideally transposed values".into(),
-                            };
-                            ui.strong(&r.circuit).on_hover_text(tip);
-                            row_cells(ui, r);
-                        }
-                        "stretch" if circuit_open => {
-                            ui.label("");
-                            ui.label(format!("  {}–{}: {}", r.from, r.to, r.sections.join(", ")));
-                            row_cells(ui, r);
-                        }
-                        "coupling" => {
-                            ui.label("");
-                            ui.label(format!("{} (zero sequence mutual)", r.circuit));
-                            ui.label(format!("{:.3}", r.length_km));
-                            for _ in 0..3 {
-                                ui.label("");
-                            }
-                            let z = r.zero.unwrap_or_default();
-                            ui.label(format!("{:.4}", z[0]));
-                            ui.label(format!("{:.4}", z[1]));
-                            ui.label("");
-                            ui.label("");
-                            ui.label(format!(
-                                "{:.3} + j{:.3}",
-                                z[0] * r.length_km,
-                                z[1] * r.length_km
-                            ));
-                        }
-                        _ => continue,
+        // One table (owner, 2026-10-28: the shared results table): the
+        // circuits, their stretches and the mutual couplings, grouped by
+        // circuit at will, sortable, as CSV.
+        use check_ui::{Cell, Col};
+        let num = |x: Option<f64>, d: usize| Cell::num(x, d);
+        let total = |r: &Row, k: usize| match r.totals() {
+            Some((z, _)) => Cell::sorted(
+                format!("{:.3} + j{:.3}", z[2 * k], z[2 * k + 1]),
+                z[2 * k].hypot(z[2 * k + 1]),
+            ),
+            None => Cell::text("—"),
+        };
+        let table: Vec<check_ui::Row> = rows
+            .iter()
+            .filter_map(|r| {
+                let cells = match r.kind {
+                    "circuit" => vec![
+                        Cell::text(&r.circuit),
+                        Cell::text("circuit"),
+                        num(Some(r.length_km), 3),
+                        num(r.positive.map(|x| x[0]), 4),
+                        num(r.positive.map(|x| x[1]), 4),
+                        num(r.positive.map(|x| x[2]), 3),
+                        num(r.zero.map(|x| x[0]), 4),
+                        num(r.zero.map(|x| x[1]), 4),
+                        num(r.zero.map(|x| x[2]), 3),
+                        total(r, 0),
+                        total(r, 1),
+                    ],
+                    "stretch" => vec![
+                        Cell::text(&r.circuit),
+                        Cell::text(format!("{}–{}: {}", r.from, r.to, r.sections.join(", "))),
+                        num(Some(r.length_km), 3),
+                        num(r.positive.map(|x| x[0]), 4),
+                        num(r.positive.map(|x| x[1]), 4),
+                        num(r.positive.map(|x| x[2]), 3),
+                        num(r.zero.map(|x| x[0]), 4),
+                        num(r.zero.map(|x| x[1]), 4),
+                        num(r.zero.map(|x| x[2]), 3),
+                        total(r, 0),
+                        total(r, 1),
+                    ],
+                    "coupling" => {
+                        let z = r.zero.unwrap_or_default();
+                        vec![
+                            Cell::text(&r.circuit),
+                            Cell::text("zero sequence mutual"),
+                            num(Some(r.length_km), 3),
+                            Cell::text(""),
+                            Cell::text(""),
+                            Cell::text(""),
+                            num(Some(z[0]), 4),
+                            num(Some(z[1]), 4),
+                            Cell::text(""),
+                            Cell::text(""),
+                            Cell::sorted(
+                                format!("{:.3} + j{:.3}", z[0] * r.length_km, z[1] * r.length_km),
+                                (z[0] * r.length_km).hypot(z[1] * r.length_km),
+                            ),
+                        ]
                     }
-                    ui.end_row();
-                }
-            });
-    }
-}
-
-/// The values of a circuit's or stretch's row (after its first two cells).
-fn row_cells(ui: &mut egui::Ui, r: &Row) {
-    ui.label(format!("{:.3}", r.length_km));
-    let num = |x: Option<f64>, d: usize| x.map_or("—".into(), |v| format!("{v:.d$}"));
-    ui.label(num(r.positive.map(|x| x[0]), 4));
-    ui.label(num(r.positive.map(|x| x[1]), 4));
-    ui.label(num(r.positive.map(|x| x[2]), 3));
-    ui.label(num(r.zero.map(|x| x[0]), 4));
-    ui.label(num(r.zero.map(|x| x[1]), 4));
-    ui.label(num(r.zero.map(|x| x[2]), 3));
-    match r.totals() {
-        Some((z, _)) => {
-            ui.label(format!("{:.3} + j{:.3}", z[0], z[1]));
-            ui.label(format!("{:.3} + j{:.3}", z[2], z[3]));
-        }
-        None => {
-            ui.label("—");
-            ui.label("—");
-        }
+                    _ => return None,
+                };
+                Some(check_ui::Row::new(cells, false))
+            })
+            .collect();
+        check_ui::ResultTable::new(
+            "line-parameters-rows",
+            vec![
+                Col::text("Circuit"),
+                Col::text("Stretch").tip("The circuit, a stretch of it, or a mutual coupling"),
+                Col::num("Length [km]"),
+                Col::num("R1 [Ω/km]"),
+                Col::num("X1 [Ω/km]"),
+                Col::num("B1 [µS/km]"),
+                Col::num("R0 [Ω/km]"),
+                Col::num("X0 [Ω/km]"),
+                Col::num("B0 [µS/km]"),
+                Col::num("Z1 total [Ω]"),
+                Col::num("Z0 total [Ω]"),
+            ],
+        )
+        .rows(table)
+        .no_filter()
+        .group_by(&[0])
+        .csv("line-parameters-table.csv")
+        .ui(ui);
     }
 }
 

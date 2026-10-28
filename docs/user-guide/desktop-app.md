@@ -544,6 +544,22 @@ Rules for other lines and rules across pairs of weather cases are run by `ohl li
 
 The **Analyses** entries of the Checks menu open windows that compute on demand in the background, each with a results table (click a span to go to it) and CSV export — see [Galloping, blowout, vegetation and as-built wires](analyses.md): **Galloping ellipses** (a `.ohlg` parameter file and a weather case), **Vegetation** (danger trees: the point cloud's vegetation classes near the wires of the cases ticked — blown left and right, along the swing arc, with unbalanced ice — growth, trees falling in about their root ball, isoclearance lines; drawn on the layers *Vegetation: grow-in*, *Vegetation: danger trees* and *Isoclearance lines*), **As-built wires** (catenaries fitted to the wire points, the temperature at the survey).
 
+#### The results table everywhere
+
+Since 2026-10-28 (built, in active development) the results of **Structure
+loads** (the loads table), **Bill of materials**, **Safety volumes**,
+**Line parameters**, **Thermal rating** and **Performed checks** are the
+same table as the other check windows': it fills its tab (its height
+follows the window), a click on a header sorts by it (again: the other
+way), units in brackets in the headers (`Transverse [kN]`, `Amount
+[CHF]`, `summer noon at 80 °C [A]`), *Search*, *Group by* where it helps
+(a structure, a category, a circuit, a check), *Export CSV…* of the rows
+shown. Line parameters lists the circuits, their stretches and the
+mutual couplings in one table (grouped by circuit at will, instead of
++/−). In **Performed checks** a click selects a report; its actions —
+Open, Export…, Delete…, its name, status and note — are above the table.
+The Structure loads' usage view keeps its own coloured table for now.
+
 #### The scope of a check
 
 Every check window says what it checks in *2 Scope* with the same picker
