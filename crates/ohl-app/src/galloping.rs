@@ -63,8 +63,15 @@ pub struct GallopingWindow {
     pub file: Option<PathBuf>,
     /// Weather case (index in the model's cases).
     pub case: usize,
+    /// The circuits, routes and sections checked (owner, 2026-10-28),
+    /// kept in the project ([`SETTING`]).
+    pub scope: check_ui::Scope,
+    kept: check_ui::Kept,
     pub(crate) job: Job<Report>,
 }
+
+/// The project setting the window's scope is kept in, per project line.
+pub const SETTING: &str = "app.galloping";
 
 impl GallopingWindow {
     /// Opens the window: a parameter file of the project (next to a line
@@ -83,6 +90,24 @@ impl GallopingWindow {
         (self.job.result.as_ref(), self.job.running())
     }
 
+    /// Reads the scope from the project when not read yet for the line
+    /// worked on, and writes it into it when it changed (project setting
+    /// `app.galloping.<line>`, owner, 2026-10-28: the setups kept in the
+    /// project).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let json = serde_json::to_string(&self.scope).unwrap_or_default();
+        let mut kept = std::mem::take(&mut self.kept);
+        if let check_ui::Step::Load(text) = kept.step(model, ctx, SETTING, "galloping scope", &json)
+        {
+            self.scope = text
+                .as_deref()
+                .and_then(|t| serde_json::from_str(t).ok())
+                .unwrap_or_default();
+            kept.loaded(serde_json::to_string(&self.scope).unwrap_or_default());
+        }
+        self.kept = kept;
+    }
+
     fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(path) = self.file.clone() else {
             self.job.result = Some(Err("choose a galloping parameter file (.ohlg)".into()));
@@ -97,6 +122,8 @@ impl GallopingWindow {
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
         let filter = self.overrides.filter(model);
+        // The scope's sections only (none: the whole line).
+        let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
             let params = GallopingParams::load(&path)?;
             let mut notes: Vec<String> =
@@ -110,7 +137,14 @@ impl GallopingWindow {
             let mut wires = galloping::galloping_wires(&line, &shapes, &library);
             // The overrides: the spans that do not take the case left out.
             wires.retain(|w| {
-                crate::case_groups::span_takes(&line, &filter, &w.wire.section, w.wire.span, &case)
+                keep.as_ref().is_none_or(|k| k.contains(&w.wire.section))
+                    && crate::case_groups::span_takes(
+                        &line,
+                        &filter,
+                        &w.wire.section,
+                        w.wire.span,
+                        &case,
+                    )
             });
             // Exit clause: well under a second for any line.
             let budget =
@@ -156,7 +190,9 @@ impl GallopingWindow {
         let mut open = self.open;
         let why = (!model.cases.is_empty())
             .then_some(())
-            .map_or(Some("the model has no weather case".to_owned()), |_| None);
+            .map_or(Some("the model has no weather case".to_owned()), |_| None)
+            .or_else(|| self.scope.why_not(&model.line));
+        let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
         let findings = match &self.job.result {
             Some(Ok(r)) => Some(r.rows.iter().filter(|r| short(r)).count()),
             _ => None,
@@ -196,6 +232,7 @@ impl GallopingWindow {
                         let names: Vec<String> =
                             model.cases.iter().map(|c| c.case.name.clone()).collect();
                         check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .wires(&mut self.scope, true)
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
                         ui.separator();
@@ -323,7 +360,7 @@ impl GallopingWindow {
                         why.clone(),
                         "Size the ellipses of every span by the parameter file in the case chosen \
                          and check their clearances",
-                        None,
+                        Some(scope_words),
                         |ui| {
                             overrides.ui(ui);
                         },

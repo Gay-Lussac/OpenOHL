@@ -91,7 +91,9 @@
 //!   override them). `cases` (2026-10-28, names with `*` `?`, default
 //!   none: every case of the rules): the weather cases the desktop
 //!   Clearances window runs ([`CheckScope::takes_case`]); `ohl line` and
-//!   `ohl zones` ignore it.
+//!   `ohl zones` ignore it. `sections` (2026-10-28, ids, default none:
+//!   every section): the sections the desktop wire tension, string and
+//!   internal clearance checks take (with the circuits and routes).
 //!
 //! ## Clearances by voltage
 //!
@@ -816,6 +818,8 @@ struct RawCheck {
     alignments: Vec<String>,
     #[serde(default)]
     cases: Vec<String>,
+    #[serde(default)]
+    sections: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1255,6 +1259,9 @@ pub struct CheckScope {
     /// 2026-10-28: the Clearances window runs every case of its rules);
     /// empty: every case of the rules.
     pub cases: Vec<String>,
+    /// The sections checked, by id (owner, 2026-10-28: the scope of every
+    /// check window); empty: every section (of the circuits and routes).
+    pub sections: Vec<String>,
 }
 
 impl CheckScope {
@@ -1265,6 +1272,7 @@ impl CheckScope {
             && self.routes.is_empty()
             && self.alignments.is_empty()
             && self.cases.is_empty()
+            && self.sections.is_empty()
             && self.method.is_none()
             && self.search_distance.is_none()
             && !self.structure_override
@@ -1543,6 +1551,7 @@ impl RuleSet {
                     routes: c.routes,
                     alignments: c.alignments,
                     cases: c.cases,
+                    sections: c.sections,
                     method: c
                         .method
                         .as_deref()
@@ -1700,6 +1709,13 @@ impl RuleSet {
             }
             if !c.cases.is_empty() {
                 let _ = writeln!(t, "cases = {}", list(c.cases.iter().map(|n| quoted(n))));
+            }
+            if !c.sections.is_empty() {
+                let _ = writeln!(
+                    t,
+                    "sections = {}",
+                    list(c.sections.iter().map(|n| quoted(n)))
+                );
             }
             if let Some(m) = c.method {
                 let _ = writeln!(t, "method = \"{}\"", method_name(m));

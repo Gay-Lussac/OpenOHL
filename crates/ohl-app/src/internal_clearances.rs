@@ -67,6 +67,10 @@ pub struct InternalClearancesWindow {
     pub status: Option<(String, bool)>,
     /// The structure and section overrides of its cases.
     pub overrides: crate::case_groups::Overrides,
+    /// What it checks: the circuits, routes and sections (owner,
+    /// 2026-10-28: the scope of every check window), kept in its rule
+    /// file's `[check]`.
+    pub scope: check_ui::Scope,
     /// The check.
     pub(crate) job: Job<Report>,
     /// Counted up with each answer.
@@ -197,6 +201,7 @@ impl InternalClearancesWindow {
                             structures: c.structure_override,
                             sections: c.section_override,
                         };
+                        self.scope = check_ui::Scope::of_check(&c);
                     }
                 }
                 Err(e) => self.status = Some((e, true)),
@@ -232,13 +237,8 @@ impl InternalClearancesWindow {
     pub fn rule_set(&self) -> RuleSet {
         RuleSet {
             name: "Internal clearances".into(),
-            check: (self.overrides.structures || self.overrides.sections).then(|| {
-                ohl_clearance::CheckScope {
-                    structure_override: self.overrides.structures,
-                    section_override: self.overrides.sections,
-                    ..Default::default()
-                }
-            }),
+            // The scope and the overrides ticked.
+            check: check_ui::check_of(&self.scope, self.overrides),
             checks: vec![PresetCheck::Internal],
             internal_rules: self.rules.clone(),
             ..RuleSet::default()
@@ -267,7 +267,10 @@ impl InternalClearancesWindow {
     /// background (as the line is, with its jumpers), every structure with
     /// a body checked.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
-        if let Some(why) = self.why_not_run() {
+        if let Some(why) = self
+            .why_not_run()
+            .or_else(|| self.scope.why_not(&model.line))
+        {
             self.job.result = Some(Err(format!("not run: {why}")));
             return;
         }
@@ -293,6 +296,14 @@ impl InternalClearancesWindow {
         let fits =
             internal::string_fits(&model.line, model.types.as_ref().map_or(&empty, |(_, i)| i));
         let filter = self.overrides.filter(model);
+        // The scope's sections only (none: the whole line).
+        let keep = self.scope.keeps(&model.line);
+        let scoped = move |mut s: crate::model::Solved| {
+            if let Some(k) = &keep {
+                s.shapes.retain(|x| k.contains(&x.section));
+            }
+            s
+        };
         let study = if self.overrides.structures {
             wind_study(model, &bodies)
         } else {
@@ -302,7 +313,11 @@ impl InternalClearancesWindow {
             let mut solved = Vec::new();
             let mut notes = study.notes.clone();
             for case in &cases {
-                let s = crate::model::Solved::new_memo(&line, &library, case.clone());
+                let s = scoped(crate::model::Solved::new_memo(
+                    &line,
+                    &library,
+                    case.clone(),
+                ));
                 notes.extend(
                     s.failed
                         .iter()
@@ -328,7 +343,11 @@ impl InternalClearancesWindow {
                 for case in cases.iter().filter(|c| study.cases.contains(&c.name)) {
                     let mut case = case.clone();
                     case.wind_pressure = ohl_core::units::Stress::from_si(pa);
-                    let s = crate::model::Solved::new_memo(&line, &library, case.clone());
+                    let s = scoped(crate::model::Solved::new_memo(
+                        &line,
+                        &library,
+                        case.clone(),
+                    ));
                     notes.extend(s.failed.iter().map(|f| {
                         format!("\"{}\" at {pa} Pa (wind study): not solved: {f}", case.name)
                     }));
@@ -429,7 +448,10 @@ impl InternalClearancesWindow {
             [860.0, 760.0],
             &mut open,
             |ui| {
-                let why = self.why_not_run();
+                let why = self
+                    .why_not_run()
+                    .or_else(|| self.scope.why_not(&model.line));
+                let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
                 let findings = match &self.job.result {
                     Some(Ok(r)) => Some(r.report.failures().count()),
                     _ => None,
@@ -454,9 +476,15 @@ impl InternalClearancesWindow {
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
+                        if check_ui::ScopePicker::new("internal-clearances-scope", &model.line)
+                            .wires(&mut self.scope, true)
+                            .ui(ui)
+                        {
+                            changed = true;
+                        }
                         ui.label(
                             egui::RichText::new(
-                                "Each rule gives its voltages and weather cases (3 Rules): circuits, routes and sections are not chosen here yet.",
+                                "Each rule gives its own voltages and weather cases besides (3 Rules).",
                             )
                             .small()
                             .weak(),
@@ -485,7 +513,7 @@ impl InternalClearancesWindow {
                         &mut self.job,
                         why.clone(),
                         "Solve each weather case of the rules and check every structure with a body",
-                        None,
+                        Some(scope_words),
                         |ui| {
                             changed |= overrides.ui(ui);
                         },

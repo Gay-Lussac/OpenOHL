@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-28
 
+**The scope in every check window (owner, 2026-10-28)**
+
+- The shared scope picker (circuits, routes and alignments, sections)
+  now in Wire tensions, String checks, Internal clearances, Galloping
+  ellipses, As-built wires and Distance between conductors (and under
+  unequal wind; circuits and routes there, its own circuit list
+  replaced). "Before Run: …" when the scope takes no section; Stop as
+  every job (the run discarded, the previous results kept).
+- Kept in the project: in the rule file's `[check]` where the check has
+  one (tension, strings, internal: `circuits`, `routes`, `alignments`
+  and the new optional `sections`), else a project setting per project
+  line (`app.galloping.<line>`, `app.wirefit.<line>`; the distance
+  between conductors' setting gains `scope`).
+- Our choice, to confirm: the checks are solved on the whole line and
+  only the spans in scope are checked (exact, not faster); the distance
+  between conductors keeps a pair when one of its spans is on a route
+  ticked.
+
 **Wire clearances on the ground windows' design (owner, 2026-10-28)**
 
 - The Clearances window runs **every weather case of its rules** (not

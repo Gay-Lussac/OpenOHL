@@ -42,8 +42,15 @@ pub struct WireFitWindow {
     pub params: FitParams,
     /// Estimate the temperature at the survey.
     pub estimate: bool,
+    /// The circuits, routes and sections fitted (owner, 2026-10-28), kept
+    /// in the project ([`SETTING`]).
+    pub scope: check_ui::Scope,
+    kept: check_ui::Kept,
     pub(crate) job: Job<Vec<Row>>,
 }
+
+/// The project setting the window's scope is kept in, per project line.
+pub const SETTING: &str = "app.wirefit";
 
 impl Default for WireFitWindow {
     fn default() -> Self {
@@ -52,6 +59,8 @@ impl Default for WireFitWindow {
             temperature: 15.0,
             params: FitParams::default(),
             estimate: true,
+            scope: check_ui::Scope::default(),
+            kept: check_ui::Kept::default(),
             job: Job::default(),
         }
     }
@@ -62,6 +71,25 @@ impl WireFitWindow {
     #[cfg(test)]
     pub fn result(&self) -> (Option<&Result<Vec<Row>, String>>, bool) {
         (self.job.result.as_ref(), self.job.running())
+    }
+
+    /// Reads the scope from the project when not read yet for the line
+    /// worked on, and writes it into it when it changed (project setting
+    /// `app.wirefit.<line>`, owner, 2026-10-28: the setups kept in the
+    /// project).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let json = serde_json::to_string(&self.scope).unwrap_or_default();
+        let mut kept = std::mem::take(&mut self.kept);
+        if let check_ui::Step::Load(text) =
+            kept.step(model, ctx, SETTING, "as-built wires scope", &json)
+        {
+            self.scope = text
+                .as_deref()
+                .and_then(|t| serde_json::from_str(t).ok())
+                .unwrap_or_default();
+            kept.loaded(serde_json::to_string(&self.scope).unwrap_or_default());
+        }
+        self.kept = kept;
     }
 
     fn start(&mut self, model: &Model, ctx: &egui::Context) {
@@ -86,6 +114,8 @@ impl WireFitWindow {
         let library = model.library.clone();
         let params = self.params.clone();
         let (t, estimate) = (self.temperature, self.estimate);
+        // The scope's sections only (none: the whole line).
+        let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
             let case = ohl_weather::WeatherCase::still(
                 "model",
@@ -94,6 +124,7 @@ impl WireFitWindow {
             let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
                 .into_iter()
                 .filter_map(Result::ok)
+                .filter(|s| keep.as_ref().is_none_or(|k| k.contains(&s.section)))
                 .collect();
             let mut c = WireCollector::new(wires_of(&line, &shapes, &[]), &classes, params.clone());
             let (file, name) = ohl_lidar::cloud_spec(&spec);
@@ -164,7 +195,9 @@ impl WireFitWindow {
         let why = model
             .cloud
             .is_none()
-            .then(|| "no point cloud in this model".to_owned());
+            .then(|| "no point cloud in this model".to_owned())
+            .or_else(|| self.scope.why_not(&model.line));
+        let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
         let findings = match &self.job.result {
             Some(Ok(r)) => Some(r.iter().filter(|r| matches!(r.fit, Some(Ok(_)))).count()),
             _ => None,
@@ -199,6 +232,11 @@ impl WireFitWindow {
                              the difference of the sag and of the mid-span height between the \
                              fitted wire and the model.",
                         );
+                        ui.separator();
+                        check_ui::section(ui, 2, "Scope", None);
+                        check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .wires(&mut self.scope, true)
+                            .ui(ui);
                         ui.separator();
                         check_ui::section(ui, 4, "Settings", None);
                         ui.horizontal_wrapped(|ui| {
@@ -315,7 +353,7 @@ impl WireFitWindow {
                         &mut self.job,
                         why.clone(),
                         "Read the wire points and fit a catenary in every span",
-                        None,
+                        Some(scope_words),
                         |_| {},
                     );
                 });

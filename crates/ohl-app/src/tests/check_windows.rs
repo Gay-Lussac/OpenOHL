@@ -456,3 +456,75 @@ fn stop_cancels_a_run_and_a_new_result_opens_results() {
     h.run();
     assert!(h.state().2, "Results opened after the run");
 }
+
+/// The scope of a check window (owner, 2026-10-28: circuits, routes and
+/// sections in every window): Wire tensions with one circuit ticked checks
+/// only its spans, and keeps the scope in its rule file's `[check]`.
+#[test]
+fn a_scope_restricts_a_check() {
+    let model = synthetic();
+    let circuits = crate::check_ui::circuits_of(&model.line);
+    assert!(circuits.len() >= 2, "{circuits:?}");
+    let one = circuits[0].clone();
+    let of_one: std::collections::BTreeSet<String> = model
+        .line
+        .sections
+        .iter()
+        .filter(|s| s.circuit_name == one)
+        .map(|s| s.id.clone())
+        .collect();
+    let mut w = crate::wire_tensions::WireTensionsWindow::default();
+    w.rules = vec![ohl_clearance::tension::TensionRule {
+        factor: 0.01,
+        ..ohl_clearance::tension::TensionRule::blank("invented 0.01")
+    }];
+    w.scope.circuits = Some(vec![one.clone()]);
+    // Kept in the rule file's [check], read back the same.
+    let set = ohl_clearance::RuleSet::parse(&w.rule_set().to_toml()).unwrap();
+    assert_eq!(
+        crate::check_ui::Scope::of_check(set.check.as_ref().unwrap()),
+        w.scope
+    );
+    w.start(&model, &egui::Context::default());
+    let started = std::time::Instant::now();
+    while w.job.result.is_none() {
+        w.job.poll();
+        assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let rep = w.job.result.clone().unwrap().unwrap();
+    assert!(!rep.report.rows.is_empty());
+    assert!(
+        rep.report.rows.iter().all(|r| of_one.contains(&r.section)),
+        "only the circuit ticked"
+    );
+    // No circuit ticked: Run says why.
+    w.scope.circuits = Some(Vec::new());
+    assert!(w.scope.why_not(&model.line).is_some());
+}
+
+/// A check window's setup kept in the project (owner, 2026-10-28): the
+/// Galloping window's scope written as a project setting of the line
+/// worked on, read back by a window opened anew.
+#[test]
+fn a_check_setup_is_kept_in_the_project() {
+    let mut model = crate::tests::synthetic_project("galloping-scope-kept");
+    let ctx = egui::Context::default();
+    let mut w = crate::galloping::GallopingWindow::default();
+    // Read first (nothing kept yet), then changed and kept.
+    w.keep(&mut model, &ctx);
+    assert!(w.scope.whole());
+    let circuit = crate::check_ui::circuits_of(&model.line)[0].clone();
+    w.scope.circuits = Some(vec![circuit.clone()]);
+    w.keep(&mut model, &ctx);
+    let key = format!(
+        "{}.{}",
+        crate::galloping::SETTING,
+        model.session().unwrap().current_line()
+    );
+    let text = model.session().unwrap().setting(&key).unwrap().unwrap();
+    assert!(text.contains(&circuit), "{text}");
+    let mut again = crate::galloping::GallopingWindow::default();
+    again.keep(&mut model, &ctx);
+    assert_eq!(again.scope, w.scope);
+}
