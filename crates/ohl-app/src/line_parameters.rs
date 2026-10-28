@@ -239,7 +239,15 @@ impl LineParametersWindow {
             .filter_map(|r| {
                 let cells = match r.kind {
                     "circuit" => vec![
-                        Cell::text(&r.circuit),
+                        Cell::text(&r.circuit).tip(match r.unbalance {
+                            Some(u) if u > 0.01 => format!(
+                                "As built the sequences couple by {:.1} % of Z1: the line is \
+                                 not transposed; the values are those of the ideally \
+                                 transposed line",
+                                100.0 * u
+                            ),
+                            _ => "Ideally transposed values".into(),
+                        }),
                         Cell::text("circuit"),
                         num(Some(r.length_km), 3),
                         num(r.positive.map(|x| x[0]), 4),

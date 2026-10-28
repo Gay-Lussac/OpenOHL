@@ -957,7 +957,13 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   kept in their rule files' `[check]` with the overrides (additive, optional:
   a file without it reads as before; `ohl line` and `ohl zones` ignore
   it); that window keeps its wind in `[wind]` (`stepped`, `step`,
-  `sides`; `arc` not used between wires).
+  `sides`; since 2026-10-28 `arc`: the wires against each other swung
+  together by one wind, `ohl_clearance::wire_arc` — `swings(arcs,
+  cases) -> Vec<Swing>` from `zone_arc::zone_arcs`, `Swing::wires(arcs,
+  k)` the wires at sample k; `SwingArc::swung` / `swing_reach`; the
+  app's `clearance::Input::arc` the bands' margins; the file unchanged).
+- The shared results table (2026-10-28): `check_ui::Cell::tip` (optional
+  hover text of a cell, app only).
 - Wire clearances across cases (2026-10-28, `ohl-clearance`):
   `check_case_pairs(rules, cases, voltages) -> Vec<CasePairCheck>` checks
   the rules between this line's wires with `case_pairs` across the cases

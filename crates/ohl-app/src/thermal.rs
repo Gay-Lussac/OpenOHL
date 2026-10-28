@@ -572,7 +572,11 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
         .zip(ratings)
         .map(|(s, (at_max, at_limit))| {
             let mut cells = vec![Cell::text(&s.id), Cell::text(&s.cable)];
-            cells.extend(at_max.iter().map(|(text, _)| Cell::guess(text)));
+            cells.extend(
+                at_max
+                    .iter()
+                    .map(|(text, hover)| Cell::guess(text).tip(hover.as_str())),
+            );
             if !limits.is_empty() {
                 match by_section.get(s.id.as_str()) {
                     Some(l) => {
@@ -604,7 +608,11 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
                         if at_limit.is_empty() {
                             cells.extend(cases.iter().map(|_| Cell::text("—")));
                         } else {
-                            cells.extend(at_limit.iter().map(|(text, _)| Cell::guess(text)));
+                            cells.extend(
+                                at_limit
+                                    .iter()
+                                    .map(|(text, hover)| Cell::guess(text).tip(hover.as_str())),
+                            );
                         }
                     }
                     None => cells

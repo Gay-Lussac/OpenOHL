@@ -51,6 +51,7 @@ pub mod tension;
 pub mod unequal_wind;
 pub mod vegetation;
 pub mod volumes;
+pub mod wire_arc;
 pub mod wirefit;
 pub mod zone;
 pub mod zone_arc;
