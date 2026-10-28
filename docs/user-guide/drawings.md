@@ -278,18 +278,29 @@ the layout kept is the one with
 
 1. the fewest warnings (a span longer than the sheet, a datum step or
    structure tops cut, elevations overlapping, a sheet that runs on),
-2. then the least paper (the sum of the sheets' areas: fuller sheets),
-3. then the fewest sheets, then the smallest sheet.
+2. then the **least empty paper**: the panels' width past the route
+   drawn (a sheet ending early, at the last structure that fits) and the
+   profile panel's height above the profile, summed over the sheets
+   (since 2026-10-28; the furniture the template places — title block,
+   legend, key map — is not counted),
+3. then the least paper (the sum of the sheets' areas),
+4. then the fewest sheets, then the smallest sheet.
 
-With **different sizes allowed** (`--mixed-sizes`), a route's sheets may
-take different sizes of one standard (ISO A with its long sizes, ISO B,
-ANSI, ARCH) in one orientation — a short last sheet on a smaller size:
-the breaks and the sizes are chosen together. With **the same paper on
-every route** (`--same-paper`), one size (or one standard, mixed) is
-chosen for all routes together. The export reports the choice per route
+With **both orientations allowed** (no `--orientation`, the window's
+*landscape or portrait*), one more layout **turns each sheet as suits
+it**: landscape where the profile is low, portrait (a taller profile
+panel) where a valley or a slope needs the height, so the datum does not
+step; the breaks and the pages are chosen together, in the same order
+(warnings, then empty paper). With **different sizes allowed**
+(`--mixed-sizes`), a route's sheets may also take different sizes of one
+standard (ISO A with its long sizes, ISO B, ANSI, ARCH) — a short last
+sheet on a smaller size, a larger one over a deep valley. With **the
+same paper on every route** (`--same-paper`), one size (or one standard,
+mixed, or one size or standard with the sheets turned) is chosen for all
+routes together. The export reports the choice per route
 (`optimised layout A2 landscape (A2 ×4; 0 warning(s), 1.00 m² of paper,
 86 % filled)`); in the export window **Compare sizes** lists every
-candidate for the first route, best first.
+candidate for the first route, best first, with its empty paper.
 
 The sizes offered — and those the optimiser may choose from — are ticked
 in the window's **Paper sizes** list (ISO A0–A4 by default; the long A

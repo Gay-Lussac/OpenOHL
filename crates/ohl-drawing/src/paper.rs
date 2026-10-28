@@ -2,31 +2,41 @@
 //!
 //! The standard sizes a designer may tick ([`PAPER_SIZES`]), and the
 //! choice of paper and orientation that lays a route out on sheets with
-//! the fewest problems and the least paper ([`candidates`]): every allowed
-//! size in each allowed orientation is laid out as [`crate::sheet_layout`]
-//! would, at the options' scales (never changed), and the candidates are
-//! ranked by
+//! the fewest problems and the least empty paper ([`candidates`]): every
+//! allowed size in each allowed orientation is laid out as
+//! [`crate::sheet_layout`] would, at the options' scales (never changed),
+//! and the candidates are ranked by
 //!
 //! 1. the number of warnings (a span longer than the sheet, a profile
 //!    whose datum must step or whose structure tops are cut, elevations
 //!    overlapping or leaving the plan, no free break within reach),
-//! 2. the paper used (sum of the sheets' areas): fuller sheets first,
-//! 3. the number of sheets,
-//! 4. the largest sheet.
+//! 2. the **empty paper** in the panels (owner, 2026-10-28: sheets
+//!    should mostly avoid empty space): the panels' width past the route
+//!    drawn and the profile panel's height above the profile, summed over
+//!    the sheets (the furniture the template places is not counted),
+//! 3. the paper used (sum of the sheets' areas),
+//! 4. the number of sheets,
+//! 5. the largest sheet.
 //!
 //! With different sizes allowed ([`Optimise::mixed`]) a candidate may
 //! put each sheet on another size **of the same standard** (ISO A,
-//! ISO B, ANSI, ARCH) in the same orientation: the breaks and the sizes
-//! are chosen together (dynamic programming over the places a sheet may
-//! end, with the profile's fit estimated per sheet from heights joined
-//! stretch by stretch), so a short last sheet takes a smaller size; the
-//! sheets chosen are laid out in full and ranked with the others.
+//! ISO B, ANSI, ARCH) in the same orientation, and, with both
+//! orientations ticked, one more candidate per standard may also turn
+//! each sheet (landscape where the profile is low, portrait over a
+//! valley): the breaks and the pages are chosen together (dynamic
+//! programming over the places a sheet may end, with the profile's fit
+//! estimated per sheet from heights joined stretch by stretch, the same
+//! order: warnings, empty paper, paper, sheets), so a short last sheet
+//! takes a smaller size; the sheets chosen are laid out in full and
+//! ranked with the others.
 //!
 //! Sizes: ISO 216 (A and B series); the elongated A sizes (A3×3 …) as
 //! listed for ISO 5457 / IS 10711; ANSI/ASME Y14.1 (A–E) and ARCH (A–E,
 //! E1) from their inch sizes (exact, 25.4 mm per inch).
 
-use crate::layout::{Stop, StretchHeights, can_break, ends, layout_planned, route_stops};
+use crate::layout::{
+    Stop, StretchHeights, can_break, ends, layout_planned, profile_mm, route_stops,
+};
 use crate::{Options, Page, RouteDrawing, Sheet, SheetLayout};
 
 /// A family of paper sizes: sizes of one standard may be mixed in one
@@ -181,6 +191,10 @@ pub struct Optimise {
     pub portrait: bool,
     /// Different sizes of one standard on the sheets of a route.
     pub mixed: bool,
+    /// Only the candidates that turn each sheet as suits it (both
+    /// orientations allowed): what [`common_choice`] keeps when it chose
+    /// one of them.
+    pub turned_only: bool,
 }
 
 impl Optimise {
@@ -199,6 +213,7 @@ impl Optimise {
             landscape: true,
             portrait: true,
             mixed,
+            turned_only: false,
         })
     }
 
@@ -213,6 +228,10 @@ impl Optimise {
         v
     }
 }
+
+/// How a candidate ranks: warnings, empty paper (per 10 cm²), paper (cm²),
+/// sheets, the largest sheet (mm²).
+type Rank = (usize, i64, i64, usize, i64);
 
 /// One way of laying the route out.
 #[derive(Debug, Clone, PartialEq)]
@@ -229,6 +248,8 @@ pub struct Candidate {
     pub area: f64,
     /// Route drawn over the route the sheets could hold (0–1).
     pub fill: f64,
+    /// Empty paper in the sheets' panels, m² (see the module).
+    pub empty: f64,
     /// Its sheets.
     pub layout: Vec<SheetLayout>,
 }
@@ -255,7 +276,7 @@ impl Candidate {
             .join(", ")
     }
 
-    fn rank(&self) -> (usize, i64, usize, i64) {
+    fn rank(&self) -> Rank {
         let largest = self
             .pages
             .iter()
@@ -263,6 +284,7 @@ impl Candidate {
             .fold(0.0, f64::max);
         (
             self.warnings,
+            (self.empty * 1e3).round() as i64,
             (self.area * 1e4).round() as i64,
             self.pages.len(),
             largest.round() as i64,
@@ -286,6 +308,26 @@ fn orientation_name(portrait: bool) -> &'static str {
     if portrait { "portrait" } else { "landscape" }
 }
 
+/// The sizes of `pages` grouped by standard (at least two pages each;
+/// custom sizes left out).
+fn by_standard(pages: &[Page]) -> Vec<(Standard, Vec<Page>)> {
+    let mut standards: Vec<Standard> = pages.iter().filter_map(standard_of).collect();
+    standards.sort();
+    standards.dedup();
+    standards
+        .into_iter()
+        .map(|s| {
+            let group: Vec<Page> = pages
+                .iter()
+                .filter(|p| standard_of(p) == Some(s))
+                .cloned()
+                .collect();
+            (s, group)
+        })
+        .filter(|(_, g)| g.len() >= 2)
+        .collect()
+}
+
 /// The standard of `p` (none: a custom size).
 fn standard_of(p: &Page) -> Option<Standard> {
     paper_size(&p.name).map(|s| s.standard)
@@ -301,6 +343,9 @@ pub fn candidates(d: &RouteDrawing, o: &Options, opt: &Optimise) -> Vec<Candidat
     let stations = route_stops(d, o);
     let mut out = Vec::new();
     for portrait in opt.orientations() {
+        if opt.turned_only && opt.landscape && opt.portrait {
+            break;
+        }
         let pages: Vec<Page> = opt.sizes.iter().map(|p| oriented(p, portrait)).collect();
         for (k, page) in pages.iter().enumerate() {
             let layout = crate::layout::sheet_layout_on(d, o, &stations, page);
@@ -311,18 +356,7 @@ pub fn candidates(d: &RouteDrawing, o: &Options, opt: &Optimise) -> Vec<Candidat
             ));
         }
         if opt.mixed {
-            let mut standards: Vec<Standard> = pages.iter().filter_map(standard_of).collect();
-            standards.sort();
-            standards.dedup();
-            for s in standards {
-                let group: Vec<Page> = pages
-                    .iter()
-                    .filter(|p| standard_of(p) == Some(s))
-                    .cloned()
-                    .collect();
-                if group.len() < 2 {
-                    continue;
-                }
+            for (s, group) in by_standard(&pages) {
                 let plan = mixed_plan(d, o, &stations, &group);
                 let layout = layout_planned(d, o, &stations, &plan);
                 out.push(candidate(
@@ -331,6 +365,43 @@ pub fn candidates(d: &RouteDrawing, o: &Options, opt: &Optimise) -> Vec<Candidat
                     layout,
                 ));
             }
+        }
+    }
+    // Both orientations ticked: each sheet turned as suits it (of one
+    // size, or of one standard with sizes mixed).
+    if opt.landscape && opt.portrait {
+        let turned = |p: &Page| vec![oriented(p, false), oriented(p, true)];
+        let groups: Vec<(String, String, Vec<Page>)> = if opt.mixed {
+            let pages: Vec<Page> = opt.sizes.iter().flat_map(turned).collect();
+            by_standard(&pages)
+                .into_iter()
+                .map(|(s, g)| {
+                    (
+                        format!("{} landscape and portrait, sizes mixed", s.name()),
+                        format!("{}|both|mixed", s.name()),
+                        g,
+                    )
+                })
+                .collect()
+        } else {
+            opt.sizes
+                .iter()
+                .map(|p| {
+                    (
+                        format!("{} landscape and portrait", p.name),
+                        format!("{}|both", p.name),
+                        turned(p),
+                    )
+                })
+                .collect()
+        };
+        for (label, key, group) in groups {
+            let plan = mixed_plan(d, o, &stations, &group);
+            out.push(candidate(
+                label,
+                key,
+                layout_planned(d, o, &stations, &plan),
+            ));
         }
     }
     out.sort_by_key(Candidate::rank);
@@ -347,13 +418,15 @@ fn candidate(label: String, key: String, layout: Vec<SheetLayout>) -> Candidate 
         warnings: layout.iter().map(|s| s.warnings.len()).sum(),
         area: pages.iter().map(|p| p.width * p.height).sum::<f64>() / 1e6,
         fill: if held > 0.0 { drawn / held } else { 0.0 },
+        empty: layout.iter().map(|s| s.empty).sum::<f64>() / 1e6,
         pages,
         layout,
     }
 }
 
-/// The breaks and sizes of `pages` (one standard, one orientation) with
-/// the fewest warnings, then the least paper, then the fewest sheets.
+/// The breaks and pages of `pages` (one standard; one orientation, or
+/// both) with the fewest warnings, then the least empty paper, then the
+/// least paper, then the fewest sheets.
 /// The warnings are estimated per sheet (a sheet running past its reach;
 /// the profile's fit from [`StretchHeights`], joined per stretch between
 /// stops, so each sheet costs no pass over the drawing); the sheets
@@ -376,12 +449,18 @@ fn mixed_plan(
     let heights = StretchHeights::new(d, o, stations);
     // best[i]: the cost of laying out from stop i to the end, and the
     // first sheet (its end, its page).
-    type Cost = (usize, f64, usize);
+    type Cost = (usize, f64, f64, usize);
     let mut best: Vec<Option<(Cost, usize, usize)>> = vec![None; n];
-    best[n - 1] = Some(((0, 0.0, 0), n - 1, 0));
-    let better = |a: Cost, b: Cost| {
-        (a.0, (a.1 * 1e-2).round() as i64, a.2) < (b.0, (b.1 * 1e-2).round() as i64, b.2)
+    best[n - 1] = Some(((0, 0.0, 0.0, 0), n - 1, 0));
+    let key = |a: Cost| {
+        (
+            a.0,
+            (a.1 * 1e-3).round() as i64,
+            (a.2 * 1e-2).round() as i64,
+            a.3,
+        )
     };
+    let better = |a: Cost, b: Cost| key(a) < key(b);
     for i in (0..n - 1).rev() {
         if i > 0 && !can_break(stations, i) {
             continue;
@@ -395,10 +474,13 @@ fn mixed_plan(
                 let runs_on = stations[j].station - stations[i].station > reach + 1e-9;
                 let warnings =
                     usize::from(runs_on) + heights.warnings(o, i, j, papers[k].available_mm());
+                let profile = profile_mm(o, heights.between(i, j));
+                let drawn = stations[j].station - stations[i].station;
                 let cost = (
                     rest.0 + warnings,
-                    rest.1 + page.width * page.height,
-                    rest.2 + 1,
+                    rest.1 + papers[k].empty(o, drawn, profile),
+                    rest.2 + page.width * page.height,
+                    rest.3 + 1,
                 );
                 if best[i].is_none_or(|(c, _, _)| better(cost, c)) {
                     best[i] = Some((cost, j, k));
@@ -432,10 +514,10 @@ pub fn draw(d: &RouteDrawing, o: &Options, c: &Candidate) -> Vec<Sheet> {
 }
 
 /// The optimiser narrowed to the one candidate that is best over every
-/// route of `routes` together (the least warnings, then paper, then
+/// route of `routes` together (the least warnings, then empty paper, then paper, then
 /// sheets summed), for one paper (or one standard, mixed) on every route.
 pub fn common_choice(routes: &[(&RouteDrawing, &Options)], opt: &Optimise) -> Optimise {
-    let mut totals: Vec<(String, (usize, i64, usize, i64))> = Vec::new();
+    let mut totals: Vec<(String, Rank)> = Vec::new();
     for (d, o) in routes {
         for c in candidates(d, o, opt) {
             let r = c.rank();
@@ -444,7 +526,8 @@ pub fn common_choice(routes: &[(&RouteDrawing, &Options)], opt: &Optimise) -> Op
                     t.0 += r.0;
                     t.1 += r.1;
                     t.2 += r.2;
-                    t.3 = t.3.max(r.3);
+                    t.3 += r.3;
+                    t.4 = t.4.max(r.4);
                 }
                 None => totals.push((c.key.clone(), r)),
             }
@@ -459,6 +542,7 @@ pub fn common_choice(routes: &[(&RouteDrawing, &Options)], opt: &Optimise) -> Op
 /// `opt` narrowed to the candidate called `key`.
 fn narrowed(opt: &Optimise, key: &str) -> Optimise {
     let parts: Vec<&str> = key.split('|').collect();
+    let both = parts.get(1) == Some(&"both");
     let portrait = parts.get(1) == Some(&"portrait");
     let mixed = parts.get(2) == Some(&"mixed");
     let sizes = if mixed {
@@ -476,9 +560,10 @@ fn narrowed(opt: &Optimise, key: &str) -> Optimise {
     };
     Optimise {
         sizes,
-        landscape: !portrait,
-        portrait,
+        landscape: both || !portrait,
+        portrait: both || portrait,
         mixed,
+        turned_only: both,
     }
 }
 
@@ -533,15 +618,19 @@ mod tests {
         let opt = Optimise::from_names(&["A2".into(), "A3".into(), "A4".into(), "B3".into()], true)
             .unwrap();
         let all = candidates(&d, &o, &opt);
-        // 4 sizes × 2 orientations, and ISO A mixed in each orientation
-        // (ISO B has one size: no mixed candidate).
-        assert_eq!(all.len(), 10);
+        // 4 sizes × 2 orientations, ISO A mixed in each orientation
+        // (ISO B has one size: no mixed candidate), and ISO A and ISO B
+        // with each sheet turned as suits it.
+        assert_eq!(all.len(), 12);
         let best = &all[0];
         assert!(all.iter().all(|c| best.rank() <= c.rank()));
         for w in best.layout.windows(2) {
             assert_eq!(w[0].to, w[1].from);
         }
-        for c in all.iter().filter(|c| c.key.ends_with("|mixed")) {
+        for c in all
+            .iter()
+            .filter(|c| c.key.ends_with("|mixed") && !c.key.contains("|both"))
+        {
             let portrait = c.pages[0].height > c.pages[0].width;
             assert!(
                 c.pages
@@ -573,12 +662,52 @@ mod tests {
         // (or, mixed, one standard and orientation).
         let fixed = Optimise {
             mixed: false,
+            landscape: false,
             ..opt.clone()
         };
         let common = common_choice(&[(&d, &o), (&d, &o)], &fixed);
         assert_eq!(candidates(&d, &o, &common).len(), 1);
         let common = common_choice(&[(&d, &o), (&d, &o)], &opt);
-        assert!(common.landscape != common.portrait);
+        let n = candidates(&d, &o, &common).len();
+        assert!(common.landscape != common.portrait || (common.turned_only && n <= 2));
+    }
+
+    /// With both orientations, a candidate turns each sheet as suits it:
+    /// never more warnings, nor more empty paper at as many warnings,
+    /// than the same sizes in one orientation; empty paper is what the
+    /// candidates are ranked by after the warnings.
+    #[test]
+    fn sheets_turned_as_suits_them_leave_the_least_empty_paper() {
+        let o = Options {
+            vertical_scale: 500.0,
+            ..Options::default()
+        };
+        let d = crate::tests::main_route(&o);
+        let opt = Optimise::from_names(&["A1".into(), "A2".into()], true).unwrap();
+        let all = candidates(&d, &o, &opt);
+        let turned = all.iter().find(|c| c.key == "ISO A|both|mixed").unwrap();
+        for one in all
+            .iter()
+            .filter(|c| c.key.starts_with("ISO A|") && c.key != turned.key)
+        {
+            assert!(
+                (turned.warnings, turned.empty) <= (one.warnings, one.empty + 1e-3),
+                "{} {} {} vs {} {}",
+                one.label,
+                one.warnings,
+                one.empty,
+                turned.warnings,
+                turned.empty
+            );
+        }
+        for w in all.windows(2) {
+            assert!(w[0].warnings < w[1].warnings || w[0].empty <= w[1].empty + 1e-3);
+        }
+        assert!(all.iter().all(|c| c.empty >= 0.0 && c.empty < c.area));
+        // One size: the sheets of it turned.
+        let a1 = Optimise::from_names(&["A1".into()], false).unwrap();
+        let keys: Vec<String> = candidates(&d, &o, &a1).into_iter().map(|c| c.key).collect();
+        assert!(keys.contains(&"A1|both".to_owned()), "{keys:?}");
     }
 
     #[test]
@@ -596,5 +725,7 @@ mod tests {
             ["A2", "A3"]
         );
         assert!(iso.mixed && iso.landscape && !iso.portrait);
+        let turned = narrowed(&opt, "ISO A|both|mixed");
+        assert!(turned.landscape && turned.portrait && turned.turned_only);
     }
 }

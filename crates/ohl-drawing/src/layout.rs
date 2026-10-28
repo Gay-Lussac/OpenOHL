@@ -2621,6 +2621,10 @@ pub struct SheetLayout {
     /// The sheet's page (the same on every sheet unless the layout was
     /// optimised with different sizes allowed).
     pub page: Page,
+    /// Empty paper in the panels, mm² (the panels' width past the route
+    /// drawn and the profile panel's height above the profile): what the
+    /// optimiser keeps small.
+    pub empty: f64,
     /// The profile's parts, each with its height range (more than one
     /// where the datum is stepped).
     parts: Vec<Part>,
@@ -2674,6 +2678,18 @@ impl Paper {
     /// Height of the profile panel, mm.
     pub(crate) fn available_mm(&self) -> f64 {
         self.available
+    }
+
+    /// Empty paper in the panels of a sheet drawing `drawn` m of route
+    /// with a profile `profile` mm tall when whole ([`profile_mm`]), mm²:
+    /// the panels' width past the route drawn (plan and profile) and the
+    /// profile panel's height above the profile (none where the profile
+    /// does not fit: it fills the panel). The furniture (title block,
+    /// legend, …) is not counted: the template places it.
+    pub(crate) fn empty(&self, o: &Options, drawn: f64, profile: f64) -> f64 {
+        let width = (drawn * self.h).min(self.usable);
+        let plan = if o.plan { self.plan_h } else { 0.0 };
+        self.usable * (plan + self.available) - width * (plan + profile.min(self.available))
     }
 
     /// The frame of a sheet from `s0` to `s1` with its profile's `parts`.
@@ -3034,7 +3050,20 @@ pub(crate) fn sheet_at(
         structures: (stations[a].label.clone(), stations[b].label.clone()),
         warnings,
         page: page.clone(),
+        empty: paper.empty(o, s1 - s0, profile_mm(o, heights(d, o, s0, s1))),
         parts,
+    }
+}
+
+/// Height the profile of a stretch with heights `(essential, full)`
+/// ([`heights`]) needs to show whole, mm (with the names' room on top).
+pub(crate) fn profile_mm(o: &Options, (essential, full): ([f64; 2], [f64; 2])) -> f64 {
+    let v = 1000.0 / o.vertical_scale;
+    let r = if full[0].is_finite() { full } else { essential };
+    if r[0].is_finite() {
+        (r[1] - r[0]) * v + LABEL_ROOM_MM
+    } else {
+        0.0
     }
 }
 
@@ -3575,6 +3604,7 @@ pub(crate) fn framed_page(
         structures: ends,
         warnings: Vec::new(),
         page: page.clone(),
+        empty: 0.0,
         parts: Vec::new(),
     };
     let mut values = sheet_values(d, o, page, &sl, n);
