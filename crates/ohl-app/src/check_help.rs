@@ -278,7 +278,8 @@ pub fn solves_per_case(wind: &WindSteps, full: f64, sides_all: bool) -> usize {
 /// the sides apply to every position (the clearance windows), else to
 /// the steps only (the danger-tree check). `jumpers`: the check includes
 /// jumpers (their band margin then editable; else shown greyed, as the
-/// check leaves them out). True when something changed.
+/// check leaves them out). `arc`: the swing arc offered (not between
+/// wires: the Clearances window, 2026-10-28). True when something changed.
 pub fn wind_choice(
     ui: &mut egui::Ui,
     id: &str,
@@ -286,16 +287,22 @@ pub fn wind_choice(
     sides_all: bool,
     full: f64,
     jumpers: bool,
+    arc: bool,
 ) -> bool {
     let mut changed = false;
+    if !arc {
+        wind.arc = false;
+    }
     ui.horizontal(|ui| {
-        changed |= ui
-            .checkbox(&mut wind.arc, "swing arc")
-            .on_hover_text(
-                "Each span also anywhere on its swing arc between still air and the full \
-                 blowouts: three solves per windy case, one closed-form distance per point",
-            )
-            .changed();
+        if arc {
+            changed |= ui
+                .checkbox(&mut wind.arc, "swing arc")
+                .on_hover_text(
+                    "Each span also anywhere on its swing arc between still air and the full \
+                     blowouts: three solves per windy case, one closed-form distance per point",
+                )
+                .changed();
+        }
         changed |= ui
             .checkbox(&mut wind.stepped, "wind stepped")
             .on_hover_text(
@@ -1152,7 +1159,7 @@ mod tests {
                     band_margin: margin,
                     ..WindSteps::default()
                 };
-                wind_choice(ui, "test", &mut w, true, 600.0, true);
+                wind_choice(ui, "test", &mut w, true, 600.0, true, true);
             });
             h.run();
             assert_eq!(h.query_by_label("band margin").is_some(), arc);
@@ -1193,7 +1200,7 @@ mod tests {
                     jumper_band_margin: margin,
                     ..WindSteps::default()
                 };
-                wind_choice(ui, "test", &mut w, false, 600.0, jumpers);
+                wind_choice(ui, "test", &mut w, false, 600.0, jumpers, true);
             });
             h.run();
             assert!(h.query_by_label("jumper band margin").is_some());

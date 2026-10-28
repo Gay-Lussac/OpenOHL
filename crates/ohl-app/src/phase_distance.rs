@@ -388,6 +388,10 @@ pub struct Out {
     pub case: Option<String>,
     /// The sections of the pair clicked.
     pub sections: Vec<String>,
+    /// Under unequal wind, the winds of the pair clicked in words ("300
+    /// and 180 Pa from the right"): said with its case on the span
+    /// (owner, 2026-10-28).
+    pub wind: Option<String>,
     /// The wires to draw, replacing the last (empty: none).
     pub wires: Option<Vec<MeasureWire>>,
 }
@@ -2407,6 +2411,13 @@ impl PhaseDistanceWindow {
                 // Only the pair, as measured (each at its wind): nothing
                 // solved, the case shown kept.
                 let side = r.side.as_deref().unwrap_or("right");
+                out.wind = Some(format!(
+                    "{} Pa from the {side}",
+                    p.iter()
+                        .map(|x| format!("{x:.0}"))
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                ));
                 out.wires = Some(
                     r.wires
                         .iter()

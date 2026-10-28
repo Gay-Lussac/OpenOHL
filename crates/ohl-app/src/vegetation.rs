@@ -1512,7 +1512,7 @@ impl VegetationWindow {
                     ..s.steps
                 };
                 // The danger-tree check leaves the jumpers out: their margin greyed.
-                help::wind_choice(ui, "vegetation", &mut wind, false, full, false);
+                help::wind_choice(ui, "vegetation", &mut wind, false, full, false, true);
                 s.arc = wind.arc;
                 s.steps = WindSteps { arc: false, ..wind };
                 ui.horizontal(|ui| {

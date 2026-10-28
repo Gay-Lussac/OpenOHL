@@ -214,8 +214,15 @@ impl Ready {
     }
 
     /// A finding of the Clearances window clicked: its wire (and the other
-    /// wire of a wire rule) drawn in the case checked.
-    pub(crate) fn show_clearance_finding(&mut self, f: &crate::clearance::Finding, case: &str) {
+    /// wire of a wire rule) drawn in the weather case that governs, at its
+    /// wind (owner, 2026-10-28: the case and the wind shown on the span);
+    /// a case pair's said whole, its first case drawn.
+    pub(crate) fn show_clearance_finding(
+        &mut self,
+        f: &crate::clearance::Finding,
+        state: &ohl_clearance::zone::WindState,
+    ) {
+        use crate::model::WindDisplay;
         let section = |s: &Selection| match s {
             Selection::Span { section, .. } => Some(section.clone()),
             _ => None,
@@ -224,15 +231,38 @@ impl Ready {
             .chain(f.other.as_ref())
             .filter_map(section)
             .collect();
-        let k = self.model.cases.iter().position(|c| c.case.name == case);
-        let rc = crate::result_case::ResultCase::new(
+        let k = self
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == state.name);
+        let mut rc = crate::result_case::ResultCase::new(
             crate::result_case::From::Clearances,
             f.wire.clone(),
             sections,
             k,
-            format!("found in {case}"),
+            format!("found in {}", f.case),
             f.at,
         );
+        // The case as drawn: at its full wind from the side shown (both
+        // sides: both); else the span at the finding's wind on top.
+        let drawn = match state.side {
+            None => state.full <= 0.0,
+            Some(side) => {
+                (state.pressure - state.full).abs() < 1e-9
+                    && (self.model.wind == WindDisplay::Both || self.model.wind.primary() == side)
+            }
+        };
+        if !drawn && let Selection::Span { section, span } = &f.wire {
+            rc.solve_wire(
+                &self.model.line,
+                &self.model.library,
+                section,
+                *span,
+                state.case.clone(),
+                None,
+            );
+        }
         self.show_result_case(Some(rc));
     }
 
@@ -294,7 +324,10 @@ impl Ready {
                     self.selection.clone(),
                     out.sections.clone(),
                     k,
-                    format!("found in {name}"),
+                    match &out.wind {
+                        Some(w) => format!("found in {name}, {w}"),
+                        None => format!("found in {name}"),
+                    },
                     at,
                 );
                 self.show_result_case(Some(rc));
@@ -522,17 +555,49 @@ pub(crate) fn clearance_zone_out(
     }
 }
 
+/// The wind positions the Clearances window checks: every weather case of
+/// its rules (owner, 2026-10-28: not only the case shown) in its scope,
+/// at the wind's positions ([`ohl_clearance::zone::wind_states`]).
+pub(crate) fn clearance_states(r: &Ready) -> Vec<ohl_clearance::zone::WindState> {
+    let rules = match &r.clearances.rules {
+        Some(Ok(rules)) => rules.clone(),
+        _ => return Vec::new(),
+    };
+    let check = &r.clearances.check;
+    let cases: Vec<ohl_weather::WeatherCase> =
+        r.model.cases.iter().map(|c| c.case.clone()).collect();
+    ohl_clearance::zone::wind_states(
+        &cases,
+        |n| check.takes_case(n) && rules.iter().any(|x| ohl_clearance::applies(x, n)),
+        &ohl_clearance::rules::WindSteps {
+            // Wires among themselves: the positions themselves (the
+            // swing arc is the ground windows').
+            arc: false,
+            ..r.clearances.wind
+        },
+    )
+}
+
 pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     r.clearances.set_defaults(&r.model.line.defaults);
-    // The check needs its weather case solved, and its ground.
-    r.model.ensure_solved(r.case);
+    // The check needs its ground; every position is solved on its thread.
     r.model.ensure_check_ground();
+    let states = clearance_states(r);
     let m = &r.model;
-    let Some(solved) = m.cases.get(r.case) else {
-        return;
-    };
-    let scope = m.scope();
     let check = r.clearances.check.clone();
+    // The sections solved: the circuits and routes chosen, and the route
+    // worked on (View › Work on route).
+    let on = check.wires_on(&m.line).map(|(s, _)| s);
+    let worked = m.scope().map(|s| s.sections);
+    let sections: Vec<String> = m
+        .line
+        .sections
+        .iter()
+        .filter(|s| check.takes_circuit(&s.circuit_name))
+        .filter(|s| on.as_ref().is_none_or(|on| on.contains(&s.id)))
+        .filter(|s| worked.as_ref().is_none_or(|w| w.contains(&s.id)))
+        .map(|s| s.id.clone())
+        .collect();
     r.clearances.start(ctx, |rules| crate::clearance::Input {
         // The surfaces the ground rules name (read on the check's thread).
         surfaces: crate::model::NamedSurfaces::of(
@@ -540,26 +605,10 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
             rules.iter().filter_map(|r| r.surface.clone()),
         ),
         line: m.line.clone(),
-        case: solved.case.name.clone(),
-        // The route worked on only (View › Work on route).
-        shapes: match &scope {
-            Some(on) => solved
-                .shapes
-                .iter()
-                .filter(|s| on.sections.contains(&s.section))
-                .cloned()
-                .collect(),
-            None => solved.shapes.clone(),
-        },
-        jumpers: match &scope {
-            Some(on) => solved
-                .jumpers
-                .iter()
-                .filter(|j| on.jumpers.contains(&j.jumper))
-                .cloned()
-                .collect(),
-            None => solved.jumpers.clone(),
-        },
+        library: m.library.clone(),
+        states,
+        solved: None,
+        sections,
         // The LiDAR points of the rules' classes (the time limit).
         points: m.cloud.as_ref().map_or(0, |_| {
             let classes: Vec<u8> = rules
@@ -579,6 +628,7 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
         corridor: m.sources.corridor,
         check: check.clone(),
         progress: Default::default(),
+        done: Default::default(),
         cancel: Default::default(),
     });
 }
@@ -699,8 +749,14 @@ pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     crate::check_help::footer(ui, WINDOW, |ui| {
         let c = &mut r.clearances;
         match c.progress() {
-            Some((share, visited, elapsed)) => {
+            Some((share, visited, (done, total), elapsed)) => {
                 let p = match share {
+                    // The wind positions solved first.
+                    _ if done < total && visited == 0 => crate::check_ui::Progress::of(
+                        std::time::Duration::from_secs_f64(elapsed),
+                        done,
+                        total,
+                    ),
                     // The points read (owner, 2026-10-27).
                     Some(f) => crate::check_ui::Progress {
                         fraction: Some(f as f32),
@@ -729,12 +785,15 @@ pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 let f = crate::check_ui::RunFooter {
                     running: None,
                     why_not: why.clone(),
-                    hover: "Check wire clearances: the rules of this file, the weather case shown",
+                    hover: "Check wire clearances: the rules of this file, in every weather case \
+                            of its rules and its wind positions",
                     scope: None,
                     info: match &c.report {
-                        Some(Ok(rep)) => {
-                            Some(format!("case {}, checked in {:.1?}", rep.case, rep.took))
-                        }
+                        Some(Ok(rep)) => Some(format!(
+                            "{}, checked in {:.1?}",
+                            rep.cases_words(),
+                            rep.took
+                        )),
                         _ => None,
                     },
                 };
@@ -761,6 +820,9 @@ fn clearances_why_not(ctx: &egui::Context, r: &Ready) -> Option<String> {
         None => Some("choose a rule file (3 Rules)".into()),
         Some(Err(_)) => Some("the rule file could not be read (3 Rules)".into()),
         Some(Ok(rules)) if rules.is_empty() => Some("add a rule (3 Rules)".into()),
+        Some(Ok(_)) if clearance_states(r).is_empty() => {
+            Some("no weather case of the rules is in the model, or ticked (2 Scope)".into())
+        }
         Some(Ok(_)) => crate::check_ui::Scope::remembered(ctx, "clearances-scope", &c.check)
             .and_then(|s| s.circuits)
             .filter(|c| c.is_empty())
@@ -812,22 +874,26 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     crate::check_help::explain(
         ui,
         "The clearances between the wires of this line (and to exclusion zones), by the rules \
-         of a rule file, in the weather case shown in the views.",
+         of a rule file, in every weather case of its rules and the wind positions of 4 Settings.",
         "Each rule gives a vertical and/or radial distance by voltage (a wire pair takes the \
-         pair's voltage) between the wires of the line, to the ground or to points. The check \
-         solves the line in the weather case shown; rules across weather cases and to other \
-         lines are checked by the command line (`ohl line --weather`, `--other-line`).",
+         pair's voltage) between the wires of the line, to the ground or to points, in its \
+         weather cases. The check solves the line in every case of the rules (those ticked in \
+         2 Scope), at each wind position, and across the cases of a rule's case pairs; rules to \
+         other lines are checked by the command line (`ohl line --other-line`).",
     );
     crate::check_ui::how_computed(
         ui,
         WINDOW,
-        "Every span of the circuits and routes in scope is solved in the weather case shown. \
-         For each rule, the closest approach of each wire to its targets (another wire's \
-         surface, the ground, a LiDAR point) is measured surface to surface — straight up or \
-         down for a vertical distance, in any direction for a radial one — and compared with \
-         the rule's distance at the wire's (or the pair's) voltage. Exclusions near the ends \
-         and at structures are taken from the rule file.",
-        |_| {},
+        "Every span of the circuits and routes in scope is solved in each weather case of the \
+         rules, at each wind position (the case's own wind, or the steps from still air to it, \
+         from the sides chosen). For each rule, the closest approach of each wire to its targets \
+         (another wire's surface, the ground, a LiDAR point) is measured surface to surface — \
+         straight up or down for a vertical distance, in any direction for a radial one — and \
+         compared with the rule's distance at the wire's (or the pair's) voltage. A case pair \
+         takes the first wire in the first case and the second in the second (each case at its \
+         own wind). Per rule and wire pair the lowest over every position is listed, with the \
+         position that governs. Exclusions near the ends and at structures are the rule's.",
+        crate::check_help::radial_zone,
     );
     // To the ground and the LiDAR points: the other two clearance
     // windows (the same layout).
@@ -861,10 +927,24 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     let mut scope =
         crate::check_ui::Scope::remembered(&ctx, "clearances-scope", &r.clearances.check)
             .unwrap_or_else(|| crate::check_ui::Scope::of_check(&r.clearances.check));
+    // The weather cases run (none ticked out: every case of the rules).
+    let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let mut ticked: Vec<usize> = (0..names.len())
+        .filter(|&k| r.clearances.check.takes_case(&names[k]))
+        .collect();
+    let before = ticked.clone();
     if crate::check_ui::ScopePicker::new("clearances-scope", &r.model.line)
         .wires(&mut scope, false)
+        .cases(crate::check_ui::Cases::Many(&names, &mut ticked))
         .ui(ui)
     {
+        if ticked != before {
+            r.clearances.check.cases = if ticked.len() == names.len() {
+                Vec::new()
+            } else {
+                ticked.iter().map(|&k| names[k].clone()).collect()
+            };
+        }
         scope.write_check(&mut r.clearances.check);
         let saved = r
             .clearances
@@ -875,17 +955,25 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         }
     }
     crate::check_ui::Scope::remember(&ctx, "clearances-scope", &r.clearances.check, scope);
-    ui.label(
-        egui::RichText::new(format!(
-            "Weather case: the case shown ({})",
-            r.model
-                .cases
-                .get(r.case)
-                .map_or("none", |c| c.case.name.as_str())
-        ))
-        .small()
-        .weak(),
-    );
+    {
+        let states = clearance_states(r);
+        let rules: Vec<String> = states.iter().fold(Vec::new(), |mut v, s| {
+            if !v.contains(&s.name) {
+                v.push(s.name.clone());
+            }
+            v
+        });
+        ui.label(
+            egui::RichText::new(format!(
+                "Run checks {} weather case(s) of the rules ({}) at {} wind position(s)",
+                rules.len(),
+                rules.join(", "),
+                states.len()
+            ))
+            .small()
+            .weak(),
+        );
+    }
     ui.separator();
     crate::check_ui::section(ui, 3, "Rules", None);
     let c = &mut r.clearances;
@@ -934,6 +1022,41 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         add_rule_file(r);
     }
     crate::rule_editor::ui(ui, r);
+    ui.separator();
+    crate::check_ui::section(ui, 4, "Settings", None);
+    crate::check_help::heading(ui, "Wind", "clearances-wind");
+    // The largest pressure of the rules' cases.
+    let full = clearance_states(r)
+        .iter()
+        .map(|s| s.full)
+        .fold(0.0, f64::max);
+    let mut wind = r.clearances.wind;
+    let changed = ui
+        .horizontal_top(|ui| {
+            let changed = ui
+                .vertical(|ui| {
+                    crate::check_help::wind_choice(ui, WINDOW, &mut wind, true, full, true, false)
+                })
+                .inner;
+            let n = if wind.stepped {
+                (full / wind.step.max(1.0)).ceil() as usize
+            } else {
+                0
+            };
+            crate::check_help::wind_positions(ui, false, n);
+            changed
+        })
+        .inner;
+    if changed {
+        r.clearances.wind = wind;
+        let saved = r
+            .clearances
+            .save_check()
+            .and_then(|()| r.model.store_libraries().map(|_| ()));
+        if let Err(e) = saved {
+            r.status = Some((format!("rule file not saved: {e}"), true));
+        }
+    }
     false
 }
 
@@ -952,16 +1075,17 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
             let n = rep.findings.len();
             let text = match rep.findings.first() {
                 Some(f) => format!(
-                    "✖ {n} violation{} in case {} — worst {} {:.2} m of {:.2} m: {} ({})",
+                    "✖ {n} violation{} in {} — worst {} {:.2} m of {:.2} m: {} ({}, {})",
                     if n == 1 { "" } else { "s" },
-                    rep.case,
+                    rep.cases_words(),
                     f.measure,
                     f.distance,
                     f.required,
                     f.wire.describe(),
-                    f.rule
+                    f.rule,
+                    f.case
                 ),
-                None => format!("✔ Every rule met in case {}", rep.case),
+                None => format!("✔ Every rule met in {}", rep.cases_words()),
             };
             if crate::check_ui::verdict(ui, n > 0, &text, n > 0) {
                 go = rep.findings.first().cloned();
@@ -999,6 +1123,7 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                             Cell::num(Some(f.distance), 2),
                         ),
                     };
+                    let _ = class;
                     crate::check_ui::Row::new(
                         vec![
                             wire,
@@ -1007,13 +1132,8 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                             Cell::text(f.measure),
                             required,
                             found.bad(true),
-                            Cell::sorted(
-                                format!("{:+.2}", f.distance - f.required),
-                                f.distance - f.required,
-                            )
-                            .bad(true),
-                            Cell::text(class),
-                            Cell::sorted(f.count.to_string(), f.count as f64),
+                            Cell::text(&f.case),
+                            Cell::sorted(f.positions.to_string(), f.positions as f64),
                         ],
                         true,
                     )
@@ -1035,14 +1155,15 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                     crate::check_ui::Col::text("Measure"),
                     crate::check_ui::Col::num("Required [m]"),
                     crate::check_ui::Col::num("Found [m]")
-                        .tip("The clearance found, to the conductor's surface"),
-                    crate::check_ui::Col::num("Margin [m]").tip("Found less required"),
-                    crate::check_ui::Col::text("Target"),
-                    crate::check_ui::Col::num("Below").tip("Points or wire pieces below the rule"),
+                        .tip("The lowest clearance found, to the conductor's surface"),
+                    crate::check_ui::Col::text("Case")
+                        .tip("The weather case and wind position (or case pair) that governs"),
+                    crate::check_ui::Col::num("Count")
+                        .tip("How many wind positions and case pairs are below the rule"),
                 ],
             )
             .rows(rows)
-            .group_by(&[2, 0, 3])
+            .group_by(&[2, 0, 3, 6])
             .csv("wire-clearances.csv")
             .below(crate::check_ui::FOLDS_BELOW)
             .ui(ui);
@@ -1057,8 +1178,8 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
         None => {
             ui.label(
                 egui::RichText::new(
-                    "Not checked yet: Run (below) checks the wires against these rules in the \
-                     weather case shown.",
+                    "Not checked yet: Run (below) checks the wires against these rules in every \
+                     weather case of the rules.",
                 )
                 .weak(),
             );
@@ -1066,9 +1187,12 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
     }
     if let Some(f) = go {
         r.select(f.wire.clone());
-        if let Some(Ok(rep)) = &r.clearances.report {
-            let case = rep.case.clone();
-            r.show_clearance_finding(&f, &case);
+        let state = match &r.clearances.report {
+            Some(Ok(rep)) => rep.states.get(f.state).cloned(),
+            _ => None,
+        };
+        if let Some(state) = state {
+            r.show_clearance_finding(&f, &state);
         }
         if let Some(cam) = r.view3d.camera.as_mut() {
             cam.target = f.at;

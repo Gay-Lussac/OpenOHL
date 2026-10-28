@@ -727,7 +727,7 @@ fn the_clearances_window_has_setup_and_results_tabs() {
         crate::check_ui::current_tab(&harness.ctx, "clearances-window"),
         crate::check_ui::Tab::Results
     );
-    harness.get_by_label_contains("in case ");
+    harness.get_by_label("Case");
     harness.get_by_label("Required [m]");
     harness.get_by_label("Setup").click();
     harness.run();
