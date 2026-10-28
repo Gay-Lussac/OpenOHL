@@ -25,9 +25,16 @@ band rows. Its **vertical scale is never changed**. On each sheet:
    the panel at the step and its own height labels; the warning says where
    and by how much (`datum stepped at T4 (+5 m)`). A single span whose
    essentials alone do not fit is drawn from its lowest point, its top
-   cut, warned.
+   cut, warned — unless that would leave even the wires' lowest point
+   above the panel (a span over a deep valley): then the span's wires are
+   drawn whole when they fit (else from their lowest point, a little
+   ground below, the top cut) and the **ground is cut** at the panel's
+   bottom, a break mark and `ground cut, lowest 1 234 m` written where
+   it is lowest (2026-10-28). The wires matter more than a valley floor
+   far below them; the warning says what was cut.
 
-The profile is never empty and the ground is always on the sheet. The
+The profile is never empty, and the ground is on the sheet (cut only
+under a span over a deep valley). The
 continuous drawing (no sheets) takes the height it needs.
 
 ![Three profile panels: everything fits; only the essentials fit with the structures' tops cut; the datum stepped at a structure with a double line](../images/theory/sheet-ranges.svg)

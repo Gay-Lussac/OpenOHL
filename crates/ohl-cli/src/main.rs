@@ -2789,6 +2789,20 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                         d.wires.push(w);
                     }
                 }
+                // What the project removes of an existing line, in its
+                // own role (the template's `removed`).
+                let own: Vec<_> = solved_cases
+                    .iter()
+                    .map(|(c, shapes, jumpers)| {
+                        (
+                            c.name.as_str(),
+                            &line,
+                            shapes.as_slice(),
+                            jumpers.as_slice(),
+                        )
+                    })
+                    .collect();
+                d.split_removed(&options, &own);
                 let options = ohl_drawing::Options {
                     stations: (spec.from.is_some() || spec.to.is_some())
                         .then(|| [spec.from.unwrap_or(0.0), spec.to.unwrap_or(d.length)]),

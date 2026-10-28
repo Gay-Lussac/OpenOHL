@@ -1387,6 +1387,20 @@ impl Input {
                 );
             }
         }
+        // What the project removes of an existing line, in its own role.
+        let own: Vec<_> = self
+            .cases
+            .iter()
+            .map(|(name, shapes, jumpers)| {
+                (
+                    name.as_str(),
+                    &self.line,
+                    shapes.as_slice(),
+                    jumpers.as_slice(),
+                )
+            })
+            .collect();
+        d.split_removed(&self.options, &own);
         Ok(d)
     }
 

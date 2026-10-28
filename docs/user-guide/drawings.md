@@ -254,9 +254,13 @@ anyway and reported as a warning: change the scales or the format.
   do not fit too they are cut at the panel's top (a break mark, warned);
   when not even the ground and the wires' lowest points fit, the **datum
   is stepped** at a structure (a double line across the panel, its own
-  height labels, warned: `datum stepped at T4 (+5 m)`). The vertical
-  scale is never changed and the ground is always on the sheet ([how the
-  height range is chosen](../theory/drawings.md)).
+  height labels, warned: `datum stepped at T4 (+5 m)`). Under a span
+  over a deep valley that still does not fit, the wires are kept and the
+  ground is cut at the bottom (a break mark, its lowest height written,
+  warned). The vertical scale is never changed ([how the height range is
+  chosen](../theory/drawings.md)). In mountains, a larger vertical
+  scale (1:500 rather than 1:200) and **different sizes allowed** give
+  the valleys a larger sheet with few datum steps.
 - The height labels and grid stay inside the panel.
 - The **panels end at the match lines**: what lies beyond belongs to the
   next sheet (the template may show it faded, `beyond_match = "faded"`).

@@ -1222,6 +1222,18 @@ pub fn voltage_words(line: &Line) -> String {
     }
 }
 
+/// How near a version's structure or wire end must be to the project's to
+/// count as the same ([`RouteDrawing::split_removed`]), m.
+pub const SAME_WITHIN: f64 = 1.0;
+
+/// The ends of wire `w` in project coordinates and height: (x, y, z) of
+/// its first and last points.
+fn trace_ends(w: &Trace) -> Option<[[f64; 3]; 2]> {
+    let (a, b) = (w.xy.first()?, w.xy.last()?);
+    let (za, zb) = (w.points.first()?[2], w.points.last()?[2]);
+    Some([[a[0], a[1], za], [b[0], b[1], zb]])
+}
+
 impl RouteDrawing {
     /// Adds another version of the line (a project line, a line file)
     /// solved in `shapes` and `jumpers` — in the role `role` (a key of the
@@ -1241,6 +1253,42 @@ impl RouteDrawing {
         width: f64,
         case: (&str, Option<String>),
     ) {
+        let (structures, wires) = self.near(line, shapes, jumpers, name, width, case.clone());
+        let label = template::fill(label, &|n, _| match n {
+            "name" => Some(name.to_owned()),
+            "voltage" => Some(voltage_words(line)),
+            "role" => Some(role.to_owned()),
+            _ => None,
+        });
+        match self
+            .versions
+            .iter_mut()
+            .find(|v| v.name == name && v.role == role)
+        {
+            // Another weather case of a version already drawn: its wires.
+            Some(v) => v.wires.extend(wires),
+            None => self.versions.push(VersionDrawing {
+                name: name.to_owned(),
+                role: role.to_owned(),
+                label: label.trim().to_owned(),
+                structures,
+                wires,
+            }),
+        }
+    }
+
+    /// The structures and wires of `line` (solved in `shapes` and
+    /// `jumpers`, weather case `case`) within `width` m of this route's
+    /// centreline, along it, wires cut there ([`Self::add_version`]).
+    fn near(
+        &self,
+        line: &Line,
+        shapes: &[SectionShape],
+        jumpers: &[JumperShape],
+        name: &str,
+        width: f64,
+        case: (&str, Option<String>),
+    ) -> (Vec<Mark>, Vec<Trace>) {
         let centre = self.centreline.clone();
         let near = |s: f64, o: f64| o.abs() <= width && s >= -width && s <= self.length + width;
         let potentials = line.potentials().unwrap_or_default();
@@ -1292,26 +1340,99 @@ impl RouteDrawing {
             w.case = case.0.to_owned();
             w.dash = case.1.clone();
         }
-        let label = template::fill(label, &|n, _| match n {
-            "name" => Some(name.to_owned()),
-            "voltage" => Some(voltage_words(line)),
-            "role" => Some(role.to_owned()),
-            _ => None,
-        });
-        match self
-            .versions
-            .iter_mut()
-            .find(|v| v.name == name && v.role == role)
-        {
-            // Another weather case of a version already drawn: its wires.
-            Some(v) => v.wires.extend(wires),
-            None => self.versions.push(VersionDrawing {
-                name: name.to_owned(),
-                role: role.to_owned(),
-                label: label.trim().to_owned(),
-                structures,
-                wires,
-            }),
+        (structures, wires)
+    }
+
+    /// Splits the versions whose role names a `removed` role in the
+    /// template's `[roles]` ([`template::RoleSpec::removed`]): their
+    /// structures and wires the project does not keep move to a version
+    /// of the same name in that role, the rest stays. The project: this
+    /// line, `own` (its weather cases: name, line, shapes, jumpers), when
+    /// `o.role` is `project`, and the versions in the role `project`;
+    /// none, nothing is split. Kept: a structure within [`SAME_WITHIN`]
+    /// of a project structure in plan and at its top; a wire whose two
+    /// ends are each within it of the ends of a project wire in the same
+    /// weather case (any case when the project has none of that name).
+    /// Expected cost: the line's wires near the route once per case, and
+    /// a comparison of every pair of wire ends (a few thousand wires: well
+    /// under a second).
+    pub fn split_removed(
+        &mut self,
+        o: &Options,
+        own: &[(&str, &Line, &[SectionShape], &[JumperShape])],
+    ) {
+        let removed_of = |role: &str| o.template.roles.get(role).and_then(|r| r.removed.clone());
+        if !self.versions.iter().any(|v| removed_of(&v.role).is_some()) {
+            return;
+        }
+        let mut marks: Vec<[f64; 3]> = Vec::new();
+        let mut ends: Vec<(String, [[f64; 3]; 2])> = Vec::new();
+        if o.role.as_deref() == Some("project") {
+            for (case, line, shapes, jumpers) in own {
+                let (m, w) = self.near(line, shapes, jumpers, "", o.plan_half_width, (case, None));
+                marks.extend(m.iter().map(|m| [m.xy[0], m.xy[1], m.top]));
+                ends.extend(
+                    w.iter()
+                        .filter_map(|w| Some((w.case.clone(), trace_ends(w)?))),
+                );
+            }
+        }
+        for v in self.versions.iter().filter(|v| v.role == "project") {
+            marks.extend(v.structures.iter().map(|m| [m.xy[0], m.xy[1], m.top]));
+            ends.extend(
+                v.wires
+                    .iter()
+                    .filter_map(|w| Some((w.case.clone(), trace_ends(w)?))),
+            );
+        }
+        if marks.is_empty() && ends.is_empty() {
+            return;
+        }
+        let near = |a: [f64; 3], b: [f64; 3]| {
+            (a[0] - b[0]).hypot(a[1] - b[1]) <= SAME_WITHIN && (a[2] - b[2]).abs() <= SAME_WITHIN
+        };
+        let kept_mark = |m: &Mark| marks.iter().any(|p| near(*p, [m.xy[0], m.xy[1], m.top]));
+        let kept_wire = |w: &Trace| {
+            let same_case = ends.iter().any(|(c, _)| *c == w.case);
+            trace_ends(w).is_none_or(|[a, b]| {
+                ends.iter()
+                    .filter(|(c, _)| !same_case || *c == w.case)
+                    .any(|(_, [c, e])| (near(a, *c) && near(b, *e)) || (near(a, *e) && near(b, *c)))
+            })
+        };
+        let mut gone = Vec::new();
+        for v in &mut self.versions {
+            let Some(to) = removed_of(&v.role) else {
+                continue;
+            };
+            let (keep, go): (Vec<Mark>, Vec<Mark>) =
+                v.structures.drain(..).partition(|m| kept_mark(m));
+            v.structures = keep;
+            let (keep, go_w): (Vec<Trace>, Vec<Trace>) =
+                v.wires.drain(..).partition(|w| kept_wire(w));
+            v.wires = keep;
+            if !go.is_empty() || !go_w.is_empty() {
+                gone.push(VersionDrawing {
+                    name: v.name.clone(),
+                    role: to,
+                    label: v.label.clone(),
+                    structures: go,
+                    wires: go_w,
+                });
+            }
+        }
+        for g in gone {
+            match self
+                .versions
+                .iter_mut()
+                .find(|v| v.name == g.name && v.role == g.role)
+            {
+                Some(v) => {
+                    v.structures.extend(g.structures);
+                    v.wires.extend(g.wires);
+                }
+                None => self.versions.push(g),
+            }
         }
     }
 
@@ -1868,6 +1989,82 @@ pub(crate) mod tests {
             options,
         )
         .unwrap()
+    }
+
+    /// An existing line drawn with the project: what the project keeps
+    /// stays existing, what it does not (a structure moved, the wires on
+    /// it) goes to the template's `removed` role; without `removed`
+    /// nothing is split.
+    #[test]
+    fn existing_parts_the_project_removes_go_to_removal() {
+        let t = template::SheetTemplate::parse(
+            "format = \"ohl-sheet-template\"\nversion = 1\n\
+             [roles.existing]\nremoved = \"removal\"\n[roles.removal]\ncolour = \"#ff8000\"\n",
+            None,
+            &[],
+        )
+        .unwrap();
+        let o = Options {
+            role: Some("project".into()),
+            ..Options::default()
+        }
+        .with_template(Arc::new(t));
+        let (line, shapes, jumpers, _) = solved();
+        let mut d = main_route(&o);
+        d.set_case("t");
+        // The existing line: the whole line. The project: its second
+        // structure 20 m away and its first section gone.
+        d.add_version(
+            &line,
+            &shapes,
+            &jumpers,
+            "before",
+            "existing",
+            "{name}",
+            40.0,
+            ("t", None),
+        );
+        let mut project = line.clone();
+        let moved = project.structures[1].id.clone();
+        project.structures[1].position[0] += 20.0;
+        let dropped = shapes[0].section.clone();
+        let project_shapes: Vec<_> = shapes[1..].to_vec();
+        let mut whole = d.clone();
+        whole.split_removed(&Options::default(), &[]);
+        assert_eq!(whole.versions.len(), 1, "no `removed`: drawn whole");
+        d.split_removed(&o, &[("t", &project, &project_shapes, &jumpers)]);
+        let role = |r: &str| d.versions.iter().find(|v| v.role == r).unwrap();
+        let (kept, gone) = (role("existing"), role("removal"));
+        assert_eq!(
+            gone.structures
+                .iter()
+                .map(|m| m.id.as_str())
+                .collect::<Vec<_>>(),
+            [moved.as_str()]
+        );
+        assert!(kept.structures.iter().all(|m| m.id != moved));
+        assert!(!kept.structures.is_empty());
+        assert!(!kept.wires.is_empty());
+        assert!(!gone.wires.is_empty());
+        assert!(
+            gone.wires
+                .iter()
+                .all(|w| w.label.contains(&format!(" {dropped} span")))
+        );
+        // The same line as existing: everything kept.
+        let mut same = main_route(&o);
+        same.add_version(
+            &line,
+            &shapes,
+            &jumpers,
+            "same",
+            "existing",
+            "{name}",
+            40.0,
+            ("t", None),
+        );
+        same.split_removed(&o, &[("t", &line, &shapes, &jumpers)]);
+        assert_eq!(same.versions.len(), 1);
     }
 
     /// Isoclearance lines along the route on their own layer, cut at the
@@ -3186,7 +3383,15 @@ pub(crate) mod tests {
                         seen += along.iter().filter(|q| model::inside(***q, *r)).count();
                     }
                 }
-                assert!(all > 0 && 2 * seen > all, "1:{vscale}: {seen} of {all}");
+                // (At 1:50 a part whose wires would stand above the panel
+                // keeps them, the ground cut and said.)
+                let cut = flat
+                    .iter()
+                    .any(|(i, _)| matches!(i, Item::Text(t) if t.text.starts_with("ground cut")));
+                assert!(
+                    all > 0 && (2 * seen > all || (vscale < 100.0 && cut)),
+                    "1:{vscale}: {seen} of {all}"
+                );
                 // The profile panel down to the labels above the title
                 // block, its 5 mm padding above it (297 − 10 − 32 − 5 − 8
                 // = 242 mm).

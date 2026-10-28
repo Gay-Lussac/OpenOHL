@@ -67,7 +67,7 @@ built-in look).
 | `[plan_background]` | `drawings` (`true`, `false` or a list of names), `texts`, `points`, `own_colours`, `pen`, `orthophoto` (`true`, `false` or a list of image layers), `veil`, `dpi`, `quality` | the project's drawings and orthophotos under the plan ([below](#drawings-and-orthophotos-under-the-plan)) |
 | `[elevations]` | `place`, `offset`, `rotation`, `scale`, `labels` (`number`, `type`, `height`, `string_length`, `dimensions`, `arm_heights`), `size`, `stick` (schematic stick figures), `pen` | the structures' elevations on the plan ([Elevations](drawings.md#elevations)); their words in `[legend.labels]`: `elevation_dimension`, `elevation_arm`, `elevation_string` |
 | `[line_styles]` | `by_kind`, `low_voltage_up_to_kv`, `kind_field`, `construction_field`, `cable_dash`, `[line_styles.kinds.hv|lv|telecom|earth] = { colour, width, dash, label }` | wires by kind |
-| `[roles.<role>]` | `label`, `width`, `weight`, `colour`, `dash`, `structure_colour`, `names` | a version of the line in that role |
+| `[roles.<role>]` | `label`, `width`, `weight`, `colour`, `dash`, `structure_colour`, `names`, `removed` | a version of the line in that role; `removed = "removal"` (e.g. on `existing`): what the project does not keep of that version — a structure not within 1 m of one of the project's (in plan and at its top), a wire whose ends are not within 1 m of a project wire's in the same weather case — is drawn in that role instead, the rest in this one. The project: the line itself when its role is `project`, and the versions in the role `project` |
 | `[conductor_clearance]` | `show`, `circuits`, `mode` (`"also"`, `"instead"`), `label` (`{distance}`, `{rule}`, `{circuit}`, `{case}`, `{voltage}`), `label_at` (`"auto"`: clear of structures, wires and ground; `"middle"`, `"start"`, `"end"`), `envelope` (since 2026-10-24: one line for the whole line — at each station the lowest of the circuits' lines, the limit the ground must stay under), `envelope_label` (`{distance}`, `{rule}`, `{case}`: those of the circuits in it, each once), `pen` | lines below the lowest conductor, or one for the whole line |
 | `[title_block]` | `corner` (`bottom_right`, `bottom_left`), `width` (`"auto"`: across the frame), `columns` (a length, `"*"` the room left, `"logos"` the export's logos), `rows`, `line`, `grid` | a grid in a corner |
 | `[[title_block.cell]]` | `at = [row, column]`, `span`, `text`, `size`, `bold`, `align` (`left`, `centre`, `right`), `image` (an image's name, or `"{logos}"`) | its cells |
@@ -148,6 +148,7 @@ without):
 | `structure`, `structure_role` | structure, structure ({role}) | `{role}` |
 | `clearance_violation` | clearance violation | |
 | `datum_step` | datum step (heights read on each side) | |
+| `ground_cut` | ground cut, lowest {height} m | `height`; written in the profile where the ground is cut under a span over a deep valley |
 | `ground` | ground on the axis | |
 | `ground_side` | ground beside the axis | `{offset}` |
 | `clearance_line` | ground + {distance} m (required clearance) | `{distance}` |
