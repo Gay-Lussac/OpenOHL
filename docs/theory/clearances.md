@@ -287,6 +287,48 @@ far, nor below the required clearance, is passed over (its bound from the
 highest ground near it, as below): the counts and the lowest clearance
 are those of every angle checked in full.
 
+## Wire to wire on the swing arc (2026-10-28)
+
+The Clearances window (wire clearances) checks the line's own wires
+against each other on the swing arc too (owner, 2026-10-28;
+`ohl_clearance::wire_arc`). Two wires do not swing independently: one
+wind blows on both. So the spans are swung **together**: for a windy case
+of pressure \\( P \\) and a side, the pressure \\( p = f P \\),
+\\( 0 \le f \le 1 \\), and at every station of a span, about its
+attachment axis,
+
+\\[ \tan\varphi(f) = \tan\varphi_0 + f\,(\tan\varphi_1 - \tan\varphi_0),
+\qquad r(f) = r_0 + f\,(r_1 - r_0), \\]
+
+from the still-air \\( (\varphi_0, r_0) \\) and the full blowout's
+\\( (\varphi_1, r_1) \\) (both solved). The tangent of a rigid swing is
+the wind load over the weight per metre, and the wind load grows with the
+pressure: a heavy span swings less than a light one at the same
+pressure, as it does.
+
+**Sampling.** \\( d\varphi/df = \Delta / (1 + \tan^2\varphi) \le \Delta \\)
+(\\( \Delta = \tan\varphi_1 - \tan\varphi_0 \\)), so no point moves more
+than \\( r_\max \Delta + |r_1 - r_0| \\) per unit of \\( f \\). The swing is
+sampled in \\( n \\) steps of \\( f \\) such that this over \\( n \\) is at most
+0.1 m (at most 2000 steps: a longer swing coarser), and at each sample
+every rule between the line's wires is checked as in any case. To keep a
+long line fast, the whole line is first swung in steps of 1 m, each wire
+taken 0.5 m thicker: a pair meeting every rule there meets it everywhere
+on the swing (the bound below); only the pairs that may not, and per rule
+those within a coarse step of its lowest, are then swung alone in the
+0.1 m steps. The result is the fine pass's.
+
+**Conservative.** Between two samples a point is never farther than half
+a step from one of them: each wire is taken that much thicker. The rigid
+swing is not the wire's solved position at the pressures between; each
+wire is also taken thicker by its **band margin**, as for the ground
+(spans: the measured worst excess of the intermediate pressures plus an
+allowance; jumpers: the user's, 0 by default — a Simplification on the
+user's responsibility). Both are taken off every clearance.
+
+**Not covered.** A rule's case pairs are not swung (each case at its full
+wind). Wires of other lines are not on this arc.
+
 ## Arc or steps: speed and quality
 
 Measured on the example line (`zone_arc` test) and on an invented line

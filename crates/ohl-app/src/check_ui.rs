@@ -757,6 +757,9 @@ pub struct Cell {
     pub key: Key,
     /// Shown in the error colour (the value below its requirement).
     pub bad: bool,
+    /// More about it on hover (e.g. how it was found), before the row's
+    /// own hover.
+    pub tip: Option<String>,
 }
 
 impl Cell {
@@ -767,6 +770,7 @@ impl Cell {
             key: Key::Text(text.to_lowercase()),
             text,
             bad: false,
+            tip: None,
         }
     }
 
@@ -776,6 +780,7 @@ impl Cell {
             text: crate::job::or_dash(v, digits),
             key: Key::Num(v.unwrap_or(f64::INFINITY)),
             bad: false,
+            tip: None,
         }
     }
 
@@ -800,6 +805,7 @@ impl Cell {
             text: text.into(),
             key: Key::Num(v),
             bad: false,
+            tip: None,
         }
     }
 
@@ -815,12 +821,20 @@ impl Cell {
             text: sel.describe(),
             key: Key::Text(format!("{section}\u{0}{span:08}")),
             bad: false,
+            tip: None,
         }
     }
 
     /// Shown in the error colour.
     pub fn bad(mut self, bad: bool) -> Self {
         self.bad = bad;
+        self
+    }
+
+    /// `tip` on hover (none when empty).
+    pub fn tip(mut self, tip: impl Into<String>) -> Self {
+        let tip = tip.into();
+        self.tip = (!tip.is_empty()).then_some(tip);
         self
     }
 }
@@ -1187,10 +1201,14 @@ impl<'a> ResultTable<'a> {
                                 if cell.bad {
                                     t = t.color(ui.visuals().error_fg_color);
                                 }
+                                let hover = match &cell.tip {
+                                    Some(more) => format!("{more}\n\n{tip}"),
+                                    None => tip.to_owned(),
+                                };
                                 let add = |ui: &mut egui::Ui| {
                                     ui.add(egui::Label::new(t).sense(egui::Sense::click()))
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .on_hover_text(tip)
+                                        .on_hover_text(hover)
                                         .clicked()
                                 };
                                 if numeric { num(ui, add) } else { add(ui) }

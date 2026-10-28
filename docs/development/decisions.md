@@ -125,6 +125,36 @@ of Parts A, B and C).
   its removal colour is yellow, as ESTI 235 1.3.4 asks (first orange;
   owner, 2026-10-28: "Keep it yellow as per the esti requirements").
 
+**Check windows phase 2 confirmed, with changes (owner, 2026-10-28)**
+
+- Case pairs: a rule compares the wires in the same weather case by
+  default; its case pairs compare different cases (each at its full
+  wind) — kept.
+- **Swing arc between wires** (owner: "please do but explain it clearly
+  on how it works"): the Clearances window's *swing arc* swings the
+  line's wires together by one wind (`ohl_clearance::wire_arc`): per
+  windy case and side, the pressure from 0 to the case's, each span at
+  its own angle (tan φ linear in the pressure between its still-air and
+  full-blowout angles, the radius likewise), sampled so no point moves
+  more than 0.1 m between samples; each wire taken thicker by half a
+  step and its band margin (conservative); one position per side in
+  Count. Coarse first (1 m steps, wires 0.5 m thicker, the whole line),
+  then only the pairs that may break a rule (and those near a rule's
+  lowest) in the fine steps: the fine pass's result with far less work
+  on a long line. Case pairs are not swung; the ground and LiDAR points stay at
+  the solved positions in this window (their own windows have the arc).
+  Explained in the window (?) and the theory page.
+- Count, Remove asked inline, new rules at the end — kept; the rules can
+  now be reordered (**Move up** / **Move down** in the rule table).
+- **This project** presets: a project preset the same as a plugin's
+  (same rule file text or same rules read) is listed under the plugin
+  only.
+- Scoped checks solving the whole line, the tables' layout — kept.
+- Corrections (owner: "the functionality stays the same"): the shared
+  table's cells take a hover text (`Cell::tip`); Thermal rating's heat
+  terms on hover and Line parameters' transposition note on a circuit
+  are back.
+
 **Optimised sheets: least empty paper, each sheet turned as suits it (owner, 2026-10-28)**
 
 - Owner: "both is always allowed if ticked in the parameters it should

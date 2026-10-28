@@ -13,8 +13,10 @@
 //! the design-code plugins turned on, grouped by plugin, then the
 //! project's generated presets), the preset chosen previewed with
 //! **Merge** (a rule of the same name replaced, the others added) and
-//! **Replace**; **Import…** and **Export…** (.ohlr); **Add rule**,
-//! **Duplicate** and **Remove** (asked first).
+//! **Replace**; **Import…** and **Export…** (.ohlr); **Add rule** (at
+//! the end), **Duplicate**, **Remove** (asked first), **Move up** and
+//! **Move down** (owner, 2026-10-28: the rules' order is the user's; the
+//! rule file keeps it).
 //!
 //! The table keeps what the user looks at (the row selected, the preset
 //! chosen) for the session; the rules are the window's, kept where the
@@ -574,6 +576,30 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
                 {
                     st.confirm = sel;
                 }
+                let n = rules.len();
+                if ui
+                    .add_enabled(sel.is_some_and(|k| k > 0), egui::Button::new("Move up"))
+                    .on_hover_text("The rule selected one place up (the rule file keeps the order)")
+                    .clicked()
+                    && let Some(k) = sel
+                {
+                    rules.swap(k, k - 1);
+                    st.selected = Some(k - 1);
+                    out.changed = true;
+                }
+                if ui
+                    .add_enabled(
+                        sel.is_some_and(|k| k + 1 < n),
+                        egui::Button::new("Move down"),
+                    )
+                    .on_hover_text("The rule selected one place down")
+                    .clicked()
+                    && let Some(k) = sel
+                {
+                    rules.swap(k, k + 1);
+                    st.selected = Some(k + 1);
+                    out.changed = true;
+                }
             });
             ui.label(
                 egui::RichText::new(format!("{} rule(s)", rules.len()))
@@ -740,11 +766,32 @@ fn groups(ui: &egui::Ui, p: &Presets<'_>) -> Vec<(String, Result<Vec<RulePresetC
             )
         })
         .collect();
-    let own = project_presets(ui.ctx(), p.model, part);
+    let own = own_presets(&project_presets(ui.ctx(), p.model, part), p.plugins);
     if !own.is_empty() {
-        out.push((PROJECT_GROUP.to_owned(), Ok(own.as_ref().clone())));
+        out.push((PROJECT_GROUP.to_owned(), Ok(own)));
     }
     out
+}
+
+/// The project's presets that are its own (owner, 2026-10-28): not those
+/// the same as a plugin's (a design code's presets written into the
+/// project, e.g. by Line › Criteria › Design code) — the same rule file
+/// text, or the same rules read.
+fn own_presets(project: &[RulePresetChecked], plugins: &[PluginPresets]) -> Vec<RulePresetChecked> {
+    let theirs: Vec<&RulePresetChecked> = plugins
+        .iter()
+        .filter_map(|p| p.presets.as_ref().ok())
+        .flatten()
+        .collect();
+    project
+        .iter()
+        .filter(|x| {
+            !theirs.iter().any(|t| {
+                t.rules_text.trim() == x.rules_text.trim() || t.rules.rules == x.rules.rules
+            })
+        })
+        .cloned()
+        .collect()
 }
 
 /// *Preset ▾*: one dropdown, the plugins' presets grouped by plugin, then
@@ -996,6 +1043,54 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["rule 2", "rule 2 (copy)"]
         );
+        // The order: the second down is greyed, up swaps it with the
+        // first (and keeps it selected).
+        h.get_by_label("rule 2 (copy)").click();
+        h.run();
+        h.get_by_label("Move up").click();
+        h.run();
+        assert_eq!(
+            h.state()
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            ["rule 2 (copy)", "rule 2"]
+        );
+        h.get_by_label("editing rule 2 (copy)");
+        h.get_by_label("Move down").click();
+        h.run();
+        assert_eq!(h.state()[1].name, "rule 2 (copy)");
+    }
+
+    /// A project preset the same as a plugin's is not listed under This
+    /// project; one of the project's own is.
+    #[test]
+    fn project_presets_the_same_as_a_plugins_are_not_its_own() {
+        let preset = |name: &str, text: &str| RulePresetChecked {
+            name: name.into(),
+            description: String::new(),
+            rules_text: text.into(),
+            weather_text: String::new(),
+            rules: RuleSet::parse(text).unwrap(),
+            weather: None,
+        };
+        let code = "[[rule]]\nname = \"ground\"\ntarget = \"ground\"\nvertical = 6.0\n";
+        let own = "[[rule]]\nname = \"ground\"\ntarget = \"ground\"\nvertical = 7.5\n";
+        let plugins = vec![PluginPresets {
+            plugin: "code".into(),
+            presets: Ok(vec![preset("roads", code)]),
+        }];
+        let project = vec![
+            preset("roads", &format!("# written by the code\n{code}")),
+            preset("mine", own),
+        ];
+        let kept = own_presets(&project, &plugins);
+        assert_eq!(
+            kept.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            ["mine"]
+        );
+        // No plugin: every one the project's.
+        assert_eq!(own_presets(&project, &[]).len(), 2);
     }
 
     /// Merge replaces a rule of the same name in its place and adds the

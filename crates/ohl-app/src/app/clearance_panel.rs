@@ -555,6 +555,27 @@ pub(crate) fn clearance_zone_out(
     }
 }
 
+/// How the swing arc works between the wires (the Clearances window's
+/// wind settings; [`ohl_clearance::wire_arc`]).
+const WIRE_ARC_HELP: &str = "How the swing arc works between wires: in each windy case one wind \
+    blows on every span at once and swings them together. The pressure is taken from 0 (still \
+    air) up to the case's own, from each side chosen. At every pressure each span hangs at its \
+    own angle about the line through its attachment points: the tangent of the angle grows in \
+    proportion to the pressure, from the span's still-air angle to its full blowout's (both \
+    solved); its distance from that line goes from the one to the other the same way. So a \
+    heavy span swings less than a light one at the same pressure, as it does. The pressures are \
+    taken so close together that no point of a wire moves more than 0.1 m between two of them \
+    (first the whole line in 1 m steps with every wire 0.5 m thicker: a pair clear there is clear \
+    on the whole swing; then only the pairs that may not be, in the 0.1 m steps), and the wires \
+    are checked against each other at each, with every rule between wires of the \
+    line (its measures, voltages and exclusions as in any case); a rule's case pairs are not \
+    swung. Conservative: every wire is taken thicker by half of that movement and by the band \
+    margin (the intermediate pressures' real positions lie up to that off the swing; a jumper's \
+    margin is yours). A finding says the pressure that governs; it counts as one position per \
+    side. The ground and LiDAR points are checked here at the positions solved (still air and \
+    the full blowouts, and the steps when ticked); their own windows (Vertical / Radial \
+    clearances, Vegetation) check them on the swing arc.";
+
 /// The wind positions the Clearances window checks: every weather case of
 /// its rules (owner, 2026-10-28: not only the case shown) in its scope,
 /// at the wind's positions ([`ohl_clearance::zone::wind_states`]).
@@ -569,12 +590,9 @@ pub(crate) fn clearance_states(r: &Ready) -> Vec<ohl_clearance::zone::WindState>
     ohl_clearance::zone::wind_states(
         &cases,
         |n| check.takes_case(n) && rules.iter().any(|x| ohl_clearance::applies(x, n)),
-        &ohl_clearance::rules::WindSteps {
-            // Wires among themselves: the positions themselves (the
-            // swing arc is the ground windows').
-            arc: false,
-            ..r.clearances.wind
-        },
+        // With the swing arc: each windy case's still air too (the
+        // wires swung between it and the full blowouts).
+        &r.clearances.wind,
     )
 }
 
@@ -585,6 +603,7 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     let states = clearance_states(r);
     let m = &r.model;
     let check = r.clearances.check.clone();
+    let arc = r.clearances.wind.arc.then(|| r.clearances.wind.margins());
     // The sections solved: the circuits and routes chosen, and the route
     // worked on (View › Work on route).
     let on = check.wires_on(&m.line).map(|(s, _)| s);
@@ -627,6 +646,7 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
         ground: m.ground_for_checks(),
         corridor: m.sources.corridor,
         check: check.clone(),
+        arc,
         progress: Default::default(),
         done: Default::default(),
         cancel: Default::default(),
@@ -1035,7 +1055,18 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         .horizontal_top(|ui| {
             let changed = ui
                 .vertical(|ui| {
-                    crate::check_help::wind_choice(ui, WINDOW, &mut wind, true, full, true, false)
+                    let changed = crate::check_help::wind_choice(
+                        ui, WINDOW, &mut wind, true, full, true, true,
+                    );
+                    if wind.arc {
+                        crate::check_help::explain(
+                            ui,
+                            "Swing arc here: the wires against each other, swung together by one \
+                             wind.",
+                            WIRE_ARC_HELP,
+                        );
+                    }
+                    changed
                 })
                 .inner;
             let n = if wind.stepped {
@@ -1043,7 +1074,7 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
             } else {
                 0
             };
-            crate::check_help::wind_positions(ui, false, n);
+            crate::check_help::wind_positions(ui, wind.arc, n);
             changed
         })
         .inner;

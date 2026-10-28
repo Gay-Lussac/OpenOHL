@@ -1057,6 +1057,54 @@ impl SwingArc {
             .collect()
     }
 
+    /// The centre line of the wire swung the fraction `f` (0: still air,
+    /// 1: the full blowout) of its way to side `side` (0: blown to the
+    /// left, 2: to the right) as the same wind on every span swings it
+    /// (2026-10-28, wire to wire on the swing arc): at every station the
+    /// angle φ about the axis with tan φ = tan φ₀ + f (tan φ₁ − tan φ₀)
+    /// (the wind's share of the load grows with the pressure, the weight
+    /// stays) and the radius r₀ + f (r₁ − r₀), from the still-air (φ₀, r₀)
+    /// and the full blowout's (φ₁, r₁) points there.
+    pub fn swung(&self, side: usize, f: f64) -> Vec<P3> {
+        self.stations
+            .iter()
+            .zip(&self.points)
+            .map(|(&s, p)| {
+                let centre = [
+                    self.axis.a1[0] + s * self.axis.u[0],
+                    self.axis.a1[1] + s * self.axis.u[1],
+                    self.axis.a1[2] + s * self.axis.u[2],
+                ];
+                let (r0, a0) = self.polar(sub(p[1], centre));
+                let (r1, a1) = self.polar(sub(p[side], centre));
+                let phi = (a0.tan() + f * (a1.tan() - a0.tan())).atan();
+                self.point(centre, r0 + f * (r1 - r0), phi)
+            })
+            .collect()
+    }
+
+    /// A bound on how far any point of the wire moves while f runs from
+    /// 0 to 1 in [`SwingArc::swung`] at its fastest, m: at every station
+    /// r_max |tan φ₁ − tan φ₀| + |r₁ − r₀| (dφ/df = Δ / (1 + tan² φ) ≤ Δ,
+    /// Δ = tan φ₁ − tan φ₀), the largest; a step of f of 1/n moves no point
+    /// more than this over n.
+    pub fn swing_reach(&self, side: usize) -> f64 {
+        self.stations
+            .iter()
+            .zip(&self.points)
+            .map(|(&s, p)| {
+                let centre = [
+                    self.axis.a1[0] + s * self.axis.u[0],
+                    self.axis.a1[1] + s * self.axis.u[1],
+                    self.axis.a1[2] + s * self.axis.u[2],
+                ];
+                let (r0, a0) = self.polar(sub(p[1], centre));
+                let (r1, a1) = self.polar(sub(p[side], centre));
+                r0.max(r1) * (a1.tan() - a0.tan()).abs() + (r1 - r0).abs()
+            })
+            .fold(0.0, f64::max)
+    }
+
     /// The angles of the circle of radius `r` at `place` whose point lies
     /// within `band` across the line of `y` (its offset to the right of
     /// the axis, m): up to three intervals (the lower half of the circle,

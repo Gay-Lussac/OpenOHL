@@ -147,6 +147,78 @@ fn wire_clearances_run_every_case_of_the_rules() {
     );
 }
 
+/// Wire to wire on the swing arc (owner, 2026-10-28): with the arc, a
+/// windy case's wires are also checked swung together from still air to
+/// each full blowout — a finding there says the pressure that governs,
+/// counts as one position per side, and is never above what the solved
+/// positions alone give for the same pair (the swing passes through them,
+/// the wires taken thicker).
+#[test]
+fn wire_clearances_on_the_swing_arc() {
+    let m = synthetic();
+    let windy: Vec<ohl_weather::WeatherCase> = m
+        .cases
+        .iter()
+        .map(|c| c.case.clone())
+        .filter(|c| c.wind_pressure.si() > 0.0)
+        .take(1)
+        .collect();
+    assert!(!windy.is_empty(), "a windy case in the synthetic model");
+    let rules = ohl_clearance::RuleSet::parse(
+        "[[rule]]\nname = \"phases\"\ntarget = \"same_line\"\nradial = 8.0\n",
+    )
+    .unwrap()
+    .rules;
+    let wind = ohl_clearance::rules::WindSteps {
+        arc: true,
+        ..Default::default()
+    };
+    let states = ohl_clearance::zone::wind_states(&windy, |_| true, &wind);
+    // Still air and both full blowouts.
+    assert_eq!(states.len(), 3);
+    let run = |arc: bool| {
+        crate::clearance::run(&crate::clearance::Input {
+            states: states.clone(),
+            solved: None,
+            arc: arc.then(|| wind.margins()),
+            ..clearance_input(&m, rules.clone())
+        })
+        .unwrap()
+    };
+    let (with, without) = (run(true), run(false));
+    let key = |f: &crate::clearance::Finding| {
+        (
+            f.measure,
+            f.wire.describe(),
+            f.other.as_ref().map(|o| o.describe()),
+        )
+    };
+    let swung: Vec<&crate::clearance::Finding> = with
+        .findings
+        .iter()
+        .filter(|f| f.case.contains("swing arc"))
+        .collect();
+    assert!(!swung.is_empty(), "{:?}", with.notes);
+    assert!(
+        with.findings
+            .iter()
+            .all(|f| f.positions <= states.len() + 2)
+    );
+    for f in &without.findings {
+        let g = with.findings.iter().find(|g| key(g) == key(f)).unwrap();
+        assert!(
+            g.distance <= f.distance + 1e-9,
+            "{} {}",
+            g.distance,
+            f.distance
+        );
+        assert!(g.positions > f.positions);
+    }
+    for f in &swung {
+        assert!(f.case.contains(" Pa from the "), "{}", f.case);
+    }
+}
+
 /// The Clearances window finds the example rules next to the model; checks run
 /// on demand (Checks › Run checks), not at start; the violations are drawn.
 #[test]

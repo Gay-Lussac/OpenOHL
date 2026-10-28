@@ -278,8 +278,8 @@ pub fn solves_per_case(wind: &WindSteps, full: f64, sides_all: bool) -> usize {
 /// the sides apply to every position (the clearance windows), else to
 /// the steps only (the danger-tree check). `jumpers`: the check includes
 /// jumpers (their band margin then editable; else shown greyed, as the
-/// check leaves them out). `arc`: the swing arc offered (not between
-/// wires: the Clearances window, 2026-10-28). True when something changed.
+/// check leaves them out). `arc`: the swing arc offered. True when
+/// something changed.
 pub fn wind_choice(
     ui: &mut egui::Ui,
     id: &str,

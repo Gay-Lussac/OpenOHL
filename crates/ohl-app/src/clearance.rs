@@ -10,7 +10,10 @@
 //! only the case shown), at each wind position of the window's wind (the
 //! steps from still air to the case's pressure, from the sides chosen;
 //! [`ohl_clearance::zone::wind_states`]), and across the cases of the
-//! rules' case pairs ([`ohl_clearance::check_case_pairs`]). The findings
+//! rules' case pairs ([`ohl_clearance::check_case_pairs`]); with the
+//! swing arc ticked (owner, 2026-10-28), the wires also against each
+//! other while the same wind swings them together from still air to each
+//! full blowout ([`ohl_clearance::wire_arc`]). The findings
 //! are the envelope over the positions: per rule, measure and wire (pair)
 //! the lowest clearance, with the position that governs it and how many
 //! positions are below the rule.
@@ -142,6 +145,9 @@ pub struct Input {
     /// LiDAR points of the rules' classes in the cloud (the time limit,
     /// [`ohl_clearance::zone::time_limit`]).
     pub points: u64,
+    /// The swing arc between the wires, with the bands' margins (the
+    /// states then hold each windy case's still air and full blowouts).
+    pub arc: Option<ohl_clearance::positions::BandMargins>,
 }
 
 impl Input {
@@ -179,6 +185,7 @@ impl Input {
             done: Default::default(),
             cancel: Default::default(),
             points: 0,
+            arc: None,
         }
     }
 }
@@ -244,20 +251,192 @@ fn findings(
                 f.wire.describe(),
                 f.other.as_ref().map(Selection::describe),
             );
-            match out.get_mut(&key) {
-                Some(o) => {
-                    let positions = o.positions + 1;
-                    if f.distance - f.required < o.distance - o.required {
-                        *o = f;
+            keep(out, key, f);
+        }
+    }
+}
+
+/// `f` into the envelope `out` at `key`: the lower kept, the positions
+/// counted.
+fn keep(out: &mut BTreeMap<Key, Finding>, key: Key, f: Finding) {
+    match out.get_mut(&key) {
+        Some(o) => {
+            let positions = o.positions + f.positions;
+            if f.distance - f.required < o.distance - o.required {
+                *o = f;
+            }
+            o.positions = positions;
+        }
+        None => {
+            out.insert(key, f);
+        }
+    }
+}
+
+/// `r`'s hits folded into `into` (the lower of each kept).
+fn fold(into: &mut Option<WireResult>, r: &WireResult) {
+    let Some(i) = into else {
+        *into = Some(r.clone());
+        return;
+    };
+    if r.vertical
+        .is_some_and(|h| i.vertical.is_none_or(|o| h.distance < o.distance))
+    {
+        i.vertical = r.vertical;
+    }
+    if r.radial
+        .is_some_and(|h| i.radial.is_none_or(|o| h.distance < o.distance))
+    {
+        i.radial = r.radial;
+    }
+}
+
+/// Wire to wire on the swing arc (owner, 2026-10-28): every swing of
+/// `arcs` ([`ohl_clearance::wire_arc`]) first in coarse steps over all
+/// its wires (each thicker by half a coarse step: a pair meeting every
+/// rule there meets it on the whole swing), then the pairs that may not
+/// — and per rule those near its lowest — swung alone in fine steps, the
+/// rules between the line's own wires checked at each sample; per rule,
+/// measure and pair the lowest over a swing, counted as one position. The
+/// lowest results per rule go to `results`.
+#[allow(clippy::too_many_arguments)]
+fn swing_findings(
+    input: &Input,
+    rules: &[Rule],
+    states: &[WindState],
+    arcs: &[ohl_clearance::zone_arc::ZoneArc],
+    cases: &[ohl_clearance::zone_arc::ArcCase],
+    voltages: &[Option<ohl_line::electrical::Potential>],
+    found: &mut BTreeMap<Key, Finding>,
+    results: &mut [Vec<WireResult>],
+) -> Result<(), String> {
+    use ohl_clearance::wire_arc::{WIRE_ARC_COARSE, WIRE_ARC_STEP, swings};
+    // The rules between the line's own wires in one case only.
+    let own: Vec<usize> = (0..rules.len())
+        .filter(|&k| {
+            matches!(rules[k].target, ohl_clearance::Target::SameLine { .. })
+                && rules[k].case_pairs.is_empty()
+        })
+        .collect();
+    if own.is_empty() {
+        return Ok(());
+    }
+    let subset: Vec<Rule> = own.iter().map(|&k| rules[k].clone()).collect();
+    let check = |wires: &[Wire], name: &str| {
+        ohl_clearance::check_case(
+            &subset,
+            name,
+            wires,
+            CaseTargets {
+                voltages,
+                other_voltages: &[],
+                ground: None,
+                surfaces: &[],
+                point_classes: &[],
+                points: None,
+                other_wires: &[],
+            },
+        )
+    };
+    let stopped = || {
+        if input.cancel.is_cancelled() {
+            Err("stopped".to_owned())
+        } else {
+            Ok(())
+        }
+    };
+    for swing in swings(arcs, cases, WIRE_ARC_COARSE) {
+        let state = &states[swing.state];
+        // Coarse: per rule and pair (arcs) the lowest; the pairs below a
+        // rule.
+        let mut lows: BTreeMap<(usize, usize, usize), f64> = BTreeMap::new();
+        let mut below: BTreeSet<(usize, usize)> = BTreeSet::new();
+        for k in 0..=swing.samples {
+            stopped()?;
+            let wires = swing.wires(arcs, k);
+            for c in &check(&wires, &state.name)? {
+                let Outcome::Pairs(pairs) = &c.outcome else {
+                    continue;
+                };
+                for p in pairs {
+                    let (Some(a), Some(b)) = (
+                        swing.arc_of(arcs, &c.wires[p.a]),
+                        swing.arc_of(arcs, &c.wires[p.b]),
+                    ) else {
+                        continue;
+                    };
+                    let pair = (a.min(b), a.max(b));
+                    for (_, hit, required, _) in p.result.measures() {
+                        let Some(h) = hit else { continue };
+                        let low = lows
+                            .entry((c.rule, pair.0, pair.1))
+                            .or_insert(f64::INFINITY);
+                        *low = low.min(h.distance);
+                        if required.is_some_and(|r| h.distance < r) {
+                            below.insert(pair);
+                        }
                     }
-                    o.positions = positions;
-                }
-                None => {
-                    out.insert(key, f);
                 }
             }
         }
+        // And per rule the pairs near its lowest (its lowest in words).
+        for r in 0..own.len() {
+            let least = lows
+                .iter()
+                .filter(|((k, _, _), _)| *k == r)
+                .map(|(_, d)| *d)
+                .fold(f64::INFINITY, f64::min);
+            below.extend(
+                lows.iter()
+                    .filter(|((k, _, _), d)| *k == r && **d <= least + 2.0 * swing.half_step)
+                    .map(|((_, a, b), _)| (*a, *b)),
+            );
+        }
+        // Fine: each of those pairs swung alone.
+        let mut local: BTreeMap<Key, Finding> = BTreeMap::new();
+        let mut lowest: Vec<Option<WireResult>> = vec![None; own.len()];
+        for (a, b) in below {
+            let fine = swing.only(arcs, &[a, b], WIRE_ARC_STEP);
+            for k in 0..=fine.samples {
+                stopped()?;
+                let f = k as f64 / fine.samples as f64;
+                let label = format!(
+                    "{}, swing arc: {:.0} of {:.0} Pa from the {}",
+                    state.name,
+                    f * state.full,
+                    state.full,
+                    swing.side.as_str()
+                );
+                let wires = fine.wires(arcs, k);
+                for c in &check(&wires, &state.name)? {
+                    let Outcome::Pairs(pairs) = &c.outcome else {
+                        continue;
+                    };
+                    for p in pairs {
+                        findings(
+                            own[c.rule],
+                            &subset[c.rule],
+                            &c.wires[p.a],
+                            Some(&c.wires[p.b]),
+                            &p.result,
+                            &label,
+                            swing.state,
+                            &mut local,
+                        );
+                        fold(&mut lowest[c.rule], &p.result);
+                    }
+                }
+            }
+        }
+        for (key, mut f) in local {
+            f.positions = 1;
+            keep(found, key, f);
+        }
+        for (k, r) in lowest.into_iter().enumerate() {
+            results[own[k]].extend(r);
+        }
     }
+    Ok(())
 }
 
 /// Runs the check.
@@ -469,6 +648,35 @@ pub fn run(input: &Input) -> Result<Report, String> {
                 }
             }
         }
+    }
+    // The swing arc between the wires: all swung together by one wind.
+    if let Some(margins) = input.arc {
+        let cases = ohl_clearance::zone_arc::arc_cases(states);
+        let (shapes, jumpers): (Vec<Vec<SectionShape>>, Vec<Vec<JumperShape>>) =
+            solved.iter().cloned().unzip();
+        let (mut arcs, notes) =
+            ohl_clearance::zone_arc::zone_arcs(line, &shapes, &jumpers, &cases, margins);
+        arcs.retain(|a| {
+            let w = &a.wire;
+            input.check.takes_circuit(&w.circuit)
+                && on.as_ref().is_none_or(|(sections, jumpers)| {
+                    match w.section.strip_prefix("jumper:") {
+                        Some(j) => jumpers.contains(j),
+                        None => sections.contains(&w.section),
+                    }
+                })
+        });
+        report.notes.extend(notes);
+        swing_findings(
+            input,
+            rules,
+            states,
+            &arcs,
+            &cases,
+            &voltages,
+            &mut found,
+            &mut results,
+        )?;
     }
     // The case pairs: each case as it is (its own wind, from each side
     // checked; not the steps) against the other.

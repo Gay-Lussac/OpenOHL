@@ -155,8 +155,9 @@ another route is taken whole). The desktop windows and the Clearances
 tab keep their choice of circuits, routes and alignments here; the
 Clearances window its weather cases too (`cases`, 2026-10-28; built, in
 active development: names with `*` `?`, none: every case of the rules)
-and its wind in `[wind]` (its steps and sides; the swing arc is the
-ground windows' only).
+and its wind in `[wind]` (its steps and sides, and `arc = true`: since
+2026-10-28 the wires against each other swung together by one wind —
+[the desktop application](desktop-app.md), Clearances window).
 
 Design-code plugins may give such rule files as **clearance presets**
 for those windows ([Design codes](design-codes.md#clearance-presets)),
