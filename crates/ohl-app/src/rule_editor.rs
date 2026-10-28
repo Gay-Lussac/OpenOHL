@@ -3,14 +3,18 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The Clearances window's **rule editor**: the rules of the rule file chosen
-//! (ground, LiDAR classes, the line's own wires, other lines), each
+//! (ground, LiDAR classes, the line's own wires, other lines) in the
+//! shared rule table ([`crate::check_ui::RuleTable`], 2026-10-28): each
 //! distance set as one distance, a table by voltage or a base plus an
-//! amount per kV ([`crate::requirement_ui`]), rules added and removed;
-//! and **Load preset…**: the presets of clearance rules of the enabled
-//! design-code plugins (their optional `rule-presets` export), previewed,
-//! then merged into the file (a rule of the same name replaced, the
-//! others added) or replacing its rules. Its weather cases are matched to
-//! the project's by physics first, then by name ([`crate::preset_cases`]).
+//! amount per kV ([`crate::requirement_ui`]); the weather cases, and for
+//! the rules between wires the case pairs, the pair's voltage, the
+//! circuits and the exclusions ([`RuleFields`]); rules added, copied and
+//! removed; **Preset ▾**: the presets of clearance rules of the enabled
+//! design-code plugins (their optional `rule-presets` export) and of the
+//! project, previewed, then merged into the file (a rule of the same name
+//! replaced, the others added) or replacing its rules. Its weather cases
+//! are matched to the project's by physics first, then by name
+//! ([`crate::preset_cases`]).
 //!
 //! Each rule's **voltage filter** ("only for these voltages", empty:
 //! every wire) is shown with its distances: optional with one distance,
@@ -53,13 +57,81 @@ pub struct EditRule {
     /// Only the wires of these nominal voltages, kV (0: earthed); empty:
     /// every wire.
     pub voltages: Vec<f64>,
+    /// Its weather cases, case pairs and the wire rules' fields
+    /// (owner, 2026-10-28: edited in the window, not only in the file).
+    pub fields: RuleFields,
+    /// [`EditRule::fields`] as the file has them (a field is written only
+    /// when it changed: the file's own text kept otherwise).
+    written: RuleFields,
     /// The rest of the rule as read (every field but the name, the
-    /// distances and the voltages), to find rules alike
-    /// ([`merge_groups`]).
+    /// distances, the voltages and [`EditRule::fields`]), to find rules
+    /// alike ([`merge_groups`]).
     rest: String,
+    /// Which table of the file it is (0: a new rule; a copy keeps its
+    /// original's until it is written).
+    id: u64,
+}
+
+/// The fields of a rule besides its name, distances and voltages that the
+/// rule table edits (the others stay as the file has them).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RuleFields {
+    /// The weather cases it applies to (`*` `?` wildcards; empty: every
+    /// case).
+    pub cases: Vec<String>,
+    /// Wire rules: the first wire in the first case, the second in the
+    /// second (empty: both in the same case).
+    pub case_pairs: Vec<[String; 2]>,
+    /// Wire rules: the voltage of a pair.
+    pub pair_voltage: ohl_clearance::rules::PairVoltage,
+    /// Wires of this line: the pairs checked by their circuits.
+    pub circuits: ohl_clearance::rules::CircuitFilter,
+    /// Wires of this line: wires of the same circuit and phase too.
+    pub include_same_phase: bool,
+    /// The wire within this horizontal distance of its ends left out, m.
+    pub exclude_near_ends: f64,
+    /// Spans ending at these structures left out (`*` `?` wildcards).
+    pub exclude_spans_at: Vec<String>,
+}
+
+impl RuleFields {
+    /// The fields of rule `r`.
+    fn of(r: &ohl_clearance::Rule) -> Self {
+        Self {
+            cases: r.cases.clone(),
+            case_pairs: r.case_pairs.clone(),
+            pair_voltage: r.pair_voltage,
+            circuits: r.circuits,
+            include_same_phase: matches!(
+                r.target,
+                ohl_clearance::Target::SameLine {
+                    include_same_phase: true
+                }
+            ),
+            exclude_near_ends: r.exclude_near_ends,
+            exclude_spans_at: r.exclude_spans_at.clone(),
+        }
+    }
 }
 
 impl EditRule {
+    /// A new rule of `target` (`ground`, `same_line`, `other_lines`), its
+    /// distance to set: vertical to the ground, radial between wires.
+    pub fn new(name: &str, target: &str) -> Self {
+        let wire = matches!(target, "same_line" | "other_lines");
+        Self {
+            name: name.to_owned(),
+            target: target.to_owned(),
+            vertical: (!wire).then_some(Requirement::Fixed(0.0)),
+            radial: wire.then_some(Requirement::Fixed(0.0)),
+            voltages: Vec::new(),
+            fields: RuleFields::default(),
+            written: RuleFields::default(),
+            rest: String::new(),
+            id: 0,
+        }
+    }
+
     /// Whether a distance of the rule depends on the voltage (a table or
     /// base + per kV).
     pub fn by_voltage(&self) -> bool {
@@ -67,6 +139,11 @@ impl EditRule {
             .into_iter()
             .flatten()
             .any(Requirement::by_voltage)
+    }
+
+    /// Whether it is a rule between wires (this line's or other lines').
+    pub fn between_wires(&self) -> bool {
+        matches!(self.target.as_str(), "same_line" | "other_lines")
     }
 }
 
@@ -87,6 +164,7 @@ pub fn merge_groups(rules: &[EditRule]) -> Vec<Vec<usize>> {
         let alike = |g: &Vec<usize>| {
             let o = &rules[g[0]];
             o.rest == r.rest
+                && o.fields == r.fields
                 && o.target == r.target
                 && o.vertical.is_some() == r.vertical.is_some()
                 && o.radial.is_some() == r.radial.is_some()
@@ -131,7 +209,10 @@ pub fn merged(rules: &[EditRule], group: &[usize]) -> EditRule {
         vertical: table(|r| &r.vertical),
         radial: table(|r| &r.radial),
         voltages: Vec::new(),
+        fields: first.fields.clone(),
+        written: first.written.clone(),
         rest: first.rest.clone(),
+        id: first.id,
     }
 }
 
@@ -198,11 +279,10 @@ pub enum Load {
     Replace,
 }
 
-/// The "Load preset…" window, and the presets every window offers.
+/// The presets of the design-code plugins every check window offers
+/// (*Preset ▾* of [`crate::check_ui::RuleTable`]), read once.
 #[derive(Default)]
 pub struct PresetsWindow {
-    /// Shown.
-    pub open: bool,
     /// The plugins were asked (read again with [`PresetsWindow::read`]).
     pub asked: bool,
     /// The presets read, per plugin, with the project's edits of their
@@ -214,8 +294,6 @@ pub struct PresetsWindow {
     pub edit_errors: Vec<String>,
     /// The project and library revision the edits were applied for.
     applied: Option<(PathBuf, u64)>,
-    /// The preset shown (plugin, preset).
-    pub chosen: Option<(usize, usize)>,
     job: Option<Receiver<Vec<PluginPresets>>>,
 }
 
@@ -245,7 +323,6 @@ impl PresetsWindow {
         self.list.clear();
         self.original.clear();
         self.applied = None;
-        self.chosen = None;
     }
 
     /// Whether the plugins are being read.
@@ -273,14 +350,6 @@ impl PresetsWindow {
             }
         }
     }
-
-    /// The preset shown.
-    pub fn preset(&self) -> Option<(&str, &RulePresetChecked)> {
-        let (p, k) = self.chosen?;
-        let pp = self.list.get(p)?;
-        let preset = pp.presets.as_ref().ok()?.get(k)?;
-        Some((pp.plugin.as_str(), preset))
-    }
 }
 
 /// The editor of the rule file chosen in the Clearances window.
@@ -297,14 +366,18 @@ pub struct RuleEditor {
     pub status: Option<(String, bool)>,
     /// A change not written yet.
     pub dirty: bool,
-    confirm: Option<usize>,
+    /// The ids of the document's rule tables, in its order
+    /// ([`EditRule`]'s id).
+    ids: Vec<u64>,
+    /// The last id given.
+    next_id: u64,
     /// "Remove all rules" asked, waiting for its confirmation.
     confirm_all: bool,
     /// "Merge rules by voltage" asked: the group previewed.
     merge: Option<usize>,
     /// When the file was read or written (undo writes it again).
     stamp: Option<std::time::SystemTime>,
-    /// The "Load preset…" window.
+    /// The design-code plugins' presets.
     pub presets: PresetsWindow,
 }
 
@@ -314,6 +387,76 @@ fn requirement_item(r: &Requirement) -> Item {
         .parse()
         .expect("a required clearance's text reads");
     doc["x"].clone()
+}
+
+/// Writes into rule table `t` the [`RuleFields`] that differ from what
+/// the file has (`written`); a field back at its default is removed.
+fn write_fields(t: &mut toml_edit::Table, now: &RuleFields, written: &RuleFields, target: &str) {
+    use ohl_clearance::rules::{CircuitFilter, PairVoltage};
+    let strings = |v: &[String]| {
+        let mut a = toml_edit::Array::new();
+        for s in v {
+            a.push(s.as_str());
+        }
+        a
+    };
+    if now.cases != written.cases {
+        if now.cases.is_empty() {
+            t.remove("cases");
+        } else {
+            t["cases"] = toml_edit::value(strings(&now.cases));
+        }
+    }
+    if now.case_pairs != written.case_pairs {
+        if now.case_pairs.is_empty() {
+            t.remove("case_pairs");
+        } else {
+            let mut a = toml_edit::Array::new();
+            for [x, y] in &now.case_pairs {
+                a.push(strings(&[x.clone(), y.clone()]));
+            }
+            t["case_pairs"] = toml_edit::value(a);
+        }
+    }
+    if now.pair_voltage != written.pair_voltage {
+        match now.pair_voltage {
+            PairVoltage::Higher => {
+                t.remove("pair_voltage");
+            }
+            PairVoltage::Sum => t["pair_voltage"] = toml_edit::value("sum"),
+            PairVoltage::Difference => t["pair_voltage"] = toml_edit::value("difference"),
+        }
+    }
+    if now.circuits != written.circuits {
+        match now.circuits {
+            CircuitFilter::Any => {
+                t.remove("circuits");
+            }
+            CircuitFilter::Same => t["circuits"] = toml_edit::value("same"),
+            CircuitFilter::Different => t["circuits"] = toml_edit::value("different"),
+        }
+    }
+    if now.include_same_phase != written.include_same_phase && target == "same_line" {
+        if now.include_same_phase {
+            t["include_same_phase"] = toml_edit::value(true);
+        } else {
+            t.remove("include_same_phase");
+        }
+    }
+    if now.exclude_near_ends != written.exclude_near_ends {
+        if now.exclude_near_ends > 0.0 {
+            t["exclude_near_ends"] = toml_edit::value(format!("{} m", now.exclude_near_ends));
+        } else {
+            t.remove("exclude_near_ends");
+        }
+    }
+    if now.exclude_spans_at != written.exclude_spans_at {
+        if now.exclude_spans_at.is_empty() {
+            t.remove("exclude_spans_at");
+        } else {
+            t["exclude_spans_at"] = toml_edit::value(strings(&now.exclude_spans_at));
+        }
+    }
 }
 
 fn modified(p: &Path) -> Option<std::time::SystemTime> {
@@ -329,7 +472,6 @@ impl RuleEditor {
             return;
         }
         self.file = file.map(Path::to_path_buf);
-        self.confirm = None;
         if !same {
             self.status = None;
         }
@@ -377,11 +519,14 @@ impl RuleEditor {
                     .collect()
             })
             .unwrap_or_default();
+        let first = self.next_id + 1;
         self.rules = set
             .rules
             .into_iter()
             .zip(targets)
-            .map(|(r, target)| {
+            .enumerate()
+            .map(|(k, (r, target))| {
+                let fields = RuleFields::of(&r);
                 let rest = format!(
                     "{:?}",
                     ohl_clearance::Rule {
@@ -389,6 +534,20 @@ impl RuleEditor {
                         vertical: None,
                         radial: None,
                         voltages: Vec::new(),
+                        cases: Vec::new(),
+                        case_pairs: Vec::new(),
+                        pair_voltage: Default::default(),
+                        circuits: Default::default(),
+                        exclude_near_ends: 0.0,
+                        exclude_spans_at: Vec::new(),
+                        target: match r.target {
+                            ohl_clearance::Target::SameLine { .. } => {
+                                ohl_clearance::Target::SameLine {
+                                    include_same_phase: false,
+                                }
+                            }
+                            ref t => t.clone(),
+                        },
                         ..r.clone()
                     }
                 );
@@ -398,10 +557,15 @@ impl RuleEditor {
                     vertical: r.vertical,
                     radial: r.radial,
                     voltages: r.voltages,
+                    written: fields.clone(),
+                    fields,
                     rest,
+                    id: first + k as u64,
                 }
             })
             .collect();
+        self.next_id = first + self.rules.len() as u64;
+        self.ids = self.rules.iter().map(|r| r.id).collect();
         self.merge = None;
         self.doc = Some(doc);
         Ok(())
@@ -422,20 +586,91 @@ impl RuleEditor {
                     out.push(format!("\"{}\": {what}: {p}", r.name));
                 }
             }
+            if r.fields
+                .case_pairs
+                .iter()
+                .any(|[a, b]| a.trim().is_empty() || b.trim().is_empty())
+            {
+                out.push(format!(
+                    "\"{}\": a case pair needs both weather cases",
+                    r.name
+                ));
+            }
         }
         out
     }
 
-    /// The rules written into the document (names and distances; the
-    /// rest of each table kept, a value's trailing comment too).
+    /// The rule tables of the document in the order of the rules: a rule
+    /// added, copied or removed in the table (2026-10-28) changes the list
+    /// of tables; each table keeps its text and place in the file while
+    /// the order allows, a new or copied one goes after the file's tables.
+    fn arrange(&mut self) {
+        let ids: Vec<u64> = self.rules.iter().map(|r| r.id).collect();
+        let Some(doc) = self.doc.as_mut() else {
+            return;
+        };
+        if ids == self.ids && ids.iter().all(|i| *i != 0) {
+            return;
+        }
+        let old: Vec<toml_edit::Table> = doc
+            .get("rule")
+            .and_then(Item::as_array_of_tables)
+            .map(|a| a.iter().cloned().collect())
+            .unwrap_or_default();
+        let by_id: std::collections::HashMap<u64, &toml_edit::Table> =
+            self.ids.iter().copied().zip(old.iter()).collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut list = toml_edit::ArrayOfTables::new();
+        let mut last: Option<isize> = None;
+        let mut in_place = true;
+        for r in &mut self.rules {
+            let mut t = match by_id.get(&r.id) {
+                Some(t) if seen.insert(r.id) => (*t).clone(),
+                found => {
+                    // New, or a copy: written whole from what it holds.
+                    let mut t = found.map_or_else(toml_edit::Table::new, |t| (*t).clone());
+                    if found.is_none() {
+                        t["name"] = toml_edit::value(r.name.clone());
+                        t["target"] = toml_edit::value(r.target.clone());
+                        r.written = RuleFields::default();
+                    }
+                    t.set_position(None);
+                    self.next_id += 1;
+                    r.id = self.next_id;
+                    seen.insert(r.id);
+                    t
+                }
+            };
+            // The file's order kept while it is the rules' order.
+            match t.position() {
+                Some(p) if in_place && last.is_none_or(|l| p > l) => last = Some(p),
+                _ => {
+                    in_place = false;
+                    t.set_position(None);
+                }
+            }
+            list.push(t);
+        }
+        if list.is_empty() {
+            doc.remove("rule");
+        } else {
+            doc["rule"] = Item::ArrayOfTables(list);
+        }
+        self.ids = self.rules.iter().map(|r| r.id).collect();
+    }
+
+    /// The rules written into the document (names, distances, voltages and
+    /// [`RuleFields`]; the rest of each table kept, a value's trailing
+    /// comment too).
     fn sync(&mut self) {
+        self.arrange();
         let Some(doc) = self.doc.as_mut() else {
             return;
         };
         let Some(list) = doc.get_mut("rule").and_then(Item::as_array_of_tables_mut) else {
             return;
         };
-        for (t, r) in list.iter_mut().zip(&self.rules) {
+        for (t, r) in list.iter_mut().zip(self.rules.iter_mut()) {
             if t.get("name").and_then(Item::as_str) != Some(r.name.as_str()) {
                 t["name"] = toml_edit::value(r.name.clone());
             }
@@ -489,6 +724,8 @@ impl RuleEditor {
                     }
                 }
             }
+            write_fields(t, &r.fields, &r.written, &r.target);
+            r.written = r.fields.clone();
         }
     }
 
@@ -533,40 +770,21 @@ impl RuleEditor {
         true
     }
 
-    /// Adds a rule of `target` (its distance to set).
+    /// Adds a rule of `target` (its distance to set; the table's *Add
+    /// rule* adds [`EditRule::new`]).
+    #[cfg(test)]
     pub fn add_rule(&mut self, target: &str) {
-        let Some(doc) = self.doc.as_mut() else {
+        if self.doc.is_none() {
             return;
-        };
-        let name = format!("Rule {}", self.rules.len() + 1);
-        let mut t = toml_edit::Table::new();
-        t["name"] = toml_edit::value(name.clone());
-        t["target"] = toml_edit::value(target);
-        let list = doc
-            .entry("rule")
-            .or_insert_with(|| Item::ArrayOfTables(toml_edit::ArrayOfTables::new()));
-        if let Some(list) = list.as_array_of_tables_mut() {
-            list.push(t);
         }
-        let wire = matches!(target, "same_line" | "other_lines");
-        self.rules.push(EditRule {
-            name,
-            target: target.to_owned(),
-            vertical: (!wire).then_some(Requirement::Fixed(0.0)),
-            radial: wire.then_some(Requirement::Fixed(0.0)),
-            voltages: Vec::new(),
-            rest: String::new(),
-        });
+        let name = format!("Rule {}", self.rules.len() + 1);
+        self.rules.push(EditRule::new(&name, target));
     }
 
     /// Removes every rule (the file's other tables, `[wind]`, `[check]`,
     /// `[vegetation]`, stay).
     pub fn remove_all_rules(&mut self) {
-        if let Some(d) = self.doc.as_mut() {
-            d.remove("rule");
-        }
         self.rules.clear();
-        self.confirm = None;
     }
 
     /// Merges the rules of `group` ([`merge_groups`]) into one table rule
@@ -584,20 +802,12 @@ impl RuleEditor {
         for &k in rest.iter().rev() {
             self.remove_rule(k);
         }
-        self.confirm = None;
         self.merge = None;
     }
 
     /// Removes rule `k`.
     pub fn remove_rule(&mut self, k: usize) {
-        if let Some(list) = self
-            .doc
-            .as_mut()
-            .and_then(|d| d.get_mut("rule"))
-            .and_then(Item::as_array_of_tables_mut)
-            && k < list.len()
-        {
-            list.remove(k);
+        if k < self.rules.len() {
             self.rules.remove(k);
         }
     }
@@ -680,7 +890,13 @@ impl RuleEditor {
     }
 }
 
-/// The Clearances window's editor of the rule file chosen.
+/// The Clearances window's rules of the rule file chosen, in the shared
+/// rule table (owner, 2026-10-28): one row per rule, the selected one's
+/// fields below it — its distances (with their preview at the line's
+/// voltages), its voltages, weather cases and, for rules between wires,
+/// the case pairs, the pair's voltage, the circuits and the exclusions —;
+/// one *Preset ▾*, Import / Export; *Merge rules by voltage…* and *Remove
+/// all rules* of this window beside.
 pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     let file = r
         .clearances
@@ -691,212 +907,158 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     r.rule_editor.follow(file.as_deref(), &defaults);
     let voltages = ohl_clearance::zone::line_voltages(&r.model.line);
     let editable = r.model.can_edit().is_ok() || r.model.library_dir.is_none();
-    egui::CollapsingHeader::new(egui::RichText::new("Edit rules").strong())
-        .id_salt("rule-editor")
-        .show(ui, |ui| {
-            let e = &mut r.rule_editor;
-            ui.label(
-                egui::RichText::new(
-                    "Each distance: one distance, a table \"up to kV: distance\" or a base plus \
-                     an amount per kV, so one rule covers every voltage (the preview gives the \
-                     distance at the project's voltages; wire rules take the pair's voltage). \
-                     Written when the mouse is released and every rule is complete.",
-                )
-                .small()
-                .weak(),
-            );
-            if let Some(err) = &e.error {
-                crate::menu::error_label(ui, err.as_str());
-                return;
-            }
-            if e.file.is_none() {
-                ui.label("Choose a rule file above.");
-            }
-            // Wrapped: the Clearances window is narrow.
-            ui.horizontal_wrapped(|ui| {
-                ui.add_enabled_ui(editable && e.doc.is_some(), |ui| {
-                    ui.menu_button("Add rule", |ui| {
-                        for (target, what) in [
-                            ("ground", "to the ground"),
-                            ("same_line", "between the wires of this line"),
-                            ("other_lines", "to the wires of other lines"),
-                        ] {
-                            if ui.button(what).clicked() {
-                                e.add_rule(target);
-                                e.dirty = true;
-                                ui.close();
-                            }
-                        }
-                        ui.label(
-                            egui::RichText::new(
-                                "Rules to LiDAR classes: the Vertical / Radial clearances \
-                                 windows, or a preset.",
-                            )
-                            .small()
-                            .weak(),
-                        );
-                    });
-                });
-                if ui
-                    .button("Load preset…")
+    ui.label(
+        egui::RichText::new(
+            "Each distance: one distance, a table \"up to kV: distance\" or a base plus an \
+             amount per kV, so one rule covers every voltage (the preview gives the distance at \
+             the project's voltages; wire rules take the pair's voltage). Written when the mouse \
+             is released and every rule is complete.",
+        )
+        .small()
+        .weak(),
+    );
+    {
+        let e = &mut r.rule_editor;
+        if let Some(err) = &e.error {
+            crate::menu::error_label(ui, err.as_str());
+            return;
+        }
+        if e.doc.is_none() {
+            ui.label("Choose a rule file above.");
+            return;
+        }
+        // This window's own: merge rules by voltage, remove them all.
+        let groups = merge_groups(&e.rules);
+        ui.horizontal_wrapped(|ui| {
+            if !groups.is_empty()
+                && ui
+                    .add_enabled(editable, egui::Button::new("Merge rules by voltage…"))
                     .on_hover_text(
-                        "Presets of clearance rules from the design-code plugins turned on \
-                         (File › Plugins › Plugin manager): previewed, then merged into this file or \
-                         replacing its rules",
+                        "Rules alike but for one voltage and a plain distance each, made one rule \
+                         with a table by voltage and no voltage filter (previewed first; Edit › \
+                         Undo takes it back)",
                     )
                     .clicked()
-                {
-                    e.presets.open = true;
-                    e.presets.list.clear();
-                }
-                let groups = merge_groups(&e.rules);
-                if !groups.is_empty()
-                    && ui
-                        .add_enabled(editable, egui::Button::new("Merge rules by voltage…"))
-                        .on_hover_text(
-                            "Rules alike but for one voltage and a plain distance each, made \
-                             one rule with a table by voltage and no voltage filter (previewed \
-                             first; Edit › Undo takes it back)",
-                        )
-                        .clicked()
-                {
-                    e.merge = Some(0);
-                }
-                if ui
-                    .add_enabled(
-                        editable && !e.rules.is_empty(),
-                        egui::Button::new("Remove all rules"),
-                    )
-                    .on_hover_text(
-                        "Every rule of this file removed (after a confirmation; Edit › Undo \
-                         brings them back); its wind and check settings stay",
-                    )
-                    .clicked()
-                {
-                    e.confirm_all = true;
-                }
-            });
-            if e.doc.is_none() {
-                return;
-            }
-            if e.confirm_all {
-                ui.horizontal_wrapped(|ui| {
-                    ui.colored_label(
-                        ui.visuals().warn_fg_color,
-                        format!("Remove all {} rules of this file?", e.rules.len()),
-                    );
-                    if ui.button("Remove them").clicked() {
-                        e.remove_all_rules();
-                        e.confirm_all = false;
-                        e.dirty = true;
-                    }
-                    if ui.button("Keep them").clicked() {
-                        e.confirm_all = false;
-                    }
-                });
-            }
-            merge_ui(ui, e, &voltages);
-            let mut remove = None;
-            crate::check_help::list(ui, "rule-editor-rules", 360.0, egui::ScrollArea::vertical().id_salt("rule-editor-rules").auto_shrink([false, true]), |ui| {
-                    // One block per rule (the Clearances window is narrow).
-                    for (k, rule) in e.rules.iter_mut().enumerate() {
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                e.dirty |= ui
-                                    .add_enabled(
-                                        editable,
-                                        egui::TextEdit::singleline(&mut rule.name)
-                                            .desired_width(150.0),
-                                    )
-                                    .changed();
-                                ui.label(
-                                    egui::RichText::new(rule.target.replace('_', " "))
-                                        .small()
-                                        .weak(),
-                                );
-                                if ui
-                                    .add_enabled(editable, egui::Button::new("Remove").small())
-                                    .clicked()
-                                {
-                                    remove = Some(k);
-                                }
-                            });
-                            for (m, q) in [
-                                ("vertical", &mut rule.vertical),
-                                ("radial", &mut rule.radial),
-                            ] {
-                                ui.add_enabled_ui(editable, |ui| {
-                                    ui.vertical(|ui| {
-                                        let mut on = q.is_some();
-                                        if ui
-                                            .checkbox(&mut on, m)
-                                            .on_hover_text(format!("A {m} clearance"))
-                                            .changed()
-                                        {
-                                            *q = on.then_some(Requirement::Fixed(0.0));
-                                            e.dirty = true;
-                                        }
-                                        if let Some(q) = q.as_mut() {
-                                            e.dirty |=
-                                                crate::requirement_ui::requirement_ui_stacked(
-                                                    ui,
-                                                    ("rule-editor", m, k),
-                                                    q,
-                                                    &voltages,
-                                                );
-                                        }
-                                    });
-                                });
-                            }
-                            // Its voltages: optional, behind a toggle when
-                            // a distance depends on the voltage.
-                            ui.add_enabled_ui(editable, |ui| {
-                                ui.horizontal(|ui| {
-                                    let depends = rule.by_voltage();
-                                    if !depends {
-                                        ui.label("only for");
-                                    }
-                                    e.dirty |= crate::requirement_ui::voltage_filter_ui(
-                                        ui,
-                                        ("rule-editor", k),
-                                        &mut rule.voltages,
-                                        depends,
-                                        &voltages,
-                                    );
-                                });
-                            });
-                        });
-                    }
-                });
-            if remove.is_some() {
-                e.confirm = remove;
-            }
-            if let Some(k) = e.confirm
-                && k < e.rules.len()
             {
-                ui.horizontal(|ui| {
-                    ui.colored_label(
-                        ui.visuals().warn_fg_color,
-                        format!("Remove the rule \"{}\"?", e.rules[k].name),
-                    );
-                    if ui.button("Remove it").clicked() {
-                        e.remove_rule(k);
-                        e.confirm = None;
-                        e.dirty = true;
-                    }
-                    if ui.button("Keep").clicked() {
-                        e.confirm = None;
-                    }
-                });
+                e.merge = Some(0);
             }
-            if let Some((text, error)) = &e.status {
-                if *error {
-                    crate::menu::error_label(ui, text.as_str());
-                } else {
-                    crate::menu::message(ui, egui::RichText::new(text.as_str()).small(), None);
-                }
+            if ui
+                .add_enabled(
+                    editable && !e.rules.is_empty(),
+                    egui::Button::new("Remove all rules"),
+                )
+                .on_hover_text(
+                    "Every rule of this file removed (after a confirmation; Edit › Undo brings \
+                     them back); its wind and check settings stay",
+                )
+                .clicked()
+            {
+                e.confirm_all = true;
             }
         });
+        if e.confirm_all {
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    format!("Remove all {} rules of this file?", e.rules.len()),
+                );
+                if ui.button("Remove them").clicked() {
+                    e.remove_all_rules();
+                    e.confirm_all = false;
+                    e.dirty = true;
+                }
+                if ui.button("Keep them").clicked() {
+                    e.confirm_all = false;
+                }
+            });
+        }
+        merge_ui(ui, e, &voltages);
+    }
+    let cases: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let case_groups = crate::case_groups::groups(&r.model);
+    let preview_voltages = voltages.clone();
+    let e = &mut r.rule_editor;
+    let t = crate::check_ui::RuleTable::new("clearance-rules", &mut e.rules, &voltages)
+        .add(
+            "To the ground",
+            "a rule to the ground: set its distance",
+            |n| EditRule::new(&format!("Rule {}", n + 1), "ground"),
+        )
+        .add(
+            "Between the wires of this line",
+            "a rule between the line's own wires: set its distance",
+            |n| EditRule::new(&format!("Rule {}", n + 1), "same_line"),
+        )
+        .add(
+            "To the wires of other lines",
+            "a rule to other lines' wires (run by ohl line --other-line): set its distance",
+            |n| EditRule::new(&format!("Rule {}", n + 1), "other_lines"),
+        )
+        .editable(editable)
+        .presets(
+            &r.model,
+            &e.presets.list,
+            crate::preset_cases::Part::Rules,
+            move |set| {
+                let mut lines = Vec::new();
+                for (group, list) in crate::preset_cases::grouped(&set.rules) {
+                    lines.push(format!("— {group} —"));
+                    for x in list {
+                        let mut parts = Vec::new();
+                        for (m, q) in [("vertical", &x.vertical), ("radial", &x.radial)] {
+                            if let Some(q) = q {
+                                parts.push(format!(
+                                    "{m} {}",
+                                    crate::requirement_ui::preview_text(q, &preview_voltages)
+                                ));
+                            }
+                        }
+                        lines.push(format!(
+                            "{}: {} ({})",
+                            x.name,
+                            parts.join("; "),
+                            crate::preset_cases::cases_label(x)
+                        ));
+                    }
+                }
+                lines
+            },
+        )
+        .ui(ui, |ui, k, rule| {
+            edit_rule(ui, k, rule, &voltages, &cases, &case_groups)
+        });
+    e.dirty |= t.changed;
+    if t.export
+        && let Some(p) = crate::rule_table::export_file(
+            &file
+                .as_ref()
+                .and_then(|f| f.file_name())
+                .map_or("clearance-rules.ohlr".into(), |n| {
+                    n.to_string_lossy().into_owned()
+                }),
+        )
+    {
+        e.status = Some(match e.text().map(|text| std::fs::write(&p, text)) {
+            Some(Ok(())) => (format!("exported to {}", p.display()), false),
+            Some(Err(err)) => (format!("{}: {err}", p.display()), true),
+            None => ("no rule file".into(), true),
+        });
+    }
+    if let Some((text, error)) = &e.status {
+        if *error {
+            crate::menu::error_label(ui, text.as_str());
+        } else {
+            crate::menu::message(ui, egui::RichText::new(text.as_str()).small(), None);
+        }
+    }
+    if let Some(pick) = t.preset {
+        apply_preset(r, pick);
+    }
+    if t.import
+        && let Some(p) = crate::rule_table::import_file()
+    {
+        import(r, &p);
+    }
     // Written once the mouse is released.
     if r.rule_editor.dirty && !ui.ctx().input(|i| i.pointer.any_down()) {
         r.rule_editor.dirty = false;
@@ -908,6 +1070,323 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     }
 }
 
+/// The fields of rule `rule` (row `k`) below the rule table: its
+/// distances, voltages, weather cases and, for a rule between wires, the
+/// case pairs, the pair's voltage, the circuits and the exclusions. True
+/// when one changed.
+fn edit_rule(
+    ui: &mut egui::Ui,
+    k: usize,
+    rule: &mut EditRule,
+    voltages: &[f64],
+    cases: &[String],
+    groups: &[ohl_weather::CaseGroup],
+) -> bool {
+    use ohl_clearance::rules::{CircuitFilter, PairVoltage};
+    let mut changed = false;
+    egui::Grid::new(("clearance-rule", k))
+        .num_columns(2)
+        .spacing(crate::check_help::GRID_SPACING)
+        .show(ui, |ui| {
+            for (m, q) in [
+                ("Vertical", &mut rule.vertical),
+                ("Radial", &mut rule.radial),
+            ] {
+                let mut on = q.is_some();
+                if ui
+                    .checkbox(&mut on, m)
+                    .on_hover_text(format!("A {} clearance", m.to_lowercase()))
+                    .changed()
+                {
+                    *q = on.then_some(Requirement::Fixed(0.0));
+                    changed = true;
+                }
+                match q.as_mut() {
+                    Some(q) => {
+                        changed |= crate::requirement_ui::requirement_ui(
+                            ui,
+                            ("rule-editor", m, k),
+                            q,
+                            voltages,
+                        );
+                    }
+                    None => {
+                        ui.label(egui::RichText::new("not checked").weak());
+                    }
+                }
+                ui.end_row();
+            }
+            ui.label("Voltages");
+            ui.horizontal(|ui| {
+                let depends = rule.by_voltage();
+                if !depends {
+                    ui.label("only for");
+                }
+                changed |= crate::requirement_ui::voltage_filter_ui(
+                    ui,
+                    ("rule-editor", k),
+                    &mut rule.voltages,
+                    depends,
+                    voltages,
+                );
+            });
+            ui.end_row();
+            ui.label("Weather cases");
+            changed |= cases_menu(ui, &mut rule.fields.cases, cases, groups);
+            ui.end_row();
+            if !rule.between_wires() {
+                return;
+            }
+            ui.label("Case pairs").on_hover_text(
+                "The first wire in the first weather case, the second wire in the second (an iced \
+                 upper wire over a lower one without ice); none: both in the same case",
+            );
+            ui.vertical(|ui| {
+                let mut remove = None;
+                for (j, pair) in rule.fields.case_pairs.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        for (side, name) in pair.iter_mut().enumerate() {
+                            let shown = if name.is_empty() {
+                                "choose…".to_owned()
+                            } else {
+                                name.clone()
+                            };
+                            egui::ComboBox::from_id_salt(("case-pair", k, j, side))
+                                .selected_text(shown)
+                                .show_ui(ui, |ui| {
+                                    for c in cases {
+                                        changed |=
+                                            ui.selectable_value(name, c.clone(), c).changed();
+                                    }
+                                });
+                            if side == 0 {
+                                ui.label("over");
+                            }
+                        }
+                        if ui
+                            .small_button("×")
+                            .on_hover_text("Remove this pair")
+                            .clicked()
+                        {
+                            remove = Some(j);
+                        }
+                    });
+                }
+                if let Some(j) = remove {
+                    rule.fields.case_pairs.remove(j);
+                    changed = true;
+                }
+                if ui.small_button("Add a case pair").clicked() {
+                    rule.fields.case_pairs.push([String::new(), String::new()]);
+                    changed = true;
+                }
+            });
+            ui.end_row();
+            ui.label("Pair voltage");
+            let name = |p: PairVoltage| match p {
+                PairVoltage::Higher => "the higher of the two",
+                PairVoltage::Sum => "the sum of both",
+                PairVoltage::Difference => "the voltage between the two",
+            };
+            egui::ComboBox::from_id_salt(("pair-voltage", k))
+                .selected_text(name(rule.fields.pair_voltage))
+                .show_ui(ui, |ui| {
+                    for p in [
+                        PairVoltage::Higher,
+                        PairVoltage::Sum,
+                        PairVoltage::Difference,
+                    ] {
+                        changed |= ui
+                            .selectable_value(&mut rule.fields.pair_voltage, p, name(p))
+                            .changed();
+                    }
+                })
+                .response
+                .on_hover_text("The voltage a wire pair's distance is taken at");
+            ui.end_row();
+            if rule.target == "same_line" {
+                ui.label("Circuits");
+                ui.horizontal_wrapped(|ui| {
+                    let name = |c: CircuitFilter| match c {
+                        CircuitFilter::Any => "every pair",
+                        CircuitFilter::Same => "same circuit (phase to phase)",
+                        CircuitFilter::Different => "different circuits",
+                    };
+                    egui::ComboBox::from_id_salt(("pair-circuits", k))
+                        .selected_text(name(rule.fields.circuits))
+                        .show_ui(ui, |ui| {
+                            for c in [
+                                CircuitFilter::Any,
+                                CircuitFilter::Same,
+                                CircuitFilter::Different,
+                            ] {
+                                changed |= ui
+                                    .selectable_value(&mut rule.fields.circuits, c, name(c))
+                                    .changed();
+                            }
+                        });
+                    changed |= ui
+                        .checkbox(&mut rule.fields.include_same_phase, "the same phase too")
+                        .on_hover_text(
+                            "Wires of the same circuit and phase (its back and ahead spans, the \
+                             jumpers) checked too",
+                        )
+                        .changed();
+                });
+                ui.end_row();
+            }
+            ui.label("Left out");
+            ui.horizontal_wrapped(|ui| {
+                ui.label("near the ends [m]");
+                let r = crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut rule.fields.exclude_near_ends)
+                        .range(0.0..=200.0)
+                        .speed(0.1),
+                )
+                .on_hover_text(
+                    "The wire within this horizontal distance of its ends (the clamps) is not \
+                     checked (0: none)",
+                );
+                changed |= r.drag_stopped() || r.lost_focus();
+                ui.label("spans at");
+                let mut text = rule.fields.exclude_spans_at.join(", ");
+                let r = ui
+                    .add(
+                        egui::TextEdit::singleline(&mut text)
+                            .hint_text("structures, e.g. term_*")
+                            .desired_width(160.0),
+                    )
+                    .on_hover_text(
+                        "Spans ending at these structures are not checked (names, * ? \
+                         wildcards, separated by commas)",
+                    );
+                if r.changed() {
+                    rule.fields.exclude_spans_at = text
+                        .split(',')
+                        .map(|s| s.trim().to_owned())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+                changed |= r.lost_focus();
+            });
+            ui.end_row();
+        });
+    changed
+}
+
+/// The weather cases of a rule ticked among the model's (none ticked:
+/// every case), the case groups' buttons first; a menu that stays open.
+fn cases_menu(
+    ui: &mut egui::Ui,
+    chosen: &mut Vec<String>,
+    cases: &[String],
+    groups: &[ohl_weather::CaseGroup],
+) -> bool {
+    let mut changed = false;
+    crate::menu::options_menu(ui, &crate::rule_table::cases_words(chosen), |ui| {
+        ui.label(
+            egui::RichText::new("None ticked: every weather case")
+                .small()
+                .weak(),
+        );
+        changed |= crate::case_groups::pick_names(ui, groups, chosen);
+        for c in cases {
+            let mut on = chosen.iter().any(|p| ohl_core::pattern::matches(p, c));
+            if ui.checkbox(&mut on, c).changed() {
+                if on {
+                    chosen.push(c.clone());
+                } else {
+                    chosen.retain(|p| !ohl_core::pattern::matches(p, c));
+                }
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+/// A rule of the Clearances window as a row of the shared rule table.
+impl crate::check_ui::RuleRow for EditRule {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn name_mut(&mut self) -> &mut String {
+        &mut self.name
+    }
+
+    fn summary(&self, _: &[f64]) -> crate::check_ui::Summary {
+        let mut distance = Vec::new();
+        for (m, q) in [("vertical", &self.vertical), ("radial", &self.radial)] {
+            if let Some(q) = q {
+                distance.push(format!("{m} {}", crate::rule_table::distance_words(q)));
+            }
+        }
+        let mut cases = crate::rule_table::cases_words(&self.fields.cases);
+        if !self.fields.case_pairs.is_empty() {
+            let pairs: Vec<String> = self
+                .fields
+                .case_pairs
+                .iter()
+                .map(|[a, b]| format!("{a} over {b}"))
+                .collect();
+            cases = format!("pairs {}", pairs.join(", "));
+        }
+        crate::check_ui::Summary {
+            target: match self.target.as_str() {
+                "ground" => "ground",
+                "points" => "LiDAR points",
+                "same_line" => "wires of this line",
+                "other_lines" => "wires of other lines",
+                other => other,
+            }
+            .to_owned(),
+            voltages: crate::rule_table::voltages_words(&self.voltages),
+            cases,
+            distance: if distance.is_empty() {
+                "none".into()
+            } else {
+                distance.join("; ")
+            },
+            wires: if self.fields.exclude_near_ends > 0.0 {
+                format!("but {} m at the ends", self.fields.exclude_near_ends)
+            } else {
+                "every wire".into()
+            },
+        }
+    }
+}
+
+/// *Import…* in the Clearances window: the rules of rule file `p` replace
+/// those of the file chosen (its `[wind]` and `[check]` too, if it has
+/// them).
+fn import(r: &mut Ready, p: &Path) {
+    let defaults: ohl_clearance::rules::RuleDefaults = (&r.model.line.defaults).into();
+    let read = std::fs::read_to_string(p)
+        .map_err(|e| format!("{}: {e}", p.display()))
+        .and_then(|text| {
+            let rules = RuleSet::parse_with(&text, &defaults)?;
+            Ok(RulePresetChecked {
+                name: p
+                    .file_name()
+                    .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                description: String::new(),
+                rules_text: text,
+                weather_text: String::new(),
+                rules,
+                weather: None,
+            })
+        });
+    let e = &mut r.rule_editor;
+    match read.and_then(|x| e.load_preset(&x, Load::Replace, &defaults)) {
+        Ok(m) => {
+            e.status = Some((format!("imported from {}: {m}", p.display()), false));
+            e.dirty = true;
+        }
+        Err(err) => e.status = Some((err, true)),
+    }
+}
 /// "Merge rules by voltage": the group chosen previewed (what changes at
 /// each of the line's voltages), merged on Merge, or left.
 fn merge_ui(ui: &mut egui::Ui, e: &mut RuleEditor, voltages: &[f64]) {
@@ -1088,172 +1567,27 @@ pub fn preset_dropdown(
     *chosen != before
 }
 
-/// One rule of a preset previewed: its name, its distances (and their
-/// values at the project's voltages) and the weather cases it uses.
-pub(crate) fn rule_preview(ui: &mut egui::Ui, rule: &ohl_clearance::Rule, voltages: &[f64]) {
-    ui.label(egui::RichText::new(&rule.name).strong());
-    for (m, q) in [("vertical", &rule.vertical), ("radial", &rule.radial)] {
-        if let Some(q) = q {
-            ui.label(format!("{m}: {q}"));
-            // Shown read-only until merged or replaced into the file.
-            crate::requirement_ui::requirement_view(
-                ui,
-                ("rule-preset-preview", &rule.name, m),
-                q,
-                voltages,
-            );
-        }
-    }
-    ui.label(
-        egui::RichText::new(crate::preset_cases::cases_label(rule))
-            .small()
-            .weak(),
-    );
-}
-
-/// The "Load preset…" window: the rule presets of the enabled design-code
-/// plugins (read with the Design code window's parameter file, if one is
-/// chosen), one previewed, then merged or replacing the rules.
-pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plugins) {
-    if !r.rule_editor.presets.open {
-        return;
-    }
-    ensure_presets(ctx, r, plugins);
-    let voltages = ohl_clearance::zone::line_voltages(&r.model.line);
-    let target = r
-        .rule_editor
-        .file
-        .as_ref()
-        .and_then(|f| f.file_name())
-        .map(|n| n.to_string_lossy().into_owned());
-    // The preset as it would go in: every rule, the cases they name
-    // matched to the project's (shown in the project's names).
-    let (shown, plan_lines): (Option<RuleSet>, Vec<String>) = match r.rule_editor.presets.preset() {
-        Some((_, p)) => {
-            match crate::preset_cases::for_project(&r.model, p, crate::preset_cases::Part::Rules) {
-                Ok((adapted, plan)) => (Some(adapted.rules), plan.lines()),
-                Err(e) => (None, vec![format!("its weather cases: {e}")]),
-            }
-        }
-        None => (None, Vec::new()),
-    };
-    let mut open = true;
-    let mut load = None;
-    egui::Window::new("Rule presets")
-        .open(&mut open)
-        .default_width(720.0)
-        .show(ctx, |ui| {
-            let w = &mut r.rule_editor.presets;
-            ui.label(
-                egui::RichText::new(
-                    "Presets of clearance rules from the design-code plugins turned on, read with \
-                     the parameter file of Line › Criteria › Design code (if one is chosen). Check every \
-                     value against the regulation you work to.",
-                )
-                .small()
-                .weak(),
-            );
-            if w.busy() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("reading the plugins…");
-                });
-            }
-            ui.horizontal(|ui| {
-                ui.label("Preset");
-                preset_dropdown(
-                    ui,
-                    "rule-preset-choice",
-                    &w.list,
-                    |p| crate::preset_cases::Part::Rules.lists(&p.rules),
-                    &mut w.chosen,
-                );
-            });
-            ui.separator();
-            ui.vertical(|ui| {
-                let Some((plugin, p)) = w.preset() else {
-                    ui.label("Choose a preset to see its rules.");
-                    return;
-                };
-                ui.strong(format!("{plugin}: {}", p.name));
-                crate::menu::message(ui, p.description.as_str(), None);
-                crate::check_help::list(ui, "rule-preset-preview", 300.0, egui::ScrollArea::vertical().id_salt("rule-preset-preview"), |ui| {
-                        // Grouped by target; each rule with the cases it
-                        // uses (the project's names).
-                        let rules = shown.as_ref().unwrap_or(&p.rules);
-                        for (group, list) in crate::preset_cases::grouped(&rules.rules) {
-                            ui.label(egui::RichText::new(format!("— {group} —")).strong());
-                            for rule in list {
-                                rule_preview(ui, rule, &voltages);
-                            }
-                        }
-                    });
-                // Its weather cases: the project's of the same weather
-                // used, the others created.
-                for line in &plan_lines {
-                    ui.label(egui::RichText::new(line).small());
-                }
-                ui.separator();
-                match &target {
-                    Some(file) => {
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(format!("Merge into {file}"))
-                                .on_hover_text("A rule of the same name replaced, the others added")
-                                .clicked()
-                            {
-                                load = Some(Load::Merge);
-                            }
-                            if ui.button(format!("Replace the rules of {file}")).clicked() {
-                                load = Some(Load::Replace);
-                            }
-                        });
-                    }
-                    None => {
-                        ui.label("Choose a rule file in the Clearances window first (or add one).");
-                    }
-                }
-            });
-        });
-    if !open {
-        r.rule_editor.presets.open = false;
-    }
-    if let Some(how) = load {
-        apply_preset(r, how);
-    }
-}
-
-/// Loads the preset shown into the rule file chosen (one write, one
-/// command), and its weather cases missing from the model into the
-/// model's weather cases.
-pub fn apply_preset(r: &mut Ready, how: Load) {
-    let Some((plugin, p)) = r
-        .rule_editor
-        .presets
-        .preset()
-        .map(|(a, b)| (a.to_owned(), b.clone()))
-    else {
-        return;
-    };
-    // Its weather cases matched to the project's (the same weather used,
-    // the rules naming the project's).
-    let (p, plan) =
-        match crate::preset_cases::for_project(&r.model, &p, crate::preset_cases::Part::Rules) {
-            Ok(x) => x,
-            Err(e) => {
-                r.rule_editor.status = Some((format!("preset {plugin} {}: {e}", p.name), true));
-                return;
-            }
-        };
-    let defaults: ohl_clearance::rules::RuleDefaults = (&r.model.line.defaults).into();
-    let done = r.rule_editor.load_preset(&p, how, &defaults);
-    let mut text = match done {
-        Ok(m) => format!("preset {plugin} {}: {m}", p.name),
+/// Takes the preset chosen in the Clearances window's *Preset ▾* into the
+/// rule file chosen (one write, one command): merged or replacing its
+/// rules; its weather cases missing from the model added to the model's
+/// weather cases.
+pub fn apply_preset(r: &mut Ready, pick: crate::rule_table::PresetPick) {
+    let (p, lines) = match pick.taken(&r.model, crate::preset_cases::Part::Rules) {
+        Ok(x) => x,
         Err(e) => {
             r.rule_editor.status = Some((e, true));
             return;
         }
     };
+    let defaults: ohl_clearance::rules::RuleDefaults = (&r.model.line.defaults).into();
+    let done = match r.rule_editor.load_preset(&p, pick.how, &defaults) {
+        Ok(m) => m,
+        Err(e) => {
+            r.rule_editor.status = Some((e, true));
+            return;
+        }
+    };
+    let mut text = pick.said(&done, &[]);
     if r.rule_editor.save(&mut r.model) {
         if let Some(k) = r.clearances.chosen {
             r.clearances.choose(k);
@@ -1262,19 +1596,17 @@ pub fn apply_preset(r: &mut Ready, how: Load) {
         return;
     }
     if let Some(wc) = &p.weather {
-        match preset_cases(r, &plugin, &p.name, &p.weather_text, wc) {
+        match preset_cases(r, &pick.group, &p.name, &p.weather_text, wc) {
             Ok(m) if !m.is_empty() => text = format!("{text}; {m}"),
             Ok(_) => {}
             Err(e) => text = format!("{text}; weather cases: {e}"),
         }
     }
-    let lines = plan.lines();
     if !lines.is_empty() {
         text = format!("{text}\n{}", lines.join("\n"));
     }
     r.rule_editor.status = Some((text, false));
 }
-
 /// The preset's weather cases missing from the model (by name: `wc` is the
 /// preset as matched to the project, [`crate::preset_cases`], holding only
 /// the cases to create): added to the model's weather case file (or the

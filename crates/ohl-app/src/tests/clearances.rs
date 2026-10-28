@@ -479,14 +479,10 @@ fn the_radial_clearances_window_keeps_its_rules() {
         2,
         "asks first"
     );
-    // The question under the rules (scrolled to: the window is long).
-    harness
-        .query_all_by_label("Remove")
-        .last()
-        .unwrap()
-        .scroll_to_me();
+    // The question under the buttons.
+    harness.get_by_label("Keep it").scroll_to_me();
     harness.run();
-    harness.get_by_label("Keep").click();
+    harness.get_by_label("Keep it").click();
     harness.run();
     harness
         .query_all_by_label("Remove")
@@ -496,14 +492,10 @@ fn the_radial_clearances_window_keeps_its_rules() {
     harness.run();
     harness.query_all_by_label("Remove").next().unwrap().click();
     harness.run();
-    // The question under the rules (scrolled to: the window is long).
-    harness
-        .query_all_by_label("Remove")
-        .last()
-        .unwrap()
-        .scroll_to_me();
+    // The question under the buttons.
+    harness.get_by_label("Remove it").scroll_to_me();
     harness.run();
-    harness.query_all_by_label("Remove").last().unwrap().click();
+    harness.get_by_label("Remove it").click();
     harness.run();
     harness.run();
     assert_eq!(

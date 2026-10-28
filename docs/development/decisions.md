@@ -10,6 +10,40 @@ of Parts A, B and C).
 
 ## 2026-10-28
 
+**Check windows, phase 2: the shared rule table (owner, 2026-10-28)**
+
+- The owner approved the check-window standard (sections 2–4 of the
+  review's draft) and asked for phase 2: "keep it standard between all
+  tests" — the same widgets, names and order in every window.
+- One rule table for every check window with rules
+  (`check_ui::RuleTable`, `ohl-app` `rule_table`): Vertical / Radial
+  clearances, the Clearances window (wire clearances), Wire tensions,
+  String checks, Internal clearances. One compact row per rule (name,
+  target, voltages, weather cases, distance in words, wires, …), the
+  selected rule's fields below the table (the distance editor of
+  `requirement_ui` with its preview at the line's voltages), *Add rule*
+  (*Add rule…* with a choice of target), *Duplicate*, *Remove* (asked
+  first), *Import…* / *Export…* (.ohlr).
+- One **Preset** dropdown in place of the three entries (the ground windows'
+  *Plugin preset* and *Load preset…*, the Clearances window's *Load
+  preset…* window, the analyses' *Plugin preset*): the plugins' presets
+  grouped by plugin, then the project's generated presets (*This
+  project*, read into the same form as a plugin's), the one chosen
+  previewed, then **Merge** (a rule of the same name replaced in its
+  place, the others added — as the rule editor did) or **Replace**. The
+  analyses (tension, strings, internal) and the ground windows can now
+  merge a preset, not only replace their rules; the analyses list the
+  project's presets too.
+- The Clearances window's rule editor edits what was only in the file:
+  the weather cases, and for rules between wires the case pairs, the
+  pair's voltage, the circuits (and *the same phase too*), the exclusions
+  near the ends and at structures. Each is written into the file only
+  when changed (the file's own text kept otherwise); a rule added or
+  copied in the table goes after the file's tables. No format change.
+- Our choice, to confirm: Remove asks in a line under the buttons
+  (*Remove it* / *Keep it*), as before, rather than in a pop-up; a rule's
+  name is kept when its field is left (not at every key).
+
 **Existing line on the sheets: removed parts in their own role (owner, 2026-10-28)**
 
 - Owner: "when picking an existing line and a project line, everything
@@ -253,7 +287,7 @@ of Parts A, B and C).
   program's SVG renderer is built without text: not drawn in the app
   yet).
 - **Next (phase 2, not built)**: the shared rule table (`RuleTable`:
-  compact rows, the selected rule's editor below, one *Preset ▾*); the
+  compact rows, the selected rule's editor below, one *Preset*); the
   wire clearances running every weather case of their rules with the
   wind and case pairs, as the ground windows do; scope (circuits,
   routes) for Wire tensions, String checks, Internal clearances,

@@ -157,7 +157,7 @@ Design-code plugins may give such rule files as **clearance presets**
 for those windows ([Design codes](design-codes.md#clearance-presets)),
 and **rule presets** for any rule set — ground, objects, crossings, wire
 to wire ([Design codes](design-codes.md#rule-presets)). In the desktop
-application the Clearances window's **Edit rules** and the clearance windows
+application the rule tables of the Clearances window and the clearance windows
 set every distance in the three forms below
 ([Distances by voltage](desktop-app.md#distances-by-voltage)).
 

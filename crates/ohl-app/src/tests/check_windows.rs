@@ -72,7 +72,7 @@ fn a_check_list_is_made_taller() {
     }
     h.run();
     h.run();
-    let id = ("Vertical clearances", "rules");
+    let id = ("Vertical clearances", "rule-rows");
     let height = |h: &Harness<'_, App>| {
         crate::check_help::list_height(&h.ctx, id, crate::check_help::LIST_HEIGHT)
     };

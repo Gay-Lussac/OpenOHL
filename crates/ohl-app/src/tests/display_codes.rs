@@ -335,14 +335,30 @@ fn design_code_clearance_presets_load_into_the_window() {
     assert!(r.model.cases.iter().any(|c| c.case.name == "a"));
     let mut win = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Vertical);
     win.show(&r.model);
-    let presets = win.presets(&r.model);
+    let presets = crate::rule_table::project_presets_read(
+        &r.model,
+        crate::preset_cases::Part::of(ohl_clearance::Measure::Vertical),
+    );
     assert_eq!(presets.len(), 1, "{presets:?}");
-    assert_eq!(presets[0].0, "Code vertical");
+    assert_eq!(presets[0].name, "Code vertical");
     // The radial window has none.
-    let radial = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Radial);
-    assert!(radial.presets(&r.model).is_empty());
+    assert!(
+        crate::rule_table::project_presets_read(
+            &r.model,
+            crate::preset_cases::Part::of(ohl_clearance::Measure::Radial)
+        )
+        .is_empty()
+    );
     let mut out = crate::clearance_zones::Out::default();
-    win.load_preset(&r.model, &presets[0].1, &presets[0].2, &mut out);
+    win.take_preset(
+        &r.model,
+        crate::rule_table::PresetPick {
+            group: crate::rule_table::PROJECT_GROUP.into(),
+            preset: presets[0].clone(),
+            how: crate::rule_editor::Load::Replace,
+        },
+        &mut out,
+    );
     assert_eq!(win.rules.len(), 2);
     // The first rule's half width is the window's, the other keeps its own.
     assert_eq!(win.zone.width, 1.0);
@@ -391,10 +407,21 @@ fn a_clearance_preset_uses_the_projects_cases_of_the_same_weather() {
     let before: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
     let mut win = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Vertical);
     win.show(&r.model);
-    let presets = win.presets(&r.model);
-    let p = presets.iter().find(|p| p.0 == "Code vertical").unwrap();
+    let presets = crate::rule_table::project_presets_read(
+        &r.model,
+        crate::preset_cases::Part::of(ohl_clearance::Measure::Vertical),
+    );
+    let p = presets.iter().find(|p| p.name == "Code vertical").unwrap();
     let mut out = crate::clearance_zones::Out::default();
-    win.load_preset(&r.model, &p.1, &p.2, &mut out);
+    win.take_preset(
+        &r.model,
+        crate::rule_table::PresetPick {
+            group: crate::rule_table::PROJECT_GROUP.into(),
+            preset: p.clone(),
+            how: crate::rule_editor::Load::Replace,
+        },
+        &mut out,
+    );
     assert_eq!(win.rules[0].cases, ["max temperature", "everyday (preset)"]);
     crate::app::clearance_zone_out(&mut r, win.zone.measure, out);
     let after: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
@@ -432,10 +459,21 @@ fn a_big_preset_brings_only_the_vertical_part_to_the_vertical_window() {
     let before: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
     let mut win = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Vertical);
     win.show(&r.model);
-    let presets = win.presets(&r.model);
-    let file = presets.iter().find(|x| x.0 == "big").unwrap();
+    let presets = crate::rule_table::project_presets_read(
+        &r.model,
+        crate::preset_cases::Part::of(ohl_clearance::Measure::Vertical),
+    );
+    let file = presets.iter().find(|x| x.name == "big").unwrap();
     let mut out = crate::clearance_zones::Out::default();
-    win.load_preset(&r.model, &file.1, &file.2, &mut out);
+    win.take_preset(
+        &r.model,
+        crate::rule_table::PresetPick {
+            group: crate::rule_table::PROJECT_GROUP.into(),
+            preset: file.clone(),
+            how: crate::rule_editor::Load::Replace,
+        },
+        &mut out,
+    );
     assert_eq!(win.rules.len(), 24);
     assert!(
         win.rules
