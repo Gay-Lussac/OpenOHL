@@ -247,7 +247,8 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
         app.plugins.folders = vec![dir];
         app.plugins.refresh();
     }
-    harness.run();
+    // (The presets are being read from here on: a step, not a run.)
+    harness.step();
     let started = std::time::Instant::now();
     while harness
         .state_mut()
@@ -283,7 +284,8 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
     harness.get_by_label_contains("220 kV: 8.20 m");
     harness.get_by_label_contains("220 kV: 4.50 m");
     harness.get_by_label("Merge").click();
-    harness.run();
+    // (The rule table sizes its grid again over a few frames.)
+    harness.run_steps(10);
     harness.run();
     let set = rules_of(&file);
     let names: Vec<&str> = set.rules.iter().map(|r| r.name.as_str()).collect();
