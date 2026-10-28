@@ -125,6 +125,27 @@ of Parts A, B and C).
   its removal colour is yellow, as ESTI 235 1.3.4 asks (first orange;
   owner, 2026-10-28: "Keep it yellow as per the esti requirements").
 
+**Optimised sheets: least empty paper, each sheet turned as suits it (owner, 2026-10-28)**
+
+- Owner: "both is always allowed if ticked in the parameters it should
+  mostly avoid empty space".
+- The candidates are ranked by warnings, then **empty paper** (new: the
+  panels' width past the route drawn and the profile panel's height above
+  the profile; `SheetLayout::empty`, `Candidate::empty`), then paper,
+  sheets, the largest sheet. The template's furniture is not counted.
+- With both orientations ticked, one more candidate per size (or per
+  standard, sizes mixed) chooses landscape or portrait **per sheet**
+  with the breaks (the mixed search's dynamic programming over both
+  orientations), so a valley gets a portrait sheet without the rest of
+  the route on portrait. `Optimise::turned_only` keeps only those when
+  the same paper is chosen for every route.
+- Warnings stay first: a datum step (a vertical shift of the profile) or
+  cut wires count more than empty paper (owner, same day: keep the
+  vertical shift minimal).
+- A real mountain line (local check): the sheets chosen went from all
+  portrait (3.6 m² empty panels) to landscape and portrait mixed
+  (2.7 m²), the same 2 warnings (elevations overlapping).
+
 **A span over a deep valley keeps its wires on the sheet (owner, 2026-10-28)**
 
 - Owner: on a sheet of a mountain line "some wires are not drawn across

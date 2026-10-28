@@ -1979,11 +1979,12 @@ impl DrawingsWindow {
             .iter()
             .map(|c| {
                 format!(
-                    "{}: {} sheet(s) ({}), {} warning(s), {:.2} m², {:.0} % filled",
+                    "{}: {} sheet(s) ({}), {} warning(s), {:.2} m² empty of {:.2} m², {:.0} % filled",
                     c.label,
                     c.sheets(),
                     c.sizes(),
                     c.warnings,
+                    c.empty,
                     c.area,
                     c.fill * 100.0
                 )
