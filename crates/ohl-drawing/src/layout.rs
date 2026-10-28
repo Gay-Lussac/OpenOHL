@@ -336,10 +336,37 @@ pub(crate) fn fit(
             } else {
                 parts.last().map_or(essential, |p| [p.z0, p.z0])
             };
+            // A part whose ground and wires do not fit: drawn from its
+            // lowest point, the top cut — unless that leaves the wires
+            // above the panel (a span over a deep valley): then the
+            // wires drawn whole when they fit, else from their lowest
+            // point, and the ground cut at the bottom.
+            let mut lo = r[0];
             if best.is_none() {
+                let w = wire_heights(d, a, stops[j].0);
+                let whole = w[0].is_finite() && w[1] + label - w[0] <= room;
+                // Only when the wires' lowest point would be above the
+                // panel: else the ground under them stays in sight.
+                if w[0].is_finite() && r[0] + room < w[0] {
+                    lo = if whole {
+                        w[1] + label - room
+                    } else {
+                        w[0] - 0.15 * room
+                    };
+                }
+                let how = if lo > r[0] + 1e-6 {
+                    if whole {
+                        "the wires drawn whole, the ground cut at the bottom".to_owned()
+                    } else {
+                        "drawn from the wires' lowest point, the ground cut at the bottom and the top cut"
+                            .to_owned()
+                    }
+                } else {
+                    "drawn from the lowest point, the top cut".to_owned()
+                };
                 warnings.push(format!(
                     "the ground and the wires' lowest points of {}–{} need {:.0} mm of height at 1:{}, the panel \
-                     has {:.0} mm: drawn from the lowest point, the top cut",
+                     has {:.0} mm: {how}",
                     format_station(a),
                     format_station(stops[j].0),
                     needed(r),
@@ -347,7 +374,7 @@ pub(crate) fn fit(
                     avail
                 ));
             }
-            parts.push(part(a, stops[j].0, r[0], r[1]));
+            parts.push(part(a, stops[j].0, lo, r[1]));
             a = stops[j].0;
             k = j + 1;
         }
@@ -393,6 +420,19 @@ pub(crate) fn fit(
         ));
     }
     (parts, warnings)
+}
+
+/// The lowest and highest point of the line's own wires between
+/// stations `a` and `b`, m (infinite: none).
+fn wire_heights(d: &RouteDrawing, a: f64, b: f64) -> [f64; 2] {
+    let mut r = [f64::INFINITY, f64::NEG_INFINITY];
+    for p in d.wires.iter().flat_map(|w| &w.points) {
+        if p[0] >= a - 1e-6 && p[0] <= b + 1e-6 && p[2].is_finite() {
+            r[0] = r[0].min(p[2]);
+            r[1] = r[1].max(p[2]);
+        }
+    }
+    r
 }
 
 /// The highest point drawn of structure `m`.
@@ -1558,6 +1598,42 @@ fn profile_part(
                 ),
             );
         }
+    }
+    // The ground cut at the bottom of the part (a deep valley under the
+    // wires, [`fit`]): a break mark and its lowest height where it is.
+    let low = d
+        .ground
+        .iter()
+        .flatten()
+        .filter(|q| q[0] >= p.s0 - 1e-6 && q[0] <= p.s1 + 1e-6 && q[1].is_finite())
+        .min_by(|a, b| a[1].total_cmp(&b[1]));
+    if o.template.centreline.ground
+        && let Some(q) = low.filter(|q| q[1] < p.z0 - 0.05)
+    {
+        let (x, yb) = (f.x(q[0]), y(p.z0));
+        prof.push(path(
+            Layer::Labels,
+            vec![
+                [x - 6.0, yb - 2.0],
+                [x - 1.0, yb - 2.0],
+                [x, yb - 3.5],
+                [x + 1.0, yb - 0.5],
+                [x + 2.0, yb - 2.0],
+                [x + 6.0, yb - 2.0],
+            ],
+            ground.clone(),
+            Some("ground cut".into()),
+        ));
+        prof.push(text(
+            Layer::Labels,
+            [x, yb - 5.0],
+            2.0,
+            Anchor::Middle,
+            labels.label(
+                "ground_cut",
+                &[("height", &crate::template::format_number(q[1], ""))],
+            ),
+        ));
     }
     let cp = curve_pen(o);
     for c in curves {

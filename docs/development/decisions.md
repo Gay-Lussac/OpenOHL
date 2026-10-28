@@ -8,6 +8,47 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-28
+
+**Existing line on the sheets: removed parts in their own role (owner, 2026-10-28)**
+
+- Owner: "when picking an existing line and a project line, everything
+  from the existing that is removed should be drawn in orange in the LeV
+  plugin and everything that is the same should be drawn in black".
+- A template's role may name `removed = "<role>"`: the parts of a version
+  in that role the project does not keep are drawn in the named role
+  (`RouteDrawing::split_removed`). Same: a structure within 1 m in plan
+  and at its top of a project structure; a wire whose two ends are within
+  1 m of a project wire's ends in the same weather case. A wire re-strung
+  on the same attachments counts as kept; a structure replaced at the
+  same place by one of another height counts as removed. The project is
+  the line itself in the role `project` (all its spans near the route,
+  every weather case drawn) and the versions in the role `project`.
+- The shipped default template does not set it (an existing line stays
+  drawn whole); the private LeV template sets `existing` → `removal`, and
+  its removal colour is orange (the owner's choice; ESTI 235 1.3.4 names
+  yellow).
+
+**A span over a deep valley keeps its wires on the sheet (owner, 2026-10-28)**
+
+- Owner: on a sheet of a mountain line "some wires are not drawn across
+  a valley". A span whose ground and wires' lowest points did not fit was
+  drawn from the ground's lowest point with its top cut; over a valley
+  about 180 m deep at 1:200 the wires were wholly above the panel.
+- Now, only when the wires' lowest point would be above the panel: the
+  span's wires are drawn whole when they fit (else from their lowest
+  point with a little ground below), the ground cut at the bottom with a
+  break mark and its lowest height written (`ground_cut`), warned. Every
+  other case is unchanged.
+- Owner: "in the cases of valleys it makes sense to use a bigger sheet to
+  have most of the area displayed and also keep the vertical shift of
+  pylons to a minimal", and "usually vertical is 1:500". The optimised
+  paper choice already ranks the fewest warnings (datum steps, cut tops)
+  first, so with different sizes allowed it puts valleys on larger
+  sheets; the private LeV plan set now proposes 1:500 in height. Whether
+  portrait sheets should be allowed for such lines is the owner's choice
+  (asked).
+
 ## 2026-10-27
 
 **Member-capacity extension point for plugins (owner, 2026-10-27)**

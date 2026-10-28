@@ -593,7 +593,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 34] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 35] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -611,6 +611,8 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 34] = [
     ("clearance_violation", "clearance violation", &[]),
     ("datum_step", "datum step (heights read on each side)", &[]),
     ("ground", "ground on the axis", &[]),
+    // Written in the profile where the ground runs below the panel.
+    ("ground_cut", "ground cut, lowest {height} m", &["height"]),
     ("ground_side", "ground beside the axis", &["offset"]),
     (
         "clearance_line",
@@ -1051,6 +1053,12 @@ pub struct RoleSpec {
     pub structure_colour: Option<String>,
     /// Its structures' names drawn.
     pub names: Option<bool>,
+    /// The role its structures and wires are drawn in where the project
+    /// does not keep them (the line itself in the role `project`, or a
+    /// version in that role): e.g. `existing` with `removed = "removal"`
+    /// draws what stays as existing and what goes as removal
+    /// ([`crate::RouteDrawing::split_removed`]). None: drawn whole.
+    pub removed: Option<String>,
 }
 
 /// `[cases]`: the weather case each kind of wire is drawn in, and the
@@ -2180,6 +2188,13 @@ impl SheetTemplate {
                 if crate::model::Color::parse(c).is_none() {
                     return Err(format!("roles.{r}: colour \"{c}\" is not #rrggbb"));
                 }
+            }
+            if let Some(to) = &s.removed
+                && (to == r || to.trim().is_empty())
+            {
+                return Err(format!(
+                    "roles.{r}: removed = \"{to}\": give another role (e.g. removal)"
+                ));
             }
         }
         // The title block's grid.
