@@ -122,8 +122,8 @@ of Parts A, B and C).
   every weather case drawn) and the versions in the role `project`.
 - The shipped default template does not set it (an existing line stays
   drawn whole); the private LeV template sets `existing` → `removal`, and
-  its removal colour is orange (the owner's choice; ESTI 235 1.3.4 names
-  yellow).
+  its removal colour is yellow, as ESTI 235 1.3.4 asks (first orange;
+  owner, 2026-10-28: "Keep it yellow as per the esti requirements").
 
 **A span over a deep valley keeps its wires on the sheet (owner, 2026-10-28)**
 
