@@ -125,6 +125,16 @@ of Parts A, B and C).
   its removal colour is yellow, as ESTI 235 1.3.4 asks (first orange;
   owner, 2026-10-28: "Keep it yellow as per the esti requirements").
 
+**Magnetic field setup kept quick (owner, 2026-10-28)**
+
+- Owner: the setup page was laggy, "could it be applied once we start
+  the calculation?". The window wrote its inputs into the project at
+  every change and listed the line's spans (each section's place along
+  the alignments) two to three times per frame.
+- Now its inputs are written when a run starts or the window closes
+  (still read when the project opens or another line is worked on), and
+  the spans are listed once per version of the line.
+
 **Check windows phase 2 confirmed, with changes (owner, 2026-10-28)**
 
 - Case pairs: a rule compares the wires in the same weather case by

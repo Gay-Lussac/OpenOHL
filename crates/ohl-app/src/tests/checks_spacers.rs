@@ -1700,7 +1700,9 @@ fn the_magnetic_field_window_runs_and_goes_out_of_date() {
 
 /// The Magnetic field window's inputs are kept in the project (owner,
 /// 2026-10-27): a current and a limit set, written into the project's
-/// setting for the line worked on, and read back by a window opened anew.
+/// setting for the line worked on once a run starts (owner, 2026-10-28:
+/// not at every change on the page), and read back by a window opened
+/// anew.
 #[test]
 fn the_magnetic_field_inputs_are_kept_in_the_project() {
     let model = crate::tests::session_edits::synthetic_project("magnetic-kept");
@@ -1717,13 +1719,27 @@ fn the_magnetic_field_inputs_are_kept_in_the_project() {
         label
     };
     harness.run();
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        let session = r.model.session().unwrap();
+        let key = format!(
+            "{}.{}",
+            crate::magnetic_field::SETTING,
+            session.current_line()
+        );
+        // Changed only: not written yet.
+        let text = session.setting(&key).unwrap().unwrap_or_default();
+        assert!(!text.contains("650"), "{text}");
+        key
+    };
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.magnetic_field.start(&r.model, &ctx);
+    }
+    harness.run();
     let r = harness.state_mut().ready().unwrap();
     let session = r.model.session().unwrap();
-    let key = format!(
-        "{}.{}",
-        crate::magnetic_field::SETTING,
-        session.current_line()
-    );
     let text = session.setting(&key).unwrap().unwrap();
     assert!(text.contains("650") && text.contains(&label), "{text}");
     let mut fresh = crate::magnetic_field::MagneticFieldWindow::default();

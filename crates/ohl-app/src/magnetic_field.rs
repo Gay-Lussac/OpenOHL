@@ -57,6 +57,9 @@ enum Stations {
     One { span: usize, fraction: Option<f64> },
 }
 
+/// The line's spans by their first and last structure.
+type Spans = Arc<Vec<(String, String)>>;
+
 /// The Magnetic field window.
 pub struct MagneticFieldWindow {
     /// Shown.
@@ -90,6 +93,14 @@ pub struct MagneticFieldWindow {
     progress: Option<Arc<Progress>>,
     /// The run.
     pub(crate) job: Job<Answer>,
+    /// The line's spans (first and last structure), by the line's version
+    /// they were listed for: listed again only when the line changes (they
+    /// take every section's place along the alignments).
+    spans: Option<(u64, Spans)>,
+    /// The inputs are written into the project at the next frame (a run
+    /// started, the window closed; owner, 2026-10-28: not at every change,
+    /// the page stays quick).
+    commit: bool,
 }
 
 impl Default for MagneticFieldWindow {
@@ -114,6 +125,8 @@ impl Default for MagneticFieldWindow {
             shown: 0,
             progress: None,
             job: Job::default(),
+            spans: None,
+            commit: false,
         }
     }
 }
@@ -146,15 +159,32 @@ struct Stored {
 }
 
 impl MagneticFieldWindow {
+    /// The line's spans by their first and last structure, listed once per
+    /// version of the line.
+    fn spans(&mut self, model: &Model) -> Spans {
+        if let Some((v, list)) = &self.spans
+            && *v == model.line_version
+        {
+            return list.clone();
+        }
+        let list: Spans = Arc::new(
+            ohl_electrical::cross_section::line_spans(&model.line)
+                .into_iter()
+                .map(|s| (s.from, s.to))
+                .collect(),
+        );
+        self.spans = Some((model.line_version, list.clone()));
+        list
+    }
+
     /// The inputs as kept in the project.
-    fn stored(&self, model: &Model) -> Stored {
+    fn stored(&mut self, model: &Model) -> Stored {
+        let spans = self.spans(model);
         let span = match &self.stations {
             Stations::EverySpan => None,
-            Stations::One { span, fraction } => {
-                ohl_electrical::cross_section::line_spans(&model.line)
-                    .get(*span)
-                    .map(|s| (s.from.clone(), s.to.clone(), *fraction))
-            }
+            Stations::One { span, fraction } => spans
+                .get(*span)
+                .map(|(from, to)| (from.clone(), to.clone(), *fraction)),
         };
         Stored {
             case: model.cases.get(self.case).map(|c| c.case.name.clone()),
@@ -202,12 +232,13 @@ impl MagneticFieldWindow {
         self.height = st.height.unwrap_or(d.height);
         self.width = st.width.unwrap_or(d.width);
         self.step = st.step.unwrap_or(d.step);
+        let spans = self.spans(model);
         self.stations = st
             .span
             .and_then(|(from, to, fraction)| {
-                ohl_electrical::cross_section::line_spans(&model.line)
+                spans
                     .iter()
-                    .position(|s| s.from == from && s.to == to)
+                    .position(|(a, b)| *a == from && *b == to)
                     .map(|span| Stations::One { span, fraction })
             })
             .unwrap_or_default();
@@ -231,9 +262,10 @@ impl MagneticFieldWindow {
     }
 
     /// Reads the inputs from the project when not read yet for the line
-    /// worked on, and writes them into it when they changed (each frame;
-    /// not while a value is dragged or typed). A project this user
-    /// cannot change keeps them for the session.
+    /// worked on, and writes them into it when they changed — once a run
+    /// starts or the window closes (owner, 2026-10-28: not at every change
+    /// on the page), not while a value is dragged or typed. A project this
+    /// user cannot change keeps them for the session.
     pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
         let Some(line) = model.session().map(|s| s.current_line().to_owned()) else {
             return;
@@ -243,13 +275,17 @@ impl MagneticFieldWindow {
             self.load(model);
             return;
         }
-        let Ok(json) = serde_json::to_string(&self.stored(model)) else {
-            return;
-        };
-        if self.saved.as_ref().is_some_and(|(_, j)| *j == json)
+        if !self.commit
             || ctx.input(|i| i.pointer.any_down())
             || ctx.memory(|m| m.focused().is_some())
         {
+            return;
+        }
+        self.commit = false;
+        let Ok(json) = serde_json::to_string(&self.stored(model)) else {
+            return;
+        };
+        if self.saved.as_ref().is_some_and(|(_, j)| *j == json) {
             return;
         }
         let op = ohl_server::Op::SetSetting {
@@ -302,15 +338,15 @@ impl MagneticFieldWindow {
     }
 
     /// The settings as the engine takes them.
-    fn settings(&self, model: &Model) -> Settings {
-        let spans = ohl_electrical::cross_section::line_spans(&model.line);
+    fn settings(&mut self, model: &Model) -> Settings {
+        let spans = self.spans(model);
         let stations = match &self.stations {
             Stations::EverySpan => Vec::new(),
             Stations::One { span, fraction } => spans
                 .get(*span)
-                .map(|s| StationSpec {
-                    from: s.from.clone(),
-                    to: s.to.clone(),
+                .map(|(from, to)| StationSpec {
+                    from: from.clone(),
+                    to: to.clone(),
                     fraction: *fraction,
                 })
                 .into_iter()
@@ -353,6 +389,8 @@ impl MagneticFieldWindow {
 
     /// Starts a run on the case's solved sections.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
+        // The inputs run with: kept in the project (the next frame).
+        self.commit = true;
         let Some(solved) = model.cases.get(self.case) else {
             self.job.result = Some(Err("no weather case in the model".into()));
             return;
@@ -498,6 +536,10 @@ impl MagneticFieldWindow {
                 });
             },
         );
+        // Closed: its inputs kept in the project (the next frame).
+        if self.open && !open {
+            self.commit = true;
+        }
         self.open = open;
         if run {
             self.start(model, ctx);
@@ -592,8 +634,8 @@ impl MagneticFieldWindow {
                     );
                 ui.end_row();
                 ui.label("Profiles");
+                let spans = self.spans(model);
                 ui.horizontal(|ui| {
-                    let spans = ohl_electrical::cross_section::line_spans(&model.line);
                     let mut every = self.stations == Stations::EverySpan;
                     ui.radio_value(&mut every, true, "every span's lowest point");
                     ui.radio_value(&mut every, false, "one span");
@@ -611,7 +653,7 @@ impl MagneticFieldWindow {
                             let name = |k: usize| {
                                 spans
                                     .get(k)
-                                    .map_or(String::new(), |s| format!("{}–{}", s.from, s.to))
+                                    .map_or(String::new(), |(a, b)| format!("{a}–{b}"))
                             };
                             egui::ComboBox::from_id_salt("magnetic-field-span")
                                 .selected_text(name(*span))
