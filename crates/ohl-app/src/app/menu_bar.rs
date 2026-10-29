@@ -784,6 +784,19 @@ pub(super) fn menus(
                 r.magnetic_field.show(r.case);
                 ui.close();
             }
+            if ui
+                .button("Electric field…")
+                .on_hover_text(
+                    "The electric field of the line's voltages (charges per wire from the \
+                     potential coefficients, their images in the ground): profiles across the \
+                     line, values at given points, an optional limit with the margin; 3D from \
+                     the wires as solved in a weather case, or 2D",
+                )
+                .clicked()
+            {
+                r.electric_field.show(r.case);
+                ui.close();
+            }
         });
         ui.separator();
         ui.label(egui::RichText::new("Analyses").strong());

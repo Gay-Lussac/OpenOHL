@@ -70,6 +70,8 @@ pub struct View3d {
     pub safety_volume: crate::safety_volume::Overlay,
     /// The magnetic field's isolines, cuts and surfaces.
     pub magnetic_field: crate::field_overlay::Overlay,
+    /// The electric field's cuts and surfaces.
+    pub electric_field: crate::field_overlay::Overlay,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
     /// What a replacement would remove (Replace structure's window open):
@@ -1396,6 +1398,9 @@ impl View3d {
                 }
                 Layer::MagneticField => {
                     crate::field_overlay::scene(model.origin, &self.magnetic_field)
+                }
+                Layer::ElectricField => {
+                    crate::field_overlay::scene(model.origin, &self.electric_field)
                 }
                 Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
                 Layer::GroundLines => crate::ground_lines::scene(

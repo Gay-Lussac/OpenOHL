@@ -123,8 +123,26 @@ the tiles' (each tile near the point as 6 × 6 point charges).
 | slope C | 4.5 m | 0.908 | 0.911 | −0.4 % | 9 % |
 | slope D | 2.2 m | 0.736 | 0.749 | −1.7 % | 5 % |
 
+**Exactly, in a V-valley** (owner: "can you test the per point plane
+too?"; a unit test): a long wire 20 m above the bottom of a 90° V
+(sides at 45°, z = |y|) has the exact field of its charge and three
+images (a 90° wedge). 1 m above the ground across the valley:
+
+| Across the valley | Exact | Plane under each point | Tiled floor |
+|---|---|---|---|
+| 0 m (the bottom) | 180 V/m | 1 802 | 82 |
+| 5 m | 1 374 | 2 274 | 1 365 |
+| 10 m (the largest) | 2 054 | 2 542 (+24 %) | 2 065 |
+| 20 m | 962 | 1 209 | 982 |
+
+The tiled floor is within 4.8 % of the largest value everywhere; the
+plane under each point **overestimates everywhere in the hollow** — the
+sides shield it, which a plane cannot see — by 24 % at the largest and
+tenfold at the bottom (**conservative** there).
+
 So the plane under each point **underestimates the largest field by up
-to some 8 % on uneven ground — not conservative** — and differs locally
+to some 8 % on the real line's bumps and slopes — not conservative** —
+and overestimates in hollows (conservative) — and differs locally
 by 5–30 % of the largest value (more where the field is weak: a bump of
 the ground raises the field on it, a hollow lowers it, which a plane
 cannot follow). Each profile says how far the terrain departs from the

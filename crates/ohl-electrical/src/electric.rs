@@ -1369,6 +1369,98 @@ fn field_2d(lines: &[LineCharge], y: f64, z: f64) -> f64 {
         .sqrt()
 }
 
+// ---------------------------------------------------------------------------
+// Kept for later, CSV out (the OHL-Design window, 2026-10-29).
+
+/// The ground [`run`] takes where no terrain gives it: straight between
+/// the structures' feet and level across, by the nearest span. Owned (for
+/// the field computed later, on another thread).
+pub fn feet_ground(line: &ohl_line::Line) -> impl Fn(f64, f64) -> f64 + Send + Sync + 'static {
+    let axes: Vec<Axis> = cross_section::line_spans(line)
+        .iter()
+        .filter_map(|s| Axis::of(line, s).ok())
+        .collect();
+    move |x: f64, y: f64| {
+        let mut best: Option<(f64, f64)> = None;
+        for a in &axes {
+            let (t, s) = a.local(&[x, y, 0.0]);
+            let tc = t.clamp(0.0, a.length);
+            let d = (t - tc).hypot(s);
+            if best.is_none_or(|b| d < b.0) {
+                best = Some((d, a.ground(None, tc, 0.0)));
+            }
+        }
+        best.map_or(0.0, |b| b.1)
+    }
+}
+
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_owned()
+    }
+}
+
+/// The results as CSV: one row per profile point, given point and cut
+/// point (kV/m).
+pub fn csv(e: &ElectricField) -> String {
+    use std::fmt::Write;
+    let mut out = String::from(
+        "kind,from,to,station_m,name,x,y,z,offset_m,height_m,e_kv_m,limit_kv_m,margin_kv_m\n",
+    );
+    let num = |x: Option<f64>| x.map_or(String::new(), |v| format!("{v:.4}"));
+    let row =
+        |out: &mut String, kind: &str, from: &str, to: &str, at: Option<f64>, p: &FieldPoint| {
+            let _ = writeln!(
+                out,
+                "{kind},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{},{}",
+                csv_field(from),
+                csv_field(to),
+                num(at),
+                csv_field(&p.name),
+                p.x,
+                p.y,
+                p.z,
+                p.offset,
+                p.height,
+                p.e_kv_m,
+                num(e.limit_kv_m),
+                num(p.margin_kv_m),
+            );
+        };
+    for pr in &e.profiles {
+        for p in &pr.points {
+            row(&mut out, "profile", &pr.from, &pr.to, Some(pr.at), p);
+        }
+    }
+    for p in &e.points {
+        row(&mut out, "point", "", "", None, p);
+    }
+    for c in &e.cuts {
+        let v = &c.values;
+        let nc = v.offsets.len();
+        for (r, &z) in v.elevations.iter().enumerate() {
+            for (k, &s) in v.offsets.iter().enumerate() {
+                let xy = v.cut.at(s);
+                let kv = v.values[r * nc + k];
+                let p = FieldPoint {
+                    name: String::new(),
+                    x: xy[0],
+                    y: xy[1],
+                    z,
+                    offset: s,
+                    height: v.ground[k].map_or(f64::NAN, |g| z - g),
+                    e_kv_m: kv,
+                    margin_kv_m: e.limit_kv_m.map(|l| l - kv),
+                };
+                row(&mut out, "cut", &c.from, &c.to, Some(c.at), &p);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1481,5 +1573,70 @@ mod tests {
         assert!((n[0] / n[2] + 0.1).abs() < 1e-12 && (n[1] / n[2] - 0.2).abs() < 1e-12);
         let m = p.mirror([10.0, 5.0, 110.0]);
         assert!(((m[2] - 100.0) + 10.0 * n[2] * n[2]).abs() < 1e-9 || m[2] < 100.0);
+    }
+
+    /// Exact: a long wire 20 m above the bottom of a 90° V-valley (its
+    /// sides z = |y|): the charge and three images (a 90° wedge). The
+    /// plane under each point and the tiled floor against it, 1 m above the
+    /// ground across the valley (owner, 2026-10-29: "can you test the per
+    /// point plane too?").
+    #[test]
+    fn a_v_valley_exactly() {
+        let (h, q) = (20.0, 1e-6);
+        let g = |_x: f64, y: f64| y.abs();
+        // The exact 2D field: the charge, its mirrors in each side (−q)
+        // and in both (+q).
+        let exact = |y: f64, z: f64| {
+            let mut e = [0.0; 2];
+            for (yk, zk, s) in [
+                (0.0, h, 1.0),
+                (h, 0.0, -1.0),
+                (-h, 0.0, -1.0),
+                (0.0, -h, 1.0),
+            ] {
+                let (dy, dz) = (y - yk, z - zk);
+                let r2 = dy * dy + dz * dz;
+                e[0] += s * q * 2.0 * K * dy / r2;
+                e[1] += s * q * 2.0 * K * dz / r2;
+            }
+            e[0].hypot(e[1])
+        };
+        let mut m = Charges3d::default();
+        m.push(50.0, &[[-2e4, 0.0, h], [2e4, 0.0, h]], C::new(q, 0.0));
+        let axis = Axis {
+            a: [-2e4, 0.0, 0.0],
+            b: [2e4, 0.0, 0.0],
+            u: [1.0, 0.0],
+            right: [0.0, -1.0],
+            length: 4e4,
+        };
+        let floor = TiledFloor::default();
+        let panels = floor_panels(&axis, 2e4, 30.0, &floor, &g);
+        let sigma = solve_floor(&panels, &m).unwrap();
+        let ys: Vec<f64> = (-25..=25).map(|k| k as f64).collect();
+        let ex: Vec<f64> = ys.iter().map(|&y| exact(y, y.abs() + 1.0)).collect();
+        let top = ex.iter().copied().fold(0.0, f64::max);
+        let (mut plane_worst, mut tiled_worst, mut plane_at_top) = (0.0f64, 0.0f64, 0.0);
+        for (k, &y) in ys.iter().enumerate() {
+            let p = [0.0, y, y.abs() + 1.0];
+            let pl = m.field(p, &GroundPlane::fitted(&g, p[0], p[1], 10.0));
+            let ti = floor_field(p, &panels, &sigma, &m);
+            plane_worst = plane_worst.max((pl - ex[k]).abs() / top);
+            tiled_worst = tiled_worst.max((ti - ex[k]).abs() / top);
+            if ex[k] == top {
+                plane_at_top = (pl - ex[k]) / ex[k];
+            }
+        }
+        eprintln!(
+            "V-valley: exact largest {top:.1} V/m; plane under each point off by at most {:.1} % of it ({:+.1} % at the largest); tiled floor at most {:.1} %",
+            plane_worst * 100.0,
+            plane_at_top * 100.0,
+            tiled_worst * 100.0
+        );
+        assert!(tiled_worst < 0.06, "{tiled_worst}");
+        assert!(
+            plane_worst > tiled_worst,
+            "the plane is the less exact here"
+        );
     }
 }

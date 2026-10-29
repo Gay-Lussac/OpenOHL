@@ -485,9 +485,14 @@ core staying independent of them.
    circuits at zero), 3D from the solved wires and jumpers as pieces of
    uniform charge in closed form, the ground a plane fitted under each
    point (owner's question "what's easier and actually better", answered,
-   to confirm), 2D line charges; profiles, points, cuts, volumes. Not yet:
-   the window in OHL-Design, a published profile in the validation, the
-   structures and objects (not modelled, said).
+   to confirm), 2D line charges; profiles, points, cuts, volumes. The
+   window in OHL-Design *built 2026-10-29 (in active development, not
+   approved yet)*: Checks › Electrical › Electric field… (voltages per
+   circuit, nominal by default, 0 kV voltage-free; 3D/2D, jumpers, ground
+   plane radius, profiles, limit, points; the cross-section panels and
+   volumes on the layer *Electric field (isolines, surfaces)*; inputs kept
+   in the project). Not yet: isolines from above, a published profile in
+   the validation, the structures and objects (not modelled, said).
 6. [ ] **Audible noise and a cross-check of the fields — a plugin for
    hvlbuzz.** [hvlbuzz](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html)
    (FKH, Switzerland; a Python library on a Rust core, `ebl`) computes the

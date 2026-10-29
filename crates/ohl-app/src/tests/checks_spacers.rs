@@ -1843,3 +1843,229 @@ fn the_magnetic_field_inputs_are_kept_in_the_project() {
     assert_eq!(fresh.limit(), Some(1.0));
     assert_eq!(fresh.views(), (Some(3.0), Some(0.5), Some(2.0)));
 }
+
+/// Checks › Electrical › Electric field…: Run is greyed while every
+/// circuit is voltage-free; then a profile per span with the charges per
+/// wire; the line edited, the results are out of date.
+#[test]
+fn the_electric_field_window_runs_and_goes_out_of_date() {
+    use egui_kittest::kittest::NodeT;
+    let model = synthetic();
+    let png =
+        ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| ohl_render::headless_device().is_ok());
+    let mut builder = Harness::builder().with_size(egui::vec2(1600.0, 1000.0));
+    if png.is_some() {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    submenu(&mut harness, "Checks", "Electrical");
+    harness.get_by_label("Electric field…").click();
+    harness.run();
+    let circuits = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.electric_field.open);
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        assert!(!circuits.is_empty());
+        for c in &circuits {
+            r.electric_field.set_voltage(&c.label(), 0.0);
+        }
+        circuits
+    };
+    harness.run();
+    assert!(
+        run_in(&harness, "Electric field")
+            .accesskit_node()
+            .is_disabled(),
+        "every circuit voltage-free"
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.electric_field.set_voltage(&circuits[0].label(), 400.0);
+        r.electric_field.set_limit(Some(5.0));
+    }
+    harness.run();
+    run_in(&harness, "Electric field").click();
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let Some(res) = &r.electric_field.job.result {
+            let a = res.as_ref().expect("a field");
+            assert!(!a.field.profiles.is_empty());
+            assert!(a.field.profiles.iter().all(|p| p.max_kv_m > 0.0));
+            assert!(!a.field.charges.is_empty());
+            assert!(a.charges.is_some());
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no field in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    assert!(harness.query_by_label_contains("Export CSV").is_some());
+    if let Some(dir) = png {
+        let image = harness.render().unwrap();
+        let path = std::path::PathBuf::from(dir).join("ohl-design-electric-field.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.electric_field.out_of_date(&r.model).is_none());
+    r.model.line.structures[1].position[2] += 1.0;
+    r.model.line_version += 1;
+    assert!(r.electric_field.out_of_date(&r.model).is_some());
+}
+
+/// The electric field's views: a volume's surfaces drawn on the Electric
+/// field layer once a run ends, a cross-section panel's cut computed from
+/// the run's charges (the kept charges give the profiles' values again),
+/// and everything gone when the window closes.
+#[test]
+fn the_electric_field_views_are_drawn() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.electric_field.set_views(Some(1.0), Some(4.0));
+        r.electric_field.show(r.case);
+        r.electric_field.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let Some(res) = &r.electric_field.job.result {
+            let a = res.as_ref().expect("a field");
+            assert_eq!(a.field.volumes.len(), 1);
+            assert!(a.charges.is_some());
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no field in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let o = &r.view3d.electric_field;
+        assert!(!o.surfaces.is_empty(), "surfaces");
+        assert!(o.plan.is_empty(), "no isolines from above yet");
+        // The kept charges on the run's ground give the profiles' values.
+        let Some(Ok(a)) = &r.electric_field.job.result else {
+            panic!("a field")
+        };
+        let charges = a.charges.clone().unwrap();
+        let terrain = r.model.ground_for_checks();
+        let feet = ohl_electrical::electric::feet_ground(&r.model.line);
+        let ground = |x: f64, y: f64| {
+            terrain
+                .as_ref()
+                .and_then(|t| t.height(x, y))
+                .unwrap_or_else(|| feet(x, y))
+        };
+        for p in a.field.profiles[0].points.iter().step_by(10) {
+            let plane = ohl_electrical::electric::GroundPlane::fitted(&ground, p.x, p.y, a.radius);
+            let e = charges.field([p.x, p.y, p.z], &plane) / 1e3;
+            assert!(
+                (e - p.e_kv_m).abs() <= 1e-6 * p.e_kv_m.max(1e-3),
+                "{e} {}",
+                p.e_kv_m
+            );
+        }
+        // A cross-section panel in the first span.
+        r.open_cut(crate::xsection::CutSpec {
+            alignment: "main".into(),
+            at: crate::xsection::At::Station(155.0),
+            depth: crate::xsection::DEFAULT_DEPTH,
+            width: 30.0,
+        });
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        if harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .electric_field
+            .panel_cuts_done()
+            == 1
+        {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no panel cut in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.view3d.electric_field.cuts.len(), 1);
+        let values = r.electric_field.panel_values();
+        assert!(values[0].values.iter().any(|v| *v > 0.0));
+    }
+    harness.state_mut().ready().unwrap().electric_field.fill = false;
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let o = r.electric_field.overlay_change(&r.model).expect("changed");
+        assert_eq!(o.cuts.len(), 1);
+        assert!(!o.cuts[0].lines.is_empty() && o.cuts[0].bands.is_empty());
+        // Closed: nothing drawn.
+        r.electric_field.open = false;
+        let o = r.electric_field.overlay_change(&r.model).expect("changed");
+        assert!(o.surfaces.is_empty() && o.cuts.is_empty());
+    }
+}
+
+/// The Electric field window's inputs are kept in the project: a voltage
+/// and a limit set, written into the project's setting for the line
+/// worked on once a run starts (not at every change on the page), and
+/// read back by a window opened anew.
+#[test]
+fn the_electric_field_inputs_are_kept_in_the_project() {
+    let model = crate::tests::session_edits::synthetic_project("electric-kept");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let label = {
+        let r = harness.state_mut().ready().unwrap();
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        let label = circuits[0].label();
+        r.electric_field.set_voltage(&label, 245.0);
+        r.electric_field.set_limit(Some(5.0));
+        r.electric_field.set_views(Some(0.5), Some(2.0));
+        label
+    };
+    harness.run();
+    let key = {
+        let r = harness.state_mut().ready().unwrap();
+        let session = r.model.session().unwrap();
+        let key = format!(
+            "{}.{}",
+            crate::electric_field::SETTING,
+            session.current_line()
+        );
+        // Changed only: not written yet.
+        let text = session.setting(&key).unwrap().unwrap_or_default();
+        assert!(!text.contains("245"), "{text}");
+        key
+    };
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.electric_field.start(&r.model, &ctx);
+    }
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let session = r.model.session().unwrap();
+    let text = session.setting(&key).unwrap().unwrap();
+    assert!(text.contains("245") && text.contains(&label), "{text}");
+    let mut fresh = crate::electric_field::ElectricFieldWindow::default();
+    fresh.keep(&mut r.model, &egui::Context::default());
+    assert_eq!(fresh.voltage_of(&label), Some(245.0));
+    assert_eq!(fresh.limit(), Some(5.0));
+    assert_eq!(fresh.views(), (Some(0.5), Some(2.0)));
+}
