@@ -33,10 +33,26 @@ use crate::contour::{self, Mesh};
 pub struct Progress {
     /// Set to stop: the run returns an error at its next point.
     pub cancel: AtomicBool,
-    /// Points computed.
+    /// Work done: points computed (and a floor's tiles once solved).
     pub done: AtomicUsize,
-    /// Points to compute.
+    /// Work to do.
     pub total: AtomicUsize,
+    /// What is under way, in words (empty: points).
+    pub stage: std::sync::Mutex<String>,
+}
+
+impl Progress {
+    /// Says what is under way.
+    pub fn set_stage(&self, text: impl Into<String>) {
+        if let Ok(mut s) = self.stage.lock() {
+            *s = text.into();
+        }
+    }
+
+    /// What is under way.
+    pub fn stage(&self) -> String {
+        self.stage.lock().map(|s| s.clone()).unwrap_or_default()
+    }
 }
 
 /// The distance from `p` to the segment `ab`.
@@ -481,6 +497,24 @@ impl Path {
             a[0] + f * (b[0] - a[0]) + s * (na[0] + f * (nb[0] - na[0])),
             a[1] + f * (b[1] - a[1]) + s * (na[1] + f * (nb[1] - na[1])),
         ]
+    }
+
+    /// [`Path::place`], beyond the path's ends too: on along its first or
+    /// last straight.
+    pub fn place_beyond(&self, t: f64, s: f64) -> [f64; 2] {
+        let len = self.length();
+        let (k, base, extra) = if t < 0.0 {
+            (0, 0.0, t)
+        } else if t > len {
+            (self.points.len() - 2, len, t - len)
+        } else {
+            return self.place(t, s);
+        };
+        let (a, b) = (self.points[k], self.points[k + 1]);
+        let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let d = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+        let p = self.place(base, s);
+        [p[0] + extra * d[0], p[1] + extra * d[1]]
     }
 
     /// The ground's elevation at station `t` (straight between the

@@ -213,6 +213,11 @@ impl ElectricFieldWindow {
                 );
                 ui.end_row();
                 // The cross-section panels.
+                if self.panel.job.running() {
+                    ui.label("");
+                    self.panel.progress_ui(ui);
+                    ui.end_row();
+                }
                 ui.label("Cross-sections");
                 ui.horizontal(|ui| {
                     let mut on = self.in_cuts.is_some();
@@ -342,11 +347,16 @@ impl ElectricFieldWindow {
     ) {
         let mut mesh_at = meshes.iter();
         let levels = field_overlay::shown(&self.levels);
-        if m.volumes.is_empty() && self.panel.done.is_empty() && self.panel.error.is_none() {
+        if m.volumes.is_empty()
+            && self.panel.done.is_empty()
+            && !self.panel.job.running()
+            && self.panel.error.is_none()
+        {
             return;
         }
         ui.separator();
         ui.strong("Views");
+        self.panel.progress_ui(ui);
         let small = |ui: &mut egui::Ui, t: String| {
             ui.label(egui::RichText::new(t).small());
         };
@@ -430,7 +440,7 @@ impl ElectricFieldWindow {
             }
             self.panel.generation += 1;
         }
-        let (Some(step), Some((charges, radius, ground_model))) =
+        let (Some(step), Some((charges, radius, ground_model, cut_tile))) =
             (self.in_cuts, self.charges.clone())
         else {
             if !self.panel.done.is_empty() {
@@ -471,6 +481,8 @@ impl ElectricFieldWindow {
             .iter()
             .map(|l| l.value)
             .collect();
+        let progress = Arc::new(field_views::Progress::default());
+        self.panel.progress = Some(progress.clone());
         self.panel.job.start(ctx, move || {
             let ground = |x: f64, y: f64| {
                 terrain
@@ -490,14 +502,31 @@ impl ElectricFieldWindow {
             for key in missing {
                 // On the tiled floor: one around the cut.
                 let floor = match ground_model {
-                    electric::GroundModel::Tiled(f) => Some(electric::Floor::solve(
-                        &charges,
-                        electric::Frame::of_cut(key.origin, key.right),
-                        0.0,
-                        key.width,
-                        &f,
-                        &ground,
-                    )?),
+                    electric::GroundModel::Tiled(f) => {
+                        let f = electric::TiledFloor {
+                            fine: cut_tile,
+                            coarse: cut_tile.max(f.coarse),
+                            ..f
+                        };
+                        let tiles = f.tiles(key.width);
+                        progress
+                            .total
+                            .fetch_add(tiles, std::sync::atomic::Ordering::Relaxed);
+                        progress.set_stage(format!("a tiled floor of {tiles} tiles"));
+                        let fl = electric::Floor::solve(
+                            &charges,
+                            electric::Frame::of_cut(key.origin, key.right),
+                            0.0,
+                            key.width,
+                            &f,
+                            &ground,
+                        )?;
+                        progress
+                            .done
+                            .fetch_add(tiles, std::sync::atomic::Ordering::Relaxed);
+                        progress.set_stage(String::new());
+                        Some(fl)
+                    }
                     electric::GroundModel::Plane => None,
                 };
                 let tiled = |ps: &[[f64; 3]]| -> Vec<f64> {
@@ -515,7 +544,10 @@ impl ElectricFieldWindow {
                     top: key.heights[1],
                     step: key.step,
                 };
-                let values = field_views::vertical_cut(&cut, &kv, Some(&height), None)?;
+                progress
+                    .total
+                    .fetch_add(cut.points(), std::sync::atomic::Ordering::Relaxed);
+                let values = field_views::vertical_cut(&cut, &kv, Some(&height), Some(&progress))?;
                 let deviation = levels
                     .iter()
                     .map(|&l| (l, values.deviation(l, &kv)))

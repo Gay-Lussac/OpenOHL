@@ -955,8 +955,14 @@ default.
   follows hollows and ridges. Or *plane under each point*, fitted over ±
   a distance (default ±10 m): quick, exact for level or evenly sloping
   ground, on a real line up to 8 % low on bumps and up to 24 % high in a
-  hollow. Volumes take the plane. On the command line `--plane`; the
-  tiles `--tile`, `--coarse-tile`, `--floor-reach`.
+  hollow. Cuts across the line (the cross-section panels too) and volumes
+  on coarser 8 m tiles by default, each a parameter (*tiles: profiles and
+  points / cuts / volumes*; a volume's floor of 8 m tiles is some 3 % off
+  on even ground, of 4 m 0.2 % and some 40 times as long). On the command
+  line `--plane`; the tiles `--tile`, `--coarse-tile`, `--floor-reach`,
+  `--cut-tile`, `--volume-tile`. Progress bars: the run's in the footer
+  (saying which floor is being solved), the cross-section panels' under
+  *Cross-sections* and in the results.
 - **Profiles**, **Across**, **Points from CSV…**: as for the [magnetic
   field](#electrical-magnetic-field) (default ±50 m every 1 m at 1 m
   above the ground).

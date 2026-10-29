@@ -114,6 +114,11 @@ pub struct ElectricFieldWindow {
     tiled: bool,
     /// The floor's fine tiles, m.
     tile: f64,
+    /// The tiles under the cuts across the line, m (coarser by default;
+    /// owner, 2026-10-29).
+    cut_tile: f64,
+    /// The tiles under the volumes, m.
+    volume_tile: f64,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
     /// The points file's text (kept in the project).
@@ -157,7 +162,7 @@ pub struct ElectricFieldWindow {
     /// The overlay as last handed out.
     drawn: Option<(bool, u64, u64, String, bool, bool)>,
     /// The last run's charges (3D) and its ground plane's radius.
-    charges: Option<(Arc<electric::Charges3d>, f64, electric::GroundModel)>,
+    charges: Option<(Arc<electric::Charges3d>, f64, electric::GroundModel, f64)>,
 }
 
 impl Default for ElectricFieldWindow {
@@ -177,6 +182,8 @@ impl Default for ElectricFieldWindow {
             ground_radius: d.ground_radius,
             tiled: true,
             tile: 2.0,
+            cut_tile: 8.0,
+            volume_tile: 8.0,
             points: None,
             points_text: None,
             saved: None,
@@ -228,6 +235,8 @@ struct Stored {
     ground_radius: Option<f64>,
     tiled: Option<bool>,
     tile: Option<f64>,
+    cut_tile: Option<f64>,
+    volume_tile: Option<f64>,
     /// The points file's name and text.
     points: Option<(String, String)>,
     piece_length: Option<f64>,
@@ -279,6 +288,8 @@ impl ElectricFieldWindow {
             ground_radius: Some(self.ground_radius),
             tiled: Some(self.tiled),
             tile: Some(self.tile),
+            cut_tile: Some(self.cut_tile),
+            volume_tile: Some(self.volume_tile),
             points: match (&self.points, &self.points_text) {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
@@ -336,6 +347,8 @@ impl ElectricFieldWindow {
         self.ground_radius = st.ground_radius.unwrap_or(d.ground_radius);
         self.tiled = st.tiled.unwrap_or(d.tiled);
         self.tile = st.tile.unwrap_or(d.tile);
+        self.cut_tile = st.cut_tile.unwrap_or(d.cut_tile);
+        self.volume_tile = st.volume_tile.unwrap_or(d.volume_tile);
         self.piece_length = st.piece_length;
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
@@ -538,6 +551,8 @@ impl ElectricFieldWindow {
             } else {
                 electric::GroundModel::Plane
             },
+            cut_tile: self.cut_tile,
+            volume_tile: self.volume_tile,
             jumpers: self.jumpers,
             piece_length: self.piece_length,
             cuts: Vec::new(),
@@ -641,7 +656,10 @@ impl ElectricFieldWindow {
             // volumes' share for the estimates.
             self.charges = None;
             if let Some(Ok(a)) = &self.job.result {
-                self.charges = a.charges.clone().map(|c| (c, a.radius, a.ground_model));
+                self.charges = a
+                    .charges
+                    .clone()
+                    .map(|c| (c, a.radius, a.ground_model, self.cut_tile));
                 if let Some(t) = self.job.took
                     && a.work > 0.0
                 {
@@ -731,7 +749,12 @@ impl ElectricFieldWindow {
                             done,
                             total,
                         );
-                        pr.text = format!("{done} of {total} points; {}", pr.text);
+                        let stage = p.stage();
+                        pr.text = if stage.is_empty() {
+                            format!("{done} of {total} points; {}", pr.text)
+                        } else {
+                            format!("{stage}; {}", pr.text)
+                        };
                         pr
                     });
                     let f = check_ui::RunFooter {
@@ -898,11 +921,27 @@ impl ElectricFieldWindow {
                         ui.radio_value(&mut self.tiled, true, "tiled floor");
                         ui.radio_value(&mut self.tiled, false, "plane under each point");
                         if self.tiled {
-                            ui.label("fine tiles");
+                            ui.label("tiles: profiles and points");
                             crate::style::field(
                                 ui,
                                 egui::DragValue::new(&mut self.tile)
                                     .range(1.0..=8.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            );
+                            ui.label("cuts");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.cut_tile)
+                                    .range(1.0..=32.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            );
+                            ui.label("volumes");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.volume_tile)
+                                    .range(2.0..=32.0)
                                     .speed(0.1)
                                     .suffix(" m"),
                             );
@@ -931,7 +970,7 @@ impl ElectricFieldWindow {
                         };
                         help::explain(
                             ui,
-                            &format!(
+                            &(format!(
                                 "The terrain as a conducting floor of tiles around each profile, \
                                  group of points and cut (owner, 2026-10-29: \"keep the tiled \
                                  implementation\"): ≈ {tiles} tiles, ≈ {} per floor, {floors} \
@@ -940,7 +979,35 @@ impl ElectricFieldWindow {
                                  and up to 24 % high in a hollow. From 4 m to 2 m tiles the \
                                  profiles moved 1–3 %; 1 m tiles take about 8 times as long.",
                                 magnetic_duration(electric::TiledFloor::seconds(tiles))
-                            ),
+                            ) + &format!(
+                                " Cuts across the line and volumes on coarser tiles by default \
+                                 (owner, 2026-10-29): a cut ≈ {} tiles, ≈ {}; a volume over one \
+                                 span ≈ {} tiles, ≈ {}. Measured against the exact field on even \
+                                 ground, a volume's floor of 16 m tiles is 8.3 % off the largest \
+                                 value, of 8 m 2.8 %, of 4 m 0.16 % (some 40 times as long).",
+                                electric::TiledFloor {
+                                    fine: self.cut_tile,
+                                    coarse: self.cut_tile.max(8.0),
+                                    ..Default::default()
+                                }
+                                .tiles(self.width),
+                                magnetic_duration(electric::TiledFloor::seconds(
+                                    electric::TiledFloor {
+                                        fine: self.cut_tile,
+                                        coarse: self.cut_tile.max(8.0),
+                                        ..Default::default()
+                                    }
+                                    .tiles(self.width)
+                                )),
+                                electric::Floor::tiles_under(400.0, self.width, self.volume_tile),
+                                magnetic_duration(electric::TiledFloor::seconds(
+                                    electric::Floor::tiles_under(
+                                        400.0,
+                                        self.width,
+                                        self.volume_tile
+                                    )
+                                )),
+                            )),
                             "Square tiles of the fine size within 30 m along the line and 10 m \
                              beyond the profiles across, 8 m beyond, to 200 m every way, each \
                              carrying a uniform charge solved so that the floor is at zero \

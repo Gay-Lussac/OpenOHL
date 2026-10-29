@@ -98,6 +98,14 @@ pub struct ElectricArgs {
     /// The tiled floor reaches this far every way from the station, m.
     #[arg(long, default_value_t = 200.0)]
     pub floor_reach: f64,
+    /// The tiles under the cuts across the line, m (coarser than the
+    /// profiles' by default).
+    #[arg(long, default_value_t = 8.0)]
+    pub cut_tile: f64,
+    /// The tiles under the volumes, m (8 m: some 3 % of the largest value
+    /// on even ground; 4 m: 0.2 %, some 40 times as long).
+    #[arg(long, default_value_t = 8.0)]
+    pub volume_tile: f64,
     /// The ground from the project's point cloud: its ground classes
     /// within the floor's reach of the profiles' spans (only those: a few
     /// extracts read quickly), the lowest point per metre triangulated.
@@ -1057,6 +1065,8 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         } else {
             electric::GroundModel::Plane
         },
+        cut_tile: a.cut_tile,
+        volume_tile: a.volume_tile,
         jumpers: !a.no_jumpers,
         piece_length: a.piece_length,
         cuts,
