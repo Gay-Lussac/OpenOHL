@@ -413,6 +413,36 @@ impl AlignmentView {
         false
     }
 
+    /// Whether a span between structures `a` and `b` runs along the
+    /// alignment: they follow each other in its run
+    /// ([`Self::consecutive`]), or both are in the run and the span stays
+    /// within [`NEAR_ALIGNMENT`] of the alignment over its whole length
+    /// (another line's structure standing under it, in the run because it
+    /// stands near the alignment, does not take the span off the route).
+    pub fn along(&self, line: &Line, a: &str, b: &str) -> bool {
+        if self.consecutive(a, b) {
+            return true;
+        }
+        if a == b || !self.run().any(|s| s == a) || !self.run().any(|s| s == b) {
+            return false;
+        }
+        let (Some(pa), Some(pb)) = (line.structure(a), line.structure(b)) else {
+            return false;
+        };
+        let (pa, pb) = (pa.position, pb.position);
+        let centre = positions(&self.alignment);
+        let n = (pa[0] - pb[0]).hypot(pa[1] - pb[1]).ceil().max(1.0) as usize;
+        (1..n).all(|k| {
+            let t = k as f64 / n as f64;
+            let p = [
+                pa[0] + t * (pb[0] - pa[0]),
+                pa[1] + t * (pb[1] - pa[1]),
+                0.0,
+            ];
+            beside(&centre, p) <= NEAR_ALIGNMENT
+        })
+    }
+
     /// Stationing of every structure of the route. Line angles and spans
     /// ahead are those of the run along the alignment ([`Self::run`]); a
     /// structure away from it has a station and an offset only (0 for
