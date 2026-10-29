@@ -433,13 +433,27 @@ core staying independent of them.
      circuit, frequencies combined, induced earth wire currents (infinite
      earth wire), profiles (every span's lowest point by default), grids,
      points from a CSV, an optional limit with margins and the limit
-     line's extent, the modelled length rule said. Not yet: the isolines
-     drawn (cross-section panel, 3D view), places of sensitive use as
-     project objects, the thermal rating in the window, crossings and
-     other lines, the earth wires per span with the towers' earthing,
-     the phase arrangement search, the site data sheet's numbers, a
-     limit from a plugin's parameter file, a published profile in the
-     validation.
+     line's extent, the modelled length rule said. *Built 2026-10-29
+     (owner: cuts across "to show what happens near buildings", from
+     the top, 3D with the performance checked; every modelling setting
+     with its effect and time):* levels as a table (display only), the
+     isolines from above, the field in every cross-section panel open,
+     volumes (isosurfaces in the 3D view, OBJ), shorter wire pieces, the
+     wires modelled within a distance (default: the whole line), each
+     drawing's distance off its level and each setting's effect measured
+     at every run, time estimates from this computer's speed. Not yet:
+     places of sensitive use as project objects, the thermal rating in
+     the window, crossings and other lines, the earth wires per span with
+     the towers' earthing, the phase arrangement search, the site data
+     sheet's numbers, a limit from a plugin's parameter file, a published
+     profile in the validation.
+   - [ ] **Option: the jumpers** as current paths (owner, 2026-10-29) —
+     their polylines as solved carry their circuit's phase current; left
+     out today (not conservative near the structures).
+   - [ ] **Option: the structures' steel** (owner, 2026-10-29) — its
+     permeability near the conductors and the currents induced in the
+     loops of earth wire and towers (with the towers' earthing above);
+     not modelled today (the field near a structure).
    - **Validation.** Closed forms (one infinite straight conductor; a
      balanced three-phase flat line, whose field falls as 1/d²), a finite
      segment against numerical integration, published profiles (to find:

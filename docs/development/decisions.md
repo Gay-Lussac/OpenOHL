@@ -10,6 +10,41 @@ of Parts A, B and C).
 
 ## 2026-10-29
 
+**The magnetic field in cuts and volumes, every modelling setting
+explained (owner, 2026-10-29)**
+
+- The owner: cuts in 2D with isolines "across vertical to show what
+  happens near buildings", "from the top could be nice too", "go ahead
+  for the 3d but make sure to check the performance"; levels as rules on
+  what is displayed; "change most of the line modelisation parameters …
+  but it should always explain the difference it makes on the results and
+  the calculation time". The electric field comes after this.
+- Built: the levels as a table (value, colour, shown; display only, the
+  limit addable); isolines from above (the grids, their own step); the
+  field in **every cross-section panel open** (computed from the run's
+  wires when a panel opens or moves); **volumes** over spans
+  (isosurfaces, translucent in the 3D view; `--obj`). Generic for any
+  field (`ohl_electrical::field_views`, `contour`), so the electric field
+  takes the same views.
+- Settings with their effect and time beside them: the wire pieces (as
+  solved, or at most a length — new points on the curve through the
+  solver's points), the wires modelled (the whole line by default, or
+  within a distance of each cut and volume), each view's step. Every run
+  **measures** how far its isolines and surfaces lie off their levels and
+  what the wires left out change (the field computed again at up to 200
+  of their points), instead of assuming it.
+- Performance, checked on a real line (28 km, 7 circuits, 124 000
+  pieces): the sum arranged per polyline (half the square roots; equal
+  within rounding) and per block of 64 points (the wires stay in the
+  cache), threads taking blocks in turn; a volume's fine lattice only
+  where a surface passes (about half of it). One span at 2 m: 85 s → 67 s
+  with the whole line, 6 s with the wires within 2 km (the field within
+  0.03 %); 1 m about four times longer. The computer slows to about half
+  speed after 5 s of full load: the estimates use the last run's speed.
+  The whole line stays the default (quality before speed).
+- To do, as options (owner): the **jumpers** as current paths and the
+  **structures' steel** (roadmap O18 step 4).
+
 **A span stays on the profile with another line under it (owner, 2026-10-29)**
 
 - Reported: the line's wires were missing on the sheets and in the

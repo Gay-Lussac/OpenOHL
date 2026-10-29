@@ -777,6 +777,59 @@ longer in the line falls back to the default.
   a CSV with a header naming `x`, `y` and `z` (elevation) or `height`
   (above the ground), optionally `name`.
 
+**3 Model** (3D; 2026-10-29). Every setting says beside it what it
+changes in the results and about how long it takes on this computer —
+from the last run's speed, else a short measurement (a laptop slows to
+about half speed after a few seconds of full load; the estimate allows
+for it).
+
+- **Wire pieces**: *as solved* (the solver's 64 pieces per span or part
+  of a span; it says the longest and how far a wire lies off them, a few
+  millimetres) or *at most* a length: the pieces are cut, the new points
+  placed on the curve through the solver's points (on the chord at a
+  kink: a spacer, a clamp). The field changes by about the wire's offset
+  over the distance to it: a few hundredths of a per cent at 10 m.
+  Shorter pieces take longer in proportion.
+- **Modelled**: *the whole line* (the default, the most exact) or the
+  *wires within* a distance of each cut and volume (profiles, grids and
+  points always take the whole line). Each run then computes the whole
+  line's field at some 200 points of the cut or volume and says how much
+  the wires left out change it (on a real line of 28 km, 2 km changed it
+  by at most 0.03 % and made a volume ten times quicker).
+
+**4 Views and levels** (2026-10-29). The **levels** are a table of
+values (µT) with a colour each, ticked to draw them, **+ level**, **+ the
+limit** (the limit given above) — display only, none is a limit. *Colour
+the cuts by band* fills a cut's cells with the colour of the highest
+level at or below their value. The views, drawn on the layer **Magnetic
+field (isolines, surfaces)** while the window is open:
+
+- **From above**: isolines at the profiles' height above the ground over
+  every span or one, ± the width, a grid every step (default 2 m); in
+  the plan and the 3D view.
+- **Cross-sections**: the field in **every cross-section panel open**
+  (**Cross-section…**, C), every step (default 0.5 m) — open a cut at a
+  building to see the field around it with the ground, the LiDAR points
+  and the line. Computed after a run whenever a panel opens or moves
+  (some seconds each), from the run's wires.
+- **Volume**: isosurfaces of the levels over spans *from … to*, ± the
+  width, from the ground to 10 m over the highest wire, the lattice every
+  step (default 2 m), drawn translucent in the 3D view. A coarse lattice
+  first, then the fine one only where a level passes, near the wires and
+  wherever a surface goes on. On a real line (7 circuits, 1000 A each), one
+  span at 2 m took about a minute with the whole line modelled and 6 s
+  with the wires within 2 km; 1 m takes about four times as long.
+
+Every value at a grid or lattice point is computed in full; only the
+lines and surfaces between the points are interpolated. **Each run says
+how far its drawings lie off their levels**: the field computed again at
+up to 200 points of every isoline and surface (half within …, nine in ten
+within …, at most …). A level drawn nowhere is said: *not reached*, or
+*the field is above it everywhere shown* (widen the view). Thin surfaces
+around the conductors (100 µT at 1000 A: some 2 m from a wire) need a
+fine step: at 2 m they lay up to 50 % off their level on a real line, at
+1 m within 4 % for nine points in ten.
+
 Choose the weather case in *2 Scope* (in the footer until 2026-10-27),
 the currents under it, and **Run** (a progress bar and **Stop** while it
 runs); the results open in the Results tab. The results: the currents used, the earth wires'
@@ -787,10 +840,12 @@ table per profile (station, the distance along the line, the largest B
 and where, the limit line's extent, warnings such as a line end nearer
 than five times the limit line's reach); a table of the points with B and
 the margin (red when above the limit). **Export CSV…** writes every point.
-The results are marked out of date when the line or the ground changes.
-Not yet: the isolines drawn in the 3D view and on the cross-section, the
-thermal rating as the currents (on the command line only), places of
-sensitive use as objects of the project.
+The results are marked out of date when the line or the ground changes;
+the views then draw faded. Under **Views**: per view what was computed
+and how far its drawings lie off their levels. Not yet: the thermal
+rating as the currents (on the command line only), places of sensitive
+use as objects of the project, the jumpers and the structures' steel
+(roadmap).
 
 **On the command line:**
 
@@ -802,7 +857,11 @@ ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
         [--method ieee738|cigre601|cigre207] [--reverse CIRCUIT]…]
     [--earth-wires] [--two-d [--mean-heights]]
     [--profile FROM:TO[@FRACTION]]… [--width 50] [--height 1] [--step 1]
-    [--grid FROM:TO]… [--points FILE.csv] [--limit µT]
+    [--grid FROM:TO]… [--grid-step M] [--points FILE.csv] [--limit µT]
+    [--piece-length M] [--modelled-within M]
+    [--cut FROM:TO[@FRACTION]]… [--cut-step 0.5]
+    [--volume FROM:TO]… [--volume-step 1] [--above 10] [--level µT]…
+    [--obj SURFACES.obj]
     [--terrain FILE | --surface NAME] [--all-points] [--csv OUT.csv]
     [--library WIRES.ohlw]
 ```
@@ -815,7 +874,13 @@ rating](../theory/thermal.md)) — the ambient case and the temperature are
 yours to give; `--current` then overrides single circuits. `--profile`
 without `@` takes the span's lowest point; none: every span's.
 `--grid` adds a grid on a horizontal plane over a span (to draw isolines
-elsewhere). Try it on the synthetic example:
+elsewhere). `--cut` computes a vertical cut across a span (± `--width`,
+from the ground to `--above` over the highest wire; its points in the
+CSV as `cut` rows), `--volume` the isosurfaces of the `--level` values
+over a span (written by `--obj` as a Wavefront OBJ file, one object per
+span and level); both say how far their drawings lie off the levels, and
+with `--modelled-within` what the wires left out change. Try it on the
+synthetic example:
 
 ```text
 ohl electrical magnetic examples/electrical/double-circuit.ohl.json \

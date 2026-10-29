@@ -51,6 +51,10 @@ pub enum Layer {
     /// Lines on the ground a distance beside the line (View › Lines on
     /// the ground beside the line, [`crate::ground_lines`]).
     GroundLines,
+    /// The magnetic field (Checks › Electrical › Magnetic field): isolines
+    /// from above, the cross-section panels' cuts, isosurfaces
+    /// (translucent), each level in its colour ([`crate::field_overlay`]).
+    MagneticField,
     /// Safety volumes around the wires (Checks › Safety volumes),
     /// translucent: drawn last.
     SafetyVolume,
@@ -61,7 +65,7 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 19] = [
+    pub const ALL: [Layer; 20] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -80,6 +84,7 @@ impl Layer {
         Layer::FallIn,
         Layer::Isoclearance,
         Layer::GroundLines,
+        Layer::MagneticField,
         Layer::SafetyVolume,
     ];
 
@@ -103,6 +108,7 @@ impl Layer {
             Layer::FallIn => "Vegetation: danger trees",
             Layer::Isoclearance => "Isoclearance lines",
             Layer::GroundLines => "Ground lines (beside the line)",
+            Layer::MagneticField => "Magnetic field (isolines, surfaces)",
             Layer::SafetyVolume => "Safety volumes",
             Layer::RigidLinks => "Rigid links (attachment points)",
         }
@@ -141,6 +147,7 @@ pub const LAYER_GROUPS: [(&str, &[Layer]); 4] = [
             Layer::GrowIn,
             Layer::FallIn,
             Layer::Isoclearance,
+            Layer::MagneticField,
             Layer::SafetyVolume,
         ],
     ),
@@ -1706,6 +1713,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         | Layer::FallIn
         | Layer::Isoclearance
         | Layer::GroundLines
+        | Layer::MagneticField
         | Layer::SafetyVolume => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {

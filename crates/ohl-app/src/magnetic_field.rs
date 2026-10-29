@@ -11,8 +11,10 @@
 //! the profiles plotted (B against the distance from the axis), a table
 //! per profile and per point with the limit's margin, the notes; Export
 //! CSV. Out of date like the other checks when the line or the ground
-//! changes. Not yet: isolines drawn in the views, the thermal rating as
-//! the currents (in `ohl electrical magnetic --thermal`).
+//! changes. The model's pieces and length, the levels drawn and the views
+//! (isolines from above, the cross-section panels, volumes) in
+//! [`views`] (owner, 2026-10-29). Not yet: the thermal rating as the
+//! currents (in `ohl electrical magnetic --thermal`).
 //!
 //! The window's inputs are kept in the project, per project line
 //! ([`SETTING`]; owner, 2026-10-27): the weather case, the currents and
@@ -29,10 +31,15 @@ use ohl_electrical::magnetic::{
     Settings, StationSpec,
 };
 
+#[path = "magnetic_views.rs"]
+pub mod views;
+
 use crate::check_help as help;
 use crate::check_ui;
+use crate::field_overlay::Level;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
+use views::{Above, PanelCuts, PieceStats, VolumeSetup};
 
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE_GROUND;
@@ -44,6 +51,12 @@ pub struct Answer {
     pub field: MagneticField,
     /// The weather case's name.
     pub case: String,
+    /// The 3D model's wires (for the cross-section panels' cuts).
+    pub wires: Option<Arc<magnetic::Wires3d>>,
+    /// The volumes' surfaces (level, mesh), in their order.
+    pub meshes: Vec<(f64, Arc<ohl_electrical::contour::Mesh>)>,
+    /// The points computed and the pieces, for the speed.
+    pub work: f64,
 }
 
 /// Where the profiles are taken.
@@ -56,6 +69,9 @@ enum Stations {
     /// fraction of it.
     One { span: usize, fraction: Option<f64> },
 }
+
+/// A span by its first and last structure.
+type SpanIds = (String, String);
 
 /// The line's spans by their first and last structure.
 type Spans = Arc<Vec<(String, String)>>;
@@ -101,6 +117,34 @@ pub struct MagneticFieldWindow {
     /// started, the window closed; owner, 2026-10-28: not at every change,
     /// the page stays quick).
     commit: bool,
+    /// The longest piece of a wire, m (none: as solved).
+    piece_length: Option<f64>,
+    /// Cuts and volumes take the wires within this distance only, m.
+    modelled_within: Option<f64>,
+    /// The levels drawn.
+    levels: Vec<Level>,
+    /// The cuts coloured by band.
+    pub(crate) fill: bool,
+    /// Isolines from above.
+    above: Option<Above>,
+    /// The field in the cross-section panels: the step, m.
+    in_cuts: Option<f64>,
+    /// A volume.
+    volume: Option<VolumeSetup>,
+    /// The panels' cuts.
+    panel: PanelCuts,
+    /// Seconds per piece and point of the last run here.
+    rate: Option<f64>,
+    /// The share of a volume's lattice the last run computed.
+    volume_share: Option<f64>,
+    /// The levels the last run was asked (their order in its reports).
+    run_levels: Vec<f64>,
+    /// The wires' pieces, by line version and case.
+    pieces_seen: Option<((u64, usize), PieceStats)>,
+    /// The overlay as last handed out.
+    drawn: Option<(bool, u64, u64, String, bool, bool)>,
+    /// The last run's wires (3D).
+    wires: Option<Arc<magnetic::Wires3d>>,
 }
 
 impl Default for MagneticFieldWindow {
@@ -127,6 +171,20 @@ impl Default for MagneticFieldWindow {
             job: Job::default(),
             spans: None,
             commit: false,
+            piece_length: None,
+            modelled_within: None,
+            levels: crate::field_overlay::default_levels(),
+            fill: true,
+            above: None,
+            in_cuts: None,
+            volume: None,
+            panel: PanelCuts::default(),
+            rate: None,
+            volume_share: None,
+            run_levels: Vec::new(),
+            pieces_seen: None,
+            drawn: None,
+            wires: None,
         }
     }
 }
@@ -156,6 +214,15 @@ struct Stored {
     mean_heights: bool,
     /// The points file's name and text.
     points: Option<(String, String)>,
+    piece_length: Option<f64>,
+    modelled_within: Option<f64>,
+    levels: Option<Vec<Level>>,
+    fill: Option<bool>,
+    /// Isolines from above: one span (none: every span) and the step.
+    above: Option<(Option<(String, String)>, f64)>,
+    in_cuts: Option<f64>,
+    /// A volume: its first and last spans and the step.
+    volume: Option<(SpanIds, SpanIds, f64)>,
 }
 
 impl MagneticFieldWindow {
@@ -201,6 +268,19 @@ impl MagneticFieldWindow {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
             },
+            piece_length: self.piece_length,
+            modelled_within: self.modelled_within,
+            levels: Some(self.levels.clone()),
+            fill: Some(self.fill),
+            above: self
+                .above
+                .as_ref()
+                .map(|a| (a.span.and_then(|k| spans.get(k).cloned()), a.step)),
+            in_cuts: self.in_cuts,
+            volume: self
+                .volume
+                .as_ref()
+                .and_then(|v| Some((spans.get(v.from)?.clone(), spans.get(v.to)?.clone(), v.step))),
         }
     }
 
@@ -243,6 +323,23 @@ impl MagneticFieldWindow {
             })
             .unwrap_or_default();
         self.limit = st.limit;
+        self.piece_length = st.piece_length;
+        self.modelled_within = st.modelled_within;
+        self.levels = st.levels.unwrap_or(d.levels);
+        self.fill = st.fill.unwrap_or(d.fill);
+        let find = |s: &(String, String)| spans.iter().position(|x| x == s);
+        self.above = st.above.map(|(span, step)| Above {
+            span: span.as_ref().and_then(find),
+            step,
+        });
+        self.in_cuts = st.in_cuts;
+        self.volume = st.volume.and_then(|(a, b, step)| {
+            Some(VolumeSetup {
+                from: find(&a)?,
+                to: find(&b)?,
+                step,
+            })
+        });
         self.two_d = st.two_d;
         self.mean_heights = st.mean_heights;
         (self.points, self.points_text, self.points_error) = match st.points {
@@ -317,6 +414,36 @@ impl MagneticFieldWindow {
         self.currents.get(circuit).map(|c| c.0)
     }
 
+    /// Sets the views (tests): isolines from above every `above` m, the
+    /// cross-section panels every `cuts` m, a volume over the first span
+    /// every `volume` m.
+    #[cfg(test)]
+    pub fn set_views(&mut self, above: Option<f64>, cuts: Option<f64>, volume: Option<f64>) {
+        self.above = above.map(|step| Above { span: None, step });
+        self.in_cuts = cuts;
+        self.volume = volume.map(|step| VolumeSetup {
+            from: 0,
+            to: 0,
+            step,
+        });
+    }
+
+    /// The views (tests): from above, the panels, the volume's step.
+    #[cfg(test)]
+    pub fn views(&self) -> (Option<f64>, Option<f64>, Option<f64>) {
+        (
+            self.above.as_ref().map(|a| a.step),
+            self.in_cuts,
+            self.volume.as_ref().map(|v| v.step),
+        )
+    }
+
+    /// The panels' cuts computed (tests).
+    #[cfg(test)]
+    pub fn panel_cuts_done(&self) -> usize {
+        self.panel.done.len()
+    }
+
     /// The limit, µT (tests).
     #[cfg(test)]
     pub fn limit(&self) -> Option<f64> {
@@ -377,7 +504,34 @@ impl MagneticFieldWindow {
             width: self.width,
             step: self.step,
             stations,
-            grids: Vec::new(),
+            grids: match &self.above {
+                None => Vec::new(),
+                Some(a) => match a.span {
+                    None => spans.to_vec(),
+                    Some(k) => spans.get(k).cloned().into_iter().collect(),
+                },
+            },
+            grid_step: self.above.as_ref().map(|a| a.step),
+            piece_length: self.piece_length,
+            modelled_within: self.modelled_within,
+            cuts: Vec::new(),
+            volumes: match (&self.volume, self.two_d) {
+                (Some(v), false) => (v.from..=v.to)
+                    .filter_map(|k| spans.get(k))
+                    .map(|(from, to)| magnetic::VolumeSpec {
+                        from: from.clone(),
+                        to: to.clone(),
+                        width: self.width,
+                        above: views::ABOVE,
+                        step: v.step,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
+            levels: crate::field_overlay::shown(&self.levels)
+                .iter()
+                .map(|l| l.value)
+                .collect(),
             points: self
                 .points
                 .as_ref()
@@ -401,6 +555,7 @@ impl MagneticFieldWindow {
         let case = solved.case.clone();
         let ground = model.ground_for_checks();
         let settings = self.settings(model);
+        self.run_levels = settings.levels.clone();
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
         self.job.start_at(ctx, model.revision(), move || {
@@ -415,7 +570,9 @@ impl MagneticFieldWindow {
                 temperature: case.temperature,
                 ground: g,
             };
-            let mut field = magnetic::run(&src, &settings, Some(&progress))?;
+            let (mut field, wires) = magnetic::run_keeping(&src, &settings, Some(&progress))?;
+            let work = progress.total.load(Ordering::Relaxed) as f64
+                * wires.as_ref().map_or(0, |w| w.count()) as f64;
             for id in line
                 .sections
                 .iter()
@@ -432,18 +589,42 @@ impl MagneticFieldWindow {
                         .into(),
                 );
             }
+            let meshes = views::take_meshes(&mut field);
             Ok(Answer {
                 field,
                 case: case.name.clone(),
+                wires: wires.map(Arc::new),
+                meshes,
+                work,
             })
         });
     }
 
     /// The window.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) {
+        let generation = self.job.generation;
         self.job.poll();
         if !self.job.running() {
             self.progress = None;
+        }
+        if self.job.generation != generation {
+            // A new answer: its wires for the panels, its speed and its
+            // volumes' share for the estimates.
+            self.wires = None;
+            if let Some(Ok(a)) = &self.job.result {
+                self.wires = a.wires.clone();
+                if let Some(t) = self.job.took
+                    && a.work > 0.0
+                {
+                    self.rate = Some(t.as_secs_f64() / a.work);
+                }
+                let (c, f) = a.field.volumes.iter().fold((0usize, 0usize), |s, v| {
+                    (s.0 + v.values.computed, s.1 + v.values.full)
+                });
+                if f > 0 {
+                    self.volume_share = Some(c as f64 / f as f64);
+                }
+            }
         }
         if !self.open {
             return;
@@ -496,6 +677,10 @@ impl MagneticFieldWindow {
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
                         self.inputs_ui(ui, model);
+                        if !self.two_d {
+                            let spans = self.spans(model);
+                            self.views_ui(ui, model, &spans);
+                        }
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
                         egui::ScrollArea::both()
@@ -830,13 +1015,7 @@ impl MagneticFieldWindow {
         for n in &m.notes {
             ui.label(egui::RichText::new(n).small().weak());
         }
-        ui.label(
-            egui::RichText::new(
-                "Not yet: the isolines drawn in the 3D view and the cross-section.",
-            )
-            .small()
-            .weak(),
-        );
+        self.views_results_ui(ui, m, &answer.meshes);
         if !m.profiles.is_empty() {
             ui.separator();
             self.shown = self.shown.min(m.profiles.len() - 1);

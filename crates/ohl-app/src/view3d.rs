@@ -68,6 +68,8 @@ pub struct View3d {
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
     /// What Checks › Safety volumes built.
     pub safety_volume: crate::safety_volume::Overlay,
+    /// The magnetic field's isolines, cuts and surfaces.
+    pub magnetic_field: crate::field_overlay::Overlay,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
     /// What a replacement would remove (Replace structure's window open):
@@ -1391,6 +1393,9 @@ impl View3d {
                 }
                 Layer::SafetyVolume => {
                     crate::safety_volume::scene(model.origin, &self.safety_volume)
+                }
+                Layer::MagneticField => {
+                    crate::field_overlay::scene(model.origin, &self.magnetic_field)
                 }
                 Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
                 Layer::GroundLines => crate::ground_lines::scene(

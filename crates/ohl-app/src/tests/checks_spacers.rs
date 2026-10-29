@@ -1698,6 +1698,100 @@ fn the_magnetic_field_window_runs_and_goes_out_of_date() {
     assert!(r.magnetic_field.out_of_date(&r.model).is_some());
 }
 
+/// The magnetic field's views (owner, 2026-10-29): isolines from above
+/// and a volume's surfaces drawn on the Magnetic field layer once a run
+/// ends, a cross-section panel's cut computed from the run's wires, and
+/// everything gone when the window closes.
+#[test]
+fn the_magnetic_field_views_are_drawn() {
+    let model = synthetic();
+    let png =
+        ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| ohl_render::headless_device().is_ok());
+    let mut builder = Harness::builder().with_size(egui::vec2(1600.0, 1000.0));
+    if png.is_some() {
+        builder = builder.wgpu();
+    }
+    let mut harness =
+        builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        r.magnetic_field.set_current(&circuits[0].label(), 800.0);
+        r.magnetic_field.set_views(Some(5.0), Some(1.0), Some(4.0));
+        r.magnetic_field.show(r.case);
+        r.magnetic_field.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let Some(res) = &r.magnetic_field.job.result {
+            let a = res.as_ref().expect("a field");
+            assert!(!a.field.grids.is_empty());
+            assert_eq!(a.field.volumes.len(), 1);
+            assert!(a.wires.is_some());
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no field in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let o = &r.view3d.magnetic_field;
+        assert!(!o.plan.is_empty(), "isolines from above");
+        assert!(!o.surfaces.is_empty(), "surfaces");
+        assert!(!r.plan.magnetic_field.plan.is_empty());
+        // A cross-section panel in the first span.
+        r.open_cut(crate::xsection::CutSpec {
+            alignment: "main".into(),
+            at: crate::xsection::At::Station(155.0),
+            depth: crate::xsection::DEFAULT_DEPTH,
+            width: 30.0,
+        });
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        if harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .magnetic_field
+            .panel_cuts_done()
+            == 1
+        {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no panel cut in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.view3d.magnetic_field.cuts.len(), 1);
+    }
+    if let Some(dir) = png {
+        harness.run_steps(4);
+        let image = harness.render().unwrap();
+        let path = std::path::PathBuf::from(dir).join("ohl-design-magnetic-field-views.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    harness.state_mut().ready().unwrap().magnetic_field.fill = false;
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let o = r.magnetic_field.overlay_change(&r.model).expect("changed");
+        assert_eq!(o.cuts.len(), 1);
+        assert!(!o.cuts[0].lines.is_empty() && o.cuts[0].bands.is_empty());
+        // Closed: nothing drawn.
+        r.magnetic_field.open = false;
+        let o = r.magnetic_field.overlay_change(&r.model).expect("changed");
+        assert!(o.plan.is_empty() && o.surfaces.is_empty() && o.cuts.is_empty());
+    }
+}
+
 /// The Magnetic field window's inputs are kept in the project (owner,
 /// 2026-10-27): a current and a limit set, written into the project's
 /// setting for the line worked on once a run starts (owner, 2026-10-28:
@@ -1716,6 +1810,7 @@ fn the_magnetic_field_inputs_are_kept_in_the_project() {
         let label = circuits[0].label();
         r.magnetic_field.set_current(&label, 650.0);
         r.magnetic_field.set_limit(Some(1.0));
+        r.magnetic_field.set_views(Some(3.0), Some(0.5), Some(2.0));
         label
     };
     harness.run();
@@ -1746,4 +1841,5 @@ fn the_magnetic_field_inputs_are_kept_in_the_project() {
     fresh.keep(&mut r.model, &egui::Context::default());
     assert_eq!(fresh.current_of(&label), Some(650.0));
     assert_eq!(fresh.limit(), Some(1.0));
+    assert_eq!(fresh.views(), (Some(3.0), Some(0.5), Some(2.0)));
 }

@@ -959,6 +959,9 @@ fn take_overlays(view: &mut View3d, main: &View3d, layers: &HashSet<Layer>) {
     if layers.contains(&Layer::SafetyVolume) {
         view.safety_volume.clone_from(&main.safety_volume);
     }
+    if layers.contains(&Layer::MagneticField) {
+        view.magnetic_field.clone_from(&main.magnetic_field);
+    }
     if layers.contains(&Layer::Draft) {
         view.draft.clone_from(&main.draft);
         view.removed.clone_from(&main.removed);
