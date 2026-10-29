@@ -173,7 +173,21 @@ angles). This is the governing state the guide describes (2.4.1 and
 8.1.4); real operation is unbalanced — **Assumption** as the guide asks,
 neither conservative nor not in general.
 
-- **Given** (A), or
+- **At its end points** (owner, 2026-10-29: "inputs and outputs for each
+  end point of the circuit"): a circuit's end points are the structures
+  where its sections end without going on to another of them (each
+  phase's sections joined where they meet, by its jumpers); at each the
+  current into the line (out: negative; one end may take the rest).
+  Every section's current then follows by **Kirchhoff's current law**:
+  on each phase's sections, a section's current is the sum of the
+  currents in on its first structure's side once it is taken away —
+  exact for a line with branches; a **meshed** circuit (its sections
+  closing a loop) needs its impedances (the load flow, roadmap O18 step
+  2) and is refused. The direction of each section's current comes with
+  it. Tested: in at one end and out at the other is the circuit's current
+  along the line (in at the other: against it); a sum not zero, a
+  structure not an end and two "rests" are refused.
+- **Given** (A) for the whole circuit, or
 - the circuit's **thermal rating** (`--thermal` on the command line): the
   steady-state ampacity of each section's wire ([Thermal
   rating](thermal.md)) times its subconductors, at a conductor

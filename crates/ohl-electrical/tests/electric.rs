@@ -148,7 +148,14 @@ fn the_tiled_floor_on_even_ground() {
     };
     let t0 = std::time::Instant::now();
     let plane = field(&s);
-    s.ground_model = electric::GroundModel::Tiled(electric::TiledFloor::default());
+    // (A floor smaller than the default: the test stays quick.)
+    s.ground_model = electric::GroundModel::Tiled(electric::TiledFloor {
+        fine: 2.0,
+        coarse: 8.0,
+        fine_along: 16.0,
+        fine_margin: 4.0,
+        reach: 96.0,
+    });
     let tiled = field(&s);
     let (a, b) = (&plane.profiles[0], &tiled.profiles[0]);
     let worst = a

@@ -696,3 +696,93 @@ fn a_section_given_backwards_carries_the_current_on() {
     let (a, b) = (fwd.points[0].b_ut, back.points[0].b_ut);
     assert!((a - b).abs() < 1e-2 * a, "{a} {b}");
 }
+
+/// Currents in and out at a circuit's end points (owner, 2026-10-29):
+/// the jumpered example's circuit North has its ends at T1 and T3; 1000 A
+/// in at T1 and out at T3 is the circuit's 1000 A along the line, in at T3
+/// the same reversed; the ends are listed; a sum not 0, a structure not an
+/// end and two "rests" are refused.
+#[test]
+fn currents_at_the_end_points() {
+    let (line, library) = with_a_jumper();
+    let ends = magnetic::circuit_ends(&line);
+    let north = ends.iter().find(|(k, _)| k.circuit == "North").unwrap();
+    assert_eq!(north.1, vec!["T1".to_string(), "T3".to_string()]);
+    let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+    let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let src = Sources {
+        line: &line,
+        library: &library,
+        shapes: &shapes,
+        temperature: Temperature::from_celsius(40.0),
+        ground: None,
+        jumpers: &jumpers,
+    };
+    let base = Settings {
+        stations: vec![mid("T1", "T2"), mid("T2", "T3")],
+        points: vec![magnetic::GivenPoint {
+            name: "by the jumper".into(),
+            x: 300.2,
+            y: 7.0,
+            z: Some(423.0),
+            height: None,
+        }],
+        ..Settings::default()
+    };
+    let end = |s: &str, a: Option<f64>| magnetic::EndCurrent {
+        circuit: "North".into(),
+        structure: s.into(),
+        amps: a,
+    };
+    let by = |reverse: bool| {
+        let s = Settings {
+            currents: vec![CircuitCurrent {
+                circuit: "North".into(),
+                amps: 1000.0,
+                reverse,
+            }],
+            ..base.clone()
+        };
+        magnetic::run(&src, &s, None).unwrap()
+    };
+    let at = |ends: Vec<magnetic::EndCurrent>| {
+        let s = Settings {
+            ends,
+            ..base.clone()
+        };
+        magnetic::run(&src, &s, None)
+    };
+    for (circuit, ends) in [
+        (by(false), vec![end("T1", Some(1000.0)), end("T3", None)]),
+        (
+            by(true),
+            vec![end("T3", Some(1000.0)), end("T1", Some(-1000.0))],
+        ),
+    ] {
+        let e = at(ends).unwrap();
+        for (a, b) in circuit.profiles.iter().zip(&e.profiles) {
+            assert!(
+                (a.max_ut - b.max_ut).abs() < 1e-9 * a.max_ut,
+                "{} {}",
+                a.max_ut,
+                b.max_ut
+            );
+        }
+        assert!((circuit.points[0].b_ut - e.points[0].b_ut).abs() < 1e-9 * circuit.points[0].b_ut);
+        assert!(
+            e.notes.iter().any(|n| n.contains("end points")),
+            "{:?}",
+            e.notes
+        );
+    }
+    assert!(at(vec![end("T1", Some(1000.0)), end("T3", Some(-900.0))]).is_err());
+    assert!(at(vec![end("T2", Some(1000.0))]).is_err());
+    assert!(at(vec![end("T1", None), end("T3", None)]).is_err());
+}

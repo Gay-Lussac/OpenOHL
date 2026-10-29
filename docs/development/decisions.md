@@ -26,7 +26,14 @@ keep 2 builds (owner, 2026-10-29)**
 - "Only keep the last 2 builds at all times": `tools/prune_builds.py`
   keeps per crate and kind the last two builds (main folder 39 → 15 GB).
 - The owner, on currents: "give inputs and outputs for each end point of
-  the circuit" instead of one current per circuit (to build next).
+  the circuit" instead of one current per circuit: built — a circuit's
+  end points (where its sections end without going on), the current in
+  or out at each (one may take the rest), every section's current by
+  Kirchhoff's current law (branches; a meshed circuit refused: the load
+  flow); the window (*given*: the circuit / at its end points),
+  `--end`, `--ends`. The one current per circuit stays (the default).
+- The owner, after the comparison: "keep the tiled implementation" (the
+  tiled floor as the electric field's ground: to build next).
 
 **The electric field window (owner, 2026-10-29: go ahead with the
 window)**

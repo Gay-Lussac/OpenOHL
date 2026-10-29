@@ -70,6 +70,9 @@ pub(crate) enum Stations {
     One { span: usize, fraction: Option<f64> },
 }
 
+/// Every circuit's end points: its label and the structures.
+type CircuitEnds = Vec<(String, Vec<String>)>;
+
 /// A span by its first and last structure.
 type SpanIds = (String, String);
 
@@ -97,6 +100,12 @@ pub struct MagneticFieldWindow {
     pub case: usize,
     /// Current (A) and reverse per circuit, by its label.
     currents: BTreeMap<String, (f64, bool)>,
+    /// The circuits given by their end points (owner, 2026-10-29): per
+    /// circuit, each end's structure and current into the line (A,
+    /// negative: out; none: the rest).
+    ends: BTreeMap<String, Vec<(String, Option<f64>)>>,
+    /// The circuits' end points, by the line's version.
+    ends_seen: Option<(u64, CircuitEnds)>,
     earth_wires: bool,
     /// The earth wires as a network through the structures' earthing,
     /// the structures carrying current.
@@ -171,6 +180,8 @@ impl Default for MagneticFieldWindow {
             open: false,
             case: 0,
             currents: BTreeMap::new(),
+            ends: BTreeMap::new(),
+            ends_seen: None,
             earth_wires: false,
             towers: true,
             jumpers: true,
@@ -222,6 +233,7 @@ const WINDOW: &str = "magnetic-field-window";
 struct Stored {
     case: Option<String>,
     currents: BTreeMap<String, (f64, bool)>,
+    ends: BTreeMap<String, Vec<(String, Option<f64>)>>,
     earth_wires: bool,
     towers: Option<bool>,
     jumpers: Option<bool>,
@@ -278,6 +290,7 @@ impl MagneticFieldWindow {
         Stored {
             case: model.cases.get(self.case).map(|c| c.case.name.clone()),
             currents: self.currents.clone(),
+            ends: self.ends.clone(),
             earth_wires: self.earth_wires,
             towers: Some(self.towers),
             jumpers: Some(self.jumpers),
@@ -332,6 +345,7 @@ impl MagneticFieldWindow {
             self.case_kept = true;
         }
         self.currents = st.currents;
+        self.ends = st.ends;
         self.earth_wires = st.earth_wires;
         self.towers = st.towers.unwrap_or(d.towers);
         self.jumpers = st.jumpers.unwrap_or(d.jumpers);
@@ -470,6 +484,13 @@ impl MagneticFieldWindow {
         self.panel.done.len()
     }
 
+    /// Gives circuit `label` by its end points (tests): each end's
+    /// structure and current in (none: the rest).
+    #[cfg(test)]
+    pub fn set_ends(&mut self, label: &str, ends: Vec<(String, Option<f64>)>) {
+        self.ends.insert(label.to_owned(), ends);
+    }
+
     /// The limit, µT (tests).
     #[cfg(test)]
     pub fn limit(&self) -> Option<f64> {
@@ -519,10 +540,22 @@ impl MagneticFieldWindow {
             currents: self
                 .currents
                 .iter()
+                .filter(|(c, _)| !self.ends.contains_key(*c))
                 .map(|(c, &(amps, reverse))| CircuitCurrent {
                     circuit: c.clone(),
                     amps,
                     reverse,
+                })
+                .collect(),
+            ends: self
+                .ends
+                .iter()
+                .flat_map(|(c, list)| {
+                    list.iter().map(move |(s, a)| magnetic::EndCurrent {
+                        circuit: c.clone(),
+                        structure: s.clone(),
+                        amps: *a,
+                    })
                 })
                 .collect(),
             earth_wires: self.earth_wires,
@@ -679,7 +712,16 @@ impl MagneticFieldWindow {
                 let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
                 let why = if names.is_empty() {
                     Some("no weather case in the model".to_owned())
-                } else if !self.currents.values().any(|c| c.0 > 0.0) {
+                } else if !self
+                    .currents
+                    .iter()
+                    .any(|(c, v)| v.0 > 0.0 && !self.ends.contains_key(c))
+                    && !self
+                        .ends
+                        .values()
+                        .flatten()
+                        .any(|e| e.1.is_some_and(|a| a != 0.0))
+                {
                     Some("give a circuit a current (2 Scope)".to_owned())
                 } else {
                     None
@@ -783,15 +825,119 @@ impl MagneticFieldWindow {
             .striped(true)
             .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
-                for h in ["circuit", "system", "current", "load flow"] {
+                for h in ["circuit", "system", "given", "current", "load flow"] {
                     ui.strong(h);
                 }
                 ui.end_row();
+                let version = model.line_version;
+                if self.ends_seen.as_ref().is_none_or(|(v, _)| *v != version) {
+                    let list = magnetic::circuit_ends(&model.line)
+                        .into_iter()
+                        .map(|(k, e)| (k.label(), e))
+                        .collect();
+                    self.ends_seen = Some((version, list));
+                }
+                let seen = self
+                    .ends_seen
+                    .as_ref()
+                    .map(|s| s.1.clone())
+                    .unwrap_or_default();
                 for c in &circuits {
                     let label = c.label();
-                    let entry = self.currents.entry(label.clone()).or_insert((0.0, false));
                     ui.label(&label);
                     ui.label(&c.system);
+                    let points: Vec<String> = seen
+                        .iter()
+                        .find(|(l, _)| *l == label)
+                        .map(|(_, e)| e.clone())
+                        .unwrap_or_default();
+                    let mut by_ends = self.ends.contains_key(&label);
+                    egui::ComboBox::from_id_salt(("magnetic-field-given", &label))
+                        .selected_text(if by_ends {
+                            "at its end points"
+                        } else {
+                            "the circuit"
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut by_ends, false, "the circuit");
+                            ui.add_enabled_ui(points.len() >= 2, |ui| {
+                                ui.selectable_value(&mut by_ends, true, "at its end points");
+                            });
+                        })
+                        .response
+                        .on_hover_text(
+                            "The circuit: one current everywhere, along the line or against it. \
+                             At its end points (owner, 2026-10-29): the current in or out at each \
+                             end (one end may take the rest); every section's current follows by \
+                             Kirchhoff's current law, branches included (a meshed circuit needs \
+                             the load flow: refused)",
+                        );
+                    if by_ends && !self.ends.contains_key(&label) {
+                        // In at the first end, the rest out at the others.
+                        let amps = self.currents.get(&label).map_or(0.0, |c| c.0);
+                        let mut list: Vec<(String, Option<f64>)> =
+                            points.iter().map(|p| (p.clone(), Some(0.0))).collect();
+                        if let Some(first) = list.first_mut() {
+                            first.1 = Some(amps);
+                        }
+                        if let Some(last) = list.last_mut() {
+                            last.1 = None;
+                        }
+                        self.ends.insert(label.clone(), list);
+                    } else if !by_ends {
+                        self.ends.remove(&label);
+                    }
+                    if let Some(list) = self.ends.get_mut(&label) {
+                        // The ends as the line has them now.
+                        list.retain(|(s, _)| points.contains(s));
+                        for p in &points {
+                            if !list.iter().any(|(s, _)| s == p) {
+                                list.push((p.clone(), Some(0.0)));
+                            }
+                        }
+                        ui.vertical(|ui| {
+                            let mut rest_at = list.iter().position(|e| e.1.is_none());
+                            for (k, (s, a)) in list.iter_mut().enumerate() {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("at {s}"));
+                                    let mut rest = rest_at == Some(k);
+                                    if ui
+                                        .checkbox(&mut rest, "the rest")
+                                        .on_hover_text("The others' sum, out (one end at most)")
+                                        .changed()
+                                    {
+                                        rest_at = rest.then_some(k);
+                                    }
+                                    if rest_at == Some(k) {
+                                        *a = None;
+                                    } else {
+                                        let v = a.get_or_insert(0.0);
+                                        crate::style::field(
+                                            ui,
+                                            egui::DragValue::new(v)
+                                                .range(-100_000.0..=100_000.0)
+                                                .speed(5.0)
+                                                .suffix(" A"),
+                                        )
+                                        .on_hover_text(
+                                            "rms, each phase, into the line here (negative: out \
+                                             of it)",
+                                        );
+                                    }
+                                });
+                            }
+                            // Only one "rest".
+                            for (k, e) in list.iter_mut().enumerate() {
+                                if e.1.is_none() && rest_at != Some(k) {
+                                    e.1 = Some(0.0);
+                                }
+                            }
+                        });
+                        ui.label("");
+                        ui.end_row();
+                        continue;
+                    }
+                    let entry = self.currents.entry(label.clone()).or_insert((0.0, false));
                     crate::style::field(
                         ui,
                         egui::DragValue::new(&mut entry.0)
