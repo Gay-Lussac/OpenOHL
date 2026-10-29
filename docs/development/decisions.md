@@ -32,8 +32,14 @@ keep 2 builds (owner, 2026-10-29)**
   Kirchhoff's current law (branches; a meshed circuit refused: the load
   flow); the window (*given*: the circuit / at its end points),
   `--end`, `--ends`. The one current per circuit stays (the default).
-- The owner, after the comparison: "keep the tiled implementation" (the
-  tiled floor as the electric field's ground: to build next).
+- The owner, after the comparison: "keep the tiled implementation": the
+  tiled floor is now the electric field's default ground — a floor
+  around each profile, each group of given points near one another and
+  each cut (the window's cross-section panels too; `electric::Floor`,
+  `Frame`); the plane under each point the quick choice (`--plane`, the
+  window's *Ground*); volumes still on the plane (a floor along a run:
+  thousands of tiles, minutes — to discuss). The window says the tiles
+  and the time per floor.
 
 **The electric field window (owner, 2026-10-29: go ahead with the
 window)**

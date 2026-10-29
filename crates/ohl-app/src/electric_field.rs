@@ -56,10 +56,17 @@ pub struct Answer {
     pub charges: Option<Arc<electric::Charges3d>>,
     /// The ground plane's radius the run took, m.
     pub radius: f64,
+    /// The ground model the run took.
+    pub ground_model: electric::GroundModel,
     /// The volumes' surfaces (level, mesh), in their order.
     pub meshes: Vec<(f64, Arc<ohl_electrical::contour::Mesh>)>,
     /// The points computed and the pieces, for the speed.
     pub work: f64,
+}
+
+/// A duration in words (the magnetic window's).
+fn magnetic_duration(s: f64) -> String {
+    crate::magnetic_field::views::duration(s)
 }
 
 /// The default levels, kV/m: display only (no limit).
@@ -102,6 +109,11 @@ pub struct ElectricFieldWindow {
     two_d: bool,
     /// The ground plane under a point is fitted over this distance, m.
     ground_radius: f64,
+    /// The ground a tiled conducting floor (the default; owner,
+    /// 2026-10-29), else a plane under each point.
+    tiled: bool,
+    /// The floor's fine tiles, m.
+    tile: f64,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
     /// The points file's text (kept in the project).
@@ -145,7 +157,7 @@ pub struct ElectricFieldWindow {
     /// The overlay as last handed out.
     drawn: Option<(bool, u64, u64, String, bool, bool)>,
     /// The last run's charges (3D) and its ground plane's radius.
-    charges: Option<(Arc<electric::Charges3d>, f64)>,
+    charges: Option<(Arc<electric::Charges3d>, f64, electric::GroundModel)>,
 }
 
 impl Default for ElectricFieldWindow {
@@ -163,6 +175,8 @@ impl Default for ElectricFieldWindow {
             limit: None,
             two_d: false,
             ground_radius: d.ground_radius,
+            tiled: true,
+            tile: 2.0,
             points: None,
             points_text: None,
             saved: None,
@@ -212,6 +226,8 @@ struct Stored {
     limit: Option<f64>,
     two_d: bool,
     ground_radius: Option<f64>,
+    tiled: Option<bool>,
+    tile: Option<f64>,
     /// The points file's name and text.
     points: Option<(String, String)>,
     piece_length: Option<f64>,
@@ -261,6 +277,8 @@ impl ElectricFieldWindow {
             limit: self.limit,
             two_d: self.two_d,
             ground_radius: Some(self.ground_radius),
+            tiled: Some(self.tiled),
+            tile: Some(self.tile),
             points: match (&self.points, &self.points_text) {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
@@ -316,6 +334,8 @@ impl ElectricFieldWindow {
         self.limit = st.limit;
         self.two_d = st.two_d;
         self.ground_radius = st.ground_radius.unwrap_or(d.ground_radius);
+        self.tiled = st.tiled.unwrap_or(d.tiled);
+        self.tile = st.tile.unwrap_or(d.tile);
         self.piece_length = st.piece_length;
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
@@ -388,6 +408,12 @@ impl ElectricFieldWindow {
     }
 
     /// Gives a circuit's voltage between phases, kV (tests).
+    /// The ground a tiled floor or a plane under each point (tests).
+    #[cfg(test)]
+    pub fn set_tiled(&mut self, on: bool) {
+        self.tiled = on;
+    }
+
     #[cfg(test)]
     pub fn set_voltage(&mut self, circuit: &str, kv: f64) {
         self.voltages.insert(circuit.to_owned(), kv);
@@ -504,7 +530,14 @@ impl ElectricFieldWindow {
                 .unwrap_or_default(),
             limit_kv_m: self.limit,
             ground_radius: self.ground_radius,
-            ground_model: electric::GroundModel::Plane,
+            ground_model: if self.tiled {
+                electric::GroundModel::Tiled(electric::TiledFloor {
+                    fine: self.tile,
+                    ..Default::default()
+                })
+            } else {
+                electric::GroundModel::Plane
+            },
             jumpers: self.jumpers,
             piece_length: self.piece_length,
             cuts: Vec::new(),
@@ -589,6 +622,7 @@ impl ElectricFieldWindow {
                 case: case.name.clone(),
                 charges: charges.map(Arc::new),
                 radius: settings.ground_radius,
+                ground_model: settings.ground_model,
                 meshes,
                 work,
             })
@@ -607,7 +641,7 @@ impl ElectricFieldWindow {
             // volumes' share for the estimates.
             self.charges = None;
             if let Some(Ok(a)) = &self.job.result {
-                self.charges = a.charges.clone().map(|c| (c, a.radius));
+                self.charges = a.charges.clone().map(|c| (c, a.radius, a.ground_model));
                 if let Some(t) = self.job.took
                     && a.work > 0.0
                 {
@@ -859,29 +893,74 @@ impl ElectricFieldWindow {
                              said",
                         );
                     ui.end_row();
-                    ui.label("Ground plane");
+                    ui.label("Ground");
                     ui.horizontal(|ui| {
-                        ui.label("fitted over ±");
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut self.ground_radius)
-                                .range(0.5..=500.0)
-                                .speed(0.5)
-                                .suffix(" m"),
-                        );
+                        ui.radio_value(&mut self.tiled, true, "tiled floor");
+                        ui.radio_value(&mut self.tiled, false, "plane under each point");
+                        if self.tiled {
+                            ui.label("fine tiles");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.tile)
+                                    .range(1.0..=8.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            );
+                        } else {
+                            ui.label("fitted over ±");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.ground_radius)
+                                    .range(0.5..=500.0)
+                                    .speed(0.5)
+                                    .suffix(" m"),
+                            );
+                        }
                     });
                     ui.end_row();
                     ui.label("");
-                    help::explain(
-                        ui,
-                        "The ground under each point a plane fitted over ± this distance (its \
-                         elevation there, its slopes from the ground that far either side), the \
-                         charges' images in it. No effect on the time.",
-                        "Exact for level or evenly sloping ground; on uneven ground a \
-                         simplification: a short distance follows the ground right under the \
-                         point (a bank, a ditch), a long one the slope at large. Under the wires \
-                         the field changes with the slope taken.",
-                    );
+                    if self.tiled {
+                        let floor = electric::TiledFloor {
+                            fine: self.tile,
+                            ..Default::default()
+                        };
+                        let tiles = floor.tiles(self.width);
+                        let floors = match self.stations {
+                            Stations::EverySpan => self.spans(model).len(),
+                            _ => 1,
+                        };
+                        help::explain(
+                            ui,
+                            &format!(
+                                "The terrain as a conducting floor of tiles around each profile, \
+                                 group of points and cut (owner, 2026-10-29: \"keep the tiled \
+                                 implementation\"): ≈ {tiles} tiles, ≈ {} per floor, {floors} \
+                                 floor(s) for the profiles. It follows hollows and ridges: on a \
+                                 real line the plane read the largest field up to 8 % low on bumps \
+                                 and up to 24 % high in a hollow. From 4 m to 2 m tiles the \
+                                 profiles moved 1–3 %; 1 m tiles take about 8 times as long.",
+                                magnetic_duration(electric::TiledFloor::seconds(tiles))
+                            ),
+                            "Square tiles of the fine size within 30 m along the line and 10 m \
+                             beyond the profiles across, 8 m beyond, to 200 m every way, each \
+                             carrying a uniform charge solved so that the floor is at zero \
+                             potential. Volumes take the plane (a floor along a whole run: \
+                             thousands of tiles, minutes per volume). See the theory page, \
+                             Electric field.",
+                        );
+                    } else {
+                        help::explain(
+                            ui,
+                            "The ground under each point a plane fitted over ± this distance, \
+                             the charges' images in it: quick (no floor to solve), exact for \
+                             level or evenly sloping ground; on a real line it read the largest \
+                             field up to 8 % low on bumps (not conservative) and in a hollow up \
+                             to 24 % high.",
+                            "A short distance follows the ground right under the point (a bank, \
+                             a ditch), a long one the slope at large. See the theory page, \
+                             Electric field.",
+                        );
+                    }
                     ui.end_row();
                 }
                 ui.label("Profiles");

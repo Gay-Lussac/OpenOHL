@@ -64,7 +64,20 @@ evaluated numerically (Simpson, \\( 10^{-8} \\)). The pieces are summed
 per polyline as for the magnetic field (each vertex's distance once,
 blocks of points), with the same choices of piece length.
 
-### The ground: a plane under each point
+### The ground
+
+**By default a tiled conducting floor** (owner, 2026-10-29, after the
+comparison below: "keep the tiled implementation"): around each profile,
+each group of given points near one another along a span (they share a
+floor around their middle, its fine tiles reaching the farthest across)
+and each cut (the cross-section panels' too), the floor below is solved;
+some seconds each (its dense system grows with the tiles' cube: about
+7 s for 3 700 tiles here). **Volumes take the plane** under each point (a
+floor along a whole run would be thousands of tiles, minutes per
+volume), said in their notes. The plane under each point is kept as the
+quick choice.
+
+#### The plane under each point
 
 The ground is a perfect conductor (at power frequency the earth's
 conductivity is high enough for the electric field). Under each point of
