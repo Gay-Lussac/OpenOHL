@@ -1449,9 +1449,7 @@ impl Directions {
         }
         let place = |id: &str| line.structure(id).map(|s| s.position);
         let mut vote = vec![0.0; n];
-        let roots: Vec<(usize, f64)> = (0..n)
-            .map(|k| find(&mut parent, &mut parity, k))
-            .collect();
+        let roots: Vec<(usize, f64)> = (0..n).map(|k| find(&mut parent, &mut parity, k)).collect();
         for (&(k, j), &o) in &orient {
             let sec = &line.sections[k];
             let len = match (
