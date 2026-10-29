@@ -777,7 +777,12 @@ impl MagneticFieldWindow {
                             done,
                             total,
                         );
-                        pr.text = format!("{done} of {total} points; {}", pr.text);
+                        let stage = p.stage();
+                        pr.text = if stage.is_empty() {
+                            format!("{done} of {total} points; {}", pr.text)
+                        } else {
+                            format!("{stage}; {}", pr.text)
+                        };
                         pr
                     });
                     let f = check_ui::RunFooter {

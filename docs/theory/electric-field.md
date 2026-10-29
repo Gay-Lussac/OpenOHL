@@ -72,10 +72,16 @@ each group of given points near one another along a span (they share a
 floor around their middle, its fine tiles reaching the farthest across)
 and each cut (the cross-section panels' too), the floor below is solved;
 some seconds each (its dense system grows with the tiles' cube: about
-7 s for 3 700 tiles here). **Volumes take the plane** under each point (a
-floor along a whole run would be thousands of tiles, minutes per
-volume), said in their notes. The plane under each point is kept as the
-quick choice.
+7 s for 3 700 tiles here). **Cuts across the line and volumes on coarser
+tiles by default, each a parameter** (owner, 2026-10-29): a cut's floor
+of 8 m tiles (`cut_tile`); a volume's floor under its whole run of spans
+and 100 m beyond every way, square tiles of 8 m (`volume_tile`). Measured
+against the exact field on even ground, from 1 m above it up: 16 m tiles
+8.3 % of the largest value, **8 m 2.8 %**, 4 m 0.16 % (a 300 m span: 0.5 s,
+1 s and 39 s). A tile near the point is summed finer the nearer the point
+(points closer together than its distance to the tile, up to 96 per
+side): next to coarse tiles the field stays right. The plane under each
+point is kept as the quick choice.
 
 #### The plane under each point
 

@@ -37,9 +37,15 @@ keep 2 builds (owner, 2026-10-29)**
   around each profile, each group of given points near one another and
   each cut (the window's cross-section panels too; `electric::Floor`,
   `Frame`); the plane under each point the quick choice (`--plane`, the
-  window's *Ground*); volumes still on the plane (a floor along a run:
-  thousands of tiles, minutes — to discuss). The window says the tiles
-  and the time per floor.
+  window's *Ground*). The window says the tiles and the time per floor.
+  The owner: "as default coarser tiles but leave a parameter to change
+  the size, same for 2D cuts across the line": volumes on a floor along
+  their whole run, cuts on their own, both of 8 m tiles by default
+  (`cut_tile`, `volume_tile`; 8 m 2.8 %, 4 m 0.16 % off the exact field on
+  even ground); tiles near a point summed finer. "Progress bars" for both
+  field windows: the run's footer says which floor it solves (the floors'
+  tiles counted as work), the cross-section panels' cuts have their own
+  bar.
 
 **The electric field window (owner, 2026-10-29: go ahead with the
 window)**

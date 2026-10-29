@@ -365,10 +365,16 @@ pub struct Settings {
     /// side, m (3D).
     pub ground_radius: f64,
     /// The ground: a tiled conducting floor around each profile, group of
-    /// points and cut (the default; owner, 2026-10-29: "keep the tiled
-    /// implementation"), or a plane under each point (quick: not
-    /// conservative on bumps, see the theory). Volumes take the plane.
+    /// points, cut and volume (the default; owner, 2026-10-29: "keep the
+    /// tiled implementation"), or a plane under each point (quick: not
+    /// conservative on bumps, see the theory).
     pub ground_model: GroundModel,
+    /// With the tiled floor: the tiles' side under the cuts across the
+    /// line, m (owner, 2026-10-29: coarser by default, a parameter).
+    pub cut_tile: f64,
+    /// With the tiled floor: the tiles' side under the volumes, m (the
+    /// floor along the volume's whole run and [`VOLUME_MARGIN`] beyond).
+    pub volume_tile: f64,
     /// The jumpers carry their phase's charge (3D).
     pub jumpers: bool,
     /// The longest straight piece, m (3D; `None`: the solver's).
@@ -394,6 +400,8 @@ impl Default for Settings {
             limit_kv_m: None,
             ground_radius: 10.0,
             ground_model: GroundModel::Tiled(TiledFloor::default()),
+            cut_tile: 8.0,
+            volume_tile: 8.0,
             jumpers: true,
             piece_length: None,
             cuts: Vec::new(),
@@ -837,7 +845,12 @@ pub fn run_keeping(
         let mut tiles = None;
         let values: Vec<f64> = match (&model3d, settings.ground_model) {
             (Some(m), GroundModel::Tiled(floor)) => {
-                let fl = Floor::solve(m, Frame::of(axis), t, settings.width, &floor, &ground)?;
+                let fl = with_floor(
+                    progress,
+                    &format!("profile {}–{}", span.from, span.to),
+                    floor.tiles(settings.width),
+                    || Floor::solve(m, Frame::of(axis), t, settings.width, &floor, &ground),
+                )?;
                 tiles = Some(fl.tiles());
                 let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
                 let f =
@@ -952,7 +965,9 @@ pub fn run_keeping(
             let axis = axes[i].as_ref().expect("an axis");
             let t0 = list.iter().map(|p| p.1).sum::<f64>() / list.len() as f64;
             let across = list.iter().map(|p| p.2.abs()).fold(0.0, f64::max);
-            let fl = Floor::solve(m, Frame::of(axis), t0, across, &floor, &ground)?;
+            let fl = with_floor(progress, "given points", floor.tiles(across), || {
+                Floor::solve(m, Frame::of(axis), t0, across, &floor, &ground)
+            })?;
             for (n, _, _, p) in list {
                 floor_e.insert(n, fl.field(p, m));
             }
@@ -1045,7 +1060,17 @@ pub fn run_keeping(
             let g = |x: f64, y: f64| Some(ground(x, y));
             let values: CutValues = match (&model3d, settings.ground_model) {
                 (Some(m), GroundModel::Tiled(floor)) => {
-                    let fl = Floor::solve(m, Frame::of(axis), t, c.width, &floor, &ground)?;
+                    let floor = TiledFloor {
+                        fine: settings.cut_tile,
+                        coarse: settings.cut_tile.max(floor.coarse),
+                        ..floor
+                    };
+                    let fl = with_floor(
+                        progress,
+                        &format!("cut {}–{}", c.from, c.to),
+                        floor.tiles(c.width),
+                        || Floor::solve(m, Frame::of(axis), t, c.width, &floor, &ground),
+                    )?;
                     let f = |ps: &[[f64; 3]]| -> Vec<f64> {
                         ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
                     };
@@ -1083,11 +1108,6 @@ pub fn run_keeping(
                 })
                 .unwrap_or_default()
         };
-        if !settings.volumes.is_empty() && matches!(settings.ground_model, GroundModel::Tiled(_)) {
-            notes.push(
-                "volumes: the ground a plane under each point (a tiled floor along a whole run is not built: thousands of tiles, minutes per volume)".into(),
-            );
-        }
         for v in &settings.volumes {
             magnetic::check_cancel(progress)?;
             let run =
@@ -1117,8 +1137,30 @@ pub fn run_keeping(
                 top: high.unwrap_or(low + 50.0) + v.above,
                 step: v.step,
             };
-            let values: VolumeValues =
-                field_views::volume(&bounds, &settings.levels, &kv, &pieces, progress)?;
+            let values: VolumeValues = match (&model3d, settings.ground_model) {
+                (Some(m), GroundModel::Tiled(_)) => {
+                    let tiles = Floor::tiles_under(
+                        bounds.path.length(),
+                        bounds.width,
+                        settings.volume_tile,
+                    );
+                    let fl = with_floor(progress, "volume", tiles, || {
+                        Floor::under(m, &bounds.path, bounds.width, settings.volume_tile, &ground)
+                    })?;
+                    notes.push(format!(
+                        "volume {}–{}: a tiled floor of {} tiles of {} m along it and {VOLUME_MARGIN} m beyond",
+                        spans[run[0]].from,
+                        spans[run[run.len() - 1]].to,
+                        fl.tiles(),
+                        settings.volume_tile
+                    ));
+                    let f = |ps: &[[f64; 3]]| -> Vec<f64> {
+                        ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
+                    };
+                    field_views::volume(&bounds, &settings.levels, &f, &pieces, progress)?
+                }
+                _ => field_views::volume(&bounds, &settings.levels, &kv, &pieces, progress)?,
+            };
             volumes.push(magnetic::FieldVolume {
                 from: spans[run[0]].from.clone(),
                 to: spans[run[run.len() - 1]].to.clone(),
@@ -1257,6 +1299,47 @@ impl Floor {
         Ok(Self { panels, sigma })
     }
 
+    /// The floor under a volume: square tiles of side `tile` along `path`
+    /// (its stations beyond its ends too), `width` and
+    /// [`VOLUME_MARGIN`] either side, and as far beyond its ends.
+    pub fn under(
+        charges: &Charges3d,
+        path: &field_views::Path,
+        width: f64,
+        tile: f64,
+        ground: &dyn Fn(f64, f64) -> f64,
+    ) -> Result<Self, String> {
+        if !(tile.is_finite() && tile > 0.0) {
+            return Err(format!("a tile above 0 m, not {tile}"));
+        }
+        let place = |t: f64, s: f64| {
+            let p = path.place_beyond(t, s);
+            [p[0], p[1], ground(p[0], p[1])]
+        };
+        let (t0, t1) = (-VOLUME_MARGIN, path.length() + VOLUME_MARGIN);
+        let half = width + VOLUME_MARGIN;
+        let (nt, ns) = (
+            ((t1 - t0) / tile).ceil() as usize,
+            (2.0 * half / tile).ceil() as usize,
+        );
+        let mut panels = Vec::with_capacity(nt * ns);
+        for a in 0..nt {
+            for b in 0..ns {
+                let (t, s) = (t0 + a as f64 * tile, -half + b as f64 * tile);
+                panels.push(panel(&place, t, s, tile));
+            }
+        }
+        let sigma = solve_floor(&panels, charges)?;
+        Ok(Self { panels, sigma })
+    }
+
+    /// The tiles of the floor [`Floor::under`] lays under a volume.
+    pub fn tiles_under(length: f64, width: f64, tile: f64) -> usize {
+        let nt = ((length + 2.0 * VOLUME_MARGIN) / tile).ceil() as usize;
+        let ns = (2.0 * (width + VOLUME_MARGIN) / tile).ceil() as usize;
+        nt * ns
+    }
+
     /// E (rms) at `p`, V/m: the line's charges and the floor's.
     pub fn field(&self, p: [f64; 3], charges: &Charges3d) -> f64 {
         floor_field(p, &self.panels, &self.sigma, charges)
@@ -1288,6 +1371,29 @@ impl TiledFloor {
     }
 }
 
+/// Runs `solve` (a floor of `tiles`) with `progress` saying so: its tiles
+/// added to the work to do, and done once solved.
+fn with_floor<T>(
+    progress: Option<&Progress>,
+    what: &str,
+    tiles: usize,
+    solve: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    if let Some(p) = progress {
+        p.total.fetch_add(tiles, Ordering::Relaxed);
+        p.set_stage(format!("{what}: a tiled floor of {tiles} tiles"));
+    }
+    let out = solve();
+    if let Some(p) = progress {
+        p.done.fetch_add(tiles, Ordering::Relaxed);
+        p.set_stage(String::new());
+    }
+    out
+}
+
+/// A volume's floor reaches this far beyond it every way, m.
+pub const VOLUME_MARGIN: f64 = 100.0;
+
 /// Quadrature points per tile side.
 const Q: usize = 6;
 
@@ -1297,6 +1403,51 @@ struct Panel {
     area: f64,
     size: f64,
     sub: Vec<[f64; 3]>,
+    /// Its corners (in order round it).
+    corners: [[f64; 3]; 4],
+    /// Its unit normal.
+    normal: [f64; 3],
+}
+
+/// A tile: the quadrilateral of side `size` from station `t` and offset
+/// `s` of `place` (plan station and offset to a point on the ground).
+fn panel(place: &dyn Fn(f64, f64) -> [f64; 3], t: f64, s: f64, size: f64) -> Panel {
+    let c = [
+        place(t, s),
+        place(t + size, s),
+        place(t + size, s + size),
+        place(t, s + size),
+    ];
+    let d1: [f64; 3] = std::array::from_fn(|k| c[2][k] - c[0][k]);
+    let d2: [f64; 3] = std::array::from_fn(|k| c[3][k] - c[1][k]);
+    let x = [
+        d1[1] * d2[2] - d1[2] * d2[1],
+        d1[2] * d2[0] - d1[0] * d2[2],
+        d1[0] * d2[1] - d1[1] * d2[0],
+    ];
+    let area = 0.5 * (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
+    let mut sub = Vec::with_capacity(Q * Q);
+    for i in 0..Q {
+        for j in 0..Q {
+            sub.push(place(
+                t + size * (i as f64 + 0.5) / Q as f64,
+                s + size * (j as f64 + 0.5) / Q as f64,
+            ));
+        }
+    }
+    let n = if area > 0.0 {
+        x.map(|v| v / (2.0 * area))
+    } else {
+        [0.0, 0.0, 1.0]
+    };
+    Panel {
+        centre: std::array::from_fn(|k| 0.25 * (c[0][k] + c[1][k] + c[2][k] + c[3][k])),
+        area,
+        size,
+        sub,
+        corners: c,
+        normal: n,
+    }
 }
 
 /// The floor's tiles around station `t0` of a span's axis.
@@ -1311,37 +1462,7 @@ fn floor_panels(
         let p = frame.plan(t, s);
         [p[0], p[1], ground(p[0], p[1])]
     };
-    let quad = |t: f64, s: f64, size: f64| -> Panel {
-        let c = [
-            place(t, s),
-            place(t + size, s),
-            place(t + size, s + size),
-            place(t, s + size),
-        ];
-        let d1: [f64; 3] = std::array::from_fn(|k| c[2][k] - c[0][k]);
-        let d2: [f64; 3] = std::array::from_fn(|k| c[3][k] - c[1][k]);
-        let x = [
-            d1[1] * d2[2] - d1[2] * d2[1],
-            d1[2] * d2[0] - d1[0] * d2[2],
-            d1[0] * d2[1] - d1[1] * d2[0],
-        ];
-        let area = 0.5 * (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
-        let mut sub = Vec::with_capacity(Q * Q);
-        for i in 0..Q {
-            for j in 0..Q {
-                sub.push(place(
-                    t + size * (i as f64 + 0.5) / Q as f64,
-                    s + size * (j as f64 + 0.5) / Q as f64,
-                ));
-            }
-        }
-        Panel {
-            centre: std::array::from_fn(|k| 0.25 * (c[0][k] + c[1][k] + c[2][k] + c[3][k])),
-            area,
-            size,
-            sub,
-        }
-    };
+    let quad = |t: f64, s: f64, size: f64| panel(&place, t, s, size);
     let n_fine = (floor.coarse / floor.fine).round().max(1.0) as usize;
     let fine = floor.coarse / n_fine as f64;
     let cells = (floor.reach / floor.coarse).ceil() as i64;
@@ -1456,11 +1577,40 @@ fn floor_field(p: [f64; 3], panels: &[Panel], sigma: &[Vec<C>], charges: &Charge
                     e[k] += s * (K * a * r[k] / r3);
                 }
             };
-            if dist(p, pj.centre) > 4.0 * pj.size {
+            let d = dist(p, pj.centre);
+            if d > 4.0 * pj.size {
                 add(pj.centre, pj.area);
-            } else {
+            } else if d > 1.5 * pj.size {
                 for q in &pj.sub {
                     add(*q, pj.area * w);
+                }
+            } else {
+                // Close to the tile: points closer together than the
+                // distance to its plane (some per cent off otherwise a
+                // metre above a coarse tile).
+                let r = [
+                    p[0] - pj.centre[0],
+                    p[1] - pj.centre[1],
+                    p[2] - pj.centre[2],
+                ];
+                let h = (r[0] * pj.normal[0] + r[1] * pj.normal[1] + r[2] * pj.normal[2])
+                    .abs()
+                    .max(0.1);
+                let k = ((2.0 * pj.size / h).ceil() as usize).clamp(Q, 96);
+                let c = &pj.corners;
+                let a = pj.area / (k * k) as f64;
+                for i in 0..k {
+                    let u = (i as f64 + 0.5) / k as f64;
+                    for j in 0..k {
+                        let v = (j as f64 + 0.5) / k as f64;
+                        let q: [f64; 3] = std::array::from_fn(|m| {
+                            (1.0 - u) * (1.0 - v) * c[0][m]
+                                + u * (1.0 - v) * c[1][m]
+                                + u * v * c[2][m]
+                                + (1.0 - u) * v * c[3][m]
+                        });
+                        add(q, a);
+                    }
                 }
             }
         }

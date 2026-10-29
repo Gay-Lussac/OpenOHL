@@ -99,6 +99,31 @@ pub struct PanelCuts {
     pub generation: u64,
     /// Why the last batch failed.
     pub error: Option<String>,
+    /// The batch's progress.
+    pub progress: Option<Arc<field_views::Progress>>,
+}
+
+impl PanelCuts {
+    /// The batch's progress bar while it runs (both field windows).
+    pub fn progress_ui(&self, ui: &mut egui::Ui) {
+        let Some(p) = self.progress.as_ref().filter(|_| self.job.running()) else {
+            return;
+        };
+        let total = p.total.load(std::sync::atomic::Ordering::Relaxed).max(1);
+        let done = p.done.load(std::sync::atomic::Ordering::Relaxed);
+        let stage = p.stage();
+        ui.add(
+            egui::ProgressBar::new(done as f32 / total as f32)
+                .show_percentage()
+                .text(if stage.is_empty() {
+                    format!("cross-section cuts: {done} of {total}")
+                } else {
+                    format!("cross-section cuts: {stage}")
+                }),
+        );
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(200));
+    }
 }
 
 /// The wires' straight pieces as solved (for the estimates).
@@ -479,6 +504,11 @@ impl MagneticFieldWindow {
                     ui.end_row();
                 }
                 // The cross-section panels.
+                if self.panel.job.running() {
+                    ui.label("");
+                    self.panel.progress_ui(ui);
+                    ui.end_row();
+                }
                 ui.label("Cross-sections");
                 ui.horizontal(|ui| {
                     let mut on = self.in_cuts.is_some();
@@ -608,11 +638,16 @@ impl MagneticFieldWindow {
     ) {
         let mut mesh_at = meshes.iter();
         let levels = field_overlay::shown(&self.levels);
-        if m.grids.is_empty() && m.volumes.is_empty() && self.panel.done.is_empty() {
+        if m.grids.is_empty()
+            && m.volumes.is_empty()
+            && self.panel.done.is_empty()
+            && !self.panel.job.running()
+        {
             return;
         }
         ui.separator();
         ui.strong("Views");
+        self.panel.progress_ui(ui);
         let small = |ui: &mut egui::Ui, t: String| {
             ui.label(egui::RichText::new(t).small());
         };
@@ -782,6 +817,8 @@ impl MagneticFieldWindow {
             .map(|l| l.value)
             .collect();
         let within = self.modelled_within;
+        let progress = Arc::new(field_views::Progress::default());
+        self.panel.progress = Some(progress.clone());
         self.panel.job.start(ctx, move || {
             let mut out = Vec::new();
             for key in missing {
@@ -802,7 +839,10 @@ impl MagneticFieldWindow {
                     w.field_block(ps).iter().map(|b| b.0 * 1e6).collect()
                 };
                 let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
-                let values = field_views::vertical_cut(&cut, &ut, Some(&height), None)?;
+                progress
+                    .total
+                    .fetch_add(cut.points(), std::sync::atomic::Ordering::Relaxed);
+                let values = field_views::vertical_cut(&cut, &ut, Some(&height), Some(&progress))?;
                 let deviation = levels
                     .iter()
                     .map(|&l| (l, values.deviation(l, &ut)))

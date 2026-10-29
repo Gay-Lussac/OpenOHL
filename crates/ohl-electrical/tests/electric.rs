@@ -232,3 +232,87 @@ fn the_tiled_floor_is_the_default() {
     assert!((a - b).abs() < 0.03 * p.max_kv_m, "{a} {b}");
     assert!(m2.cuts[0].values.values.iter().any(|v| *v > 0.0));
 }
+
+/// A volume and a cut on the tiled floor (owner, 2026-10-29: coarser
+/// tiles by default, a parameter): on the example's evenly sloping ground,
+/// where the plane under each point is exact, the volume's surface lies on
+/// its level by the exact field within the coarse tiles' error.
+#[test]
+fn a_volume_on_the_tiled_floor() {
+    let s = Settings {
+        stations: vec![mid("T1", "T2")],
+        volumes: vec![magnetic::VolumeSpec {
+            from: "T1".into(),
+            to: "T2".into(),
+            width: 20.0,
+            above: 5.0,
+            step: 2.0,
+        }],
+        levels: vec![1.0],
+        // (16 m tiles and a small floor for the profile: the test stays
+        // quick.)
+        volume_tile: 16.0,
+        ground_model: electric::GroundModel::Tiled(electric::TiledFloor {
+            fine: 4.0,
+            coarse: 16.0,
+            fine_along: 8.0,
+            fine_margin: 4.0,
+            reach: 64.0,
+        }),
+        ..Settings::default()
+    };
+    let (line, library) = example();
+    let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+    let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let src = Sources {
+        line: &line,
+        library: &library,
+        shapes: &shapes,
+        temperature: Temperature::from_celsius(40.0),
+        ground: None,
+        jumpers: &[],
+    };
+    let plane = Settings {
+        ground_model: electric::GroundModel::Plane,
+        stations: s.stations.clone(),
+        ..Settings::default()
+    };
+    let (m, charges) = electric::run_keeping(&src, &s, None).unwrap();
+    assert!(
+        m.notes.iter().any(|n| n.contains("tiled floor")),
+        "{:?}",
+        m.notes
+    );
+    let charges = charges.unwrap();
+    assert!(!m.volumes[0].values.surfaces[0].1.triangles.is_empty());
+    // The volume's floor against the plane (exact here), at points from
+    // 1 m above the ground up, across the span's middle.
+    let ground = electric::feet_ground(&line);
+    let at = |id: &str| {
+        let p = line.structure(id).unwrap().position;
+        [p[0], p[1], p[2]]
+    };
+    let path = ohl_electrical::field_views::Path::new(vec![at("T1"), at("T2")]).unwrap();
+    let floor = electric::Floor::under(&charges, &path, 20.0, 16.0, &ground).unwrap();
+    let mid = path.place(0.5 * path.length(), 0.0);
+    let mut worst: f64 = 0.0;
+    let mut top: f64 = 0.0;
+    for k in -10..=10 {
+        for h in [1.0, 3.0, 8.0] {
+            let (x, y) = (mid[0], mid[1] + 2.0 * k as f64);
+            let p = [x, y, ground(x, y) + h];
+            let exact = charges.field(
+                p,
+                &electric::GroundPlane::fitted(&ground, x, y, plane.ground_radius),
+            );
+            top = top.max(exact);
+            worst = worst.max((floor.field(p, &charges) - exact).abs());
+        }
+    }
+    // (Measured 2026-10-29: 16 m tiles 8.3 % of the largest value, 8 m
+    // 2.8 %, 4 m 0.16 %.)
+    assert!(worst < 0.10 * top, "{} of {}", worst, top);
+}
