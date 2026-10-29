@@ -84,6 +84,25 @@ pub struct ElectricArgs {
     /// side, m.
     #[arg(long, default_value_t = 10.0)]
     pub ground_radius: f64,
+    /// The profiles over a tiled conducting floor (the reference ground,
+    /// slow: some seconds per profile) instead of a plane under each
+    /// point.
+    #[arg(long)]
+    pub tiled: bool,
+    /// The tiled floor's fine tiles, m (near the profile).
+    #[arg(long, default_value_t = 2.0)]
+    pub tile: f64,
+    /// The tiled floor's coarse tiles, m (a whole multiple of --tile).
+    #[arg(long, default_value_t = 8.0)]
+    pub coarse_tile: f64,
+    /// The tiled floor reaches this far every way from the station, m.
+    #[arg(long, default_value_t = 200.0)]
+    pub floor_reach: f64,
+    /// The ground from the project's point cloud: its ground classes
+    /// within the floor's reach of the profiles' spans (only those: a few
+    /// extracts read quickly), the lowest point per metre triangulated.
+    #[arg(long, conflicts_with_all = ["terrain", "surface"])]
+    pub lidar_ground: bool,
     /// Leave the jumpers out (by default they carry their phase's charge).
     #[arg(long)]
     pub no_jumpers: bool,
@@ -989,6 +1008,16 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         points,
         limit_kv_m: a.limit,
         ground_radius: a.ground_radius,
+        ground_model: if a.tiled {
+            electric::GroundModel::Tiled(electric::TiledFloor {
+                fine: a.tile,
+                coarse: a.coarse_tile,
+                reach: a.floor_reach,
+                ..Default::default()
+            })
+        } else {
+            electric::GroundModel::Plane
+        },
         jumpers: !a.no_jumpers,
         piece_length: a.piece_length,
         cuts,
@@ -1016,6 +1045,43 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
+        }
+        (None, None) if a.lidar_ground => {
+            // The spans of the profiles asked for.
+            let mut lines = Vec::new();
+            for st in &settings.stations {
+                let at = |id: &str| {
+                    line.structure(id)
+                        .map(|s| [s.position[0], s.position[1]])
+                        .ok_or_else(|| format!("no structure {id}"))
+                };
+                lines.push(vec![at(&st.from)?, at(&st.to)?]);
+            }
+            if lines.is_empty() {
+                return Err("--lidar-ground: give the extracts as --profile FROM:TO".into());
+            }
+            let corridor = ohl_lidar::Corridor::new(&lines, a.floor_reach + a.width + 20.0);
+            let source = ohl_pointcloud::open_source(&a.model.file.display().to_string())?;
+            let scheme = source
+                .class_scheme()
+                .and_then(|t| ohl_lidar::ClassScheme::parse(&t).ok())
+                .unwrap_or_else(ohl_lidar::ClassScheme::asprs);
+            let classes = scheme.codes_with_role("ground");
+            let mut cells = ohl_lidar::LowestPerCell::new(Some(1.0));
+            let budget =
+                ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+            source.visit(
+                Some(&corridor),
+                Some(&classes),
+                &budget,
+                &mut |x, y, z, _| cells.add(x, y, z),
+            )?;
+            println!(
+                "  ground: {} LiDAR cells of 1 m within {} m of the profiles' spans",
+                cells.points().len(),
+                a.floor_reach + a.width + 20.0
+            );
+            Some(cells.terrain(Some(50.0)).map_err(|e| e.to_string())?)
         }
         (None, None) => None,
     };
@@ -1048,16 +1114,18 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         println!("  note: {n}");
     }
     println!(
-        "{:<16} {:>9} {:>10} {:>9}",
-        "profile", "station m", "max kV/m", "at m"
+        "{:<16} {:>9} {:>10} {:>9} {:>12} {:>7}",
+        "profile", "station m", "max kV/m", "at m", "ground off m", "tiles"
     );
     for p in &m.profiles {
         println!(
-            "{:<16} {:>9.1} {:>10.4} {:>9.1}",
+            "{:<16} {:>9.1} {:>10.4} {:>9.1} {:>12.2} {:>7}",
             format!("{}–{}", p.from, p.to),
             p.at,
             p.max_kv_m,
-            p.max_offset
+            p.max_offset,
+            p.ground_departure,
+            p.tiles.map_or(String::new(), |n| n.to_string())
         );
         if a.all_points {
             for q in &p.points {

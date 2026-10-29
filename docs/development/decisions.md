@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-29
 
+**The electric field's ground compared with a tiled floor; build folders
+keep 2 builds (owner, 2026-10-29)**
+
+- The owner: "make a comparison with a tiled floor based on one of the 2
+  lines … in a valley area as well as flatland", "only take a few
+  extracts". The reference built (`GroundModel::Tiled`: a conducting
+  floor of 2 m / 8 m tiles to 200 m around a profile, solved for zero
+  potential; `--tiled`; `--lidar-ground` reads a project's LiDAR ground
+  near the profiles asked only). Its own error 0.2 % on even ground, 1–3 %
+  from 4 m to 2 m tiles on real terrain. On six extracts of a real alpine
+  line the plane under each point gave the largest field 0.4–7.8 % low
+  (not conservative) and differed locally by 5–30 % of it; said in the
+  theory, each profile now gives the terrain's departure from its plane.
+- "Only keep the last 2 builds at all times": `tools/prune_builds.py`
+  keeps per crate and kind the last two builds (main folder 39 → 15 GB).
+- The owner, on currents: "give inputs and outputs for each end point of
+  the circuit" instead of one current per circuit (to build next).
+
 **The electric field, engine and command line (owner, 2026-10-29: "E
 feld comes after this"; "work in parallel on the electrical field")**
 

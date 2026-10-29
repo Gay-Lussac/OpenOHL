@@ -127,6 +127,21 @@ struct Poly {
 }
 
 impl Poly {
+    /// The potential at `p` of the pieces (per C/m), V:
+    /// \\( \frac{1}{4\pi\varepsilon_0}\left(\operatorname{asinh}\frac{L - t}{\rho}
+    /// + \operatorname{asinh}\frac{t}{\rho}\right) \\) per piece.
+    fn potential(&self, p: [f64; 3]) -> f64 {
+        let mut sum = 0.0;
+        for k in 0..self.len.len() {
+            let (rx, ry, rz) = (p[0] - self.x[k], p[1] - self.y[k], p[2] - self.z[k]);
+            let (ux, uy, uz) = (self.ux[k], self.uy[k], self.uz[k]);
+            let t = rx * ux + ry * uy + rz * uz;
+            let rho = (rx * rx + ry * ry + rz * rz - t * t).max(1e-12).sqrt();
+            sum += ((self.len[k] - t) / rho).asinh() + (t / rho).asinh();
+        }
+        K * sum
+    }
+
     fn new(points: &[[f64; 3]], charge: C) -> Self {
         let mut p = Poly {
             charge,
@@ -349,6 +364,9 @@ pub struct Settings {
     /// The ground plane under a point is fitted over this distance either
     /// side, m (3D).
     pub ground_radius: f64,
+    /// The ground: a plane under each point (the default), or for the
+    /// profiles a tiled conducting floor (the reference, slow).
+    pub ground_model: GroundModel,
     /// The jumpers carry their phase's charge (3D).
     pub jumpers: bool,
     /// The longest straight piece, m (3D; `None`: the solver's).
@@ -373,6 +391,7 @@ impl Default for Settings {
             points: Vec::new(),
             limit_kv_m: None,
             ground_radius: 10.0,
+            ground_model: GroundModel::Plane,
             jumpers: true,
             piece_length: None,
             cuts: Vec::new(),
@@ -421,6 +440,13 @@ pub struct Profile {
     pub max_kv_m: f64,
     /// Where, m to the right of the axis.
     pub max_offset: f64,
+    /// How far the terrain departs from the plane fitted under the
+    /// largest value's point, within three ground radii of it, m (the
+    /// plane ground's weakness there; 0 on level or evenly sloping
+    /// ground).
+    pub ground_departure: f64,
+    /// The tiles of the floor, with the tiled ground.
+    pub tiles: Option<usize>,
 }
 
 /// The charge per metre of a wire in a span.
@@ -806,12 +832,25 @@ pub fn run_keeping(
                 ([p[0], p[1], g + settings.height], g)
             })
             .collect();
-        let values: Vec<f64> = match &model3d {
-            Some(_) => {
+        let mut tiles = None;
+        let values: Vec<f64> = match (&model3d, settings.ground_model) {
+            (Some(m), GroundModel::Tiled(floor)) => {
+                let panels = floor_panels(axis, t, settings.width, &floor, &ground);
+                let sigma = solve_floor(&panels, m)?;
+                tiles = Some(panels.len());
+                let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
+                let f = |ps: &[[f64; 3]]| -> Vec<f64> {
+                    ps.iter()
+                        .map(|&p| floor_field(p, &panels, &sigma, m))
+                        .collect()
+                };
+                compute_all(&pts, &f, progress)?
+            }
+            (Some(_), GroundModel::Plane) => {
                 let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
                 compute_all(&pts, &e_at, progress)?
             }
-            None => {
+            (None, _) => {
                 let cs =
                     cross_section::cross_section(src, span, StationAt::Fraction(t / axis.length))?;
                 let lines = charges_2d(&cs, &charges);
@@ -849,6 +888,23 @@ pub fn run_keeping(
                     (0.0, f64::NEG_INFINITY),
                     |a, b| if b.1 > a.1 { b } else { a },
                 );
+        let ground_departure = {
+            let p = axis.plan(t, max_offset);
+            let plane = GroundPlane::fitted(&ground, p[0], p[1], radius);
+            let n = plane.normal;
+            let reach = 3.0 * radius;
+            let mut worst: f64 = 0.0;
+            for a in -6..=6 {
+                for b in -6..=6 {
+                    let (x, y) = (p[0] + reach * a as f64 / 6.0, p[1] + reach * b as f64 / 6.0);
+                    // The plane's elevation at (x, y).
+                    let zp = plane.point[2]
+                        - (n[0] * (x - plane.point[0]) + n[1] * (y - plane.point[1])) / n[2];
+                    worst = worst.max((ground(x, y) - zp).abs());
+                }
+            }
+            worst
+        };
         profiles.push(Profile {
             from: span.from.clone(),
             to: span.to.clone(),
@@ -856,6 +912,8 @@ pub fn run_keeping(
             points,
             max_kv_m,
             max_offset,
+            ground_departure,
+            tiles,
         });
     }
     // Given points (3D; in 2D at the nearest span's cross-section there).
@@ -1032,6 +1090,238 @@ pub fn run_keeping(
         },
         model3d,
     ))
+}
+
+// ---------------------------------------------------------------------------
+// The reference ground: a tiled conducting floor.
+
+/// The ground as a conducting floor of tiles (owner, 2026-10-29: "a
+/// comparison with a tiled floor … in a valley area as well as flatland").
+/// Around a profile's station, square tiles of side `fine` within
+/// `fine_along` along the line and the profile's width and `fine_margin`
+/// across it, of side `coarse` beyond, to `reach` every way; each tile a
+/// quadrilateral on the terrain carrying a uniform charge per square metre,
+/// solved so that the floor is at zero potential at every tile's centre
+/// under the line's charges (\\( A\,\sigma = -\varphi_{line} \\)). The
+/// field: the line's charges and the tiles'. A reference for the plane
+/// under each point: it follows hollows and ridges; its own errors are the
+/// tiles' size and the floor's end at `reach` (measured on level ground,
+/// where the plane is exact).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TiledFloor {
+    /// Fine tiles' side, m.
+    pub fine: f64,
+    /// Coarse tiles' side, m (a whole multiple of `fine`).
+    pub coarse: f64,
+    /// Fine tiles this far along the line either side of the station, m.
+    pub fine_along: f64,
+    /// And this far beyond the profile's width across, m.
+    pub fine_margin: f64,
+    /// The floor reaches this far every way, m.
+    pub reach: f64,
+}
+
+impl Default for TiledFloor {
+    fn default() -> Self {
+        Self {
+            fine: 2.0,
+            coarse: 8.0,
+            fine_along: 30.0,
+            fine_margin: 10.0,
+            reach: 200.0,
+        }
+    }
+}
+
+/// The ground model.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum GroundModel {
+    /// A plane fitted under each point, the charges' images in it.
+    Plane,
+    /// The profiles over a tiled conducting floor ([`TiledFloor`]).
+    Tiled(TiledFloor),
+}
+
+/// Quadrature points per tile side.
+const Q: usize = 6;
+
+/// A tile of the floor.
+struct Panel {
+    centre: [f64; 3],
+    area: f64,
+    size: f64,
+    sub: Vec<[f64; 3]>,
+}
+
+/// The floor's tiles around station `t0` of a span's axis.
+fn floor_panels(
+    axis: &Axis,
+    t0: f64,
+    width: f64,
+    floor: &TiledFloor,
+    ground: &dyn Fn(f64, f64) -> f64,
+) -> Vec<Panel> {
+    let place = |t: f64, s: f64| {
+        let p = axis.plan(t, s);
+        [p[0], p[1], ground(p[0], p[1])]
+    };
+    let quad = |t: f64, s: f64, size: f64| -> Panel {
+        let c = [
+            place(t, s),
+            place(t + size, s),
+            place(t + size, s + size),
+            place(t, s + size),
+        ];
+        let d1: [f64; 3] = std::array::from_fn(|k| c[2][k] - c[0][k]);
+        let d2: [f64; 3] = std::array::from_fn(|k| c[3][k] - c[1][k]);
+        let x = [
+            d1[1] * d2[2] - d1[2] * d2[1],
+            d1[2] * d2[0] - d1[0] * d2[2],
+            d1[0] * d2[1] - d1[1] * d2[0],
+        ];
+        let area = 0.5 * (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
+        let mut sub = Vec::with_capacity(Q * Q);
+        for i in 0..Q {
+            for j in 0..Q {
+                sub.push(place(
+                    t + size * (i as f64 + 0.5) / Q as f64,
+                    s + size * (j as f64 + 0.5) / Q as f64,
+                ));
+            }
+        }
+        Panel {
+            centre: std::array::from_fn(|k| 0.25 * (c[0][k] + c[1][k] + c[2][k] + c[3][k])),
+            area,
+            size,
+            sub,
+        }
+    };
+    let n_fine = (floor.coarse / floor.fine).round().max(1.0) as usize;
+    let fine = floor.coarse / n_fine as f64;
+    let cells = (floor.reach / floor.coarse).ceil() as i64;
+    let across = width + floor.fine_margin;
+    let mut out = Vec::new();
+    for a in -cells..cells {
+        for b in -cells..cells {
+            let (t, s) = (t0 + a as f64 * floor.coarse, b as f64 * floor.coarse);
+            let near = t + floor.coarse > t0 - floor.fine_along
+                && t < t0 + floor.fine_along
+                && s + floor.coarse > -across
+                && s < across;
+            if near {
+                for i in 0..n_fine {
+                    for j in 0..n_fine {
+                        out.push(quad(t + i as f64 * fine, s + j as f64 * fine, fine));
+                    }
+                }
+            } else {
+                out.push(quad(t, s, floor.coarse));
+            }
+        }
+    }
+    out
+}
+
+fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+/// The tiles' charges per square metre, per frequency of the line's
+/// charges: zero potential at every tile's centre.
+fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, String> {
+    let n = panels.len();
+    let w = 1.0 / (Q * Q) as f64;
+    // The potential coefficients row by row on all cores.
+    let rows: Vec<usize> = (0..n).collect();
+    let mut a = nalgebra::DMatrix::<f64>::zeros(n, n);
+    let row = |i: usize| -> Vec<f64> {
+        let ci = panels[i].centre;
+        (0..n)
+            .map(|j| {
+                let pj = &panels[j];
+                if i == j {
+                    // A disc of the tile's area, at its centre.
+                    (pj.area / PI).sqrt() / (2.0 * EPS0)
+                } else if dist(ci, pj.centre) > 4.0 * pj.size {
+                    K * pj.area / dist(ci, pj.centre)
+                } else {
+                    pj.sub
+                        .iter()
+                        .map(|q| K * pj.area * w / dist(ci, *q).max(1e-6))
+                        .sum()
+                }
+            })
+            .collect()
+    };
+    let filled: Vec<Vec<f64>> = std::thread::scope(|scope| {
+        let chunk = n.div_ceil(field_views::threads()).max(1);
+        let handles: Vec<_> = rows
+            .chunks(chunk)
+            .map(|c| scope.spawn(move || c.iter().map(|&i| row(i)).collect::<Vec<_>>()))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a row"))
+            .collect()
+    });
+    for (i, r) in filled.iter().enumerate() {
+        for (j, v) in r.iter().enumerate() {
+            a[(i, j)] = *v;
+        }
+    }
+    let lu = a.lu();
+    let mut out = Vec::new();
+    for (_, polys) in &charges.groups {
+        let phi: Vec<C> = panels
+            .iter()
+            .map(|p| {
+                polys
+                    .iter()
+                    .map(|poly| poly.charge * poly.potential(p.centre))
+                    .sum()
+            })
+            .collect();
+        let re = DVector::from_iterator(n, phi.iter().map(|c| -c.re));
+        let im = DVector::from_iterator(n, phi.iter().map(|c| -c.im));
+        let (Some(sr), Some(si)) = (lu.solve(&re), lu.solve(&im)) else {
+            return Err("the tiled floor's system could not be solved".into());
+        };
+        out.push((0..n).map(|k| C::new(sr[k], si[k])).collect());
+    }
+    Ok(out)
+}
+
+/// E (rms) at `p` over the tiled floor, V/m: the line's charges and the
+/// tiles'.
+fn floor_field(p: [f64; 3], panels: &[Panel], sigma: &[Vec<C>], charges: &Charges3d) -> f64 {
+    let mut inv = Vec::new();
+    let direct = charges.sums(p, &mut inv);
+    let w = 1.0 / (Q * Q) as f64;
+    let mut sum = 0.0;
+    for (g, d) in direct.iter().enumerate() {
+        let mut e = *d;
+        for (pj, &s) in panels.iter().zip(&sigma[g]) {
+            let mut add = |q: [f64; 3], a: f64| {
+                let r = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+                let r3 = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2])
+                    .max(1e-12)
+                    .powf(1.5);
+                for k in 0..3 {
+                    e[k] += s * (K * a * r[k] / r3);
+                }
+            };
+            if dist(p, pj.centre) > 4.0 * pj.size {
+                add(pj.centre, pj.area);
+            } else {
+                for q in &pj.sub {
+                    add(*q, pj.area * w);
+                }
+            }
+        }
+        let r = rms(&e);
+        sum += r * r;
+    }
+    sum.sqrt()
 }
 
 /// A 2D line charge: across, height, per frequency the charge per metre.

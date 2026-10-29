@@ -135,3 +135,36 @@ fn a_cut_and_a_volume() {
     // (A 2 m lattice near 110 kV conductors: some per cent, said.)
     assert!(d.median < 0.02 && d.p90 < 0.15, "{d:?}");
 }
+
+/// The tiled conducting floor (the reference) against the plane under
+/// each point on the example's evenly sloping ground, where the plane is
+/// exact: they agree within the floor's own error (its tiles and its end).
+#[test]
+fn the_tiled_floor_on_even_ground() {
+    let mut s = Settings {
+        stations: vec![mid("T1", "T2")],
+        width: 30.0,
+        ..Settings::default()
+    };
+    let t0 = std::time::Instant::now();
+    let plane = field(&s);
+    s.ground_model = electric::GroundModel::Tiled(electric::TiledFloor::default());
+    let tiled = field(&s);
+    let (a, b) = (&plane.profiles[0], &tiled.profiles[0]);
+    let worst = a
+        .points
+        .iter()
+        .zip(&b.points)
+        .map(|(x, y)| (x.e_kv_m - y.e_kv_m).abs() / a.max_kv_m)
+        .fold(0.0, f64::max);
+    eprintln!(
+        "plane max {} tiled max {} worst {worst} tiles {:?} departure {} in {:?}",
+        a.max_kv_m,
+        b.max_kv_m,
+        b.tiles,
+        a.ground_departure,
+        t0.elapsed()
+    );
+    assert!(a.ground_departure < 0.05, "{}", a.ground_departure);
+    assert!(worst < 0.03, "{worst}");
+}
