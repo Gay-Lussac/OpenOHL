@@ -1628,7 +1628,7 @@ impl Graph {
             } else {
                 both
             };
-            e.along = views.iter().find(|v| v.consecutive(a, b)).map(|v| {
+            e.along = views.iter().find(|v| v.along(line, a, b)).map(|v| {
                 let pos = |id: &str| v.structures.iter().position(|s| s == id);
                 (v.id.clone(), pos(a) < pos(b))
             });

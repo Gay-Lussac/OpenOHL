@@ -8,6 +8,22 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-29
+
+**A span stays on the profile with another line under it (owner, 2026-10-29)**
+
+- Reported: the line's wires were missing on the sheets and in the
+  profile view where a crossing line passes under a span. A structure of
+  the crossing line standing within 5 m of the alignment is in the run
+  of the line (`NEAR_ALIGNMENT`), so the two structures of the span no
+  longer followed each other in the run and the span was left out.
+- Now a span between two structures of the run is drawn when they follow
+  each other in it, or when the span stays within 5 m of the alignment
+  over its whole length (`AlignmentView::along`; the profile, the sheets
+  and the profile's lines on the ground use it). The structure under the
+  span is drawn as before. Line angles and spans ahead (stationing) are
+  unchanged.
+
 ## 2026-10-28
 
 **The results table in the remaining windows (owner, 2026-10-28)**

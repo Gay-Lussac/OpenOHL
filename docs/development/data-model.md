@@ -326,9 +326,12 @@ station, offset, line angle, ahead span — computed, not stored). The
 **run** along the alignment (`AlignmentView::run`) leaves the structures
 away out: line angles and spans ahead are taken along it (a structure
 away has 0 for both), and the profile's spans are those between
-consecutive structures of the run (`AlignmentView::consecutive`) plus
-those to a structure away (projected), so a connection whose station falls
-between two structures does not break the span between them. The drawings
+consecutive structures of the run (`AlignmentView::consecutive`), those
+between two structures of the run that stay within 5 m of the alignment
+over their whole length (`AlignmentView::along`: another line's structure
+standing under a span does not break it), plus those to a structure away
+(projected), so a connection whose station falls between two structures
+does not break the span between them. The drawings
 mark it too (`ohl_drawing::Mark::away`, computed) and keep the
 alignment's points by station (`RouteDrawing::alignment`,
 `AlignmentMark`: id, station, the structure tied to it or none). What

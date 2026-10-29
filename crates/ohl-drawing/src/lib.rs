@@ -1062,13 +1062,13 @@ pub fn build(
     // (Voltages are for the styles only: a line whose systems do not read
     // is drawn without them.)
     let potentials = line.potentials().unwrap_or_default();
-    // Spans of the route: between consecutive structures of its run along
-    // the alignment, and those to a structure of the route away from it
-    // (a connection beside the line: projected), which do not break the
-    // run.
+    // Spans of the route: along its run on the alignment (consecutive,
+    // or over another line's structure standing under the span), and
+    // those to a structure of the route away from it (a connection beside
+    // the line: projected), which do not break the run.
     let on = |s: &str| route.structures.iter().any(|x| x == s);
     let consecutive = |a: &str, b: &str| {
-        route.consecutive(a, b) || (on(a) && on(b) && (route.is_away(a) || route.is_away(b)))
+        route.along(line, a, b) || (on(a) && on(b) && (route.is_away(a) || route.is_away(b)))
     };
     let mut wires = Vec::new();
     for shape in shapes {
@@ -2180,6 +2180,43 @@ pub(crate) mod tests {
         assert_eq!(to_c.len(), 1);
         let end = to_c[0].points.last().unwrap();
         assert!((end[0] - 150.0).abs() < 1e-6 && (end[1] - 80.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_crossing_line_under_a_span_keeps_the_span() {
+        // Another line's structure 3 m beside the alignment under T1–T2
+        // (in the run: near the alignment): T1–T2 no longer follow each
+        // other in the run, the span still runs along the route and is
+        // drawn.
+        let (mut line, shapes, jumpers, _) = solved();
+        let mut c = line.structure("T1").unwrap().clone();
+        c.id = "X1".into();
+        c.position = [150.0, -3.0, 480.0];
+        c.points.clear();
+        c.members.clear();
+        line.structures.push(c);
+        let views = line.alignment_views();
+        let main = &views[0];
+        assert_eq!(main.structures[..3], ["T1", "X1", "T2"]);
+        assert!(main.away.is_empty());
+        assert!(!main.consecutive("T1", "T2") && main.along(&line, "T1", "T2"));
+        let d = build(
+            &line,
+            main,
+            &shapes,
+            &jumpers,
+            None,
+            &[],
+            &Options::default(),
+        )
+        .unwrap();
+        let s1: Vec<&Trace> = d
+            .wires
+            .iter()
+            .filter(|w| w.label.starts_with("S1"))
+            .collect();
+        assert_eq!(s1.len(), 4);
+        assert!(s1.iter().any(|w| w.label.starts_with("S1 span 0 ")));
     }
 
     /// A square tower 4 m wide and 30 m tall at T2 (its four legs and a
