@@ -1782,12 +1782,370 @@ def max_tension():
     return f
 
 
+# =====================================================================================
+# Magnetic field
+# =====================================================================================
+def bs_segment():
+    f = Fig("bs-segment", 760, 360, "The field of one straight piece",
+            "A straight piece of wire from a to b carrying the current I, a point p beside it: "
+            "the piece's direction u, the perpendicular d from the piece's line to p of length "
+            "rho, the vectors r_a and r_b from the ends to p and the angles alpha_1 and alpha_2 "
+            "they make with u; the field at p is perpendicular to the plane of the piece and p.")
+    f.text(20, 26, "Biot–Savart for one straight piece, in closed form", "t")
+    a, b, p = (110.0, 270.0), (430.0, 270.0), (330.0, 110.0)
+    foot = (p[0], a[1])
+    f.path(f"M{a[0]},{a[1]} L{b[0]},{b[1]}", "", "stroke:var(--wire);stroke-width:5;stroke-linecap:round")
+    f.arrow(170, 296, 260, 296, "wire", 1.8)
+    f.text(215, 316, "current I", "c lab")
+    f.arrow(a[0], a[1], a[0] + 60, a[1], "ink", 2)
+    f.text(a[0] + 30, a[1] - 10, "û", "c")
+    gf.ap(f, *a)
+    gf.ap(f, *b)
+    f.text(a[0] - 10, a[1] + 20, "a", "e")
+    f.text(b[0] + 10, b[1] + 20, "b")
+    f.arrow(a[0], a[1], p[0] - 4, p[1] + 2, "muted", 1.2, 8, dash=True)
+    f.arrow(b[0], b[1], p[0] + 3, p[1] + 3, "muted", 1.2, 8, dash=True)
+    f.text(205, 175, "r_{a}", "lab")
+    f.text(395, 185, "r_{b}", "lab")
+    f.arrow(foot[0], foot[1], p[0], p[1] + 8, "acc", 2)
+    f.text(p[0] - 8, 215, "d,  |d| = ρ", "e")
+    f.path(f"M{foot[0] - 12},{foot[1]} L{foot[0] - 12},{foot[1] - 12} L{foot[0]},{foot[1] - 12}", "thin")
+    al1 = math.degrees(math.atan2(a[1] - p[1], p[0] - a[0]))
+    f.arc(a[0], a[1], 42, -al1, 0)
+    f.text(a[0] + 50, a[1] - 14, "α_{1}")
+    al2 = math.degrees(math.atan2(b[1] - p[1], b[0] - p[0]))
+    f.arc(b[0], b[1], 34, -180 + al2, 0)
+    f.text(b[0] - 2, b[1] - 42, "α_{2}", "c")
+    # B out of the page at p
+    f.add(f'<circle cx="{p[0]}" cy="{p[1]}" r="11" style="fill:var(--bg);stroke:var(--wire3);stroke-width:2.2"/>')
+    f.dot(p[0], p[1], 3.5, "wire3")
+    f.text(p[0] + 16, p[1] - 10, "p:  B out of the page (along û × d)")
+    x = 480
+    f.text(x, 236, "|B| = μ_{0} I ⁄ (4π ρ) · (cos α_{1} − cos α_{2})", "")
+    f.text(x, 258, "exact for the straight piece;", "lab")
+    f.text(x, 276, "a long piece: cos α_{1} → 1, cos α_{2} → −1,", "lab")
+    f.text(x, 294, "the infinite wire's μ_{0} I ⁄ (2π ρ).", "lab")
+    f.text(20, 344, "The line: every piece of every subconductor, its current a phasor; the "
+           "pieces' fields summed per component, B = √(|B_{x}|² + |B_{y}|² + |B_{z}|²).", "lab")
+    return f
+
+
+def field_pieces():
+    f = Fig("field-pieces", 760, 400, "The wire as straight pieces",
+            "Left: a sagging wire and the chords between the solver's points; the most a chord "
+            "lies off the wire is the sagitta e = L squared over 8 R, with R = H over w the "
+            "catenary's smallest radius of curvature. Right: one piece cut into three, the new "
+            "points on the curve through the piece's ends and a neighbouring point; at a kink "
+            "the two neighbours' curves differ and the piece is cut on its chord.")
+    f.text(20, 26, "The wire as straight pieces (exaggerated)", "t")
+    # left: a span and its chords
+    A, B = (40.0, 110.0), (380.0, 110.0)
+    curve = parab(*A, *B, 150, 80)
+    f.poly(curve, "", "stroke:var(--wire);stroke-width:2.2;fill:none;opacity:.55")
+    pts = parab(*A, *B, 150, 6)
+    f.poly(pts, "inkl")
+    for q in pts:
+        f.dot(*q, 3.2)
+    k = 2
+    (x0, y0), (x1, y1) = pts[k], pts[k + 1]
+    mx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    t = (mx - A[0]) / (B[0] - A[0])
+    wy = A[1] + 4 * 150 * t * (1 - t)
+    f.vdim2(mx, cy, wy, "")
+    f.text(mx + 10, (cy + wy) / 2 + 26, "e (sagitta)", "")
+    f.text(130, 300, "solver's points: 64 per span or part of it", "lab")
+    f.text(40, 330, "e ≈ L² ⁄ (8 R),   R = H ⁄ w  (smallest at the low point)", "")
+    f.text(40, 352, "e.g. L = 7 m, R = 1700 m:  e ≈ 4 mm", "lab")
+    f.text(40, 370, "the field moves by about e over the distance to the wire", "lab")
+    # right: refining one piece
+    ox = 430
+    f.text(ox, 60, "Shorter pieces: each piece cut into n,", "")
+    f.text(ox, 78, "the new points on the curve through the solver's", "lab")
+    f.text(ox, 94, "points (two quadratics averaged); e falls as 1 ⁄ n².", "lab")
+    sp = [(ox + 10 + 90 * i, 262 - 40 * (i - 1.5) ** 2) for i in range(4)]
+    smooth = catmull(sp, 20)
+    f.poly(smooth, "", "stroke:var(--wire);stroke-width:2.2;fill:none;opacity:.55")
+    f.poly(sp, "inkl")
+    for q in sp:
+        f.dot(*q, 3.4)
+    for j in (1, 2):
+        q = smooth[20 + int(20 * j / 3)]
+        f.ring(q[0], q[1], 4, "acc", 2)
+    f.text(sp[1][0] - 6, sp[1][1] + 22, "k", "c lab")
+    f.text(sp[2][0] + 6, sp[2][1] + 22, "k + 1", "c lab")
+    f.text(sp[0][0], sp[0][1] - 12, "k − 1", "c lab")
+    f.text(sp[3][0], sp[3][1] - 12, "k + 2", "c lab")
+    f.ring(ox + 10, 306, 4, "acc", 2)
+    f.text(ox + 22, 310, "new point on the curve", "lab")
+    f.text(ox, 336, "At a kink (a spacer, a clamp, a span point) the two", "lab")
+    f.text(ox, 352, "neighbours' curves disagree by more than the solver's", "lab")
+    f.text(ox, 368, "bound: the piece is cut on its chord, no worse.", "lab")
+    return f
+
+
+def _field_2d(conductors, y, z):
+    """|B| (µT) of infinite conductors (offset, height, amps, angle °) at (y, z)."""
+    bx = [0j, 0j]
+    for (cy, cz, amps, ang) in conductors:
+        dy, dz = y - cy, z - cz
+        r2 = max(dy * dy + dz * dz, 1e-6)
+        i = amps * complex(math.cos(math.radians(ang)), math.sin(math.radians(ang)))
+        k = 0.2 / r2  # µ0/(2π) in µT·m/A = 0.2
+        bx[0] += -dz * k * i
+        bx[1] += dy * k * i
+    return math.sqrt(abs(bx[0]) ** 2 + abs(bx[1]) ** 2)
+
+
+def _segments(vals, nc, nr, level):
+    """Marching squares: the level's segments in grid coordinates (log placing)."""
+    def cross(va, vb):
+        t = (math.log(level) - math.log(va)) / (math.log(vb) - math.log(va))
+        return min(max(t, 0.0), 1.0)
+    out = []
+    for r in range(nr - 1):
+        for c in range(nc - 1):
+            q = [vals[r][c], vals[r][c + 1], vals[r + 1][c + 1], vals[r + 1][c]]
+            if any(v is None for v in q):
+                continue
+            ins = [v >= level for v in q]
+            if all(ins) or not any(ins):
+                continue
+            corners = [(c, r), (c + 1, r), (c + 1, r + 1), (c, r + 1)]
+            pts = []
+            for e in range(4):
+                if ins[e] != ins[(e + 1) % 4]:
+                    t = cross(q[e], q[(e + 1) % 4])
+                    (xa, ya), (xb, yb) = corners[e], corners[(e + 1) % 4]
+                    pts.append((xa + t * (xb - xa), ya + t * (yb - ya)))
+            for i in range(0, len(pts) - 1, 2):
+                out.append((pts[i], pts[i + 1]))
+    return out
+
+
+def field_cut():
+    f = Fig("field-cut", 760, 430, "A vertical cut across the line near a building",
+            "A double-circuit line in a vertical plane across it, a house beside it: the field "
+            "computed at every point of a grid in the plane, its isolines of 3, 10 and 30 "
+            "microtesla drawn between the points and cut at the ground.")
+    f.text(20, 26, "A vertical cut across the line: what reaches a building", "t")
+    cond = []
+    for side in (-1, 1):
+        for (y, z, ang) in ((6.5, 22.0, 0), (8.5, 28.0, -120), (6.5, 34.0, 120)):
+            cond.append((side * y, z, 1000.0, ang))
+    cond.append((0.0, 40.0, 0.0, 0))
+    y0, y1, z0, z1, step = -50.0, 50.0, 0.0, 60.0, 1.0
+    nc, nr = int((y1 - y0) / step) + 1, int((z1 - z0) / step) + 1
+    X0, Y0, S = 60.0, 395.0, 5.0
+    gz = lambda y: 0.04 * y  # a gentle slope across
+    vals = [[_field_2d(cond, y0 + c * step, z0 + r * step) for c in range(nc)] for r in range(nr)]
+    px = lambda y, z: (X0 + (y - y0) * S, Y0 - (z - z0) * S)
+    # ground and the house
+    g = [px(y, gz(y)) for y in (y0, y1)]
+    f.poly(g + [(g[1][0], Y0 + 12), (g[0][0], Y0 + 12)], "fi", close=True)
+    f.poly(g, "gnd")
+    hx0, hx1, hz = 24.0, 36.0, 9.0
+    base = gz(30.0)
+    house = [px(hx0, base), px(hx0, base + hz), px(30.0, base + hz + 5), px(hx1, base + hz), px(hx1, base)]
+    f.poly(house, "", "fill:var(--fill);stroke:var(--ink);stroke-width:1.6", close=True)
+    f.text(*px(30.0, base + 3), "house", "c lab")
+    # the grid's points (a few shown)
+    for r in range(0, nr, 5):
+        for c in range(0, nc, 5):
+            y, z = y0 + c * step, z0 + r * step
+            in_house = 24.0 <= y <= 36.0 and z <= gz(30.0) + 14.0
+            if z >= gz(y) and not in_house:
+                x, yy = px(y, z)
+                f.add(f'<circle cx="{x:.1f}" cy="{yy:.1f}" r="1.1" style="fill:var(--muted)"/>')
+    # isolines, cut at the ground
+    levels = ((3.0, "acc"), (10.0, "wire"), (30.0, "wire3"))
+    for level, col in levels:
+        d = []
+        for (ca, ra), (cb, rb) in _segments(vals, nc, nr, level):
+            ya, za = y0 + ca * step, z0 + ra * step
+            yb, zb = y0 + cb * step, z0 + rb * step
+            if za < gz(ya) and zb < gz(yb):
+                continue
+            (xa, pa), (xb, pb) = px(ya, za), px(yb, zb)
+            d.append(f"M{xa:.1f},{pa:.1f} L{xb:.1f},{pb:.1f}")
+        f.path(" ".join(d), "", f"stroke:var({STROKE[col]});stroke-width:2;fill:none;stroke-linecap:round")
+    # tower and conductors
+    f.path(f"M{px(0, gz(0))[0]},{px(0, gz(0))[1]} L{px(0, 40)[0]},{px(0, 40)[1]}", "", "stroke:var(--muted);stroke-width:3")
+    for (y, z, amps, _) in cond:
+        x, yy = px(y, z)
+        if amps > 0:
+            f.dot(x, yy, 3.6)
+        else:
+            f.ring(x, yy, 3, "ink", 1.5)
+    x = 590
+    f.text(x, 70, "1000 A per phase,", "lab")
+    f.text(x, 86, "both circuits alike", "lab")
+    for k, (level, col) in enumerate(levels):
+        yy = 120 + 22 * k
+        f.path(f"M{x},{yy} L{x + 26},{yy}", "", f"stroke:var({STROKE[col]});stroke-width:2.5")
+        f.text(x + 34, yy + 4, f"{level:g} µT")
+    f.text(x, 200, "· grid point (every 5th", "lab")
+    f.text(x, 216, "shown; computed exactly)", "lab")
+    f.text(x, 244, "Isolines: straight", "lab")
+    f.text(x, 260, "between the points,", "lab")
+    f.text(x, 276, "placed by log B;", "lab")
+    f.text(x, 292, "cut at the ground.", "lab")
+    f.text(x, 320, "Each run says how far", "lab")
+    f.text(x, 336, "they lie off their level.", "lab")
+    f.text(20, 422, "Drawn here with infinite conductors (2D, to scale); the program computes the "
+           "cut from the solved 3D wires.", "lab")
+    return f
+
+
+def field_volume():
+    f = Fig("field-volume", 760, 430, "Where a volume is computed fine",
+            "A slice of a volume's lattice: the coarse points four fine steps apart, the coarse "
+            "cells a level passes through or comes within 10 percent of, those within a coarse "
+            "step of a wire, and those reached by following the surface across a face, all "
+            "computed fine; the rest stays coarse.")
+    f.text(20, 26, "A volume: coarse first, fine only where a surface can pass (a slice)", "t")
+    X0, Y0, C = 40.0, 60.0, 28.0
+    nx, ny = 16, 12
+    wires = [(150.0, 150.0, 1.0), (330.0, 210.0, 1.0)]
+    thin = (380.0, 300.0, 0.6)
+    def val(x, y):
+        v = sum(a / max(math.hypot(x - wx, y - wy), 1.0) for wx, wy, a in wires)
+        v += thin[2] / max(math.hypot(x - thin[0], y - thin[1]), 0.5)
+        return v
+    level = 1 / 70.0 + 1 / 400.0
+    tube = 1 / 14.0
+    gx = lambda i: X0 + i * C
+    gy = lambda j: Y0 + j * C
+    cv = [[val(gx(i), gy(j)) for i in range(nx + 1)] for j in range(ny + 1)]
+    levels = (level, tube)
+    flag = {}
+    for j in range(ny):
+        for i in range(nx):
+            q = [cv[j][i], cv[j][i + 1], cv[j + 1][i], cv[j + 1][i + 1]]
+            if any(min(q) / 1.03 <= l <= max(q) * 1.03 for l in levels):
+                flag[(i, j)] = "level"
+    for wx, wy in [(w[0], w[1]) for w in wires] + [thin[:2]]:
+        for j in range(ny):
+            for i in range(nx):
+                cx, cy = gx(i) + C / 2, gy(j) + C / 2
+                if abs(cx - wx) <= 1.5 * C and abs(cy - wy) <= 1.5 * C and (i, j) not in flag:
+                    flag[(i, j)] = "wire"
+    # follow across faces (fine values sampled on the face)
+    todo = list(flag)
+    while todo:
+        nxt = []
+        for (i, j) in todo:
+            for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                a, b = i + di, j + dj
+                if not (0 <= a < nx and 0 <= b < ny) or (a, b) in flag:
+                    continue
+                if di:
+                    xf = gx(i + (1 if di > 0 else 0))
+                    face = [val(xf, gy(j) + C * k / 4) for k in range(5)]
+                else:
+                    yf = gy(j + (1 if dj > 0 else 0))
+                    face = [val(gx(i) + C * k / 4, yf) for k in range(5)]
+                if any(min(face) < l <= max(face) for l in levels):
+                    flag[(a, b)] = "follow"
+                    nxt.append((a, b))
+        todo = nxt
+    fills = {"level": "fa", "wire": "f3", "follow": "f2"}
+    fine_pts = set()
+    for (i, j), why in flag.items():
+        f.add(f'<rect x="{gx(i):.1f}" y="{gy(j):.1f}" width="{C}" height="{C}" class="{fills[why]}"/>')
+        fine_pts.update((4 * i + a, 4 * j + b) for a in range(5) for b in range(5))
+    f.path(" ".join(f"M{X0 + a * C / 4:.1f},{Y0 + b * C / 4:.1f}h0" for a, b in sorted(fine_pts)), "",
+           "stroke:var(--muted);stroke-width:1.8;stroke-linecap:round")
+    for j in range(ny + 1):
+        f.path(f"M{gx(0)},{gy(j)} L{gx(nx)},{gy(j)}", "thin", "opacity:.45")
+    for i in range(nx + 1):
+        f.path(f"M{gx(i)},{gy(0)} L{gx(i)},{gy(ny)}", "thin", "opacity:.45")
+    for j in range(ny + 1):
+        for i in range(nx + 1):
+            f.dot(gx(i), gy(j), 2.2)
+    # the surfaces (fine, for the eye)
+    fine = 4
+    vals = [[val(X0 + i * C / fine, Y0 + j * C / fine) for i in range(nx * fine + 1)] for j in range(ny * fine + 1)]
+    for l in levels:
+        d = []
+        for (ca, ra), (cb, rb) in _segments(vals, nx * fine + 1, ny * fine + 1, l):
+            d.append(f"M{X0 + ca * C / fine:.1f},{Y0 + ra * C / fine:.1f} L{X0 + cb * C / fine:.1f},{Y0 + rb * C / fine:.1f}")
+        f.path(" ".join(d), "", "stroke:var(--wire);stroke-width:2.2;fill:none;stroke-linecap:round")
+    for wx, wy, _ in wires + [thin]:
+        f.dot(wx, wy, 4)
+    x = 510
+    f.dot(x + 6, 74, 2.2)
+    f.text(x + 18, 78, "coarse point (4 steps apart)", "lab")
+    f.add(f'<circle cx="{x + 6}" cy="96" r="0.9" style="fill:var(--muted)"/>')
+    f.text(x + 18, 100, "fine point", "lab")
+    for k, (cls, t1, t2) in enumerate((("fa", "a level between or near", "the corners' values"),
+                                       ("f3", "within a coarse step", "of a wire (thin tubes)"),
+                                       ("f2", "a surface crosses a face", "of a fine cell: followed"))):
+        yy = 126 + 46 * k
+        f.add(f'<rect x="{x}" y="{yy}" width="16" height="16" class="{cls}"/>')
+        f.text(x + 24, yy + 12, t1, "")
+        f.text(x + 24, yy + 28, t2, "lab")
+    f.path(f"M{x},272 L{x + 26},272", "", "stroke:var(--wire);stroke-width:2.2")
+    f.text(x + 34, 276, "the levels' surfaces", "")
+    f.dot(x + 6, 296, 4)
+    f.text(x + 18, 300, "a wire", "")
+    f.text(x, 330, "Every point computed exactly;", "lab")
+    f.text(x, 346, "the surface between them", "lab")
+    f.text(x, 362, "interpolated (marching", "lab")
+    f.text(x, 378, "tetrahedra, by log B).", "lab")
+    f.text(20, 420, "In 3D the same with cubes: about half the fine lattice computed on a real span.", "lab")
+    return f
+
+
+def field_blocks():
+    f = Fig("field-blocks", 760, 330, "Points in blocks",
+            "Point by point, every point reads all the line's pieces from memory; in blocks of 64 "
+            "points, each wire's pieces are read once and stay in the processor's cache for the "
+            "64 points; the threads take the next block in turn, so a quicker core takes more.")
+    f.text(20, 26, "Why points are computed in blocks (the same sums, read once)", "t")
+    def wires(x, y):
+        for k in range(4):
+            f.add(f'<rect x="{x}" y="{y + 26 * k}" width="120" height="18" class="box"/>')
+            f.text(x + 60, y + 13 + 26 * k, f"wire {k + 1}: pieces" if k < 3 else "…  (7 MB in all)", "c sm")
+    f.text(40, 64, "Point by point", "")
+    wires(40, 80)
+    for k in range(3):
+        px_, py_ = 300, 92 + 40 * k
+        f.dot(px_, py_, 4, "acc")
+        f.text(px_ + 10, py_ + 4, f"point {k + 1}", "sm")
+        for w in range(4):
+            f.path(f"M160,{89 + 26 * w} L{px_ - 6},{py_}", "thin", "opacity:.5")
+    f.text(40, 216, "every point reads all 7 MB again:", "lab")
+    f.text(40, 232, "memory, not arithmetic, sets the pace", "lab")
+    ox = 420
+    f.text(ox, 64, "In blocks of 64 points", "")
+    wires(ox, 80)
+    f.add(f'<rect x="{ox + 160}" y="76" width="130" height="110" class="band"/>')
+    f.text(ox + 225, 70, "one block", "c sm")
+    for k in range(8):
+        f.dot(ox + 176 + (k % 4) * 30, 100 + (k // 4) * 50, 3.2, "acc")
+    f.arrow(ox + 124, 89, ox + 160, 110, "wire", 1.8)
+    f.text(ox, 216, "wire 1's pieces read once, used for all 64,", "lab")
+    f.text(ox, 232, "then wire 2's…: they stay in the cache", "lab")
+    # the queue
+    y = 262
+    for k in range(10):
+        f.add(f'<rect x="{40 + 36 * k}" y="{y}" width="30" height="20" class="box"/>')
+        f.text(55 + 36 * k, y + 14, f"{k + 1}", "c sm")
+    f.text(420, y + 8, "blocks waiting: each thread takes the next", "lab")
+    f.text(420, y + 24, "one in turn (quick cores take more)", "lab")
+    f.text(20, 318, "Measured: per polyline 4.7 ns a piece and point (9.4 ns piece by piece); "
+           "blocks and the queue: 85 s → 67 s for one volume.", "lab")
+    return f
+
+
 FIGURES = [catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
            shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, lidar_classes,
            swing_band, fall_in, safety_section, jumper_gap, sheet_ranges, lowest_line,
-           vertical_radial, vertical_arc, max_tension]
+           vertical_radial, vertical_arc, max_tension, bs_segment, field_pieces, field_cut,
+           field_volume, field_blocks]
 
 
 def main(argv):
