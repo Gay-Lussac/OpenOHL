@@ -429,18 +429,7 @@ impl AlignmentView {
         let (Some(pa), Some(pb)) = (line.structure(a), line.structure(b)) else {
             return false;
         };
-        let (pa, pb) = (pa.position, pb.position);
-        let centre = positions(&self.alignment);
-        let n = (pa[0] - pb[0]).hypot(pa[1] - pb[1]).ceil().max(1.0) as usize;
-        (1..n).all(|k| {
-            let t = k as f64 / n as f64;
-            let p = [
-                pa[0] + t * (pb[0] - pa[0]),
-                pa[1] + t * (pb[1] - pa[1]),
-                0.0,
-            ];
-            beside(&centre, p) <= NEAR_ALIGNMENT
-        })
+        chord_along(&positions(&self.alignment), pa.position, pb.position)
     }
 
     /// Stationing of every structure of the route. Line angles and spans
@@ -722,7 +711,7 @@ impl Line {
                 on.sort_by(|x, y| x.0.total_cmp(&y.0));
                 // Away: neither tied to one of its points nor beside it
                 // (on it only because it gives the route itself).
-                let away = on
+                let mut away: Vec<String> = on
                     .iter()
                     .filter(|(_, id)| {
                         !points.iter().any(|p| p.structure.as_deref() == Some(id))
@@ -732,6 +721,8 @@ impl Line {
                     })
                     .map(|x| x.1.clone())
                     .collect();
+                let under = self.under_spans(&points, &on, &away);
+                away.extend(under);
                 AlignmentView {
                     id: a.id.clone(),
                     name: a.name.clone(),
@@ -741,6 +732,63 @@ impl Line {
                     away,
                 }
             })
+            .collect()
+    }
+
+    /// The structures of `on` (station, id; in station order) that stand
+    /// near the alignment `points` without being tied to one of its points
+    /// and are not of the line's run there: a span of the line along the
+    /// alignment passes over them (between two structures of the run on
+    /// either side) and none of their own spans runs along it, such as
+    /// another line's tower under a span. `away` (those away already) are
+    /// left out of the run.
+    fn under_spans(
+        &self,
+        points: &[AlignmentPoint],
+        on: &[(f64, String)],
+        away: &[String],
+    ) -> Vec<String> {
+        let pts = positions(points);
+        let run: std::collections::HashMap<&str, f64> = on
+            .iter()
+            .filter(|(_, id)| !away.contains(id))
+            .map(|(st, id)| (id.as_str(), *st))
+            .collect();
+        let candidates: Vec<(f64, &str)> = on
+            .iter()
+            .filter(|(_, id)| {
+                !away.contains(id) && !points.iter().any(|p| p.structure.as_deref() == Some(id))
+            })
+            .map(|(st, id)| (*st, id.as_str()))
+            .collect();
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+        let along = |a: &str, b: &str| {
+            let (Some(pa), Some(pb)) = (self.structure(a), self.structure(b)) else {
+                return false;
+            };
+            chord_along(&pts, pa.position, pb.position)
+        };
+        let spans: Vec<(&str, &str)> = self
+            .sections
+            .iter()
+            .flat_map(|s| s.points.windows(2))
+            .map(|w| (w[0].structure.as_str(), w[1].structure.as_str()))
+            .filter(|(a, b)| a != b && run.contains_key(a) && run.contains_key(b))
+            .collect();
+        candidates
+            .into_iter()
+            .filter(|&(st, x)| {
+                let over = spans.iter().any(|&(a, b)| {
+                    let (sa, sb) = (run[a], run[b]);
+                    a != x && b != x && sa.min(sb) < st && st < sa.max(sb) && along(a, b)
+                });
+                over && !spans
+                    .iter()
+                    .any(|&(a, b)| (a == x || b == x) && along(a, b))
+            })
+            .map(|(_, x)| x.to_owned())
             .collect()
     }
 
@@ -1238,6 +1286,19 @@ fn distance_to(line: &[Point], p: Point) -> f64 {
             )
         })
         .fold(f64::INFINITY, f64::min)
+}
+
+/// Whether the straight line from `a` to `b` stays within
+/// [`NEAR_ALIGNMENT`] of the alignment `centre` over its whole length
+/// (in plan, sampled every 10 m or closer: between samples it strays
+/// less than the samples do from a straight alignment).
+fn chord_along(centre: &[Point], a: Point, b: Point) -> bool {
+    let n = ((a[0] - b[0]).hypot(a[1] - b[1]) / 10.0).ceil().max(1.0) as usize;
+    (0..=n).all(|k| {
+        let t = k as f64 / n as f64;
+        let p = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), 0.0];
+        beside(centre, p) <= NEAR_ALIGNMENT
+    })
 }
 
 /// Plan distance from `p` to `line` when `p` lies beside it (its

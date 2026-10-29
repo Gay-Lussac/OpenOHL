@@ -164,7 +164,10 @@ engineering use yet. The most valuable contributions right now are:
    ```
 
 3. Before pushing, run what CI runs (CI is started by hand, so these
-   local checks are what keeps `main` green):
+   local checks are what keeps `main` green). `sh tools/check.sh` runs
+   all of it, the plugins the tests need included, and stops at the
+   first failure (see the script's header for checking a worktree and
+   for the private parts it runs only where they are). Step by step:
 
    ```bash
    cargo fmt --all --check

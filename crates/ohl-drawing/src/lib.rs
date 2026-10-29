@@ -668,6 +668,11 @@ pub struct Mark {
     /// `AlignmentView::away`): a sheet never ends at it, and it is drawn
     /// only within the line width ([`Options::plan_half_width`]).
     pub away: bool,
+    /// Not on the route at all: a structure of the line standing within
+    /// the line width beside it ([`build`]; also [`Self::away`]), such as
+    /// another circuit's tower under a span. Drawn, but no span of the
+    /// route's sags ends at it.
+    pub beside: bool,
     /// Position in project coordinates (x, y).
     pub xy: [f64; 2],
     /// Ground (base) height.
@@ -1053,12 +1058,29 @@ pub fn build(
         let (s, o) = project(&centre, *p);
         [s, o, p[2]]
     };
-    let structures = route
+    // Within the line width beside the centreline (not beyond its ends).
+    let width = options.plan_half_width;
+    let within = |p: &Point| {
+        let (s, o) = project(&centre, *p);
+        let back = ohl_line::route::point_at(&centre, s, o);
+        o.abs() <= width && (back[0] - p[0]).hypot(back[1] - p[1]) < 0.01 * width.max(1.0)
+    };
+    let mut structures: Vec<Mark> = route
         .structures
         .iter()
         .filter_map(|id| line.structure(id))
         .map(|s| mark_of(s, &centre, route.is_away(&s.id)))
         .collect();
+    // The line's other structures within the line width: drawn too.
+    structures.extend(
+        line.structures
+            .iter()
+            .filter(|s| !route.structures.contains(&s.id) && within(&s.position))
+            .map(|s| Mark {
+                beside: true,
+                ..mark_of(s, &centre, true)
+            }),
+    );
     // (Voltages are for the styles only: a line whose systems do not read
     // is drawn without them.)
     let potentials = line.potentials().unwrap_or_default();
@@ -1081,7 +1103,9 @@ pub fn build(
                 &section.points[k].structure,
                 &section.points[k + 1].structure,
             );
-            if consecutive(a, b) {
+            // Along the route, or another span passing within the line
+            // width (a crossing or a connection: cut there when shown).
+            if consecutive(a, b) || span.points.iter().any(within) {
                 wires.push(trace_of(
                     Some(section),
                     &potentials,
@@ -1104,6 +1128,7 @@ pub fn build(
             .into_iter()
             .flat_map(|e| line.end_structures(e))
             .any(|s| route.structures.contains(&s))
+            || j.points.iter().any(within)
         {
             let section = line.jumper_section(def);
             let color = def.color.clone().unwrap_or_else(|| {
@@ -1488,6 +1513,7 @@ impl RouteDrawing {
         let station: std::collections::HashMap<&str, f64> = self
             .structures
             .iter()
+            .filter(|m| !m.beside)
             .map(|m| (m.id.as_str(), m.station))
             .collect();
         let sections: std::collections::HashMap<&str, &ohl_line::Section> =
@@ -2184,10 +2210,10 @@ pub(crate) mod tests {
 
     #[test]
     fn a_crossing_line_under_a_span_keeps_the_span() {
-        // Another line's structure 3 m beside the alignment under T1–T2
-        // (in the run: near the alignment): T1–T2 no longer follow each
-        // other in the run, the span still runs along the route and is
-        // drawn.
+        // Another line's structure 3 m beside the alignment under T1–T2,
+        // none of its own spans along it: near the alignment, but away
+        // from the run (the span passes over it); T1–T2 follow each other
+        // in the run and are drawn, the structure too.
         let (mut line, shapes, jumpers, _) = solved();
         let mut c = line.structure("T1").unwrap().clone();
         c.id = "X1".into();
@@ -2198,8 +2224,10 @@ pub(crate) mod tests {
         let views = line.alignment_views();
         let main = &views[0];
         assert_eq!(main.structures[..3], ["T1", "X1", "T2"]);
-        assert!(main.away.is_empty());
-        assert!(!main.consecutive("T1", "T2") && main.along(&line, "T1", "T2"));
+        assert_eq!(main.away, ["X1"]);
+        assert!(main.consecutive("T1", "T2") && main.along(&line, "T1", "T2"));
+        let stations = main.stations(&line).unwrap();
+        assert!((stations[0].ahead_span - 310.0).abs() < 1e-6);
         let d = build(
             &line,
             main,
@@ -2217,6 +2245,61 @@ pub(crate) mod tests {
             .collect();
         assert_eq!(s1.len(), 4);
         assert!(s1.iter().any(|w| w.label.starts_with("S1 span 0 ")));
+        assert!(d.structures.iter().any(|m| m.id == "X1" && m.away));
+    }
+
+    #[test]
+    fn structures_and_spans_within_the_line_width_are_drawn() {
+        // A crossing line's two structures 20 m and 60 m left of T1–T2 (not
+        // on the route: no route of their own, beyond 5 m), a span between
+        // them: the nearer drawn, not on the route's sags, the span cut at
+        // the line width; T1–T2 still drawn.
+        let (mut line, mut shapes, jumpers, _) = solved();
+        for (id, y) in [("X1", 20.0), ("X2", 60.0)] {
+            let mut c = line.structure("T1").unwrap().clone();
+            c.id = id.into();
+            c.position = [150.0, y, 490.0];
+            c.points.clear();
+            c.members.clear();
+            line.structures.push(c);
+        }
+        let mut sc = line.sections.iter().find(|s| s.id == "S1").unwrap().clone();
+        sc.id = "SX".into();
+        sc.points.truncate(2);
+        sc.points[0].structure = "X1".into();
+        sc.points[1].structure = "X2".into();
+        line.sections.push(sc);
+        let mut shape = shapes.iter().find(|s| s.section == "S1").unwrap().clone();
+        shape.section = "SX".into();
+        shape.spans.truncate(1);
+        shape.spans[0].points = (0..=20)
+            .map(|k| [150.0, 20.0 + 2.0 * f64::from(k), 500.0])
+            .collect();
+        shapes.push(shape);
+        let views = line.alignment_views();
+        let main = &views[0];
+        assert!(!main.structures.iter().any(|s| s.starts_with('X')));
+        let o = Options::default();
+        let d = build(&line, main, &shapes, &jumpers, None, &[], &o).unwrap();
+        let x1 = d.structures.iter().find(|m| m.id == "X1").unwrap();
+        assert!(x1.beside && x1.away && (x1.offset + 20.0).abs() < 1e-6);
+        assert!(!d.structures.iter().any(|m| m.id == "X2"));
+        let shown = d.shown(o.plan_half_width);
+        let sx: Vec<&Trace> = shown
+            .wires
+            .iter()
+            .filter(|w| w.label.starts_with("SX"))
+            .collect();
+        assert_eq!(sx.len(), 1);
+        assert!(sx[0].points.iter().all(|p| p[1].abs() <= 40.0 + 1e-6));
+        assert_eq!(
+            shown
+                .wires
+                .iter()
+                .filter(|w| w.label.starts_with("S1 "))
+                .count(),
+            4
+        );
     }
 
     /// A square tower 4 m wide and 30 m tall at T2 (its four legs and a
@@ -2878,7 +2961,20 @@ pub(crate) mod tests {
             4
         );
         assert!(main.wires.iter().any(|w| w.label.starts_with("jumper")));
-        assert!(main.wires.iter().all(|w| !w.label.starts_with("S3")));
+        // The branch leaving T3 (S3): drawn where it passes within the
+        // line width, cut there when shown.
+        let shown = main.shown(options.plan_half_width);
+        let s3: Vec<&Trace> = shown
+            .wires
+            .iter()
+            .filter(|w| w.label.starts_with("S3"))
+            .collect();
+        assert!(!s3.is_empty());
+        assert!(s3.iter().all(|w| {
+            w.points
+                .iter()
+                .all(|p| p[1].abs() <= options.plan_half_width + 1e-6)
+        }));
         assert!(main.wires.iter().all(|w| w.xy.len() == w.points.len()));
         // Structures at their stations; T1 at 0.
         assert_eq!(main.structures.len(), 5);
@@ -2899,7 +2995,8 @@ pub(crate) mod tests {
         assert!(svg_text.contains("0+310.0")); // T2's station label
         let csv = profile_csv(&main, &options);
         assert!(csv.lines().count() > 500);
-        // Branch route: only S3.
+        // Branch route: S3, and the main route's wires only where they pass
+        // within the line width (at the junction T3).
         let branch = build(
             &line,
             &routes[1],
@@ -2910,13 +3007,16 @@ pub(crate) mod tests {
             &options,
         )
         .unwrap();
+        let w = options.plan_half_width;
         assert!(
             branch
+                .shown(w)
                 .wires
                 .iter()
-                .filter(|w| !w.label.starts_with("jumper"))
-                .all(|w| w.label.starts_with("S3"))
+                .filter(|t| !t.label.starts_with("jumper") && !t.label.starts_with("S3"))
+                .all(|t| t.points.iter().all(|p| p[1].abs() <= w + 1e-6))
         );
+        assert!(branch.wires.iter().any(|t| t.label.starts_with("S3")));
         assert_eq!(
             branch
                 .wires
@@ -3235,15 +3335,25 @@ pub(crate) mod tests {
         let ids = |d: &RouteDrawing| -> Vec<String> {
             d.structures.iter().map(|m| m.id.clone()).collect()
         };
-        // The synthetic example has no structure beside the line and no
-        // wire beyond ±40 m: every route is drawn whole, as before (its
-        // free alignment points P1 and P3 lie at its first and last
-        // structure: no breaks of their own, its sheets unchanged).
+        // The synthetic example has no structure beside the line: every
+        // structure is drawn; the other route's wires at the junction T3
+        // only within ±40 m (its free alignment points P1 and P3 lie at
+        // its first and last structure: no breaks of their own).
         let (line, shapes, jumpers, terrain) = solved();
         for route in line.alignment_views() {
             let o = Options::default();
             let d = build(&line, &route, &shapes, &jumpers, Some(&terrain), &[], &o).unwrap();
-            assert_eq!(d.shown(o.plan_half_width), d, "{}", route.id);
+            let shown = d.shown(o.plan_half_width);
+            assert_eq!(shown.structures, d.structures, "{}", route.id);
+            assert!(
+                shown
+                    .wires
+                    .iter()
+                    .flat_map(|w| &w.points)
+                    .all(|p| p[1].abs() <= o.plan_half_width + 1e-6),
+                "{}",
+                route.id
+            );
         }
         let d = main_with_away(700.0, 39.9);
         assert!(ids(&d.shown(40.0)).contains(&"C1".to_owned()));

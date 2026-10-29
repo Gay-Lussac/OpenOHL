@@ -120,13 +120,20 @@ The **line width** (± m from the alignment, default 40 m) decides what is
 drawn along the line, in the plan and in the profile:
 
 - the plan shows the band of the line width each side of the alignment;
-- every structure of the run along the alignment is drawn; a structure of
-  the route **beside the line** (a connection or termination away from
-  the alignment, more than 5 m beside it and not on one of its points) is
-  drawn only when it stands within the line width;
-- wires are drawn within it: a span out to a structure beyond it is cut
-  where it leaves the line width (the crossing interpolated between the
-  wire's points);
+- the line itself is always drawn: every structure of the run along the
+  alignment and every span between them;
+- every other structure of the line within the line width is drawn too:
+  a structure of the route **beside the line** (a connection or
+  termination away from the alignment, more than 5 m beside it and not
+  on one of its points), a structure of another circuit or line standing
+  under a span (near the alignment, not on one of its points, with the
+  span passing over it and none of its own spans along the alignment: it
+  does not break the line's span, its length or its height steps), and
+  any other structure of the line there;
+- wires are drawn within it: the line's own, and every other span or
+  jumper passing within the line width (a crossing, an outgoing or
+  ongoing connection), cut where it leaves the line width (the crossing
+  interpolated between the wire's points);
 - violation markers within it.
 
 The profile CSV and XML keep every number (they are not cut at the line
