@@ -950,7 +950,7 @@ fn earth_wire_currents(
 }
 
 /// A structure's current from the earth wires into the ground (the earth
-/// wire network, [`earth_wire_network`]).
+/// wire network over the line, `Settings::towers`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TowerCurrent {
     /// The structure.
