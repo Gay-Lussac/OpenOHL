@@ -570,31 +570,39 @@ fn cross_section_charges(
     if wires.is_empty() {
         return Vec::new();
     }
-    let Some(inv) = matrices::potential(&wires).try_inverse() else {
-        notes.push(format!(
-            "span {}–{}: the potential coefficients are singular; no charges",
-            cs.station.from, cs.station.to
-        ));
-        return Vec::new();
-    };
-    let inv = matrices::complex(&inv);
     let mut freqs: Vec<f64> = volts.iter().flatten().map(|v| v.0).collect();
     freqs.sort_by(f64::total_cmp);
     freqs.dedup();
-    freqs
-        .into_iter()
-        .map(|f| {
-            let v = DVector::from_iterator(
-                volts.len(),
-                volts.iter().map(|x| match x {
-                    Some((g, v)) if *g == f => *v,
-                    _ => C::new(0.0, 0.0),
-                }),
-            );
-            let q = &inv * v;
-            (f, q.iter().copied().collect())
-        })
-        .collect()
+    let mut out = Vec::new();
+    for f in freqs {
+        let v: Vec<C> = volts
+            .iter()
+            .map(|x| match x {
+                Some((g, v)) if *g == f => *v,
+                _ => C::new(0.0, 0.0),
+            })
+            .collect();
+        let Some(q) = charges(&wires, &v) else {
+            notes.push(format!(
+                "span {}–{}: the potential coefficients are singular; no charges",
+                cs.station.from, cs.station.to
+            ));
+            return Vec::new();
+        };
+        out.push((f, q));
+    }
+    out
+}
+
+/// The charges per metre of parallel wires over a perfectly conducting
+/// earth at the voltages to earth `volts` (rms phasors, V), C/m:
+/// \( q = P^{-1} V \) with the potential coefficients of
+/// [`matrices::potential`] (a bundle as its equivalent wire). `None`: the
+/// coefficients are singular.
+pub fn charges(wires: &[Wire], volts: &[C]) -> Option<Vec<C>> {
+    let inv = matrices::complex(&matrices::potential(wires).try_inverse()?);
+    let v = DVector::from_iterator(volts.len(), volts.iter().copied());
+    Some((&inv * v).iter().copied().collect())
 }
 
 /// Charges per (section id, span index): per frequency, per metre, the

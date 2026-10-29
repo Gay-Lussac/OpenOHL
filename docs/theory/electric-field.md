@@ -184,8 +184,13 @@ the level case turned with it.
 Tests in the crate: the closed forms above; on the synthetic double
 circuit the symmetry of a profile, the field proportional to the voltage,
 3D against 2D at mid-span (within 10 %), a cut and a volume with their
-isolines' and surfaces' distance off their levels. **Not validated yet**
-against a published profile (to find: IEC 62110's examples, CIGRE's
+isolines' and surfaces' distance off their levels. **Against hvlbuzz**
+(FKH, an independent program; 2026-10-29): the 2D charges and field on
+three cross-sections, 1 m above the ground — within 0.12 % on 380 kV
+bundles (one charge per bundle at its centre against hvlbuzz's twelve
+round every subconductor), 0.003 % on single wires, with and without an
+earth wire ([validation](../validation/textbook.md#the-2d-fields-against-hvlbuzz-benchmarkselectricalhvlbuzztoml)).
+**Not validated yet** against a published profile (to find: IEC 62110's examples, CIGRE's
 brochures on fields of overhead lines, the NISV guide's examples).
 
 ## Standards and sources

@@ -8,7 +8,7 @@
 # formatting, both clippy runs, the WebAssembly plugins the tests need,
 # every test (plugin and GPU tests required, not skipped), rustdoc, the
 # book, the documentation links, the validation benchmarks. Prints one
-# line per step (`fmt-ok`, `clippy1-ok`, …, `215 cases: 215 passed, 0
+# line per step (`fmt-ok`, `clippy1-ok`, …, `218 cases: 218 passed, 0
 # failed`) and `check-ok` at the end.
 #
 #   sh tools/check.sh [TREE]

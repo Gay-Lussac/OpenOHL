@@ -21,6 +21,130 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(Parameters));
     registry.register(Box::new(MagneticSegments));
     registry.register(Box::new(Magnetic2d));
+    registry.register(Box::new(Fields2d));
+}
+
+/// `electrical.fields_2d`: the electric field strength and the magnetic
+/// flux density on a profile across a line's cross-section by the
+/// program's 2D model, from inputs as hvlbuzz (FKH) takes them, to compare
+/// with it: `systems` (`{ subconductors, spacing, diameter (m), kv (between
+/// phases), amps, bundle_angle (deg, the first subconductor's from the
+/// bundle's centre), phases = [[x, y], …] }`, the phases at 0°, −120°,
+/// +120°, …), `earth_wires` (`{ x, y, diameter }`, at earth potential, no
+/// induced current), `height` (m above the ground) and `offsets` (m).
+/// Outputs per offset k (`_00`, `_01`, …): `e_v_m_k` (rms of the vector,
+/// V/m) and `b_ut_k` (µT); and their largest values `e_max_v_m`,
+/// `b_max_ut`. The charges: one per bundle at its centre
+/// ([`ohl_electrical::electric::charges`]); the currents: each
+/// subconductor's.
+struct Fields2d;
+
+impl Calculation for Fields2d {
+    fn id(&self) -> &'static str {
+        "electrical.fields_2d"
+    }
+
+    fn description(&self) -> &'static str {
+        "Electric and magnetic field on a profile across a cross-section (2D), inputs as hvlbuzz takes them"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use nalgebra::Complex;
+        use ohl_electrical::electric::{charges, line_field};
+        use ohl_electrical::magnetic::{Conductor2d, Group2d, field_2d};
+        let height = float(inputs, "height")?;
+        let offsets: Vec<f64> = inputs
+            .get("offsets")
+            .and_then(|v| v.as_array())
+            .ok_or("input \"offsets\": a list of numbers")?
+            .iter()
+            .filter_map(|x| x.as_float().or_else(|| x.as_integer().map(|i| i as f64)))
+            .collect();
+        let mut wires = Vec::new();
+        let mut volts = Vec::new();
+        let mut conductors = Vec::new();
+        for t in tables(inputs, "systems")? {
+            let n = number(t, "subconductors")?.max(1.0) as usize;
+            let spacing = number(t, "spacing")?;
+            let d = number(t, "diameter")?;
+            let kv = number(t, "kv")?;
+            let amps = number(t, "amps")?;
+            let beta = if t.contains_key("bundle_angle") {
+                number(t, "bundle_angle")?.to_radians()
+            } else {
+                0.0
+            };
+            let phases = t
+                .get("phases")
+                .and_then(|v| v.as_array())
+                .ok_or("input \"phases\": a list of [x, y]")?;
+            let np = phases.len().max(1) as f64;
+            let rb = if n > 1 {
+                spacing / 2.0 / (PI / n as f64).sin()
+            } else {
+                0.0
+            };
+            for (k, ph) in phases.iter().enumerate() {
+                let xy = numbers(Some(ph), "phase", 2)?;
+                let angle = -2.0 * PI * k as f64 / np;
+                let (_, radius) = matrices::bundle(n as u32, Some(spacing), d / 2.0, d / 2.0);
+                wires.push(Wire {
+                    across: xy[0],
+                    height: xy[1],
+                    gmr: radius,
+                    radius,
+                    resistance: 0.0,
+                });
+                volts.push(Complex::from_polar(kv * 1e3 / 3f64.sqrt(), angle));
+                for i in 0..n {
+                    let a = beta + 2.0 * PI * i as f64 / n as f64;
+                    conductors.push(Conductor2d {
+                        y: xy[0] + rb * a.cos(),
+                        z: xy[1] + rb * a.sin(),
+                        current: Complex::from_polar(amps / n as f64, angle),
+                    });
+                }
+            }
+        }
+        if let Some(list) = inputs.get("earth_wires").and_then(|v| v.as_array()) {
+            for e in list {
+                let t = e.as_table().ok_or("earth_wires: tables")?;
+                let r = number(t, "diameter")? / 2.0;
+                wires.push(Wire {
+                    across: number(t, "x")?,
+                    height: number(t, "y")?,
+                    gmr: r,
+                    radius: r,
+                    resistance: 0.0,
+                });
+                volts.push(Complex::new(0.0, 0.0));
+            }
+        }
+        let q = charges(&wires, &volts).ok_or("the potential coefficients are singular")?;
+        let group = [Group2d {
+            frequency_hz: 50.0,
+            conductors,
+        }];
+        let mut out = Outputs::new();
+        let (mut e_max, mut b_max) = (0.0f64, 0.0f64);
+        for (k, &x) in offsets.iter().enumerate() {
+            let mut e = [Complex::new(0.0, 0.0); 2];
+            for (w, qk) in wires.iter().zip(&q) {
+                let f = line_field(w.across, w.height, x, height);
+                e[0] += qk * f[0];
+                e[1] += qk * f[1];
+            }
+            let e = (e[0].norm_sqr() + e[1].norm_sqr()).sqrt();
+            let (b, _) = field_2d(&group, x, height);
+            out.insert(format!("e_v_m_{k:02}"), e);
+            out.insert(format!("b_ut_{k:02}"), b * 1e6);
+            e_max = e_max.max(e);
+            b_max = b_max.max(b * 1e6);
+        }
+        out.insert("e_max_v_m".into(), e_max);
+        out.insert("b_max_ut".into(), b_max);
+        Ok(out)
+    }
 }
 
 /// A list of numbers (`[x, y, z]`).

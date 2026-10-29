@@ -1,0 +1,221 @@
+# The 2D fields against hvlbuzz (owner, 2026-10-29: "for the electric and
+# magnetic fields you can probably use hvlbuzz … it's only 2D but at least
+# this can be validated"). hvlbuzz 2.0 (FKH, Switzerland;
+# https://gitlab.com/fkh-ch/emc, GPL-3.0-or-later) is an independent
+# program: its electric field from a charge simulation with 12 line charges
+# round every subconductor, its magnetic field by Biot–Savart. Its project
+# files are in benchmarks/electrical/hvlbuzz/ with the profiles it wrote
+# (run 2026-10-29); reference_hvlbuzz.py turns them into these cases.
+# Induced currents in the earth wires neglected (both programs).
+#
+# Tolerances: B 1e-7 (the same law; hvlbuzz's values agree to their last
+# digits); E 0.2 % (the program takes one charge at each bundle's centre,
+# hvlbuzz 12 round every subconductor: on the 380 kV bundles the profiles
+# differ by up to 0.12 %, on single wires by some 0.003 %).
+
+[[case]]
+id = "electrical-050"
+title = "One 380 kV circuit, flat, two-conductor bundles, 1000 A: E and B 1 m above the ground against hvlbuzz"
+calculation = "electrical.fields_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its own charge simulation and Biot–Savart; benchmarks/electrical/hvlbuzz/A-flat-380kV.json"
+[case.inputs]
+height = 1.0
+offsets = [-50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+[[case.inputs.systems]]
+subconductors = 2
+spacing = 0.4
+diameter = 0.0318
+kv = 380
+amps = 1000
+bundle_angle = 0
+phases = [[-9, 20], [0, 20], [9, 20]]
+[case.expected]
+e_v_m_00 = { value = 332.4722637, rel_tol = 0.002 }
+b_ut_00 = { value = 1.118356084, rel_tol = 1e-07 }
+e_v_m_01 = { value = 429.4728242, rel_tol = 0.002 }
+b_ut_01 = { value = 1.345526893, rel_tol = 1e-07 }
+e_v_m_02 = { value = 562.955378, rel_tol = 0.002 }
+b_ut_02 = { value = 1.642825008, rel_tol = 1e-07 }
+e_v_m_03 = { value = 746.7093819, rel_tol = 0.002 }
+b_ut_03 = { value = 2.037253743, rel_tol = 1e-07 }
+e_v_m_04 = { value = 994.7149045, rel_tol = 0.002 }
+b_ut_04 = { value = 2.564779256, rel_tol = 1e-07 }
+e_v_m_05 = { value = 1308.493442, rel_tol = 0.002 }
+b_ut_05 = { value = 3.266396773, rel_tol = 1e-07 }
+e_v_m_06 = { value = 1642.584739, rel_tol = 0.002 }
+b_ut_06 = { value = 4.167874945, rel_tol = 1e-07 }
+e_v_m_07 = { value = 1850.166745, rel_tol = 0.002 }
+b_ut_07 = { value = 5.227651371, rel_tol = 1e-07 }
+e_v_m_08 = { value = 1698.708342, rel_tol = 0.002 }
+b_ut_08 = { value = 6.273292667, rel_tol = 1e-07 }
+e_v_m_09 = { value = 1107.583736, rel_tol = 0.002 }
+b_ut_09 = { value = 7.035958329, rel_tol = 1e-07 }
+e_v_m_10 = { value = 570.0447459, rel_tol = 0.002 }
+b_ut_10 = { value = 7.310973464, rel_tol = 1e-07 }
+e_v_m_11 = { value = 1107.583771, rel_tol = 0.002 }
+b_ut_11 = { value = 7.035958329, rel_tol = 1e-07 }
+e_v_m_12 = { value = 1698.708369, rel_tol = 0.002 }
+b_ut_12 = { value = 6.273292667, rel_tol = 1e-07 }
+e_v_m_13 = { value = 1850.166759, rel_tol = 0.002 }
+b_ut_13 = { value = 5.227651371, rel_tol = 1e-07 }
+e_v_m_14 = { value = 1642.584744, rel_tol = 0.002 }
+b_ut_14 = { value = 4.167874945, rel_tol = 1e-07 }
+e_v_m_15 = { value = 1308.493442, rel_tol = 0.002 }
+b_ut_15 = { value = 3.266396773, rel_tol = 1e-07 }
+e_v_m_16 = { value = 994.7149023, rel_tol = 0.002 }
+b_ut_16 = { value = 2.564779256, rel_tol = 1e-07 }
+e_v_m_17 = { value = 746.7093788, rel_tol = 0.002 }
+b_ut_17 = { value = 2.037253743, rel_tol = 1e-07 }
+e_v_m_18 = { value = 562.9553747, rel_tol = 0.002 }
+b_ut_18 = { value = 1.642825008, rel_tol = 1e-07 }
+e_v_m_19 = { value = 429.472821, rel_tol = 0.002 }
+b_ut_19 = { value = 1.345526893, rel_tol = 1e-07 }
+e_v_m_20 = { value = 332.4722607, rel_tol = 0.002 }
+b_ut_20 = { value = 1.118356084, rel_tol = 1e-07 }
+e_max_v_m = { value = 1850.166759, rel_tol = 0.002 }
+b_max_ut = { value = 7.310973464, rel_tol = 1e-07 }
+
+[[case]]
+id = "electrical-051"
+title = "A 110 kV double circuit, phases one above another, 1000 A: E and B 1 m above the ground against hvlbuzz"
+calculation = "electrical.fields_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its own charge simulation and Biot–Savart; benchmarks/electrical/hvlbuzz/B-double-110kV.json"
+[case.inputs]
+height = 1.0
+offsets = [-50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+amps = 1000
+bundle_angle = 0
+phases = [[5, 22], [5, 27], [5, 32]]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+amps = 1000
+bundle_angle = 0
+phases = [[-5, 22], [-5, 27], [-5, 32]]
+[case.expected]
+e_v_m_00 = { value = 39.41078844, rel_tol = 0.002 }
+b_ut_00 = { value = 1.102239339, rel_tol = 1e-07 }
+e_v_m_01 = { value = 37.31816321, rel_tol = 0.002 }
+b_ut_01 = { value = 1.296821757, rel_tol = 1e-07 }
+e_v_m_02 = { value = 31.96810683, rel_tol = 0.002 }
+b_ut_02 = { value = 1.53927687, rel_tol = 1e-07 }
+e_v_m_03 = { value = 24.98678621, rel_tol = 0.002 }
+b_ut_03 = { value = 1.841848786, rel_tol = 1e-07 }
+e_v_m_04 = { value = 34.82253903, rel_tol = 0.002 }
+b_ut_04 = { value = 2.217092775, rel_tol = 1e-07 }
+e_v_m_05 = { value = 78.16929135, rel_tol = 0.002 }
+b_ut_05 = { value = 2.673039049, rel_tol = 1e-07 }
+e_v_m_06 = { value = 152.8734494, rel_tol = 0.002 }
+b_ut_06 = { value = 3.202279949, rel_tol = 1e-07 }
+e_v_m_07 = { value = 256.6192692, rel_tol = 0.002 }
+b_ut_07 = { value = 3.764232669, rel_tol = 1e-07 }
+e_v_m_08 = { value = 373.0855797, rel_tol = 0.002 }
+b_ut_08 = { value = 4.272813251, rel_tol = 1e-07 }
+e_v_m_09 = { value = 467.242988, rel_tol = 0.002 }
+b_ut_09 = { value = 4.621303603, rel_tol = 1e-07 }
+e_v_m_10 = { value = 503.3026568, rel_tol = 0.002 }
+b_ut_10 = { value = 4.742414644, rel_tol = 1e-07 }
+e_v_m_11 = { value = 467.2429848, rel_tol = 0.002 }
+b_ut_11 = { value = 4.621303603, rel_tol = 1e-07 }
+e_v_m_12 = { value = 373.0855742, rel_tol = 0.002 }
+b_ut_12 = { value = 4.272813251, rel_tol = 1e-07 }
+e_v_m_13 = { value = 256.6192628, rel_tol = 0.002 }
+b_ut_13 = { value = 3.764232669, rel_tol = 1e-07 }
+e_v_m_14 = { value = 152.8734434, rel_tol = 0.002 }
+b_ut_14 = { value = 3.202279949, rel_tol = 1e-07 }
+e_v_m_15 = { value = 78.16928637, rel_tol = 0.002 }
+b_ut_15 = { value = 2.673039049, rel_tol = 1e-07 }
+e_v_m_16 = { value = 34.82253622, rel_tol = 0.002 }
+b_ut_16 = { value = 2.217092775, rel_tol = 1e-07 }
+e_v_m_17 = { value = 24.98678743, rel_tol = 0.002 }
+b_ut_17 = { value = 1.841848786, rel_tol = 1e-07 }
+e_v_m_18 = { value = 31.96810913, rel_tol = 0.002 }
+b_ut_18 = { value = 1.53927687, rel_tol = 1e-07 }
+e_v_m_19 = { value = 37.31816533, rel_tol = 0.002 }
+b_ut_19 = { value = 1.296821757, rel_tol = 1e-07 }
+e_v_m_20 = { value = 39.41079023, rel_tol = 0.002 }
+b_ut_20 = { value = 1.102239339, rel_tol = 1e-07 }
+e_max_v_m = { value = 503.3026568, rel_tol = 0.002 }
+b_max_ut = { value = 4.742414644, rel_tol = 1e-07 }
+
+[[case]]
+id = "electrical-052"
+title = "The 110 kV double circuit with an earth wire (at earth potential): E and B 1 m above the ground against hvlbuzz"
+calculation = "electrical.fields_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its own charge simulation and Biot–Savart; benchmarks/electrical/hvlbuzz/C-double-110kV-earthwire.json"
+[case.inputs]
+height = 1.0
+offsets = [-50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+amps = 1000
+bundle_angle = 0
+phases = [[5, 22], [5, 27], [5, 32]]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+amps = 1000
+bundle_angle = 0
+phases = [[-5, 22], [-5, 27], [-5, 32]]
+[[case.inputs.earth_wires]]
+x = 0
+y = 38
+diameter = 0.016
+[case.expected]
+e_v_m_00 = { value = 24.81750074, rel_tol = 0.002 }
+b_ut_00 = { value = 1.102239339, rel_tol = 1e-07 }
+e_v_m_01 = { value = 21.64817826, rel_tol = 0.002 }
+b_ut_01 = { value = 1.296821757, rel_tol = 1e-07 }
+e_v_m_02 = { value = 16.97385667, rel_tol = 0.002 }
+b_ut_02 = { value = 1.53927687, rel_tol = 1e-07 }
+e_v_m_03 = { value = 20.52314298, rel_tol = 0.002 }
+b_ut_03 = { value = 1.841848786, rel_tol = 1e-07 }
+e_v_m_04 = { value = 46.16443869, rel_tol = 0.002 }
+b_ut_04 = { value = 2.217092775, rel_tol = 1e-07 }
+e_v_m_05 = { value = 95.13074798, rel_tol = 0.002 }
+b_ut_05 = { value = 2.673039049, rel_tol = 1e-07 }
+e_v_m_06 = { value = 171.5825012, rel_tol = 0.002 }
+b_ut_06 = { value = 3.202279949, rel_tol = 1e-07 }
+e_v_m_07 = { value = 275.600828, rel_tol = 0.002 }
+b_ut_07 = { value = 3.764232669, rel_tol = 1e-07 }
+e_v_m_08 = { value = 391.6075287, rel_tol = 0.002 }
+b_ut_08 = { value = 4.272813251, rel_tol = 1e-07 }
+e_v_m_09 = { value = 485.1714821, rel_tol = 0.002 }
+b_ut_09 = { value = 4.621303603, rel_tol = 1e-07 }
+e_v_m_10 = { value = 520.9765256, rel_tol = 0.002 }
+b_ut_10 = { value = 4.742414644, rel_tol = 1e-07 }
+e_v_m_11 = { value = 485.171479, rel_tol = 0.002 }
+b_ut_11 = { value = 4.621303603, rel_tol = 1e-07 }
+e_v_m_12 = { value = 391.6075235, rel_tol = 0.002 }
+b_ut_12 = { value = 4.272813251, rel_tol = 1e-07 }
+e_v_m_13 = { value = 275.6008219, rel_tol = 0.002 }
+b_ut_13 = { value = 3.764232669, rel_tol = 1e-07 }
+e_v_m_14 = { value = 171.5824954, rel_tol = 0.002 }
+b_ut_14 = { value = 3.202279949, rel_tol = 1e-07 }
+e_v_m_15 = { value = 95.13074298, rel_tol = 0.002 }
+b_ut_15 = { value = 2.673039049, rel_tol = 1e-07 }
+e_v_m_16 = { value = 46.16443486, rel_tol = 0.002 }
+b_ut_16 = { value = 2.217092775, rel_tol = 1e-07 }
+e_v_m_17 = { value = 20.52314122, rel_tol = 0.002 }
+b_ut_17 = { value = 1.841848786, rel_tol = 1e-07 }
+e_v_m_18 = { value = 16.97385789, rel_tol = 0.002 }
+b_ut_18 = { value = 1.53927687, rel_tol = 1e-07 }
+e_v_m_19 = { value = 21.64818002, rel_tol = 0.002 }
+b_ut_19 = { value = 1.296821757, rel_tol = 1e-07 }
+e_v_m_20 = { value = 24.81750233, rel_tol = 0.002 }
+b_ut_20 = { value = 1.102239339, rel_tol = 1e-07 }
+e_max_v_m = { value = 520.9765256, rel_tol = 0.002 }
+b_max_ut = { value = 4.742414644, rel_tol = 1e-07 }
+
