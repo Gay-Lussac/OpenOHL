@@ -678,11 +678,15 @@ derived, never stored). Inputs `electric::Settings`: `model`,
 `voltages` [`CircuitVoltage` {`circuit`, `kv` between phases; 0:
 voltage-free}], `height`, `width`, `step`, `stations`, `points`,
 `limit_kv_m`, `ground_radius` (m, the plane under a point fitted over
-it), `jumpers`, `piece_length`, `cuts`, `volumes`, `levels` (kV/m).
+it), `ground_model` (`Plane`, or `Tiled(TiledFloor {fine, coarse,
+fine_along, fine_margin, reach})` for the profiles: the reference, a
+conducting floor of tiles), `jumpers`, `piece_length`, `cuts`, `volumes`, `levels` (kV/m).
 Results `ElectricField`: `charges` [`WireCharge` {`section`, `from`,
 `to`, `frequency_hz`, `kv` to earth, `nc_per_m`}], `profiles`
 [`electric::Profile` {`from`, `to`, `at`, `points`, `max_kv_m`,
-`max_offset`}], `points` [`electric::FieldPoint` {…, `e_kv_m`,
+`max_offset`, `ground_departure` (m: the terrain off the plane under the
+largest value within three ground radii), `tiles` (with the tiled
+floor)}], `points` [`electric::FieldPoint` {…, `e_kv_m`,
 `margin_kv_m`}], `cuts`, `volumes` (the magnetic field's `FieldCut`,
 `FieldVolume`, values in kV/m), `notes`. `Sources.ground` is
 `Send`-safe since 2026-10-29 (`dyn Fn + Sync`: the field's points run on

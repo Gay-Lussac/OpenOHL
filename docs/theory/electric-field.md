@@ -92,6 +92,46 @@ system — later, if a comparison shows it matters.
   field: the field computed is **conservative** away from them and **not
   conservative** at their tops, where it concentrates).
 
+### The plane against a tiled floor (2026-10-29)
+
+The owner asked for "a comparison with a tiled floor … in a valley area
+as well as flatland" on a few extracts of a real line. The reference
+(`GroundModel::Tiled`, `ohl electrical electric --tiled`): around a
+profile's station, the terrain as a floor of square tiles — 2 m within
+30 m along the line and 10 m beyond the profile across, 8 m beyond, to
+200 m every way — each a quadrilateral on the terrain with a uniform
+charge per square metre, solved so that the floor is at zero potential
+at every tile's centre under the line's charges (a dense system, some
+4 000 tiles, about 10 s per profile); the field the line's charges and
+the tiles' (each tile near the point as 6 × 6 point charges).
+
+- **The reference's own error**, on the synthetic example's evenly
+  sloping ground where the plane is exact: within 0.2 % of the profile's
+  largest value (tested). On real terrain, from 4 m to 2 m tiles the
+  profiles moved by 1–3 % of their largest value (15 % on one rough
+  extract), the largest values by under 3 %.
+- **A real alpine line** (the ground from its LiDAR ground classes, the
+  lowest point per metre; 1 m above the ground, ±40 m, the systems'
+  nominal voltages), six extracts:
+
+| Extract | Terrain off the plane within ±30 m | Largest E, plane | Tiled | Plane against tiled at the largest | Along the profile, at most |
+|---|---|---|---|---|---|
+| valley floor A | 4.6 m | 0.162 kV/m | 0.175 kV/m | −7.8 % | 14 % of the largest |
+| valley floor B | 5.0 m | 0.213 | 0.223 | −4.5 % | 31 % |
+| valley side A (200 m rise per 500 m) | 18 m | 1.020 | 1.087 | −6.2 % | 9 % |
+| valley side B | 5.4 m | 0.770 | 0.800 | −3.8 % | 8 % |
+| slope C | 4.5 m | 0.908 | 0.911 | −0.4 % | 9 % |
+| slope D | 2.2 m | 0.736 | 0.749 | −1.7 % | 5 % |
+
+So the plane under each point **underestimates the largest field by up
+to some 8 % on uneven ground — not conservative** — and differs locally
+by 5–30 % of the largest value (more where the field is weak: a bump of
+the ground raises the field on it, a hollow lowers it, which a plane
+cannot follow). Each profile says how far the terrain departs from the
+plane under its largest value (`ground_departure`); where it is metres,
+take the tiled floor for the places that matter (`--tiled`, profiles
+only for now) or add a margin.
+
 ## The 2D model
 
 A cross-section's wires as infinite line charges with their images in
