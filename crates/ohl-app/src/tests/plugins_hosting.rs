@@ -223,13 +223,15 @@ fn the_cable_model_is_a_list_and_adds_its_fields() {
     assert!(page.dirty());
 }
 
-/// Runs frames until `done` (at most 30 s: an exit clause).
+/// Runs frames until `done` (at most 120 s: an exit clause for a hang;
+/// some seconds alone, the whole suite shares the cores — 2026-10-29: over
+/// 30 s there).
 pub(super) fn run_until(h: &mut Harness<'_, App>, mut done: impl FnMut(&mut App) -> bool) {
     let started = std::time::Instant::now();
     while !done(h.state_mut()) {
         assert!(
-            started.elapsed() < std::time::Duration::from_secs(30),
-            "not done in 30 s"
+            started.elapsed() < std::time::Duration::from_secs(120),
+            "not done in 120 s"
         );
         h.step();
         std::thread::sleep(std::time::Duration::from_millis(20));
