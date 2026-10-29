@@ -189,7 +189,7 @@ pub struct Sources<'a> {
     /// The conductor temperature for the resistances: the weather case's.
     pub temperature: Temperature,
     /// The ground's elevation at a plan point, when a terrain is given.
-    pub ground: Option<&'a dyn Fn(f64, f64) -> Option<f64>>,
+    pub ground: Option<&'a (dyn Fn(f64, f64) -> Option<f64> + Sync)>,
     /// Its jumpers solved in the same weather case (the magnetic field's
     /// current paths; none: left out).
     pub jumpers: &'a [ohl_line::jumper::JumperShape],
@@ -345,7 +345,7 @@ impl Axis {
     /// terrain's, else straight between the feet and level across.
     pub(crate) fn ground(
         &self,
-        ground: Option<&dyn Fn(f64, f64) -> Option<f64>>,
+        ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
         t: f64,
         s: f64,
     ) -> f64 {

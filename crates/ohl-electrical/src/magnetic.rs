@@ -697,7 +697,7 @@ pub fn circuits(line: &ohl_line::Line) -> Vec<CircuitKey> {
     out
 }
 
-fn matches(c: &CircuitKey, name: &str) -> bool {
+pub(crate) fn matches(c: &CircuitKey, name: &str) -> bool {
     name == "*" || c.circuit == name || c.system == name || c.label() == name
 }
 
@@ -1767,7 +1767,7 @@ fn build_2d(
 
 /// The lowest point of a span's lowest phase conductor along its axis, m
 /// (the span's middle when it has no phase conductor).
-fn lowest_station(src: &Sources<'_>, span: &LineSpan, axis: &Axis) -> f64 {
+pub(crate) fn lowest_station(src: &Sources<'_>, span: &LineSpan, axis: &Axis) -> f64 {
     let line = src.line;
     let phases = line.section_phases().unwrap_or_default();
     let mut best: Option<(f64, f64)> = None;
@@ -1851,7 +1851,7 @@ fn arrangement_change(src: &Sources<'_>, span: &LineSpan, axis: &Axis) -> f64 {
         .fold(0.0, f64::max)
 }
 
-fn check_cancel(progress: Option<&Progress>) -> Result<(), String> {
+pub(crate) fn check_cancel(progress: Option<&Progress>) -> Result<(), String> {
     match progress {
         Some(p) if p.cancel.load(Ordering::Relaxed) => Err("stopped".into()),
         _ => Ok(()),
@@ -2684,7 +2684,7 @@ pub fn run_keeping(
 /// The spans from structure `from` to structure `to` along the line, in
 /// order (consecutive spans, each starting where the one before ends); a
 /// single span also either way round.
-fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<usize>, String> {
+pub(crate) fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<usize>, String> {
     for (i, first) in spans.iter().enumerate() {
         if first.from != from {
             continue;
@@ -2711,7 +2711,7 @@ fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<usize>, Str
 
 /// The path along a run of spans: the structures' places and the ground
 /// at their feet.
-fn run_path(
+pub(crate) fn run_path(
     src: &Sources<'_>,
     spans: &[LineSpan],
     run: &[usize],
@@ -2730,7 +2730,7 @@ fn run_path(
 }
 
 /// The highest point of a span's wires, m.
-fn highest_wire(src: &Sources<'_>, span: &LineSpan) -> Option<f64> {
+pub(crate) fn highest_wire(src: &Sources<'_>, span: &LineSpan) -> Option<f64> {
     span.wires
         .iter()
         .filter_map(|&(k, j)| {

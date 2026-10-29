@@ -29,6 +29,95 @@ pub enum ElectricalCommand {
     /// (Biot–Savart, finite segments) or 2D; an optional limit with the
     /// margin and the limit line's width.
     Magnetic(Box<MagneticArgs>),
+    /// Electric field strength (kV/m) of the line's voltages: profiles
+    /// across the line (every span's lowest point by default, ±50 m, 1 m
+    /// above the ground), given points, cuts, volumes; 3D from the wires as
+    /// solved with their images in the ground under each point, or 2D; an
+    /// optional limit with the margin.
+    Electric(Box<ElectricArgs>),
+}
+
+/// `ohl electrical electric`.
+#[derive(Args)]
+pub struct ElectricArgs {
+    #[command(flatten)]
+    pub model: ModelArgs,
+    /// Weather case file (.ohlwc) holding the case the wires hang in.
+    #[arg(long, requires = "case")]
+    pub weather: Option<PathBuf>,
+    /// The weather case the wires hang in (default: still air at
+    /// --temperature; an ordinance may ask the largest sag).
+    #[arg(long, requires = "weather")]
+    pub case: Option<String>,
+    /// Conductor temperature without --case, °C.
+    #[arg(long, default_value_t = 40.0)]
+    pub temperature: f64,
+    /// Terrain file for the ground (default: straight between the
+    /// structures' feet, level across).
+    #[arg(long, conflicts_with = "surface")]
+    pub terrain: Option<PathBuf>,
+    /// A terrain surface of the project file for the ground.
+    #[arg(long)]
+    pub surface: Option<String>,
+    /// A circuit's voltage between phases: CIRCUIT=KV (CIRCUIT: its name or
+    /// its system's id, `*` every circuit). Repeatable; default: the
+    /// system's nominal voltage, said.
+    #[arg(long, value_name = "CIRCUIT=KV")]
+    pub voltage: Vec<String>,
+    /// 2D: the cross-section's wires as infinite line charges.
+    #[arg(long)]
+    pub two_d: bool,
+    /// A profile: FROM:TO or FROM:TO@FRACTION. Repeatable; default every
+    /// span at its lowest point.
+    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
+    pub profile: Vec<String>,
+    /// The profiles reach this far to either side, m.
+    #[arg(long, default_value_t = 50.0)]
+    pub width: f64,
+    /// Height above the ground of the profiles and points, m.
+    #[arg(long, default_value_t = 1.0)]
+    pub height: f64,
+    /// Between profile points, m.
+    #[arg(long, default_value_t = 1.0)]
+    pub step: f64,
+    /// The ground plane under a point is fitted over this distance either
+    /// side, m.
+    #[arg(long, default_value_t = 10.0)]
+    pub ground_radius: f64,
+    /// Leave the jumpers out (by default they carry their phase's charge).
+    #[arg(long)]
+    pub no_jumpers: bool,
+    /// The longest straight piece of a wire, m (default: the solver's).
+    #[arg(long)]
+    pub piece_length: Option<f64>,
+    /// A vertical cut across span FROM:TO at its lowest point or a fraction.
+    /// Repeatable.
+    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
+    pub cut: Vec<String>,
+    /// Between a cut's points, m.
+    #[arg(long, default_value_t = 0.5)]
+    pub cut_step: f64,
+    /// A volume over the spans from FROM to TO along the line. Repeatable.
+    #[arg(long, value_name = "FROM:TO")]
+    pub volume: Vec<String>,
+    /// The volumes' fine lattice step, m.
+    #[arg(long, default_value_t = 1.0)]
+    pub volume_step: f64,
+    /// Cuts and volumes reach this far over the highest wire, m.
+    #[arg(long, default_value_t = 10.0)]
+    pub above: f64,
+    /// A level for the isolines and isosurfaces, kV/m. Repeatable.
+    #[arg(long)]
+    pub level: Vec<f64>,
+    /// Points to evaluate: a CSV with x, y and z or height.
+    #[arg(long)]
+    pub points: Option<PathBuf>,
+    /// A limit, kV/m: the margin per point (none is built in).
+    #[arg(long)]
+    pub limit: Option<f64>,
+    /// Print every profile point.
+    #[arg(long)]
+    pub all_points: bool,
 }
 
 /// `ohl electrical magnetic`.
@@ -224,6 +313,7 @@ pub fn run(command: ElectricalCommand) -> Result<(), String> {
     match command {
         ElectricalCommand::Parameters(a) => parameters(&a),
         ElectricalCommand::Magnetic(a) => magnetic(&a),
+        ElectricalCommand::Electric(a) => electric(&a),
     }
 }
 
@@ -279,9 +369,9 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
         (None, None) => None,
     };
     let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
-    let ground: Option<&dyn Fn(f64, f64) -> Option<f64>> = terrain
+    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
         .as_ref()
-        .map(|_| &height as &dyn Fn(f64, f64) -> Option<f64>);
+        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
     let p = ohl_electrical::run(&line, &library, &shapes, case.temperature, ground);
     let (rho, assumed) = line.electrical.soil_resistivity();
     println!(
@@ -611,9 +701,9 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         (None, None) => None,
     };
     let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
-    let ground: Option<&dyn Fn(f64, f64) -> Option<f64>> = terrain
+    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
         .as_ref()
-        .map(|_| &height as &dyn Fn(f64, f64) -> Option<f64>);
+        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
     let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
         .into_iter()
         .filter_map(Result::ok)
@@ -800,6 +890,236 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
     if let Some(path) = &a.obj {
         std::fs::write(path, magnetic::obj(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("written: {}", path.display());
+    }
+    Ok(())
+}
+
+/// A span FROM:TO with an optional @FRACTION.
+fn span_at(text: &str, flag: &str) -> Result<(String, String, Option<f64>), String> {
+    let (span, fraction) = match text.split_once('@') {
+        Some((s, f)) => (
+            s,
+            Some(
+                f.trim()
+                    .parse::<f64>()
+                    .map_err(|_| format!("{flag} {text}: {f} is not a fraction 0–1"))?,
+            ),
+        ),
+        None => (text, None),
+    };
+    let (from, to) = span_arg(span, flag)?;
+    Ok((from, to, fraction))
+}
+
+fn electric(a: &ElectricArgs) -> Result<(), String> {
+    use ohl_electrical::electric::{self, CircuitVoltage, Settings};
+    use ohl_electrical::magnetic::{self, Model, StationSpec};
+    let (mut line, library) = load(&a.model)?;
+    let case = match (&a.weather, &a.case) {
+        (Some(path), Some(name)) => {
+            let set = ohl_weather::WeatherCases::load(path)?;
+            line.set_weather_cases(&set.cases);
+            set.select(std::slice::from_ref(name), &[])?
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("no weather case {name}"))?
+        }
+        _ => ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(a.temperature)),
+    };
+    let mut voltages = Vec::new();
+    for v in &a.voltage {
+        let (c, kv) = v
+            .split_once('=')
+            .ok_or_else(|| format!("--voltage {v}: CIRCUIT=KV"))?;
+        voltages.push(CircuitVoltage {
+            circuit: c.trim().to_owned(),
+            kv: kv
+                .trim()
+                .parse()
+                .map_err(|_| format!("--voltage {v}: {kv} is not a number of kV"))?,
+        });
+    }
+    let mut stations = Vec::new();
+    for p in &a.profile {
+        let (from, to, fraction) = span_at(p, "--profile")?;
+        stations.push(StationSpec { from, to, fraction });
+    }
+    let mut cuts = Vec::new();
+    for c in &a.cut {
+        let (from, to, fraction) = span_at(c, "--cut")?;
+        cuts.push(magnetic::CutSpec {
+            from,
+            to,
+            fraction,
+            width: a.width,
+            above: a.above,
+            step: a.cut_step,
+        });
+    }
+    let mut volumes = Vec::new();
+    for v in &a.volume {
+        let (from, to) = span_arg(v, "--volume")?;
+        volumes.push(magnetic::VolumeSpec {
+            from,
+            to,
+            width: a.width,
+            above: a.above,
+            step: a.volume_step,
+        });
+    }
+    if !volumes.is_empty() && a.level.is_empty() {
+        return Err("give the volumes' levels: --level kV/m".into());
+    }
+    let mut levels = a.level.clone();
+    levels.sort_by(f64::total_cmp);
+    let points = match &a.points {
+        Some(p) => magnetic::parse_points(
+            &std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
+        )
+        .map_err(|e| format!("{}: {e}", p.display()))?,
+        None => Vec::new(),
+    };
+    let settings = Settings {
+        model: if a.two_d { Model::TwoD } else { Model::ThreeD },
+        voltages,
+        height: a.height,
+        width: a.width,
+        step: a.step,
+        stations,
+        points,
+        limit_kv_m: a.limit,
+        ground_radius: a.ground_radius,
+        jumpers: !a.no_jumpers,
+        piece_length: a.piece_length,
+        cuts,
+        volumes,
+        levels,
+    };
+    let mut shapes = Vec::new();
+    for (section, r) in line
+        .sections
+        .iter()
+        .zip(ohl_line::solve::solve_line(&line, &library, &case))
+    {
+        match r {
+            Ok(s) => shapes.push(s),
+            Err(e) => println!("  section {} not solved: {e}", section.id),
+        }
+    }
+    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+    let terrain = match (&a.terrain, &a.surface) {
+        (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
+        (None, Some(name)) => {
+            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
+            let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
+            Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
+        }
+        (None, None) => None,
+    };
+    let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
+    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
+        .as_ref()
+        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
+    let src = ohl_electrical::Sources {
+        line: &line,
+        library: &library,
+        shapes: &shapes,
+        temperature: case.temperature,
+        ground,
+        jumpers: &jumpers,
+    };
+    let m = electric::run(&src, &settings, None)?;
+    println!(
+        "Electric field strength of {} in \"{}\" ({:.1} °C): {}, {} m above the ground{}",
+        line.name,
+        case.name,
+        case.temperature.celsius(),
+        m.model.describe(),
+        m.height,
+        match m.limit_kv_m {
+            Some(l) => format!(", limit {l} kV/m"),
+            None => String::new(),
+        }
+    );
+    for n in &m.notes {
+        println!("  note: {n}");
+    }
+    println!(
+        "{:<16} {:>9} {:>10} {:>9}",
+        "profile", "station m", "max kV/m", "at m"
+    );
+    for p in &m.profiles {
+        println!(
+            "{:<16} {:>9.1} {:>10.4} {:>9.1}",
+            format!("{}–{}", p.from, p.to),
+            p.at,
+            p.max_kv_m,
+            p.max_offset
+        );
+        if a.all_points {
+            for q in &p.points {
+                println!(
+                    "    {:>8.1} m  {:>9.4} kV/m{}",
+                    q.offset,
+                    q.e_kv_m,
+                    q.margin_kv_m
+                        .map_or(String::new(), |x| format!("  margin {x:.4}"))
+                );
+            }
+        }
+    }
+    for c in &m.cuts {
+        let v = &c.values;
+        let max = v.values.iter().copied().fold(0.0, f64::max);
+        println!(
+            "cut {}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} kV/m",
+            c.from,
+            c.to,
+            c.at,
+            v.offsets.len(),
+            v.elevations.len(),
+            v.cut.step
+        );
+    }
+    for vol in &m.volumes {
+        let v = &vol.values;
+        println!(
+            "volume {}–{}: {} of {} lattice points computed ({} m apart)",
+            vol.from, vol.to, v.computed, v.full, v.bounds.step
+        );
+        for ((l, mesh), d) in v.surfaces.iter().zip(&v.deviation) {
+            println!(
+                "  {l} kV/m: {} triangles{}",
+                mesh.triangles.len(),
+                d.map_or(String::new(), |d| format!(
+                    "; off the level: half within {:.2} %, nine in ten within {:.2} %, at most {:.1} %",
+                    d.median * 100.0,
+                    d.p90 * 100.0,
+                    d.max * 100.0
+                ))
+            );
+        }
+    }
+    if !m.points.is_empty() {
+        println!(
+            "{:<16} {:>12} {:>12} {:>8} {:>8} {:>9} {:>9}",
+            "point", "x", "y", "z", "h m", "E kV/m", "margin"
+        );
+        for p in &m.points {
+            println!(
+                "{:<16} {:>12.2} {:>12.2} {:>8.2} {:>8.2} {:>9.4} {:>9}",
+                p.name,
+                p.x,
+                p.y,
+                p.z,
+                p.height,
+                p.e_kv_m,
+                p.margin_kv_m.map_or("—".into(), |x| format!("{x:.4}"))
+            );
+        }
     }
     Ok(())
 }

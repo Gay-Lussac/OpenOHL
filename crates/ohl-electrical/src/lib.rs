@@ -21,6 +21,10 @@
 //!   3D from the solved wires (Biot–Savart, finite segments) or 2D from
 //!   cross-sections — in profiles, grids, given points, vertical cuts
 //!   across the line and volumes.
+//! - [`electric`]: the electric field of the line's voltages — charges
+//!   from the potential coefficients, 3D from the solved wires with their
+//!   images in a ground plane fitted under each point, or 2D — in
+//!   profiles, given points, cuts and volumes.
 //! - [`field_views`]: a field's vertical cuts and volumes (isosurfaces),
 //!   for any field given as a function of the place; [`contour`]: the
 //!   isolines and isosurfaces they are drawn with.
@@ -39,6 +43,7 @@
 pub mod contour;
 pub mod cross_section;
 pub mod earth;
+pub mod electric;
 pub mod field_views;
 pub mod magnetic;
 pub mod matrices;
@@ -60,7 +65,7 @@ pub fn run(
     library: &ohl_cables::Library,
     shapes: &[SectionShape],
     temperature: ohl_core::units::Temperature,
-    ground: Option<&dyn Fn(f64, f64) -> Option<f64>>,
+    ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
 ) -> LineParameters {
     let src = Sources {
         line,

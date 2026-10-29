@@ -10,6 +10,21 @@ of Parts A, B and C).
 
 ## 2026-10-29
 
+**The electric field, engine and command line (owner, 2026-10-29: "E
+feld comes after this"; "work in parallel on the electrical field")**
+
+- Charges per span from its mean cross-section, \( q = P^{-1} V \) (the
+  line parameters' potential coefficients; earth wires and a circuit given
+  0 kV at earth potential); 3D from the solved wires and jumpers as
+  pieces of uniform charge (closed form, tested against the integral);
+  the ground a plane fitted under each point with the images in it (the
+  answer given to "what's easier and actually better", to confirm); 2D
+  line charges with images. The voltage per circuit given, else the
+  system's nominal, said (the NISV asks the highest operating voltage,
+  the largest sag and, on a compensating double circuit, one circuit
+  voltage-free — BAFU 2007, 8.7.3; all left to the user). Profiles,
+  points, cuts and volumes as for the magnetic field. The window next.
+
 **The magnetic field: continuous tiles, the jumpers and the structures'
 currents (owner, 2026-10-29)**
 

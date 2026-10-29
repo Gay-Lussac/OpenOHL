@@ -478,6 +478,16 @@ core staying independent of them.
    another taken as switched off and earthed), a slope across as a
    tilted plane; 2D enough (the guide), 3D with the solved wires later.
    Validation as above (closed forms, published profiles).
+   *Built 2026-10-29 (engine and command line; in active development,
+   not approved yet):* `ohl_electrical::electric`, `ohl electrical
+   electric`, [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/electric-field.md):
+   charges per span \( q = P^{-1} V \) (earth wires and voltage-free
+   circuits at zero), 3D from the solved wires and jumpers as pieces of
+   uniform charge in closed form, the ground a plane fitted under each
+   point (owner's question "what's easier and actually better", answered,
+   to confirm), 2D line charges; profiles, points, cuts, volumes. Not yet:
+   the window in OHL-Design, a published profile in the validation, the
+   structures and objects (not modelled, said).
 6. [ ] **Audible noise and a cross-check of the fields — a plugin for
    hvlbuzz.** [hvlbuzz](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html)
    (FKH, Switzerland; a Python library on a Rust core, `ebl`) computes the
