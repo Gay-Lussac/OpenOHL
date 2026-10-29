@@ -596,9 +596,9 @@ impl MagneticFieldWindow {
         self.progress = Some(progress.clone());
         self.job.start_at(ctx, model.revision(), move || {
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
-            let g: Option<&dyn Fn(f64, f64) -> Option<f64>> = ground
+            let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = ground
                 .as_ref()
-                .map(|_| &height as &dyn Fn(f64, f64) -> Option<f64>);
+                .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
             let src = ohl_electrical::Sources {
                 line: &line,
                 library: &library,

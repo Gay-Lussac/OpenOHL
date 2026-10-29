@@ -673,6 +673,21 @@ the ideally transposed z1, z0, c1, c0, b1, b0; `unbalance`); `Coupling`
 between circuits of one frequency sharing spans (`length`, `z`, `c`,
 `z0m`). Methods: [Line parameters](../theory/line-parameters.md).
 
+**Electric field** (`electric::run`, roadmap O18 step 5, 2026-10-29;
+derived, never stored). Inputs `electric::Settings`: `model`,
+`voltages` [`CircuitVoltage` {`circuit`, `kv` between phases; 0:
+voltage-free}], `height`, `width`, `step`, `stations`, `points`,
+`limit_kv_m`, `ground_radius` (m, the plane under a point fitted over
+it), `jumpers`, `piece_length`, `cuts`, `volumes`, `levels` (kV/m).
+Results `ElectricField`: `charges` [`WireCharge` {`section`, `from`,
+`to`, `frequency_hz`, `kv` to earth, `nc_per_m`}], `profiles`
+[`electric::Profile` {`from`, `to`, `at`, `points`, `max_kv_m`,
+`max_offset`}], `points` [`electric::FieldPoint` {…, `e_kv_m`,
+`margin_kv_m`}], `cuts`, `volumes` (the magnetic field's `FieldCut`,
+`FieldVolume`, values in kV/m), `notes`. `Sources.ground` is
+`Send`-safe since 2026-10-29 (`dyn Fn + Sync`: the field's points run on
+all cores). Methods: [Electric field](../theory/electric-field.md).
+
 **Magnetic field** (`magnetic::run`, roadmap O18 step 4, 2026-10-27;
 derived, never stored — the window's inputs live in the window for the
 session only). Inputs `Settings`: `model` (`three_d` / `two_d`),
