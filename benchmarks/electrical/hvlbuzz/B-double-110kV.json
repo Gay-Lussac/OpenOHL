@@ -1,0 +1,280 @@
+{
+ "systems": [
+  {
+   "n_t": 1,
+   "beta_s": 0.0,
+   "a": 0.0,
+   "d": 0.0281,
+   "U": 110000.0,
+   "phi_U": 0.0,
+   "I": 1000.0,
+   "phi_I": 0.0,
+   "phases": [
+    {
+     "x": 5.0,
+     "y": 22.0
+    },
+    {
+     "x": 5.0,
+     "y": 27.0
+    },
+    {
+     "x": 5.0,
+     "y": 32.0
+    }
+   ]
+  },
+  {
+   "n_t": 1,
+   "beta_s": 0.0,
+   "a": 0.0,
+   "d": 0.0281,
+   "U": 110000.0,
+   "phi_U": 0.0,
+   "I": 1000.0,
+   "phi_I": 0.0,
+   "phases": [
+    {
+     "x": -5.0,
+     "y": 22.0
+    },
+    {
+     "x": -5.0,
+     "y": 27.0
+    },
+    {
+     "x": -5.0,
+     "y": 32.0
+    }
+   ]
+  }
+ ],
+ "guardwires": [],
+ "transverse_profile": {
+  "x_min": -50.0,
+  "x_max": 50.0,
+  "y": 1.0,
+  "m": 21,
+  "columns": {
+   "with_e_abs": true,
+   "with_e_components": false,
+   "with_b_abs": true,
+   "with_b_components": false,
+   "with_l": true
+  },
+  "plots": {
+   "with_conductor_picture": false,
+   "with_e_profile": false,
+   "with_b_profile": false
+  }
+ },
+ "corona_sound": {
+  "h_0": 300.0,
+  "enable_atmospheric_air_absorption": true,
+  "rain_rate": 1.0
+ },
+ "figures": {
+  "e": {
+   "x_range": {
+    "start": -50.0,
+    "end": 50.0
+   },
+   "y_range": {
+    "start": -10.0,
+    "end": 60.0
+   },
+   "with_subgrid": false,
+   "width": 1024.0,
+   "plots": {
+    "contour_lines": {
+     "enabled": false,
+     "resolution": 0.2,
+     "levels": [
+      {
+       "value": 100.0
+      },
+      {
+       "value": 200.0
+      },
+      {
+       "value": 500.0
+      },
+      {
+       "value": 1000.0
+      },
+      {
+       "value": 2000.0
+      },
+      {
+       "value": 5000.0
+      },
+      {
+       "value": 10000.0
+      }
+     ]
+    }
+   }
+  },
+  "b": {
+   "x_range": {
+    "start": -50.0,
+    "end": 50.0
+   },
+   "y_range": {
+    "start": -10.0,
+    "end": 60.0
+   },
+   "with_subgrid": false,
+   "width": 1024.0,
+   "plots": {
+    "contour_lines": {
+     "enabled": false,
+     "resolution": 0.2,
+     "levels": [
+      {
+       "value": 0.2
+      },
+      {
+       "value": 0.5
+      },
+      {
+       "value": 1.0
+      },
+      {
+       "value": 2.0
+      },
+      {
+       "value": 5.0
+      },
+      {
+       "value": 10.0
+      },
+      {
+       "value": 20.0
+      },
+      {
+       "value": 50.0
+      },
+      {
+       "value": 100.0
+      },
+      {
+       "value": 200.0
+      },
+      {
+       "value": 500.0
+      }
+     ]
+    }
+   }
+  },
+  "l": {
+   "x_range": {
+    "start": -50.0,
+    "end": 50.0
+   },
+   "y_range": {
+    "start": -10.0,
+    "end": 60.0
+   },
+   "with_subgrid": false,
+   "width": 1024.0,
+   "plots": {
+    "contour_lines": {
+     "enabled": false,
+     "resolution": 0.2,
+     "levels": [
+      {
+       "value": 25.0
+      },
+      {
+       "value": 27.5
+      },
+      {
+       "value": 30.0
+      },
+      {
+       "value": 32.5
+      },
+      {
+       "value": 35.0
+      },
+      {
+       "value": 37.5
+      },
+      {
+       "value": 40.0
+      },
+      {
+       "value": 42.5
+      },
+      {
+       "value": 45.0
+      },
+      {
+       "value": 47.5
+      },
+      {
+       "value": 50.0
+      },
+      {
+       "value": 52.5
+      },
+      {
+       "value": 55.0
+      }
+     ]
+    }
+   }
+  },
+  "u": {
+   "x_range": {
+    "start": -50.0,
+    "end": 50.0
+   },
+   "y_range": {
+    "start": -10.0,
+    "end": 60.0
+   },
+   "with_subgrid": false,
+   "width": 1024.0,
+   "plots": {
+    "contour_lines": {
+     "enabled": false,
+     "resolution": 0.2,
+     "levels": [
+      {
+       "value": 200.0
+      },
+      {
+       "value": 1000.0
+      },
+      {
+       "value": 2000.0
+      },
+      {
+       "value": 5000.0
+      },
+      {
+       "value": 10000.0
+      },
+      {
+       "value": 20000.0
+      },
+      {
+       "value": 100000.0
+      },
+      {
+       "value": 200000.0
+      }
+     ]
+    }
+   }
+  }
+ },
+ "y_ref": 0.0,
+ "alpha": 0.0,
+ "rho": 100.0,
+ "f_ac1": 50.0,
+ "neglect_induced_currents": true
+}

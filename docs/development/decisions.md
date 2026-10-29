@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-29
 
+**The 2D fields validated against hvlbuzz (owner, 2026-10-29: "for the
+electric and magnetic fields you can probably use hvlbuzz"; "it's only
+2D but at least this can be validated")**
+
+- hvlbuzz 2.0 (FKH, GPL-3.0-or-later) built by the owner from
+  gitlab.com/fkh-ch/emc and run on three cross-sections (its project
+  files and profiles kept in `benchmarks/electrical/hvlbuzz/`); three
+  validation cases `electrical-050…052` (`electrical.fields_2d`, a new
+  adapter; `electric::charges` made public). B equal to hvlbuzz's last
+  digits; E within 0.12 % on 380 kV bundles (one charge per bundle against
+  twelve per subconductor), 0.003 % on single wires. 218 cases.
+- Not yet compared: the earth wires' induced currents (hvlbuzz computes
+  them too; neglected in both here), corona noise (roadmap O18 step 6).
+
 **The electric field's ground compared with a tiled floor; build folders
 keep 2 builds (owner, 2026-10-29)**
 

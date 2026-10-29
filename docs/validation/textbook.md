@@ -334,6 +334,29 @@ No openly published field profile with all its inputs was found yet (to
 look for: IEC 62110's examples, CIGRE brochures, papers with
 measurements).
 
+### The 2D fields against hvlbuzz (`benchmarks/electrical/hvlbuzz.toml`)
+
+Calculation `electrical.fields_2d`: the electric field strength (the
+program's charges, \( q = P^{-1} V \) with a bundle as its equivalent
+wire, and line charges with their images) and the magnetic flux density
+(its 2D model, subconductor by subconductor) on a profile 1 m above the
+ground, ±50 m every 5 m, from inputs as hvlbuzz takes them. Reference:
+**hvlbuzz 2.0** (FKH, Switzerland; [gitlab.com/fkh-ch/emc](https://gitlab.com/fkh-ch/emc),
+GPL-3.0-or-later), an independent program — a charge simulation with 12
+line charges round every subconductor, Biot–Savart — run on the project
+files in `benchmarks/electrical/hvlbuzz/` (2026-10-29; its profiles kept
+beside them, `reference_hvlbuzz.py` writes the cases; induced currents in
+the earth wires neglected in both).
+
+| Case | Cross-section | Agreement | Tolerance |
+|---|---|---|---|
+| electrical-050 | one 380 kV circuit, flat (−9, 0, 9 m at 20 m), two-conductor bundles 0.4 m, 1000 A | E within 0.12 % (one charge per bundle against twelve per subconductor), B to hvlbuzz's last digits | E 0.2 %, B \( 10^{-7} \) |
+| electrical-051 | a 110 kV double circuit, phases one above another (±5 m, 22/27/32 m), 1000 A | E within 0.003 %, B to the last digits | the same |
+| electrical-052 | the same with an earth wire (0, 38 m) at earth potential | E within 0.003 % | the same |
+
+Only 2D: hvlbuzz computes a cross-section; the 3D model's agreement with
+the 2D one on long straight spans is tested in the crate.
+
 ### Member capacities by ASCE 10-97 (`benchmarks/structures-fe/asce10.toml`)
 
 Calculation `structures.fe` (output `usage_m`), on invented single bars
