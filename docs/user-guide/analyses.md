@@ -947,12 +947,16 @@ default.
 - **Jumpers** (3D, on by default): a jumper at a section's end carries
   that section's charge per metre; jumpers not at a section's end are
   left out and listed in the notes.
-- **Ground plane** (3D, default ±10 m): the ground under each point is a
-  plane fitted over ± this distance (its elevation there, its slopes from
-  the ground that far either side), the charges' images in it. Exact for
-  level or evenly sloping ground, a simplification on uneven ground (a
-  short distance follows a bank or a ditch under the point, a long one the
-  slope at large). No effect on the time.
+- **Ground** (3D): *tiled floor* (the default since 2026-10-29: the
+  owner, "keep the tiled implementation") — the terrain as a conducting
+  floor of tiles (fine tiles of 2 m near the profile by default, 8 m
+  beyond, to 200 m) solved around each profile, group of points and cut,
+  some seconds each (the window says how many tiles and how long); it
+  follows hollows and ridges. Or *plane under each point*, fitted over ±
+  a distance (default ±10 m): quick, exact for level or evenly sloping
+  ground, on a real line up to 8 % low on bumps and up to 24 % high in a
+  hollow. Volumes take the plane. On the command line `--plane`; the
+  tiles `--tile`, `--coarse-tile`, `--floor-reach`.
 - **Profiles**, **Across**, **Points from CSV…**: as for the [magnetic
   field](#electrical-magnetic-field) (default ±50 m every 1 m at 1 m
   above the ground).

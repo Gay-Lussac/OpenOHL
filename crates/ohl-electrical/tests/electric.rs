@@ -55,6 +55,7 @@ fn mid(from: &str, to: &str) -> StationSpec {
 fn a_symmetric_profile() {
     let s = Settings {
         stations: vec![mid("T1", "T2")],
+        ground_model: electric::GroundModel::Plane,
         ..Settings::default()
     };
     let m = field(&s);
@@ -82,6 +83,7 @@ fn the_field_goes_with_the_voltage() {
             circuit: "*".into(),
             kv: 200.0,
         }],
+        ground_model: electric::GroundModel::Plane,
         ..Settings::default()
     };
     let a = field(&s).profiles[0].max_kv_m;
@@ -96,6 +98,7 @@ fn the_field_goes_with_the_voltage() {
 fn two_d_against_three_d() {
     let mut s = Settings {
         stations: vec![mid("T1", "T2")],
+        ground_model: electric::GroundModel::Plane,
         ..Settings::default()
     };
     let d3 = field(&s).profiles[0].max_kv_m;
@@ -125,6 +128,7 @@ fn a_cut_and_a_volume() {
             step: 2.0,
         }],
         levels: vec![1.0],
+        ground_model: electric::GroundModel::Plane,
         ..Settings::default()
     };
     let m = field(&s);
@@ -144,6 +148,7 @@ fn the_tiled_floor_on_even_ground() {
     let mut s = Settings {
         stations: vec![mid("T1", "T2")],
         width: 30.0,
+        ground_model: electric::GroundModel::Plane,
         ..Settings::default()
     };
     let t0 = std::time::Instant::now();
@@ -174,4 +179,56 @@ fn the_tiled_floor_on_even_ground() {
     );
     assert!(a.ground_departure < 0.05, "{}", a.ground_departure);
     assert!(worst < 0.03, "{worst}");
+}
+
+/// The tiled floor is the default ground (owner, 2026-10-29: "keep the
+/// tiled implementation"); given points near one another share a floor
+/// and agree with the profile through them; a cut on it.
+#[test]
+fn the_tiled_floor_is_the_default() {
+    assert!(matches!(
+        Settings::default().ground_model,
+        electric::GroundModel::Tiled(_)
+    ));
+    let small = electric::GroundModel::Tiled(electric::TiledFloor {
+        fine: 2.0,
+        coarse: 8.0,
+        fine_along: 16.0,
+        fine_margin: 4.0,
+        reach: 96.0,
+    });
+    let s = Settings {
+        stations: vec![mid("T1", "T2")],
+        width: 20.0,
+        ground_model: small,
+        ..Settings::default()
+    };
+    let m = field(&s);
+    let p = &m.profiles[0];
+    assert!(p.tiles.is_some());
+    let q = &p.points[25];
+    let s2 = Settings {
+        points: vec![magnetic::GivenPoint {
+            name: "q".into(),
+            x: q.x,
+            y: q.y,
+            z: Some(q.z),
+            height: None,
+        }],
+        cuts: vec![magnetic::CutSpec {
+            from: "T1".into(),
+            to: "T2".into(),
+            fraction: Some(0.5),
+            width: 20.0,
+            above: 5.0,
+            step: 2.0,
+        }],
+        ..s.clone()
+    };
+    let m2 = field(&s2);
+    // The point's own floor (around it, not the profile's station) gives
+    // about the profile's value.
+    let (a, b) = (m2.points[0].e_kv_m, q.e_kv_m);
+    assert!((a - b).abs() < 0.03 * p.max_kv_m, "{a} {b}");
+    assert!(m2.cuts[0].values.values.iter().any(|v| *v > 0.0));
 }

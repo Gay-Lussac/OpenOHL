@@ -84,11 +84,11 @@ pub struct ElectricArgs {
     /// side, m.
     #[arg(long, default_value_t = 10.0)]
     pub ground_radius: f64,
-    /// The profiles over a tiled conducting floor (the reference ground,
-    /// slow: some seconds per profile) instead of a plane under each
-    /// point.
+    /// The ground a plane under each point (quick; not conservative on
+    /// bumps) instead of the tiled conducting floor around each profile,
+    /// group of points and cut (the default: some seconds each).
     #[arg(long)]
-    pub tiled: bool,
+    pub plane: bool,
     /// The tiled floor's fine tiles, m (near the profile).
     #[arg(long, default_value_t = 2.0)]
     pub tile: f64,
@@ -1047,7 +1047,7 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         points,
         limit_kv_m: a.limit,
         ground_radius: a.ground_radius,
-        ground_model: if a.tiled {
+        ground_model: if !a.plane {
             electric::GroundModel::Tiled(electric::TiledFloor {
                 fine: a.tile,
                 coarse: a.coarse_tile,

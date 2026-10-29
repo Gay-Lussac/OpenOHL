@@ -364,8 +364,10 @@ pub struct Settings {
     /// The ground plane under a point is fitted over this distance either
     /// side, m (3D).
     pub ground_radius: f64,
-    /// The ground: a plane under each point (the default), or for the
-    /// profiles a tiled conducting floor (the reference, slow).
+    /// The ground: a tiled conducting floor around each profile, group of
+    /// points and cut (the default; owner, 2026-10-29: "keep the tiled
+    /// implementation"), or a plane under each point (quick: not
+    /// conservative on bumps, see the theory). Volumes take the plane.
     pub ground_model: GroundModel,
     /// The jumpers carry their phase's charge (3D).
     pub jumpers: bool,
@@ -391,7 +393,7 @@ impl Default for Settings {
             points: Vec::new(),
             limit_kv_m: None,
             ground_radius: 10.0,
-            ground_model: GroundModel::Plane,
+            ground_model: GroundModel::Tiled(TiledFloor::default()),
             jumpers: true,
             piece_length: None,
             cuts: Vec::new(),
@@ -835,15 +837,11 @@ pub fn run_keeping(
         let mut tiles = None;
         let values: Vec<f64> = match (&model3d, settings.ground_model) {
             (Some(m), GroundModel::Tiled(floor)) => {
-                let panels = floor_panels(axis, t, settings.width, &floor, &ground);
-                let sigma = solve_floor(&panels, m)?;
-                tiles = Some(panels.len());
+                let fl = Floor::solve(m, Frame::of(axis), t, settings.width, &floor, &ground)?;
+                tiles = Some(fl.tiles());
                 let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
-                let f = |ps: &[[f64; 3]]| -> Vec<f64> {
-                    ps.iter()
-                        .map(|&p| floor_field(p, &panels, &sigma, m))
-                        .collect()
-                };
+                let f =
+                    |ps: &[[f64; 3]]| -> Vec<f64> { ps.iter().map(|&p| fl.field(p, m)).collect() };
                 compute_all(&pts, &f, progress)?
             }
             (Some(_), GroundModel::Plane) => {
@@ -917,8 +915,51 @@ pub fn run_keeping(
         });
     }
     // Given points (3D; in 2D at the nearest span's cross-section there).
+    // On the tiled floor: the points near one another along a span share
+    // its floor (each group's floor around its middle, its fine tiles
+    // reaching its farthest point across).
+    let mut floor_e: BTreeMap<usize, f64> = BTreeMap::new();
+    if let (Some(m), GroundModel::Tiled(floor)) = (&model3d, settings.ground_model) {
+        // Per (span, stretch along it): (point, station, offset, place).
+        type Near = Vec<(usize, f64, f64, [f64; 3])>;
+        let mut groups: BTreeMap<(usize, i64), Near> = BTreeMap::new();
+        for (n, gp) in settings.points.iter().enumerate() {
+            let mut best: Option<(f64, usize, f64, f64)> = None;
+            for (i, a) in axes.iter().enumerate() {
+                let Some(a) = a else { continue };
+                let (t, s) = a.local(&[gp.x, gp.y, 0.0]);
+                let tc = t.clamp(0.0, a.length);
+                let d = (t - tc).hypot(s);
+                if best.is_none_or(|b| d < b.0) {
+                    best = Some((d, i, t, s));
+                }
+            }
+            let Some((_, i, t, s)) = best else { continue };
+            let g = ground(gp.x, gp.y);
+            let z = match (gp.z, gp.height) {
+                (Some(z), _) => z,
+                (None, Some(h)) => g + h,
+                (None, None) => g + settings.height,
+            };
+            let bucket = (t / (2.0 * floor.fine_along)).floor() as i64;
+            groups
+                .entry((i, bucket))
+                .or_default()
+                .push((n, t, s, [gp.x, gp.y, z]));
+        }
+        for ((i, _), list) in groups {
+            magnetic::check_cancel(progress)?;
+            let axis = axes[i].as_ref().expect("an axis");
+            let t0 = list.iter().map(|p| p.1).sum::<f64>() / list.len() as f64;
+            let across = list.iter().map(|p| p.2.abs()).fold(0.0, f64::max);
+            let fl = Floor::solve(m, Frame::of(axis), t0, across, &floor, &ground)?;
+            for (n, _, _, p) in list {
+                floor_e.insert(n, fl.field(p, m));
+            }
+        }
+    }
     let mut points = Vec::new();
-    for gp in &settings.points {
+    for (n, gp) in settings.points.iter().enumerate() {
         let g = ground(gp.x, gp.y);
         let z = match (gp.z, gp.height) {
             (Some(z), _) => z,
@@ -926,6 +967,7 @@ pub fn run_keeping(
             (None, None) => g + settings.height,
         };
         let e = match &model3d {
+            Some(_) if floor_e.contains_key(&n) => floor_e[&n],
             Some(_) => e_at(&[[gp.x, gp.y, z]])[0],
             None => {
                 let mut best: Option<(f64, usize, f64, f64)> = None;
@@ -1001,7 +1043,16 @@ pub fn run_keeping(
                 step: c.step,
             };
             let g = |x: f64, y: f64| Some(ground(x, y));
-            let values: CutValues = field_views::vertical_cut(&cut, &kv, Some(&g), progress)?;
+            let values: CutValues = match (&model3d, settings.ground_model) {
+                (Some(m), GroundModel::Tiled(floor)) => {
+                    let fl = Floor::solve(m, Frame::of(axis), t, c.width, &floor, &ground)?;
+                    let f = |ps: &[[f64; 3]]| -> Vec<f64> {
+                        ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
+                    };
+                    field_views::vertical_cut(&cut, &f, Some(&g), progress)?
+                }
+                _ => field_views::vertical_cut(&cut, &kv, Some(&g), progress)?,
+            };
             cuts.push(magnetic::FieldCut {
                 from: spans[i].from.clone(),
                 to: spans[i].to.clone(),
@@ -1032,6 +1083,11 @@ pub fn run_keeping(
                 })
                 .unwrap_or_default()
         };
+        if !settings.volumes.is_empty() && matches!(settings.ground_model, GroundModel::Tiled(_)) {
+            notes.push(
+                "volumes: the ground a plane under each point (a tiled floor along a whole run is not built: thousands of tiles, minutes per volume)".into(),
+            );
+        }
         for v in &settings.volumes {
             magnetic::check_cancel(progress)?;
             let run =
@@ -1142,6 +1198,96 @@ pub enum GroundModel {
     Tiled(TiledFloor),
 }
 
+/// A floor's frame in plan: stations along `ahead` (unit) from `origin`,
+/// offsets to its right.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Frame {
+    /// Station 0, offset 0.
+    pub origin: [f64; 2],
+    /// Ahead (unit).
+    pub ahead: [f64; 2],
+}
+
+impl Frame {
+    fn plan(&self, t: f64, s: f64) -> [f64; 2] {
+        // Right of ahead: (ahead.y, −ahead.x).
+        [
+            self.origin[0] + t * self.ahead[0] + s * self.ahead[1],
+            self.origin[1] + t * self.ahead[1] - s * self.ahead[0],
+        ]
+    }
+
+    fn of(axis: &Axis) -> Self {
+        Self {
+            origin: axis.plan(0.0, 0.0),
+            ahead: axis.u,
+        }
+    }
+
+    /// A vertical cut's frame: station 0 on it, its offsets to the right.
+    pub fn of_cut(origin: [f64; 2], right: [f64; 2]) -> Self {
+        Self {
+            origin,
+            ahead: [-right[1], right[0]],
+        }
+    }
+}
+
+/// A tiled floor solved under the line's charges: its tiles and their
+/// charges per square metre (per frequency).
+pub struct Floor {
+    panels: Vec<Panel>,
+    sigma: Vec<Vec<C>>,
+}
+
+impl Floor {
+    /// The floor of `settings` around station `t0` of `frame`, its fine
+    /// tiles to `across` either side (plus the floor's margin), solved
+    /// under `charges`; the ground's elevation from `ground`.
+    pub fn solve(
+        charges: &Charges3d,
+        frame: Frame,
+        t0: f64,
+        across: f64,
+        floor: &TiledFloor,
+        ground: &dyn Fn(f64, f64) -> f64,
+    ) -> Result<Self, String> {
+        let panels = floor_panels(frame, t0, across, floor, ground);
+        let sigma = solve_floor(&panels, charges)?;
+        Ok(Self { panels, sigma })
+    }
+
+    /// E (rms) at `p`, V/m: the line's charges and the floor's.
+    pub fn field(&self, p: [f64; 3], charges: &Charges3d) -> f64 {
+        floor_field(p, &self.panels, &self.sigma, charges)
+    }
+
+    /// Its tiles.
+    pub fn tiles(&self) -> usize {
+        self.panels.len()
+    }
+}
+
+impl TiledFloor {
+    /// The tiles of a floor whose fine part reaches `across` either side
+    /// of its station (plus the margin).
+    pub fn tiles(&self, across: f64) -> usize {
+        let n_fine = (self.coarse / self.fine).round().max(1.0) as usize;
+        let cells = 2 * (self.reach / self.coarse).ceil() as usize;
+        let fine_t = ((2.0 * self.fine_along) / self.coarse).ceil() as usize + 1;
+        let fine_s = ((2.0 * (across + self.fine_margin)) / self.coarse).ceil() as usize + 1;
+        let fine = fine_t.min(cells) * fine_s.min(cells);
+        cells * cells - fine + fine * n_fine * n_fine
+    }
+
+    /// About how long a floor of `tiles` takes to solve on this computer,
+    /// s: its dense system (some 7 s for 3 700 tiles measured here,
+    /// 2026-10-29; the time grows with the tiles' cube).
+    pub fn seconds(tiles: usize) -> f64 {
+        7.0 * (tiles as f64 / 3700.0).powi(3)
+    }
+}
+
 /// Quadrature points per tile side.
 const Q: usize = 6;
 
@@ -1155,14 +1301,14 @@ struct Panel {
 
 /// The floor's tiles around station `t0` of a span's axis.
 fn floor_panels(
-    axis: &Axis,
+    frame: Frame,
     t0: f64,
     width: f64,
     floor: &TiledFloor,
     ground: &dyn Fn(f64, f64) -> f64,
 ) -> Vec<Panel> {
     let place = |t: f64, s: f64| {
-        let p = axis.plan(t, s);
+        let p = frame.plan(t, s);
         [p[0], p[1], ground(p[0], p[1])]
     };
     let quad = |t: f64, s: f64, size: f64| -> Panel {
@@ -1618,7 +1764,7 @@ mod tests {
             fine_margin: 4.0,
             reach: 96.0,
         };
-        let panels = floor_panels(&axis, 2e4, 26.0, &floor, &g);
+        let panels = floor_panels(Frame::of(&axis), 2e4, 26.0, &floor, &g);
         let sigma = solve_floor(&panels, &m).unwrap();
         let ys: Vec<f64> = (-25..=25).map(|k| k as f64).collect();
         let ex: Vec<f64> = ys.iter().map(|&y| exact(y, y.abs() + 1.0)).collect();

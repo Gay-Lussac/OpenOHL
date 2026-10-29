@@ -1928,6 +1928,8 @@ fn the_electric_field_window_runs_and_goes_out_of_date() {
     {
         let r = harness.state_mut().ready().unwrap();
         r.electric_field.set_voltage(&circuits[0].label(), 400.0);
+        // (The plane: the window's code; the tiled floor has its own tests.)
+        r.electric_field.set_tiled(false);
         r.electric_field.set_limit(Some(5.0));
     }
     harness.run();
@@ -1976,6 +1978,8 @@ fn the_electric_field_views_are_drawn() {
     {
         let r = harness.state_mut().ready().unwrap();
         r.electric_field.set_views(Some(1.0), Some(4.0));
+        // (The plane: the window's code; the tiled floor has its own tests.)
+        r.electric_field.set_tiled(false);
         r.electric_field.show(r.case);
         r.electric_field.start(&r.model, &ctx);
     }
@@ -2080,6 +2084,8 @@ fn the_electric_field_inputs_are_kept_in_the_project() {
         let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
         let label = circuits[0].label();
         r.electric_field.set_voltage(&label, 245.0);
+        // (The plane: the window's code; the tiled floor has its own tests.)
+        r.electric_field.set_tiled(false);
         r.electric_field.set_limit(Some(5.0));
         r.electric_field.set_views(Some(0.5), Some(2.0));
         label

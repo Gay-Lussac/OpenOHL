@@ -430,7 +430,9 @@ impl ElectricFieldWindow {
             }
             self.panel.generation += 1;
         }
-        let (Some(step), Some((charges, radius))) = (self.in_cuts, self.charges.clone()) else {
+        let (Some(step), Some((charges, radius, ground_model))) =
+            (self.in_cuts, self.charges.clone())
+        else {
             if !self.panel.done.is_empty() {
                 self.panel.done.clear();
                 self.panel.generation += 1;
@@ -476,7 +478,7 @@ impl ElectricFieldWindow {
                     .and_then(|t| t.height(x, y))
                     .unwrap_or_else(|| feet(x, y))
             };
-            let kv = |ps: &[[f64; 3]]| -> Vec<f64> {
+            let plane = |ps: &[[f64; 3]]| -> Vec<f64> {
                 ps.iter()
                     .map(|&p| {
                         charges.field(p, &GroundPlane::fitted(&ground, p[0], p[1], radius)) / 1e3
@@ -486,6 +488,24 @@ impl ElectricFieldWindow {
             let height = |x: f64, y: f64| Some(ground(x, y));
             let mut out = Vec::new();
             for key in missing {
+                // On the tiled floor: one around the cut.
+                let floor = match ground_model {
+                    electric::GroundModel::Tiled(f) => Some(electric::Floor::solve(
+                        &charges,
+                        electric::Frame::of_cut(key.origin, key.right),
+                        0.0,
+                        key.width,
+                        &f,
+                        &ground,
+                    )?),
+                    electric::GroundModel::Plane => None,
+                };
+                let tiled = |ps: &[[f64; 3]]| -> Vec<f64> {
+                    let fl = floor.as_ref().expect("a floor");
+                    ps.iter().map(|&p| fl.field(p, &charges) / 1e3).collect()
+                };
+                let kv: &(dyn Fn(&[[f64; 3]]) -> Vec<f64> + Sync) =
+                    if floor.is_some() { &tiled } else { &plane };
                 let cut = VerticalCut {
                     origin: key.origin,
                     right: key.right,
