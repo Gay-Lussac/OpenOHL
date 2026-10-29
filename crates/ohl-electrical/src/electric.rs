@@ -287,6 +287,22 @@ impl Charges3d {
         sum.sqrt()
     }
 
+    /// Every straight piece (start, end).
+    pub fn segments(&self) -> Vec<[[f64; 3]; 2]> {
+        self.groups
+            .iter()
+            .flat_map(|g| &g.1)
+            .flat_map(|p| {
+                (0..p.len.len()).map(move |k| {
+                    [
+                        [p.x[k], p.y[k], p.z[k]],
+                        [p.x[k + 1], p.y[k + 1], p.z[k + 1]],
+                    ]
+                })
+            })
+            .collect()
+    }
+
     /// The number of straight pieces.
     pub fn count(&self) -> usize {
         self.groups
@@ -632,6 +648,18 @@ pub fn run(
     settings: &Settings,
     progress: Option<&Progress>,
 ) -> Result<ElectricField, String> {
+    run_keeping(src, settings, progress).map(|r| r.0)
+}
+
+/// [`run`], and the 3D model's charges kept (3D only) for cuts computed
+/// later at other places: [`Charges3d::field`] at a point with the ground
+/// plane [`GroundPlane::fitted`] under it (over
+/// [`Settings::ground_radius`]).
+pub fn run_keeping(
+    src: &Sources<'_>,
+    settings: &Settings,
+    progress: Option<&Progress>,
+) -> Result<(ElectricField, Option<Charges3d>), String> {
     let line = src.line;
     if !(settings.step > 0.0 && settings.width >= 0.0 && settings.height.is_finite()) {
         return Err("a step above 0 m and a width of at least 0 m".into());
@@ -990,17 +1018,20 @@ pub fn run(
         p.done
             .store(p.total.load(Ordering::Relaxed), Ordering::Relaxed);
     }
-    Ok(ElectricField {
-        model: settings.model,
-        height: settings.height,
-        limit_kv_m: limit,
-        charges: rows,
-        profiles,
-        points,
-        cuts,
-        volumes,
-        notes,
-    })
+    Ok((
+        ElectricField {
+            model: settings.model,
+            height: settings.height,
+            limit_kv_m: limit,
+            charges: rows,
+            profiles,
+            points,
+            cuts,
+            volumes,
+            notes,
+        },
+        model3d,
+    ))
 }
 
 /// A 2D line charge: across, height, per frequency the charge per metre.
