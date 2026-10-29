@@ -397,6 +397,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         routes,
         weather_groups,
         soil_resistivity_ohm_m,
+        earthing_resistance_ohm,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -410,6 +411,9 @@ fn write_structure(out: &mut String, s: &Structure) {
     }
     if let Some(r) = soil_resistivity_ohm_m {
         attr(out, "soil_resistivity_ohm_m", &num(*r));
+    }
+    if let Some(r) = earthing_resistance_ohm {
+        attr(out, "earthing_resistance_ohm", &num(*r));
     }
     nonempty(out, "description", description);
     if points.is_empty()
@@ -1177,10 +1181,14 @@ pub fn to_xml(line: &Line) -> String {
             soil_resistivity_ohm_m,
             earth_return,
             mean_height,
+            earthing_resistance_ohm,
         } = electrical;
         out.push_str("  <electrical");
         if let Some(r) = soil_resistivity_ohm_m {
             attr(&mut out, "soil_resistivity_ohm_m", &num(*r));
+        }
+        if let Some(r) = earthing_resistance_ohm {
+            attr(&mut out, "earthing_resistance_ohm", &num(*r));
         }
         if !earth_return.is_default() {
             attr(&mut out, "earth_return", earth_return.as_str());
@@ -1407,6 +1415,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "extension",
             "height_adjust",
             "soil_resistivity_ohm_m",
+            "earthing_resistance_ohm",
             "description",
         ],
         &[
@@ -1631,6 +1640,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             })
             .collect::<Result<_, String>>()?,
         soil_resistivity_ohm_m: optional(e, "soil_resistivity_ohm_m")?,
+        earthing_resistance_ohm: optional(e, "earthing_resistance_ohm")?,
         id,
         fields: read_fields(e)?,
     })
@@ -2168,12 +2178,18 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         Some(e) => {
             check(
                 e,
-                &["soil_resistivity_ohm_m", "earth_return", "mean_height"],
+                &[
+                    "soil_resistivity_ohm_m",
+                    "earth_return",
+                    "mean_height",
+                    "earthing_resistance_ohm",
+                ],
                 &[],
             )?;
             use ohl_line::electrical::{EarthReturn, MeanHeight};
             ohl_line::electrical::ElectricalSettings {
                 soil_resistivity_ohm_m: optional(e, "soil_resistivity_ohm_m")?,
+                earthing_resistance_ohm: optional(e, "earthing_resistance_ohm")?,
                 earth_return: match owned(e, "earth_return") {
                     None => EarthReturn::default(),
                     Some(t) => EarthReturn::parse(&t).ok_or_else(|| {

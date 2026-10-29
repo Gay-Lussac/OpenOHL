@@ -190,6 +190,9 @@ pub struct Sources<'a> {
     pub temperature: Temperature,
     /// The ground's elevation at a plan point, when a terrain is given.
     pub ground: Option<&'a dyn Fn(f64, f64) -> Option<f64>>,
+    /// Its jumpers solved in the same weather case (the magnetic field's
+    /// current paths; none: left out).
+    pub jumpers: &'a [ohl_line::jumper::JumperShape],
 }
 
 /// A span of the line: two structures and the wires between them.
@@ -211,6 +214,37 @@ pub fn line_spans(line: &Line) -> Vec<LineSpan> {
             .and_then(|s| line.place_along([s.position[0], s.position[1]]))
             .unwrap_or((usize::MAX, f64::INFINITY))
     };
+    // Off the alignments (both structures unplaced): the way most of the
+    // sections between the two structures are drawn (2026-10-29: a section
+    // drawn backwards no longer makes a span of its own), ties by the
+    // first drawn.
+    let mut drawn: std::collections::BTreeMap<(String, String), i64> = Default::default();
+    for s in &line.sections {
+        for w in s.points.windows(2) {
+            let (a, b) = (&w[0].structure, &w[1].structure);
+            if a != b {
+                let (lo, hi, d) = if a < b { (a, b, 1) } else { (b, a, -1) };
+                *drawn.entry((lo.clone(), hi.clone())).or_insert(0) += d;
+            }
+        }
+    }
+    let first: std::collections::BTreeMap<(String, String), bool> = {
+        let mut m = std::collections::BTreeMap::new();
+        for s in &line.sections {
+            for w in s.points.windows(2) {
+                let (a, b) = (&w[0].structure, &w[1].structure);
+                if a != b {
+                    let key = if a < b {
+                        (a.clone(), b.clone())
+                    } else {
+                        (b.clone(), a.clone())
+                    };
+                    m.entry(key).or_insert(a < b);
+                }
+            }
+        }
+        m
+    };
     let mut spans: Vec<LineSpan> = Vec::new();
     let mut index: std::collections::BTreeMap<(String, String), usize> = Default::default();
     for (k, s) in line.sections.iter().enumerate() {
@@ -220,7 +254,19 @@ pub fn line_spans(line: &Line) -> Vec<LineSpan> {
                 continue;
             }
             let (pa, pb) = (place(a), place(b));
-            let ahead = pa.0 < pb.0 || (pa.0 == pb.0 && pa.1 <= pb.1);
+            let ahead = if pa.0 == usize::MAX && pb.0 == usize::MAX {
+                // Low to high id when most are drawn so.
+                let key = if a < b {
+                    (a.clone(), b.clone())
+                } else {
+                    (b.clone(), a.clone())
+                };
+                let n = drawn.get(&key).copied().unwrap_or(0);
+                let low_first = n > 0 || (n == 0 && first.get(&key).copied().unwrap_or(true));
+                (a < b) == low_first
+            } else {
+                pa.0 < pb.0 || (pa.0 == pb.0 && pa.1 <= pb.1)
+            };
             let (from, to) = if ahead { (a, b) } else { (b, a) };
             let key = (from.clone(), to.clone());
             let at = *index.entry(key).or_insert_with(|| {

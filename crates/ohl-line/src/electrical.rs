@@ -233,6 +233,14 @@ impl System {
 /// calculations say when they take it.
 pub const DEFAULT_SOIL_RESISTIVITY_OHM_M: f64 = 100.0;
 
+/// The earthing (footing) resistance taken for a structure without one,
+/// Ω: a common design target for the towers of transmission lines (e.g.
+/// IEEE Std 1243-1997, *Guide for improving the lightning performance of
+/// transmission lines*, which works with footing resistances of the order
+/// of 10 Ω). **An assumption**: measured values range from under 1 Ω to
+/// hundreds; the calculations say when they take it.
+pub const DEFAULT_EARTHING_RESISTANCE_OHM: f64 = 10.0;
+
 /// How the earth return of the series impedances is computed (the line's
 /// electrical settings, [`ElectricalSettings::earth_return`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -356,6 +364,10 @@ pub struct ElectricalSettings {
     /// The wires' height in a span.
     #[serde(default, skip_serializing_if = "MeanHeight::is_default")]
     pub mean_height: MeanHeight,
+    /// The structures' earthing resistance, Ω, where a structure gives
+    /// none (2026-10-29); none: [`DEFAULT_EARTHING_RESISTANCE_OHM`], said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earthing_resistance_ohm: Option<f64>,
 }
 
 impl ElectricalSettings {
@@ -373,11 +385,26 @@ impl ElectricalSettings {
         }
     }
 
-    /// Refuses a resistivity that is not a positive number.
+    /// The structures' earthing resistance to use where they give none,
+    /// Ω, and whether it is the assumed default.
+    pub fn earthing_resistance(&self) -> (f64, bool) {
+        match self.earthing_resistance_ohm {
+            Some(r) => (r, false),
+            None => (DEFAULT_EARTHING_RESISTANCE_OHM, true),
+        }
+    }
+
+    /// Refuses a resistivity or resistance that is not a positive number.
     pub fn validate(&self) -> Result<(), String> {
         match self.soil_resistivity_ohm_m {
             Some(r) if !(r.is_finite() && r > 0.0) => {
-                Err("electrical: soil resistivity must be a number of Ω·m > 0".into())
+                return Err("electrical: soil resistivity must be a number of Ω·m > 0".into());
+            }
+            _ => {}
+        }
+        match self.earthing_resistance_ohm {
+            Some(r) if !(r.is_finite() && r > 0.0) => {
+                Err("electrical: earthing resistance must be a number of Ω > 0".into())
             }
             _ => Ok(()),
         }

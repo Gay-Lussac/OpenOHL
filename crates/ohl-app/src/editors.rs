@@ -71,6 +71,9 @@ pub struct StructureForm {
     /// The soil resistivity measured at it, Ω·m
     /// ([`ohl_line::Structure::soil_resistivity_ohm_m`]).
     pub soil_resistivity_ohm_m: Option<f64>,
+    /// The resistance of its earthing, Ω
+    /// ([`ohl_line::Structure::earthing_resistance_ohm`]).
+    pub earthing_resistance_ohm: Option<f64>,
     /// A new route's name being typed.
     pub new_route: String,
     /// A new route to make with it.

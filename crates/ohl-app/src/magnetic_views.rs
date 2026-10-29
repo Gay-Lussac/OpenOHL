@@ -781,11 +781,9 @@ impl MagneticFieldWindow {
                     top: key.heights[1],
                     step: key.step,
                 };
-                let local = within.map(|d| {
-                    let a = cut.at(-key.width);
-                    // Along the cut: "ahead" is its right.
-                    wires.within(a, key.right, 2.0 * key.width, 0.0, d)
-                });
+                let (a, b) = (cut.at(-key.width), cut.at(key.width));
+                let line = field_views::Path::new(vec![[a[0], a[1], 0.0], [b[0], b[1], 0.0]])?;
+                let local = within.map(|d| wires.within(&line, 0.0, d));
                 let w: &Wires3d = local.as_ref().unwrap_or(&wires);
                 let ut = |ps: &[[f64; 3]]| -> Vec<f64> {
                     w.field_block(ps).iter().map(|b| b.0 * 1e6).collect()

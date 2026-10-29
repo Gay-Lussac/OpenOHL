@@ -39,6 +39,23 @@ pub struct Progress {
     pub total: AtomicUsize,
 }
 
+/// The distance from `p` to the segment `ab`.
+fn segment_distance(ab: [[f64; 3]; 2], p: [f64; 3]) -> f64 {
+    let d = [
+        ab[1][0] - ab[0][0],
+        ab[1][1] - ab[0][1],
+        ab[1][2] - ab[0][2],
+    ];
+    let w = [p[0] - ab[0][0], p[1] - ab[0][1], p[2] - ab[0][2]];
+    let l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    let u = if l2 > 0.0 {
+        ((w[0] * d[0] + w[1] * d[1] + w[2] * d[2]) / l2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    ((w[0] - u * d[0]).powi(2) + (w[1] - u * d[1]).powi(2) + (w[2] - u * d[2]).powi(2)).sqrt()
+}
+
 /// "stopped" once `progress` asks to stop.
 fn check(progress: Option<&Progress>) -> Result<(), String> {
     match progress {
@@ -382,17 +399,137 @@ pub const COARSE: usize = 4;
 /// (away from the wires a field changes smoothly over a coarse cell).
 pub const MARGIN: f64 = 1.1;
 
-/// A box along a stretch of the line: from `start` along `ahead` (unit,
-/// plan) for `length`, `width` to either side, elevations `bottom` to
-/// `top`.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+/// A line along the ground in plan: points (x, y, the ground's elevation
+/// there), joined straight. A place on it is a station `t` along it and an
+/// offset `s` to its right; across a bend the offset follows the
+/// bisector, mitred (the offset point lies `s` from both straights), and
+/// along a straight the direction turns evenly from one end's to the
+/// other's — so a lattice laid on it bends with the line without gaps or
+/// overlaps at its angles (owner, 2026-10-29: continuity between tiles).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Path {
+    /// The points (x, y, ground elevation).
+    pub points: Vec<[f64; 3]>,
+    /// Station of each point, m.
+    stations: Vec<f64>,
+    /// The offset's direction at each point (mitred: longer than 1 at a
+    /// bend).
+    normals: Vec<[f64; 2]>,
+}
+
+impl Path {
+    /// A path through `points` (at least two, no two at one place).
+    pub fn new(points: Vec<[f64; 3]>) -> Result<Self, String> {
+        if points.len() < 2 {
+            return Err("a path of at least two points".into());
+        }
+        let mut stations = vec![0.0];
+        let mut dirs = Vec::new();
+        for w in points.windows(2) {
+            let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+            let l = dx.hypot(dy);
+            if l < 1e-6 {
+                return Err("two points of the path at one place".into());
+            }
+            stations.push(stations.last().copied().unwrap_or(0.0) + l);
+            dirs.push([dx / l, dy / l]);
+        }
+        let right = |d: [f64; 2]| [d[1], -d[0]];
+        let mut normals = Vec::with_capacity(points.len());
+        normals.push(right(dirs[0]));
+        for k in 1..points.len() - 1 {
+            let (a, b) = (right(dirs[k - 1]), right(dirs[k]));
+            let m = [a[0] + b[0], a[1] + b[1]];
+            let c = m[0] * a[0] + m[1] * a[1];
+            if c.abs() < 1e-9 {
+                return Err("the path turns back on itself".into());
+            }
+            // Mitred: its part along either straight's normal is 1.
+            normals.push([m[0] / c, m[1] / c]);
+        }
+        normals.push(right(dirs[dirs.len() - 1]));
+        Ok(Self {
+            points,
+            stations,
+            normals,
+        })
+    }
+
+    /// Its length, m.
+    pub fn length(&self) -> f64 {
+        self.stations.last().copied().unwrap_or(0.0)
+    }
+
+    /// The straight a station lies on and how far along it (0–1).
+    fn piece(&self, t: f64) -> (usize, f64) {
+        let n = self.points.len();
+        let k = self
+            .stations
+            .partition_point(|&x| x <= t)
+            .saturating_sub(1)
+            .min(n - 2);
+        let f = (t - self.stations[k]) / (self.stations[k + 1] - self.stations[k]);
+        (k, f.clamp(0.0, 1.0))
+    }
+
+    /// The plan point at station `t`, offset `s` to the right.
+    pub fn place(&self, t: f64, s: f64) -> [f64; 2] {
+        let (k, f) = self.piece(t);
+        let (a, b) = (self.points[k], self.points[k + 1]);
+        let (na, nb) = (self.normals[k], self.normals[k + 1]);
+        [
+            a[0] + f * (b[0] - a[0]) + s * (na[0] + f * (nb[0] - na[0])),
+            a[1] + f * (b[1] - a[1]) + s * (na[1] + f * (nb[1] - na[1])),
+        ]
+    }
+
+    /// The ground's elevation at station `t` (straight between the
+    /// points).
+    pub fn ground(&self, t: f64) -> f64 {
+        let (k, f) = self.piece(t);
+        self.points[k][2] + f * (self.points[k + 1][2] - self.points[k][2])
+    }
+
+    /// The plan distance from `p` to the path's line (its straights).
+    pub fn distance(&self, p: [f64; 2]) -> f64 {
+        self.points
+            .windows(2)
+            .map(|w| {
+                let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+                let l2 = dx * dx + dy * dy;
+                let u = (((p[0] - w[0][0]) * dx + (p[1] - w[0][1]) * dy) / l2).clamp(0.0, 1.0);
+                (p[0] - w[0][0] - u * dx).hypot(p[1] - w[0][1] - u * dy)
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Whether offsets up to `width` either side stay unfolded: the
+    /// places at a station move ahead with it everywhere across.
+    pub fn unfolded(&self, width: f64) -> bool {
+        (0..self.points.len() - 1).all(|k| {
+            let l = self.stations[k + 1] - self.stations[k];
+            let d = [
+                (self.points[k + 1][0] - self.points[k][0]) / l,
+                (self.points[k + 1][1] - self.points[k][1]) / l,
+            ];
+            let dn = [
+                (self.normals[k + 1][0] - self.normals[k][0]) / l,
+                (self.normals[k + 1][1] - self.normals[k][1]) / l,
+            ];
+            [-width, width]
+                .iter()
+                .all(|&s| d[0] * (d[0] + s * dn[0]) + d[1] * (d[1] + s * dn[1]) > 0.1)
+        })
+    }
+}
+
+/// A volume along a path: `width` to either side of it, elevations
+/// `bottom` to `top`, the fine lattice `step` apart (stations, offsets,
+/// heights).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct VolumeBox {
-    /// Start on the axis, plan, m.
-    pub start: [f64; 2],
-    /// Ahead (unit, plan).
-    pub ahead: [f64; 2],
-    /// Along, m.
-    pub length: f64,
+    /// Along what.
+    pub path: Path,
     /// To either side, m.
     pub width: f64,
     /// From this elevation…
@@ -405,14 +542,15 @@ pub struct VolumeBox {
 
 impl VolumeBox {
     /// The fine lattice's points per axis (along, across, up), a multiple
-    /// of [`COARSE`] plus one each.
+    /// of [`COARSE`] plus one each; the last station is the path's end
+    /// (the lattice's steps along it a little shorter than `step`).
     pub fn dims(&self) -> [usize; 3] {
         let n = |len: f64| {
             let cells = (len / self.step).ceil().max(1.0) as usize;
             cells.div_ceil(COARSE) * COARSE + 1
         };
         [
-            n(self.length),
+            n(self.path.length()),
             n(2.0 * self.width),
             n(self.top - self.bottom),
         ]
@@ -420,17 +558,11 @@ impl VolumeBox {
 
     /// A lattice point's place (lattice coordinates may be fractional).
     pub fn place(&self, p: [f64; 3]) -> [f64; 3] {
-        let (t, s, z) = (
-            p[0] * self.step,
-            -self.width + p[1] * self.step,
-            self.bottom + p[2] * self.step,
-        );
-        // Right of ahead: (ahead.y, −ahead.x).
-        [
-            self.start[0] + t * self.ahead[0] + s * self.ahead[1],
-            self.start[1] + t * self.ahead[1] - s * self.ahead[0],
-            z,
-        ]
+        let along = self.path.length() / (self.dims()[0] - 1) as f64;
+        let xy = self
+            .path
+            .place(p[0] * along, -self.width + p[1] * self.step);
+        [xy[0], xy[1], self.bottom + p[2] * self.step]
     }
 
     /// Points of the full fine lattice and of the coarse one.
@@ -511,11 +643,17 @@ pub fn volume(
     progress: Option<&Progress>,
 ) -> Result<VolumeValues, String> {
     if !(bounds.step > 0.0
-        && bounds.length > 0.0
+        && bounds.path.length() > 0.0
         && bounds.width > 0.0
         && bounds.top > bounds.bottom)
     {
         return Err("a volume with a step above 0 m, a length, a width and a height".into());
+    }
+    if !bounds.path.unfolded(bounds.width) {
+        return Err(format!(
+            "±{} m folds over itself at a sharp line angle: a smaller width",
+            bounds.width
+        ));
     }
     let d = bounds.dims();
     let full = d[0] * d[1] * d[2];
@@ -581,37 +719,54 @@ pub fn volume(
             }
         }
     }
-    // Near a wire piece: the cells its box (grown by a coarse step)
-    // meets, in lattice coordinates.
+    // Near a wire piece: the cells whose centre lies within two coarse
+    // steps of one (pieces found through a plan grid of their middles).
     let coarse = bounds.step * COARSE as f64;
-    let local = |p: [f64; 3]| {
-        let (dx, dy) = (p[0] - bounds.start[0], p[1] - bounds.start[1]);
-        let t = dx * bounds.ahead[0] + dy * bounds.ahead[1];
-        let s = dx * bounds.ahead[1] - dy * bounds.ahead[0];
-        [t, s + bounds.width, p[2] - bounds.bottom]
-    };
-    for piece in pieces {
-        let (a, b) = (local(piece[0]), local(piece[1]));
-        let mut range = [(0usize, 0usize); 3];
-        let mut inside = true;
-        for ax in 0..3 {
-            let lo = (a[ax].min(b[ax]) - coarse) / coarse;
-            let hi = (a[ax].max(b[ax]) + coarse) / coarse;
-            if hi < 0.0 || lo > cells[ax] as f64 {
-                inside = false;
-                break;
-            }
-            range[ax] = (
-                lo.floor().max(0.0) as usize,
-                (hi.ceil().max(0.0) as usize).min(cells[ax].saturating_sub(1)),
-            );
-        }
-        if !inside {
-            continue;
-        }
-        for k in range[2].0..=range[2].1 {
-            for j in range[1].0..=range[1].1 {
-                for i in range[0].0..=range[0].1 {
+    let cell = 2.0 * coarse;
+    let mut hash: std::collections::HashMap<(i64, i64), Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut reach: f64 = 0.0;
+    for (n, piece) in pieces.iter().enumerate() {
+        let m = [
+            0.5 * (piece[0][0] + piece[1][0]),
+            0.5 * (piece[0][1] + piece[1][1]),
+        ];
+        let half = 0.5
+            * ((piece[1][0] - piece[0][0]).powi(2)
+                + (piece[1][1] - piece[0][1]).powi(2)
+                + (piece[1][2] - piece[0][2]).powi(2))
+            .sqrt();
+        reach = reach.max(half);
+        hash.entry(((m[0] / cell).floor() as i64, (m[1] / cell).floor() as i64))
+            .or_default()
+            .push(n);
+    }
+    let near = 2.0 * coarse;
+    let span = ((near + reach) / cell).ceil() as i64;
+    for k in 0..cells[2] {
+        for j in 0..cells[1] {
+            for i in 0..cells[0] {
+                if flag[cid(i, j, k)] {
+                    continue;
+                }
+                let c = bounds.place([
+                    (i * COARSE) as f64 + 0.5 * COARSE as f64,
+                    (j * COARSE) as f64 + 0.5 * COARSE as f64,
+                    (k * COARSE) as f64 + 0.5 * COARSE as f64,
+                ]);
+                let (hx, hy) = ((c[0] / cell).floor() as i64, (c[1] / cell).floor() as i64);
+                let mut hit = false;
+                'search: for gx in hx - span..=hx + span {
+                    for gy in hy - span..=hy + span {
+                        for &n in hash.get(&(gx, gy)).into_iter().flatten() {
+                            if segment_distance(pieces[n], c) <= near {
+                                hit = true;
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+                if hit {
                     flag[cid(i, j, k)] = true;
                 }
             }
@@ -720,7 +875,7 @@ pub fn volume(
         .map(|(l, m)| deviation(&m.vertices, *l, field))
         .collect();
     Ok(VolumeValues {
-        bounds: *bounds,
+        bounds: bounds.clone(),
         surfaces,
         deviation,
         computed,
@@ -779,9 +934,7 @@ mod tests {
     fn a_volume_around_a_straight_wire() {
         let f = |p: [f64; 3]| 1.0 / (p[1].powi(2) + (p[2] - 30.0).powi(2)).sqrt().max(1e-6);
         let b = VolumeBox {
-            start: [0.0, 0.0],
-            ahead: [1.0, 0.0],
-            length: 40.0,
+            path: Path::new(vec![[0.0, 0.0, 0.0], [40.0, 0.0, 0.0]]).unwrap(),
             width: 40.0,
             bottom: 0.0,
             top: 60.0,
@@ -796,6 +949,76 @@ mod tests {
             for p in &m.vertices {
                 let r = (p[1].powi(2) + (p[2] - 30.0).powi(2)).sqrt();
                 assert!((r - r0).abs() < 0.05 * r0 + 0.05, "{r} vs {r0}");
+            }
+        }
+    }
+
+    /// A path's places at a bend: the same on either side of the bend's
+    /// station, the offset point `s` from both straights (mitred).
+    #[test]
+    fn a_path_bends_without_a_gap() {
+        let p = Path::new(vec![
+            [0.0, 0.0, 10.0],
+            [100.0, 0.0, 20.0],
+            [200.0, 100.0, 0.0],
+        ])
+        .unwrap();
+        let t = 100.0;
+        for s in [-30.0, 0.0, 30.0] {
+            let (a, b) = (p.place(t - 1e-9, s), p.place(t + 1e-9, s));
+            assert!((a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6);
+        }
+        let q = p.place(t, 30.0);
+        // From the first straight (y = 0) and the second (through
+        // (100, 0) at 45°), both 30 m.
+        assert!((q[1].abs() - 30.0).abs() < 1e-9, "{q:?}");
+        let d2 = ((q[0] - 100.0) - q[1]).abs() / 2f64.sqrt();
+        assert!((d2 - 30.0).abs() < 1e-9, "{d2}");
+        assert!((p.ground(150.0) - (20.0 - 20.0 * (50.0 / (100.0 * 2f64.sqrt())))).abs() < 1e-9);
+        assert!(p.unfolded(50.0));
+        assert!(!p.unfolded(1000.0));
+    }
+
+    /// A volume along a bent path around a wire bent alike: one tube,
+    /// closed but at the path's two ends (no seam at the bend).
+    #[test]
+    fn a_volume_bends_with_its_path() {
+        let path = Path::new(vec![[0.0, 0.0, 0.0], [60.0, 0.0, 0.0], [110.0, 40.0, 0.0]]).unwrap();
+        let wire: Vec<[f64; 3]> = vec![[0.0, 0.0, 30.0], [60.0, 0.0, 30.0], [110.0, 40.0, 30.0]];
+        let pieces: Vec<[[f64; 3]; 2]> = wire.windows(2).map(|w| [w[0], w[1]]).collect();
+        let f = |p: [f64; 3]| {
+            let d = pieces
+                .iter()
+                .map(|s| segment_distance(*s, p))
+                .fold(f64::INFINITY, f64::min);
+            1.0 / d.max(1e-6)
+        };
+        let b = VolumeBox {
+            path,
+            width: 20.0,
+            bottom: 10.0,
+            top: 50.0,
+            step: 1.0,
+        };
+        let v = volume(&b, &[1.0 / 5.0], &each(f), &pieces, None).unwrap();
+        let m = &v.surfaces[0].1;
+        assert!(m.triangles.len() > 500);
+        let mut edges = std::collections::HashMap::new();
+        for t in &m.triangles {
+            for e in 0..3 {
+                let (a, c) = (t[e], t[(e + 1) % 3]);
+                *edges.entry((a.min(c), a.max(c))).or_insert(0) += 1;
+            }
+        }
+        let near_end = |p: [f64; 3]| {
+            [wire[0], wire[2]].iter().any(|e| {
+                ((p[0] - e[0]).powi(2) + (p[1] - e[1]).powi(2) + (p[2] - e[2]).powi(2)).sqrt() < 6.5
+            })
+        };
+        for ((a, c), n) in &edges {
+            if *n == 1 {
+                let (p, q) = (m.vertices[*a as usize], m.vertices[*c as usize]);
+                assert!(near_end(p) && near_end(q), "a hole at {p:?}");
             }
         }
     }

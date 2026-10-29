@@ -368,6 +368,46 @@ fn settings_ui(ui: &mut egui::Ui, model: &Model) -> Option<ElectricalSettings> {
                     }
                 });
                 ui.end_row();
+                ui.label("Earthing resistance");
+                ui.horizontal(|ui| {
+                    let mut given = s.earthing_resistance_ohm.is_some();
+                    if ui
+                        .checkbox(&mut given, "given")
+                        .on_hover_text(
+                            "The structures', where a structure has none of its own (Structures \
+                             table, earthing Ω): the current a structure leads from the earth wires \
+                             into the ground (Magnetic field, earth wires through the structures). \
+                             Not given: 10 Ω assumed — a common design target for towers; measured \
+                             values range from under 1 Ω to hundreds",
+                        )
+                        .changed()
+                    {
+                        s.earthing_resistance_ohm =
+                            given.then_some(ohl_line::electrical::DEFAULT_EARTHING_RESISTANCE_OHM);
+                    }
+                    match &mut s.earthing_resistance_ohm {
+                        Some(r) => {
+                            let mut v = *r;
+                            let resp = crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut v)
+                                    .range(0.01..=100_000.0)
+                                    .speed(0.1)
+                                    .suffix(" Ω"),
+                            );
+                            if resp.drag_stopped() || resp.lost_focus() {
+                                *r = v;
+                            }
+                        }
+                        None => {
+                            ui.label(
+                                egui::RichText::new("10 Ω assumed (not given)")
+                                    .color(ui.visuals().warn_fg_color),
+                            );
+                        }
+                    }
+                });
+                ui.end_row();
                 ui.label("Earth return");
                 egui::ComboBox::from_id_salt("line-parameters-earth")
                     .selected_text(s.earth_return.describe())

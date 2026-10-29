@@ -447,13 +447,22 @@ core staying independent of them.
      the towers' earthing, the phase arrangement search, the site data
      sheet's numbers, a limit from a plugin's parameter file, a published
      profile in the validation.
-   - [ ] **Option: the jumpers** as current paths (owner, 2026-10-29) —
-     their polylines as solved carry their circuit's phase current; left
-     out today (not conservative near the structures).
-   - [ ] **Option: the structures' steel** (owner, 2026-10-29) — its
-     permeability near the conductors and the currents induced in the
-     loops of earth wire and towers (with the towers' earthing above);
-     not modelled today (the field near a structure).
+   - [x] **Option: the jumpers** as current paths (owner, 2026-10-29) —
+     *built 2026-10-29, in active development, not approved yet*: a
+     jumper between two section ends of one phase carries its phase's
+     current as solved (on by default); taps and mixed phases left out,
+     said.
+   - [x] **Option: the structures' steel** (owner, 2026-10-29) — *built
+     2026-10-29, in active development, not approved yet*: the earth
+     wires as a network through every structure's earthing resistance
+     (a new structure and line value, 10 Ω assumed when not given), the
+     structures' currents as paths down their axes; the steel's
+     permeability not modelled (its effect estimated in the theory: under
+     0.25 % at 1 m from a 5 cm member). Not yet: the currents shared over
+     the legs, a substation's earthing grid at the line's ends.
+   - [x] **Continuity between the views' tiles** (owner, 2026-10-29) —
+     *built*: grids from above and volumes laid on one path along each
+     run of spans, mitred at the line angles.
    - **Validation.** Closed forms (one infinite straight conductor; a
      balanced three-phase flat line, whose field falls as 1/d²), a finite
      segment against numerical integration, published profiles (to find:

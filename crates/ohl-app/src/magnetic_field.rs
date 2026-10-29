@@ -73,6 +73,19 @@ enum Stations {
 /// A span by its first and last structure.
 type SpanIds = (String, String);
 
+/// Spans following each other (each starting where the one before ends)
+/// as runs: each run's first and last structure.
+fn runs(spans: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (a, b) in spans {
+        match out.last_mut() {
+            Some(last) if last.1 == *a => last.1 = b.clone(),
+            _ => out.push((a.clone(), b.clone())),
+        }
+    }
+    out
+}
+
 /// The line's spans by their first and last structure.
 type Spans = Arc<Vec<(String, String)>>;
 
@@ -85,6 +98,11 @@ pub struct MagneticFieldWindow {
     /// Current (A) and reverse per circuit, by its label.
     currents: BTreeMap<String, (f64, bool)>,
     earth_wires: bool,
+    /// The earth wires as a network through the structures' earthing,
+    /// the structures carrying current.
+    towers: bool,
+    /// The jumpers carry their phase's current.
+    jumpers: bool,
     height: f64,
     width: f64,
     step: f64,
@@ -154,6 +172,8 @@ impl Default for MagneticFieldWindow {
             case: 0,
             currents: BTreeMap::new(),
             earth_wires: false,
+            towers: true,
+            jumpers: true,
             height: 1.0,
             width: 50.0,
             step: 1.0,
@@ -203,6 +223,8 @@ struct Stored {
     case: Option<String>,
     currents: BTreeMap<String, (f64, bool)>,
     earth_wires: bool,
+    towers: Option<bool>,
+    jumpers: Option<bool>,
     height: Option<f64>,
     width: Option<f64>,
     step: Option<f64>,
@@ -257,6 +279,8 @@ impl MagneticFieldWindow {
             case: model.cases.get(self.case).map(|c| c.case.name.clone()),
             currents: self.currents.clone(),
             earth_wires: self.earth_wires,
+            towers: Some(self.towers),
+            jumpers: Some(self.jumpers),
             height: Some(self.height),
             width: Some(self.width),
             step: Some(self.step),
@@ -309,6 +333,8 @@ impl MagneticFieldWindow {
         }
         self.currents = st.currents;
         self.earth_wires = st.earth_wires;
+        self.towers = st.towers.unwrap_or(d.towers);
+        self.jumpers = st.jumpers.unwrap_or(d.jumpers);
         self.height = st.height.unwrap_or(d.height);
         self.width = st.width.unwrap_or(d.width);
         self.step = st.step.unwrap_or(d.step);
@@ -500,14 +526,19 @@ impl MagneticFieldWindow {
                 })
                 .collect(),
             earth_wires: self.earth_wires,
+            towers: self.towers,
+            jumpers: self.jumpers,
             height: self.height,
             width: self.width,
             step: self.step,
             stations,
+            // From above: every run of spans following each other along
+            // the line as one grid (continuous across the line angles), or
+            // one span.
             grids: match &self.above {
                 None => Vec::new(),
                 Some(a) => match a.span {
-                    None => spans.to_vec(),
+                    None => runs(&spans),
                     Some(k) => spans.get(k).cloned().into_iter().collect(),
                 },
             },
@@ -515,17 +546,21 @@ impl MagneticFieldWindow {
             piece_length: self.piece_length,
             modelled_within: self.modelled_within,
             cuts: Vec::new(),
+            // A volume: one along each run of spans following each other
+            // within the range (continuous across the line angles).
             volumes: match (&self.volume, self.two_d) {
-                (Some(v), false) => (v.from..=v.to)
-                    .filter_map(|k| spans.get(k))
-                    .map(|(from, to)| magnetic::VolumeSpec {
-                        from: from.clone(),
-                        to: to.clone(),
-                        width: self.width,
-                        above: views::ABOVE,
-                        step: v.step,
-                    })
-                    .collect(),
+                (Some(v), false) => {
+                    runs(&spans[v.from.min(spans.len())..(v.to + 1).min(spans.len())])
+                        .into_iter()
+                        .map(|(from, to)| magnetic::VolumeSpec {
+                            from,
+                            to,
+                            width: self.width,
+                            above: views::ABOVE,
+                            step: v.step,
+                        })
+                        .collect()
+                }
                 _ => Vec::new(),
             },
             levels: crate::field_overlay::shown(&self.levels)
@@ -552,6 +587,7 @@ impl MagneticFieldWindow {
         let line = model.line.clone();
         let library = model.library.clone();
         let shapes = solved.shapes.clone();
+        let jumpers = solved.jumpers.clone();
         let case = solved.case.clone();
         let ground = model.ground_for_checks();
         let settings = self.settings(model);
@@ -569,6 +605,7 @@ impl MagneticFieldWindow {
                 shapes: &shapes,
                 temperature: case.temperature,
                 ground: g,
+                jumpers: &jumpers,
             };
             let (mut field, wires) = magnetic::run_keeping(&src, &settings, Some(&progress))?;
             let work = progress.total.load(Ordering::Relaxed) as f64
@@ -812,12 +849,35 @@ impl MagneticFieldWindow {
                 });
                 ui.end_row();
                 ui.label("Earth wires");
-                ui.checkbox(&mut self.earth_wires, "carry the currents the phases induce")
-                    .on_hover_text(
-                        "An infinitely long earth wire earthed everywhere: I_e = −inv(Z_ee) · Z_ep · I_p per \
-                         span (an approximation). Off: no current in the earth wires",
-                    );
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.earth_wires, "carry the currents the phases induce")
+                        .on_hover_text(
+                            "Off: no current in the earth wires",
+                        );
+                    if self.earth_wires {
+                        ui.checkbox(&mut self.towers, "through the structures' earthing")
+                            .on_hover_text(
+                                "On: the earth wires as a network over the line, each structure \
+                                 leading current into the ground through its earthing resistance \
+                                 (Structures table, earthing Ω; else the line's, else 10 Ω \
+                                 assumed), the structures' currents in the field (3D). Off: an \
+                                 infinitely long earth wire earthed everywhere, I_e = −inv(Z_ee) · \
+                                 Z_ep · I_p per span",
+                            );
+                    }
+                });
                 ui.end_row();
+                if !self.two_d {
+                    ui.label("Jumpers");
+                    ui.checkbox(&mut self.jumpers, "carry their phase's current")
+                        .on_hover_text(
+                            "A jumper between two section ends of one phase carries that phase's \
+                             current, as solved in the weather case (3D). Off: left out (not \
+                             conservative near the structures). Jumpers on taps or between \
+                             different phases are left out, said",
+                        );
+                    ui.end_row();
+                }
                 ui.label("Profiles");
                 let spans = self.spans(model);
                 ui.horizontal(|ui| {
@@ -1008,6 +1068,19 @@ impl MagneticFieldWindow {
                 egui::RichText::new(format!(
                     "earth wire {} {}–{}: {:.1} A at {:.1}°",
                     e.section, e.from, e.to, e.amps, e.angle_deg
+                ))
+                .small(),
+            );
+        }
+        for t in &m.towers {
+            ui.label(
+                egui::RichText::new(format!(
+                    "structure {}: {:.1} A at {:.1}° into the ground through {} Ω{}",
+                    t.structure,
+                    t.amps,
+                    t.angle_deg,
+                    t.resistance_ohm,
+                    if t.assumed { " (assumed)" } else { "" }
                 ))
                 .small(),
             );

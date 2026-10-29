@@ -100,11 +100,27 @@ The pieces' fields are summed per component as phasors.
   subconductors (exact for a regular bundle by symmetry, close for the
   others).
 - **Assumption**: the permeability of free space everywhere — the steel
-  of the structures and of the earth wires' cores is not modelled. It
-  changes the field near a structure, little at mid-span.
-- **Simplification, not conservative near the structures**: the
-  **jumpers are left out** (their currents flow near the structures; at a
-  span's lowest point their share is small).
+  of the structures and of the earth wires' cores is not modelled
+  magnetically (the structures' **currents** are: see *Earth wire
+  currents*). Its size: a steel member of radius \\( a \\) and relative
+  permeability \\( \mu_r \\) in a field across it disturbs that field
+  outside it by at most \\( \frac{\mu_r - 1}{\mu_r + 1} (a/r)^2 \\) at
+  the distance \\( r \\) from its axis (the 2D cylinder in a uniform field,
+  exact): for a leg of 5 cm under 0.25 % at 1 m and 0.01 % at 5 m, for
+  any \\( \mu_r \\). A lattice tower adds many such small disturbances
+  near it; at mid-span and at the profiles' height none. Modelling it
+  would take a finite-element field solution of the tower.
+- **The jumpers** (since 2026-10-29; on by default, an option): a jumper
+  between two section ends of one phase carries that phase's current as
+  solved in the weather case, from the end whose section brings the
+  current into the structure (by the sections' directions along the line
+  and the circuit's load flow) to the end whose section takes it on. A
+  jumper on a tap (the current shares itself), between different phases
+  or between two ends the current enters (or leaves) by is left out and
+  said (**not conservative** near that structure). Tested: a line cut at
+  a structure and jumpered gives within 2.5 % the field of the line uncut
+  right beside it, 9–10 % less without the jumper. Off: left out (**not
+  conservative** near the structures).
 - **The modelled length.** The line is modelled whole, as far as it goes.
   The guide asks for every conductor to be modelled at least five times
   the limit line's largest distance from a conductor before and after the
@@ -175,6 +191,22 @@ structure to its last) or against it — every phase's current turned by
 
 DC systems are left out (a static field; said).
 
+## Which way the currents flow
+
+A circuit's current flows on through its sections and the jumpers
+joining them (2026-10-29): the sections joined by jumpers are oriented
+alike (a jumper from one's last point to another's first: the same way;
+last to last or first to first: opposite ways), and each such chain is
+turned so that it runs along the line over most of its length (span by
+span, from the structure placed first along the alignments to the next;
+off the alignments, the way most sections between the two structures are
+drawn). "Reverse" on a circuit turns all its phases. Until 2026-10-29 each
+span took its direction alone; where the order of a span's two structures
+turned at a structure, a current left that structure by both sections
+(on a real line 3 of 77 profiles moved by more than 1 %, one by 9.7 %),
+and a section drawn backwards off the alignments made a span of its own.
+Tested: a section given backwards gives the same field.
+
 ## Earth wire currents
 
 Optional. The earth wires are taken as **infinitely long and earthed
@@ -187,7 +219,40 @@ method and soil resistivity):
 
 **Simplification**: the towers' earthing (footing resistances) and the
 earth wires' ends are not modelled; near the ends of a line and with high
-footing resistances the real currents are smaller. The guide does not ask
+footing resistances the real currents are smaller. Hence, since
+2026-10-29 (owner: "include … the pylons' steel to improve accuracy"),
+**through the structures' earthing**:
+
+- Every structure bonds its earth wires (one voltage \\( V_n \\)) and leads
+  current into the ground through its **earthing resistance** \\( R_n \\)
+  (its own, `Structure.earthing_resistance_ohm`; else the line's; else
+  10 Ω **assumed**, said — a common design target for towers, measured
+  values ranging from under 1 Ω to hundreds).
+- In every span of length \\( L \\) from structure \\( a \\) to \\( b \\), the
+  earth wires carry
+  \\[ \underline I_e = (Z_{ee} L)^{-1} \big( (V_a - V_b)\,\mathbf 1 - Z_{ep} \underline I_p L \big) \\]
+  (the same primitive matrices from the span's mean cross-section).
+- Kirchhoff's current law at every structure,
+  \\( \sum_{\text{spans}} \mathbf 1^T \underline I_e \text{ (out)} + V_n/R_n = 0 \\),
+  is one linear system over the whole line (branches included); its
+  solution gives the earth wires' currents per span and every
+  structure's current into the ground \\( V_n / R_n \\). With every
+  \\( R_n \to 0 \\) it is the infinitely long earth wire above (tested
+  within 0.1 %); with very high ones no current flows; the structures'
+  currents add to nothing (tested).
+- **The structures' currents are current paths** of the 3D model: down
+  the structure's axis from its highest earth wire point to its foot.
+  **Simplification**: the current shares itself among the legs and
+  members; the field within a few metres of the structure differs.
+- **Simplification, not conservative**: the earth wires end at the
+  line's end structures, earthed there alone; a substation's earthing
+  grid (far lower) is not modelled — near the line's ends the real
+  currents are larger.
+
+On the synthetic double circuit (600 m, three structures of 10 Ω, 1000 A
+per circuit in the same direction) the network gives 2.3 A in the earth
+wire, the infinitely long earth wire 94 A: on a short line with real
+footings the infinite assumption overstates them by far. The guide does not ask
 for earth wire currents but takes them when the program computes them
 (its footnote 24). Their effect has **either sign**: in the synthetic
 double-circuit example (L1 lowest, L3 next to the earth wire) the induced
@@ -393,9 +458,25 @@ around each conductor) needs a step well under its radius.
   (a balanced three-phase line falls as \( 1/d^2 \)); single precision,
   all most GPUs offer, would lose digits there.
 
-Not yet (roadmap): the **jumpers** as current paths and the
-**structures' steel** (its permeability and the currents induced in the
-earth wire–tower loops), each as an option.
+**Continuity between the views' tiles** (2026-10-29). The values are
+continuous: every point sums the same pieces of the whole line (or the
+same within the distance asked). The drawings are laid on **one path
+along a run of spans** (spans following each other along the line):
+grids from above and volumes take each run whole, the stations along its
+straights, the offsets across them, and at a line angle the offset along
+the bisector, mitred (the offset point lies its offset from both
+straights), the direction turning evenly along each straight from one
+end's to the other's — so the lattice bends with the line, without the
+gap on the outside of an angle and the overlap on its inside that boxes
+per span left, and the isolines and surfaces run through the structures
+unbroken (tested on a bent path: a tube around a bent wire closed but at
+the path's ends). Where the offsets would fold over themselves (a very
+sharp angle and a wide band) the run is refused with a narrower width
+asked for. A level met exactly at a lattice point gives that point's
+vertex to every edge through it (no crack; tested).
+
+The structures' magnetic permeability is not modelled (above); the
+jumpers and the structures' currents are.
 
 ## Validation
 

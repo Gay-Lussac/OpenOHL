@@ -494,6 +494,11 @@
                 <xs:documentation>Soil resistivity measured at the structure, ohm-metres; absent: not measured (the line's).</xs:documentation>
               </xs:annotation>
             </xs:attribute>
+            <xs:attribute name="earthing_resistance_ohm" type="xs:double">
+              <xs:annotation>
+                <xs:documentation>Resistance of the structure's earthing (footing) to remote earth, ohms (2026-10-29); absent: the line's (electrical), else 10 ohms assumed.</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
 
@@ -948,6 +953,7 @@
           </xs:annotation>
           <xs:complexType>
             <xs:attribute name="soil_resistivity_ohm_m" type="xs:double"/>
+            <xs:attribute name="earthing_resistance_ohm" type="xs:double"/>
             <xs:attribute name="earth_return" default="carson_series">
               <xs:simpleType>
                 <xs:restriction base="xs:string">

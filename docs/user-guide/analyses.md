@@ -764,8 +764,17 @@ longer in the line falls back to the default.
   2D results warn where the model is not valid: near a line angle over
   5°, on a span between differently arranged structures.
 - **Earth wires**: tick to let them carry the currents the phases induce
-  (an infinitely long earth wire earthed everywhere; it may raise the
-  field as well as lower it).
+  (it may raise the field as well as lower it). *Through the structures'
+  earthing* (on by default, 2026-10-29): the earth wires as a network
+  over the line, each structure leading current into the ground through
+  its **earthing resistance** (Structures table, **earthing Ω**, or the
+  structure's window; else the line's, in Line parameters; else 10 Ω
+  assumed, said) — the structures' currents in the field and listed in
+  the results. Unticked: an infinitely long earth wire earthed everywhere
+  (far larger currents on a short line).
+- **Jumpers** (3D, on by default, 2026-10-29): a jumper between two
+  section ends of one phase carries that phase's current; jumpers on taps
+  or between different phases are left out and listed in the notes.
 - **Profiles**: every span's lowest point, or one span at its lowest
   point or at a place 0–1 along it; **Across** ± the width every step at a
   height above the ground (default ±50 m every 1 m at 1 m). The ground is
@@ -806,14 +815,17 @@ field (isolines, surfaces)** while the window is open:
 
 - **From above**: isolines at the profiles' height above the ground over
   every span or one, ± the width, a grid every step (default 2 m); in
-  the plan and the 3D view.
+  the plan and the 3D view. Spans following each other along the line
+  make one grid, bent at the line angles: the isolines run through the
+  structures unbroken.
 - **Cross-sections**: the field in **every cross-section panel open**
   (**Cross-section…**, C), every step (default 0.5 m) — open a cut at a
   building to see the field around it with the ground, the LiDAR points
   and the line. Computed after a run whenever a panel opens or moves
   (some seconds each), from the run's wires.
-- **Volume**: isosurfaces of the levels over spans *from … to*, ± the
-  width, from the ground to 10 m over the highest wire, the lattice every
+- **Volume**: isosurfaces of the levels over spans *from … to* (one
+  volume along them, bent at the line angles: no seam at the structures),
+  ± the width, from the ground to 10 m over the highest wire, the lattice every
   step (default 2 m), drawn translucent in the 3D view. A coarse lattice
   first, then the fine one only where a level passes, near the wires and
   wherever a surface goes on. On a real line (7 circuits, 1000 A each), one
@@ -844,8 +856,8 @@ The results are marked out of date when the line or the ground changes;
 the views then draw faded. Under **Views**: per view what was computed
 and how far its drawings lie off their levels. Not yet: the thermal
 rating as the currents (on the command line only), places of sensitive
-use as objects of the project, the jumpers and the structures' steel
-(roadmap).
+use as objects of the project, the structures' magnetic permeability
+(estimated small: theory page).
 
 **On the command line:**
 
@@ -855,7 +867,7 @@ ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     (--current CIRCUIT=A[:reverse])…
     [--thermal AMBIENT.ohlta --ambient-case NAME --max-temp °C
         [--method ieee738|cigre601|cigre207] [--reverse CIRCUIT]…]
-    [--earth-wires] [--two-d [--mean-heights]]
+    [--earth-wires [--towers]] [--no-jumpers] [--two-d [--mean-heights]]
     [--profile FROM:TO[@FRACTION]]… [--width 50] [--height 1] [--step 1]
     [--grid FROM:TO]… [--grid-step M] [--points FILE.csv] [--limit µT]
     [--piece-length M] [--modelled-within M]
