@@ -29,6 +29,12 @@
 #   the same for the lines to let through.
 # Build folders are pruned at the end (tools/prune-target.sh).
 set -e
+# No debug information in the check's builds (owner, 2026-10-29: no
+# unnecessary disk use): on macOS the line tables keep every object file
+# beside the binaries for the debugger (some 30 GB); a failing test still
+# says its file and line. CARGO_PROFILE_DEV_DEBUG set before keeps its
+# value.
+export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-false}"
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 TREE=$(cd "${1:-$HERE}" && pwd)
 C=${CARGO:-cargo}
@@ -57,6 +63,13 @@ $C fmt --all --check && echo fmt-ok || { echo fmt-FAILED; exit 1; }
 $C clippy -q --workspace --exclude ohl-py --all-targets -- -D warnings && echo clippy1-ok || { echo clippy1-FAILED; exit 1; }
 $C clippy -q -p ohl-app --no-default-features --all-targets -- -D warnings && echo clippy2-ok || { echo clippy2-FAILED; exit 1; }
 
+# The tests and the benchmarks read the shipped libraries next to the
+# program: with the build outside the tree, a link to them there (made
+# again when it went: 2026-10-29, a cleanup removed it mid-run).
+if [ -n "${CARGO_TARGET_DIR:-}" ] && [ ! -e "$(dirname "$OUT")/libraries" ]; then
+    ln -sfn "$TREE/libraries" "$(dirname "$OUT")/libraries"
+fi
+
 # The plugins the tests load: each built in its own folder (as CI does).
 for d in plugins/examples/* plugins/tests/* plugins/codes/*; do
     [ -f "$d/Cargo.toml" ] || continue
@@ -75,11 +88,6 @@ RUSTDOCFLAGS="-D warnings" $C doc -q --no-deps --workspace --exclude ohl-py && e
 mdbook build > /dev/null 2>&1 && echo mdbook-ok || { echo mdbook-FAILED; exit 1; }
 python3 -I tools/check_doc_links.py > /dev/null && echo links-ok || { echo links-FAILED; exit 1; }
 
-# The benchmarks read the shipped libraries next to the program: with the
-# build outside the tree, a link to them there.
-if [ -n "$CARGO_TARGET_DIR" ] && [ ! -e "$(dirname "$OUT")/libraries" ]; then
-    ln -s "$TREE/libraries" "$(dirname "$OUT")/libraries"
-fi
 $C build -q -p ohl-cli
 BENCH=$("$OUT/debug/ohl" validate benchmarks 2>&1 | tail -1)
 echo "$BENCH"
