@@ -335,6 +335,8 @@ pub struct Ready {
     pub line_parameters: crate::line_parameters::LineParametersWindow,
     /// Checks › Electrical › Magnetic field (2026-10-27).
     pub magnetic_field: crate::magnetic_field::MagneticFieldWindow,
+    /// Checks › Electrical › Electric field (2026-10-29).
+    pub electric_field: crate::electric_field::ElectricFieldWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
     /// Checks › Wire clearances › Internal clearances….
@@ -532,6 +534,7 @@ impl Ready {
             wire_tensions: Default::default(),
             line_parameters: Default::default(),
             magnetic_field: Default::default(),
+            electric_field: Default::default(),
             string_checks: Default::default(),
             internal_clearances: Default::default(),
             plans: Default::default(),
@@ -2344,6 +2347,7 @@ impl eframe::App for App {
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
                 ready.magnetic_field.keep(&mut ready.model, &ctx);
+                ready.electric_field.keep(&mut ready.model, &ctx);
                 ready.galloping.keep(&mut ready.model, &ctx);
                 ready.wirefit.keep(&mut ready.model, &ctx);
                 ready.vegetation.keep(&mut ready.model, &ctx);
@@ -2351,19 +2355,28 @@ impl eframe::App for App {
                 ready.phase_distance.keep(&mut ready.model, &ctx);
                 ready.unequal_wind.keep(&mut ready.model, &ctx);
                 ready.magnetic_field.ui(&ctx, &ready.model);
+                ready.electric_field.ui(&ctx, &ready.model);
                 // The field in the cross-section panels open, and its
                 // drawing in the views while the window is open.
-                let panels = ready
+                let panels: Vec<_> = ready
                     .xsections
                     .views
                     .values()
                     .filter_map(|v| Some((v.placed.as_ref()?.plane, v.spec.width, v.heights?)))
                     .collect();
-                ready.magnetic_field.panel_cuts(panels, &ready.model, &ctx);
+                ready
+                    .magnetic_field
+                    .panel_cuts(panels.clone(), &ready.model, &ctx);
+                ready.electric_field.panel_cuts(panels, &ready.model, &ctx);
                 if let Some(overlay) = ready.magnetic_field.overlay_change(&ready.model) {
                     ready.view3d.magnetic_field = overlay.clone();
                     ready.plan.magnetic_field = overlay;
                     ready.view3d.dirty.insert(Layer::MagneticField);
+                }
+                if let Some(overlay) = ready.electric_field.overlay_change(&ready.model) {
+                    ready.view3d.electric_field = overlay.clone();
+                    ready.plan.electric_field = overlay;
+                    ready.view3d.dirty.insert(Layer::ElectricField);
                 }
                 let out = ready.line_parameters.ui(&ctx, &ready.model);
                 if let Some(settings) = out.settings {

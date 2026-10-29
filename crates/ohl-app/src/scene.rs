@@ -55,6 +55,10 @@ pub enum Layer {
     /// from above, the cross-section panels' cuts, isosurfaces
     /// (translucent), each level in its colour ([`crate::field_overlay`]).
     MagneticField,
+    /// The electric field (Checks › Electrical › Electric field): the
+    /// cross-section panels' cuts, isosurfaces (translucent), each level in
+    /// its colour ([`crate::field_overlay`]).
+    ElectricField,
     /// Safety volumes around the wires (Checks › Safety volumes),
     /// translucent: drawn last.
     SafetyVolume,
@@ -65,7 +69,7 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 20] = [
+    pub const ALL: [Layer; 21] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -85,6 +89,7 @@ impl Layer {
         Layer::Isoclearance,
         Layer::GroundLines,
         Layer::MagneticField,
+        Layer::ElectricField,
         Layer::SafetyVolume,
     ];
 
@@ -109,6 +114,7 @@ impl Layer {
             Layer::Isoclearance => "Isoclearance lines",
             Layer::GroundLines => "Ground lines (beside the line)",
             Layer::MagneticField => "Magnetic field (isolines, surfaces)",
+            Layer::ElectricField => "Electric field (isolines, surfaces)",
             Layer::SafetyVolume => "Safety volumes",
             Layer::RigidLinks => "Rigid links (attachment points)",
         }
@@ -148,6 +154,7 @@ pub const LAYER_GROUPS: [(&str, &[Layer]); 4] = [
             Layer::FallIn,
             Layer::Isoclearance,
             Layer::MagneticField,
+            Layer::ElectricField,
             Layer::SafetyVolume,
         ],
     ),
@@ -1714,6 +1721,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         | Layer::Isoclearance
         | Layer::GroundLines
         | Layer::MagneticField
+        | Layer::ElectricField
         | Layer::SafetyVolume => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {

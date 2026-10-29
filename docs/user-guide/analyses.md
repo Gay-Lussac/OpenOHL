@@ -725,8 +725,7 @@ ohl electrical parameters examples/electrical/double-circuit.ohl.json \
 Not yet: other lines in the corridor, soil resistivity along the route,
 a transposition plan, the terrain in the window (the ground is taken
 straight between the structures' feet there) and the point cloud's ground,
-the electric field and audible noise (roadmap O18). The magnetic field:
-below.
+audible noise (roadmap O18). The magnetic and electric fields: below.
 
 ## Electrical: magnetic field
 
@@ -899,3 +898,90 @@ ohl electrical magnetic examples/electrical/double-circuit.ohl.json \
     --library examples/electrical/wires.ohlw \
     --current North=1000 --current South=1000:reverse --earth-wires --limit 1
 ```
+
+## Electrical: electric field
+
+*Built, in active development, not approved yet* (roadmap O18 step 5,
+2026-10-29). The electric field strength (kV/m, the rms of the vector)
+of the line's voltages, from the wires where they hang in a weather case.
+Methods, assumptions (each marked conservative or not) and validation:
+[Electric field](../theory/electric-field.md).
+
+**What it needs:** the sections' systems and phases (Line › Electrical
+systems; the circuits are the phases of a system in one named circuit;
+sections of no system are earth wires, at earth potential) and the
+wires' diameters. **No limit is built in**: an ordinance's values (which
+voltage, which sag, which places, which limit) are yours to give.
+
+**In OHL-Design:** Checks › Electrical › **Electric field…** Its inputs
+— the weather case, the voltages, the model, the jumpers, the ground
+plane, the profiles, the limit, the points (the CSV's text), the pieces,
+the levels and the views — are kept in the project for the project line
+worked on, written when a run starts or the window closes, as for the
+magnetic field. A case or span no longer in the line falls back to the
+default.
+
+- **Voltages**: per circuit its voltage between phases (kV, rms); each
+  phase at it over √3 to earth at its system's phase angle (L1 0°, L2
+  −120°, L3 +120° unless the system gives others). Unless given, the
+  system's **nominal** voltage (said beside it; **nominal** sets it back).
+  **0 kV: voltage-free** — the circuit at earth potential, like the earth
+  wires. The NISV guide (BAFU 2007, 8.7.3) asks the highest operating
+  voltage, the largest sag (the weather case) and, on a double circuit
+  built to compensate, one circuit voltage-free; which governs is yours to
+  choose. DC systems are left out (a static field with space charge). Run
+  stays greyed while every circuit is voltage-free.
+- **Model**: *3D* — the wires as solved (sag, line angles, the line's
+  length) and the jumpers as straight pieces of uniform charge, their
+  images in the ground under each point; *2D* — infinite line charges
+  where the wires cross the profile over level ground at the
+  cross-section (quick; not valid near a line angle, a structure or on
+  sloping ground). Both take the same charges per wire, from each span's
+  mean cross-section.
+- **Jumpers** (3D, on by default): a jumper at a section's end carries
+  that section's charge per metre; jumpers not at a section's end are
+  left out and listed in the notes.
+- **Ground plane** (3D, default ±10 m): the ground under each point is a
+  plane fitted over ± this distance (its elevation there, its slopes from
+  the ground that far either side), the charges' images in it. Exact for
+  level or evenly sloping ground, a simplification on uneven ground (a
+  short distance follows a bank or a ditch under the point, a long one the
+  slope at large). No effect on the time.
+- **Profiles**, **Across**, **Points from CSV…**: as for the [magnetic
+  field](#electrical-magnetic-field) (default ±50 m every 1 m at 1 m
+  above the ground).
+- **Limit**: optional, kV/m: the margin at every point and per profile.
+
+**3 Model** (3D): **Wire pieces** *as solved* or *at most* a length, as
+for the magnetic field (each piece's field exact, in closed form; the
+only error is how far the wire curves away from it). Beside it the
+profiles' time: every point sums every piece twice (the charges and
+their images), estimated from the last run's speed, else from a short
+measurement on this computer. The whole line is always modelled.
+
+**4 Views and levels**: the **levels** (kV/m; default 1 and 5 kV/m
+drawn, 10 kV/m not; display only, none is a limit; **+ the limit**),
+*colour the cuts by band*, the field in **every cross-section panel
+open** (every step, default 0.5 m; computed from the run's charges
+whenever a panel opens or moves) and a **volume** over spans (isosurfaces
+of the levels, one volume along the spans, ± the width, from the ground to
+10 m over the highest wire) — each with its time beside it, drawn on the
+layer **Electric field (isolines, surfaces)** while the window is open,
+as for the magnetic field. Not yet: isolines from above.
+
+The results: the case and model, the **charges per wire** (per section
+and span: the voltage to earth, the charge per metre in nC/m, the
+frequency), the notes (what was assumed or left out); the chosen profile
+plotted — E against the distance from the axis (right positive), the
+limit dashed, the value under the pointer; a table per profile (station,
+the largest E and where, the margin); a table of the points with E and
+the margin (red when above the limit); under **Views**, per view what was
+computed and how far its drawings lie off their levels. **Export CSV…**
+writes every profile point, point and cut point. The results are marked
+out of date when the line or the ground changes; the views then draw
+faded. Not modelled: the structures, trees, buildings and people (earthed
+objects lower the field beside them and raise it at their tops).
+
+**On the command line:** `ohl electrical electric LINE.ohl.json|PROJECT.ohl`
+with the voltages, profiles, points, cuts and volumes as options
+(`ohl electrical electric --help`).

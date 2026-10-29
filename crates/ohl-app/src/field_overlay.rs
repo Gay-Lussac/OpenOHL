@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The field drawn in the views (owner, 2026-10-29; the Magnetic field
-//! layer): the levels' isolines from above (at the grids' height above
+//! and Electric field layers): the levels' isolines from above (at the grids' height above
 //! the ground, 3D view and plan), their isosurfaces (the volumes,
 //! translucent, 3D view) and the vertical cuts in the cross-section
 //! panels (the cells coloured by band, the isolines over them). Each level
@@ -19,7 +19,7 @@ use ohl_electrical::field_views::CutValues;
 /// table).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Level {
-    /// The value, µT.
+    /// The value, µT (the magnetic field) or kV/m (the electric field).
     pub value: f64,
     /// Its colour.
     pub rgb: [u8; 3],
@@ -27,7 +27,8 @@ pub struct Level {
     pub on: bool,
 }
 
-/// The default levels: decades, display only (no limit).
+/// The magnetic field's default levels: decades, µT, display only (no
+/// limit).
 pub fn default_levels() -> Vec<Level> {
     vec![
         Level {
