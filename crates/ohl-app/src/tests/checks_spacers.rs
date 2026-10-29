@@ -1698,6 +1698,51 @@ fn the_magnetic_field_window_runs_and_goes_out_of_date() {
     assert!(r.magnetic_field.out_of_date(&r.model).is_some());
 }
 
+/// A circuit given by its end points (owner, 2026-10-29): the current in
+/// at one end, the rest out at the other; the run says so.
+#[test]
+fn the_magnetic_field_currents_at_the_end_points() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let ends = ohl_electrical::magnetic::circuit_ends(&r.model.line);
+        let (key, points) = ends
+            .iter()
+            .find(|(_, e)| e.len() >= 2)
+            .expect("a circuit with ends");
+        let mut list: Vec<(String, Option<f64>)> =
+            points.iter().map(|p| (p.clone(), Some(0.0))).collect();
+        list[0].1 = Some(700.0);
+        let last = list.len() - 1;
+        list[last].1 = None;
+        r.magnetic_field.set_ends(&key.label(), list);
+        r.magnetic_field.show(r.case);
+        r.magnetic_field.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let Some(res) = &r.magnetic_field.job.result {
+            let a = res.as_ref().expect("a field");
+            assert!(
+                a.field.notes.iter().any(|n| n.contains("end points")),
+                "{:?}",
+                a.field.notes
+            );
+            assert!(a.field.profiles.iter().any(|p| p.max_ut > 0.0));
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no field in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 /// The magnetic field's views (owner, 2026-10-29): isolines from above
 /// and a volume's surfaces drawn on the Magnetic field layer once a run
 /// ends, a cross-section panel's cut computed from the run's wires, and

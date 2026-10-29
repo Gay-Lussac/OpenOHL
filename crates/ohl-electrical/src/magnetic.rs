@@ -267,6 +267,19 @@ pub enum Heights2d {
     Mean,
 }
 
+/// The current into a circuit at one of its end points (owner,
+/// 2026-10-29: "inputs and outputs for each end point of the circuit").
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EndCurrent {
+    /// The circuit: its name, or its system's id.
+    pub circuit: String,
+    /// The structure of the end point ([`circuit_ends`]).
+    pub structure: String,
+    /// Current into the line there, A (rms; each phase; negative: out of
+    /// it). `None`: the rest (the others' sum, out) — one end at most.
+    pub amps: Option<f64>,
+}
+
 /// The current of a circuit.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CircuitCurrent {
@@ -313,8 +326,12 @@ pub struct Settings {
     pub model: Model,
     /// The 2D model's wire heights.
     pub heights_2d: Heights2d,
-    /// The currents per circuit.
+    /// The currents per circuit (a circuit with `ends` takes those).
     pub currents: Vec<CircuitCurrent>,
+    /// The currents in and out at the circuits' end points: every
+    /// section's current from them by Kirchhoff's current law (a circuit
+    /// given here: its `currents` entry is not used).
+    pub ends: Vec<EndCurrent>,
     /// Earth wire currents induced by the phases (else none).
     pub earth_wires: bool,
     /// With `earth_wires`: the earth wires as a network over the line,
@@ -405,6 +422,7 @@ impl Default for Settings {
             model: Model::ThreeD,
             heights_2d: Heights2d::Station,
             currents: Vec::new(),
+            ends: Vec::new(),
             earth_wires: false,
             towers: false,
             height: 1.0,
@@ -676,6 +694,47 @@ pub struct Pieces {
 // ---------------------------------------------------------------------------
 // Currents.
 
+/// Every circuit's end points: the structures where its sections end
+/// without going on to another of them (its first phase's sections, joined
+/// where they meet), in id order.
+pub fn circuit_ends(line: &ohl_line::Line) -> Vec<(CircuitKey, Vec<String>)> {
+    let Ok(phases) = line.section_phases() else {
+        return Vec::new();
+    };
+    circuits(line)
+        .into_iter()
+        .map(|key| {
+            let mut first: Option<usize> = None;
+            let mut degree: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+            for sec in &line.sections {
+                let Some(Some(at)) = phases.get(&sec.id) else {
+                    continue;
+                };
+                let p = cross_section::phase_data(line, sec, *at);
+                if p.circuit != key.circuit || p.system != key.system || sec.points.len() < 2 {
+                    continue;
+                }
+                let f = *first.get_or_insert(p.index);
+                for s in [
+                    &sec.points[0].structure,
+                    &sec.points[sec.points.len() - 1].structure,
+                ] {
+                    let e = degree.entry(s.clone()).or_insert((0, 0));
+                    if p.index == f {
+                        e.0 += 1;
+                    }
+                }
+            }
+            let ends = degree
+                .into_iter()
+                .filter(|(_, d)| d.0 == 1)
+                .map(|(s, _)| s)
+                .collect();
+            (key, ends)
+        })
+        .collect()
+}
+
 /// The circuits of the line (phases of one system in one named circuit,
 /// or in none), in the order of their first section.
 pub fn circuits(line: &ohl_line::Line) -> Vec<CircuitKey> {
@@ -762,6 +821,9 @@ pub fn thermal_currents(
 /// the direction's sign.
 struct Currents {
     by_key: BTreeMap<CircuitKey, (f64, f64)>,
+    /// Per section of a circuit given by its end points: its current
+    /// along its points, A (negative: against them).
+    flows: BTreeMap<usize, f64>,
     /// Which way the current flows in each section and span.
     directions: Directions,
 }
@@ -803,6 +865,7 @@ impl Currents {
         }
         Ok(Self {
             by_key,
+            flows: BTreeMap::new(),
             directions: Directions::default(),
         })
     }
@@ -811,8 +874,198 @@ impl Currents {
     /// structure to its second (the cross-sections' frame), A, and its
     /// frequency.
     fn in_span(&self, p: &PhaseData, section: &str, span: usize) -> Option<(f64, C)> {
+        let k = *self.directions.by_id.get(section)?;
+        let (f, i) = self.of_section(p, k)?;
+        Some((f, i * self.directions.orient(k, span)))
+    }
+
+    /// Section `k`'s current along its points (rms phasor, A), and its
+    /// frequency: from its circuit's end points, else its circuit's
+    /// current in the circuit's direction.
+    fn of_section(&self, p: &PhaseData, k: usize) -> Option<(f64, C)> {
+        if p.kind == SystemKind::Dc {
+            return None;
+        }
+        if let Some(&a) = self.flows.get(&k) {
+            if a == 0.0 {
+                return None;
+            }
+            let f = p.frequency_hz.unwrap_or(DEFAULT_FREQUENCY_HZ);
+            return Some((f, C::from_polar(a, p.angle_deg.to_radians())));
+        }
         let (f, i) = self.of(p)?;
-        Some((f, i * self.directions.span_frame(section, span)))
+        Some((f, i * self.directions.along(k)))
+    }
+
+    /// Whether section `k`'s current runs along its points.
+    fn along(&self, k: usize) -> f64 {
+        match self.flows.get(&k) {
+            Some(&a) if a < 0.0 => -1.0,
+            Some(_) => 1.0,
+            None => self.directions.along(k),
+        }
+    }
+
+    /// Every section's current of the circuits given by their end points
+    /// (Kirchhoff's current law on each phase's sections, joined at the
+    /// structures where they meet).
+    fn take_ends(
+        &mut self,
+        line: &ohl_line::Line,
+        ends: &[EndCurrent],
+        notes: &mut Vec<String>,
+    ) -> Result<(), String> {
+        if ends.is_empty() {
+            return Ok(());
+        }
+        let phases = line.section_phases().map_err(|e| e.to_string())?;
+        let all = circuits(line);
+        let mut keys: Vec<&CircuitKey> = Vec::new();
+        for e in ends {
+            let k = all
+                .iter()
+                .find(|c| matches(c, &e.circuit))
+                .ok_or_else(|| format!("no circuit {}", e.circuit))?;
+            if !keys.contains(&k) {
+                keys.push(k);
+            }
+        }
+        for key in keys {
+            let given: Vec<&EndCurrent> =
+                ends.iter().filter(|e| matches(key, &e.circuit)).collect();
+            // Per phase: its sections as edges between the structures they
+            // end at.
+            let mut by_phase: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+            for (k, sec) in line.sections.iter().enumerate() {
+                let Some(Some(at)) = phases.get(&sec.id) else {
+                    continue;
+                };
+                let p = cross_section::phase_data(line, sec, *at);
+                if p.circuit == key.circuit && p.system == key.system && sec.points.len() >= 2 {
+                    by_phase.entry(p.index).or_default().push(k);
+                }
+            }
+            let mut summary = Vec::new();
+            for (phase, secs) in &by_phase {
+                let edge = |k: usize| {
+                    let pts = &line.sections[k].points;
+                    (
+                        pts[0].structure.clone(),
+                        pts[pts.len() - 1].structure.clone(),
+                    )
+                };
+                let mut degree: BTreeMap<String, usize> = BTreeMap::new();
+                for &k in secs {
+                    let (a, b) = edge(k);
+                    *degree.entry(a).or_default() += 1;
+                    *degree.entry(b).or_default() += 1;
+                }
+                let terminals: Vec<String> = degree
+                    .iter()
+                    .filter(|(_, d)| **d == 1)
+                    .map(|(s, _)| s.clone())
+                    .collect();
+                // The injections at the ends.
+                let mut inj: BTreeMap<String, f64> = BTreeMap::new();
+                let mut rest = None;
+                for g in &given {
+                    if !terminals.contains(&g.structure) {
+                        return Err(format!(
+                            "circuit {}: structure {} is not one of its end points ({})",
+                            key.label(),
+                            g.structure,
+                            terminals.join(", ")
+                        ));
+                    }
+                    match g.amps {
+                        Some(a) if a.is_finite() => {
+                            inj.insert(g.structure.clone(), a);
+                        }
+                        Some(a) => {
+                            return Err(format!("circuit {}: a current of {a} A", key.label()));
+                        }
+                        None if rest.is_none() => rest = Some(g.structure.clone()),
+                        None => {
+                            return Err(format!(
+                                "circuit {}: one end point at most takes the rest",
+                                key.label()
+                            ));
+                        }
+                    }
+                }
+                let sum: f64 = inj.values().sum();
+                match &rest {
+                    Some(r) => {
+                        inj.insert(r.clone(), -sum);
+                    }
+                    None if sum.abs()
+                        > 1e-6 * inj.values().map(|a| a.abs()).sum::<f64>().max(1.0) =>
+                    {
+                        return Err(format!(
+                            "circuit {}: the currents in and out add to {sum:.3} A, not 0 (leave one end point as the rest)",
+                            key.label()
+                        ));
+                    }
+                    None => {}
+                }
+                for t in &terminals {
+                    if !inj.contains_key(t) {
+                        inj.insert(t.clone(), 0.0);
+                    }
+                }
+                // A meshed circuit: its currents need its impedances.
+                let nodes = degree.len();
+                if secs.len() >= nodes {
+                    return Err(format!(
+                        "circuit {}: its sections form a loop; the currents of a meshed circuit need its impedances (the load flow, roadmap O18 step 2)",
+                        key.label()
+                    ));
+                }
+                // Each section's current: the injections on its first
+                // structure's side once it is taken away.
+                for &k in secs {
+                    let (a, _) = edge(k);
+                    let mut seen = vec![a.clone()];
+                    let mut stack = vec![a.clone()];
+                    while let Some(n) = stack.pop() {
+                        for &j in secs {
+                            if j == k {
+                                continue;
+                            }
+                            let (x, y) = edge(j);
+                            for (u, v) in [(&x, &y), (&y, &x)] {
+                                if *u == n && !seen.contains(v) {
+                                    seen.push(v.clone());
+                                    stack.push(v.clone());
+                                }
+                            }
+                        }
+                    }
+                    let flow: f64 = seen.iter().filter_map(|n| inj.get(n)).sum();
+                    self.flows.insert(k, flow);
+                }
+                if *phase == 0 || summary.is_empty() {
+                    summary = inj
+                        .iter()
+                        .map(|(s, a)| {
+                            format!(
+                                "{s} {}{:.1} A",
+                                if *a >= 0.0 { "in " } else { "out " },
+                                a.abs()
+                            )
+                        })
+                        .collect();
+                }
+            }
+            let none = format!("circuit {}: no current given", key.label());
+            notes.retain(|n| !n.starts_with(&none));
+            notes.push(format!(
+                "circuit {}: the currents from its end points ({}); every section's by Kirchhoff's current law",
+                key.label(),
+                summary.join(", ")
+            ));
+        }
+        Ok(())
     }
 
     /// A phase's current along the line, A (rms phasor), and its
@@ -1486,14 +1739,6 @@ impl Directions {
     fn orient(&self, k: usize, j: usize) -> f64 {
         self.orient.get(&(k, j)).copied().unwrap_or(1.0)
     }
-
-    /// +1 when a circuit's current in a section's span runs from the line
-    /// span's first structure to its second.
-    fn span_frame(&self, section: &str, span: usize) -> f64 {
-        self.by_id
-            .get(section)
-            .map_or(1.0, |&k| self.along(k) * self.orient(k, span))
-    }
 }
 
 /// The sign of section `k`'s span `j` along the line: +1 when its points
@@ -1543,12 +1788,12 @@ fn build_3d(
             // direction; an earth wire's (in the span's frame) by the
             // span's.
             let sign = if phase.is_some() {
-                currents.directions.along(k)
+                1.0
             } else {
                 currents.directions.orient(k, j)
             };
             let flows: Vec<(f64, C)> = match &phase {
-                Some(p) => currents.of(p).into_iter().collect(),
+                Some(p) => currents.of_section(p, k).into_iter().collect(),
                 None if with_earth_wires => earth
                     .get(&(section.id.clone(), j))
                     .cloned()
@@ -1616,7 +1861,7 @@ fn add_jumpers(
             }
             // The circuit's current runs along the section's points (or
             // against them): in at the last point when along.
-            let along = currents.directions.along(k);
+            let along = currents.along(k);
             if sec.points[n - 1] == *p {
                 Some((k, along > 0.0))
             } else if sec.points[0] == *p {
@@ -1666,11 +1911,22 @@ fn add_jumpers(
             ));
             continue;
         }
-        let Some((f, i)) = currents.of(&pa) else {
+        // The current into the structure by `from`'s section and out of
+        // it by `to`'s (along their points, turned at a first point): the
+        // same on a chain; at a junction the jumper carries the smaller.
+        let at_last = |p: &ohl_line::SectionPoint, k: usize| {
+            let pts = &line.sections[k].points;
+            pts[pts.len() - 1] == *p
+        };
+        let (Some((f, ia)), Some((_, ib))) =
+            (currents.of_section(&pa, ka), currents.of_section(&pb, kb))
+        else {
             continue;
         };
-        // Along the jumper's points (from → to) when it comes in at `from`.
-        let i = if in_a { i } else { -i };
+        let into = if at_last(a, ka) { ia } else { -ia };
+        let out = if at_last(b, kb) { -ib } else { ib };
+        // From → to along the jumper's points.
+        let i = if into.norm() <= out.norm() { into } else { out };
         let points = match piece_length {
             Some(max) => refine(&shape.points, max, f64::INFINITY).0,
             None => shape.points.clone(),
@@ -1904,6 +2160,7 @@ pub fn run_keeping(
         return Err("the line has no spans".into());
     }
     currents.directions = Directions::new(line, &spans);
+    currents.take_ends(line, &settings.ends, &mut notes)?;
     let axes: Vec<Option<Axis>> = spans.iter().map(|s| Axis::of(line, s).ok()).collect();
     // Distance along the line to each span's start.
     let mut along = Vec::with_capacity(spans.len());

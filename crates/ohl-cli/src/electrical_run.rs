@@ -166,6 +166,15 @@ pub struct MagneticArgs {
     /// system's id, `*` every circuit). Repeatable.
     #[arg(long, value_name = "CIRCUIT=A[:reverse]")]
     pub current: Vec<String>,
+    /// A current at a circuit's end point: CIRCUIT@STRUCTURE=A (into the
+    /// line; negative: out of it) or CIRCUIT@STRUCTURE=rest (the others'
+    /// sum, out; one end at most). Every section's current then follows
+    /// by Kirchhoff's current law. Repeatable; --ends lists the end points.
+    #[arg(long, value_name = "CIRCUIT@STRUCTURE=A")]
+    pub end: Vec<String>,
+    /// List every circuit's end points and stop.
+    #[arg(long)]
+    pub ends: bool,
     /// The circuits' thermal rating as their currents: ambient case file
     /// (.ohlta) with --ambient-case and --max-temp; the weakest section of
     /// a circuit governs. --current overrides it per circuit.
@@ -604,8 +613,37 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         sources.push((c.circuit.clone(), "given".into()));
         currents.push(c);
     }
-    if currents.is_empty() {
-        return Err("give the currents: --current CIRCUIT=A (or --thermal)".into());
+    if a.ends {
+        for (key, ends) in magnetic::circuit_ends(&line) {
+            println!("circuit {}: end points {}", key.label(), ends.join(", "));
+        }
+        return Ok(());
+    }
+    let mut ends = Vec::new();
+    for e in &a.end {
+        let (left, value) = e
+            .split_once('=')
+            .ok_or_else(|| format!("--end {e}: CIRCUIT@STRUCTURE=A"))?;
+        let (circuit, structure) = left
+            .split_once('@')
+            .ok_or_else(|| format!("--end {e}: CIRCUIT@STRUCTURE=A"))?;
+        ends.push(magnetic::EndCurrent {
+            circuit: circuit.trim().to_owned(),
+            structure: structure.trim().to_owned(),
+            amps: match value.trim() {
+                "rest" => None,
+                v => Some(
+                    v.parse()
+                        .map_err(|_| format!("--end {e}: {v} is not a number of amperes"))?,
+                ),
+            },
+        });
+    }
+    if currents.is_empty() && ends.is_empty() {
+        return Err(
+            "give the currents: --current CIRCUIT=A, --end CIRCUIT@STRUCTURE=A (or --thermal)"
+                .into(),
+        );
     }
     let mut stations = Vec::new();
     for p in &a.profile {
@@ -682,6 +720,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             Heights2d::Station
         },
         currents,
+        ends,
         earth_wires: a.earth_wires,
         towers: a.towers,
         height: a.height,

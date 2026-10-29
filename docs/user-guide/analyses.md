@@ -756,6 +756,12 @@ longer in the line falls back to the default.
   *against it* (every phase turned by 180°). The phases are balanced at
   their systems' phase angles (L1 0°, L2 −120°, L3 +120° unless the
   system gives others). Run stays greyed until a circuit has a current.
+  **Given** *the circuit* (one current) or *at its end points*
+  (2026-10-29): the current in at each end (negative: out), one end
+  ticked *the rest*; every section's current follows (branches
+  included; a circuit closing a loop is refused: it needs the load
+  flow). On the command line `--end CIRCUIT@STRUCTURE=A` (or `=rest`),
+  `--ends` lists the end points.
 - **Model**: *3D* — the wires as solved (sag, line angles, the line's
   length), bundles subconductor by subconductor; *2D* — the wires as
   infinite straight conductors where they cross the profile (tick *wires
@@ -863,7 +869,7 @@ use as objects of the project, the structures' magnetic permeability
 ```text
 ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     [--weather CASES.ohlwc --case NAME | --temperature 40]
-    (--current CIRCUIT=A[:reverse])…
+    (--current CIRCUIT=A[:reverse])… (--end CIRCUIT@STRUCTURE=A|rest)… [--ends]
     [--thermal AMBIENT.ohlta --ambient-case NAME --max-temp °C
         [--method ieee738|cigre601|cigre207] [--reverse CIRCUIT]…]
     [--earth-wires [--towers]] [--no-jumpers] [--two-d [--mean-heights]]
