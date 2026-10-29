@@ -317,6 +317,12 @@ pub struct Settings {
     pub currents: Vec<CircuitCurrent>,
     /// Earth wire currents induced by the phases (else none).
     pub earth_wires: bool,
+    /// With `earth_wires`: the earth wires as a network over the line,
+    /// each structure leading current into the ground through its
+    /// earthing resistance, and the structures' currents as current
+    /// paths (3D; [`TowerCurrent`]); else an infinitely long earth wire
+    /// earthed everywhere.
+    pub towers: bool,
     /// The profiles' height above the ground, m.
     pub height: f64,
     /// The profiles reach this far to either side of the axis, m.
@@ -339,6 +345,9 @@ pub struct Settings {
     /// through the solver's points ([`refine`]); `None`: the solver's
     /// pieces as they are.
     pub piece_length: Option<f64>,
+    /// The jumpers carry their phase's current (3D; from the section
+    /// whose current comes into the structure to the one it leaves by).
+    pub jumpers: bool,
     /// Cuts and volumes take the wires within this plan distance of
     /// them only, m (3D; `None`: the whole line). The field with the whole
     /// line is computed at some of their points and the difference said
@@ -397,6 +406,7 @@ impl Default for Settings {
             heights_2d: Heights2d::Station,
             currents: Vec::new(),
             earth_wires: false,
+            towers: false,
             height: 1.0,
             width: 50.0,
             step: 1.0,
@@ -407,6 +417,7 @@ impl Default for Settings {
             limit_ut: None,
             piece_length: None,
             modelled_within: None,
+            jumpers: true,
             cuts: Vec::new(),
             volumes: Vec::new(),
             levels: Vec::new(),
@@ -591,6 +602,8 @@ pub struct MagneticField {
     pub currents: Vec<CurrentUsed>,
     /// The earth wires' currents (with earth wires on).
     pub earth_wires: Vec<EarthWireCurrent>,
+    /// The structures' currents into the ground (the earth wire network).
+    pub towers: Vec<TowerCurrent>,
     /// The profiles.
     pub profiles: Vec<Profile>,
     /// The grids.
@@ -749,6 +762,8 @@ pub fn thermal_currents(
 /// the direction's sign.
 struct Currents {
     by_key: BTreeMap<CircuitKey, (f64, f64)>,
+    /// Which way the current flows in each section and span.
+    directions: Directions,
 }
 
 impl Currents {
@@ -786,7 +801,18 @@ impl Currents {
                 ));
             }
         }
-        Ok(Self { by_key })
+        Ok(Self {
+            by_key,
+            directions: Directions::default(),
+        })
+    }
+
+    /// A phase's current in a section's span from the span's first
+    /// structure to its second (the cross-sections' frame), A, and its
+    /// frequency.
+    fn in_span(&self, p: &PhaseData, section: &str, span: usize) -> Option<(f64, C)> {
+        let (f, i) = self.of(p)?;
+        Some((f, i * self.directions.span_frame(section, span)))
     }
 
     /// A phase's current along the line, A (rms phasor), and its
@@ -812,21 +838,29 @@ impl Currents {
 /// frequency, the current along the line (rms phasor, A).
 type EarthWireMap = BTreeMap<(String, usize), Vec<(f64, C)>>;
 
-/// The earth wires' induced currents in a span from its (mean)
-/// cross-section, per frequency: \\( I_e = -Z_{ee}^{-1} Z_{ep} I_p \\)
-/// with the primitive matrices of [`matrices::impedance`] (an infinitely
-/// long earth wire earthed everywhere, its voltage along it zero).
-fn earth_wire_currents(
+/// What the earth wires of a span see at one frequency, from its (mean)
+/// cross-section: their keys (section id, span index), their impedance
+/// matrix per metre with earth return \( Z_{ee} \) and the voltage the
+/// phases induce along them per metre \( Z_{ep} I_p \) (the primitive
+/// matrices of [`matrices::impedance`]).
+struct EarthTerms {
+    frequency_hz: f64,
+    keys: Vec<(String, usize)>,
+    zee: DMatrix<C>,
+    emf: DVector<C>,
+}
+
+/// The earth wires' terms of a span ([`EarthTerms`]), per frequency.
+fn earth_terms(
     cs: &CrossSection,
     currents: &Currents,
     method: ohl_line::electrical::EarthReturn,
     notes: &mut Vec<String>,
-) -> EarthWireMap {
-    let mut out = EarthWireMap::new();
+) -> Vec<EarthTerms> {
     let earthed: Vec<&cross_section::CrossWire> =
         cs.wires.iter().filter(|w| w.phase.is_none()).collect();
     if earthed.is_empty() {
-        return out;
+        return Vec::new();
     }
     let mut ew = Vec::new();
     for w in &earthed {
@@ -838,14 +872,14 @@ fn earth_wire_currents(
                     "span {}–{}: earth wire {} has no resistance or lies on the ground; no earth wire currents in this span",
                     cs.station.from, cs.station.to, w.section
                 ));
-                return out;
+                return Vec::new();
             }
         }
     }
     let mut phases: Vec<(f64, C, Wire)> = Vec::new();
     for w in &cs.wires {
         let Some(p) = &w.phase else { continue };
-        let Some((f, i)) = currents.of(p) else {
+        let Some((f, i)) = currents.in_span(p, &w.section, w.span) else {
             continue;
         };
         phases.push((
@@ -864,6 +898,7 @@ fn earth_wire_currents(
     freqs.sort_by(f64::total_cmp);
     freqs.dedup();
     let ne = ew.len();
+    let mut out = Vec::new();
     for f in freqs {
         let ph: Vec<&(f64, C, Wire)> = phases.iter().filter(|p| p.0 == f).collect();
         let mut wires = ew.clone();
@@ -872,21 +907,186 @@ fn earth_wire_currents(
         let zee = DMatrix::from_fn(ne, ne, |i, j| z[(i, j)]);
         let zep = DMatrix::from_fn(ne, ph.len(), |i, j| z[(i, ne + j)]);
         let ip = DVector::from_iterator(ph.len(), ph.iter().map(|p| p.1));
-        let Some(inv) = zee.try_inverse() else {
+        out.push(EarthTerms {
+            frequency_hz: f,
+            keys: earthed
+                .iter()
+                .map(|w| (w.section.clone(), w.span))
+                .collect(),
+            zee,
+            emf: zep * ip,
+        });
+    }
+    out
+}
+
+/// The earth wires' induced currents in a span from its (mean)
+/// cross-section, per frequency: \( I_e = -Z_{ee}^{-1} Z_{ep} I_p \)
+/// with the primitive matrices of [`matrices::impedance`] (an infinitely
+/// long earth wire earthed everywhere, its voltage along it zero).
+fn earth_wire_currents(
+    cs: &CrossSection,
+    currents: &Currents,
+    method: ohl_line::electrical::EarthReturn,
+    notes: &mut Vec<String>,
+) -> EarthWireMap {
+    let mut out = EarthWireMap::new();
+    for t in earth_terms(cs, currents, method, notes) {
+        let Some(inv) = t.zee.clone().try_inverse() else {
             notes.push(format!(
                 "span {}–{}: the earth wires' matrix is singular; no earth wire currents",
                 cs.station.from, cs.station.to
             ));
             continue;
         };
-        let ie = -(inv * zep * ip);
-        for (k, w) in earthed.iter().enumerate() {
-            out.entry((w.section.clone(), w.span))
+        let ie = -(inv * &t.emf);
+        for (k, key) in t.keys.iter().enumerate() {
+            out.entry(key.clone())
                 .or_default()
-                .push((f, ie[k]));
+                .push((t.frequency_hz, ie[k]));
         }
     }
     out
+}
+
+/// A structure's current from the earth wires into the ground (the earth
+/// wire network, [`earth_wire_network`]).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TowerCurrent {
+    /// The structure.
+    pub structure: String,
+    /// Frequency, Hz.
+    pub frequency_hz: f64,
+    /// Current into the ground, A (rms).
+    pub amps: f64,
+    /// Its phase angle, degrees.
+    pub angle_deg: f64,
+    /// The earthing resistance taken, Ω.
+    pub resistance_ohm: f64,
+    /// The resistance is the assumed default.
+    pub assumed: bool,
+    /// The current as a phasor, A (into the ground).
+    #[serde(skip)]
+    pub current: C,
+}
+
+/// The earth wires as a network over the whole line (owner, 2026-10-29:
+/// the towers' steel): each structure bonding its earth wires, at one
+/// voltage, and leading current into the ground through its earthing
+/// resistance \( R_n \); each span's earth wires carrying
+/// \( I_e = (Z_{ee} L)^{-1} \big( (V_a - V_b)\,\mathbf 1 - Z_{ep} I_p L \big) \)
+/// from its first structure \( a \) to its second \( b \) (\( L \) the
+/// span's length). Kirchhoff's current law at every structure
+/// (\( \sum I_e \) out \( + V_n / R_n = 0 \)) gives the structures'
+/// voltages, then the earth wires' currents per span and the towers'
+/// \( V_n / R_n \). With every \( R_n \to 0 \) it is the infinitely long
+/// earth wire earthed everywhere ([`earth_wire_currents`]).
+fn earth_wire_network(
+    line: &ohl_line::Line,
+    means: &[(LineSpan, CrossSection)],
+    axes: &[(LineSpan, f64)],
+    currents: &Currents,
+    notes: &mut Vec<String>,
+) -> (EarthWireMap, Vec<TowerCurrent>) {
+    let method = line.electrical.earth_return;
+    // Per span: its structures, length and terms.
+    let mut spans = Vec::new();
+    for (span, cs) in means {
+        let Some(length) = axes.iter().find(|(s, _)| s == span).map(|a| a.1) else {
+            continue;
+        };
+        for t in earth_terms(cs, currents, method, notes) {
+            spans.push((span.from.clone(), span.to.clone(), length, t));
+        }
+    }
+    let mut freqs: Vec<f64> = spans.iter().map(|s| s.3.frequency_hz).collect();
+    freqs.sort_by(f64::total_cmp);
+    freqs.dedup();
+    let mut map = EarthWireMap::new();
+    let mut towers = Vec::new();
+    let mut assumed = 0usize;
+    for f in freqs {
+        let these: Vec<_> = spans.iter().filter(|s| s.3.frequency_hz == f).collect();
+        let mut nodes: Vec<String> = Vec::new();
+        for s in &these {
+            for id in [&s.0, &s.1] {
+                if !nodes.contains(id) {
+                    nodes.push(id.clone());
+                }
+            }
+        }
+        let n = nodes.len();
+        let at = |id: &str| nodes.iter().position(|x| x == id).expect("a node");
+        let mut a = DMatrix::<C>::zeros(n, n);
+        let mut rhs = DVector::<C>::zeros(n);
+        let mut res = Vec::with_capacity(n);
+        for (k, id) in nodes.iter().enumerate() {
+            let (r, is_assumed) = line.earthing_resistance(id);
+            assumed += usize::from(is_assumed);
+            a[(k, k)] += C::new(1.0 / r, 0.0);
+            res.push((r, is_assumed));
+        }
+        // Per span: y = 1ᵀ (Z L)⁻¹ 1, g = 1ᵀ (Z L)⁻¹ Z_ep I_p L, and
+        // (Z L)⁻¹ kept for the currents.
+        let mut solved = Vec::new();
+        for s in &these {
+            let (from, to, len, t) = (&s.0, &s.1, s.2, &s.3);
+            let Some(inv) = (t.zee.clone() * C::new(len, 0.0)).try_inverse() else {
+                notes.push(format!(
+                    "span {from}–{to}: the earth wires' matrix is singular; no earth wire currents"
+                ));
+                continue;
+            };
+            let ones = DVector::from_element(t.keys.len(), C::new(1.0, 0.0));
+            let emf = &t.emf * C::new(len, 0.0);
+            let y = (ones.transpose() * &inv * &ones)[(0, 0)];
+            let g = (ones.transpose() * &inv * &emf)[(0, 0)];
+            let (i, j) = (at(from), at(to));
+            a[(i, i)] += y;
+            a[(j, j)] += y;
+            a[(i, j)] -= y;
+            a[(j, i)] -= y;
+            rhs[i] += g;
+            rhs[j] -= g;
+            solved.push((i, j, inv, emf, ones, t));
+        }
+        let Some(v) = a.lu().solve(&rhs) else {
+            notes.push(format!(
+                "the earth wire network at {f} Hz could not be solved; no earth wire currents"
+            ));
+            continue;
+        };
+        for (i, j, inv, emf, ones, t) in solved {
+            let ie = inv * (ones * (v[i] - v[j]) - emf);
+            for (k, key) in t.keys.iter().enumerate() {
+                map.entry(key.clone()).or_default().push((f, ie[k]));
+            }
+        }
+        for (k, id) in nodes.iter().enumerate() {
+            let it = v[k] / res[k].0;
+            towers.push(TowerCurrent {
+                structure: id.clone(),
+                frequency_hz: f,
+                amps: it.norm(),
+                angle_deg: if it.norm() > 1e-9 {
+                    it.arg().to_degrees()
+                } else {
+                    0.0
+                },
+                resistance_ohm: res[k].0,
+                assumed: res[k].1,
+                current: it,
+            });
+        }
+    }
+    if assumed > 0 {
+        let (r, _) = line.electrical.earthing_resistance();
+        notes.push(format!(
+            "earthing resistance not given at {} structure(s): {r} Ω taken (the line's, or assumed when the line gives none — set them for the real line)",
+            assumed
+        ));
+    }
+    (map, towers)
 }
 
 // ---------------------------------------------------------------------------
@@ -1031,25 +1231,10 @@ impl Wires3d {
         sum.into_iter().map(|s| (s.0.sqrt(), s.1.sqrt())).collect()
     }
 
-    /// The wires' pieces within `d` (plan, m) of a rectangle: from
-    /// `start` along `ahead` (unit) for `length`, `width` to either side
-    /// (a piece by its nearer end, and half its length).
-    pub fn within(
-        &self,
-        start: [f64; 2],
-        ahead: [f64; 2],
-        length: f64,
-        width: f64,
-        d: f64,
-    ) -> Wires3d {
-        let near = |x: f64, y: f64, half: f64| {
-            let (dx, dy) = (x - start[0], y - start[1]);
-            let t = dx * ahead[0] + dy * ahead[1];
-            let s = dx * ahead[1] - dy * ahead[0];
-            let ot = (t - t.clamp(0.0, length)).abs();
-            let os = (s.abs() - width).max(0.0);
-            ot.hypot(os) <= d + half
-        };
+    /// The wires' pieces within `d` (plan, m) of the band `width` either
+    /// side of `path` (a piece by its nearer end, and half its length).
+    pub fn within(&self, path: &field_views::Path, width: f64, d: f64) -> Wires3d {
+        let near = |x: f64, y: f64, half: f64| (path.distance([x, y]) - width).max(0.0) <= d + half;
         let mut out = Wires3d {
             groups: Vec::new(),
             pieces: self.pieces,
@@ -1193,6 +1378,126 @@ pub fn refine(points: &[[f64; 3]], max: f64, bound: f64) -> (Vec<[f64; 3]>, f64,
     (out, estimate, most)
 }
 
+/// Which way the current flows in each section and span (2026-10-29).
+///
+/// A circuit's current flows on through its sections and the jumpers
+/// joining them, so a section's current runs one way along all its points
+/// and on into the next one: the sections joined by jumpers are oriented
+/// alike (a jumper from one's last point to another's first: the same
+/// way; last to last or first to first: opposite ways). Each chain is then
+/// turned so that it runs along the line (from the line span's first
+/// structure to its second) over most of its length — the "along the
+/// line" of the circuits' load flow. Until 2026-10-29 every span took the
+/// line spans' order on its own, which at a structure where that order
+/// turns sent a current out of the structure by both sections.
+#[derive(Debug, Clone, Default)]
+struct Directions {
+    /// Per (section, span): +1 when the span's points run from the line
+    /// span's first structure to its second.
+    orient: BTreeMap<(usize, usize), f64>,
+    /// Per section: +1 when the circuit's current runs along its points.
+    along: Vec<f64>,
+    /// Sections by id.
+    by_id: BTreeMap<String, usize>,
+}
+
+impl Directions {
+    fn new(line: &ohl_line::Line, spans: &[LineSpan]) -> Self {
+        let orient = span_signs(line, spans);
+        let n = line.sections.len();
+        // Union–find with the parity of each section to its root.
+        let mut parent: Vec<usize> = (0..n).collect();
+        let mut parity = vec![1.0; n];
+        fn find(parent: &mut Vec<usize>, parity: &mut Vec<f64>, x: usize) -> (usize, f64) {
+            if parent[x] == x {
+                return (x, 1.0);
+            }
+            let (r, p) = find(parent, parity, parent[x]);
+            parity[x] *= p;
+            parent[x] = r;
+            (r, parity[x])
+        }
+        let end_of = |p: &ohl_line::SectionPoint| -> Option<(usize, bool)> {
+            line.sections.iter().enumerate().find_map(|(k, sec)| {
+                let m = sec.points.len();
+                if m < 2 {
+                    None
+                } else if sec.points[m - 1] == *p {
+                    Some((k, true))
+                } else if sec.points[0] == *p {
+                    Some((k, false))
+                } else {
+                    None
+                }
+            })
+        };
+        for j in &line.jumpers {
+            let (Some(a), Some(b)) = (j.from.point(), j.to.point()) else {
+                continue;
+            };
+            let (Some((ka, last_a)), Some((kb, last_b))) = (end_of(a), end_of(b)) else {
+                continue;
+            };
+            // s_a = rel · s_b.
+            let rel = if last_a != last_b { 1.0 } else { -1.0 };
+            let (ra, pa) = find(&mut parent, &mut parity, ka);
+            let (rb, pb) = find(&mut parent, &mut parity, kb);
+            if ra != rb {
+                parent[ra] = rb;
+                parity[ra] = rel * pa * pb;
+            }
+        }
+        let place = |id: &str| line.structure(id).map(|s| s.position);
+        let mut vote = vec![0.0; n];
+        let roots: Vec<(usize, f64)> = (0..n)
+            .map(|k| find(&mut parent, &mut parity, k))
+            .collect();
+        for (&(k, j), &o) in &orient {
+            let sec = &line.sections[k];
+            let len = match (
+                place(&sec.points[j].structure),
+                place(&sec.points[j + 1].structure),
+            ) {
+                (Some(a), Some(b)) => (b[0] - a[0]).hypot(b[1] - a[1]),
+                _ => 1.0,
+            };
+            vote[roots[k].0] += roots[k].1 * o * len;
+        }
+        let along = (0..n)
+            .map(|k| roots[k].1 * if vote[roots[k].0] >= 0.0 { 1.0 } else { -1.0 })
+            .collect();
+        Self {
+            orient,
+            along,
+            by_id: line
+                .sections
+                .iter()
+                .enumerate()
+                .map(|(k, s)| (s.id.clone(), k))
+                .collect(),
+        }
+    }
+
+    /// +1 when the circuit's current runs along section `k`'s points.
+    fn along(&self, k: usize) -> f64 {
+        self.along.get(k).copied().unwrap_or(1.0)
+    }
+
+    /// +1 when section `k`'s span `j` runs from the line span's first
+    /// structure to its second.
+    fn orient(&self, k: usize, j: usize) -> f64 {
+        self.orient.get(&(k, j)).copied().unwrap_or(1.0)
+    }
+
+    /// +1 when a circuit's current in a section's span runs from the line
+    /// span's first structure to its second.
+    fn span_frame(&self, section: &str, span: usize) -> f64 {
+        self.by_id
+            .get(section)
+            .map_or(1.0, |&k| self.along(k) * self.orient(k, span))
+    }
+}
+
 /// The sign of section `k`'s span `j` along the line: +1 when its points
 /// run from the line span's first structure to its second.
 fn span_signs(line: &ohl_line::Line, spans: &[LineSpan]) -> BTreeMap<(usize, usize), f64> {
@@ -1209,11 +1514,11 @@ fn span_signs(line: &ohl_line::Line, spans: &[LineSpan]) -> BTreeMap<(usize, usi
 fn build_3d(
     src: &Sources<'_>,
     currents: &Currents,
-    signs: &BTreeMap<(usize, usize), f64>,
     earth: &EarthWireMap,
-    with_earth_wires: bool,
-    piece_length: Option<f64>,
+    settings: &Settings,
+    notes: &mut Vec<String>,
 ) -> Result<Wires3d, String> {
+    let (with_earth_wires, piece_length) = (settings.earth_wires, settings.piece_length);
     let line = src.line;
     let phases = line.section_phases().map_err(|e| e.to_string())?;
     let mut wires = Wires3d::default();
@@ -1236,7 +1541,14 @@ fn build_3d(
             if sp.points.len() < 2 {
                 continue;
             }
-            let sign = signs.get(&(k, j)).copied().unwrap_or(1.0);
+            // Along the span's points: a phase's current by its circuit's
+            // direction; an earth wire's (in the span's frame) by the
+            // span's.
+            let sign = if phase.is_some() {
+                currents.directions.along(k)
+            } else {
+                currents.directions.orient(k, j)
+            };
             let flows: Vec<(f64, C)> = match &phase {
                 Some(p) => currents.of(p).into_iter().collect(),
                 None if with_earth_wires => earth
@@ -1273,9 +1585,133 @@ fn build_3d(
             }
         }
     }
+    if settings.jumpers {
+        add_jumpers(src, currents, &phases, piece_length, &mut wires, notes);
+    }
     info.count = wires.count();
     wires.pieces = Some(info);
     Ok(wires)
+}
+
+/// The jumpers as current paths: a jumper between two section ends of
+/// one phase carries that phase's current, from the end whose section
+/// brings the current into the structure to the end whose section takes
+/// it on (by the sections' directions along the line and the circuit's
+/// load flow). A jumper on a tap, between different phases or between
+/// two ends the current enters (or leaves) by is left out, said.
+fn add_jumpers(
+    src: &Sources<'_>,
+    currents: &Currents,
+    phases: &BTreeMap<String, Option<(usize, usize)>>,
+    piece_length: Option<f64>,
+    wires: &mut Wires3d,
+    notes: &mut Vec<String>,
+) {
+    let line = src.line;
+    // A section end at a wire point: the section's index, whether the
+    // current comes in there (towards the structure).
+    let end_of = |p: &ohl_line::SectionPoint| -> Option<(usize, bool)> {
+        line.sections.iter().enumerate().find_map(|(k, sec)| {
+            let n = sec.points.len();
+            if n < 2 {
+                return None;
+            }
+            // The circuit's current runs along the section's points (or
+            // against them): in at the last point when along.
+            let along = currents.directions.along(k);
+            if sec.points[n - 1] == *p {
+                Some((k, along > 0.0))
+            } else if sec.points[0] == *p {
+                Some((k, along < 0.0))
+            } else {
+                None
+            }
+        })
+    };
+    let mut left_out = Vec::new();
+    for shape in src.jumpers {
+        let Some(j) = line.jumpers.iter().find(|j| j.id == shape.jumper) else {
+            continue;
+        };
+        if shape.points.len() < 2 {
+            continue;
+        }
+        let (Some(a), Some(b)) = (j.from.point(), j.to.point()) else {
+            left_out.push(format!("{} (a tap)", j.id));
+            continue;
+        };
+        let (Some((ka, in_a)), Some((kb, in_b))) = (end_of(a), end_of(b)) else {
+            left_out.push(format!("{} (not at a section's end)", j.id));
+            continue;
+        };
+        let phase = |k: usize| {
+            let sec = &line.sections[k];
+            phases
+                .get(&sec.id)
+                .copied()
+                .flatten()
+                .map(|at| cross_section::phase_data(line, sec, at))
+        };
+        let (Some(pa), Some(pb)) = (phase(ka), phase(kb)) else {
+            // Earth wire jumpers: no current of their own (bonding).
+            continue;
+        };
+        if pa.circuit != pb.circuit || pa.system != pb.system || pa.index != pb.index {
+            left_out.push(format!("{} (between different phases)", j.id));
+            continue;
+        }
+        if in_a == in_b {
+            left_out.push(format!(
+                "{} (the current {} by both ends)",
+                j.id,
+                if in_a { "comes in" } else { "leaves" }
+            ));
+            continue;
+        }
+        let Some((f, i)) = currents.of(&pa) else {
+            continue;
+        };
+        // Along the jumper's points (from → to) when it comes in at `from`.
+        let i = if in_a { i } else { -i };
+        let points = match piece_length {
+            Some(max) => refine(&shape.points, max, f64::INFINITY).0,
+            None => shape.points.clone(),
+        };
+        wires.push(f, &points, i);
+    }
+    if !left_out.is_empty() {
+        notes.push(format!(
+            "jumpers without a current of their own: {}",
+            left_out.join(", ")
+        ));
+    }
+}
+
+/// The structures' currents as current paths: down the structure's axis
+/// from its highest earth wire point to its foot (a simplification: the
+/// current shares itself among the legs and members; the field within a
+/// few metres of the structure).
+fn add_towers(line: &ohl_line::Line, towers: &[TowerCurrent], wires: &mut Wires3d) {
+    for t in towers {
+        let Some(st) = line.structure(&t.structure) else {
+            continue;
+        };
+        let top = line
+            .sections
+            .iter()
+            .filter(|s| s.system.is_none())
+            .flat_map(|s| &s.points)
+            .filter(|p| p.structure == t.structure)
+            .filter_map(|p| st.wires.iter().find(|w| w.set == Some(p.set)))
+            .map(|w| w.position[2])
+            .reduce(f64::max);
+        let Some(top) = top else { continue };
+        let foot = st.position;
+        if top <= foot[2] {
+            continue;
+        }
+        wires.push(t.frequency_hz, &[[foot[0], foot[1], top], foot], t.current);
+    }
 }
 
 /// The 2D groups of a cross-section: each wire's subconductors as
@@ -1290,7 +1726,10 @@ fn build_2d(
     let mut groups: Vec<Group2d> = Vec::new();
     for w in &cs.wires {
         let flows: Vec<(f64, C)> = match &w.phase {
-            Some(p) => currents.of(p).into_iter().collect(),
+            Some(p) => currents
+                .in_span(p, &w.section, w.span)
+                .into_iter()
+                .collect(),
             None if with_earth_wires => earth
                 .get(&(w.section.clone(), w.span))
                 .cloned()
@@ -1461,13 +1900,13 @@ pub fn run_keeping(
         return Err(format!("a limit above 0 µT, not {l}"));
     }
     let mut notes = Vec::new();
-    let currents = Currents::new(line, &settings.currents, &mut notes)?;
+    let mut currents = Currents::new(line, &settings.currents, &mut notes)?;
     let spans = line_spans(line);
     if spans.is_empty() {
         return Err("the line has no spans".into());
     }
+    currents.directions = Directions::new(line, &spans);
     let axes: Vec<Option<Axis>> = spans.iter().map(|s| Axis::of(line, s).ok()).collect();
-    let signs = span_signs(line, &spans);
     // Distance along the line to each span's start.
     let mut along = Vec::with_capacity(spans.len());
     let mut total = 0.0;
@@ -1480,7 +1919,41 @@ pub fn run_keeping(
     notes.extend(mean_notes);
     let mut earth = EarthWireMap::new();
     let mut earth_rows = Vec::new();
-    if settings.earth_wires {
+    let mut towers = Vec::new();
+    if settings.earth_wires && settings.towers {
+        let lengths: Vec<(LineSpan, f64)> = spans
+            .iter()
+            .zip(&axes)
+            .filter_map(|(s, a)| a.as_ref().map(|a| (s.clone(), a.length)))
+            .collect();
+        let (m, t) = earth_wire_network(line, &means, &lengths, &currents, &mut notes);
+        for ((section, j), list) in &m {
+            let span = means.iter().find(|(_, cs)| {
+                cs.wires
+                    .iter()
+                    .any(|w| &w.section == section && w.span == *j)
+            });
+            for (f, i) in list {
+                earth_rows.push(EarthWireCurrent {
+                    section: section.clone(),
+                    from: span.map_or(String::new(), |s| s.0.from.clone()),
+                    to: span.map_or(String::new(), |s| s.0.to.clone()),
+                    frequency_hz: *f,
+                    amps: i.norm(),
+                    angle_deg: if i.norm() > 1e-9 {
+                        i.arg().to_degrees()
+                    } else {
+                        0.0
+                    },
+                });
+            }
+        }
+        earth = m;
+        towers = t;
+        notes.push(
+            "earth wire currents: the earth wires as a network over the line, each structure leading current into the ground through its earthing resistance (per span from its mean cross-section); the earth wires end at the line's end structures, earthed there alone (a substation's earthing grid is not modelled)".into(),
+        );
+    } else if settings.earth_wires {
         for (span, cs) in &means {
             let m = earth_wire_currents(cs, &currents, line.electrical.earth_return, &mut notes);
             for ((section, _), list) in &m {
@@ -1520,16 +1993,21 @@ pub fn run_keeping(
         ));
     }
     notes.push(
-        "the ground's return currents left out (their image lies at the complex depth, hundreds of metres down at power frequency); jumpers left out; balanced phases, no harmonics".into(),
+        format!(
+            "the ground's return currents left out (their image lies at the complex depth, hundreds of metres down at power frequency); {}; balanced phases, no harmonics",
+            if settings.jumpers && settings.model == Model::ThreeD {
+                "the jumpers carry their phase's current"
+            } else {
+                "jumpers left out"
+            }
+        ),
     );
     let model3d = match settings.model {
-        Model::ThreeD => Some(build_3d(
-            src,
-            &currents,
-            &signs,
-            &earth,
-            settings.earth_wires,
-            settings.piece_length,
+        Model::ThreeD => Some(build_3d(src, &currents, &earth, settings, &mut notes).map(
+            |mut w| {
+                add_towers(line, &towers, &mut w);
+                w
+            },
         )?),
         Model::TwoD => None,
     };
@@ -1571,17 +2049,14 @@ pub fn run_keeping(
         .collect();
     let mut grid_specs = Vec::new();
     for (from, to) in &settings.grids {
-        let i = spans
-            .iter()
-            .position(|s| (&s.from == from && &s.to == to) || (&s.from == to && &s.to == from))
-            .ok_or_else(|| format!("grid: no span between structures {from} and {to}"))?;
-        grid_specs.push(i);
+        grid_specs.push(run_spans(&spans, from, to).map_err(|e| format!("grid: {e}"))?);
     }
     if let Some(p) = progress {
         let grid_points: usize = grid_specs
             .iter()
+            .flatten()
             .filter_map(|&i| axes[i].as_ref())
-            .map(|a| ((a.length / grid_step).floor() as usize + 1) * n_grid)
+            .map(|a| ((a.length / grid_step).ceil() as usize + 1) * n_grid)
             .sum();
         p.total.store(
             stations.len() * n_across + settings.points.len() + grid_points,
@@ -1774,70 +2249,61 @@ pub fn run_keeping(
                 .into(),
         );
     }
-    // Grids (3D; in 2D the profile repeated along the span).
+    // Grids: in 3D one over each run of spans along the line, laid on
+    // its path (continuous across the line angles); in 2D per span, the
+    // profile repeated along it.
     let mut grids = Vec::new();
-    for &i in &grid_specs {
-        check_cancel(progress)?;
-        let span = &spans[i];
-        let Some(axis) = axes[i].as_ref() else {
-            continue;
-        };
-        let rows = (axis.length / grid_step).floor() as usize + 1;
-        let mut places = Vec::new();
-        for r in 0..rows {
-            let t = r as f64 * grid_step;
-            for &s in &grid_offsets {
-                let p = axis.plan(t, s);
-                let g = axis.ground(src.ground, t, s);
-                places.push(([p[0], p[1], g + settings.height], s, g, t));
-            }
-        }
-        let values = match &model3d {
-            Some(m) => {
-                let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
-                compute_all(&pts, &|ps: &[[f64; 3]]| m.field_block(ps), progress)?
-            }
-            None => {
-                let mut out = Vec::new();
-                for r in 0..rows {
-                    let t = r as f64 * grid_step;
-                    let cs = cross_section::cross_section(
-                        src,
-                        span,
-                        StationAt::Fraction((t / axis.length).min(1.0)),
-                    )?;
-                    let groups = build_2d(line, &cs, &currents, &earth, settings.earth_wires);
-                    for k in 0..grid_offsets.len() {
-                        let p = &places[r * grid_offsets.len() + k];
-                        out.push(field_2d(&groups, -p.1, p.0[2] - cs.ground.elevation));
-                    }
-                }
-                out
-            }
-        };
-        let mut grid = FieldGrid {
-            from: span.from.clone(),
-            to: span.to.clone(),
-            rows,
-            columns: grid_offsets.len(),
-            deviation: Vec::new(),
-            points: places
-                .iter()
-                .zip(&values)
-                .map(|(p, &(b, m))| FieldPoint {
-                    name: String::new(),
-                    x: p.0[0],
-                    y: p.0[1],
-                    z: p.0[2],
-                    offset: p.1,
-                    height: p.0[2] - p.2,
-                    b_ut: b * 1e6,
-                    major_ut: m * 1e6,
-                    margin_ut: limit.map(|l| l - b * 1e6),
-                })
-                .collect(),
-        };
+    for run in &grid_specs {
         if let Some(m) = &model3d {
+            check_cancel(progress)?;
+            let path = run_path(src, &spans, run)?;
+            if !path.unfolded(settings.width) {
+                return Err(format!(
+                    "grid: ±{} m folds over itself at a sharp line angle: a smaller width",
+                    settings.width
+                ));
+            }
+            let length = path.length();
+            let rows = (length / grid_step).ceil().max(1.0) as usize + 1;
+            let ground = |t: f64, s: f64| {
+                let p = path.place(t, s);
+                src.ground
+                    .and_then(|g| g(p[0], p[1]))
+                    .unwrap_or_else(|| path.ground(t))
+            };
+            let mut places = Vec::new();
+            for r in 0..rows {
+                let t = length * r as f64 / (rows - 1) as f64;
+                for &s in &grid_offsets {
+                    let p = path.place(t, s);
+                    let g = ground(t, s);
+                    places.push(([p[0], p[1], g + settings.height], s, g));
+                }
+            }
+            let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
+            let values = compute_all(&pts, &|ps: &[[f64; 3]]| m.field_block(ps), progress)?;
+            let mut grid = FieldGrid {
+                from: spans[run[0]].from.clone(),
+                to: spans[run[run.len() - 1]].to.clone(),
+                rows,
+                columns: grid_offsets.len(),
+                deviation: Vec::new(),
+                points: places
+                    .iter()
+                    .zip(&values)
+                    .map(|(p, &(b, mj))| FieldPoint {
+                        name: String::new(),
+                        x: p.0[0],
+                        y: p.0[1],
+                        z: p.0[2],
+                        offset: p.1,
+                        height: p.0[2] - p.2,
+                        b_ut: b * 1e6,
+                        major_ut: mj * 1e6,
+                        margin_ut: limit.map(|l| l - b * 1e6),
+                    })
+                    .collect(),
+            };
             let ut = |ps: &[[f64; 3]]| -> Vec<f64> {
                 m.field_block(ps).iter().map(|b| b.0 * 1e6).collect()
             };
@@ -1849,8 +2315,85 @@ pub fn run_keeping(
                     field_views::deviation(&pts, l, &ut)
                 })
                 .collect();
+            grids.push(grid);
+            continue;
         }
-        grids.push(grid);
+        for &i in run {
+            check_cancel(progress)?;
+            let span = &spans[i];
+            let Some(axis) = axes[i].as_ref() else {
+                continue;
+            };
+            let rows = (axis.length / grid_step).floor() as usize + 1;
+            let mut places = Vec::new();
+            for r in 0..rows {
+                let t = r as f64 * grid_step;
+                for &s in &grid_offsets {
+                    let p = axis.plan(t, s);
+                    let g = axis.ground(src.ground, t, s);
+                    places.push(([p[0], p[1], g + settings.height], s, g, t));
+                }
+            }
+            let values = match &model3d {
+                Some(m) => {
+                    let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
+                    compute_all(&pts, &|ps: &[[f64; 3]]| m.field_block(ps), progress)?
+                }
+                None => {
+                    let mut out = Vec::new();
+                    for r in 0..rows {
+                        let t = r as f64 * grid_step;
+                        let cs = cross_section::cross_section(
+                            src,
+                            span,
+                            StationAt::Fraction((t / axis.length).min(1.0)),
+                        )?;
+                        let groups = build_2d(line, &cs, &currents, &earth, settings.earth_wires);
+                        for k in 0..grid_offsets.len() {
+                            let p = &places[r * grid_offsets.len() + k];
+                            out.push(field_2d(&groups, -p.1, p.0[2] - cs.ground.elevation));
+                        }
+                    }
+                    out
+                }
+            };
+            let mut grid = FieldGrid {
+                from: span.from.clone(),
+                to: span.to.clone(),
+                rows,
+                columns: grid_offsets.len(),
+                deviation: Vec::new(),
+                points: places
+                    .iter()
+                    .zip(&values)
+                    .map(|(p, &(b, m))| FieldPoint {
+                        name: String::new(),
+                        x: p.0[0],
+                        y: p.0[1],
+                        z: p.0[2],
+                        offset: p.1,
+                        height: p.0[2] - p.2,
+                        b_ut: b * 1e6,
+                        major_ut: m * 1e6,
+                        margin_ut: limit.map(|l| l - b * 1e6),
+                    })
+                    .collect(),
+            };
+            if let Some(m) = &model3d {
+                let ut = |ps: &[[f64; 3]]| -> Vec<f64> {
+                    m.field_block(ps).iter().map(|b| b.0 * 1e6).collect()
+                };
+                grid.deviation = settings
+                    .levels
+                    .iter()
+                    .map(|&l| {
+                        let pts: Vec<[f64; 3]> = grid.isolines(l).into_iter().flatten().collect();
+                        field_views::deviation(&pts, l, &ut)
+                    })
+                    .collect();
+            }
+            grids.push(grid);
+        }
     }
     // Given points.
     let mut points = Vec::new();
@@ -1950,10 +2493,8 @@ pub fn run_keeping(
         let full = |ps: &[[f64; 3]]| ut_of(m, ps);
         // The wires a view takes, and how much those left out change the
         // field at some of its points.
-        let local = |start: [f64; 2], ahead: [f64; 2], length: f64, width: f64| {
-            settings
-                .modelled_within
-                .map(|d| m.within(start, ahead, length, width, d))
+        let local = |path: &field_views::Path, width: f64| {
+            settings.modelled_within.map(|d| m.within(path, width, d))
         };
         let left_out = |w: &Option<Wires3d>, pts: &[[f64; 3]]| -> Option<field_views::Deviation> {
             let w = w.as_ref()?;
@@ -2013,7 +2554,12 @@ pub fn run_keeping(
             if let Some(p) = progress {
                 p.total.fetch_add(cut.points(), Ordering::Relaxed);
             }
-            let w = local(cut.at(-c.width), axis.right, 2.0 * c.width, 0.0);
+            let a = cut.at(-c.width);
+            let b = cut.at(c.width);
+            let w = local(
+                &field_views::Path::new(vec![[a[0], a[1], 0.0], [b[0], b[1], 0.0]])?,
+                0.0,
+            );
             let wires = w.as_ref().unwrap_or(m);
             let values = field_views::vertical_cut(
                 &cut,
@@ -2047,32 +2593,37 @@ pub fn run_keeping(
         };
         for v in &settings.volumes {
             check_cancel(progress)?;
-            let i = find(&v.from, &v.to)?;
-            let axis = axes[i]
-                .as_ref()
-                .ok_or_else(|| format!("span {}–{}: no axis", v.from, v.to))?;
+            let run = run_spans(&spans, &v.from, &v.to).map_err(|e| format!("volume: {e}"))?;
+            let path = run_path(src, &spans, &run)?;
             let mut low = f64::INFINITY;
             let (nt, ns) = (
-                (axis.length / 5.0).ceil() as usize,
+                (path.length() / 5.0).ceil() as usize,
                 (2.0 * v.width / 5.0).ceil() as usize,
             );
             for a in 0..=nt {
                 for b in 0..=ns {
-                    let t = axis.length * a as f64 / nt.max(1) as f64;
+                    let t = path.length() * a as f64 / nt.max(1) as f64;
                     let s = -v.width + 2.0 * v.width * b as f64 / ns.max(1) as f64;
-                    low = low.min(axis.ground(src.ground, t, s));
+                    let p = path.place(t, s);
+                    let g = src
+                        .ground
+                        .and_then(|g| g(p[0], p[1]))
+                        .unwrap_or_else(|| path.ground(t));
+                    low = low.min(g);
                 }
             }
+            let high = run
+                .iter()
+                .filter_map(|&i| highest_wire(src, &spans[i]))
+                .reduce(f64::max);
             let bounds = VolumeBox {
-                start: [axis.a[0], axis.a[1]],
-                ahead: axis.u,
-                length: axis.length,
+                path,
                 width: v.width,
                 bottom: low.floor(),
-                top: highest_wire(src, &spans[i]).unwrap_or(low + 50.0) + v.above,
+                top: high.unwrap_or(low + 50.0) + v.above,
                 step: v.step,
             };
-            let w = local(bounds.start, bounds.ahead, bounds.length, bounds.width);
+            let w = local(&bounds.path, bounds.width);
             let wires = w.as_ref().unwrap_or(m);
             let values = field_views::volume(
                 &bounds,
@@ -2087,8 +2638,8 @@ pub fn run_keeping(
                 .flat_map(|(_, mesh)| mesh.vertices.iter().copied())
                 .collect();
             volumes.push(FieldVolume {
-                from: spans[i].from.clone(),
-                to: spans[i].to.clone(),
+                from: spans[run[0]].from.clone(),
+                to: spans[run[run.len() - 1]].to.clone(),
                 pieces: wires.count(),
                 left_out: left_out(&w, &pts),
                 values,
@@ -2119,6 +2670,7 @@ pub fn run_keeping(
             limit_ut: limit,
             currents: used,
             earth_wires: earth_rows,
+            towers,
             profiles,
             grids,
             points,
@@ -2129,6 +2681,54 @@ pub fn run_keeping(
         },
         model3d,
     ))
+}
+
+/// The spans from structure `from` to structure `to` along the line, in
+/// order (consecutive spans, each starting where the one before ends); a
+/// single span also either way round.
+fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<usize>, String> {
+    for (i, first) in spans.iter().enumerate() {
+        if first.from != from {
+            continue;
+        }
+        let mut run = vec![i];
+        let mut k = i;
+        loop {
+            if spans[k].to == to {
+                return Ok(run);
+            }
+            if k + 1 >= spans.len() || spans[k + 1].from != spans[k].to {
+                break;
+            }
+            k += 1;
+            run.push(k);
+        }
+    }
+    spans
+        .iter()
+        .position(|s| s.from == to && s.to == from)
+        .map(|i| vec![i])
+        .ok_or_else(|| format!("no run of spans from structure {from} to {to} along the line"))
+}
+
+/// The path along a run of spans: the structures' places and the ground
+/// at their feet.
+fn run_path(
+    src: &Sources<'_>,
+    spans: &[LineSpan],
+    run: &[usize],
+) -> Result<field_views::Path, String> {
+    let at = |id: &str| -> Result<[f64; 3], String> {
+        src.line
+            .structure(id)
+            .map(|s| s.position)
+            .ok_or_else(|| format!("structure {id} not in the line"))
+    };
+    let mut points = vec![at(&spans[run[0]].from)?];
+    for &i in run {
+        points.push(at(&spans[i].to)?);
+    }
+    field_views::Path::new(points)
 }
 
 /// The highest point of a span's wires, m.

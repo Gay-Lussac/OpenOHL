@@ -1357,6 +1357,13 @@ pub struct Structure {
     /// one; none: the line's [`electrical::ElectricalSettings`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub soil_resistivity_ohm_m: Option<f64>,
+    /// The resistance of its earthing (footing) to remote earth, Ω (owner,
+    /// 2026-10-29); none: the line's
+    /// ([`electrical::ElectricalSettings::earthing_resistance_ohm`]). The
+    /// magnetic field's earth wire network takes it: the current a tower
+    /// leads from the earth wires into the ground.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earthing_resistance_ohm: Option<f64>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1400,6 +1407,8 @@ struct StructureFile {
     weather_groups: Vec<String>,
     #[serde(default)]
     soil_resistivity_ohm_m: Option<f64>,
+    #[serde(default)]
+    earthing_resistance_ohm: Option<f64>,
     #[serde(default)]
     fields: Fields,
 }
@@ -1448,6 +1457,7 @@ impl From<StructureFile> for Structure {
             routes: f.routes,
             weather_groups: f.weather_groups,
             soil_resistivity_ohm_m: f.soil_resistivity_ohm_m,
+            earthing_resistance_ohm: f.earthing_resistance_ohm,
             fields: f.fields,
         }
     }
@@ -3386,10 +3396,9 @@ impl Line {
             !self.solver.blocks.is_default() || self.jumpers.iter().any(|j| j.tension.is_some());
         let written = match (sheaves, winds, shapes) {
             _ if !self.electrical.is_default()
-                || self
-                    .structures
-                    .iter()
-                    .any(|s| s.soil_resistivity_ohm_m.is_some()) =>
+                || self.structures.iter().any(|s| {
+                    s.soil_resistivity_ohm_m.is_some() || s.earthing_resistance_ohm.is_some()
+                }) =>
             {
                 LINE_FILE_VERSION
             }
@@ -3423,6 +3432,16 @@ impl Line {
             (Some(a), Some(b)) => ((a * b).sqrt(), false),
             (Some(r), None) | (None, Some(r)) => (r, false),
             (None, None) => self.electrical.soil_resistivity(),
+        }
+    }
+
+    /// The earthing resistance of structure `id`, Ω, and whether it is the
+    /// assumed default: its own, else the line's, else assumed
+    /// ([`electrical::DEFAULT_EARTHING_RESISTANCE_OHM`]).
+    pub fn earthing_resistance(&self, id: &str) -> (f64, bool) {
+        match self.structure(id).and_then(|s| s.earthing_resistance_ohm) {
+            Some(r) => (r, false),
+            None => self.electrical.earthing_resistance(),
         }
     }
 
@@ -3645,6 +3664,15 @@ impl Line {
         }) {
             return invalid(format!(
                 "structure {}: soil resistivity must be a number of Ω·m > 0",
+                s.id
+            ));
+        }
+        if let Some(s) = self.structures.iter().find(|s| {
+            s.earthing_resistance_ohm
+                .is_some_and(|r| !(r.is_finite() && r > 0.0))
+        }) {
+            return invalid(format!(
+                "structure {}: earthing resistance must be a number of Ω > 0",
                 s.id
             ));
         }

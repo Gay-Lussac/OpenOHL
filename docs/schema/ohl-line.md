@@ -33,7 +33,8 @@ The names are those of the line file:
        and the line's own <alignment> without id: read and converted -->
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…"
              height_adjust="0.5"                 <!-- feet 0.5 m above the ground -->
-             soil_resistivity_ohm_m="8.5">          <!-- soil resistivity measured here, Ω·m -->
+             soil_resistivity_ohm_m="8.5"           <!-- soil resistivity measured here, Ω·m -->
+             earthing_resistance_ohm="6.2">         <!-- its earthing (footing), Ω (2026-10-29) -->
     <weather_group name="…"/>                   <!-- its weather case groups (the structure override) -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
@@ -107,7 +108,7 @@ The names are those of the line file:
     <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->
     <broken_case name="…"/>                     <!-- version 9: a load case with a broken wire, its weather case with the wire broken -->
   </structure_loads>
-  <electrical soil_resistivity_ohm_m="100" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
+  <electrical soil_resistivity_ohm_m="100" earthing_resistance_ohm="10" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
 </line>
 ```
 

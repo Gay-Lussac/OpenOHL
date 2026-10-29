@@ -49,6 +49,7 @@ impl StructureForm {
             routes: Vec::new(),
             weather_groups: Vec::new(),
             soil_resistivity_ohm_m: None,
+            earthing_resistance_ohm: None,
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -155,6 +156,7 @@ impl StructureForm {
             routes: s.routes.clone(),
             weather_groups: s.weather_groups.clone(),
             soil_resistivity_ohm_m: s.soil_resistivity_ohm_m,
+            earthing_resistance_ohm: s.earthing_resistance_ohm,
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -230,6 +232,7 @@ impl StructureForm {
                 routes: self.routes.clone(),
                 weather_groups: self.weather_groups.clone(),
                 soil_resistivity_ohm_m: self.soil_resistivity_ohm_m,
+                earthing_resistance_ohm: self.earthing_resistance_ohm,
                 ..Structure::new(id.clone(), self.position)
             }
         } else {
@@ -266,6 +269,7 @@ impl StructureForm {
             s.routes = self.routes.clone();
             s.weather_groups.clone_from(&self.weather_groups);
             s.soil_resistivity_ohm_m = self.soil_resistivity_ohm_m;
+            s.earthing_resistance_ohm = self.earthing_resistance_ohm;
             // Its own points as in the window (in its axes, turned and
             // moved with it); a linked one keeps its joint, its offset
             // following a move (owner decision 2026-10-21).
@@ -473,6 +477,30 @@ pub(super) fn structure_ui(
                                 .speed(1.0)
                                 .max_decimals(3)
                                 .suffix(" Ω·m"),
+                        )
+                        .on_hover_text(TIP);
+                    }
+                });
+                ui.end_row();
+                ui.label("earthing resistance");
+                ui.horizontal(|ui| {
+                    const TIP: &str = "The resistance of its earthing (footing) to remote \
+                                       earth: the current it leads from the earth wires into \
+                                       the ground (Magnetic field, earth wires through the \
+                                       structures). Unticked: the line's (Line parameters), \
+                                       else 10 Ω assumed";
+                    let mut on = f.earthing_resistance_ohm.is_some();
+                    if ui.checkbox(&mut on, "measured").on_hover_text(TIP).changed() {
+                        f.earthing_resistance_ohm = on.then_some(10.0);
+                    }
+                    if let Some(r) = &mut f.earthing_resistance_ohm {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(r)
+                                .range(0.01..=1e5)
+                                .speed(0.1)
+                                .max_decimals(3)
+                                .suffix(" Ω"),
                         )
                         .on_hover_text(TIP);
                     }

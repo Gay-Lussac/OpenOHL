@@ -38,6 +38,7 @@ fn field(
         shapes: &shapes,
         temperature: Temperature::from_celsius(40.0),
         ground: None,
+        jumpers: &[],
     };
     magnetic::run(&src, settings, None).unwrap()
 }
@@ -286,6 +287,7 @@ fn field_keeping(
         shapes: &shapes,
         temperature: Temperature::from_celsius(40.0),
         ground: None,
+        jumpers: &[],
     };
     let (m, w) = magnetic::run_keeping(&src, settings, None).unwrap();
     (m, w.unwrap())
@@ -382,12 +384,15 @@ fn a_volume_over_a_span() {
                 *edges.entry((a.min(c), a.max(c))).or_insert(0) += 1;
             }
         }
+        // (One span: the path is a straight from its first point.)
+        let (p0, p1) = (b.path.points[0], b.path.points[1]);
+        let len = b.path.length();
+        let ahead = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len];
         let on_side = |p: [f64; 3]| {
-            let (dx, dy) = (p[0] - b.start[0], p[1] - b.start[1]);
-            let t = dx * b.ahead[0] + dy * b.ahead[1];
-            let s = dx * b.ahead[1] - dy * b.ahead[0];
+            let (dx, dy) = (p[0] - p0[0], p[1] - p0[1]);
+            let t = dx * ahead[0] + dy * ahead[1];
+            let s = dx * ahead[1] - dy * ahead[0];
             let d = b.dims();
-            let len = (d[0] - 1) as f64 * b.step;
             let top = b.bottom + (d[2] - 1) as f64 * b.step;
             let w = -b.width + (d[1] - 1) as f64 * b.step;
             [t, len - t, s + b.width, w - s, p[2] - b.bottom, top - p[2]]
@@ -451,4 +456,243 @@ fn shorter_pieces() {
             y.b_ut
         );
     }
+}
+
+/// The example with circuit North's L1 cut at T2 into two sections joined
+/// by a jumper (T2's wire point 1 to a new one 0.4 m ahead).
+fn with_a_jumper() -> (Line, ohl_cables::Library) {
+    with_a_jumper_drawn(false)
+}
+
+/// [`with_a_jumper`], the second section's points given from T3 back to
+/// T2 when `backwards` (the jumper then joins two last points).
+fn with_a_jumper_drawn(backwards: bool) -> (Line, ohl_cables::Library) {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/electrical");
+    let mut v: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("double-circuit.ohl.json")).unwrap(),
+    )
+    .unwrap();
+    let t2 = v["structures"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|s| s["id"] == "T2")
+        .unwrap();
+    t2["wires"].as_array_mut().unwrap().push(serde_json::json!(
+        {"label": "W11", "position": [300.4, 5.0, 424.0], "set": 11}
+    ));
+    let sections = v["sections"].as_array_mut().unwrap();
+    let k = sections.iter().position(|s| s["id"] == "NL1").unwrap();
+    let mut a = sections[k].clone();
+    let mut b = sections[k].clone();
+    a["id"] = "NL1a".into();
+    a["points"] = serde_json::json!([{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}]);
+    b["id"] = "NL1b".into();
+    b["points"] = if backwards {
+        serde_json::json!([{"structure": "T3", "set": 1}, {"structure": "T2", "set": 11}])
+    } else {
+        serde_json::json!([{"structure": "T2", "set": 11}, {"structure": "T3", "set": 1}])
+    };
+    sections[k] = a;
+    sections.push(b);
+    v["jumpers"] = serde_json::json!([{
+        "id": "J1", "cable": "acsr-drake-26-7",
+        "from": {"structure": "T2", "set": 1}, "to": {"structure": "T2", "set": 11},
+        "sag": 1.0, "temperature": 15.0
+    }]);
+    let line = Line::from_json(&v.to_string()).unwrap();
+    let library = ohl_cables::Library::load(&dir.join("wires.ohlw")).unwrap();
+    (line, library)
+}
+
+/// A jumper carries its phase's current: next to it, the line cut and
+/// jumpered gives about the field of the line uncut (the jumper hangs a
+/// little lower); without the jumper the field there is clearly another.
+#[test]
+fn a_jumper_carries_its_phase_current() {
+    let point = |y: f64, z: f64| magnetic::GivenPoint {
+        name: "beside".into(),
+        x: 300.2,
+        y,
+        z: Some(z),
+        height: None,
+    };
+    let s = |jumpers: bool| Settings {
+        currents: vec![CircuitCurrent {
+            circuit: "North".into(),
+            amps: 1000.0,
+            reverse: false,
+        }],
+        stations: vec![mid("T1", "T2")],
+        points: vec![point(5.0, 421.0), point(7.0, 423.0)],
+        jumpers,
+        ..Settings::default()
+    };
+    let (line, library) = example();
+    let whole = field(&line, &library, &s(true));
+    let (cut, library) = with_a_jumper();
+    let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+    let shapes: Vec<_> = ohl_line::solve::solve_line(&cut, &library, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&cut, &library, &case, &shapes)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let src = Sources {
+        line: &cut,
+        library: &library,
+        shapes: &shapes,
+        temperature: Temperature::from_celsius(40.0),
+        ground: None,
+        jumpers: &jumpers,
+    };
+    let with = magnetic::run(&src, &s(true), None).unwrap();
+    let without = magnetic::run(&src, &s(false), None).unwrap();
+    for k in 0..2 {
+        let (w, j, n) = (
+            whole.points[k].b_ut,
+            with.points[k].b_ut,
+            without.points[k].b_ut,
+        );
+        assert!(
+            (j - w).abs() < 0.05 * w,
+            "point {k}: whole {w}, jumpered {j}"
+        );
+        assert!(
+            (n - w).abs() > 2.0 * (j - w).abs(),
+            "point {k}: whole {w}, jumpered {j}, none {n}"
+        );
+    }
+    assert!(
+        !with.notes.iter().any(|n| n.contains("without a current")),
+        "{:?}",
+        with.notes
+    );
+}
+
+/// The earth wire network over the line: with earthings of no resistance
+/// it is the infinitely long earth wire earthed everywhere; with very
+/// high ones no current flows; the towers' currents into the ground add
+/// to nothing (they close through the earth wires); a tower's current
+/// changes the field beside it.
+#[test]
+fn the_earth_wire_network() {
+    let (mut line, library) = example();
+    let s = |towers: bool| Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        earth_wires: true,
+        towers,
+        points: vec![magnetic::GivenPoint {
+            name: "at the foot".into(),
+            x: 302.0,
+            y: 0.0,
+            z: None,
+            height: Some(1.0),
+        }],
+        ..Settings::default()
+    };
+    let infinite = field(&line, &library, &s(false));
+    line.electrical.earthing_resistance_ohm = Some(1e-7);
+    let tight = field(&line, &library, &s(true));
+    assert_eq!(infinite.earth_wires.len(), tight.earth_wires.len());
+    for a in &infinite.earth_wires {
+        let b = tight
+            .earth_wires
+            .iter()
+            .find(|b| b.section == a.section && b.from == a.from)
+            .unwrap();
+        assert!(
+            (a.amps - b.amps).abs() < 1e-3 * a.amps.max(1e-6),
+            "{a:?} {b:?}"
+        );
+    }
+    line.electrical.earthing_resistance_ohm = Some(1e7);
+    let loose = field(&line, &library, &s(true));
+    assert!(
+        loose.earth_wires.iter().all(|e| e.amps < 1e-3),
+        "{:?}",
+        loose.earth_wires
+    );
+    line.electrical.earthing_resistance_ohm = Some(10.0);
+    let ten = field(&line, &library, &s(true));
+    assert_eq!(ten.towers.len(), 3);
+    let sum = ten
+        .towers
+        .iter()
+        .fold(magnetic::C::new(0.0, 0.0), |a, t| a + t.current);
+    let largest = ten.towers.iter().map(|t| t.amps).fold(0.0, f64::max);
+    assert!(largest > 0.1, "{:?}", ten.towers);
+    assert!(sum.norm() < 1e-9 * largest.max(1.0), "{sum}");
+    // The towers' paths change the field at a tower's foot.
+    let at_foot = |m: &magnetic::MagneticField| m.points[0].b_ut;
+    let without = {
+        line.electrical.earthing_resistance_ohm = Some(1e7);
+        field(&line, &library, &s(true))
+    };
+    assert!(
+        (at_foot(&ten) - at_foot(&without)).abs() > 1e-4,
+        "{} {}",
+        at_foot(&ten),
+        at_foot(&without)
+    );
+}
+
+/// The current's direction follows the circuit through its sections and
+/// jumpers (2026-10-29): a section given backwards (from T3 to T2, the
+/// jumper joining two last points) carries the current the same way along
+/// the line, so the field is the same as with it given forwards.
+#[test]
+fn a_section_given_backwards_carries_the_current_on() {
+    let s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2"), mid("T2", "T3")],
+        points: vec![magnetic::GivenPoint {
+            name: "by the jumper".into(),
+            x: 300.2,
+            y: 7.0,
+            z: Some(423.0),
+            height: None,
+        }],
+        ..Settings::default()
+    };
+    let run = |backwards: bool| {
+        let (line, library) = with_a_jumper_drawn(backwards);
+        let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+        let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        let src = Sources {
+            line: &line,
+            library: &library,
+            shapes: &shapes,
+            temperature: Temperature::from_celsius(40.0),
+            ground: None,
+            jumpers: &jumpers,
+        };
+        magnetic::run(&src, &s, None).unwrap()
+    };
+    let (fwd, back) = (run(false), run(true));
+    assert!(
+        !back.notes.iter().any(|n| n.contains("without a current")),
+        "{:?}",
+        back.notes
+    );
+    for (a, b) in fwd.profiles.iter().zip(&back.profiles) {
+        assert!(
+            (a.max_ut - b.max_ut).abs() < 1e-3 * a.max_ut,
+            "{} {}",
+            a.max_ut,
+            b.max_ut
+        );
+    }
+    let (a, b) = (fwd.points[0].b_ut, back.points[0].b_ut);
+    assert!((a - b).abs() < 1e-2 * a, "{a} {b}");
 }

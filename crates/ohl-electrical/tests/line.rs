@@ -49,6 +49,7 @@ fn cross_sections_of_the_example() {
         shapes: &solved,
         temperature: Temperature::from_celsius(40.0),
         ground: None,
+        jumpers: &[],
     };
     let (spans, notes) = cross_section::span_cross_sections(&src, MeanHeight::Solved);
     assert!(notes.is_empty(), "{notes:?}");

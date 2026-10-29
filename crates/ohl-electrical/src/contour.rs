@@ -216,16 +216,25 @@ pub fn isosurface(n: [usize; 3], value: &dyn Fn(usize, usize, usize) -> f64, lev
                     let mut vertex = |a: usize, b: usize| -> u32 {
                         let (pa, pb) = (corner(a), corner(b));
                         let (ia, ib) = (id(pa.0, pa.1, pa.2), id(pb.0, pb.1, pb.2));
-                        let key = (ia.min(ib), ia.max(ib));
+                        // Placed from the low-index end, so both cubes
+                        // sharing the edge place it alike.
+                        let (lo, hi, vl, vh) = if ia < ib {
+                            (pa, pb, vals[a], vals[b])
+                        } else {
+                            (pb, pa, vals[b], vals[a])
+                        };
+                        let t = crossing(vl, vh, level);
+                        // A crossing at a point itself (the level met
+                        // there exactly) is that point's vertex, shared by
+                        // every edge through it: no crack.
+                        let key = if t <= 0.0 {
+                            (ia.min(ib), ia.min(ib))
+                        } else if t >= 1.0 {
+                            (ia.max(ib), ia.max(ib))
+                        } else {
+                            (ia.min(ib), ia.max(ib))
+                        };
                         *shared.entry(key).or_insert_with(|| {
-                            // Placed from the low-index end, so both cubes
-                            // sharing the edge place it alike.
-                            let (lo, hi, vl, vh) = if ia < ib {
-                                (pa, pb, vals[a], vals[b])
-                            } else {
-                                (pb, pa, vals[b], vals[a])
-                            };
-                            let t = crossing(vl, vh, level);
                             mesh.vertices.push([
                                 lo.0 as f64 + t * (hi.0 as f64 - lo.0 as f64),
                                 lo.1 as f64 + t * (hi.1 as f64 - lo.1 as f64),
@@ -276,6 +285,11 @@ pub fn isosurface(n: [usize; 3], value: &dyn Fn(usize, usize, usize) -> f64, lev
                     let (ci, co) = (centre(&inside), centre(&outside));
                     let out_dir = [co[0] - ci[0], co[1] - ci[1], co[2] - ci[2]];
                     for t in tris {
+                        // Collapsed to a point or a line by a level met at
+                        // a lattice point (its vertices shared): nothing.
+                        if t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
+                            continue;
+                        }
                         let [p, q, r] = t.map(|v| mesh.vertices[v as usize]);
                         let u = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
                         let w = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
@@ -285,9 +299,6 @@ pub fn isosurface(n: [usize; 3], value: &dyn Fn(usize, usize, usize) -> f64, lev
                             u[0] * w[1] - u[1] * w[0],
                         ];
                         let s = nrm[0] * out_dir[0] + nrm[1] * out_dir[1] + nrm[2] * out_dir[2];
-                        if nrm.iter().all(|x| x.abs() < 1e-15) {
-                            continue;
-                        }
                         mesh.triangles
                             .push(if s >= 0.0 { t } else { [t[0], t[2], t[1]] });
                     }
@@ -348,8 +359,6 @@ mod tests {
                 ((i as f64 - c).powi(2) + (j as f64 - c).powi(2) + (k as f64 - c).powi(2)).sqrt();
             1.0 / d.max(1e-3)
         };
-        // (A radius off the lattice's points: a level met exactly at a
-        // point gives triangles of no area there.)
         let m = isosurface([n, n, n], &f, 1.0 / 6.3);
         assert!(m.triangles.len() > 200);
         for p in &m.vertices {
@@ -374,5 +383,16 @@ mod tests {
             assert!(nrm[0] * out[0] + nrm[1] * out[1] + nrm[2] * out[2] > 0.0);
         }
         assert!(edges.values().all(|&k| k == 2), "closed");
+        // A radius met exactly at lattice points (6: e.g. (16, 10, 10)):
+        // still closed, the vertices there shared.
+        let m = isosurface([n, n, n], &f, 1.0 / 6.0);
+        let mut edges: HashMap<(u32, u32), usize> = HashMap::new();
+        for t in &m.triangles {
+            for e in 0..3 {
+                let (a, b) = (t[e], t[(e + 1) % 3]);
+                *edges.entry((a.min(b), a.max(b))).or_default() += 1;
+            }
+        }
+        assert!(edges.values().all(|&k| k == 2), "closed at lattice points");
     }
 }

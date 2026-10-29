@@ -240,6 +240,7 @@ fn rich_line() -> Line {
         soil_resistivity_ohm_m: Some(320.0),
         earth_return: ohl_line::electrical::EarthReturn::ComplexDepth,
         mean_height: ohl_line::electrical::MeanHeight::TwoThirdsSag,
+        earthing_resistance_ohm: Some(8.0),
     };
     line.sections[0].add_spread_load(&ohl_line::legacy::SpreadLoad {
         span: 0,
@@ -387,6 +388,7 @@ fn rich_line() -> Line {
     line.structures[0].weather_groups = vec!["internal".into(), "wind study".into()];
     // A soil resistivity measured at a structure (2026-10-27).
     line.structures[1].soil_resistivity_ohm_m = Some(8.5);
+    line.structures[1].earthing_resistance_ohm = Some(6.2);
     line.sections[0].weather_groups = vec!["snow zone 2".into()];
     // Local winds (line file 9, roadmap O15).
     line.sections[0].set_wind_factor(0, 0, 1.25);

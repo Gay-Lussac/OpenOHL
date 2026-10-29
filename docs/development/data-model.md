@@ -269,7 +269,7 @@ files](../user-guide/line-file.md).
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); `loads_per` (2026-10-21, `LoadsPer`, written only when not the default) — `stretched` (default, exact: the finite elements carry the ice and wind per metre of the stretched wire, `CableElement::stretched_load`, a fixed point) or `unstretched` (per unit of unstressed length, the former treatment, as other programs: a Simplification, about T/EA ≈ 0.1 % less; in the solver `solve::Reference::loads_per`, set from the line in `solve_fe`, and the jumpers' `solve_jumper_in`; the closed forms unaffected); in the project's line settings and OHL XML `<solver taps loads_per>`; `ohl line --loads-per` overrides it; `blocks` (2026-10-25, `InTheBlocks`, line file version 10, written only when not the default) — `sheaves` (default: a section in the blocks shares its length over frictionless sheaves, the wire's tension equal on both sides of each suspension clamp; `ohl_sagtension::sheaves::share`, in the solver `solve::over_sheaves` and `settled_over_sheaves`, the stringing state `in_the_blocks_at_stringing` for `clip_lengths` and the curves' zero-strain lengths; `solve::Reference::blocks`, set from the line in `solve_fe`) or `equal_h` (simplified: one horizontal tension, the strings plumb along the line, the model before; the ruling-span method keeps it either way); the sagging table follows it (`SaggingTable::blocks`, `SaggingSpan::horizontal_tension`, `TensionSection::solve_over_sheaves`, `NonlinearSection::solve_over_sheaves`); OHL XML `<solver blocks>`; `ohl line --blocks` overrides it; `ohl sagtension`'s `[sagging] blocks` (default `sheaves`) and the validation calculation `sagtension.sagging`'s input `blocks`; the app's results keep it in `revision::Revision::loads_per` (the line's hash taken without it, so a change is named on its own) and saved check reports in `parameters.loads_per` (vegetation, safety volumes) | — |
 | `circuit_starts` | `[SectionPoint]` | — | conductor path ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
 | `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `weather_cases` — the weather cases sent, by name (default none), each a line result unfactored, a wind case twice (`<case> — wind from the left` / `— right`); `condition` — the wires' condition in them; `broken_cases` (version 9, 2026-10-25, roadmap O9) — the line's load cases with a broken wire sent, by name, after the weather cases, each its weather case with that wire broken, unfactored, `<weather case> — <section> span <n> broken` (`ohl_structure_link::structure_cases_with`, `broken_result_name`, tag `broken wire`); `load_cases` — read, not used since 2026-10-25; a name no longer in the line (or no longer a broken-wire case) is skipped and named in the file's note. Line file `{"structure_loads": {"weather_cases": [...], "condition": "creep", "broken_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>`, `<weather_case name>` and `<broken_case name>` | load case and weather case **names** |
-| `electrical` | `ElectricalSettings` | — | the line's electrical settings for the line parameters (version 11, 2026-10-27, roadmap O18; Checks › Electrical › Line parameters): `soil_resistivity_ohm_m` (Ω·m, homogeneous earth; none: `DEFAULT_SOIL_RESISTIVITY_OHM_M` 100 Ω·m **assumed**, the IEEE distribution test feeders' value, said in every result), `earth_return` (`carson_series` default, `complex_depth`, `carson_first_terms`), `mean_height` (`solved` default: the solved wire's average over the span; `two_thirds_sag`: attachment height minus 2/3 of the sag). Line file `{"electrical": {...}}` (left out when default); project `meta` row `electrical`; OHL XML `<electrical soil_resistivity_ohm_m earth_return mean_height/>` | — |
+| `electrical` | `ElectricalSettings` | — | the line's electrical settings for the line parameters (version 11, 2026-10-27, roadmap O18; Checks › Electrical › Line parameters): `soil_resistivity_ohm_m` (Ω·m, homogeneous earth; none: `DEFAULT_SOIL_RESISTIVITY_OHM_M` 100 Ω·m **assumed**, the IEEE distribution test feeders' value, said in every result), `earth_return` (`carson_series` default, `complex_depth`, `carson_first_terms`), `mean_height` (`solved` default: the solved wire's average over the span; `two_thirds_sag`: attachment height minus 2/3 of the sag), `earthing_resistance_ohm` (Ω, 2026-10-29: the structures' earthing where they give none; none: `DEFAULT_EARTHING_RESISTANCE_OHM` 10 Ω **assumed**, said). Line file `{"electrical": {...}}` (left out when default); project `meta` row `electrical`; OHL XML `<electrical soil_resistivity_ohm_m earthing_resistance_ohm earth_return mean_height/>` | — |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
 **Plugin values** (`fields`, `ohl_line::Fields`): structures, sections,
@@ -383,6 +383,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `height_adjust` | f64 | m | typed: feet above the ground at `position` (may be negative) | — |
 | `weather_groups` | `[string]` | — | its weather case groups: a check with the structure override takes here only its cases in them (2026-10-25); not read by the solve | `.ohlwc` `[[group]] name` |
 | `soil_resistivity_ohm_m` | f64? | Ω·m | soil resistivity measured at the structure (2026-10-27; line file version 11 when set; OHL XML attribute `soil_resistivity_ohm_m`); the line parameters take on each span the geometric mean of its two structures' (one measured: that one; none: the line's `electrical`) | — |
+| `earthing_resistance_ohm` | f64? | Ω | resistance of its earthing (footing) to remote earth (2026-10-29; line file version 11 when set; OHL XML attribute `earthing_resistance_ohm`; the Structures table's **earthing Ω**); the magnetic field's earth wire network leads the structure's current into the ground through it (none: the line's `electrical`, else 10 Ω assumed; `Line::earthing_resistance`) | — |
 | `points` | `[StructurePoint]` | — | points where strings hang | — |
 | `wires` | `[WirePoint]` | — | wire points | — |
 | `strings` | `[InsulatorString]` | — | strings | labels of points / wire points |
@@ -640,7 +641,7 @@ be written as JSON and passed on as it is.
 
 | Entity.field | Type | Unit | Meaning |
 |---|---|---|---|
-| `LineSpan.from`, `.to` | string | — | a **span of the line**: two structures next to each other, `from` first along the line (`line_spans`) |
+| `LineSpan.from`, `.to` | string | — | a **span of the line**: two structures next to each other, `from` first along the line (`line_spans`; off the alignments, as most sections between them are drawn, 2026-10-29) |
 | `LineSpan.wires` | `[(usize, usize)]` | — | every wire between them: (index in `Line.sections`, span index in its section) |
 | `CrossSection.station` | `Station` | — | `from`, `to`, `span_length` (horizontal, m), `at`: `Mean(MeanHeight)` (the span's mean) or `Fraction(f)` (at f × span length from `from`) |
 | `CrossSection.ground` | `Ground` | — | `elevation` (m, on the axis at the station; the span's middle for a mean), `slope_across` (rise per m to the right; 0 without terrain), `soil_resistivity_ohm_m`, `soil_resistivity_assumed` |
@@ -682,7 +683,10 @@ line)}], `earth_wires` (induced currents on), `height`, `width`, `step`
 lowest point)}], `grids` [(from, to)], `points` [`GivenPoint` {`name`,
 `x`, `y`, `z`? or `height`?}] (read by `parse_points` from a CSV with a
 header `x`, `y`, `z`|`height`, `name`), `limit_ut` (optional, µT; none
-built in); since 2026-10-29 `grid_step` (m; none: `step`),
+built in); since 2026-10-29 `jumpers` (the jumpers carry their phase's current,
+3D; default on), `towers` (with `earth_wires`: the earth wires as a
+network through the structures' earthing, their currents as paths),
+`grid_step` (m; none: `step`),
 `piece_length` (m; none: the solver's pieces), `modelled_within` (m; none:
 the whole line — cuts and volumes only), `cuts` [`CutSpec` {`from`, `to`,
 `fraction`?, `width`, `above`, `step`}], `volumes` [`VolumeSpec` {`from`,
@@ -695,18 +699,25 @@ and at a temperature given). Results `MagneticField`: `currents`
 {`from`, `to`, `at` m, `span_length`, `along_line` m, `points`, `max_ut`,
 `max_offset`, `limit` (`LimitExtent` {`left`, `right`, `beyond`}),
 `reach` m, `warnings`}], `grids` [`FieldGrid` {…, `deviation` per level}],
+`towers` [`TowerCurrent` {`structure`, `frequency_hz`, `amps`,
+`angle_deg`, `resistance_ohm`, `assumed`}] (2026-10-29),
 `cuts` [`FieldCut` {`from`, `to`, `at`, `values`: `field_views::CutValues`
 {`cut`: `VerticalCut` {`origin`, `right`, `left`, `right_offset`,
 `bottom`, `top`, `step`}, `offsets`, `elevations`, `ground` per column,
 `values` µT row by row}, `pieces`, `left_out`}], `volumes` [`FieldVolume`
-{`from`, `to`, `values`: `VolumeValues` {`bounds`: `VolumeBox`,
+{`from`, `to` (the run's first and last structure: grids and volumes
+take a run of spans following each other, 2026-10-29), `values`:
+`VolumeValues` {`bounds`: `VolumeBox` {`path`: `field_views::Path`
+(points x, y, ground; mitred offsets at its angles), `width`, `bottom`,
+`top`, `step`},
 `surfaces` [(level, `contour::Mesh` {`vertices`, `triangles`})],
 `deviation` per level, `computed`, `full`, `above` per level}, `pieces`,
 `left_out`}], `pieces` (`Pieces` {`count`, `longest`, `off_wire`,
 `interpolation`}), a `Deviation` being {`points`, `median`, `p90`, `max`}
 (relative to the level, or to the whole line's field for `left_out`);
 `run_keeping` returns the 3D model's wires too (`Wires3d`: `field`,
-`field_block`, `within`, `segments`), `seconds_per_piece_point` the
+`field_block`, `within` (by a `Path` and a width), `segments`); the
+inputs' `Sources` carry the solved `jumpers` (2026-10-29); `seconds_per_piece_point` the
 speed measured here, `refine` the shorter pieces, `obj` the surfaces as
 Wavefront OBJ; `points`, each a
 `FieldPoint` {`name`, `x`, `y`, `z`, `offset` (to the right of the span's
@@ -2330,7 +2341,7 @@ once, the server logs who changed which key).
 | `app.own-libraries` | `ohl-design`, when a new project is made (File › New project) | `1`: nothing is copied in from files next to the project |
 | `app.check_surface` | `ohl-design` (Terrain menu: the surface of the checks) | a surface's name: the ground every user's checks use; read by `ohl zones` and by the engineering impact of `ohl project` diffs and merges |
 | `app.drawings.<project line>` | `ohl-design` (File › Export › Drawings…) | JSON, below |
-| `app.magnetic_field.<project line>` | `ohl-design` (Checks › Electrical › Magnetic field…) | JSON: the window's inputs (2026-10-27) — `case` (name), `currents` (circuit label → `[A, reverse]`), `earth_wires`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: every span), `limit` (µT), `two_d`, `mean_heights`, `points` (`[file name, CSV text]`); since 2026-10-29 `piece_length`, `modelled_within` (m), `levels` (`[{value µT, rgb, on}]`), `fill`, `above` (`[[from, to] or null, step]`), `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`); missing fields take the defaults |
+| `app.magnetic_field.<project line>` | `ohl-design` (Checks › Electrical › Magnetic field…) | JSON: the window's inputs (2026-10-27) — `case` (name), `currents` (circuit label → `[A, reverse]`), `earth_wires`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: every span), `limit` (µT), `two_d`, `mean_heights`, `points` (`[file name, CSV text]`); since 2026-10-29 `towers`, `jumpers`, `piece_length`, `modelled_within` (m), `levels` (`[{value µT, rgb, on}]`), `fill`, `above` (`[[from, to] or null, step]`), `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`); missing fields take the defaults |
 | `app.galloping.<project line>`, `app.wirefit.<project line>` | `ohl-design` (Checks › Galloping ellipses…, As-built wires…) | JSON (2026-10-28): the window's scope (`ohl_app::check_ui::Scope`: `circuits`, `routes`, `alignments`, `sections`, as in `app.vegetation`); missing or unreadable: the whole line |
 | `app.vegetation.<project line>` | `ohl-design` (Checks › Vegetation…) | JSON: the panel's setup (2026-10-27) — `settings` (as a saved run's settings: the same keys as the performed check's `settings`, its `cases` the weather cases ticked, by name), `scope` (`circuits`: names, absent or `null` every circuit; `routes`, `alignments`: ids, both empty the whole line; `sections`: ids, `null` every section — `ohl_app::check_ui::Scope`), `overrides` (`[structure override, section override]`); missing or unreadable fields keep the panel's values |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name), `overrides` (`[structure, section]`) (2026-10-27) |

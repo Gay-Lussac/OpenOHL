@@ -80,6 +80,12 @@ pub struct MagneticArgs {
     /// wire earthed everywhere).
     #[arg(long)]
     pub earth_wires: bool,
+    /// With --earth-wires: the earth wires as a network over the line,
+    /// each structure leading current into the ground through its
+    /// earthing resistance (its own, the line's, else 10 Ω assumed), the
+    /// structures' currents in the field (3D).
+    #[arg(long, requires = "earth_wires")]
+    pub towers: bool,
     /// A profile: FROM:TO (a span's structures) at its lowest point, or
     /// FROM:TO@FRACTION (0–1 of the span from the first along the line).
     /// Repeatable; default every span at its lowest point.
@@ -106,6 +112,10 @@ pub struct MagneticArgs {
     /// to the wire and take longer.
     #[arg(long)]
     pub piece_length: Option<f64>,
+    /// Leave the jumpers out (by default they carry their phase's
+    /// current).
+    #[arg(long)]
+    pub no_jumpers: bool,
     /// Cuts and volumes take the wires within this plan distance of them
     /// only, m (default: the whole line); the difference to the whole
     /// line's field is computed at some of their points and said.
@@ -564,6 +574,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         },
         currents,
         earth_wires: a.earth_wires,
+        towers: a.towers,
         height: a.height,
         width: a.width,
         step: a.step,
@@ -574,6 +585,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         limit_ut: a.limit,
         piece_length: a.piece_length,
         modelled_within: a.modelled_within,
+        jumpers: !a.no_jumpers,
         cuts,
         volumes,
         levels,
@@ -602,12 +614,17 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
     let ground: Option<&dyn Fn(f64, f64) -> Option<f64>> = terrain
         .as_ref()
         .map(|_| &height as &dyn Fn(f64, f64) -> Option<f64>);
+    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
     let src = ohl_electrical::Sources {
         line: &line,
         library: &library,
         shapes: &shapes,
         temperature: case.temperature,
         ground,
+        jumpers: &jumpers,
     };
     let m = magnetic::run(&src, &settings, None)?;
     println!(
@@ -644,6 +661,17 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         println!(
             "  earth wire {} {}–{}: {:.1} A at {:.1}° ({} Hz)",
             e.section, e.from, e.to, e.amps, e.angle_deg, e.frequency_hz
+        );
+    }
+    for t in &m.towers {
+        println!(
+            "  structure {}: {:.1} A at {:.1}° into the ground through {} Ω{} ({} Hz)",
+            t.structure,
+            t.amps,
+            t.angle_deg,
+            t.resistance_ohm,
+            if t.assumed { " (assumed)" } else { "" },
+            t.frequency_hz
         );
     }
     for n in &m.notes {

@@ -195,6 +195,9 @@ impl TableKind {
                         s.soil_resistivity_ohm_m
                             .map(|r| f(r, 3))
                             .unwrap_or_default(),
+                        s.earthing_resistance_ohm
+                            .map(|r| f(r, 3))
+                            .unwrap_or_default(),
                     ],
                 })
                 .collect(),

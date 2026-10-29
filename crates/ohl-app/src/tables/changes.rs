@@ -802,6 +802,13 @@ pub(super) fn structure_cells(
     if form.soil_resistivity_ohm_m.is_some_and(|r| r <= 0.0) {
         return Err(format!("{name}: a soil resistivity is more than 0 Ω·m"));
     }
+    form.earthing_resistance_ohm = opt_num(
+        &c.get(TableKind::Structures.column("earthing Ω")),
+        &format!("{name} earthing resistance"),
+    )?;
+    if form.earthing_resistance_ohm.is_some_and(|r| r <= 0.0) {
+        return Err(format!("{name}: an earthing resistance is more than 0 Ω"));
+    }
     // Routes typed: its own, unless they are those of the alignments it
     // stands on (then left to them).
     let col = TableKind::Structures.column("routes");

@@ -70,6 +70,12 @@ pub(super) const STRUCTURES: &[Column] = &[
         Yes,
         "the soil resistivity measured at it, Ω·m; the line parameters take on each span the geometric mean of its two structures' (one measured: that one); empty: not measured (the line's)",
     ),
+    (
+        "earthing Ω",
+        70.0,
+        Yes,
+        "the resistance of its earthing (footing) to remote earth, Ω: the current it leads from the earth wires into the ground (Magnetic field, earth wires through the structures); empty: the line's (Line parameters), else 10 Ω assumed",
+    ),
 ];
 
 pub(super) const SECTIONS: &[Column] = &[

@@ -68,6 +68,7 @@ pub fn run(
         shapes,
         temperature,
         ground,
+        jumpers: &[],
     };
     let settings = line.electrical;
     let (spans, mut notes) = cross_section::span_cross_sections(&src, settings.mean_height);

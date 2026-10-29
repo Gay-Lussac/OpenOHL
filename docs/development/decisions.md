@@ -10,6 +10,50 @@ of Parts A, B and C).
 
 ## 2026-10-29
 
+**The magnetic field: continuous tiles, the jumpers and the structures'
+currents (owner, 2026-10-29)**
+
+- The owner: "yes" to joining the views' tiles, "and also include
+  jumpers and pylons steel to improve accuracy".
+- Tiles: grids from above and volumes laid on one path along each run of
+  spans following each other (`field_views::Path`): mitred offsets at the
+  line angles, the direction turning evenly along each straight, the
+  lattice ending exactly at the run's ends — no gap or overlap at the
+  structures. The volume's cells near a wire found by distance (any
+  path). A level met exactly at a lattice point shares that point's
+  vertex (no crack).
+- Jumpers: on by default; between two section ends of one phase, the
+  phase's current from the end it comes in by to the end it leaves by;
+  taps, mixed phases left out and said.
+- Found on the way (a fault since 2026-10-27): each span took the
+  current's direction from its own structures' order, so where that order
+  turned a current left a structure by both sections (on a real line all
+  526 jumpers were refused for it, 3 of 77 profiles moved by more than
+  1 %, one by 9.7 %), and off the alignments a section drawn backwards
+  made a span of its own. Now a circuit's current follows its chain of
+  sections and jumpers, each chain turned to run along the line over most
+  of its length; off the alignments a span takes the way most sections
+  are drawn (`cross_section::line_spans`). With the jumpers, profiles at
+  a steep span's lowest point near a structure (7–8 m away) rose up to
+  2.8 times on that line: the 14 m jumpers carry 1000 A close by.
+- The structures' steel: its currents modelled — the earth wires as a
+  network over the line through every structure's **earthing
+  resistance** (new: `Structure.earthing_resistance_ohm`,
+  `ElectricalSettings.earthing_resistance_ohm`; 10 Ω assumed when not
+  given, said; Structures table **earthing Ω**, the structure's window,
+  Line parameters), the structures' currents as paths down their axes.
+  Its magnetic permeability is not modelled: a 5 cm member disturbs the
+  field by under 0.25 % at 1 m (the theory's estimate); a finite-element
+  model of a tower would be needed. On the synthetic double circuit the
+  network gives 2.3 A in the earth wire where the infinitely long earth
+  wire gave 94 A.
+- The electric field's ground, asked "what's easier and actually
+  better" (answered, to confirm by the owner): a plane fitted under each
+  point (images in it), continuous
+  along the line, easier, and enough where ordinances ask (1 m above the
+  ground; objects matter more than the terrain's curvature); a
+  conducting terrain surface later if measured to matter.
+
 **The magnetic field in cuts and volumes, every modelling setting
 explained (owner, 2026-10-29)**
 
