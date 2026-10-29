@@ -320,7 +320,9 @@ alignment keeps its points.
 `AlignmentView` (id, route, points, structures in station order, and
 `away`: those of them neither tied to one of its points nor within 5 m of
 it — on its route because they give it themselves, such as a connection
-beside the line) is what the profile, drawings, stationing and spotting
+beside the line — and those within 5 m but not tied, with a span of the
+line along the alignment passing over them and none of their own along
+it, such as another line's tower under a span) is what the profile, drawings, stationing and spotting
 work on; each structure on an alignment gets a station there (`Station`:
 station, offset, line angle, ahead span — computed, not stored). The
 **run** along the alignment (`AlignmentView::run`) leaves the structures
@@ -332,7 +334,9 @@ over their whole length (`AlignmentView::along`: another line's structure
 standing under a span does not break it), plus those to a structure away
 (projected), so a connection whose station falls between two structures
 does not break the span between them. The drawings
-mark it too (`ohl_drawing::Mark::away`, computed) and keep the
+mark it too (`ohl_drawing::Mark::away`, computed; `Mark::beside`: a
+structure of the line within the line width not on the route, drawn with
+the spans and jumpers passing within it, cut there) and keep the
 alignment's points by station (`RouteDrawing::alignment`,
 `AlignmentMark`: id, station, the structure tied to it or none). What
 they draw along the line is limited by the **line width**

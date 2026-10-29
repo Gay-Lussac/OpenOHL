@@ -117,7 +117,7 @@ A **required** field left empty refuses the export, naming the fields
 
 **No empty gaps.** `{height_datum}` is the project's height datum
 (Line › Terrain › Coordinate system › Define…, e.g. `LN02 (EPSG:5728)`; see
-[coordinate systems](coordinates.md#in-the-desktop-application-terrain--coordinate-system)),
+[coordinate systems](coordinates.md#in-the-desktop-application-line--terrain--coordinate-system)),
 else the vertical part of the coordinate system when it names one
 (`EPSG:2056+5728` → `EPSG:5728`, a proj4 `+geoidgrids=`).
 A field that comes out empty is written as `[if_empty]` says — by field

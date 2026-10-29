@@ -17,12 +17,26 @@ of Parts A, B and C).
   the crossing line standing within 5 m of the alignment is in the run
   of the line (`NEAR_ALIGNMENT`), so the two structures of the span no
   longer followed each other in the run and the span was left out.
-- Now a span between two structures of the run is drawn when they follow
-  each other in it, or when the span stays within 5 m of the alignment
-  over its whole length (`AlignmentView::along`; the profile, the sheets
-  and the profile's lines on the ground use it). The structure under the
-  span is drawn as before. Line angles and spans ahead (stationing) are
-  unchanged.
+- A structure near the alignment that is not tied to one of its points,
+  with a span of the line along the alignment passing over it and none
+  of its own spans along it, is not of the line's run: it is away
+  (`Line::alignment_views`), so the spans ahead, line angles, the sheets'
+  bands and height steps are those of the line itself (TR-type example:
+  706.6 m instead of 69.4 + 637.2 m). A span between two structures of
+  the run is also drawn when it stays within 5 m of the alignment over
+  its whole length (`AlignmentView::along`; the profile, the sheets and
+  the profile's lines on the ground use it).
+- The owner's rule for what is drawn: the line itself always; besides
+  it, every structure of the line within the line width (beside the
+  route, not on it: `Mark::beside`) and every span or jumper passing
+  within it (a crossing, an outgoing or ongoing connection), cut at the
+  line width. They never take the line's own spans away, and a structure
+  beside is on no span of the bands' sags.
+- `tools/check.sh` (owner, 2026-10-29): the full local check before a
+  push, kept in the repository instead of a session folder; its private
+  parts (the real-line scan's names, private plugins) are read from
+  `local-data/check/` only where it exists. It checks the documentation
+  links too (three links to a renamed heading fixed).
 
 ## 2026-10-28
 
