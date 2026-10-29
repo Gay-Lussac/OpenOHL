@@ -61,7 +61,7 @@ pub struct Answer {
 
 /// Where the profiles are taken.
 #[derive(Debug, Clone, PartialEq, Default)]
-enum Stations {
+pub(crate) enum Stations {
     /// Every span at its lowest point.
     #[default]
     EverySpan,
@@ -75,7 +75,7 @@ type SpanIds = (String, String);
 
 /// Spans following each other (each starting where the one before ends)
 /// as runs: each run's first and last structure.
-fn runs(spans: &[(String, String)]) -> Vec<(String, String)> {
+pub(crate) fn runs(spans: &[(String, String)]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     for (a, b) in spans {
         match out.last_mut() {
@@ -87,7 +87,7 @@ fn runs(spans: &[(String, String)]) -> Vec<(String, String)> {
 }
 
 /// The line's spans by their first and last structure.
-type Spans = Arc<Vec<(String, String)>>;
+pub(crate) type Spans = Arc<Vec<(String, String)>>;
 
 /// The Magnetic field window.
 pub struct MagneticFieldWindow {
@@ -626,7 +626,7 @@ impl MagneticFieldWindow {
                         .into(),
                 );
             }
-            let meshes = views::take_meshes(&mut field);
+            let meshes = views::take_meshes(&mut field.volumes);
             Ok(Answer {
                 field,
                 case: case.name.clone(),

@@ -32,7 +32,7 @@ pub const ABOVE: f64 = 10.0;
 /// few seconds runs at about half the speed of a short measurement on a
 /// laptop (measured 2026-10-29: 1.28 M points/s falling to 0.6 M/s after
 /// 5 s on all cores).
-const SUSTAINED: f64 = 2.0;
+pub(crate) const SUSTAINED: f64 = 2.0;
 
 /// Isolines from above: over every span or one, the grid's step.
 #[derive(Debug, Clone, PartialEq)]
@@ -130,7 +130,7 @@ impl PieceStats {
 }
 
 /// "≈ 12 s", "≈ 3.5 min".
-fn duration(s: f64) -> String {
+pub(crate) fn duration(s: f64) -> String {
     if s < 1.0 {
         "under a second".into()
     } else if s < 90.0 {
@@ -140,6 +140,48 @@ fn duration(s: f64) -> String {
     } else {
         format!("≈ {:.1} h", s / 3600.0)
     }
+}
+
+/// The wires' straight pieces as solved in weather case `case` (index
+/// into the model's cases), the earth wires' with `earth_wires`, and the
+/// line's length along `spans`.
+pub(crate) fn piece_stats(
+    model: &Model,
+    spans: &[(String, String)],
+    case: usize,
+    earth_wires: bool,
+) -> PieceStats {
+    let mut st = PieceStats::default();
+    for (a, b) in spans.iter() {
+        if let (Some(a), Some(b)) = (model.line.structure(a), model.line.structure(b)) {
+            st.line += (b.position[0] - a.position[0]).hypot(b.position[1] - a.position[1]);
+            st.spans += 1;
+        }
+    }
+    if let Some(solved) = model.cases.get(case) {
+        for shape in solved.shapes.iter() {
+            let Some(section) = model.line.sections.iter().find(|s| s.id == shape.section) else {
+                continue;
+            };
+            if section.system.is_none() && !earth_wires {
+                continue;
+            }
+            let subs = section.bundle_offsets().len().max(1);
+            for sp in &shape.spans {
+                st.off = st.off.max(sp.polyline_error);
+                for w in sp.points.windows(2) {
+                    let l = ((w[1][0] - w[0][0]).powi(2)
+                        + (w[1][1] - w[0][1]).powi(2)
+                        + (w[1][2] - w[0][2]).powi(2))
+                    .sqrt();
+                    st.count += subs;
+                    st.length += l * subs as f64;
+                    st.longest = st.longest.max(l);
+                }
+            }
+        }
+    }
+    st
 }
 
 /// A deviation in words.
@@ -158,7 +200,7 @@ pub fn off_text(d: &Option<Deviation>) -> String {
 
 /// Where a level lies when it draws nothing: `above`, the share of the
 /// values at or above it.
-fn nowhere(above: f64) -> &'static str {
+pub(crate) fn nowhere(above: f64) -> &'static str {
     if above >= 1.0 {
         "the field is above it everywhere shown (widen the view to see it)"
     } else {
@@ -176,37 +218,8 @@ impl MagneticFieldWindow {
         {
             return *s;
         }
-        let mut st = PieceStats::default();
-        for (a, b) in self.spans(model).iter() {
-            if let (Some(a), Some(b)) = (model.line.structure(a), model.line.structure(b)) {
-                st.line += (b.position[0] - a.position[0]).hypot(b.position[1] - a.position[1]);
-                st.spans += 1;
-            }
-        }
-        if let Some(solved) = model.cases.get(self.case) {
-            for shape in solved.shapes.iter() {
-                let Some(section) = model.line.sections.iter().find(|s| s.id == shape.section)
-                else {
-                    continue;
-                };
-                if section.system.is_none() && !self.earth_wires {
-                    continue;
-                }
-                let subs = section.bundle_offsets().len().max(1);
-                for sp in &shape.spans {
-                    st.off = st.off.max(sp.polyline_error);
-                    for w in sp.points.windows(2) {
-                        let l = ((w[1][0] - w[0][0]).powi(2)
-                            + (w[1][1] - w[0][1]).powi(2)
-                            + (w[1][2] - w[0][2]).powi(2))
-                        .sqrt();
-                        st.count += subs;
-                        st.length += l * subs as f64;
-                        st.longest = st.longest.max(l);
-                    }
-                }
-            }
-        }
+        let spans = self.spans(model);
+        let st = piece_stats(model, &spans, self.case, self.earth_wires);
         self.pieces_seen = Some((key, st));
         st
     }
@@ -900,9 +913,9 @@ fn relative(
 
 /// A run's meshes taken out of its volumes (shared with the overlay, not
 /// copied at every redraw).
-pub fn take_meshes(field: &mut magnetic::MagneticField) -> Vec<(f64, Arc<Mesh>)> {
+pub fn take_meshes(volumes: &mut [magnetic::FieldVolume]) -> Vec<(f64, Arc<Mesh>)> {
     let mut out = Vec::new();
-    for v in &mut field.volumes {
+    for v in volumes {
         for (l, m) in &mut v.values.surfaces {
             out.push((*l, Arc::new(std::mem::take(m))));
         }

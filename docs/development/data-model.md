@@ -686,7 +686,16 @@ Results `ElectricField`: `charges` [`WireCharge` {`section`, `from`,
 `margin_kv_m`}], `cuts`, `volumes` (the magnetic field's `FieldCut`,
 `FieldVolume`, values in kV/m), `notes`. `Sources.ground` is
 `Send`-safe since 2026-10-29 (`dyn Fn + Sync`: the field's points run on
-all cores). Methods: [Electric field](../theory/electric-field.md).
+all cores). `electric::run_keeping` also returns the 3D model's
+`Charges3d` (the field at a point later: `Charges3d::field` with
+`GroundPlane::fitted` over `ground_radius`, on the terrain or else
+`electric::feet_ground`), `electric::csv` the results as CSV (`kind`
+profile / point / cut, …, `e_kv_m`, `limit_kv_m`, `margin_kv_m`).
+OHL-Design's Electric field window (2026-10-29) draws its cuts and
+surfaces on the layer `scene::Layer::ElectricField` (*Electric field
+(isolines, surfaces)*, `field_overlay::Overlay`, as the magnetic
+field's); its inputs are the project setting `app.electric_field.<project
+line>` (below). Methods: [Electric field](../theory/electric-field.md).
 
 **Magnetic field** (`magnetic::run`, roadmap O18 step 4, 2026-10-27;
 derived, never stored — the window's inputs live in the window for the
@@ -2357,6 +2366,7 @@ once, the server logs who changed which key).
 | `app.check_surface` | `ohl-design` (Terrain menu: the surface of the checks) | a surface's name: the ground every user's checks use; read by `ohl zones` and by the engineering impact of `ohl project` diffs and merges |
 | `app.drawings.<project line>` | `ohl-design` (File › Export › Drawings…) | JSON, below |
 | `app.magnetic_field.<project line>` | `ohl-design` (Checks › Electrical › Magnetic field…) | JSON: the window's inputs (2026-10-27) — `case` (name), `currents` (circuit label → `[A, reverse]`), `earth_wires`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: every span), `limit` (µT), `two_d`, `mean_heights`, `points` (`[file name, CSV text]`); since 2026-10-29 `towers`, `jumpers`, `piece_length`, `modelled_within` (m), `levels` (`[{value µT, rgb, on}]`), `fill`, `above` (`[[from, to] or null, step]`), `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`); missing fields take the defaults |
+| `app.electric_field.<project line>` | `ohl-design` (Checks › Electrical › Electric field…) | JSON: the window's inputs (2026-10-29) — `case` (name), `voltages` (circuit label → kV between phases; absent: the system's nominal; 0: voltage-free), `jumpers`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: every span), `limit` (kV/m), `two_d`, `ground_radius` (m), `points` (`[file name, CSV text]`), `piece_length` (m), `levels` (`[{value kV/m, rgb, on}]`), `fill`, `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`); written when a run starts or the window closes; missing fields take the defaults |
 | `app.galloping.<project line>`, `app.wirefit.<project line>` | `ohl-design` (Checks › Galloping ellipses…, As-built wires…) | JSON (2026-10-28): the window's scope (`ohl_app::check_ui::Scope`: `circuits`, `routes`, `alignments`, `sections`, as in `app.vegetation`); missing or unreadable: the whole line |
 | `app.vegetation.<project line>` | `ohl-design` (Checks › Vegetation…) | JSON: the panel's setup (2026-10-27) — `settings` (as a saved run's settings: the same keys as the performed check's `settings`, its `cases` the weather cases ticked, by name), `scope` (`circuits`: names, absent or `null` every circuit; `routes`, `alignments`: ids, both empty the whole line; `sections`: ids, `null` every section — `ohl_app::check_ui::Scope`), `overrides` (`[structure override, section override]`); missing or unreadable fields keep the panel's values |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name), `overrides` (`[structure, section]`) (2026-10-27) |

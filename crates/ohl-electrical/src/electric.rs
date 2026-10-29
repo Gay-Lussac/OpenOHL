@@ -1048,6 +1048,130 @@ fn field_2d(lines: &[LineCharge], y: f64, z: f64) -> f64 {
         .sqrt()
 }
 
+// ---------------------------------------------------------------------------
+// Kept for later, CSV out (the OHL-Design window, 2026-10-29).
+
+/// [`run`], and the 3D model's charges kept (3D only) for the field
+/// computed later at other places: [`Charges3d::field`] with
+/// [`GroundPlane::fitted`] over [`Settings::ground_radius`] on the ground
+/// of [`feet_ground`] where no terrain gives it. The charges are built
+/// again as the run builds them (the mean cross-sections a second time:
+/// quick beside the points).
+pub fn run_keeping(
+    src: &Sources<'_>,
+    settings: &Settings,
+    progress: Option<&Progress>,
+) -> Result<(ElectricField, Option<Charges3d>), String> {
+    let field = run(src, settings, progress)?;
+    if settings.model != Model::ThreeD {
+        return Ok((field, None));
+    }
+    let (means, _) = cross_section::span_cross_sections(src, src.line.electrical.mean_height);
+    let (mut notes, mut defaulted) = (Vec::new(), BTreeMap::new());
+    let mut charges = ChargeMap::new();
+    for (_, cs) in &means {
+        for (f, q) in cross_section_charges(cs, &settings.voltages, &mut defaulted, &mut notes) {
+            for (w, qk) in cs.wires.iter().zip(q) {
+                charges
+                    .entry((w.section.clone(), w.span))
+                    .or_default()
+                    .push((f, qk));
+            }
+        }
+    }
+    let model = build_3d(src, &charges, settings, &mut notes);
+    Ok((field, Some(model)))
+}
+
+/// The ground [`run`] takes where no terrain gives it: straight between
+/// the structures' feet and level across, by the nearest span. Owned (for
+/// the field computed later, on another thread).
+pub fn feet_ground(line: &ohl_line::Line) -> impl Fn(f64, f64) -> f64 + Send + Sync + 'static {
+    let axes: Vec<Axis> = cross_section::line_spans(line)
+        .iter()
+        .filter_map(|s| Axis::of(line, s).ok())
+        .collect();
+    move |x: f64, y: f64| {
+        let mut best: Option<(f64, f64)> = None;
+        for a in &axes {
+            let (t, s) = a.local(&[x, y, 0.0]);
+            let tc = t.clamp(0.0, a.length);
+            let d = (t - tc).hypot(s);
+            if best.is_none_or(|b| d < b.0) {
+                best = Some((d, a.ground(None, tc, 0.0)));
+            }
+        }
+        best.map_or(0.0, |b| b.1)
+    }
+}
+
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_owned()
+    }
+}
+
+/// The results as CSV: one row per profile point, given point and cut
+/// point (kV/m).
+pub fn csv(e: &ElectricField) -> String {
+    use std::fmt::Write;
+    let mut out = String::from(
+        "kind,from,to,station_m,name,x,y,z,offset_m,height_m,e_kv_m,limit_kv_m,margin_kv_m\n",
+    );
+    let num = |x: Option<f64>| x.map_or(String::new(), |v| format!("{v:.4}"));
+    let row =
+        |out: &mut String, kind: &str, from: &str, to: &str, at: Option<f64>, p: &FieldPoint| {
+            let _ = writeln!(
+                out,
+                "{kind},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{},{}",
+                csv_field(from),
+                csv_field(to),
+                num(at),
+                csv_field(&p.name),
+                p.x,
+                p.y,
+                p.z,
+                p.offset,
+                p.height,
+                p.e_kv_m,
+                num(e.limit_kv_m),
+                num(p.margin_kv_m),
+            );
+        };
+    for pr in &e.profiles {
+        for p in &pr.points {
+            row(&mut out, "profile", &pr.from, &pr.to, Some(pr.at), p);
+        }
+    }
+    for p in &e.points {
+        row(&mut out, "point", "", "", None, p);
+    }
+    for c in &e.cuts {
+        let v = &c.values;
+        let nc = v.offsets.len();
+        for (r, &z) in v.elevations.iter().enumerate() {
+            for (k, &s) in v.offsets.iter().enumerate() {
+                let xy = v.cut.at(s);
+                let kv = v.values[r * nc + k];
+                let p = FieldPoint {
+                    name: String::new(),
+                    x: xy[0],
+                    y: xy[1],
+                    z,
+                    offset: s,
+                    height: v.ground[k].map_or(f64::NAN, |g| z - g),
+                    e_kv_m: kv,
+                    margin_kv_m: e.limit_kv_m.map(|l| l - kv),
+                };
+                row(&mut out, "cut", &c.from, &c.to, Some(c.at), &p);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

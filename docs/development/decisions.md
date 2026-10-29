@@ -10,6 +10,30 @@ of Parts A, B and C).
 
 ## 2026-10-29
 
+**The electric field window (owner, 2026-10-29: go ahead with the
+window)**
+
+- Checks › Electrical › **Electric field…**, the magnetic field window's
+  counterpart: a voltage per circuit (the system's nominal unless given,
+  said; 0 kV voltage-free — the NISV guide's highest operating voltage,
+  largest sag and compensating circuit voltage-free left to the user),
+  3D or 2D, the jumpers, the ground plane's radius, the profiles, an
+  optional limit (kV/m), points from a CSV; every modelling setting says
+  what it changes and its time (a point sums every piece twice: the
+  charges and their images; the magnetic field's speed measurement times
+  two until a run measures it here).
+- Views as for the magnetic field: levels in kV/m (1 and 5 drawn by
+  default, display only), the field in every cross-section panel open
+  (from the run's kept charges, `electric::run_keeping`, on the run's
+  ground, `electric::feet_ground` without a terrain), a volume over spans;
+  a new layer *Electric field (isolines, surfaces)*. Isolines from above
+  not yet (not in the engine).
+- Results: the charges per wire, the profile plotted, the profiles' and
+  points' tables with the margin, the views' deviations, Export CSV
+  (`electric::csv`). Inputs kept in the project as
+  `app.electric_field.<line>`; out of date with the line and the ground.
+  Built, in active development, not approved yet.
+
 **The electric field, engine and command line (owner, 2026-10-29: "E
 feld comes after this"; "work in parallel on the electrical field")**
 
