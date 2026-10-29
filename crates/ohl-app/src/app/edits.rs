@@ -383,6 +383,7 @@ impl Ready {
                     | Layer::FallIn
                     | Layer::Isoclearance
                     | Layer::MagneticField
+                    | Layer::ElectricField
                     | Layer::SafetyVolume
             )
         }));

@@ -39,6 +39,7 @@ mod dockable;
 mod drawings;
 mod edit;
 mod editors;
+mod electric_field;
 mod field_overlay;
 mod files;
 mod follow;
