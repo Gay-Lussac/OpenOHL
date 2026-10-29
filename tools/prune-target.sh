@@ -4,7 +4,8 @@
 # License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 #
 # Keeps a Cargo build folder to the builds in use (owner, 2026-10-24: the
-# build folder had grown to 300 GB of old builds). Cargo never removes an
+# build folder had grown to 300 GB of old builds; 2026-10-29: only the last
+# 2 builds of every crate kept, tools/prune_builds.py, before the rest). Cargo never removes an
 # artifact it no longer needs: every change of the code or of a build's
 # flags leaves the old one behind. This removes, in every profile
 # (debug, release, the wasm targets'), what no build has read for DAYS days
@@ -58,6 +59,13 @@ prune() {
 }
 
 before=$(size_gb)
+# Every profile: the last 2 builds of each crate kept, the older removed
+# (owner, 2026-10-29; tools/prune_builds.py).
+here=$(cd "$(dirname "$0")" && pwd)
+for profile in "$dir"/* "$dir"/*/*; do
+    [ -d "$profile/.fingerprint" ] || continue
+    python3 -I "$here/prune_builds.py" "$profile" 2 >/dev/null || true
+done
 prune "$days"
 if [ "$(size_gb)" -gt "$max_gb" ]; then
     prune 1
