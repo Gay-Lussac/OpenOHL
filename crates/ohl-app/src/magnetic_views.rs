@@ -369,7 +369,7 @@ impl MagneticFieldWindow {
                     );
                     ui.color_edit_button_srgb(&mut l.rgb);
                     if ui
-                        .small_button("✕")
+                        .small_button("×")
                         .on_hover_text("Remove this level")
                         .clicked()
                     {
