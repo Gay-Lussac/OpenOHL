@@ -525,7 +525,9 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             assert!(rep.zone.findings.iter().any(|f| f.arc.is_some()));
             break;
         }
-        assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+        // Some 40 s alone in a debug build; the whole suite shares the
+        // cores (2026-10-29: over 120 s there).
+        assert!(started.elapsed().as_secs() < 300, "no report in 300 s");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     harness.run();

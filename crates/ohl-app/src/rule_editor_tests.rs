@@ -789,10 +789,16 @@ fn a_preset_value_changed_in_the_project() {
         app.plugins.refresh();
         app.plugins.open = true;
     }
-    // The manager repaints until the plugins' formats are loaded: waited
+    // The manager repaints until the plugins' formats are loaded, the
+    // rule presets until they are read again for the plugins: both waited
     // for (under a minute).
     let started = std::time::Instant::now();
-    while harness.state_mut().plugins.formats.is_none() {
+    while harness.state_mut().plugins.formats.is_none()
+        || harness
+            .state_mut()
+            .ready()
+            .is_some_and(|r| r.rule_editor.presets.busy())
+    {
         harness.step();
         assert!(started.elapsed().as_secs() < 60, "no formats in 60 s");
         std::thread::sleep(std::time::Duration::from_millis(20));
