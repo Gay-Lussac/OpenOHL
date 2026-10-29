@@ -269,3 +269,186 @@ fn given_points() {
     let csv = magnetic::csv(&m3);
     assert!(csv.lines().count() > g.points.len());
 }
+
+fn field_keeping(
+    line: &Line,
+    library: &ohl_cables::Library,
+    settings: &Settings,
+) -> (magnetic::MagneticField, magnetic::Wires3d) {
+    let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+    let shapes: Vec<_> = ohl_line::solve::solve_line(line, library, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let src = Sources {
+        line,
+        library,
+        shapes: &shapes,
+        temperature: Temperature::from_celsius(40.0),
+        ground: None,
+    };
+    let (m, w) = magnetic::run_keeping(&src, settings, None).unwrap();
+    (m, w.unwrap())
+}
+
+/// A vertical cut across the line: its values are the field at its
+/// points (a given point there agrees), its isolines lie on the level
+/// within what the drawing's interpolation allows, none under the ground.
+#[test]
+fn a_vertical_cut_across_the_line() {
+    let (line, library) = example();
+    let mut s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        cuts: vec![magnetic::CutSpec {
+            from: "T1".into(),
+            to: "T2".into(),
+            fraction: Some(0.5),
+            width: 40.0,
+            above: 10.0,
+            step: 1.0,
+        }],
+        ..Settings::default()
+    };
+    let (m, wires) = field_keeping(&line, &library, &s);
+    let c = &m.cuts[0].values;
+    let nc = c.offsets.len();
+    assert_eq!(nc, 81);
+    // A point of the grid as a given point.
+    let (col, row) = (60, 12);
+    let p = c.cut.at(c.offsets[col]);
+    s.points = vec![magnetic::GivenPoint {
+        name: "p".into(),
+        x: p[0],
+        y: p[1],
+        z: Some(c.elevations[row]),
+        height: None,
+    }];
+    let m2 = field(&line, &library, &s);
+    let v = c.values[row * nc + col];
+    assert!(
+        (m2.points[0].b_ut - v).abs() < 1e-9 * v,
+        "{} {v}",
+        m2.points[0].b_ut
+    );
+    // The isolines of 5 µT: on the level within a few per cent, above the
+    // ground.
+    let lines = c.isolines(5.0);
+    assert!(!lines.is_empty());
+    let mut worst: f64 = 0.0;
+    for l in &lines {
+        for q in l {
+            let g = c.ground_at(q[0]).unwrap();
+            assert!(q[1] >= g - 1e-9);
+            let xy = c.cut.at(q[0]);
+            let b = wires.field([xy[0], xy[1], q[1]]).0 * 1e6;
+            worst = worst.max((b - 5.0).abs() / 5.0);
+        }
+    }
+    assert!(worst < 0.05, "isoline off its level by {worst}");
+}
+
+/// A volume over a span: a surface per level, every vertex on its level
+/// within what the lattice's interpolation allows, and fewer points
+/// computed than the full lattice.
+#[test]
+fn a_volume_over_a_span() {
+    let (line, library) = example();
+    let s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        volumes: vec![magnetic::VolumeSpec {
+            from: "T1".into(),
+            to: "T2".into(),
+            width: 40.0,
+            above: 10.0,
+            step: 1.0,
+        }],
+        levels: vec![2.0, 10.0],
+        ..Settings::default()
+    };
+    let (m, wires) = field_keeping(&line, &library, &s);
+    let v = &m.volumes[0].values;
+    // (A small box full of field: some 60 % computed; a wider one less.)
+    assert!(v.computed * 10 < v.full * 7, "{} of {}", v.computed, v.full);
+    let b = &v.bounds;
+    for (level, mesh) in &v.surfaces {
+        assert!(mesh.triangles.len() > 100, "level {level}");
+        // No holes: an edge of one triangle only lies on the box's sides.
+        let mut edges = std::collections::HashMap::new();
+        for t in &mesh.triangles {
+            for e in 0..3 {
+                let (a, c) = (t[e], t[(e + 1) % 3]);
+                *edges.entry((a.min(c), a.max(c))).or_insert(0) += 1;
+            }
+        }
+        let on_side = |p: [f64; 3]| {
+            let (dx, dy) = (p[0] - b.start[0], p[1] - b.start[1]);
+            let t = dx * b.ahead[0] + dy * b.ahead[1];
+            let s = dx * b.ahead[1] - dy * b.ahead[0];
+            let d = b.dims();
+            let len = (d[0] - 1) as f64 * b.step;
+            let top = b.bottom + (d[2] - 1) as f64 * b.step;
+            let w = -b.width + (d[1] - 1) as f64 * b.step;
+            [t, len - t, s + b.width, w - s, p[2] - b.bottom, top - p[2]]
+                .iter()
+                .any(|x| x.abs() < 1e-6)
+        };
+        for ((a, c), n) in &edges {
+            assert!(*n <= 2);
+            if *n == 1 {
+                let (p, q) = (mesh.vertices[*a as usize], mesh.vertices[*c as usize]);
+                assert!(
+                    on_side(p) && on_side(q),
+                    "a hole at {p:?} {q:?}, level {level}"
+                );
+            }
+        }
+    }
+    // How far the surfaces lie off their levels, as reported: mostly
+    // close; worst where the field turns sharply between lattice points
+    // (near the conductors).
+    for (k, (level, _)) in v.surfaces.iter().enumerate() {
+        let d = v.deviation[k].unwrap();
+        assert!(d.points > 100);
+        assert!(d.median < 0.005 && d.p90 < 0.02, "level {level}: {d:?}");
+        // The report agrees with the field at the vertices.
+        let mesh = &v.surfaces[k].1;
+        let every = mesh.vertices.len().div_ceil(200);
+        let worst = mesh
+            .vertices
+            .iter()
+            .step_by(every)
+            .map(|p| (wires.field(*p).0 * 1e6 - level).abs() / level)
+            .fold(0.0, f64::max);
+        assert!((worst - d.max).abs() < 1e-9, "{worst} {}", d.max);
+    }
+}
+
+/// Shorter pieces than the solver's: the field barely changes (the
+/// solver's pieces lie a few mm off the wire), the pieces and their bound
+/// are said.
+#[test]
+fn shorter_pieces() {
+    let (line, library) = example();
+    let mut s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        ..Settings::default()
+    };
+    let a = field(&line, &library, &s);
+    s.piece_length = Some(0.5);
+    let b = field(&line, &library, &s);
+    let (pa, pb) = (a.pieces.unwrap(), b.pieces.unwrap());
+    assert!(pb.count > 4 * pa.count, "{} {}", pa.count, pb.count);
+    assert!(pb.longest <= 0.5 + 1e-9);
+    assert!(pb.off_wire < pa.off_wire / 10.0, "{pa:?} {pb:?}");
+    for (x, y) in a.profiles[0].points.iter().zip(&b.profiles[0].points) {
+        assert!(
+            (x.b_ut - y.b_ut).abs() < 1e-3 * x.b_ut,
+            "{} {}",
+            x.b_ut,
+            y.b_ut
+        );
+    }
+}

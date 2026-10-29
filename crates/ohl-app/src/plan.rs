@@ -31,6 +31,8 @@ pub struct PlanView {
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
     /// What Checks › Safety volumes built (their outlines).
     pub safety_volume: crate::safety_volume::Overlay,
+    /// The magnetic field's isolines from above.
+    pub magnetic_field: crate::field_overlay::Overlay,
     /// Other users (server mode): where each looks, with their name.
     pub peers: Vec<(String, [f64; 3])>,
     /// Where it was drawn in the last frame (its page in front), if it was.
@@ -926,6 +928,9 @@ impl PlanView {
         paint_vegetation(&painter, rect, &to_screen, &self.vegetation, visible);
         if visible.contains(&crate::scene::Layer::SafetyVolume) {
             crate::safety_volume::paint_plan(&painter, rect, &to_screen, &self.safety_volume);
+        }
+        if visible.contains(&crate::scene::Layer::MagneticField) {
+            crate::field_overlay::paint_plan(&painter, rect, &to_screen, &self.magnetic_field);
         }
         for m in &self.marks {
             let p = to_screen(*m);

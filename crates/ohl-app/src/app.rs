@@ -2351,6 +2351,20 @@ impl eframe::App for App {
                 ready.phase_distance.keep(&mut ready.model, &ctx);
                 ready.unequal_wind.keep(&mut ready.model, &ctx);
                 ready.magnetic_field.ui(&ctx, &ready.model);
+                // The field in the cross-section panels open, and its
+                // drawing in the views while the window is open.
+                let panels = ready
+                    .xsections
+                    .views
+                    .values()
+                    .filter_map(|v| Some((v.placed.as_ref()?.plane, v.spec.width, v.heights?)))
+                    .collect();
+                ready.magnetic_field.panel_cuts(panels, &ready.model, &ctx);
+                if let Some(overlay) = ready.magnetic_field.overlay_change(&ready.model) {
+                    ready.view3d.magnetic_field = overlay.clone();
+                    ready.plan.magnetic_field = overlay;
+                    ready.view3d.dirty.insert(Layer::MagneticField);
+                }
                 let out = ready.line_parameters.ui(&ctx, &ready.model);
                 if let Some(settings) = out.settings {
                     let command = ready

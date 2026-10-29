@@ -98,6 +98,44 @@ pub struct MagneticArgs {
     /// A grid on a horizontal plane over span FROM:TO. Repeatable.
     #[arg(long, value_name = "FROM:TO")]
     pub grid: Vec<String>,
+    /// Between grid points, m (default: --step).
+    #[arg(long)]
+    pub grid_step: Option<f64>,
+    /// The longest straight piece of a wire, m (3D; default: the solver's
+    /// pieces, 64 per span or part of a span). Shorter pieces lie closer
+    /// to the wire and take longer.
+    #[arg(long)]
+    pub piece_length: Option<f64>,
+    /// Cuts and volumes take the wires within this plan distance of them
+    /// only, m (default: the whole line); the difference to the whole
+    /// line's field is computed at some of their points and said.
+    #[arg(long)]
+    pub modelled_within: Option<f64>,
+    /// A vertical cut across span FROM:TO at its lowest point or at a
+    /// fraction of it (3D): --width to either side, from the ground to
+    /// --above over the highest wire. Repeatable.
+    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
+    pub cut: Vec<String>,
+    /// Between a cut's points, m.
+    #[arg(long, default_value_t = 0.5)]
+    pub cut_step: f64,
+    /// A volume over span FROM:TO (3D): the isosurfaces of the --level
+    /// values, --width to either side, from the ground to --above over
+    /// the highest wire. Repeatable.
+    #[arg(long, value_name = "FROM:TO")]
+    pub volume: Vec<String>,
+    /// The volumes' fine lattice step, m.
+    #[arg(long, default_value_t = 1.0)]
+    pub volume_step: f64,
+    /// Cuts and volumes reach this far over the highest wire, m.
+    #[arg(long, default_value_t = 10.0)]
+    pub above: f64,
+    /// A level for the isolines and isosurfaces, µT. Repeatable.
+    #[arg(long)]
+    pub level: Vec<f64>,
+    /// Write the volumes' isosurfaces to this Wavefront OBJ file.
+    #[arg(long)]
+    pub obj: Option<PathBuf>,
     /// Points from a CSV file: a header with x, y and z (elevation) or
     /// height (above the ground), optionally name.
     #[arg(long)]
@@ -471,6 +509,45 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         .iter()
         .map(|g| span_arg(g, "--grid"))
         .collect::<Result<Vec<_>, _>>()?;
+    let mut cuts = Vec::new();
+    for c in &a.cut {
+        let (span, fraction) = match c.split_once('@') {
+            Some((s, f)) => (
+                s,
+                Some(
+                    f.trim()
+                        .parse::<f64>()
+                        .map_err(|_| format!("--cut {c}: {f} is not a fraction 0–1"))?,
+                ),
+            ),
+            None => (c.as_str(), None),
+        };
+        let (from, to) = span_arg(span, "--cut")?;
+        cuts.push(magnetic::CutSpec {
+            from,
+            to,
+            fraction,
+            width: a.width,
+            above: a.above,
+            step: a.cut_step,
+        });
+    }
+    let mut volumes = Vec::new();
+    for v in &a.volume {
+        let (from, to) = span_arg(v, "--volume")?;
+        volumes.push(magnetic::VolumeSpec {
+            from,
+            to,
+            width: a.width,
+            above: a.above,
+            step: a.volume_step,
+        });
+    }
+    if !volumes.is_empty() && a.level.is_empty() {
+        return Err("give the volumes' levels: --level µT".into());
+    }
+    let mut levels = a.level.clone();
+    levels.sort_by(f64::total_cmp);
     let points = match &a.points {
         Some(p) => magnetic::parse_points(
             &std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
@@ -492,8 +569,14 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         step: a.step,
         stations,
         grids,
+        grid_step: a.grid_step,
         points,
         limit_ut: a.limit,
+        piece_length: a.piece_length,
+        modelled_within: a.modelled_within,
+        cuts,
+        volumes,
+        levels,
     };
     let mut shapes = Vec::new();
     for (section, r) in line
@@ -613,6 +696,57 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             g.from, g.to, g.rows, g.columns
         );
     }
+    let off = |d: &Option<ohl_electrical::field_views::Deviation>| match d {
+        Some(d) => format!(
+            "off the level: half within {:.2} %, nine in ten within {:.2} %, at most {:.1} % ({} points checked)",
+            d.median * 100.0,
+            d.p90 * 100.0,
+            d.max * 100.0,
+            d.points
+        ),
+        None => "no surface (the level lies outside the box)".into(),
+    };
+    let left = |d: &Option<ohl_electrical::field_views::Deviation>| match d {
+        Some(d) => format!(
+            "; the wires left out change the field by half within {:.3} %, nine in ten within {:.3} %, at most {:.3} % ({} points checked)",
+            d.median * 100.0,
+            d.p90 * 100.0,
+            d.max * 100.0,
+            d.points
+        ),
+        None => String::new(),
+    };
+    for c in &m.cuts {
+        let v = &c.values;
+        let max = v.values.iter().copied().fold(0.0, f64::max);
+        println!(
+            "cut {}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} µT; {} pieces{}",
+            c.from,
+            c.to,
+            c.at,
+            v.offsets.len(),
+            v.elevations.len(),
+            v.cut.step,
+            c.pieces,
+            left(&c.left_out)
+        );
+    }
+    for vol in &m.volumes {
+        let v = &vol.values;
+        println!(
+            "volume {}–{}: {} of {} lattice points computed ({} m apart); {} pieces{}",
+            vol.from,
+            vol.to,
+            v.computed,
+            v.full,
+            v.bounds.step,
+            vol.pieces,
+            left(&vol.left_out)
+        );
+        for ((l, mesh), d) in v.surfaces.iter().zip(&v.deviation) {
+            println!("  {l} µT: {} triangles; {}", mesh.triangles.len(), off(d));
+        }
+    }
     if !m.points.is_empty() {
         println!(
             "{:<16} {:>12} {:>12} {:>8} {:>8} {:>9} {:>9}",
@@ -633,6 +767,10 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
     }
     if let Some(path) = &a.csv {
         std::fs::write(path, magnetic::csv(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    if let Some(path) = &a.obj {
+        std::fs::write(path, magnetic::obj(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("written: {}", path.display());
     }
     Ok(())

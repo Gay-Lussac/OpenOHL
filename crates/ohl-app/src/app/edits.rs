@@ -382,6 +382,7 @@ impl Ready {
                     | Layer::GrowIn
                     | Layer::FallIn
                     | Layer::Isoclearance
+                    | Layer::MagneticField
                     | Layer::SafetyVolume
             )
         }));

@@ -35,7 +35,7 @@
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
 use std::fmt::Write as _;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 
 use nalgebra::{Complex, DMatrix, DVector};
 use ohl_line::electrical::SystemKind;
@@ -45,6 +45,7 @@ use crate::cross_section::{
     self, Axis, CrossSection, LineSpan, PhaseData, Sources, StationAt, line_spans,
 };
 use crate::earth::MU0;
+use crate::field_views::{self, CutValues, VerticalCut, VolumeBox, VolumeValues, compute_all};
 use crate::matrices::{self, Wire};
 use crate::parameters::{CircuitKey, DEFAULT_FREQUENCY_HZ};
 
@@ -325,12 +326,68 @@ pub struct Settings {
     /// The profiles; empty: every span at its lowest point.
     pub stations: Vec<StationSpec>,
     /// Grids on a horizontal plane at `height` over these spans (3D),
-    /// `step` apart both ways, `width` to either side.
+    /// `grid_step` apart both ways, `width` to either side.
     pub grids: Vec<(String, String)>,
+    /// Between the grids' points, m; `None`: `step`.
+    pub grid_step: Option<f64>,
     /// Given points.
     pub points: Vec<GivenPoint>,
     /// A limit, µT (optional; none built in).
     pub limit_ut: Option<f64>,
+    /// The longest straight piece of a wire, m (3D): the solver's pieces
+    /// cut into equal parts no longer than this, placed on the curve
+    /// through the solver's points ([`refine`]); `None`: the solver's
+    /// pieces as they are.
+    pub piece_length: Option<f64>,
+    /// Cuts and volumes take the wires within this plan distance of
+    /// them only, m (3D; `None`: the whole line). The field with the whole
+    /// line is computed at some of their points and the difference said
+    /// ([`FieldCut::left_out`]).
+    pub modelled_within: Option<f64>,
+    /// Vertical cuts across the line (3D).
+    pub cuts: Vec<CutSpec>,
+    /// Volumes over spans (3D): the isosurfaces of `levels`.
+    pub volumes: Vec<VolumeSpec>,
+    /// The levels drawn (isolines, isosurfaces), µT, ascending: display
+    /// only (none built in).
+    pub levels: Vec<f64>,
+}
+
+/// A vertical cut across the line at a place in a span: offsets to
+/// `width` either side of the axis, from the lowest ground under it to
+/// `above` over its highest wire.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CutSpec {
+    /// A structure of the span.
+    pub from: String,
+    /// The other.
+    pub to: String,
+    /// The place from the first structure (0–1); `None`: the lowest
+    /// point of the span's lowest phase conductor.
+    pub fraction: Option<f64>,
+    /// To either side, m.
+    pub width: f64,
+    /// Above the highest wire crossing the cut, m.
+    pub above: f64,
+    /// Between the grid's points, m.
+    pub step: f64,
+}
+
+/// A volume over a span: `width` to either side of its axis, from the
+/// lowest ground under it to `above` over its highest wire, the fine
+/// lattice `step` apart.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VolumeSpec {
+    /// A structure of the span.
+    pub from: String,
+    /// The other.
+    pub to: String,
+    /// To either side, m.
+    pub width: f64,
+    /// Above the highest wire, m.
+    pub above: f64,
+    /// The fine lattice's step, m.
+    pub step: f64,
 }
 
 impl Default for Settings {
@@ -345,22 +402,19 @@ impl Default for Settings {
             step: 1.0,
             stations: Vec::new(),
             grids: Vec::new(),
+            grid_step: None,
             points: Vec::new(),
             limit_ut: None,
+            piece_length: None,
+            modelled_within: None,
+            cuts: Vec::new(),
+            volumes: Vec::new(),
+            levels: Vec::new(),
         }
     }
 }
 
-/// Progress of a run and a way to stop it (shared with another thread).
-#[derive(Debug, Default)]
-pub struct Progress {
-    /// Set to stop: the run returns an error at its next point.
-    pub cancel: AtomicBool,
-    /// Points computed.
-    pub done: AtomicUsize,
-    /// Points to compute.
-    pub total: AtomicUsize,
-}
+pub use crate::field_views::Progress;
 
 // ---------------------------------------------------------------------------
 // Results.
@@ -444,6 +498,50 @@ pub struct FieldGrid {
     pub rows: usize,
     /// Points across.
     pub columns: usize,
+    /// Per level of the settings: how far its isolines lie off it
+    /// ([`field_views::deviation`], 3D).
+    pub deviation: Vec<Option<field_views::Deviation>>,
+}
+
+impl FieldGrid {
+    /// The isolines of `level` (µT), 3D: straight across a cell, the
+    /// places between its corners interpolated.
+    pub fn isolines(&self, level: f64) -> Vec<Vec<[f64; 3]>> {
+        let (nr, nc) = (self.rows, self.columns);
+        if nr < 2 || nc < 2 || self.points.len() != nr * nc {
+            return Vec::new();
+        }
+        let values: Vec<f64> = self.points.iter().map(|p| p.b_ut).collect();
+        let at = |c: usize, r: usize| {
+            let p = &self.points[r * nc + c];
+            [p.x, p.y, p.z]
+        };
+        crate::contour::isolines(&values, nc, nr, level)
+            .into_iter()
+            .map(|line| {
+                line.into_iter()
+                    .map(|[c, r]| {
+                        let (c0, r0) = (
+                            (c.floor() as usize).min(nc - 2),
+                            (r.floor() as usize).min(nr - 2),
+                        );
+                        let (fc, fr) = (c - c0 as f64, r - r0 as f64);
+                        let (a, b, cc, d) = (
+                            at(c0, r0),
+                            at(c0 + 1, r0),
+                            at(c0, r0 + 1),
+                            at(c0 + 1, r0 + 1),
+                        );
+                        std::array::from_fn(|k| {
+                            let lo = a[k] + fc * (b[k] - a[k]);
+                            let hi = cc[k] + fc * (d[k] - cc[k]);
+                            lo + fr * (hi - lo)
+                        })
+                    })
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 /// A circuit's current as used.
@@ -499,8 +597,67 @@ pub struct MagneticField {
     pub grids: Vec<FieldGrid>,
     /// The given points.
     pub points: Vec<FieldPoint>,
+    /// The vertical cuts (B, µT), each with its span.
+    pub cuts: Vec<FieldCut>,
+    /// The volumes' isosurfaces (levels in µT), each with its span.
+    pub volumes: Vec<FieldVolume>,
+    /// The wires' straight pieces (3D).
+    pub pieces: Option<Pieces>,
     /// What was assumed or left out.
     pub notes: Vec<String>,
+}
+
+/// A vertical cut's values and its span.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FieldCut {
+    /// The span's first structure.
+    pub from: String,
+    /// Its second.
+    pub to: String,
+    /// The station, m from the first structure.
+    pub at: f64,
+    /// The values, µT.
+    pub values: CutValues,
+    /// The straight pieces taken (with `modelled_within`).
+    pub pieces: usize,
+    /// With `modelled_within`: how much the wires left out change the
+    /// field, at up to [`field_views::CHECKED`] of the cut's points (the
+    /// relative difference to the whole line's field).
+    pub left_out: Option<field_views::Deviation>,
+}
+
+/// A volume's surfaces and its span.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FieldVolume {
+    /// The span's first structure.
+    pub from: String,
+    /// Its second.
+    pub to: String,
+    /// The surfaces (levels in µT).
+    pub values: VolumeValues,
+    /// The straight pieces taken (with `modelled_within`).
+    pub pieces: usize,
+    /// With `modelled_within`: how much the wires left out change the
+    /// field at up to [`field_views::CHECKED`] points of the surfaces.
+    pub left_out: Option<field_views::Deviation>,
+}
+
+/// The wires' straight pieces in a 3D model, and how far they may lie off
+/// the wires.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Pieces {
+    /// Straight pieces (every subconductor's).
+    pub count: usize,
+    /// The longest, m.
+    pub longest: f64,
+    /// The most a wire lies off its pieces, m: the solver's bound
+    /// ([`ohl_line::solve::SpanShape::polyline_error`]) over the cut
+    /// pieces (a sagitta falls with the square of the piece's length),
+    /// plus the interpolation's.
+    pub off_wire: f64,
+    /// Of which the placing of the cut pieces' points on the curve
+    /// through the solver's points (an estimate, [`refine`]), m.
+    pub interpolation: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -735,9 +892,305 @@ fn earth_wire_currents(
 // ---------------------------------------------------------------------------
 // The run.
 
-/// The line as segments, by frequency, and what was found on the way.
-struct Model3d {
-    groups: Vec<Group>,
+/// A polyline carrying one current: its points, its pieces' directions
+/// and lengths.
+#[derive(Debug, Clone, Default)]
+struct Poly {
+    x: Vec<f64>,
+    y: Vec<f64>,
+    z: Vec<f64>,
+    ux: Vec<f64>,
+    uy: Vec<f64>,
+    uz: Vec<f64>,
+    len: Vec<f64>,
+    current: C,
+}
+
+impl Poly {
+    fn new(points: &[[f64; 3]], current: C) -> Self {
+        let mut p = Poly {
+            current,
+            ..Default::default()
+        };
+        for q in points {
+            p.x.push(q[0]);
+            p.y.push(q[1]);
+            p.z.push(q[2]);
+        }
+        for w in points.windows(2) {
+            let d = sub(w[1], w[0]);
+            let l = dot(d, d).sqrt();
+            let u = if l < 1e-12 {
+                [0.0; 3]
+            } else {
+                d.map(|x| x / l)
+            };
+            p.ux.push(u[0]);
+            p.uy.push(u[1]);
+            p.uz.push(u[2]);
+            p.len.push(if l < 1e-12 { 0.0 } else { l });
+        }
+        p
+    }
+
+    /// \( \sum \) of [`segment_field`] over the pieces at `p` (per ampere),
+    /// each vertex's distance computed once for the two pieces meeting
+    /// there; `inv`: room for the inverse distances.
+    fn field(&self, p: [f64; 3], inv: &mut Vec<f64>) -> [f64; 3] {
+        inv.clear();
+        for k in 0..self.x.len() {
+            let (dx, dy, dz) = (p[0] - self.x[k], p[1] - self.y[k], p[2] - self.z[k]);
+            inv.push(1.0 / (dx * dx + dy * dy + dz * dz).sqrt());
+        }
+        let (mut sx, mut sy, mut sz) = (0.0, 0.0, 0.0);
+        for k in 0..self.len.len() {
+            let (rx, ry, rz) = (p[0] - self.x[k], p[1] - self.y[k], p[2] - self.z[k]);
+            let (ux, uy, uz) = (self.ux[k], self.uy[k], self.uz[k]);
+            let t = rx * ux + ry * uy + rz * uz;
+            let (dx, dy, dz) = (rx - t * ux, ry - t * uy, rz - t * uz);
+            let rho2 = dx * dx + dy * dy + dz * dz;
+            if rho2 < 1e-18 || self.len[k] == 0.0 {
+                continue;
+            }
+            let f = (t * inv[k] - (t - self.len[k]) * inv[k + 1]) / rho2;
+            sx += (uy * dz - uz * dy) * f;
+            sy += (uz * dx - ux * dz) * f;
+            sz += (ux * dy - uy * dx) * f;
+        }
+        let m = MU0 / (4.0 * PI);
+        [sx * m, sy * m, sz * m]
+    }
+}
+
+/// The line's wires in 3D as straight pieces, by frequency, ready to sum:
+/// the same sum as [`field_3d`] over [`segment_field`], arranged per
+/// polyline (each vertex's distance computed once; equal to it within
+/// rounding).
+#[derive(Debug, Clone, Default)]
+pub struct Wires3d {
+    groups: Vec<(f64, Vec<Poly>)>,
+    /// The pieces and how far they may lie off the wires.
+    pub pieces: Option<Pieces>,
+}
+
+impl Wires3d {
+    fn push(&mut self, frequency_hz: f64, points: &[[f64; 3]], current: C) {
+        if points.len() < 2 {
+            return;
+        }
+        let poly = Poly::new(points, current);
+        match self.groups.iter_mut().find(|g| g.0 == frequency_hz) {
+            Some(g) => g.1.push(poly),
+            None => self.groups.push((frequency_hz, vec![poly])),
+        }
+    }
+
+    /// B (rms) and its ellipse's semi-major axis at `p`, T, each
+    /// frequency's added as the root of the sum of squares.
+    pub fn field(&self, p: [f64; 3]) -> (f64, f64) {
+        let mut inv = Vec::new();
+        let mut sum = (0.0, 0.0);
+        for (_, polys) in &self.groups {
+            let mut b = [C::new(0.0, 0.0); 3];
+            for poly in polys {
+                let f = poly.field(p, &mut inv);
+                for k in 0..3 {
+                    b[k] += poly.current * f[k];
+                }
+            }
+            let (rms, major) = rms_and_major(&b);
+            sum.0 += rms * rms;
+            sum.1 += major * major;
+        }
+        (sum.0.sqrt(), sum.1.sqrt())
+    }
+
+    /// [`Wires3d::field`] at each of `ps`, each wire's pieces taken for
+    /// the whole block (they stay in the processor's cache: some times
+    /// quicker than point by point on a long line).
+    pub fn field_block(&self, ps: &[[f64; 3]]) -> Vec<(f64, f64)> {
+        let mut inv = Vec::new();
+        let mut sum = vec![(0.0, 0.0); ps.len()];
+        let mut b = vec![[C::new(0.0, 0.0); 3]; ps.len()];
+        for (_, polys) in &self.groups {
+            b.fill([C::new(0.0, 0.0); 3]);
+            for poly in polys {
+                for (p, bk) in ps.iter().zip(b.iter_mut()) {
+                    let f = poly.field(*p, &mut inv);
+                    for k in 0..3 {
+                        bk[k] += poly.current * f[k];
+                    }
+                }
+            }
+            for (bk, s) in b.iter().zip(sum.iter_mut()) {
+                let (rms, major) = rms_and_major(bk);
+                s.0 += rms * rms;
+                s.1 += major * major;
+            }
+        }
+        sum.into_iter().map(|s| (s.0.sqrt(), s.1.sqrt())).collect()
+    }
+
+    /// The wires' pieces within `d` (plan, m) of a rectangle: from
+    /// `start` along `ahead` (unit) for `length`, `width` to either side
+    /// (a piece by its nearer end, and half its length).
+    pub fn within(
+        &self,
+        start: [f64; 2],
+        ahead: [f64; 2],
+        length: f64,
+        width: f64,
+        d: f64,
+    ) -> Wires3d {
+        let near = |x: f64, y: f64, half: f64| {
+            let (dx, dy) = (x - start[0], y - start[1]);
+            let t = dx * ahead[0] + dy * ahead[1];
+            let s = dx * ahead[1] - dy * ahead[0];
+            let ot = (t - t.clamp(0.0, length)).abs();
+            let os = (s.abs() - width).max(0.0);
+            ot.hypot(os) <= d + half
+        };
+        let mut out = Wires3d {
+            groups: Vec::new(),
+            pieces: self.pieces,
+        };
+        for (f, polys) in &self.groups {
+            for p in polys {
+                let mut run: Vec<[f64; 3]> = Vec::new();
+                for k in 0..p.len.len() {
+                    let half = 0.5 * p.len[k];
+                    if near(p.x[k], p.y[k], half) || near(p.x[k + 1], p.y[k + 1], half) {
+                        if run.is_empty() {
+                            run.push([p.x[k], p.y[k], p.z[k]]);
+                        }
+                        run.push([p.x[k + 1], p.y[k + 1], p.z[k + 1]]);
+                    } else if !run.is_empty() {
+                        out.push(*f, &std::mem::take(&mut run), p.current);
+                    }
+                }
+                out.push(*f, &run, p.current);
+            }
+        }
+        out
+    }
+
+    /// Every straight piece (start, end).
+    pub fn segments(&self) -> Vec<[[f64; 3]; 2]> {
+        let mut out = Vec::new();
+        for (_, polys) in &self.groups {
+            for p in polys {
+                for k in 0..p.len.len() {
+                    out.push([
+                        [p.x[k], p.y[k], p.z[k]],
+                        [p.x[k + 1], p.y[k + 1], p.z[k + 1]],
+                    ]);
+                }
+            }
+        }
+        out
+    }
+
+    /// The number of straight pieces.
+    pub fn count(&self) -> usize {
+        self.groups
+            .iter()
+            .flat_map(|g| &g.1)
+            .map(|p| p.len.len())
+            .sum()
+    }
+}
+
+/// The seconds one straight piece takes at one point on this computer,
+/// all cores working (wall time): measured once, on a line of 78 wires ×
+/// 640 pieces at 2560 points (some 50 ms) — for the time estimates.
+pub fn seconds_per_piece_point() -> f64 {
+    static MEASURED: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *MEASURED.get_or_init(|| {
+        let mut w = Wires3d::default();
+        for k in 0..78 {
+            let pts: Vec<[f64; 3]> = (0..=640)
+                .map(|i| {
+                    let x = i as f64 * 6.25;
+                    let u = x % 400.0 - 200.0;
+                    [x, k as f64 * 0.5, 30.0 + u * u / 4000.0]
+                })
+                .collect();
+            w.push(50.0, &pts, C::new(1000.0, k as f64));
+        }
+        let points: Vec<[f64; 3]> = (0..2560)
+            .map(|i| [i as f64, 50.0 + (i % 7) as f64, 1.0])
+            .collect();
+        let start = std::time::Instant::now();
+        let v = compute_all(&points, &|ps: &[[f64; 3]]| w.field_block(ps), None);
+        std::hint::black_box(v.ok());
+        start.elapsed().as_secs_f64() / (w.count() as f64 * points.len() as f64)
+    })
+}
+
+/// A polyline's pieces cut into equal parts no longer than `max` (m). The
+/// new points lie on the quadratic through the piece's ends and a
+/// neighbouring point (parameter: the length along the polyline), the
+/// two neighbours' quadratics averaged where both exist. Where the two
+/// differ by more than `bound` (a kink: a spacer, a clamp, a span point)
+/// the piece is cut on its chord (no better than the solver's pieces
+/// there, no worse). Returns the points, the largest half difference of
+/// the two quadratics used (an estimate of the placing's error, m), and
+/// the largest number of parts a piece was cut into.
+pub fn refine(points: &[[f64; 3]], max: f64, bound: f64) -> (Vec<[f64; 3]>, f64, usize) {
+    if points.len() < 2 || max.is_nan() || max <= 0.0 {
+        return (points.to_vec(), 0.0, 1);
+    }
+    let mut u = vec![0.0];
+    for w in points.windows(2) {
+        let d = sub(w[1], w[0]);
+        u.push(u.last().copied().unwrap_or(0.0) + dot(d, d).sqrt());
+    }
+    let quad = |i: usize, x: f64| -> [f64; 3] {
+        // Through points i, i+1, i+2.
+        let (u0, u1, u2) = (u[i], u[i + 1], u[i + 2]);
+        let l0 = (x - u1) * (x - u2) / ((u0 - u1) * (u0 - u2));
+        let l1 = (x - u0) * (x - u2) / ((u1 - u0) * (u1 - u2));
+        let l2 = (x - u0) * (x - u1) / ((u2 - u0) * (u2 - u1));
+        std::array::from_fn(|k| l0 * points[i][k] + l1 * points[i + 1][k] + l2 * points[i + 2][k])
+    };
+    let n = points.len();
+    let mut out = vec![points[0]];
+    let mut estimate: f64 = 0.0;
+    let mut most = 1;
+    for k in 0..n - 1 {
+        let len = u[k + 1] - u[k];
+        let parts = (len / max).ceil().max(1.0) as usize;
+        most = most.max(parts);
+        let distinct = |i: usize| u[i + 1] > u[i] && u[i + 2] > u[i + 1];
+        let left = (k >= 1 && distinct(k - 1)).then(|| k - 1);
+        let right = (k + 2 < n && distinct(k)).then_some(k);
+        let mut placed = Vec::with_capacity(parts);
+        let mut worst: f64 = 0.0;
+        for j in 1..parts {
+            let x = u[k] + len * j as f64 / parts as f64;
+            let chord: [f64; 3] = std::array::from_fn(|c| {
+                points[k][c] + (points[k + 1][c] - points[k][c]) * j as f64 / parts as f64
+            });
+            let p = match (left.map(|i| quad(i, x)), right.map(|i| quad(i, x))) {
+                (Some(a), Some(b)) => {
+                    let d = sub(a, b);
+                    worst = worst.max(0.5 * dot(d, d).sqrt());
+                    std::array::from_fn(|c| 0.5 * (a[c] + b[c]))
+                }
+                (Some(a), None) | (None, Some(a)) => a,
+                (None, None) => chord,
+            };
+            placed.push((p, chord));
+        }
+        if worst > bound {
+            out.extend(placed.iter().map(|q| q.1));
+        } else {
+            estimate = estimate.max(worst);
+            out.extend(placed.iter().map(|q| q.0));
+        }
+        out.push(points[k + 1]);
+    }
+    (out, estimate, most)
 }
 
 /// The sign of section `k`'s span `j` along the line: +1 when its points
@@ -759,16 +1212,16 @@ fn build_3d(
     signs: &BTreeMap<(usize, usize), f64>,
     earth: &EarthWireMap,
     with_earth_wires: bool,
-) -> Result<Model3d, String> {
+    piece_length: Option<f64>,
+) -> Result<Wires3d, String> {
     let line = src.line;
     let phases = line.section_phases().map_err(|e| e.to_string())?;
-    let mut groups: Vec<Group> = Vec::new();
-    let mut push = |f: f64, seg: Segment| match groups.iter_mut().find(|g| g.frequency_hz == f) {
-        Some(g) => g.segments.push(seg),
-        None => groups.push(Group {
-            frequency_hz: f,
-            segments: vec![seg],
-        }),
+    let mut wires = Wires3d::default();
+    let mut info = Pieces {
+        count: 0,
+        longest: 0.0,
+        off_wire: 0.0,
+        interpolation: 0.0,
     };
     for (k, section) in line.sections.iter().enumerate() {
         let Some(shape) = src.shapes.iter().find(|s| s.section == section.id) else {
@@ -795,26 +1248,34 @@ fn build_3d(
             if flows.is_empty() {
                 continue;
             }
-            let subs = section.subconductor_polylines(&sp.points);
+            let (centre, off) = match piece_length {
+                Some(max) => {
+                    let (pts, est, parts) = refine(&sp.points, max, sp.polyline_error);
+                    info.interpolation = info.interpolation.max(est);
+                    (pts, sp.polyline_error / (parts * parts) as f64 + est)
+                }
+                None => (sp.points.clone(), sp.polyline_error),
+            };
+            info.off_wire = info.off_wire.max(off);
+            let subs = section.subconductor_polylines(&centre);
             let n = subs.len().max(1) as f64;
+            for poly in &subs {
+                for w in poly.windows(2) {
+                    let d = sub(w[1], w[0]);
+                    info.longest = info.longest.max(dot(d, d).sqrt());
+                }
+            }
             for (f, i) in flows {
                 let i = i * (sign / n);
                 for poly in &subs {
-                    for w in poly.windows(2) {
-                        push(
-                            f,
-                            Segment {
-                                a: w[0],
-                                b: w[1],
-                                current: i,
-                            },
-                        );
-                    }
+                    wires.push(f, poly, i);
                 }
             }
         }
     }
-    Ok(Model3d { groups })
+    info.count = wires.count();
+    wires.pieces = Some(info);
+    Ok(wires)
 }
 
 /// The 2D groups of a cross-section: each wire's subconductors as
@@ -960,42 +1421,6 @@ fn check_cancel(progress: Option<&Progress>) -> Result<(), String> {
     }
 }
 
-/// Values at many points on all cores (in order).
-fn compute_all(
-    points: &[[f64; 3]],
-    f: &(dyn Fn([f64; 3]) -> (f64, f64) + Sync),
-    progress: Option<&Progress>,
-) -> Result<Vec<(f64, f64)>, String> {
-    let threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .clamp(1, 16);
-    let chunk = points.len().div_ceil(threads).max(1);
-    let mut out = vec![(0.0, 0.0); points.len()];
-    let stopped = AtomicBool::new(false);
-    std::thread::scope(|scope| {
-        for (ps, os) in points.chunks(chunk).zip(out.chunks_mut(chunk)) {
-            let stopped = &stopped;
-            scope.spawn(move || {
-                for (p, o) in ps.iter().zip(os.iter_mut()) {
-                    if check_cancel(progress).is_err() {
-                        stopped.store(true, Ordering::Relaxed);
-                        return;
-                    }
-                    *o = f(*p);
-                    if let Some(pr) = progress {
-                        pr.done.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            });
-        }
-    });
-    if stopped.load(Ordering::Relaxed) {
-        return Err("stopped".into());
-    }
-    Ok(out)
-}
-
 /// The magnetic field of the line solved in one weather case (`src`), as
 /// `settings` ask. `progress`: to follow and stop it from another thread.
 pub fn run(
@@ -1003,9 +1428,32 @@ pub fn run(
     settings: &Settings,
     progress: Option<&Progress>,
 ) -> Result<MagneticField, String> {
+    run_keeping(src, settings, progress).map(|r| r.0)
+}
+
+/// [`run`], and the 3D model's wires kept (3D only) for cuts computed
+/// later at other places ([`field_views::vertical_cut`] with
+/// [`Wires3d::field`]).
+pub fn run_keeping(
+    src: &Sources<'_>,
+    settings: &Settings,
+    progress: Option<&Progress>,
+) -> Result<(MagneticField, Option<Wires3d>), String> {
     let line = src.line;
     if !(settings.step > 0.0 && settings.width >= 0.0 && settings.height.is_finite()) {
         return Err("a step above 0 m and a width of at least 0 m".into());
+    }
+    if let Some(l) = settings.piece_length
+        && !(l.is_finite() && l > 0.0)
+    {
+        return Err(format!("a piece length above 0 m, not {l}"));
+    }
+    let grid_step = settings.grid_step.unwrap_or(settings.step);
+    if grid_step.is_nan() || grid_step <= 0.0 {
+        return Err(format!("a grid step above 0 m, not {grid_step}"));
+    }
+    if settings.model == Model::TwoD && !(settings.cuts.is_empty() && settings.volumes.is_empty()) {
+        return Err("cuts and volumes are computed in 3D".into());
     }
     if let Some(l) = settings.limit_ut
         && !(l.is_finite() && l > 0.0)
@@ -1081,6 +1529,7 @@ pub fn run(
             &signs,
             &earth,
             settings.earth_wires,
+            settings.piece_length,
         )?),
         Model::TwoD => None,
     };
@@ -1116,6 +1565,10 @@ pub fn run(
     let offsets: Vec<f64> = (0..n_across)
         .map(|k| -settings.width + k as f64 * settings.step)
         .collect();
+    let n_grid = (2.0 * settings.width / grid_step).round() as usize + 1;
+    let grid_offsets: Vec<f64> = (0..n_grid)
+        .map(|k| -settings.width + k as f64 * grid_step)
+        .collect();
     let mut grid_specs = Vec::new();
     for (from, to) in &settings.grids {
         let i = spans
@@ -1128,7 +1581,7 @@ pub fn run(
         let grid_points: usize = grid_specs
             .iter()
             .filter_map(|&i| axes[i].as_ref())
-            .map(|a| ((a.length / settings.step).floor() as usize + 1) * n_across)
+            .map(|a| ((a.length / grid_step).floor() as usize + 1) * n_grid)
             .sum();
         p.total.store(
             stations.len() * n_across + settings.points.len() + grid_points,
@@ -1179,7 +1632,7 @@ pub fn run(
         let values = match &model3d {
             Some(m) => {
                 let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
-                compute_all(&pts, &|p| field_3d(&m.groups, p), progress)?
+                compute_all(&pts, &|ps: &[[f64; 3]]| m.field_block(ps), progress)?
             }
             None => {
                 let cs2 = match settings.heights_2d {
@@ -1329,11 +1782,11 @@ pub fn run(
         let Some(axis) = axes[i].as_ref() else {
             continue;
         };
-        let rows = (axis.length / settings.step).floor() as usize + 1;
+        let rows = (axis.length / grid_step).floor() as usize + 1;
         let mut places = Vec::new();
         for r in 0..rows {
-            let t = r as f64 * settings.step;
-            for &s in &offsets {
+            let t = r as f64 * grid_step;
+            for &s in &grid_offsets {
                 let p = axis.plan(t, s);
                 let g = axis.ground(src.ground, t, s);
                 places.push(([p[0], p[1], g + settings.height], s, g, t));
@@ -1342,31 +1795,32 @@ pub fn run(
         let values = match &model3d {
             Some(m) => {
                 let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
-                compute_all(&pts, &|p| field_3d(&m.groups, p), progress)?
+                compute_all(&pts, &|ps: &[[f64; 3]]| m.field_block(ps), progress)?
             }
             None => {
                 let mut out = Vec::new();
                 for r in 0..rows {
-                    let t = r as f64 * settings.step;
+                    let t = r as f64 * grid_step;
                     let cs = cross_section::cross_section(
                         src,
                         span,
                         StationAt::Fraction((t / axis.length).min(1.0)),
                     )?;
                     let groups = build_2d(line, &cs, &currents, &earth, settings.earth_wires);
-                    for k in 0..offsets.len() {
-                        let p = &places[r * offsets.len() + k];
+                    for k in 0..grid_offsets.len() {
+                        let p = &places[r * grid_offsets.len() + k];
                         out.push(field_2d(&groups, -p.1, p.0[2] - cs.ground.elevation));
                     }
                 }
                 out
             }
         };
-        grids.push(FieldGrid {
+        let mut grid = FieldGrid {
             from: span.from.clone(),
             to: span.to.clone(),
             rows,
-            columns: offsets.len(),
+            columns: grid_offsets.len(),
+            deviation: Vec::new(),
             points: places
                 .iter()
                 .zip(&values)
@@ -1382,7 +1836,21 @@ pub fn run(
                     margin_ut: limit.map(|l| l - b * 1e6),
                 })
                 .collect(),
-        });
+        };
+        if let Some(m) = &model3d {
+            let ut = |ps: &[[f64; 3]]| -> Vec<f64> {
+                m.field_block(ps).iter().map(|b| b.0 * 1e6).collect()
+            };
+            grid.deviation = settings
+                .levels
+                .iter()
+                .map(|&l| {
+                    let pts: Vec<[f64; 3]> = grid.isolines(l).into_iter().flatten().collect();
+                    field_views::deviation(&pts, l, &ut)
+                })
+                .collect();
+        }
+        grids.push(grid);
     }
     // Given points.
     let mut points = Vec::new();
@@ -1414,7 +1882,7 @@ pub fn run(
         let values = match &model3d {
             Some(m) => {
                 let pts: Vec<[f64; 3]> = located.iter().map(|l| [l.0.x, l.0.y, l.5]).collect();
-                compute_all(&pts, &|p| field_3d(&m.groups, p), progress)?
+                compute_all(&pts, &|ps: &[[f64; 3]]| m.field_block(ps), progress)?
             }
             None => {
                 let mut out = Vec::new();
@@ -1466,17 +1934,216 @@ pub fn run(
         p.done
             .store(p.total.load(Ordering::Relaxed), Ordering::Relaxed);
     }
-    Ok(MagneticField {
-        model: settings.model,
-        height: settings.height,
-        limit_ut: limit,
-        currents: used,
-        earth_wires: earth_rows,
-        profiles,
-        grids,
-        points,
-        notes,
-    })
+    // Cuts and volumes (3D).
+    let mut cuts = Vec::new();
+    let mut volumes = Vec::new();
+    if let Some(m) = &model3d {
+        let find = |from: &str, to: &str| {
+            spans
+                .iter()
+                .position(|s| (s.from == from && s.to == to) || (s.from == to && s.to == from))
+                .ok_or_else(|| format!("no span between structures {from} and {to}"))
+        };
+        let ut_of = |w: &Wires3d, ps: &[[f64; 3]]| -> Vec<f64> {
+            w.field_block(ps).iter().map(|b| b.0 * 1e6).collect()
+        };
+        let full = |ps: &[[f64; 3]]| ut_of(m, ps);
+        // The wires a view takes, and how much those left out change the
+        // field at some of its points.
+        let local = |start: [f64; 2], ahead: [f64; 2], length: f64, width: f64| {
+            settings
+                .modelled_within
+                .map(|d| m.within(start, ahead, length, width, d))
+        };
+        let left_out = |w: &Option<Wires3d>, pts: &[[f64; 3]]| -> Option<field_views::Deviation> {
+            let w = w.as_ref()?;
+            let every = pts.len().div_ceil(field_views::CHECKED).max(1);
+            let picked: Vec<[f64; 3]> = pts.iter().step_by(every).copied().collect();
+            let a = compute_all(&picked, &full, None).ok()?;
+            let b = compute_all(&picked, &|ps: &[[f64; 3]]| ut_of(w, ps), None).ok()?;
+            let mut d: Vec<f64> = a
+                .iter()
+                .zip(&b)
+                .filter(|(x, _)| **x > 0.0)
+                .map(|(x, y)| (x - y).abs() / x)
+                .collect();
+            d.sort_by(f64::total_cmp);
+            let at = |q: f64| d[((d.len() - 1) as f64 * q).round() as usize];
+            (!d.is_empty()).then(|| field_views::Deviation {
+                points: d.len(),
+                median: at(0.5),
+                p90: at(0.9),
+                max: at(1.0),
+            })
+        };
+        for c in &settings.cuts {
+            check_cancel(progress)?;
+            let i = find(&c.from, &c.to)?;
+            let axis = axes[i]
+                .as_ref()
+                .ok_or_else(|| format!("span {}–{}: no axis", c.from, c.to))?;
+            let t = match c.fraction {
+                Some(f) if (0.0..=1.0).contains(&f) => f * axis.length,
+                Some(f) => return Err(format!("a place in the span from 0 to 1, not {f}")),
+                None => lowest_station(src, &spans[i], axis),
+            };
+            let n = (2.0 * c.width / c.step).ceil().max(1.0) as usize;
+            let low = (0..=n)
+                .map(|k| {
+                    axis.ground(
+                        src.ground,
+                        t,
+                        -c.width + 2.0 * c.width * k as f64 / n as f64,
+                    )
+                })
+                .fold(f64::INFINITY, f64::min);
+            let cut = VerticalCut {
+                origin: axis.plan(t, 0.0),
+                right: axis.right,
+                left: -c.width,
+                right_offset: c.width,
+                bottom: low.floor(),
+                top: highest_wire(src, &spans[i]).unwrap_or(low + 50.0) + c.above,
+                step: c.step,
+            };
+            let ground = |x: f64, y: f64| {
+                let (t, s) = axis.local(&[x, y, 0.0]);
+                Some(axis.ground(src.ground, t, s))
+            };
+            if let Some(p) = progress {
+                p.total.fetch_add(cut.points(), Ordering::Relaxed);
+            }
+            let w = local(cut.at(-c.width), axis.right, 2.0 * c.width, 0.0);
+            let wires = w.as_ref().unwrap_or(m);
+            let values = field_views::vertical_cut(
+                &cut,
+                &|ps: &[[f64; 3]]| ut_of(wires, ps),
+                Some(&ground),
+                progress,
+            )?;
+            let pts: Vec<[f64; 3]> = values
+                .elevations
+                .iter()
+                .flat_map(|&z| {
+                    values.offsets.iter().map(move |&s| {
+                        let p = cut.at(s);
+                        [p[0], p[1], z]
+                    })
+                })
+                .collect();
+            cuts.push(FieldCut {
+                from: spans[i].from.clone(),
+                to: spans[i].to.clone(),
+                at: t,
+                pieces: wires.count(),
+                left_out: left_out(&w, &pts),
+                values,
+            });
+        }
+        let pieces = if settings.volumes.is_empty() {
+            Vec::new()
+        } else {
+            m.segments()
+        };
+        for v in &settings.volumes {
+            check_cancel(progress)?;
+            let i = find(&v.from, &v.to)?;
+            let axis = axes[i]
+                .as_ref()
+                .ok_or_else(|| format!("span {}–{}: no axis", v.from, v.to))?;
+            let mut low = f64::INFINITY;
+            let (nt, ns) = (
+                (axis.length / 5.0).ceil() as usize,
+                (2.0 * v.width / 5.0).ceil() as usize,
+            );
+            for a in 0..=nt {
+                for b in 0..=ns {
+                    let t = axis.length * a as f64 / nt.max(1) as f64;
+                    let s = -v.width + 2.0 * v.width * b as f64 / ns.max(1) as f64;
+                    low = low.min(axis.ground(src.ground, t, s));
+                }
+            }
+            let bounds = VolumeBox {
+                start: [axis.a[0], axis.a[1]],
+                ahead: axis.u,
+                length: axis.length,
+                width: v.width,
+                bottom: low.floor(),
+                top: highest_wire(src, &spans[i]).unwrap_or(low + 50.0) + v.above,
+                step: v.step,
+            };
+            let w = local(bounds.start, bounds.ahead, bounds.length, bounds.width);
+            let wires = w.as_ref().unwrap_or(m);
+            let values = field_views::volume(
+                &bounds,
+                &settings.levels,
+                &|ps: &[[f64; 3]]| ut_of(wires, ps),
+                &pieces,
+                progress,
+            )?;
+            let pts: Vec<[f64; 3]> = values
+                .surfaces
+                .iter()
+                .flat_map(|(_, mesh)| mesh.vertices.iter().copied())
+                .collect();
+            volumes.push(FieldVolume {
+                from: spans[i].from.clone(),
+                to: spans[i].to.clone(),
+                pieces: wires.count(),
+                left_out: left_out(&w, &pts),
+                values,
+            });
+        }
+    }
+    let pieces = model3d.as_ref().and_then(|m| m.pieces);
+    if let Some(p) = &pieces {
+        notes.push(format!(
+            "3D: {} straight pieces, the longest {:.2} m; a wire lies at most {:.1} mm off its pieces{}",
+            p.count,
+            p.longest,
+            p.off_wire * 1e3,
+            if settings.piece_length.is_some() {
+                format!(
+                    " (cut from the solver's pieces; of which {:.3} mm the estimate of placing the new points on the curve)",
+                    p.interpolation * 1e3
+                )
+            } else {
+                " (the solver's pieces)".into()
+            }
+        ));
+    }
+    Ok((
+        MagneticField {
+            model: settings.model,
+            height: settings.height,
+            limit_ut: limit,
+            currents: used,
+            earth_wires: earth_rows,
+            profiles,
+            grids,
+            points,
+            cuts,
+            volumes,
+            pieces,
+            notes,
+        },
+        model3d,
+    ))
+}
+
+/// The highest point of a span's wires, m.
+fn highest_wire(src: &Sources<'_>, span: &LineSpan) -> Option<f64> {
+    span.wires
+        .iter()
+        .filter_map(|&(k, j)| {
+            let id = &src.line.sections[k].id;
+            src.shapes
+                .iter()
+                .find(|s| &s.section == id)
+                .and_then(|s| s.spans.get(j))
+        })
+        .flat_map(|sp| sp.points.iter().map(|p| p[2]))
+        .reduce(f64::max)
 }
 
 // ---------------------------------------------------------------------------
@@ -1580,12 +2247,135 @@ pub fn csv(m: &MagneticField) -> String {
     for p in &m.points {
         row(&mut out, "point", "", "", None, p);
     }
+    for c in &m.cuts {
+        let v = &c.values;
+        let nc = v.offsets.len();
+        for (r, &z) in v.elevations.iter().enumerate() {
+            for (k, &s) in v.offsets.iter().enumerate() {
+                let xy = v.cut.at(s);
+                let b = v.values[r * nc + k];
+                let p = FieldPoint {
+                    name: String::new(),
+                    x: xy[0],
+                    y: xy[1],
+                    z,
+                    offset: s,
+                    height: v.ground[k].map_or(f64::NAN, |g| z - g),
+                    b_ut: b,
+                    major_ut: f64::NAN,
+                    margin_ut: m.limit_ut.map(|l| l - b),
+                };
+                row(&mut out, "cut", &c.from, &c.to, Some(c.at), &p);
+            }
+        }
+    }
+    out
+}
+
+/// The volumes' isosurfaces as a Wavefront OBJ file: one object per
+/// volume and level, world coordinates (m).
+pub fn obj(m: &MagneticField) -> String {
+    let mut out = String::from("# OpenOHL magnetic field isosurfaces (µT)\n");
+    let mut base = 1usize;
+    for v in &m.volumes {
+        for (level, mesh) in &v.values.surfaces {
+            let _ = writeln!(out, "o span_{}_{}_{level}uT", v.from, v.to);
+            for p in &mesh.vertices {
+                let _ = writeln!(out, "v {:.3} {:.3} {:.3}", p[0], p[1], p[2]);
+            }
+            for t in &mesh.triangles {
+                let _ = writeln!(
+                    out,
+                    "f {} {} {}",
+                    base + t[0] as usize,
+                    base + t[1] as usize,
+                    base + t[2] as usize
+                );
+            }
+            base += mesh.vertices.len();
+        }
+    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The per-polyline sum is the sum of [`segment_field`] over its
+    /// pieces (within rounding), at points near and far.
+    #[test]
+    fn polylines_sum_as_segments() {
+        let pts: Vec<[f64; 3]> = (0..=40)
+            .map(|k| {
+                let x = k as f64 * 10.0;
+                [x, 0.3 * x, 30.0 + (x - 200.0).powi(2) / 3000.0]
+            })
+            .collect();
+        let i = C::new(700.0, -200.0);
+        let mut w = Wires3d::default();
+        w.push(50.0, &pts, i);
+        let g = Group {
+            frequency_hz: 50.0,
+            segments: pts
+                .windows(2)
+                .map(|s| Segment {
+                    a: s[0],
+                    b: s[1],
+                    current: i,
+                })
+                .collect(),
+        };
+        for p in [
+            [150.0, 50.0, 1.0],
+            [10.0, 3.0, 29.0],
+            [-500.0, 20.0, 0.0],
+            pts[7],
+        ] {
+            let (a, b) = (w.field(p), field_3d(std::slice::from_ref(&g), p));
+            assert!((a.0 - b.0).abs() <= 1e-12 * b.0.max(1e-30), "{a:?} {b:?}");
+            assert!((a.1 - b.1).abs() <= 1e-12 * b.1.max(1e-30), "{a:?} {b:?}");
+        }
+        assert!(seconds_per_piece_point() > 0.0);
+    }
+
+    /// Cutting a catenary's pieces: the new points lie on the curve far
+    /// closer than the chords; at a kink the chord is kept.
+    #[test]
+    fn refined_pieces_lie_on_the_curve() {
+        let c = 1500.0;
+        let z = |x: f64| c * ((x - 200.0) / c).cosh();
+        let pts: Vec<[f64; 3]> = (0..=64)
+            .map(|k| {
+                let x = k as f64 * 400.0 / 64.0;
+                [x, 0.0, z(x)]
+            })
+            .collect();
+        let (fine, est, parts) = refine(&pts, 1.0, 0.01);
+        assert_eq!(parts, 7);
+        assert_eq!(fine.len(), 64 * 7 + 1);
+        let worst = fine
+            .iter()
+            .map(|p| (p[2] - z(p[0])).abs())
+            .fold(0.0, f64::max);
+        // The chords lie up to 6.25² / (8 · 1500) = 3.3 mm off; the new
+        // points some µm.
+        assert!(worst < 1e-5, "{worst}");
+        assert!(est < 1e-5, "{est}");
+        // A kink in the middle: the pieces next to it stay chords.
+        let mut kinked = pts.clone();
+        for p in kinked.iter_mut().skip(32) {
+            p[2] += (p[0] - 200.0) * 0.2;
+        }
+        let (fine, _, _) = refine(&kinked, 1.0, 0.01);
+        let k = fine
+            .iter()
+            .position(|p| (p[0] - 200.0).abs() < 1e-9)
+            .unwrap();
+        let (a, m, b) = (fine[k - 7], fine[k - 3], fine[k]);
+        let t = (m[0] - a[0]) / (b[0] - a[0]);
+        assert!((m[2] - (a[2] + t * (b[2] - a[2]))).abs() < 1e-9);
+    }
 
     /// A long segment's field is the infinite wire's \\( \mu_0 I/(2\pi d) \\)
     /// (2·10⁻⁷ T at 1 m for 1 A), pointing by the right-hand rule.

@@ -682,14 +682,33 @@ line)}], `earth_wires` (induced currents on), `height`, `width`, `step`
 lowest point)}], `grids` [(from, to)], `points` [`GivenPoint` {`name`,
 `x`, `y`, `z`? or `height`?}] (read by `parse_points` from a CSV with a
 header `x`, `y`, `z`|`height`, `name`), `limit_ut` (optional, µT; none
-built in). `thermal_currents` gives the circuits' thermal ratings (the
+built in); since 2026-10-29 `grid_step` (m; none: `step`),
+`piece_length` (m; none: the solver's pieces), `modelled_within` (m; none:
+the whole line — cuts and volumes only), `cuts` [`CutSpec` {`from`, `to`,
+`fraction`?, `width`, `above`, `step`}], `volumes` [`VolumeSpec` {`from`,
+`to`, `width`, `above`, `step`}], `levels` (µT, ascending; display
+only). `thermal_currents` gives the circuits' thermal ratings (the
 least over a circuit's sections of bundle × ampacity, in an ambient case
 and at a temperature given). Results `MagneticField`: `currents`
 [`CurrentUsed`], `earth_wires` [`EarthWireCurrent` {`section`, `from`,
 `to`, `frequency_hz`, `amps`, `angle_deg`}], `profiles` [`Profile`
 {`from`, `to`, `at` m, `span_length`, `along_line` m, `points`, `max_ut`,
 `max_offset`, `limit` (`LimitExtent` {`left`, `right`, `beyond`}),
-`reach` m, `warnings`}], `grids` [`FieldGrid`], `points`, each a
+`reach` m, `warnings`}], `grids` [`FieldGrid` {…, `deviation` per level}],
+`cuts` [`FieldCut` {`from`, `to`, `at`, `values`: `field_views::CutValues`
+{`cut`: `VerticalCut` {`origin`, `right`, `left`, `right_offset`,
+`bottom`, `top`, `step`}, `offsets`, `elevations`, `ground` per column,
+`values` µT row by row}, `pieces`, `left_out`}], `volumes` [`FieldVolume`
+{`from`, `to`, `values`: `VolumeValues` {`bounds`: `VolumeBox`,
+`surfaces` [(level, `contour::Mesh` {`vertices`, `triangles`})],
+`deviation` per level, `computed`, `full`, `above` per level}, `pieces`,
+`left_out`}], `pieces` (`Pieces` {`count`, `longest`, `off_wire`,
+`interpolation`}), a `Deviation` being {`points`, `median`, `p90`, `max`}
+(relative to the level, or to the whole line's field for `left_out`);
+`run_keeping` returns the 3D model's wires too (`Wires3d`: `field`,
+`field_block`, `within`, `segments`), `seconds_per_piece_point` the
+speed measured here, `refine` the shorter pieces, `obj` the surfaces as
+Wavefront OBJ; `points`, each a
 `FieldPoint` {`name`, `x`, `y`, `z`, `offset` (to the right of the span's
 axis), `height` (above the ground), `b_ut` (rms of the vector), `major_ut`
 (the cycle's largest), `margin_ut` (limit − B)}, `notes`; `csv` writes
@@ -2311,7 +2330,7 @@ once, the server logs who changed which key).
 | `app.own-libraries` | `ohl-design`, when a new project is made (File › New project) | `1`: nothing is copied in from files next to the project |
 | `app.check_surface` | `ohl-design` (Terrain menu: the surface of the checks) | a surface's name: the ground every user's checks use; read by `ohl zones` and by the engineering impact of `ohl project` diffs and merges |
 | `app.drawings.<project line>` | `ohl-design` (File › Export › Drawings…) | JSON, below |
-| `app.magnetic_field.<project line>` | `ohl-design` (Checks › Electrical › Magnetic field…) | JSON: the window's inputs (2026-10-27) — `case` (name), `currents` (circuit label → `[A, reverse]`), `earth_wires`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: every span), `limit` (µT), `two_d`, `mean_heights`, `points` (`[file name, CSV text]`); missing fields take the defaults |
+| `app.magnetic_field.<project line>` | `ohl-design` (Checks › Electrical › Magnetic field…) | JSON: the window's inputs (2026-10-27) — `case` (name), `currents` (circuit label → `[A, reverse]`), `earth_wires`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: every span), `limit` (µT), `two_d`, `mean_heights`, `points` (`[file name, CSV text]`); since 2026-10-29 `piece_length`, `modelled_within` (m), `levels` (`[{value µT, rgb, on}]`), `fill`, `above` (`[[from, to] or null, step]`), `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`); missing fields take the defaults |
 | `app.galloping.<project line>`, `app.wirefit.<project line>` | `ohl-design` (Checks › Galloping ellipses…, As-built wires…) | JSON (2026-10-28): the window's scope (`ohl_app::check_ui::Scope`: `circuits`, `routes`, `alignments`, `sections`, as in `app.vegetation`); missing or unreadable: the whole line |
 | `app.vegetation.<project line>` | `ohl-design` (Checks › Vegetation…) | JSON: the panel's setup (2026-10-27) — `settings` (as a saved run's settings: the same keys as the performed check's `settings`, its `cases` the weather cases ticked, by name), `scope` (`circuits`: names, absent or `null` every circuit; `routes`, `alignments`: ids, both empty the whole line; `sections`: ids, `null` every section — `ohl_app::check_ui::Scope`), `overrides` (`[structure override, section override]`); missing or unreadable fields keep the panel's values |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name), `overrides` (`[structure, section]`) (2026-10-27) |

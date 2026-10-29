@@ -19,7 +19,11 @@
 //!   matrices, sequence values, coupling between circuits.
 //! - [`magnetic`]: the magnetic flux density of the line's currents —
 //!   3D from the solved wires (Biot–Savart, finite segments) or 2D from
-//!   cross-sections — in profiles, grids and given points.
+//!   cross-sections — in profiles, grids, given points, vertical cuts
+//!   across the line and volumes.
+//! - [`field_views`]: a field's vertical cuts and volumes (isosurfaces),
+//!   for any field given as a function of the place; [`contour`]: the
+//!   isolines and isosurfaces they are drawn with.
 //!
 //! [`run`] does all of it for a line solved in one weather case.
 //!
@@ -32,8 +36,10 @@
 //! the capacitances; each span's horizontal length as its electrical
 //! length.
 
+pub mod contour;
 pub mod cross_section;
 pub mod earth;
+pub mod field_views;
 pub mod magnetic;
 pub mod matrices;
 pub mod parameters;

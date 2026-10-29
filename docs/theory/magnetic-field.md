@@ -72,8 +72,28 @@ The pieces' fields are summed per component as phasors.
 
 - **Simplification**: the wire straight between the solver's points. The
   solver says how far the wire lies off its polyline
-  (`SpanShape.polyline_error`, centimetres); the field moves by about
-  that share of the distance. Neither conservative nor not.
+  (`SpanShape.polyline_error`: the largest sagitta
+  \( R - \sqrt{R^2 - L^2/4} pprox L^2/(8R) \) of a piece of length
+  \( L \) on the catenary's smallest radius of curvature \( R = H/w \);
+  some millimetres: 64 pieces per span or part of a span, e.g. 7 m pieces
+  and 4 mm on a 450 m span at H/w = 1700 m); the field moves by about that
+  share of the distance (0.04 % at 10 m). Neither conservative nor not.
+  **Shorter pieces** on request (`Settings.piece_length`, 2026-10-29): each
+  solver piece cut into equal parts no longer than asked, the new points
+  on the average of the two quadratics through the piece's ends and a
+  neighbouring point (parameter: the length along the polyline); half the
+  two quadratics' difference is the placing's estimate, reported with the
+  sagitta bound over the shorter pieces (\( \propto L^2 \)). Where the two
+  differ by more than the solver's bound (a kink: a spacer, a clamp, a
+  span point) the piece is cut on its chord — no worse than the solver's
+  pieces there. On a catenary of \( C \) = 1500 m, 6.25 m pieces cut to
+  0.9 m put the points within some µm of the curve (the chords lay up to
+  3.3 mm off).
+- **The sum** is the same for every piece; it is arranged per polyline
+  (each vertex's distance computed once for the two pieces meeting there)
+  and per block of 64 points (a wire's pieces stay in the processor's
+  cache for the block): equal to the piece-by-piece sum within rounding
+  (\( 10^{-12} \), tested), some times quicker on a long line.
 - **Assumption**: a bundle's current shared equally by its
   subconductors (exact for a regular bundle by symmetry, close for the
   others).
@@ -205,8 +225,17 @@ nor not in general (the images oppose their sources' near fields).
   above the ground (1 m by default). The ground: the terrain surface when
   there is one, else straight between the structures' feet and level
   across (**Simplification**).
-- **Grids** on a horizontal plane at that height over a span (for
-  isolines; drawing them is not yet built).
+- **Grids** on a horizontal plane at that height over a span, their own
+  step (`grid_step`): the levels' isolines **from above** (plan and 3D
+  view).
+- **Vertical cuts across the line** (2026-10-29): a grid in a vertical
+  plane square to a span's axis (or a cross-section panel's plane), ± the
+  width, from the lowest ground under it to some metres over the highest
+  wire, every step; every point computed (also under the ground; the
+  drawing stops at the ground, straight between the columns).
+- **Volumes** (2026-10-29): the isosurfaces of the levels in a box over a
+  span (± the width, from the lowest ground under it to some metres over
+  the highest wire), see below.
 - **Given points** (e.g. places of sensitive use) from a CSV file: x, y and
   an elevation or a height above the ground.
 
@@ -214,6 +243,62 @@ With an optional **limit** (µT, yours to give): the margin at each point
 (limit − B) and per profile the extent where B is at or above it (the
 limit line's width at that height), and whether it reaches beyond the
 profile.
+
+## Cuts, volumes and what they are drawn with
+
+Every value at a grid or lattice point is the field computed in full;
+**only the drawing between the points is interpolated** (owner,
+2026-10-18: speed may only coarsen the display, never computed
+precision; the wires modelled are the user's choice, with its effect
+measured):
+
+- **Isolines** (marching squares): where a level crosses a cell's edge,
+  placed by the logarithm of the two values (a field falls about as a
+  power of the distance, so its logarithm is closer to straight between
+  points), straight across the cell; a saddle decided by the cell's
+  mean.
+- **Isosurfaces** (marching tetrahedra: each lattice cube cut into six
+  tetrahedra around its diagonal, so neighbouring cubes split their
+  faces alike and the surface has no cracks), the crossings placed as
+  above.
+- **The volume's lattice** is computed only where a surface can pass: a
+  coarse lattice first (4 steps apart), then the fine one in every coarse
+  cell where a level lies between its corners' values or within 10 % of
+  them (a surface bulging into the cell), in every cell within a coarse
+  step of a wire piece (where a thin surface around a conductor can hide
+  between coarse points), and, again and again, in every cell beyond a
+  face of a fine cell that a level crosses (the surface is followed until
+  it closes or leaves the box; tested: no holes but at the box's sides).
+  **Simplification**: a surface lying wholly between coarse points, away
+  from every wire and more than 10 % off the values around it, is not
+  found — it would be smaller than a coarse cell. On a real span about
+  half the fine lattice was computed.
+- **How far the drawing lies off its level is measured**, not assumed:
+  after a run the field is computed again at up to 200 points spread over
+  every isoline and surface, and the relative difference to the level
+  reported (half of the points within …, nine in ten within …, the
+  largest). It is largest where the field bends sharply between points,
+  near the conductors: on a real line (1000 A per circuit) the 1 µT
+  surface lay within 0.05 % for nine points in ten at a 2 m step, the
+  10 µT one within 1 %, the 100 µT one (a tube of some 2 m around each
+  conductor) within 15 % and up to 55 %; at 1 m within 0.01 %, 0.3 % and
+  4 % (up to 11 %).
+- **The wires modelled** (`modelled_within`, optional; the default is the
+  whole line): a cut or volume may take the wires within a distance only
+  (a piece by its nearer end and half its length). **Simplification,
+  measured**: the whole line's field is computed at up to 200 points of
+  the cut or volume and the relative difference reported. On a real line
+  of 28 km, 2 km left the field within 0.03 % (500 m: 0.6 %).
+- **Time.** The cost is the points times the pieces (some ns each per
+  core). The estimates in the window take the last run's speed on the
+  computer, else a short measurement halved: a laptop's cores slow to
+  about half their speed after a few seconds of full load (measured
+  2026-10-29: 1.28 M points/s falling to 0.6 M/s on a line of 640
+  pieces).
+
+Not yet (roadmap): the **jumpers** as current paths and the
+**structures' steel** (its permeability and the currents induced in the
+earth wire–tower loops), each as an option.
 
 ## Validation
 
