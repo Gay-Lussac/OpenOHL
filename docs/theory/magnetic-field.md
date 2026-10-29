@@ -291,10 +291,96 @@ measured):
   of 28 km, 2 km left the field within 0.03 % (500 m: 0.6 %).
 - **Time.** The cost is the points times the pieces (some ns each per
   core). The estimates in the window take the last run's speed on the
-  computer, else a short measurement halved: a laptop's cores slow to
-  about half their speed after a few seconds of full load (measured
-  2026-10-29: 1.28 M points/s falling to 0.6 M/s on a line of 640
-  pieces).
+  computer, else a short measurement halved (see *Performance* below).
+
+## Performance
+
+What a computation costs and what was done to make it quicker without
+changing a computed value (owner, 2026-10-29: "make sure to check the
+performance"). Measured on 2026-10-29 on the owner's laptop (10 cores:
+8 performance, 2 efficiency; release build).
+
+**The cost.** Every point asks every straight piece of every wire:
+the time is the points × the pieces × the time of one piece at one
+point. The line the measurements were made on: 28 km, 7 circuits, 77
+spans — **124 000 pieces** (the solver's, every subconductor's).
+
+**One piece at one point, one core:**
+
+| Arrangement | ns |
+|---|---|
+| piece by piece (`segment_field` summed) | 9.4 |
+| per polyline (each vertex's distance once for the two pieces meeting there) | 4.7 |
+
+Both give the same field within rounding (largest relative difference
+\( 3\cdot10^{-15} \) on the test line, \( 10^{-12} \) required by the
+tests).
+
+**On all cores, sustained.** A laptop's cores slow down under full load:
+a test line of 640 pieces went from 1 280 000 points/s in the first
+second to about 600 000 points/s after 5 s, and stayed there. So a run of more than a few seconds goes at
+about half the speed of a short measurement; the window's estimates use
+the last run's speed, or a short measurement halved before the first run.
+
+**What made it quicker** (each leaves every computed value as it was):
+
+1. The sum per polyline (above): half the time per piece.
+2. Points taken in **blocks of 64**: each wire's pieces are read once
+   for the block and stay in the processor's cache, instead of the whole
+   line's 7 MB of pieces being read again for every point.
+3. The threads **take blocks in turn** instead of an equal share each,
+   so the quicker cores take more of them.
+4. A volume's **fine lattice only where a surface passes** (above):
+   about half of it on a real span.
+
+**Measured on the real line** (1000 A per circuit; one span of about
+400 m, ±50 m, from the ground to 10 m over the highest wire; levels 1,
+10 and 100 µT; times of the whole command, the line's solution included,
+about 1.4 s):
+
+| What | Points computed | Wires modelled | Time |
+|---|---|---|---|
+| 77 profiles of 101 points (every span) | 7 800 | whole line | 3.5 s |
+| one profile, a cut at 1 m (after 1.–3.) | 9 600 | whole line | 2.2 s |
+| one profile, a cut at 0.5 m (after 1.–3.) | 38 000 | whole line | 10 s |
+| volume at 4 m (and a cut at 0.5 m), before 2. and 3. | 79 000 | whole line | 20 s |
+| volume at 2 m (and a cut at 0.5 m), before 2. and 3. | 326 000 | whole line | 85 s |
+| volume at 2 m, after | 326 000 | whole line | 67–70 s |
+| volume at 2 m and a cut at 0.5 m | 326 000 + 38 000 | within 2 km (17 000 pieces) | 6 s |
+| volume at 1 m | 1 740 000 of 4 400 000 | within 2 km | 63 s |
+
+**What the wires modelled change** (`modelled_within`; the whole line's
+field computed again at 200 points of the cut or volume):
+
+| Within | Pieces (cut / volume) | Largest change (cut / volume) |
+|---|---|---|
+| 500 m | 4 900 / 7 900 | 0.55 % / 0.32 % |
+| 1 km | 10 200 / 11 500 | 0.085 % / 0.080 % |
+| 2 km | 15 700 / 17 200 | 0.024 % / 0.028 % |
+
+**What the volume's step changes** (how far the surfaces lie off their
+levels, at 200 points each: nine in ten within / at most):
+
+| Step | 1 µT | 10 µT | 100 µT |
+|---|---|---|---|
+| 4 m | 0.16 % / 0.7 % | 2.5 % / 28 % | 71 % / 595 % |
+| 2 m | 0.05 % / 0.2 % | 0.94 % / 27 % | 15 % / 55 % |
+| 1 m | 0.01 % / 0.0 % | 0.27 % / 21 % | 3.7 % / 11 % |
+
+The worst points lie next to the conductors, where the field bends
+sharply between lattice points; the 100 µT surface (a tube of some 2 m
+around each conductor) needs a step well under its radius.
+
+**Not done, and why:**
+- **Leaving out the far wires by default** — it changes computed values
+  (a little: see above); it is the user's choice, with its effect
+  measured at every run. The whole line stays the default (quality
+  before speed).
+- **Approximating far wires** (a multipole or a coarser wire far away) —
+  it would change computed values without the user choosing it.
+- **The GPU** — the field sums currents that cancel far from the line
+  (a balanced three-phase line falls as \( 1/d^2 \)); single precision,
+  all most GPUs offer, would lose digits there.
 
 Not yet (roadmap): the **jumpers** as current paths and the
 **structures' steel** (its permeability and the currents induced in the
