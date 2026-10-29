@@ -70,6 +70,8 @@ line to \\( p \\), \\( \rho = |\vec d| \\) — the textbook
 \\( \frac{\mu_0 I}{4\pi\rho}(\cos\alpha_1 - \cos\alpha_2) \\) as a vector.
 The pieces' fields are summed per component as phasors.
 
+![A straight piece from a to b carrying the current I and a point p beside it: the direction u, the perpendicular d of length rho, the vectors r_a and r_b and the angles alpha_1 and alpha_2; the field at p perpendicular to the plane of the piece and p](../images/theory/bs-segment.svg)
+
 - **Simplification**: the wire straight between the solver's points. The
   solver says how far the wire lies off its polyline
   (`SpanShape.polyline_error`: the largest sagitta
@@ -114,6 +116,8 @@ The pieces' fields are summed per component as phasors.
   line) are not modelled: **not conservative** there. The reach is
   measured at the profile's height only; the limit line may reach farther
   at the conductors' height (**not conservative** for the rule's check).
+
+![Left: a sagging wire and the chords between the solver's points, the sagitta e between a chord and the wire. Right: one piece cut into three, the new points on the curve through the solver's points](../images/theory/field-pieces.svg)
 
 ## The 2D model
 
@@ -239,6 +243,8 @@ nor not in general (the images oppose their sources' near fields).
 - **Given points** (e.g. places of sensitive use) from a CSV file: x, y and
   an elevation or a height above the ground.
 
+![A double-circuit line in a vertical cut across it with a house beside it: the grid's points, the isolines of 3, 10 and 30 microtesla cut at the ground; the 3 microtesla line reaches the house](../images/theory/field-cut.svg)
+
 With an optional **limit** (µT, yours to give): the margin at each point
 (limit − B) and per profile the extent where B is at or above it (the
 limit line's width at that height), and whether it reaches beyond the
@@ -273,6 +279,9 @@ measured):
   from every wire and more than 10 % off the values around it, is not
   found — it would be smaller than a coarse cell. On a real span about
   half the fine lattice was computed.
+
+  ![A slice of a volume's lattice: the coarse points, the coarse cells computed fine because a level passes near their corners' values, because a wire is near, or because a surface crosses into them; the levels' surfaces around three wires](../images/theory/field-volume.svg)
+
 - **How far the drawing lies off its level is measured**, not assumed:
   after a run the field is computed again at up to 200 points spread over
   every isoline and surface, and the relative difference to the level
@@ -332,6 +341,8 @@ the last run's speed, or a short measurement halved before the first run.
    so the quicker cores take more of them.
 4. A volume's **fine lattice only where a surface passes** (above):
    about half of it on a real span.
+
+![Point by point, every point reads all the line's pieces; in blocks of 64 points each wire's pieces are read once for the block; the blocks wait in a queue and each thread takes the next](../images/theory/field-blocks.svg)
 
 **Measured on the real line** (1000 A per circuit; one span of about
 400 m, ±50 m, from the ground to 10 m over the highest wire; levels 1,
