@@ -62,6 +62,12 @@ impl CheckLibraryWindow {
         self.since = None;
     }
 
+    /// Selects report `id` as a click on its row does (tests).
+    #[cfg(test)]
+    pub fn select(&mut self, id: &str) {
+        self.selected = Some(id.to_owned());
+    }
+
     /// The page (a dock page: floating first, it may be docked).
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         let mut out = Out::default();

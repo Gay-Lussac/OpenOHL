@@ -521,7 +521,15 @@ fn performed_checks_are_saved_and_run_again() {
         .next()
         .unwrap()
         .hover();
-    // Opened again from the library: its parameters and results.
+    // Opened again from the library (its row selected, since the
+    // library is a table): its parameters and results.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .check_library
+        .select(&saved.id);
+    harness.run();
     harness.get_by_label("Open").click();
     harness.run();
     {
