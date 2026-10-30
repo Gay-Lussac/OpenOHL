@@ -780,8 +780,12 @@ longer in the line falls back to the default.
 - **Jumpers** (3D, on by default, 2026-10-29): a jumper between two
   section ends of one phase carries that phase's current; jumpers on taps
   or between different phases are left out and listed in the notes.
-- **Profiles**: every span's lowest point, or one span at its lowest
-  point or at a place 0–1 along it; **Across** ± the width every step at a
+- **Profiles**: the spans ticked, each at its lowest point, or one span
+  at its lowest point or at a place 0–1 along it. **Spans** (2026-10-30)
+  lists every span: per alignment its spans in station order, ticked;
+  then the spans on no alignment (both structures not on one alignment),
+  unticked; *all* / *none* per group. The ticks are kept in the project;
+  with none ticked, Run says so; **Across** ± the width every step at a
   height above the ground (default ±50 m every 1 m at 1 m). The ground is
   the project's surface for the checks when there is one, else straight
   between the structures' feet.
@@ -849,7 +853,9 @@ fine step: at 2 m they lay up to 50 % off their level on a real line, at
 
 Choose the weather case in *2 Scope* (in the footer until 2026-10-27),
 the currents under it, and **Run** (a progress bar and **Stop** while it
-runs); the results open in the Results tab. The results: the currents used, the earth wires'
+runs; the time left from the points computed so far and, in the electric
+field, the tiled floors still to solve at the speed of those solved —
+every floor of the run counted from the start, 2026-10-30); the results open in the Results tab. The results: the currents used, the earth wires'
 currents, the notes (what was assumed); the chosen profile plotted —
 B against the distance from the axis (right positive), the cycle's
 largest value fainter, the limit dashed, the value under the pointer; a

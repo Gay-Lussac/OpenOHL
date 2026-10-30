@@ -287,6 +287,7 @@ impl MagneticFieldWindow {
         };
         crate::check_ui::section(ui, 3, "Model", None);
         egui::Grid::new("magnetic-field-model")
+            .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Wire pieces");
@@ -389,7 +390,16 @@ impl MagneticFieldWindow {
                 );
                 ui.end_row();
             });
+        // The drawings of the model: the pieces of a span, (magnetic)
+        // the wires modelled.
+        let per_span =
+            (st.span() / self.piece_length.unwrap_or(st.longest).max(0.1)).ceil() as usize;
+        ui.horizontal(|ui| {
+            crate::field_help::pieces(ui, per_span);
+            crate::field_help::modelled(ui, self.modelled_within);
+        });
         crate::check_ui::section(ui, 4, "Views and levels", None);
+        crate::field_help::cut(ui, self.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.label(egui::RichText::new("Levels drawn (µT, display only: none is a limit)").small());
         let mut remove = None;
@@ -442,6 +452,7 @@ impl MagneticFieldWindow {
         });
         let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
         egui::Grid::new("magnetic-field-views")
+            .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 // From above.

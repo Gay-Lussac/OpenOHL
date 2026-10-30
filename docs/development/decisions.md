@@ -8,6 +8,42 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-30
+
+**The electrical windows: no overlapping text, drawings, the spans
+ticked, an honest time left (owner, 2026-10-30)**
+
+- The owner: "in the electrical test menu some buttons overlap with
+  text and i would like to have some illustration on how it works too".
+  The explanations under a setting were wrapped in a grid cell as wide
+  as the previous frame's column and centred on a row too low, running
+  into the next row: the field windows' and Line parameters' grids now
+  name their two columns, and every check window's explanation
+  (`check_help::explain`) is one wrapped label with its (?) beside it.
+  Drawings in the check windows' style (`field_help`, following the
+  values typed): the profile across the line and its field; Biot–Savart
+  for a straight piece; a charge and its image in a plane, or the tiled
+  floor; the straight pieces and their sagitta; the wires modelled
+  within d of a cut; a vertical cut beside a building with its isolines;
+  the earth return at the complex depth (Line parameters).
+- The owner: "the time left estimation is not that good on the
+  electrical… announcing 25 seconds since 5 minute". A floor was added to
+  the work only when its solve began, counted in tiles like points: after
+  the first floor only cheap points seemed left. Now every floor of the
+  run is announced at the start and counted in the time it is expected to
+  take (`TiledFloor::seconds`); the time left is the points left at the
+  points' speed plus the floors left at the speed of the floors solved
+  (`Progress::seconds_left`); the bar the share of the time gone. The
+  setup's floor times use the last run's measured floor speed.
+- The owner: "a list of all the spans and to be able to select and
+  deselect those we want …, the ones on the alignment first and the other
+  ones after; by default the ones outside the alignment are not wanted".
+  Both field windows: **Spans** under Profiles, per alignment (both
+  structures on it, station order), then those on none, unticked by
+  default; kept in the project as the changes from that default
+  (`spans_off`, `spans_on`). Every span ticked runs as before (every
+  span); otherwise the spans ticked as stations.
+
 ## 2026-10-29
 
 **The 2D fields validated against hvlbuzz (owner, 2026-10-29: "for the

@@ -38,6 +38,7 @@ use crate::job::{Job, save_csv};
 use crate::magnetic_field::views::{PanelCuts, PieceStats, VolumeSetup};
 use crate::magnetic_field::{Spans, Stations, runs};
 use crate::model::Model;
+use crate::span_pick::SpanPick;
 
 /// A span by its first and last structure.
 type SpanIds = (String, String);
@@ -105,6 +106,8 @@ pub struct ElectricFieldWindow {
     width: f64,
     step: f64,
     stations: Stations,
+    /// The spans ticked for the profiles (every span's).
+    span_pick: SpanPick,
     limit: Option<f64>,
     two_d: bool,
     /// The ground plane under a point is fitted over this distance, m.
@@ -157,6 +160,8 @@ pub struct ElectricFieldWindow {
     rate: Option<f64>,
     /// The share of a volume's lattice the last run computed.
     volume_share: Option<f64>,
+    /// The floors' solves of the last run against their expected time.
+    floor_speed: Option<f64>,
     /// The wires' pieces, by line version and case.
     pieces_seen: Option<((u64, usize), PieceStats)>,
     /// The overlay as last handed out.
@@ -177,6 +182,7 @@ impl Default for ElectricFieldWindow {
             width: d.width,
             step: d.step,
             stations: Stations::EverySpan,
+            span_pick: SpanPick::default(),
             limit: None,
             two_d: false,
             ground_radius: d.ground_radius,
@@ -202,6 +208,7 @@ impl Default for ElectricFieldWindow {
             panel: PanelCuts::default(),
             rate: None,
             volume_share: None,
+            floor_speed: None,
             pieces_seen: None,
             drawn: None,
             charges: None,
@@ -230,6 +237,9 @@ struct Stored {
     /// One span's stations: its structures and the place in it (none:
     /// every span at its lowest point).
     span: Option<(String, String, Option<f64>)>,
+    /// The spans on an alignment unticked and those on none ticked.
+    spans_off: Vec<(String, String)>,
+    spans_on: Vec<(String, String)>,
     limit: Option<f64>,
     two_d: bool,
     ground_radius: Option<f64>,
@@ -283,6 +293,8 @@ impl ElectricFieldWindow {
             width: Some(self.width),
             step: Some(self.step),
             span,
+            spans_off: self.span_pick.off.iter().cloned().collect(),
+            spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
             two_d: self.two_d,
             ground_radius: Some(self.ground_radius),
@@ -333,6 +345,8 @@ impl ElectricFieldWindow {
         self.width = st.width.unwrap_or(d.width);
         self.step = st.step.unwrap_or(d.step);
         let spans = self.spans(model);
+        self.span_pick.off = st.spans_off.into_iter().collect();
+        self.span_pick.on = st.spans_on.into_iter().collect();
         self.stations = st
             .span
             .and_then(|(from, to, fraction)| {
@@ -420,13 +434,19 @@ impl ElectricFieldWindow {
         self.open = true;
     }
 
-    /// Gives a circuit's voltage between phases, kV (tests).
+    /// About how long a floor of `tiles` takes here, s: as measured on
+    /// the floors of the last run (as expected before one).
+    fn floor_seconds(&self, tiles: usize) -> f64 {
+        electric::TiledFloor::seconds(tiles) * self.floor_speed.unwrap_or(1.0)
+    }
+
     /// The ground a tiled floor or a plane under each point (tests).
     #[cfg(test)]
     pub fn set_tiled(&mut self, on: bool) {
         self.tiled = on;
     }
 
+    /// Gives a circuit's voltage between phases, kV (tests).
     #[cfg(test)]
     pub fn set_voltage(&mut self, circuit: &str, kv: f64) {
         self.voltages.insert(circuit.to_owned(), kv);
@@ -507,7 +527,17 @@ impl ElectricFieldWindow {
     fn settings(&mut self, model: &Model) -> Settings {
         let spans = self.spans(model);
         let stations = match &self.stations {
-            Stations::EverySpan => Vec::new(),
+            Stations::EverySpan => match self.span_pick.chosen(model, &spans) {
+                (_, true) => Vec::new(),
+                (chosen, false) => chosen
+                    .into_iter()
+                    .map(|k| StationSpec {
+                        from: spans[k].0.clone(),
+                        to: spans[k].1.clone(),
+                        fraction: None,
+                    })
+                    .collect(),
+            },
             Stations::One { span, fraction } => spans
                 .get(*span)
                 .map(|(from, to)| StationSpec {
@@ -649,7 +679,11 @@ impl ElectricFieldWindow {
         let generation = self.job.generation;
         self.job.poll();
         if !self.job.running() {
-            self.progress = None;
+            // The floors' speed here for the estimates (the time a floor
+            // takes on this computer against the one measured).
+            if let Some(f) = self.progress.take().and_then(|p| p.floor_speed()) {
+                self.floor_speed = Some(f);
+            }
         }
         if self.job.generation != generation {
             // A new answer: its charges for the panels, its speed and its
@@ -697,6 +731,11 @@ impl ElectricFieldWindow {
                     .any(|c| self.voltage(model, c).is_some_and(|v| v > 0.0))
                 {
                     Some("every circuit voltage-free: give one a voltage (2 Scope)".to_owned())
+                } else if self.stations == Stations::EverySpan && {
+                    let spans = self.spans(model);
+                    self.span_pick.chosen(model, &spans).0.is_empty()
+                } {
+                    Some("no span ticked for the profiles (2 Scope, Spans)".to_owned())
                 } else {
                     None
                 };
@@ -722,6 +761,20 @@ impl ElectricFieldWindow {
                              modelled. A limit is yours to give; none is built in. Built, in \
                              active development, not approved yet.",
                         );
+                        ui.horizontal(|ui| {
+                            crate::field_help::profile(
+                                ui,
+                                crate::field_help::Field::Electric,
+                                self.width,
+                                self.step,
+                                self.height,
+                            );
+                            crate::field_help::sources(
+                                ui,
+                                crate::field_help::Field::Electric,
+                                self.tiled,
+                            );
+                        });
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
                         check_ui::ScopePicker::new(WINDOW, &model.line)
@@ -744,11 +797,9 @@ impl ElectricFieldWindow {
                     let running = self.progress.as_ref().map(|p| {
                         let total = p.total.load(Ordering::Relaxed).max(1);
                         let done = p.done.load(Ordering::Relaxed);
-                        let mut pr = check_ui::Progress::of(
-                            self.job.elapsed().unwrap_or_default(),
-                            done,
-                            total,
-                        );
+                        let elapsed = self.job.elapsed().unwrap_or_default();
+                        let mut pr =
+                            check_ui::Progress::with_left(elapsed, p.seconds_left(elapsed));
                         let stage = p.stage();
                         pr.text = if stage.is_empty() {
                             format!("{done} of {total} points; {}", pr.text)
@@ -872,6 +923,7 @@ impl ElectricFieldWindow {
         );
         ui.add_space(4.0);
         egui::Grid::new("electric-field-settings")
+            .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Model");
@@ -965,7 +1017,10 @@ impl ElectricFieldWindow {
                         };
                         let tiles = floor.tiles(self.width);
                         let floors = match self.stations {
-                            Stations::EverySpan => self.spans(model).len(),
+                            Stations::EverySpan => {
+                                let spans = self.spans(model);
+                                self.span_pick.chosen(model, &spans).0.len()
+                            }
                             _ => 1,
                         };
                         help::explain(
@@ -973,16 +1028,16 @@ impl ElectricFieldWindow {
                             &(format!(
                                 "The terrain as a conducting floor of tiles around each profile, \
                                  group of points and cut (owner, 2026-10-29: \"keep the tiled \
-                                 implementation\"): ≈ {tiles} tiles, ≈ {} per floor, {floors} \
+                                 implementation\"): ≈ {tiles} tiles, {} per floor, {floors} \
                                  floor(s) for the profiles. It follows hollows and ridges: on a \
                                  real line the plane read the largest field up to 8 % low on bumps \
                                  and up to 24 % high in a hollow. From 4 m to 2 m tiles the \
                                  profiles moved 1–3 %; 1 m tiles take about 8 times as long.",
-                                magnetic_duration(electric::TiledFloor::seconds(tiles))
+                                magnetic_duration(self.floor_seconds(tiles))
                             ) + &format!(
                                 " Cuts across the line and volumes on coarser tiles by default \
-                                 (owner, 2026-10-29): a cut ≈ {} tiles, ≈ {}; a volume over one \
-                                 span ≈ {} tiles, ≈ {}. Measured against the exact field on even \
+                                 (owner, 2026-10-29): a cut ≈ {} tiles, {}; a volume over one \
+                                 span ≈ {} tiles, {}. Measured against the exact field on even \
                                  ground, a volume's floor of 16 m tiles is 8.3 % off the largest \
                                  value, of 8 m 2.8 %, of 4 m 0.16 % (some 40 times as long).",
                                 electric::TiledFloor {
@@ -991,16 +1046,18 @@ impl ElectricFieldWindow {
                                     ..Default::default()
                                 }
                                 .tiles(self.width),
-                                magnetic_duration(electric::TiledFloor::seconds(
-                                    electric::TiledFloor {
-                                        fine: self.cut_tile,
-                                        coarse: self.cut_tile.max(8.0),
-                                        ..Default::default()
-                                    }
-                                    .tiles(self.width)
-                                )),
+                                magnetic_duration(
+                                    self.floor_seconds(
+                                        electric::TiledFloor {
+                                            fine: self.cut_tile,
+                                            coarse: self.cut_tile.max(8.0),
+                                            ..Default::default()
+                                        }
+                                        .tiles(self.width)
+                                    )
+                                ),
                                 electric::Floor::tiles_under(400.0, self.width, self.volume_tile),
-                                magnetic_duration(electric::TiledFloor::seconds(
+                                magnetic_duration(self.floor_seconds(
                                     electric::Floor::tiles_under(
                                         400.0,
                                         self.width,
@@ -1011,9 +1068,10 @@ impl ElectricFieldWindow {
                             "Square tiles of the fine size within 30 m along the line and 10 m \
                              beyond the profiles across, 8 m beyond, to 200 m every way, each \
                              carrying a uniform charge solved so that the floor is at zero \
-                             potential. Volumes take the plane (a floor along a whole run: \
-                             thousands of tiles, minutes per volume). See the theory page, \
-                             Electric field.",
+                             potential. Volumes take a floor of their own tiles along their \
+                             whole run and 100 m beyond. The times at the speed of the last run's \
+                             floors here (before one: as measured on a laptop). See the theory \
+                             page, Electric field.",
                         );
                     } else {
                         help::explain(
@@ -1034,7 +1092,7 @@ impl ElectricFieldWindow {
                 let spans = self.spans(model);
                 ui.horizontal(|ui| {
                     let mut every = self.stations == Stations::EverySpan;
-                    ui.radio_value(&mut every, true, "every span's lowest point");
+                    ui.radio_value(&mut every, true, "the spans ticked, at their lowest point");
                     ui.radio_value(&mut every, false, "one span");
                     if every {
                         self.stations = Stations::EverySpan;
@@ -1078,6 +1136,11 @@ impl ElectricFieldWindow {
                     }
                 });
                 ui.end_row();
+                if self.stations == Stations::EverySpan {
+                    ui.label("");
+                    self.span_pick.ui(ui, "electric-field", model, &spans);
+                    ui.end_row();
+                }
                 ui.label("Across");
                 ui.horizontal(|ui| {
                     ui.label("±");
