@@ -34,22 +34,19 @@ pub const ABOVE: f64 = 10.0;
 /// 5 s on all cores).
 pub(crate) const SUSTAINED: f64 = 2.0;
 
-/// Isolines from above: over every span or one, the grid's step.
+/// Isolines from above over the spans ticked (owner, 2026-10-30), the
+/// grid's step.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Above {
-    /// One span (index into the line's spans); none: every span.
-    pub span: Option<usize>,
     /// Between the grid's points, m.
     pub step: f64,
 }
 
-/// A volume over spans `from` to `to` (indices, along the line).
+/// A volume over the spans ticked (owner, 2026-10-30: "volumes and
+/// results computed only on selected spans"): one along each run of
+/// ticked spans following each other.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VolumeSetup {
-    /// The first span.
-    pub from: usize,
-    /// The last.
-    pub to: usize,
     /// The fine lattice's step, m.
     pub step: f64,
 }
@@ -276,6 +273,8 @@ impl MagneticFieldWindow {
         let st = self.piece_stats(model);
         let (rate, rate_from) = self.rate();
         let pieces = self.pieces_with(&st, self.piece_length);
+        // The spans ticked (Scope): the views are computed over them.
+        let ticked = self.span_pick.chosen(model, spans).0.len();
         // The wires a view takes (modelled within): the share of the line
         // within the distance either side of the view.
         let line = st.line.max(1.0);
@@ -463,10 +462,7 @@ impl MagneticFieldWindow {
                     if !on {
                         self.above = None;
                     } else {
-                        let a = self.above.get_or_insert(Above {
-                            span: None,
-                            step: 2.0,
-                        });
+                        let a = self.above.get_or_insert(Above { step: 2.0 });
                         ui.label(format!("at {} m above the ground, ±{} m, every", self.height, self.width));
                         crate::style::field(
                             ui,
@@ -475,28 +471,12 @@ impl MagneticFieldWindow {
                                 .speed(0.1)
                                 .suffix(" m"),
                         );
-                        let name = |k: Option<usize>| match k {
-                            None => "every span".to_owned(),
-                            Some(k) => spans
-                                .get(k)
-                                .map_or(String::new(), |(f, t)| format!("{f}–{t}")),
-                        };
-                        egui::ComboBox::from_id_salt("magnetic-field-above-span")
-                            .selected_text(name(a.span))
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut a.span, None, name(None));
-                                for k in 0..spans.len() {
-                                    ui.selectable_value(&mut a.span, Some(k), name(Some(k)));
-                                }
-                            });
+                        ui.label(format!("over the {ticked} span(s) ticked"));
                     }
                 });
                 ui.end_row();
                 if let Some(a) = &self.above {
-                    let length = match a.span {
-                        None => st.line,
-                        Some(_) => st.span(),
-                    };
+                    let length = st.span() * ticked as f64;
                     let points = (length / a.step + 1.0) * (2.0 * self.width / a.step + 1.0);
                     ui.label("");
                     crate::check_help::explain(
@@ -558,38 +538,12 @@ impl MagneticFieldWindow {
                 ui.label("Volume");
                 ui.horizontal(|ui| {
                     let mut on = self.volume.is_some();
-                    ui.checkbox(&mut on, "isosurfaces over spans");
+                    ui.checkbox(&mut on, "isosurfaces");
                     if !on {
                         self.volume = None;
                     } else {
-                        let v = self.volume.get_or_insert(VolumeSetup {
-                            from: 0,
-                            to: 0,
-                            step: 2.0,
-                        });
-                        let last = spans.len().saturating_sub(1);
-                        v.from = v.from.min(last);
-                        v.to = v.to.clamp(v.from, last);
-                        let name = |k: usize| {
-                            spans
-                                .get(k)
-                                .map_or(String::new(), |(f, t)| format!("{f}–{t}"))
-                        };
-                        egui::ComboBox::from_id_salt("magnetic-field-volume-from")
-                            .selected_text(name(v.from))
-                            .show_ui(ui, |ui| {
-                                for k in 0..spans.len() {
-                                    ui.selectable_value(&mut v.from, k, name(k));
-                                }
-                            });
-                        ui.label("to");
-                        egui::ComboBox::from_id_salt("magnetic-field-volume-to")
-                            .selected_text(name(v.to))
-                            .show_ui(ui, |ui| {
-                                for k in v.from..spans.len() {
-                                    ui.selectable_value(&mut v.to, k, name(k));
-                                }
-                            });
+                        let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
+                        ui.label(format!("over the {ticked} span(s) ticked,"));
                         ui.label(format!("±{} m, every", self.width));
                         crate::style::field(
                             ui,
@@ -602,7 +556,7 @@ impl MagneticFieldWindow {
                 });
                 ui.end_row();
                 if let Some(v) = &self.volume {
-                    let n = (v.to + 1).saturating_sub(v.from).max(1) as f64;
+                    let n = ticked.max(1) as f64;
                     let full =
                         n * (st.span() / v.step) * (2.0 * self.width / v.step) * (70.0 / v.step);
                     let share = self.volume_share.unwrap_or(0.5);

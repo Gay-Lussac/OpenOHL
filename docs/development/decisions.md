@@ -43,6 +43,13 @@ ticked, an honest time left (owner, 2026-10-30)**
   default; kept in the project as the changes from that default
   (`spans_off`, `spans_on`). Every span ticked runs as before (every
   span); otherwise the spans ticked as stations.
+- The owner, then: "for the magnetic field it should be the same...
+  volumes and results computed only on selected spans". The list is the
+  windows' **Spans** row (Scope): the profiles, the isolines from above
+  and the volumes over the spans ticked only, one grid or volume along
+  each run of ticked spans following each other; the views' own span
+  choices (one span or every span from above, a volume *from … to*)
+  gone, their steps kept (`volume_step`; an older `volume`'s step read).
 
 ## 2026-10-29
 

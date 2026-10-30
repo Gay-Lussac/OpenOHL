@@ -70,6 +70,8 @@ impl ElectricFieldWindow {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
+        // The spans ticked (Scope): the views are computed over them.
+        let ticked = self.span_pick.chosen(model, spans).0.len();
         crate::check_ui::section(ui, 3, "Model", None);
         egui::Grid::new("electric-field-model")
             .num_columns(2)
@@ -265,38 +267,12 @@ impl ElectricFieldWindow {
                 ui.label("Volume");
                 ui.horizontal(|ui| {
                     let mut on = self.volume.is_some();
-                    ui.checkbox(&mut on, "isosurfaces over spans");
+                    ui.checkbox(&mut on, "isosurfaces");
                     if !on {
                         self.volume = None;
                     } else {
-                        let v = self.volume.get_or_insert(VolumeSetup {
-                            from: 0,
-                            to: 0,
-                            step: 2.0,
-                        });
-                        let last = spans.len().saturating_sub(1);
-                        v.from = v.from.min(last);
-                        v.to = v.to.clamp(v.from, last);
-                        let name = |k: usize| {
-                            spans
-                                .get(k)
-                                .map_or(String::new(), |(f, t)| format!("{f}–{t}"))
-                        };
-                        egui::ComboBox::from_id_salt("electric-field-volume-from")
-                            .selected_text(name(v.from))
-                            .show_ui(ui, |ui| {
-                                for k in 0..spans.len() {
-                                    ui.selectable_value(&mut v.from, k, name(k));
-                                }
-                            });
-                        ui.label("to");
-                        egui::ComboBox::from_id_salt("electric-field-volume-to")
-                            .selected_text(name(v.to))
-                            .show_ui(ui, |ui| {
-                                for k in v.from..spans.len() {
-                                    ui.selectable_value(&mut v.to, k, name(k));
-                                }
-                            });
+                        let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
+                        ui.label(format!("over the {ticked} span(s) ticked,"));
                         ui.label(format!("±{} m, every", self.width));
                         crate::style::field(
                             ui,
@@ -309,7 +285,7 @@ impl ElectricFieldWindow {
                 });
                 ui.end_row();
                 if let Some(v) = &self.volume {
-                    let n = (v.to + 1).saturating_sub(v.from).max(1) as f64;
+                    let n = ticked.max(1) as f64;
                     let full =
                         n * (st.span() / v.step) * (2.0 * self.width / v.step) * (70.0 / v.step);
                     let share = self.volume_share.unwrap_or(0.5);

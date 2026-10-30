@@ -36,7 +36,7 @@ use crate::check_ui;
 use crate::field_overlay::Level;
 use crate::job::{Job, save_csv};
 use crate::magnetic_field::views::{PanelCuts, PieceStats, VolumeSetup};
-use crate::magnetic_field::{Spans, Stations, runs};
+use crate::magnetic_field::{Spans, Stations};
 use crate::model::Model;
 use crate::span_pick::SpanPick;
 
@@ -255,6 +255,9 @@ struct Stored {
     in_cuts: Option<f64>,
     /// A volume: its first and last spans and the step.
     volume: Option<(SpanIds, SpanIds, f64)>,
+    /// A volume over the spans ticked: its step (2026-10-30; `volume`
+    /// before: its spans now the ticked ones, its step read).
+    volume_step: Option<f64>,
 }
 
 impl ElectricFieldWindow {
@@ -310,10 +313,8 @@ impl ElectricFieldWindow {
             levels: Some(self.levels.clone()),
             fill: Some(self.fill),
             in_cuts: self.in_cuts,
-            volume: self
-                .volume
-                .as_ref()
-                .and_then(|v| Some((spans.get(v.from)?.clone(), spans.get(v.to)?.clone(), v.step))),
+            volume: None,
+            volume_step: self.volume.as_ref().map(|v| v.step),
         }
     }
 
@@ -367,14 +368,10 @@ impl ElectricFieldWindow {
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
         self.in_cuts = st.in_cuts;
-        let find = |s: &(String, String)| spans.iter().position(|x| x == s);
-        self.volume = st.volume.and_then(|(a, b, step)| {
-            Some(VolumeSetup {
-                from: find(&a)?,
-                to: find(&b)?,
-                step,
-            })
-        });
+        self.volume = st
+            .volume_step
+            .or(st.volume.map(|v| v.2))
+            .map(|step| VolumeSetup { step });
         (self.points, self.points_text, self.points_error) = match st.points {
             Some((name, text)) => match magnetic::parse_points(&text) {
                 Ok(p) => (Some((name, p)), Some(text), None),
@@ -458,16 +455,19 @@ impl ElectricFieldWindow {
         self.voltages.get(circuit).copied()
     }
 
+    /// Ticks span `k` only (tests).
+    #[cfg(test)]
+    pub fn tick_only(&mut self, model: &Model, k: usize) {
+        let spans = self.spans(model);
+        self.span_pick.only(model, &spans, k);
+    }
+
     /// Sets the views (tests): the cross-section panels every `cuts` m, a
     /// volume over the first span every `volume` m.
     #[cfg(test)]
     pub fn set_views(&mut self, cuts: Option<f64>, volume: Option<f64>) {
         self.in_cuts = cuts;
-        self.volume = volume.map(|step| VolumeSetup {
-            from: 0,
-            to: 0,
-            step,
-        });
+        self.volume = volume.map(|step| VolumeSetup { step });
     }
 
     /// The views (tests): the panels' and the volume's step.
@@ -586,21 +586,21 @@ impl ElectricFieldWindow {
             jumpers: self.jumpers,
             piece_length: self.piece_length,
             cuts: Vec::new(),
-            // A volume: one along each run of spans following each other
-            // within the range (continuous across the line angles).
+            // A volume: one along each run of ticked spans following each
+            // other (continuous across the line angles).
             volumes: match (&self.volume, self.two_d) {
-                (Some(v), false) => {
-                    runs(&spans[v.from.min(spans.len())..(v.to + 1).min(spans.len())])
-                        .into_iter()
-                        .map(|(from, to)| magnetic::VolumeSpec {
-                            from,
-                            to,
-                            width: self.width,
-                            above: crate::magnetic_field::views::ABOVE,
-                            step: v.step,
-                        })
-                        .collect()
-                }
+                (Some(v), false) => self
+                    .span_pick
+                    .runs(model, &spans)
+                    .into_iter()
+                    .map(|(from, to)| magnetic::VolumeSpec {
+                        from,
+                        to,
+                        width: self.width,
+                        above: crate::magnetic_field::views::ABOVE,
+                        step: v.step,
+                    })
+                    .collect(),
                 _ => Vec::new(),
             },
             levels: crate::field_overlay::shown(&self.levels)
@@ -735,7 +735,7 @@ impl ElectricFieldWindow {
                     let spans = self.spans(model);
                     self.span_pick.chosen(model, &spans).0.is_empty()
                 } {
-                    Some("no span ticked for the profiles (2 Scope, Spans)".to_owned())
+                    Some("no span ticked (2 Scope, Spans)".to_owned())
                 } else {
                     None
                 };
@@ -1088,11 +1088,16 @@ impl ElectricFieldWindow {
                     }
                     ui.end_row();
                 }
-                ui.label("Profiles");
+                // The spans computed (owner, 2026-10-30): the profiles,
+                // the isolines from above and the volumes over them.
                 let spans = self.spans(model);
+                ui.label("Spans");
+                self.span_pick.ui(ui, "electric-field", model, &spans);
+                ui.end_row();
+                ui.label("Profiles");
                 ui.horizontal(|ui| {
                     let mut every = self.stations == Stations::EverySpan;
-                    ui.radio_value(&mut every, true, "the spans ticked, at their lowest point");
+                    ui.radio_value(&mut every, true, "at each ticked span's lowest point");
                     ui.radio_value(&mut every, false, "one span");
                     if every {
                         self.stations = Stations::EverySpan;
@@ -1136,11 +1141,6 @@ impl ElectricFieldWindow {
                     }
                 });
                 ui.end_row();
-                if self.stations == Stations::EverySpan {
-                    ui.label("");
-                    self.span_pick.ui(ui, "electric-field", model, &spans);
-                    ui.end_row();
-                }
                 ui.label("Across");
                 ui.horizontal(|ui| {
                     ui.label("±");
