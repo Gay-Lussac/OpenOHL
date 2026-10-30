@@ -1642,7 +1642,7 @@ fn setup_shots(harness: &mut Harness<'_, App>, dir: &std::path::Path, name: &str
     harness.get_by_label("Setup").click();
     harness.run();
     harness.run_steps(5);
-    for i in 1..=4 {
+    for i in 1..=5 {
         let image = harness.render().unwrap();
         let path = dir.join(format!("{name}-{i}.png"));
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
@@ -1711,6 +1711,28 @@ fn the_magnetic_field_window_runs_and_goes_out_of_date() {
         let image = harness.render().unwrap();
         let path = std::path::PathBuf::from(&dir).join("ohl-design-magnetic-field.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        // (Every view on: their rows drawn too.)
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .magnetic_field
+            .set_views(Some(2.0), Some(0.5), Some(2.0));
+        {
+            // Earth wires and a circuit given by its end points: their
+            // rows drawn too.
+            let r = harness.state_mut().ready().unwrap();
+            r.magnetic_field.set_earth_wires(true);
+            let ends = ohl_electrical::magnetic::circuit_ends(&r.model.line);
+            if let Some((key, points)) = ends.iter().find(|(_, e)| e.len() >= 2) {
+                let mut list: Vec<(String, Option<f64>)> =
+                    points.iter().map(|p| (p.clone(), Some(0.0))).collect();
+                list[0].1 = Some(700.0);
+                let last = list.len() - 1;
+                list[last].1 = None;
+                r.magnetic_field.set_ends(&key.label(), list);
+            }
+        }
         setup_shots(
             &mut harness,
             std::path::Path::new(&dir),
@@ -1804,6 +1826,8 @@ fn the_magnetic_field_views_are_drawn() {
         let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
         r.magnetic_field.set_current(&circuits[0].label(), 800.0);
         r.magnetic_field.set_views(Some(5.0), Some(1.0), Some(4.0));
+        // A volume over the first span: it alone ticked.
+        r.magnetic_field.tick_only(&r.model, 0);
         r.magnetic_field.show(r.case);
         r.magnetic_field.start(&r.model, &ctx);
     }
@@ -2001,6 +2025,12 @@ fn the_electric_field_window_runs_and_goes_out_of_date() {
             .unwrap()
             .electric_field
             .set_tiled(true);
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .electric_field
+            .set_views(Some(0.5), Some(2.0));
         setup_shots(
             &mut harness,
             std::path::Path::new(&dir),
@@ -2029,6 +2059,8 @@ fn the_electric_field_views_are_drawn() {
     {
         let r = harness.state_mut().ready().unwrap();
         r.electric_field.set_views(Some(1.0), Some(4.0));
+        // A volume over the first span: it alone ticked.
+        r.electric_field.tick_only(&r.model, 0);
         // (The plane: the window's code; the tiled floor has its own tests.)
         r.electric_field.set_tiled(false);
         r.electric_field.show(r.case);

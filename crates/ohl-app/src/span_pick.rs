@@ -145,54 +145,80 @@ impl SpanPick {
         (out, all)
     }
 
+    /// The spans ticked in the line's order and as runs of spans
+    /// following each other (each run's first and last structure): what
+    /// the isolines from above and the volumes are computed over.
+    pub fn runs(&mut self, model: &crate::model::Model, spans: &Spans) -> Vec<SpanIds> {
+        let (mut chosen, _) = self.chosen(model, spans);
+        chosen.sort_unstable();
+        let ticked: Vec<SpanIds> = chosen.into_iter().map(|k| spans[k].clone()).collect();
+        crate::magnetic_field::runs(&ticked)
+    }
+
+    /// Ticks span `k` only (tests).
+    #[cfg(test)]
+    pub fn only(&mut self, model: &crate::model::Model, spans: &Spans, k: usize) {
+        let groups = self.groups(model, spans);
+        for g in groups.iter() {
+            let aligned = g.alignment.is_some();
+            for &j in &g.spans {
+                self.set(&spans[j], aligned, j == k);
+            }
+        }
+    }
+
     /// The list: per alignment its spans with a tick each and *all* /
     /// *none*; `id` keeps the list's scroll apart from another window's.
     pub fn ui(&mut self, ui: &mut egui::Ui, id: &str, model: &crate::model::Model, spans: &Spans) {
         let groups = self.groups(model, spans);
         let (chosen, _) = self.chosen(model, spans);
-        egui::CollapsingHeader::new(format!("Spans: {} of {} ticked", chosen.len(), spans.len()))
-            .id_salt((id, "spans"))
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt((id, "span-list"))
-                    .max_height(220.0)
-                    .show(ui, |ui| {
-                        for g in groups.iter() {
-                            let aligned = g.alignment.is_some();
-                            ui.horizontal(|ui| {
-                                match &g.alignment {
-                                    Some(name) => ui.strong(format!("Alignment {name}")),
-                                    None => ui.strong("On no alignment").on_hover_text(
-                                        "Spans whose structures are not both on one alignment: \
+        egui::CollapsingHeader::new(format!(
+            "{} of {} ticked: the profiles, isolines and volumes over them",
+            chosen.len(),
+            spans.len()
+        ))
+        .id_salt((id, "spans"))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt((id, "span-list"))
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    for g in groups.iter() {
+                        let aligned = g.alignment.is_some();
+                        ui.horizontal(|ui| {
+                            match &g.alignment {
+                                Some(name) => ui.strong(format!("Alignment {name}")),
+                                None => ui.strong("On no alignment").on_hover_text(
+                                    "Spans whose structures are not both on one alignment: \
                                      unticked unless you tick them",
-                                    ),
-                                };
-                                if ui.small_button("all").clicked() {
-                                    for &k in &g.spans {
-                                        self.set(&spans[k], aligned, true);
-                                    }
-                                }
-                                if ui.small_button("none").clicked() {
-                                    for &k in &g.spans {
-                                        self.set(&spans[k], aligned, false);
-                                    }
-                                }
-                            });
-                            ui.horizontal_wrapped(|ui| {
+                                ),
+                            };
+                            if ui.small_button("all").clicked() {
                                 for &k in &g.spans {
-                                    let ids = &spans[k];
-                                    let mut tick = self.ticked(ids, aligned);
-                                    if ui
-                                        .checkbox(&mut tick, format!("{}–{}", ids.0, ids.1))
-                                        .changed()
-                                    {
-                                        self.set(ids, aligned, tick);
-                                    }
+                                    self.set(&spans[k], aligned, true);
                                 }
-                            });
-                        }
-                    });
-            });
+                            }
+                            if ui.small_button("none").clicked() {
+                                for &k in &g.spans {
+                                    self.set(&spans[k], aligned, false);
+                                }
+                            }
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            for &k in &g.spans {
+                                let ids = &spans[k];
+                                let mut tick = self.ticked(ids, aligned);
+                                if ui
+                                    .checkbox(&mut tick, format!("{}–{}", ids.0, ids.1))
+                                    .changed()
+                                {
+                                    self.set(ids, aligned, tick);
+                                }
+                            }
+                        });
+                    }
+                });
+        });
     }
 }
 

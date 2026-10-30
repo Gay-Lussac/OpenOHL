@@ -259,11 +259,15 @@ struct Stored {
     modelled_within: Option<f64>,
     levels: Option<Vec<Level>>,
     fill: Option<bool>,
-    /// Isolines from above: one span (none: every span) and the step.
+    /// Isolines from above: (formerly one span; none: the spans ticked)
+    /// and the step.
     above: Option<(Option<(String, String)>, f64)>,
     in_cuts: Option<f64>,
     /// A volume: its first and last spans and the step.
     volume: Option<(SpanIds, SpanIds, f64)>,
+    /// A volume over the spans ticked: its step (2026-10-30; `volume`
+    /// before: its spans now the ticked ones, its step read).
+    volume_step: Option<f64>,
 }
 
 impl MagneticFieldWindow {
@@ -318,15 +322,10 @@ impl MagneticFieldWindow {
             modelled_within: self.modelled_within,
             levels: Some(self.levels.clone()),
             fill: Some(self.fill),
-            above: self
-                .above
-                .as_ref()
-                .map(|a| (a.span.and_then(|k| spans.get(k).cloned()), a.step)),
+            above: self.above.as_ref().map(|a| (None, a.step)),
             in_cuts: self.in_cuts,
-            volume: self
-                .volume
-                .as_ref()
-                .and_then(|v| Some((spans.get(v.from)?.clone(), spans.get(v.to)?.clone(), v.step))),
+            volume: None,
+            volume_step: self.volume.as_ref().map(|v| v.step),
         }
     }
 
@@ -378,19 +377,12 @@ impl MagneticFieldWindow {
         self.modelled_within = st.modelled_within;
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
-        let find = |s: &(String, String)| spans.iter().position(|x| x == s);
-        self.above = st.above.map(|(span, step)| Above {
-            span: span.as_ref().and_then(find),
-            step,
-        });
+        self.above = st.above.map(|(_, step)| Above { step });
         self.in_cuts = st.in_cuts;
-        self.volume = st.volume.and_then(|(a, b, step)| {
-            Some(VolumeSetup {
-                from: find(&a)?,
-                to: find(&b)?,
-                step,
-            })
-        });
+        self.volume = st
+            .volume_step
+            .or(st.volume.map(|v| v.2))
+            .map(|step| VolumeSetup { step });
         self.two_d = st.two_d;
         self.mean_heights = st.mean_heights;
         (self.points, self.points_text, self.points_error) = match st.points {
@@ -465,18 +457,21 @@ impl MagneticFieldWindow {
         self.currents.get(circuit).map(|c| c.0)
     }
 
+    /// Ticks span `k` only (tests).
+    #[cfg(test)]
+    pub fn tick_only(&mut self, model: &Model, k: usize) {
+        let spans = self.spans(model);
+        self.span_pick.only(model, &spans, k);
+    }
+
     /// Sets the views (tests): isolines from above every `above` m, the
     /// cross-section panels every `cuts` m, a volume over the first span
     /// every `volume` m.
     #[cfg(test)]
     pub fn set_views(&mut self, above: Option<f64>, cuts: Option<f64>, volume: Option<f64>) {
-        self.above = above.map(|step| Above { span: None, step });
+        self.above = above.map(|step| Above { step });
         self.in_cuts = cuts;
-        self.volume = volume.map(|step| VolumeSetup {
-            from: 0,
-            to: 0,
-            step,
-        });
+        self.volume = volume.map(|step| VolumeSetup { step });
     }
 
     /// The views (tests): from above, the panels, the volume's step.
@@ -493,6 +488,12 @@ impl MagneticFieldWindow {
     #[cfg(test)]
     pub fn panel_cuts_done(&self) -> usize {
         self.panel.done.len()
+    }
+
+    /// The earth wires carrying their induced currents (tests).
+    #[cfg(test)]
+    pub fn set_earth_wires(&mut self, on: bool) {
+        self.earth_wires = on;
     }
 
     /// Gives circuit `label` by its end points (tests): each end's
@@ -591,30 +592,27 @@ impl MagneticFieldWindow {
             // one span.
             grids: match &self.above {
                 None => Vec::new(),
-                Some(a) => match a.span {
-                    None => runs(&spans),
-                    Some(k) => spans.get(k).cloned().into_iter().collect(),
-                },
+                Some(_) => self.span_pick.runs(model, &spans),
             },
             grid_step: self.above.as_ref().map(|a| a.step),
             piece_length: self.piece_length,
             modelled_within: self.modelled_within,
             cuts: Vec::new(),
-            // A volume: one along each run of spans following each other
-            // within the range (continuous across the line angles).
+            // A volume: one along each run of ticked spans following each
+            // other (continuous across the line angles).
             volumes: match (&self.volume, self.two_d) {
-                (Some(v), false) => {
-                    runs(&spans[v.from.min(spans.len())..(v.to + 1).min(spans.len())])
-                        .into_iter()
-                        .map(|(from, to)| magnetic::VolumeSpec {
-                            from,
-                            to,
-                            width: self.width,
-                            above: views::ABOVE,
-                            step: v.step,
-                        })
-                        .collect()
-                }
+                (Some(v), false) => self
+                    .span_pick
+                    .runs(model, &spans)
+                    .into_iter()
+                    .map(|(from, to)| magnetic::VolumeSpec {
+                        from,
+                        to,
+                        width: self.width,
+                        above: views::ABOVE,
+                        step: v.step,
+                    })
+                    .collect(),
                 _ => Vec::new(),
             },
             levels: crate::field_overlay::shown(&self.levels)
@@ -748,7 +746,7 @@ impl MagneticFieldWindow {
                     let spans = self.spans(model);
                     self.span_pick.chosen(model, &spans).0.is_empty()
                 } {
-                    Some("no span ticked for the profiles (2 Scope, Spans)".to_owned())
+                    Some("no span ticked (2 Scope, Spans)".to_owned())
                 } else {
                     None
                 };
@@ -1068,11 +1066,16 @@ impl MagneticFieldWindow {
                         );
                     ui.end_row();
                 }
-                ui.label("Profiles");
+                // The spans computed (owner, 2026-10-30): the profiles,
+                // the isolines from above and the volumes over them.
                 let spans = self.spans(model);
+                ui.label("Spans");
+                self.span_pick.ui(ui, "magnetic-field", model, &spans);
+                ui.end_row();
+                ui.label("Profiles");
                 ui.horizontal(|ui| {
                     let mut every = self.stations == Stations::EverySpan;
-                    ui.radio_value(&mut every, true, "the spans ticked, at their lowest point");
+                    ui.radio_value(&mut every, true, "at each ticked span's lowest point");
                     ui.radio_value(&mut every, false, "one span");
                     if every {
                         self.stations = Stations::EverySpan;
@@ -1113,11 +1116,6 @@ impl MagneticFieldWindow {
                     }
                 });
                 ui.end_row();
-                if self.stations == Stations::EverySpan {
-                    ui.label("");
-                    self.span_pick.ui(ui, "magnetic-field", model, &spans);
-                    ui.end_row();
-                }
                 ui.label("Across");
                 ui.horizontal(|ui| {
                     ui.label("±");

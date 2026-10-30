@@ -780,12 +780,14 @@ longer in the line falls back to the default.
 - **Jumpers** (3D, on by default, 2026-10-29): a jumper between two
   section ends of one phase carries that phase's current; jumpers on taps
   or between different phases are left out and listed in the notes.
-- **Profiles**: the spans ticked, each at its lowest point, or one span
-  at its lowest point or at a place 0–1 along it. **Spans** (2026-10-30)
-  lists every span: per alignment its spans in station order, ticked;
-  then the spans on no alignment (both structures not on one alignment),
-  unticked; *all* / *none* per group. The ticks are kept in the project;
-  with none ticked, Run says so; **Across** ± the width every step at a
+- **Spans** (2026-10-30): the spans computed — the profiles, the
+  isolines from above and the volumes are computed over the spans ticked
+  only. Per alignment its spans in station order, ticked; then the spans
+  on no alignment (both structures not on one alignment), unticked;
+  *all* / *none* per group. The ticks are kept in the project; with none
+  ticked, Run says so.
+- **Profiles**: at each ticked span's lowest point, or one span at its
+  lowest point or at a place 0–1 along it; **Across** ± the width every step at a
   height above the ground (default ±50 m every 1 m at 1 m). The ground is
   the project's surface for the checks when there is one, else straight
   between the structures' feet.
@@ -823,7 +825,7 @@ level at or below their value. The views, drawn on the layer **Magnetic
 field (isolines, surfaces)** while the window is open:
 
 - **From above**: isolines at the profiles' height above the ground over
-  every span or one, ± the width, a grid every step (default 2 m); in
+  the spans ticked, ± the width, a grid every step (default 2 m); in
   the plan and the 3D view. Spans following each other along the line
   make one grid, bent at the line angles: the isolines run through the
   structures unbroken.
@@ -832,8 +834,8 @@ field (isolines, surfaces)** while the window is open:
   building to see the field around it with the ground, the LiDAR points
   and the line. Computed after a run whenever a panel opens or moves
   (some seconds each), from the run's wires.
-- **Volume**: isosurfaces of the levels over spans *from … to* (one
-  volume along them, bent at the line angles: no seam at the structures),
+- **Volume**: isosurfaces of the levels over the spans ticked (one
+  volume along each run of ticked spans following each other, bent at the line angles: no seam at the structures),
   ± the width, from the ground to 10 m over the highest wire, the lattice every
   step (default 2 m), drawn translucent in the 3D view. A coarse lattice
   first, then the fine one only where a level passes, near the wires and
@@ -985,8 +987,8 @@ measurement on this computer. The whole line is always modelled.
 drawn, 10 kV/m not; display only, none is a limit; **+ the limit**),
 *colour the cuts by band*, the field in **every cross-section panel
 open** (every step, default 0.5 m; computed from the run's charges
-whenever a panel opens or moves) and a **volume** over spans (isosurfaces
-of the levels, one volume along the spans, ± the width, from the ground to
+whenever a panel opens or moves) and a **volume** over the spans ticked (isosurfaces
+of the levels, one volume along each run of ticked spans, ± the width, from the ground to
 10 m over the highest wire) — each with its time beside it, drawn on the
 layer **Electric field (isolines, surfaces)** while the window is open,
 as for the magnetic field. Not yet: isolines from above.
