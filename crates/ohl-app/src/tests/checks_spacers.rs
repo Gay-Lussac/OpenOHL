@@ -1636,6 +1636,27 @@ fn calculation_options_choose_the_simplified_blocks() {
     assert_eq!(r.model.line.solver.blocks, ohl_line::InTheBlocks::EqualH);
 }
 
+/// The Setup tab of the window in front, saved as `name`-1.png, -2.png …
+/// scrolled down a page at a time (the layout looked at as a whole).
+fn setup_shots(harness: &mut Harness<'_, App>, dir: &std::path::Path, name: &str) {
+    harness.get_by_label("Setup").click();
+    harness.run();
+    harness.run_steps(5);
+    for i in 1..=4 {
+        let image = harness.render().unwrap();
+        let path = dir.join(format!("{name}-{i}.png"));
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        harness.event(egui::Event::PointerMoved(egui::pos2(440.0, 400.0)));
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -550.0),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+        });
+        harness.run();
+    }
+}
+
 /// Checks › Electrical › Magnetic field…: Run is greyed until a circuit
 /// has a current; then a profile per span with a limit's line; the line
 /// edited, the results are out of date.
@@ -1688,8 +1709,26 @@ fn the_magnetic_field_window_runs_and_goes_out_of_date() {
     assert!(harness.query_by_label_contains("Export CSV").is_some());
     if let Some(dir) = png {
         let image = harness.render().unwrap();
-        let path = std::path::PathBuf::from(dir).join("ohl-design-magnetic-field.png");
+        let path = std::path::PathBuf::from(&dir).join("ohl-design-magnetic-field.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        setup_shots(
+            &mut harness,
+            std::path::Path::new(&dir),
+            "ohl-design-magnetic-field-setup",
+        );
+        // The Line parameters window's setup (its drawing).
+        {
+            let r = harness.state_mut().ready().unwrap();
+            r.magnetic_field.open = false;
+            r.line_parameters.show(0);
+        }
+        harness.run();
+        let image = harness.render().unwrap();
+        let path = std::path::PathBuf::from(&dir).join("ohl-design-line-parameters-setup.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        let r = harness.state_mut().ready().unwrap();
+        r.line_parameters.open = false;
+        r.magnetic_field.open = true;
     }
     let r = harness.state_mut().ready().unwrap();
     assert!(r.magnetic_field.out_of_date(&r.model).is_none());
@@ -1953,8 +1992,20 @@ fn the_electric_field_window_runs_and_goes_out_of_date() {
     assert!(harness.query_by_label_contains("Export CSV").is_some());
     if let Some(dir) = png {
         let image = harness.render().unwrap();
-        let path = std::path::PathBuf::from(dir).join("ohl-design-electric-field.png");
+        let path = std::path::PathBuf::from(&dir).join("ohl-design-electric-field.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        // (The tiled floor's drawing.)
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .electric_field
+            .set_tiled(true);
+        setup_shots(
+            &mut harness,
+            std::path::Path::new(&dir),
+            "ohl-design-electric-field-setup",
+        );
     }
     let r = harness.state_mut().ready().unwrap();
     assert!(r.electric_field.out_of_date(&r.model).is_none());

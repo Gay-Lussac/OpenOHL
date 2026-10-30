@@ -39,6 +39,7 @@ use crate::check_ui;
 use crate::field_overlay::Level;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
+use crate::span_pick::SpanPick;
 use views::{Above, PanelCuts, PieceStats, VolumeSetup};
 
 /// What its results are computed from ([`crate::revision`]).
@@ -116,6 +117,8 @@ pub struct MagneticFieldWindow {
     width: f64,
     step: f64,
     stations: Stations,
+    /// The spans ticked for the profiles (every span's).
+    span_pick: SpanPick,
     limit: Option<f64>,
     two_d: bool,
     mean_heights: bool,
@@ -189,6 +192,7 @@ impl Default for MagneticFieldWindow {
             width: 50.0,
             step: 1.0,
             stations: Stations::EverySpan,
+            span_pick: SpanPick::default(),
             limit: None,
             two_d: false,
             mean_heights: false,
@@ -243,6 +247,9 @@ struct Stored {
     /// One span's stations: its structures and the place in it (none:
     /// every span at its lowest point).
     span: Option<(String, String, Option<f64>)>,
+    /// The spans on an alignment unticked and those on none ticked.
+    spans_off: Vec<(String, String)>,
+    spans_on: Vec<(String, String)>,
     limit: Option<f64>,
     two_d: bool,
     mean_heights: bool,
@@ -298,6 +305,8 @@ impl MagneticFieldWindow {
             width: Some(self.width),
             step: Some(self.step),
             span,
+            spans_off: self.span_pick.off.iter().cloned().collect(),
+            spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
             two_d: self.two_d,
             mean_heights: self.mean_heights,
@@ -353,6 +362,8 @@ impl MagneticFieldWindow {
         self.width = st.width.unwrap_or(d.width);
         self.step = st.step.unwrap_or(d.step);
         let spans = self.spans(model);
+        self.span_pick.off = st.spans_off.into_iter().collect();
+        self.span_pick.on = st.spans_on.into_iter().collect();
         self.stations = st
             .span
             .and_then(|(from, to, fraction)| {
@@ -515,7 +526,17 @@ impl MagneticFieldWindow {
     fn settings(&mut self, model: &Model) -> Settings {
         let spans = self.spans(model);
         let stations = match &self.stations {
-            Stations::EverySpan => Vec::new(),
+            Stations::EverySpan => match self.span_pick.chosen(model, &spans) {
+                (_, true) => Vec::new(),
+                (chosen, false) => chosen
+                    .into_iter()
+                    .map(|k| StationSpec {
+                        from: spans[k].0.clone(),
+                        to: spans[k].1.clone(),
+                        fraction: None,
+                    })
+                    .collect(),
+            },
             Stations::One { span, fraction } => spans
                 .get(*span)
                 .map(|(from, to)| StationSpec {
@@ -723,6 +744,11 @@ impl MagneticFieldWindow {
                         .any(|e| e.1.is_some_and(|a| a != 0.0))
                 {
                     Some("give a circuit a current (2 Scope)".to_owned())
+                } else if self.stations == Stations::EverySpan && {
+                    let spans = self.spans(model);
+                    self.span_pick.chosen(model, &spans).0.is_empty()
+                } {
+                    Some("no span ticked for the profiles (2 Scope, Spans)".to_owned())
                 } else {
                     None
                 };
@@ -747,6 +773,20 @@ impl MagneticFieldWindow {
                              conductors). A limit is yours to give; none is built in. Built, in \
                              active development, not approved yet.",
                         );
+                        ui.horizontal(|ui| {
+                            crate::field_help::profile(
+                                ui,
+                                crate::field_help::Field::Magnetic,
+                                self.width,
+                                self.step,
+                                self.height,
+                            );
+                            crate::field_help::sources(
+                                ui,
+                                crate::field_help::Field::Magnetic,
+                                false,
+                            );
+                        });
                         ui.separator();
                         // The weather case: in the scope (it was in the
                         // footer until 2026-10-27); the circuits' currents
@@ -772,11 +812,9 @@ impl MagneticFieldWindow {
                     let running = self.progress.as_ref().map(|p| {
                         let total = p.total.load(Ordering::Relaxed).max(1);
                         let done = p.done.load(Ordering::Relaxed);
-                        let mut pr = check_ui::Progress::of(
-                            self.job.elapsed().unwrap_or_default(),
-                            done,
-                            total,
-                        );
+                        let elapsed = self.job.elapsed().unwrap_or_default();
+                        let mut pr =
+                            check_ui::Progress::with_left(elapsed, p.seconds_left(elapsed));
                         let stage = p.stage();
                         pr.text = if stage.is_empty() {
                             format!("{done} of {total} points; {}", pr.text)
@@ -977,6 +1015,7 @@ impl MagneticFieldWindow {
             });
         ui.add_space(4.0);
         egui::Grid::new("magnetic-field-settings")
+            .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Model");
@@ -1033,7 +1072,7 @@ impl MagneticFieldWindow {
                 let spans = self.spans(model);
                 ui.horizontal(|ui| {
                     let mut every = self.stations == Stations::EverySpan;
-                    ui.radio_value(&mut every, true, "every span's lowest point");
+                    ui.radio_value(&mut every, true, "the spans ticked, at their lowest point");
                     ui.radio_value(&mut every, false, "one span");
                     if every {
                         self.stations = Stations::EverySpan;
@@ -1074,6 +1113,11 @@ impl MagneticFieldWindow {
                     }
                 });
                 ui.end_row();
+                if self.stations == Stations::EverySpan {
+                    ui.label("");
+                    self.span_pick.ui(ui, "magnetic-field", model, &spans);
+                    ui.end_row();
+                }
                 ui.label("Across");
                 ui.horizontal(|ui| {
                     ui.label("±");

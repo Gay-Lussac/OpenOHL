@@ -72,6 +72,7 @@ impl ElectricFieldWindow {
         };
         crate::check_ui::section(ui, 3, "Model", None);
         egui::Grid::new("electric-field-model")
+            .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Wire pieces");
@@ -134,7 +135,7 @@ impl ElectricFieldWindow {
                 // The profiles' and points' time.
                 let across = (2.0 * self.width / self.step.max(0.01)).round() + 1.0;
                 let profiles = match self.stations {
-                    Stations::EverySpan => st.spans.max(1) as f64,
+                    Stations::EverySpan => self.span_pick.chosen(model, spans).0.len().max(1) as f64,
                     Stations::One { .. } => 1.0,
                 };
                 let given = self.points.as_ref().map_or(0, |p| p.1.len()) as f64;
@@ -152,7 +153,12 @@ impl ElectricFieldWindow {
                 );
                 ui.end_row();
             });
+        // The drawing of the model: the pieces of a span.
+        let per_span =
+            (st.span() / self.piece_length.unwrap_or(st.longest).max(0.1)).ceil() as usize;
+        crate::field_help::pieces(ui, per_span);
         crate::check_ui::section(ui, 4, "Views and levels", None);
+        crate::field_help::cut(ui, self.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.label(egui::RichText::new("Levels drawn (kV/m, display only: none is a limit)").small());
         let mut remove = None;
@@ -205,6 +211,7 @@ impl ElectricFieldWindow {
         });
         let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
         egui::Grid::new("electric-field-views")
+            .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("From above");

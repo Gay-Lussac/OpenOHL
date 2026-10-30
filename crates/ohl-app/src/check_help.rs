@@ -530,10 +530,17 @@ pub const SIZE: egui::Vec2 = egui::vec2(120.0, 80.0);
 /// review, 2026-10-26 — the help paragraphs behind a (?), one short line
 /// kept).
 pub fn explain(ui: &mut egui::Ui, short: &str, long: &str) {
-    ui.horizontal_wrapped(|ui| {
+    // One wrapped label and the (?) beside it (owner, 2026-10-30: the
+    // text overlapped the next row): a label measures its own height,
+    // where a wrapped row in a grid cell was centred on a row too low.
+    ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        ui.label(egui::RichText::new(short).small().weak())
-            .on_hover_text(long);
+        let width = (ui.available_width() - 24.0).max(80.0);
+        ui.scope(|ui| {
+            ui.set_max_width(width);
+            ui.add(egui::Label::new(egui::RichText::new(short).small().weak()).wrap())
+                .on_hover_text(long);
+        });
         question(ui, long);
     });
 }
@@ -548,16 +555,26 @@ pub fn question(ui: &mut egui::Ui, long: &str) -> egui::Response {
 
 /// The colours of a drawing in the theme: lines, faint lines, the thing
 /// explained, the wire.
-struct Ink {
-    line: egui::Color32,
-    faint: egui::Color32,
-    key: egui::Color32,
-    wire: egui::Color32,
+pub(crate) struct Ink {
+    pub line: egui::Color32,
+    pub faint: egui::Color32,
+    pub key: egui::Color32,
+    pub wire: egui::Color32,
 }
 
 /// A drawing's canvas, named `name` for screen readers (and tests).
 fn canvas(ui: &mut egui::Ui, name: &str, tip: &str) -> (egui::Painter, egui::Rect, Ink) {
-    let (response, painter) = ui.allocate_painter(SIZE, egui::Sense::hover());
+    canvas_of(ui, SIZE, name, tip)
+}
+
+/// A drawing's canvas of `size` ([`canvas`]).
+pub(crate) fn canvas_of(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    name: &str,
+    tip: &str,
+) -> (egui::Painter, egui::Rect, Ink) {
+    let (response, painter) = ui.allocate_painter(size, egui::Sense::hover());
     let name = name.to_owned();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &name));
     response.on_hover_text(tip);
@@ -573,7 +590,7 @@ fn canvas(ui: &mut egui::Ui, name: &str, tip: &str) -> (egui::Painter, egui::Rec
     (painter, rect, ink)
 }
 
-fn dashed(painter: &egui::Painter, a: egui::Pos2, b: egui::Pos2, color: egui::Color32) {
+pub(crate) fn dashed(painter: &egui::Painter, a: egui::Pos2, b: egui::Pos2, color: egui::Color32) {
     painter.extend(egui::Shape::dashed_line(
         &[a, b],
         egui::Stroke::new(1.0, color),
@@ -582,7 +599,7 @@ fn dashed(painter: &egui::Painter, a: egui::Pos2, b: egui::Pos2, color: egui::Co
     ));
 }
 
-fn text(painter: &egui::Painter, at: egui::Pos2, s: &str, color: egui::Color32) {
+pub(crate) fn text(painter: &egui::Painter, at: egui::Pos2, s: &str, color: egui::Color32) {
     painter.text(
         at,
         egui::Align2::LEFT_CENTER,

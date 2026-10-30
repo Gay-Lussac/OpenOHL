@@ -1266,6 +1266,15 @@ pub struct Progress {
     pub text: String,
 }
 
+/// A time left in words: seconds, then minutes.
+fn left_text(l: f64) -> String {
+    if l < 90.0 {
+        format!("{l:.0} s")
+    } else {
+        format!("{:.0} min", l / 60.0)
+    }
+}
+
 impl Progress {
     /// A run started `elapsed` ago, `done` of `total` done: the bar and
     /// the time left.
@@ -1278,6 +1287,19 @@ impl Progress {
             text: match left {
                 Some(l) => format!("{s:.0} s, about {l:.0} s left"),
                 None => format!("{s:.1} s"),
+            },
+        }
+    }
+
+    /// A run started `elapsed` ago with about `left` s to go (none:
+    /// not known yet): the bar the share of the time gone.
+    pub fn with_left(elapsed: Duration, left: Option<f64>) -> Self {
+        let s = elapsed.as_secs_f64();
+        Self {
+            fraction: left.map(|l| (s / (s + l).max(1e-9)) as f32),
+            text: match left {
+                Some(l) if l > 0.0 => format!("{s:.0} s, about {} left", left_text(l)),
+                _ => format!("{s:.1} s"),
             },
         }
     }

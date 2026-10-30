@@ -24,7 +24,8 @@
 //! (smaller than a coarse cell, and not within [`MARGIN`] of their
 //! values) is not found (said in the theory page).
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::time::Instant;
 
 use crate::contour::{self, Mesh};
 
@@ -33,12 +34,27 @@ use crate::contour::{self, Mesh};
 pub struct Progress {
     /// Set to stop: the run returns an error at its next point.
     pub cancel: AtomicBool,
-    /// Work done: points computed (and a floor's tiles once solved).
+    /// Work done: points computed.
     pub done: AtomicUsize,
-    /// Work to do.
+    /// Points to compute.
     pub total: AtomicUsize,
     /// What is under way, in words (empty: points).
     pub stage: std::sync::Mutex<String>,
+    /// The tiled floors' solves, apart from the points (a floor of
+    /// thousands of tiles takes seconds, a point microseconds; their
+    /// cost grows with the cube of the tiles): planned and solved, in the
+    /// time they are expected to take ([`crate::electric::TiledFloor::seconds`],
+    /// µs), and the time the solved ones took (ns).
+    floors_planned: AtomicU64,
+    floors_done: AtomicU64,
+    floors_took: AtomicU64,
+    /// The floor being solved: when it began and its expected time (µs).
+    floor_now: std::sync::Mutex<Option<(Instant, u64)>>,
+}
+
+/// The time a floor of `tiles` is expected to take, µs.
+fn floor_cost(tiles: usize) -> u64 {
+    (crate::electric::TiledFloor::seconds(tiles) * 1e6).ceil() as u64
 }
 
 impl Progress {
@@ -52,6 +68,82 @@ impl Progress {
     /// What is under way.
     pub fn stage(&self) -> String {
         self.stage.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// A tiled floor of `tiles` the run will solve (announced before the
+    /// run starts on it, so the time left counts it from the start).
+    pub fn plan_floor(&self, tiles: usize) {
+        self.floors_planned
+            .fetch_add(floor_cost(tiles), Ordering::Relaxed);
+    }
+
+    /// A floor of `tiles` begins (one not planned is added).
+    pub fn floor_begins(&self, tiles: usize) {
+        let cost = floor_cost(tiles);
+        let done = self.floors_done.load(Ordering::Relaxed);
+        self.floors_planned
+            .fetch_max(done + cost, Ordering::Relaxed);
+        if let Ok(mut f) = self.floor_now.lock() {
+            *f = Some((Instant::now(), cost));
+        }
+    }
+
+    /// The floor begun last is solved.
+    pub fn floor_ends(&self) {
+        if let Ok(mut f) = self.floor_now.lock()
+            && let Some((since, cost)) = f.take()
+        {
+            self.floors_done.fetch_add(cost, Ordering::Relaxed);
+            self.floors_took
+                .fetch_add(since.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+
+    /// The floors' speed: the time the solved ones took against the
+    /// time expected ([`crate::electric::TiledFloor::seconds`]); none
+    /// before one is solved.
+    pub fn floor_speed(&self) -> Option<f64> {
+        let solved = self.floors_done.load(Ordering::Relaxed);
+        (solved > 0).then(|| self.floors_took.load(Ordering::Relaxed) as f64 * 1e-3 / solved as f64)
+    }
+
+    /// The time left of a run `elapsed` in, s: the points left at the
+    /// speed of those computed, the floors left at the speed of those
+    /// solved (before the first: as expected on this computer). None
+    /// before anything is known.
+    pub fn seconds_left(&self, elapsed: std::time::Duration) -> Option<f64> {
+        let done = self.done.load(Ordering::Relaxed);
+        let total = self.total.load(Ordering::Relaxed);
+        let planned = self.floors_planned.load(Ordering::Relaxed) as f64 * 1e-6;
+        let solved = self.floors_done.load(Ordering::Relaxed) as f64 * 1e-6;
+        let took = self.floors_took.load(Ordering::Relaxed) as f64 * 1e-9;
+        let (running, now) = self
+            .floor_now
+            .lock()
+            .ok()
+            .and_then(|f| *f)
+            .map_or((0.0, 0.0), |(since, cost)| {
+                (since.elapsed().as_secs_f64(), cost as f64 * 1e-6)
+            });
+        // This computer's speed against the expected one (thermal
+        // throttling, other work): from the floors solved.
+        let scale = if solved > 0.0 { took / solved } else { 1.0 };
+        let floors = (planned - solved - now).max(0.0) * scale
+            + (now * scale - running).max(0.1 * now * scale);
+        let floors = if planned > 0.0 { floors } else { 0.0 };
+        let points_left = total.saturating_sub(done);
+        let points = if points_left == 0 {
+            Some(0.0)
+        } else if done > 0 {
+            let time = (elapsed.as_secs_f64() - took - running).max(0.0);
+            Some(time / done as f64 * points_left as f64)
+        } else {
+            None
+        };
+        match points {
+            Some(p) => Some(p + floors),
+            None => (planned > 0.0).then_some(floors),
+        }
     }
 }
 
@@ -921,6 +1013,39 @@ pub fn volume(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The time left counts the floors still to solve, not only the
+    /// points (owner, 2026-10-30: "announcing 25 seconds since 5
+    /// minutes"): a floor solved, its points computed, nine planned
+    /// floors still say about nine floors' time.
+    #[test]
+    fn the_time_left_counts_the_floors_to_come() {
+        use std::time::Duration;
+        let p = Progress::default();
+        p.total.store(1000, Ordering::Relaxed);
+        for _ in 0..10 {
+            p.plan_floor(3700);
+        }
+        // Before anything: the floors as expected (some 7 s each).
+        let first = p.seconds_left(Duration::ZERO).unwrap();
+        assert!((first - 70.0).abs() < 1.0, "{first}");
+        p.floor_begins(3700);
+        std::thread::sleep(Duration::from_millis(20));
+        p.floor_ends();
+        p.done.store(100, Ordering::Relaxed);
+        // The floor took 20 ms against 7 s expected: the nine left at
+        // that speed, and the points left at theirs.
+        let left = p.seconds_left(Duration::from_millis(25)).unwrap();
+        let per_floor = p.floor_speed().unwrap() * crate::electric::TiledFloor::seconds(3700);
+        assert!(left > 8.0 * per_floor, "{left} against {per_floor} a floor");
+        assert!(left < 12.0 * per_floor + 0.1, "{left}");
+        // Without floors: the points' rate alone, as before.
+        let q = Progress::default();
+        q.total.store(100, Ordering::Relaxed);
+        q.done.store(50, Ordering::Relaxed);
+        let l = q.seconds_left(Duration::from_secs(10)).unwrap();
+        assert!((l - 10.0).abs() < 1e-9);
+    }
 
     /// One straight wire along x at 20 m: its field falls as 1/r, so the
     /// cut's isoline of 1/r₀ is a circle of radius r₀ around it, cut at

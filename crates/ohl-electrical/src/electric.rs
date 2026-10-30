@@ -836,6 +836,33 @@ pub fn run_keeping(
             Ordering::Relaxed,
         );
         p.done.store(0, Ordering::Relaxed);
+        // Every floor of the run announced now, so that the time left
+        // counts them from the start (a floor of thousands of tiles takes
+        // seconds, its profile's points milliseconds).
+        if let (Some(_), GroundModel::Tiled(floor)) = (&model3d, settings.ground_model) {
+            for _ in &stations {
+                p.plan_floor(floor.tiles(settings.width));
+            }
+            for c in &settings.cuts {
+                let cut_floor = TiledFloor {
+                    fine: settings.cut_tile,
+                    coarse: settings.cut_tile.max(floor.coarse),
+                    ..floor
+                };
+                p.plan_floor(cut_floor.tiles(c.width));
+            }
+            for v in &settings.volumes {
+                if let Ok(run) = magnetic::run_spans(&spans, &v.from, &v.to)
+                    && let Ok(path) = magnetic::run_path(src, &spans, &run)
+                {
+                    p.plan_floor(Floor::tiles_under(
+                        path.length(),
+                        v.width,
+                        settings.volume_tile,
+                    ));
+                }
+            }
+        }
     }
     let mut profiles = Vec::new();
     for &(i, t) in &stations {
@@ -967,6 +994,12 @@ pub fn run_keeping(
                 .entry((i, bucket))
                 .or_default()
                 .push((n, t, s, [gp.x, gp.y, z]));
+        }
+        if let Some(p) = progress {
+            for list in groups.values() {
+                let across = list.iter().map(|p| p.2.abs()).fold(0.0, f64::max);
+                p.plan_floor(floor.tiles(across));
+            }
         }
         for ((i, _), list) in groups {
             magnetic::check_cancel(progress)?;
@@ -1379,8 +1412,8 @@ impl TiledFloor {
     }
 }
 
-/// Runs `solve` (a floor of `tiles`) with `progress` saying so: its tiles
-/// added to the work to do, and done once solved.
+/// Runs `solve` (a floor of `tiles`) with `progress` saying so (its
+/// time counted apart from the points').
 fn with_floor<T>(
     progress: Option<&Progress>,
     what: &str,
@@ -1388,12 +1421,12 @@ fn with_floor<T>(
     solve: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     if let Some(p) = progress {
-        p.total.fetch_add(tiles, Ordering::Relaxed);
+        p.floor_begins(tiles);
         p.set_stage(format!("{what}: a tiled floor of {tiles} tiles"));
     }
     let out = solve();
     if let Some(p) = progress {
-        p.done.fetch_add(tiles, Ordering::Relaxed);
+        p.floor_ends();
         p.set_stage(String::new());
     }
     out

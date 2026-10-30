@@ -150,6 +150,14 @@ impl LineParametersWindow {
                              in total, the ideally transposed line's; how much the sequences \
                              couple as built. Built, in active development, not approved yet.",
                         );
+                        crate::field_help::earth_return(
+                            ui,
+                            model
+                                .line
+                                .electrical
+                                .soil_resistivity_ohm_m
+                                .unwrap_or(DEFAULT_SOIL_RESISTIVITY_OHM_M),
+                        );
                         ui.separator();
                         // The weather case: in the scope (it was in the
                         // footer until 2026-10-27).
@@ -327,6 +335,7 @@ fn settings_ui(ui: &mut egui::Ui, model: &Model) -> Option<ElectricalSettings> {
     let editable = model.can_edit().is_ok();
     ui.add_enabled_ui(editable, |ui| {
         egui::Grid::new("line-parameters-settings")
+            .num_columns(2)
             .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 ui.label("Soil resistivity");
