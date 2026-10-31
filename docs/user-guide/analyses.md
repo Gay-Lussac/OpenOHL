@@ -805,9 +805,12 @@ longer in the line falls back to the default.
   or between different phases are left out and listed in the notes.
 **3 Spans and what to compute in each** (2026-10-31, the owner's
 validated rework; the same in both field windows). **The span table**:
-every span a row — per alignment its spans in station order, ticked;
-then the spans on no alignment (both structures not on one alignment),
-unticked — with its length, its profile, its **2D cuts at** (the
+every span a row — per alignment its spans in station order, ticked
+(the spans of the line's run along it, and those out of its first or
+last structure); then the other spans, unticked: on no alignment, of
+another line crossing or running beside it, connections from a structure
+in the middle of the line (owner, 2026-10-31: the main line's spans not
+interrupted by crossing spans) — with its length, its profile, its **2D cuts at** (the
 stations asked: *+ station* at mid-span, at its lowest point or a
 distance from its first structure; a click on a station's chip removes
 it), its **Volume** and (magnetic) its **From above**. **A cut is made

@@ -474,6 +474,15 @@ ticked, an honest time left (owner, 2026-10-30)**
   default; kept in the project as the changes from that default
   (`spans_off`, `spans_on`). Every span ticked runs as before (every
   span); otherwise the spans ticked as stations.
+- The owner, 2026-10-31: "make sure the spans in the list of test are
+  grouped per alignment … I don't really want to have the main line span
+  constantly interrupted by cross spans … put the crosses at the end".
+  A span is an alignment's when it follows the line's run along it
+  (`AlignmentView::consecutive`: another line's towers under or beside
+  it are not of the run) or leaves the run's first or last structure;
+  the others (crossing lines, connections from the middle) go last,
+  unticked by default. Only the two field windows list spans to choose;
+  the other checks choose sections and circuits.
 - The owner, then: "for the magnetic field it should be the same...
   volumes and results computed only on selected spans". The list is the
   windows' **Spans** row (Scope): the profiles, the isolines from above

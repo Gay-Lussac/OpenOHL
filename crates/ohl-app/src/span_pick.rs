@@ -27,31 +27,43 @@ type SpanIds = (String, String);
 /// indices into the line's spans, in order along it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Group {
-    /// The alignment's name; `None`: the spans on no alignment.
+    /// The alignment's name; `None`: the other spans (on no alignment,
+    /// another line's, connections; [`groups`]).
     pub alignment: Option<String>,
     pub spans: Vec<usize>,
 }
 
-/// The line's spans by alignment: each alignment's spans (both
-/// structures on it) in station order, a span on several in the first
-/// only; then the spans on none, in the line's order.
+/// The line's spans by alignment: each alignment's spans in station
+/// order, a span on several in the first only; then the others, in the
+/// line's order. A span is an alignment's when it follows the line's run
+/// along it ([`ohl_line::AlignmentView::consecutive`]), or leaves the
+/// run's first or last structure for one off the run (the span into a
+/// substation): another line's spans under or beside it (a crossing
+/// line) and connections from a structure in the middle of the run go
+/// last (owner, 2026-10-31: "I don't really want to have the main line
+/// span constantly interrupted by cross spans").
 pub(crate) fn groups(line: &ohl_line::Line, spans: &[SpanIds]) -> Vec<Group> {
     let mut taken = vec![false; spans.len()];
     let mut out = Vec::new();
     for view in line.alignment_views() {
         let at: BTreeMap<&str, usize> = view
-            .structures
-            .iter()
+            .run()
             .enumerate()
             .map(|(k, s)| (s.as_str(), k))
             .collect();
+        let last = at.len().saturating_sub(1);
         let mut on: Vec<(usize, usize)> = spans
             .iter()
             .enumerate()
             .filter(|(k, _)| !taken[*k])
             .filter_map(|(k, (a, b))| {
-                let (i, j) = (at.get(a.as_str())?, at.get(b.as_str())?);
-                Some(((*i).min(*j), k))
+                let place = match (at.get(a.as_str()), at.get(b.as_str())) {
+                    (Some(&i), Some(&j)) if view.consecutive(a, b) => i.min(j),
+                    // Out of the run's end to a structure off the run.
+                    (Some(&i), None) | (None, Some(&i)) if i == 0 || i == last => i,
+                    _ => return None,
+                };
+                Some((place, k))
             })
             .collect();
         if on.is_empty() {
@@ -171,7 +183,7 @@ pub(crate) struct Columns {
 pub(crate) struct SpanPick {
     /// Spans on an alignment unticked.
     pub off: BTreeSet<SpanIds>,
-    /// Spans on no alignment ticked.
+    /// Spans of no alignment's group ticked ([`groups`]).
     pub on: BTreeSet<SpanIds>,
     /// The 2D cuts asked per span.
     pub cuts: BTreeMap<SpanIds, Vec<CutAt>>,
@@ -491,7 +503,7 @@ impl SpanPick {
                                 ui.label(
                                     egui::RichText::new(match &alignment {
                                         Some(a) => format!("Alignment {a}"),
-                                        None => "On no alignment (unticked unless ticked)".into(),
+                                        None => "Other spans: other lines, connections, off the alignments (unticked unless ticked)".into(),
                                     })
                                     .small()
                                     .strong(),
@@ -736,6 +748,80 @@ mod tests {
         pick.set(&spans[0], true, false);
         assert!(!pick.ticked(&spans[0], true));
         assert!(pick.off.contains(&spans[0]));
+    }
+
+    /// Another line crossing under the main line's first span (two towers
+    /// either side of it, near the alignment): its span goes last, after
+    /// every alignment's, and the main alignment's spans stay together.
+    #[test]
+    fn a_crossing_line_goes_last() {
+        let mut line = crate::tests::synthetic().line;
+        let ids = |line: &ohl_line::Line| -> Vec<SpanIds> {
+            ohl_electrical::cross_section::line_spans(line)
+                .into_iter()
+                .map(|s| (s.from, s.to))
+                .collect()
+        };
+        let before = groups(&line, &ids(&line));
+        let main: Vec<SpanIds> = {
+            let spans = ids(&line);
+            before[0].spans.iter().map(|&k| spans[k].clone()).collect()
+        };
+        let view = line.alignment_views().remove(0);
+        let (a, b) = (view.run().next().unwrap(), view.run().nth(1).unwrap());
+        let (pa, pb) = (
+            line.structure(a).unwrap().position,
+            line.structure(b).unwrap().position,
+        );
+        let mid = [0.5 * (pa[0] + pb[0]), 0.5 * (pa[1] + pb[1])];
+        let n = (pb[0] - pa[0]).hypot(pb[1] - pa[1]);
+        let across = [(pb[1] - pa[1]) / n, -(pb[0] - pa[0]) / n];
+        for (id, side) in [("X1", 15.0), ("X2", -15.0)] {
+            let mut c = line.structures[0].clone();
+            c.id = id.into();
+            c.position = [
+                mid[0] + side * across[0],
+                mid[1] + side * across[1],
+                pa[2] - 10.0,
+            ];
+            c.routes = vec![view.route.clone()];
+            line.structures.push(c);
+        }
+        let mut cross = line.sections[0].clone();
+        cross.id = "cross".into();
+        cross.points = vec![
+            ohl_line::SectionPoint {
+                structure: "X1".into(),
+                set: cross.points[0].set,
+            },
+            ohl_line::SectionPoint {
+                structure: "X2".into(),
+                set: cross.points[0].set,
+            },
+        ];
+        line.sections.push(cross);
+        // Both stand on the main alignment (by both structures on it, the
+        // span was the alignment's), off its run.
+        let view = line.alignment_views().remove(0);
+        assert!(
+            ["X1", "X2"]
+                .iter()
+                .all(|x| view.structures.iter().any(|s| s == x))
+        );
+        assert!(!view.consecutive("X1", "X2"));
+        let spans = ids(&line);
+        let g = groups(&line, &spans);
+        let first: Vec<SpanIds> = g[0].spans.iter().map(|&k| spans[k].clone()).collect();
+        assert_eq!(first, main, "the main alignment's spans as before");
+        let last = g.last().unwrap();
+        assert!(last.alignment.is_none());
+        assert!(
+            last.spans
+                .iter()
+                .any(|&k| spans[k] == ("X1".to_owned(), "X2".to_owned())
+                    || spans[k] == ("X2".to_owned(), "X1".to_owned())),
+            "{g:?}"
+        );
     }
 
     /// A cut's place: the middle, the lowest point (the run finds it), a
