@@ -251,6 +251,75 @@ status 0: every span within its allowed tension, 1: some above, 2: an
 error (a rule file without tension rules too). The example's rule file
 (`examples/synthetic-line/tension-rules.ohlr`) uses **invented** factors.
 
+### Lightning shielding rules (`[[lightning_rule]]`)
+
+Since 2026-10-31 a rule file may hold **lightning shielding rules** for
+the shielding check (Checks › Electrical › [Lightning shielding…](desktop-app.md#lightning-shielding)
+and `ohl lightning`): optional `[[lightning_rule]]` tables. A file
+without them reads as before; the other checks ignore them. A preset
+declares the check with `checks = ["lightning"]` (or holds lightning
+rules). Built, in active development (not approved yet). The theory:
+[Lightning shielding](../theory/lightning-shielding.md).
+
+```toml
+[[lightning_rule]]
+name = "shielding angle (invented 30°/45°)"
+cases = ["max temperature"]   # optional; none: every case
+method = "angle"
+outer_angle = 30.0            # degrees from the vertical, away from another shielding wire
+inner_angle = 45.0            # towards another shielding wire (default: the outer one)
+
+[[lightning_rule]]
+name = "rolling sphere (invented 8 kA)"
+method = "sphere"
+stroke_current = 8.0          # kA: r = A·I^b (or striking_distance = 38.6, in m)
+# distance_a = 10.0           # A, m (default 10); distance_b = 0.65: b (default 0.65)
+# ground_factor = 1.0         # β: the ground's striking distance β·r (default 1)
+step = 5.0                    # m between the cross-sections along a span (default 5)
+shields = ["gsw-*"]           # optional: the shielding wire types; none: every earthed wire
+targets = { circuits = ["North"] }  # optional: the phases protected; none: every phase
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | for the reports |
+| `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `method` | `angle` (a fixed shielding angle) or `sphere` (the rolling sphere of the electrogeometric model) |
+| `outer_angle`, `inner_angle` | (angle) degrees from the vertical through a shielding wire: towards another shielding wire the inner angle, elsewhere the outer; above 0 and below 90 |
+| `striking_distance` | (sphere) the striking distance to the wires, m |
+| `stroke_current`, `distance_a`, `distance_b` | (sphere) instead: a stroke current I (kA), the distance r = A·I^b (A = 10, b = 0.65 by default) |
+| `ground_factor` | (sphere) β: the striking distance to the ground is β·r (default 1) |
+| `step` | the cross-sections' step along each span, m (default 5; at least 0.1) |
+| `shields` | the wire types that shield (wildcards); none: every earthed wire (a section without a system) |
+| `targets` | the phases protected: `wire_types`, `systems`, `circuits`, as in the tension rules; only sections with a system are phases |
+
+**No value is built in**: the angles, the striking distance or current
+and β are the user's or a design code's; the example's are invented.
+
+**Without the window:**
+
+```sh
+ohl lightning examples/lightning/shielded-line.ohl.json \
+  --weather examples/lightning/weather-cases.ohlwc \
+  --rules examples/lightning/shielded-line.lightning-rules.ohlr --csv lightning.csv
+```
+
+prints per phase and span in each weather case of a rule — rule, case,
+section, span, phase, span length, **length exposed**, where it is
+worst (m along the span), the **margin** (the angle the phase needs; or
+r_max, the largest striking distance still reaching it, and its stroke
+current) and covered or EXPOSED — the exposed first, the longest
+exposure first. `--csv` writes them (`rule, method, case, section, span,
+from, to, phase, span_length_m, exposed_m, worst_along_m, worst_depth,
+margin, current_ka, status`), `--json` the rows and every
+cross-section. The ground: `--terrain` or `--surface`, else the
+project's surface of the checks, else its point cloud's ground, else
+straight between the structures' feet (a warning). Exit status 0: every
+phase covered, 1: some exposed, 2: an error. The example line
+(`examples/lightning/`, the synthetic line's five structures with a
+third phase and two earth wires, invented) and its rules show both
+methods.
+
 ### String rules (`[[string_rule]]`)
 
 Since 2026-10-24 a rule file may hold **string rules** for the string

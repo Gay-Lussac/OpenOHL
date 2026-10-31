@@ -1528,6 +1528,93 @@ pub fn wire_fit(ui: &mut egui::Ui) {
     text(&p, mm + egui::vec2(10.0, -10.0), "model", ink.line);
 }
 
+/// The shielding angle (Lightning shielding): two shielding wires, the
+/// outer angle away from the other wire, the inner one towards it; a phase
+/// inside the lines covered, one outside exposed.
+pub fn shielding_angle(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 100.0),
+        "drawing: shielding angle",
+        "From each shielding wire, lines leaning from the vertical by the rule's angle: the \
+         outer angle away from the other wire, the inner one towards it. A phase within them \
+         is covered; one outside is exposed.",
+    );
+    let (a, b) = (
+        egui::pos2(r.center().x - 22.0, r.top() + 14.0),
+        egui::pos2(r.center().x + 22.0, r.top() + 14.0),
+    );
+    let k = egui::Stroke::new(1.2, ink.key);
+    // Outer lines (30°) and inner (45°) meeting under the middle.
+    let down = 70.0;
+    let t_out = 30f32.to_radians().tan();
+    p.line_segment([a, a + egui::vec2(-t_out * down, down)], k);
+    p.line_segment([b, b + egui::vec2(t_out * down, down)], k);
+    let mid = egui::pos2(r.center().x, a.y + 22.0);
+    p.line_segment([a, mid], k);
+    p.line_segment([b, mid], k);
+    for w in [a, b] {
+        dashed(&p, w, w + egui::vec2(0.0, 40.0), ink.faint);
+        p.circle_filled(w, 3.0, ink.line);
+    }
+    text(&p, b + egui::vec2(6.0, 22.0), "α", ink.key);
+    // A phase covered, one exposed.
+    let covered = egui::pos2(b.x + 8.0, b.y + 36.0);
+    let exposed = egui::pos2(b.x + 36.0, b.y + 30.0);
+    p.circle_filled(covered, 3.0, egui::Color32::from_rgb(110, 200, 120));
+    p.circle_filled(exposed, 3.0, egui::Color32::from_rgb(235, 70, 60));
+    text(
+        &p,
+        egui::pos2(r.left() + 4.0, r.bottom() - 8.0),
+        "outer α, inner between the wires",
+        ink.faint,
+    );
+}
+
+/// The rolling sphere (Lightning shielding): a sphere of the striking
+/// distance resting on a shielding wire and on the ground (β times the
+/// distance above it); the phase it reaches is exposed.
+pub fn rolling_sphere(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 100.0),
+        "drawing: rolling sphere",
+        "A sphere of the striking distance r rolls over the shielding wires and the ground (its \
+         centre β·r above the ground). Where it can touch a phase before a shielding wire or the \
+         ground, the phase is exposed; above r_max the sphere no longer reaches it.",
+    );
+    let ground = r.bottom() - 8.0;
+    p.line_segment(
+        [
+            egui::pos2(r.left() + 4.0, ground),
+            egui::pos2(r.right() - 4.0, ground),
+        ],
+        egui::Stroke::new(1.0, ink.line),
+    );
+    let s = egui::pos2(r.left() + 58.0, r.top() + 16.0);
+    let rad = 44.0_f32;
+    // The centre resting on the ground (β = 1) and touching the wire.
+    let cy = ground - rad;
+    let dx = (rad * rad - (cy - s.y) * (cy - s.y)).max(0.0).sqrt();
+    let c = egui::pos2(s.x + dx, cy);
+    p.circle_stroke(c, rad, egui::Stroke::new(1.0, ink.faint));
+    p.circle_filled(c, 2.0, ink.faint);
+    p.line_segment([c, s], egui::Stroke::new(1.0, ink.key));
+    text(
+        &p,
+        egui::pos2((c.x + s.x) / 2.0 + 3.0, (c.y + s.y) / 2.0),
+        "r",
+        ink.key,
+    );
+    p.circle_filled(s, 3.0, ink.line);
+    // A phase the sphere reaches (exposed), one under the wire (covered).
+    let exposed = egui::pos2(c.x - rad * 0.55, c.y - rad * 0.55);
+    let covered = egui::pos2(s.x - 6.0, s.y + 22.0);
+    p.circle_filled(exposed, 3.0, egui::Color32::from_rgb(235, 70, 60));
+    p.circle_filled(covered, 3.0, egui::Color32::from_rgb(110, 200, 120));
+    text(&p, egui::pos2(c.x + 4.0, ground - 6.0), "β·r", ink.faint);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

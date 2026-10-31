@@ -265,6 +265,18 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
                 }
             );
         }
+        for r in &p.rules.lightning_rules {
+            println!(
+                "  {}: lightning shielding, {}{}",
+                r.name,
+                r.method.describe(),
+                if r.cases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — cases {}", r.cases.join(", "))
+                }
+            );
+        }
         if let Some(v) = &p.rules.vegetation {
             let mut parts = Vec::new();
             if !v.classes.is_empty() {

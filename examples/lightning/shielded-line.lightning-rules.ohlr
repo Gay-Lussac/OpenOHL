@@ -14,7 +14,7 @@ outer_angle = 30.0
 inner_angle = 45.0
 
 [[lightning_rule]]
-name = "rolling sphere 10 kA"
+name = "rolling sphere 8 kA"
 cases = ["max temperature"]
 method = "sphere"
-stroke_current = 10.0
+stroke_current = 8.0

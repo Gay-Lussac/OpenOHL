@@ -284,6 +284,7 @@ impl Ready {
             From::PhaseDistance(crate::phase_distance::Kind::Span) => self.phase_distance.open,
             From::PhaseDistance(crate::phase_distance::Kind::UnequalWind) => self.unequal_wind.open,
             From::Check(crate::dockable::Panel::WireTensions) => self.wire_tensions.open,
+            From::Check(crate::dockable::Panel::Lightning) => self.lightning.open,
             From::Check(crate::dockable::Panel::Galloping) => self.galloping.open,
             From::Check(crate::dockable::Panel::Vegetation) => self.vegetation.open,
             From::Check(_) => true,

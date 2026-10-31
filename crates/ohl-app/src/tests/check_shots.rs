@@ -34,6 +34,19 @@ const SHOTS: &[Shot] = &[
         done: Some(|r| r.wire_tensions.job.result.is_some()),
     },
     Shot {
+        name: "lightning",
+        title: "Lightning shielding",
+        open: |r| {
+            r.lightning.show(&r.model);
+            r.lightning.rules = ohl_clearance::rules::RuleSet::load(
+                &crate::tests::root().join("examples/lightning/shielded-line.lightning-rules.ohlr"),
+            )
+            .unwrap()
+            .lightning_rules;
+        },
+        done: Some(|r| r.lightning.job.result.is_some()),
+    },
+    Shot {
         name: "string-checks",
         title: "String checks",
         open: |r| r.string_checks.show(&r.model),
@@ -183,6 +196,8 @@ fn check_windows_rendered_for_review() {
                 // example line as it is (its clearance rule file).
                 let model = if matches!(shot.name, "structure-loads" | "performed-checks") {
                     synthetic_project(&format!("shots-{}", shot.name))
+                } else if shot.name == "lightning" {
+                    crate::tests::shielded()
                 } else {
                     synthetic()
                 };
@@ -247,6 +262,16 @@ fn check_windows_rendered_for_review() {
         }
         harness.run_steps(6);
         save(&mut harness, &dir, &format!("{}-results", shot.name));
+        // Lightning shielding: the worst row's cross-section (its verdict
+        // clicked).
+        if shot.name == "lightning"
+            && let Some(v) = harness.query_by_label_contains("✖ ")
+        {
+            v.click();
+            harness.run_steps(4);
+            wheel(&mut harness, body, -2000.0);
+            save(&mut harness, &dir, &format!("{}-cut", shot.name));
+        }
         // Structure loads: its usage view too.
         if let Some(u) = harness.query_by_label("Usage") {
             u.click();

@@ -68,6 +68,8 @@ pub struct View3d {
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
     /// What Checks › Safety volumes built.
     pub safety_volume: crate::safety_volume::Overlay,
+    /// The lightning shielding check's drawing.
+    pub lightning: crate::lightning::Overlay,
     /// The magnetic field's isolines, cuts and surfaces.
     pub magnetic_field: crate::field_overlay::Overlay,
     /// The electric field's cuts and surfaces.
@@ -1396,6 +1398,7 @@ impl View3d {
                 Layer::SafetyVolume => {
                     crate::safety_volume::scene(model.origin, &self.safety_volume)
                 }
+                Layer::Lightning => crate::lightning::scene(model.origin, &self.lightning),
                 Layer::MagneticField => {
                     crate::field_overlay::scene(model.origin, &self.magnetic_field)
                 }

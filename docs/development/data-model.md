@@ -1165,6 +1165,28 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   jumper). The radial ground clearance is the samples' shortest
   distance lowered by `checks::sampled_floor`. Until 2026-10 every
   clearance was to the axis, without these.
+- **Lightning shielding rules** (2026-10-31, additive): a rule file
+  may hold optional `[[lightning_rule]]` tables — `name`, `cases`,
+  `method` (`angle`: `outer_angle`, `inner_angle` °; `sphere`:
+  `striking_distance` m or `stroke_current` kA with `distance_a`,
+  `distance_b` of r = A·I^b, and `ground_factor` β), `step` (m, default
+  5), `shields` (wire types; none: the earthed wires), `targets` (as the
+  tension rules') — read as `RuleSet::lightning_rules`
+  (`ohl_clearance::lightning::LightningRule`), written back by
+  `RuleSet::to_toml`; `checks` may name `"lightning"`
+  (`PresetCheck::Lightning`). The check is
+  `ohl_electrical::lightning::check` (per span, cross-sections square to
+  it, `cross_section::cross_section_reached` leaving out a wire that does
+  not reach a cut): `Report { rows: Vec<Row>, cuts: Vec<Cut>, notes }`;
+  a `Row` per phase, span, rule and case (length exposed, worst place,
+  depth, margin: the angle needed or r_max with its current, the exposed
+  parts as world polylines), a `Cut` per cross-section (its plane, the
+  ground, the shielding wires and phases, the covered zone's boundary,
+  sphere centres); its CSV `rule, method, case, section, span, from, to,
+  phase, span_length_m, exposed_m, worst_along_m, worst_depth, margin,
+  current_ka, status`; `ohl lightning --json` writes the `Report`. The app
+  keeps the window's rules in `<model>.lightning-rules.ohlr`; the 3D
+  layer `Layer::Lightning` (`lightning::scene`).
 - **Tension rules** (2026-10-22, additive): a rule file (`.ohlr`) may
   hold optional `[[tension_rule]]` tables — `name`, `cases` (patterns;
   none: every case), `factor` (> 0: the allowed tension is factor × the

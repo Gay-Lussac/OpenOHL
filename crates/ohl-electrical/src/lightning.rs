@@ -556,8 +556,10 @@ fn envelope_line(
                         z = z.min(c[1] - (r * r - dx * dx).sqrt());
                     }
                 }
-                if z.is_finite() {
-                    line.push([s, z.max(g_at(s))]);
+                // Only above the ground (where it lies on it, the ground is
+                // the boundary).
+                if z.is_finite() && z > g_at(s) + 0.1 {
+                    line.push([s, z]);
                 }
                 s += 1.0;
             }

@@ -272,6 +272,27 @@ Decided 2026-10-21. *German:* Strang (to confirm). *In files:*
 joined by a jumper, one conductor path; a branch of phase L1 not
 connected is a circuit of its own](../images/glossary/circuits.svg)
 
+**Shielding wire** — a wire that keeps lightning off the phases: in the
+lightning shielding check, every earthed wire (a section without a
+system) unless a rule names wire types. *Replaces:* shield wire, ground
+wire, overhead ground wire, sky wire (the earth wire is the usual one).
+*German:* Erdseil (as shielding: Blitzschutzseil, to confirm). *In
+files:* a lightning rule's `shields`.
+
+**Shielding angle** — the angle from the vertical through a shielding
+wire to the line to a phase; a lightning rule's limit for it, **outer**
+(away from another shielding wire) and **inner** (towards one).
+*Replaces:* protective angle, shield angle. *German:* Schutzwinkel. *In
+files:* `outer_angle`, `inner_angle`.
+
+**Striking distance** — the distance from which a lightning stroke's
+leader jumps to an object, growing with the stroke's current; the
+radius of the **rolling sphere** (the electrogeometric model's sphere
+rolled over the shielding wires and the ground). *Replaces:* strike
+distance, lightning strike distance. *German:* Einschlagdistanz
+(Blitzkugelradius, to confirm). *In files:* `striking_distance`,
+`stroke_current`.
+
 ## The line and its route
 
 ![A route in plan: two alignments through alignment points meeting at a

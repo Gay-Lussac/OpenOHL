@@ -362,6 +362,33 @@ profile in `benchmarks/electrical/hvlbuzz/D-example-double-circuit-T1-T2*`
 — within 0.2 % at every point; the 3D profile's largest value within 2 %
 (0.6–0.8 %: the 2D/3D methods differ).
 
+### Lightning shielding (`benchmarks/electrical/lightning.toml`)
+
+Calculation `electrical.lightning_cut`: one phase in one cross-section
+of the [lightning shielding check](../theory/lightning-shielding.md) —
+the shielding angle it needs, or by the rolling sphere whether it is
+exposed and r_max, the largest striking distance still reaching it —
+against the classical constructions computed on their own by
+`benchmarks/electrical/reference_lightning.py` (no OpenOHL code): over
+level ground the sphere resting on the ground (its centre at β·r) and
+touching the shielding wire reaches the phase while that centre lies
+within r of it; r_max where it is exactly r away (electrogeometric
+model: Young, Clayton and Hileman 1963; Armstrong and Whitehead 1968).
+
+| Case | Cross-section | Checked | Tolerance |
+|---|---|---|---|
+| electrical-060 | one shielding wire at 32 m, a phase 5 m out and 8 m below, β = 1 | r_max, exposed at r = 30 m | 2 cm (the program halves to 1 cm) |
+| electrical-061 | the same, β = 0.8 | the same | the same |
+| electrical-062 | a shielding wire at 40 m, a bundle of radius 0.25 m 6 m out and 10 m below | r_max to its surface, covered at r = 45 m | the same |
+| electrical-063 | two shielding wires 12 m apart at 35 m, the outer phase 3 m outside the right one | r_max as with that wire alone, exposed at 40 m | the same |
+| electrical-064 | the same wires, a phase of radius 0.2 m 3 m out and 8 m below | the angle needed to its far side, within 25° | exact |
+| electrical-065 | the middle phase between them, 6 m below | 45°, covered by the inner 45° | exact |
+
+The exact test itself is compared in the crate with a brute force over
+a 5 cm grid of sphere centres (two shielding wires, sloping ground). No
+other program's shielding results or published shielding failure study
+with all its inputs were compared yet.
+
 ### Member capacities by ASCE 10-97 (`benchmarks/structures-fe/asce10.toml`)
 
 Calculation `structures.fe` (output `usage_m`), on invented single bars

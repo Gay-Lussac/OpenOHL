@@ -59,6 +59,10 @@ pub enum Layer {
     /// cross-section panels' cuts, isosurfaces (translucent), each level in
     /// its colour ([`crate::field_overlay`]).
     ElectricField,
+    /// The lightning shielding check (Checks › Electrical › Lightning
+    /// shielding, 2026-10-31): the phases' exposed parts (red), the
+    /// covered zone's boundary (translucent).
+    Lightning,
     /// Safety volumes around the wires (Checks › Safety volumes),
     /// translucent: drawn last.
     SafetyVolume,
@@ -69,7 +73,7 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 21] = [
+    pub const ALL: [Layer; 22] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -90,6 +94,7 @@ impl Layer {
         Layer::GroundLines,
         Layer::MagneticField,
         Layer::ElectricField,
+        Layer::Lightning,
         Layer::SafetyVolume,
     ];
 
@@ -115,6 +120,7 @@ impl Layer {
             Layer::GroundLines => "Ground lines (beside the line)",
             Layer::MagneticField => "Magnetic field (isolines, surfaces)",
             Layer::ElectricField => "Electric field (isolines, surfaces)",
+            Layer::Lightning => "Lightning shielding",
             Layer::SafetyVolume => "Safety volumes",
             Layer::RigidLinks => "Rigid links (attachment points)",
         }
@@ -155,6 +161,7 @@ pub const LAYER_GROUPS: [(&str, &[Layer]); 4] = [
             Layer::Isoclearance,
             Layer::MagneticField,
             Layer::ElectricField,
+            Layer::Lightning,
             Layer::SafetyVolume,
         ],
     ),
@@ -1722,6 +1729,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         | Layer::GroundLines
         | Layer::MagneticField
         | Layer::ElectricField
+        | Layer::Lightning
         | Layer::SafetyVolume => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {

@@ -10,6 +10,37 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**The lightning shielding check (owner, 2026-10-31: "work on this next
+check"; built, in active development, not approved yet)**
+
+- Both methods: a fixed shielding angle (outer and inner) and the
+  rolling sphere of the electrogeometric model. The owner's choices: the
+  striking distance typed, or from a stroke current by r = A·I^b (A, b
+  editable, 10 and 0.65 by default) with a ground factor β; the
+  cross-sections **square to each span** (not on the alignment: a phase
+  is shielded by its own span's wires); the settings in the **rule
+  file** (`[[lightning_rule]]`, presets from design-code plugins, the
+  command line the same); the results with markers in the views, the
+  covered zone's surface in 3D, the 2D cross-section drawing and a
+  margin per phase (the angle needed, or r_max and its current).
+- The sphere's test is exact: the nearest point of the free region (at
+  least r from every shielding wire, β·r from the ground: for a terrain
+  graph the points above an envelope h) to the phase, tried at the
+  phase, the feet on the circles and on h, and their corners. r_max is
+  searched at each phase's worst place per span only (at every
+  cross-section it would take some 10¹¹ operations on a 25 km line);
+  said in the results.
+- The vendor technote that prompted it stays local
+  (`local-data/documents/`, the owner: "this pdf stays local"); the
+  theory cites the methods' original sources only ("please find the
+  original sources and cite only the sources for the methods"). No
+  first source of the fixed shielding angle could be verified: none is
+  cited.
+- Checked on a real line (local only): a 30° outer angle fails on its
+  older 220 kV towers, whose upper phases sit about 7 m out and 7 m below
+  the earth wire (≈ 45° needed): the check's figures confirmed by hand
+  at one tower.
+
 **The check windows' bigger reworks a–g (owner, 2026-10-31: "go ahead
 with the bigger reworks a to g")**
 

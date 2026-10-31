@@ -333,6 +333,8 @@ pub struct Ready {
     pub galloping: crate::galloping::GallopingWindow,
     /// Checks › Wire tensions (2026-10-22).
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
+    /// Checks › Electrical › Lightning shielding (2026-10-31).
+    pub lightning: crate::lightning::LightningWindow,
     /// Checks › Electrical › Line parameters (2026-10-27).
     pub line_parameters: crate::line_parameters::LineParametersWindow,
     /// Checks › Electrical › Magnetic field (2026-10-27).
@@ -535,6 +537,7 @@ impl Ready {
             pylon_builder: None,
             galloping: Default::default(),
             wire_tensions: Default::default(),
+            lightning: Default::default(),
             line_parameters: Default::default(),
             magnetic_field: Default::default(),
             electric_field: Default::default(),
@@ -2300,6 +2303,7 @@ impl eframe::App for App {
                     || ready.vertical_clearances.open
                     || ready.radial_clearances.open
                     || ready.wire_tensions.open
+                    || ready.lightning.open
                     || ready.string_checks.open
                     || ready.internal_clearances.open
                     || ready.clearances.open
@@ -2378,6 +2382,11 @@ impl eframe::App for App {
                         .wire_tensions
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
+                let out =
+                    ready
+                        .lightning
+                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
+                crate::lightning::handle(ready, out);
                 ready.magnetic_field.keep(&mut ready.model, &ctx);
                 ready.electric_field.keep(&mut ready.model, &ctx);
                 ready.galloping.keep(&mut ready.model, &ctx);

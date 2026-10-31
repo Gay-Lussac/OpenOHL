@@ -662,6 +662,55 @@ The drawing beside shows the vertical zone (the width each side, a point and its
 
 Without the window: `ohl tensions` ([Wire tension rules](terrain.md#wire-tension-rules-tension_rule)).
 
+### Lightning shielding
+
+**Checks › Electrical › Lightning shielding…** (2026-10-31, the owner's
+request; built, in active development (not approved yet)) checks
+whether the **shielding wires keep lightning off the phases**, along
+every span, by a **fixed shielding angle** or by the **rolling sphere**
+of the electrogeometric model. The theory: [Lightning shielding](../theory/lightning-shielding.md).
+
+- **1 What it checks** — in short, and *How it is computed* with two
+  drawings: the shielding angle (outer and inner) and the rolling
+  sphere resting on a shielding wire and the ground.
+- **2 Scope** — every span of the line; each rule gives its phases, its
+  shielding wires and its weather cases. Without a terrain for the
+  checks, a warning: the sphere's verdict depends on the ground.
+- **3 Rules**, in the shared [rule table](#the-rule-table): a **name**,
+  its **weather cases**, the **method** — *Shielding angle* (**outer**
+  and **inner** angle) or *Rolling sphere* (the **striking distance**
+  typed in m, or **from a current** in kA with **A** and **b** of r =
+  A·I^b, 10 and 0.65 by default; the **ground factor β**) — the **step
+  along the span** (5 m by default; a smaller step finds the exposed
+  lengths more finely and takes longer), the **phases protected** (wire
+  types, systems, circuits; none: every phase) and the **shielding
+  wires** (none: every earthed wire; else the wire types ticked). No
+  value is given for you. **Preset**, **Import…**, **Export…** as in
+  the other rule windows; kept at once in the project as
+  `<model>.lightning-rules.ohlr` ([the rule format](terrain.md#lightning-shielding-rules-lightning_rule)).
+- **Run** (the footer) solves each weather case of the rules in the
+  background and checks every span in cross-sections square to it; the
+  footer says before Run how many spans and rule × case pairs and about
+  how long, from the last run; while it runs, the spans done.
+- **Results**: the verdict (red with the number of phases × spans
+  exposed, the metres in all and the longest; green when every phase is
+  covered), the notes folded, then one row per phase, span, rule and
+  case: span, phase, rule, case, **exposed [m]**, span [m], **worst at**
+  (m along the span), **margin** — the angle the phase needs, or r_max
+  (the largest striking distance still reaching it at its worst place)
+  with its stroke current — and covered or **exposed** (red). Sortable,
+  grouped, *Export CSV…* and *Full report (CSV)…*. A row clicked
+  selects its span, draws it in the row's weather case and draws its
+  **cross-section at the worst place** below the table: the ground, the
+  shielding wires, the phases (red exposed, green covered, the row's
+  ringed), the covered zone's boundary dashed and the sphere's centres.
+- **The 3D view** (layer *Lightning shielding*, turned on with a new
+  result): the exposed parts of the phases in red and the covered
+  zone's boundary between the cross-sections, translucent; dimmed when
+  out of date, taken off when the window closes.
+
+Without the window: `ohl lightning` ([Lightning shielding rules](terrain.md#lightning-shielding-rules-lightning_rule)).
+
 ### Internal clearances
 
 **Checks › Wire clearances › Internal clearances…** (2026-10-25; roadmap O6, first part; under Wire clearances since 2026-10-27, the owner: "Internal clearances should be just under the wire clearance" — a clearance within the model, the wires to the structure): at

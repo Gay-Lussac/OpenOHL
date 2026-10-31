@@ -103,6 +103,28 @@ pub(crate) fn run_in<'h>(h: &'h Harness<'_, App>, title: &str) -> egui_kittest::
         .unwrap_or_else(|| panic!("no Run in \"{title}\""))
 }
 
+/// The shielded example line (examples/lightning: the synthetic line's
+/// five structures, three phases and two earth wires) on the synthetic
+/// survey.
+pub(crate) fn shielded() -> model::Model {
+    let ex = root().join("examples/synthetic-line");
+    solved_all(
+        model::load(
+            Sources {
+                file: root().join("examples/lightning/shielded-line.ohl.json"),
+                library: Some(root().join("libraries/cables")),
+                terrain: Some(ex.join("synthetic-survey.csv")),
+                weather: Some(root().join("examples/lightning/weather-cases.ohlwc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap(),
+    )
+}
+
 pub(crate) fn synthetic() -> model::Model {
     let ex = root().join("examples/synthetic-line");
     solved_all(

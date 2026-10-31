@@ -798,6 +798,18 @@ pub(super) fn menus(
                 r.electric_field.show(r.case);
                 ui.close();
             }
+            if ui
+                .button("Lightning shielding…")
+                .on_hover_text(
+                    "Whether the shielding wires keep lightning off the phases, along every span: \
+                     by a fixed shielding angle or the rolling sphere (electrogeometric model), \
+                     by the rules of a rule file",
+                )
+                .clicked()
+            {
+                r.lightning.show(&r.model);
+                ui.close();
+            }
         });
         ui.separator();
         ui.label(egui::RichText::new("Analyses").strong());

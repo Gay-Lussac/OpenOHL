@@ -61,6 +61,8 @@ pub enum Panel {
     Galloping,
     /// Checks › Analyses › Wire tensions.
     WireTensions,
+    /// Checks › Electrical › Lightning shielding (2026-10-31).
+    Lightning,
     /// Checks › Analyses › String checks.
     StringChecks,
     /// Checks › Wire clearances › Internal clearances.
@@ -88,7 +90,7 @@ pub enum Panel {
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 27] = [
+    pub const ALL: [Panel; 28] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -105,6 +107,7 @@ impl Panel {
         Panel::ElectricField,
         Panel::Galloping,
         Panel::WireTensions,
+        Panel::Lightning,
         Panel::StringChecks,
         Panel::InternalClearances,
         Panel::AsBuiltWires,
@@ -137,6 +140,7 @@ impl Panel {
             Panel::ElectricField => "Electric field",
             Panel::Galloping => "Galloping ellipses",
             Panel::WireTensions => "Wire tensions",
+            Panel::Lightning => "Lightning shielding",
             Panel::StringChecks => "String checks",
             Panel::InternalClearances => "Internal clearances",
             Panel::AsBuiltWires => "As-built wires",
