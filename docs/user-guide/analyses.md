@@ -950,8 +950,10 @@ default.
   images in the ground under each point; *2D* — infinite line charges
   where the wires cross the profile over level ground at the
   cross-section (quick; not valid near a line angle, a structure or on
-  sloping ground). Both take the same charges per wire, from each span's
-  mean cross-section.
+  sloping ground). The charges per wire from the cross-section where they are: in 2D
+  the profile's own, in 3D each span in 16 stretches (2026-10-31; until
+  then from each span's mean cross-section, 3–4 % low where the wires
+  hang lowest).
 - **Jumpers** (3D, on by default): a jumper at a section's end carries
   that section's charge per metre; jumpers not at a section's end are
   left out and listed in the notes.

@@ -19,9 +19,12 @@ with space charge: another calculation).
 
 ## The charges
 
-Per span, from its mean cross-section (the [line
-parameters](line-parameters.md)' cross-section: the wires at their mean
-height, each bundle as its equivalent wire):
+From the cross-section where they are (owner, 2026-10-31; the [line
+parameters](line-parameters.md)' cross-section, each bundle as its
+equivalent wire): in 2D the profile's or point's own cross-section; in 3D
+each span cut into 16 stretches along its length, each at the charges of
+the cross-section at its middle (the wires lower in the middle of a span
+carry more charge than near its ends):
 
 \\[ \underline q = P^{-1}\,\underline V \\]
 
@@ -37,9 +40,14 @@ ordinance may ask the highest operating voltage (the NISV does: give it).
 A circuit given 0 kV is voltage-free: its wires at earth potential,
 carrying the charges that keep them there (as the earth wires).
 
-- **Simplification**: the charges per span from its mean cross-section
-  (parallel wires at their mean height over level ground), as the line
-  parameters take them; along a span they are taken constant.
+- **Simplification**: each cross-section's charges from parallel wires at
+  its heights over level ground (as the line parameters take them); in 3D
+  constant within each of a span's 16 stretches (the charge changes by a
+  few per cent over a span, well under 1 % within a stretch). Until
+  2026-10-31 the charges came from the span's mean cross-section (the
+  wires at their mean height): against hvlbuzz that read the field 3.6 %
+  low under the line at mid-span — **not conservative**, replaced. The
+  table of charges per wire and the jumpers still take the span's mean.
 - **Simplification**: a bundle's charge shared equally by its
   subconductors.
 
@@ -72,7 +80,12 @@ each group of given points near one another along a span (they share a
 floor around their middle, its fine tiles reaching the farthest across)
 and each cut (the cross-section panels' too), the floor below is solved;
 some seconds each (its dense system grows with the tiles' cube: about
-7 s for 3 700 tiles here). **Cuts across the line and volumes on coarser
+7 s for 3 700 tiles here, on one core). **The profiles' floors are solved
+side by side** (2026-10-31): up to 4 at once, as many as about 1 GB holds
+(some 170 MB each at 4 600 tiles); on a real line 4 spans' profiles took
+15 s instead of 52 s, the values unchanged. A volume's floor grows with
+its run: 2 850 tiles for one 300 m span (about 2 s), 5 360 for three
+(about 15 s). **Cuts across the line and volumes on coarser
 tiles by default, each a parameter** (owner, 2026-10-29): a cut's floor
 of 8 m tiles (`cut_tile`); a volume's floor under its whole run of spans
 and 100 m beyond every way, square tiles of 8 m (`volume_tile`). Measured
@@ -190,6 +203,14 @@ three cross-sections, 1 m above the ground — within 0.12 % on 380 kV
 bundles (one charge per bundle at its centre against hvlbuzz's twelve
 round every subconductor), 0.003 % on single wires, with and without an
 earth wire ([validation](../validation/textbook.md#the-2d-fields-against-hvlbuzz-benchmarkselectricalhvlbuzztoml)).
+And the line's own profile (2026-10-31): the example double circuit at
+the middle of T1–T2, its 2D profile against hvlbuzz on the same
+cross-section within 0.2 % at every point (tested; from the span's mean
+cross-section it was 3.6 % low at the axis); the 3D profile's largest
+value 0.6 % above hvlbuzz's on the plane under each point, 0.8 % on the
+tiled floor — the 2D/3D methods differ (the wires curve up away from the
+middle, the next span adds its field), by up to 2–3 % within ±15 m of the
+axis and more where the field is smallest.
 **Not validated yet** against a published profile (to find: IEC 62110's examples, CIGRE's
 brochures on fields of overhead lines, the NISV guide's examples).
 

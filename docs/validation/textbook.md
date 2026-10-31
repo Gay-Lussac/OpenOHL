@@ -355,7 +355,12 @@ the earth wires neglected in both).
 | electrical-052 | the same with an earth wire (0, 38 m) at earth potential | E within 0.003 % | the same |
 
 Only 2D: hvlbuzz computes a cross-section; the 3D model's agreement with
-the 2D one on long straight spans is tested in the crate.
+the 2D one on long straight spans is tested in the crate. The line's own
+2D profile is tested against hvlbuzz too (2026-10-31, a crate test): the
+example double circuit at the middle of T1–T2, hvlbuzz's project and
+profile in `benchmarks/electrical/hvlbuzz/D-example-double-circuit-T1-T2*`
+— within 0.2 % at every point; the 3D profile's largest value within 2 %
+(0.6–0.8 %: the 2D/3D methods differ).
 
 ### Member capacities by ASCE 10-97 (`benchmarks/structures-fe/asce10.toml`)
 
