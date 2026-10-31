@@ -345,7 +345,7 @@ impl SpanPick {
         ui.horizontal(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text("filter: T02")
+                    .hint_text("filter: T2")
                     .desired_width(130.0),
             )
             .on_hover_text("Only the spans whose name holds this");
