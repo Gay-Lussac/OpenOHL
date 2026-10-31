@@ -18,6 +18,7 @@ mod check_windows;
 mod checks_spacers;
 mod clearances;
 mod display_codes;
+mod field_setup;
 mod lidar;
 mod local_winds;
 mod multi_select;

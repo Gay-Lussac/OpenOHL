@@ -34,11 +34,12 @@ pub mod views;
 use crate::check_help as help;
 use crate::check_ui;
 use crate::field_overlay::Level;
+use crate::field_results::{self, FieldRequest, ResultRow, RowAction};
 use crate::job::{Job, save_csv};
 use crate::magnetic_field::views::{PanelCuts, PieceStats, VolumeSetup};
 use crate::magnetic_field::{Spans, Stations, beside_stations, profiles_ui};
 use crate::model::Model;
-use crate::span_pick::SpanPick;
+use crate::span_pick::{Columns, CutAt, SpanPick};
 
 /// A span by its first and last structure.
 type SpanIds = (String, String);
@@ -188,8 +189,16 @@ pub struct ElectricFieldWindow {
     pub(crate) fill: bool,
     /// The field in the cross-section panels: the step, m.
     in_cuts: Option<f64>,
-    /// A volume.
+    /// The volumes' step (their spans: ticked in the table).
     volume: Option<VolumeSetup>,
+    /// The cuts asked in the table (owner, 2026-10-31): ± this across, m;
+    /// every this, m; up to this over the highest wire, m.
+    cut_width: f64,
+    cut_step: f64,
+    cut_above: f64,
+    /// What the window asks of the application (a cut opened, the 3D
+    /// view turned to a volume), taken each frame.
+    pub requests: Vec<FieldRequest>,
     /// The panels' cuts.
     panel: PanelCuts,
     /// Seconds per piece and point of the last run here.
@@ -242,7 +251,11 @@ impl Default for ElectricFieldWindow {
             levels: default_levels(),
             fill: true,
             in_cuts: None,
-            volume: None,
+            volume: Some(VolumeSetup { step: 2.0 }),
+            cut_width: 60.0,
+            cut_step: 0.5,
+            cut_above: crate::magnetic_field::views::ABOVE,
+            requests: Vec::new(),
             panel: PanelCuts::default(),
             rate: None,
             volume_share: None,
@@ -301,6 +314,14 @@ struct Stored {
     /// A volume over the spans ticked: its step (2026-10-30; `volume`
     /// before: its spans now the ticked ones, its step read).
     volume_step: Option<f64>,
+    /// Per span the stations of its 2D cuts (2026-10-31).
+    cuts: Vec<(SpanIds, Vec<CutAt>)>,
+    /// The spans with a volume (2026-10-31).
+    volume_spans: Vec<SpanIds>,
+    /// The cuts' half width, step and reach over the highest wire, m.
+    cut_width: Option<f64>,
+    cut_step: Option<f64>,
+    cut_above: Option<f64>,
 }
 
 impl ElectricFieldWindow {
@@ -363,6 +384,16 @@ impl ElectricFieldWindow {
             in_cuts: self.in_cuts,
             volume: None,
             volume_step: self.volume.as_ref().map(|v| v.step),
+            cuts: self
+                .span_pick
+                .cuts
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            volume_spans: self.span_pick.volume.iter().cloned().collect(),
+            cut_width: Some(self.cut_width),
+            cut_step: Some(self.cut_step),
+            cut_above: Some(self.cut_above),
         }
     }
 
@@ -418,10 +449,14 @@ impl ElectricFieldWindow {
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
         self.in_cuts = st.in_cuts;
-        self.volume = st
-            .volume_step
-            .or(st.volume.map(|v| v.2))
-            .map(|step| VolumeSetup { step });
+        self.volume = Some(VolumeSetup {
+            step: st.volume_step.or(st.volume.map(|v| v.2)).unwrap_or(2.0),
+        });
+        self.span_pick.cuts = st.cuts.into_iter().collect();
+        self.span_pick.volume = st.volume_spans.into_iter().collect();
+        self.cut_width = st.cut_width.unwrap_or(d.cut_width);
+        self.cut_step = st.cut_step.unwrap_or(d.cut_step);
+        self.cut_above = st.cut_above.unwrap_or(d.cut_above);
         (self.points, self.points_text, self.points_error) = match st.points {
             Some((name, text)) => match magnetic::parse_points(&text) {
                 Ok(p) => (Some((name, p)), Some(text), None),
@@ -537,10 +572,156 @@ impl ElectricFieldWindow {
     pub fn tick_only(&mut self, model: &Model, k: usize) {
         let spans = self.spans(model);
         self.span_pick.only(model, &spans, k);
+        // Its volume ticked too (the tests' volume over one span).
+        self.span_pick.volume.insert(spans[k].clone());
     }
 
-    /// Sets the views (tests): the cross-section panels every `cuts` m, a
-    /// volume over the first span every `volume` m.
+    /// Asks a 2D cut in span `k` at `at` (tests).
+    #[cfg(test)]
+    pub fn add_cut(&mut self, model: &Model, k: usize, at: CutAt) {
+        let spans = self.spans(model);
+        self.span_pick
+            .cuts
+            .entry(spans[k].clone())
+            .or_default()
+            .push(at);
+    }
+
+    /// The span table's state (tests): the spans ticked.
+    #[cfg(test)]
+    pub fn ticked_spans(&mut self, model: &Model) -> Vec<usize> {
+        let spans = self.spans(model);
+        let (mut c, _) = self.span_pick.chosen(model, &spans);
+        c.sort_unstable();
+        c
+    }
+
+    /// Section 3 (owner, 2026-10-31, validated): the span table — which
+    /// spans, and in each its profile, the stations of its 2D cuts and its
+    /// volume —, where the profiles are taken and how wide, and (3D) the
+    /// sizes of the cuts and volumes.
+    fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let spans = self.spans(model);
+        self.span_pick.table(
+            ui,
+            "electric-field",
+            model,
+            &spans,
+            Columns {
+                above: false,
+                three_d: !self.two_d,
+            },
+        );
+        egui::Grid::new("electric-field-profiles-setup")
+            .num_columns(2)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Profiles");
+                profiles_ui(ui, "electric-field", &mut self.stations, &spans);
+                ui.end_row();
+                ui.label("Across");
+                ui.horizontal(|ui| {
+                    ui.label("±");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.width)
+                            .range(1.0..=2000.0)
+                            .speed(1.0)
+                            .suffix(" m"),
+                    );
+                    ui.label("every");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.step)
+                            .range(0.1..=50.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    );
+                    ui.label("at");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.height)
+                            .range(0.0..=200.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    );
+                    ui.label("above the ground");
+                });
+                ui.end_row();
+            });
+        if !self.two_d {
+            self.sizes_ui(ui, model, &spans);
+        }
+    }
+
+    /// The Results list (owner, 2026-10-31, validated): every profile, cut
+    /// and volume of `a` with its largest value; Plot, Open cut, Show in
+    /// 3D.
+    fn output_rows(&self, model: &Model, a: &Answer) -> Vec<ResultRow> {
+        let mut rows = Vec::new();
+        for (k, p) in a.field.profiles.iter().enumerate() {
+            rows.push(ResultRow {
+                kind: "Profile",
+                place: format!("{}–{} at {:.0} m", p.from, p.to, p.at),
+                max: format!("{:.3} kV/m", p.max_kv_m),
+                note: format!("at {:.0} m from the axis", p.max_offset),
+                button: "Plot",
+                action: RowAction::Plot(k),
+            });
+        }
+        for c in &a.field.cuts {
+            let largest = c.values.values.iter().copied().fold(0.0, f64::max);
+            rows.push(ResultRow {
+                kind: "Cut",
+                place: format!("{}–{} at {:.0} m", c.from, c.to, c.at),
+                max: format!("{largest:.2} kV/m"),
+                note: "at the wires; isolines at the levels".into(),
+                button: "Open cut",
+                action: field_results::open_cut(model, &c.from, &c.to, c.at, self.cut_width),
+            });
+        }
+        let per = a
+            .field
+            .volumes
+            .first()
+            .map_or(1, |v| v.values.surfaces.len().max(1));
+        for (k, v) in a.field.volumes.iter().enumerate() {
+            let meshes = a
+                .meshes
+                .iter()
+                .skip(k * per)
+                .take(per)
+                .map(|m| m.1.as_ref());
+            let levels: Vec<String> = v
+                .values
+                .surfaces
+                .iter()
+                .map(|s| format!("{}", s.0))
+                .collect();
+            let left: usize = v.values.left_out.iter().sum();
+            rows.push(ResultRow {
+                kind: "Volume",
+                place: format!("{}–{}", v.from, v.to),
+                max: format!("{} kV/m", levels.join(", ")),
+                note: if left > 0 {
+                    format!("{left} thin piece(s) left out")
+                } else {
+                    String::new()
+                },
+                button: "Show in 3D",
+                action: match field_results::centre(meshes) {
+                    Some(c) => {
+                        field_results::look(model, &v.from, &v.to, c, v.values.bounds.path.length())
+                    }
+                    None => RowAction::None,
+                },
+            });
+        }
+        rows
+    }
+
+    /// Sets the views (tests): the cross-section panels every `cuts` m, the
+    /// volumes' step `volume` m (their spans: [`Self::tick_only`]).
     #[cfg(test)]
     pub fn set_views(&mut self, cuts: Option<f64>, volume: Option<f64>) {
         self.in_cuts = cuts;
@@ -672,15 +853,35 @@ impl ElectricFieldWindow {
             volume_tile: self.volume_tile,
             jumpers: self.jumpers,
             piece_length: self.piece_length,
-            cuts: Vec::new(),
-            // A volume: one along each run of ticked spans following each
-            // other (continuous across the line angles).
+            // The cuts asked in the table (owner, 2026-10-31: "for the 2D
+            // cuts it should be asked at which stations we want one").
+            cuts: if self.two_d {
+                Vec::new()
+            } else {
+                self.span_pick
+                    .cuts_asked(model, &spans)
+                    .into_iter()
+                    .map(|((from, to), at)| {
+                        let len = crate::span_pick::span_length(model, &(from.clone(), to.clone()));
+                        magnetic::CutSpec {
+                            from,
+                            to,
+                            fraction: at.fraction(len),
+                            width: self.cut_width,
+                            above: self.cut_above,
+                            step: self.cut_step,
+                        }
+                    })
+                    .collect()
+            },
+            // A volume: one along each run of spans following each other
+            // with Volume ticked (continuous across the line angles).
             volumes: match (&self.volume, self.two_d) {
                 (Some(v), false) => self
                     .span_pick
-                    .runs(model, &spans)
+                    .volume_runs(model, &spans)
                     .into_iter()
-                    .map(|(from, to)| magnetic::VolumeSpec {
+                    .map(|((from, to), _)| magnetic::VolumeSpec {
                         from,
                         to,
                         width: self.width,
@@ -826,7 +1027,7 @@ impl ElectricFieldWindow {
                         self.span_pick.chosen(model, &spans).0.is_empty()
                     }
                 {
-                    Some("no span ticked (2 Scope, Spans)".to_owned())
+                    Some("no span ticked (3 Spans)".to_owned())
                 } else {
                     None
                 };
@@ -872,6 +1073,9 @@ impl ElectricFieldWindow {
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
                         self.inputs_ui(ui, model);
+                        ui.separator();
+                        check_ui::section(ui, 3, "Spans and what to compute in each", None);
+                        self.spans_ui(ui, model);
                         if !self.two_d {
                             let spans = self.spans(model);
                             self.views_ui(ui, model, &spans);
@@ -881,7 +1085,7 @@ impl ElectricFieldWindow {
                         egui::ScrollArea::both()
                             .id_salt("electric-field-results")
                             .auto_shrink([false, false])
-                            .show(ui, |ui| self.results_ui(ui, &stale, &mut run));
+                            .show(ui, |ui| self.results_ui(ui, model, &stale, &mut run));
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
@@ -905,7 +1109,10 @@ impl ElectricFieldWindow {
                         hover: "Compute the field from the wires as solved in the weather case \
                                 chosen",
                         scope: None,
-                        info: self.job.took.map(|t| format!("computed in {t:.1?}")),
+                        info: Some(match self.job.took {
+                            Some(t) => format!("{} · last run {t:.1?}", self.summary(model)),
+                            None => self.summary(model),
+                        }),
                     };
                     match check_ui::run_footer(ui, f, |_| {}) {
                         check_ui::Action::Run => run = true,
@@ -1042,7 +1249,7 @@ impl ElectricFieldWindow {
                          a long level span)."
                     } else {
                         "3D: every point sums every piece of charge twice (the charges and their \
-                         images): the time below (3 Model)."
+                         images): the time below (4 Model)."
                     },
                     "Both take the same charges per wire (the span's mean cross-section). 3D \
                      sees what the span does along it; 2D assumes every span infinitely long \
@@ -1183,44 +1390,6 @@ impl ElectricFieldWindow {
                     }
                     ui.end_row();
                 }
-                // The spans computed (owner, 2026-10-30): the profiles,
-                // the isolines from above and the volumes over them.
-                let spans = self.spans(model);
-                ui.label("Spans");
-                self.span_pick.ui(ui, "electric-field", model, &spans);
-                ui.end_row();
-                ui.label("Profiles");
-                profiles_ui(ui, "electric-field", &mut self.stations, &spans);
-                ui.end_row();
-                ui.label("Across");
-                ui.horizontal(|ui| {
-                    ui.label("±");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.width)
-                            .range(1.0..=2000.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.step)
-                            .range(0.1..=50.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                    ui.label("at");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.height)
-                            .range(0.0..=200.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                    ui.label("above the ground");
-                });
-                ui.end_row();
                 ui.label("Limit");
                 ui.horizontal(|ui| {
                     let mut given = self.limit.is_some();
@@ -1285,7 +1454,23 @@ impl ElectricFieldWindow {
         }
     }
 
-    fn results_ui(&mut self, ui: &mut egui::Ui, stale: &Option<String>, run: &mut bool) {
+    fn results_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        stale: &Option<String>,
+        run: &mut bool,
+    ) {
+        // The outputs listed first (owner, 2026-10-31): a click shows one.
+        if let Some(Ok(a)) = &self.job.result {
+            let rows = self.output_rows(model, a);
+            match field_results::list(ui, "electric-field", &rows) {
+                Some(RowAction::Plot(k)) => self.shown = k,
+                Some(RowAction::Ask(r)) => self.requests.push(r),
+                _ => {}
+            }
+            ui.separator();
+        }
         let answer = match &self.job.result {
             None => {
                 ui.label("Run to compute the field.");

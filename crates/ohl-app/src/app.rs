@@ -2356,6 +2356,22 @@ impl eframe::App for App {
                 ready.unequal_wind.keep(&mut ready.model, &ctx);
                 ready.magnetic_field.ui(&ctx, &ready.model);
                 ready.electric_field.ui(&ctx, &ready.model);
+                // What their Results ask (owner, 2026-10-31): a cut opened
+                // in a cross-section panel, the 3D view turned to a volume.
+                for (requests, layer) in [
+                    (
+                        std::mem::take(&mut ready.magnetic_field.requests),
+                        Layer::MagneticField,
+                    ),
+                    (
+                        std::mem::take(&mut ready.electric_field.requests),
+                        Layer::ElectricField,
+                    ),
+                ] {
+                    for r in requests {
+                        field_request(ready, r, layer);
+                    }
+                }
                 // The field in the cross-section panels open, and its
                 // drawing in the views while the window is open.
                 let panels: Vec<_> = ready

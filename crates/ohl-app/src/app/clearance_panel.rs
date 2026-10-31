@@ -387,6 +387,58 @@ impl Ready {
     }
 }
 
+/// What a field window's Results ask (owner, 2026-10-31: "in 3D … it
+/// should display it in the 3D view when we click on the results"): a cut
+/// opened in a cross-section panel (on the wires: the field drawn in it);
+/// the 3D view turned to a volume, `layer` (the field's) shown.
+pub(crate) fn field_request(
+    r: &mut Ready,
+    request: crate::field_results::FieldRequest,
+    layer: crate::scene::Layer,
+) {
+    use crate::field_results::FieldRequest;
+    match request {
+        FieldRequest::OpenCut {
+            alignment,
+            station,
+            width,
+        } => {
+            r.visible.insert(layer);
+            r.open_cut(crate::xsection::CutSpec {
+                alignment,
+                at: crate::xsection::At::Station(station),
+                depth: crate::xsection::DEFAULT_DEPTH,
+                width,
+            });
+        }
+        FieldRequest::Look {
+            target,
+            distance,
+            yaw,
+        } => {
+            r.visible.insert(layer);
+            // The view's own camera turned (its field of view and height
+            // scale kept); a view not drawn yet takes a plain one.
+            let mut camera = r.view3d.camera.unwrap_or(ohl_render::Camera {
+                target,
+                distance,
+                yaw,
+                pitch: 0.0,
+                fov_y: 45f64.to_radians(),
+                exaggeration: 1.0,
+                ortho: false,
+            });
+            camera.target = target;
+            camera.distance = distance;
+            camera.yaw = yaw;
+            camera.pitch = 12f64.to_radians();
+            camera.ortho = false;
+            r.view3d.set_camera(camera);
+            r.open_page = Some((super::Tab::View3d, None));
+        }
+    }
+}
+
 /// What the Wire tensions window asks: go to a span, its preset's
 /// weather cases added, its marks drawn (the spans above their allowed
 /// tension, else the worst; at the most tensioned support) or taken off.
