@@ -42,6 +42,7 @@ pub mod galloping;
 pub mod geometry;
 pub mod internal;
 pub mod isoclearance;
+pub mod lightning;
 pub mod phase_distance;
 pub mod positions;
 pub mod rules;

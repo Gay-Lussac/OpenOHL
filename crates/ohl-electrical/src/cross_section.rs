@@ -398,6 +398,26 @@ pub fn cross_section(
     span: &LineSpan,
     at: StationAt,
 ) -> Result<CrossSection, String> {
+    cross_section_of(src, span, at, false)
+}
+
+/// [`cross_section`], a wire that does not reach the station (its strain
+/// string reaching further into the span) left out of it, said, rather
+/// than failing it (the lightning check, 2026-10-31).
+pub fn cross_section_reached(
+    src: &Sources<'_>,
+    span: &LineSpan,
+    at: StationAt,
+) -> Result<CrossSection, String> {
+    cross_section_of(src, span, at, true)
+}
+
+fn cross_section_of(
+    src: &Sources<'_>,
+    span: &LineSpan,
+    at: StationAt,
+    reached_only: bool,
+) -> Result<CrossSection, String> {
     let line = src.line;
     let axis = Axis::of(line, span)?;
     let phases = line.section_phases().map_err(|e| e.to_string())?;
@@ -460,13 +480,24 @@ pub fn cross_section(
                     0.5 * (a.3 + b.3) - drop,
                 )
             }
-            StationAt::Fraction(_) => at_along(&samples, t_station).ok_or_else(|| {
-                format!(
-                    "section {} span {}: the wire does not reach the station",
-                    section.id,
-                    j + 1
-                )
-            })?,
+            StationAt::Fraction(_) => match at_along(&samples, t_station) {
+                Some(v) => v,
+                None if reached_only => {
+                    notes.push(format!(
+                        "section {} span {}: the wire does not reach the cross-sections next to its structures (its strings do), left out there",
+                        section.id,
+                        j + 1
+                    ));
+                    continue;
+                }
+                None => {
+                    return Err(format!(
+                        "section {} span {}: the wire does not reach the station",
+                        section.id,
+                        j + 1
+                    ));
+                }
+            },
         };
         let electrical = cable.electrical.as_ref();
         let temperature_c = src.temperature.celsius();

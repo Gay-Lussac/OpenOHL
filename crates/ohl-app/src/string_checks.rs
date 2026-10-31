@@ -151,6 +151,7 @@ impl StringChecksWindow {
             tension_rules: Vec::new(),
             string_rules: self.rules.clone(),
             internal_rules: Vec::new(),
+            lightning_rules: Vec::new(),
         }
     }
 

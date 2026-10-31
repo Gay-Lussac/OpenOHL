@@ -797,6 +797,8 @@ struct RawRules {
     string_rules: Vec<crate::strings::RawStringRule>,
     #[serde(rename = "internal_rule", default)]
     internal_rules: Vec<crate::internal::RawInternalRule>,
+    #[serde(rename = "lightning_rule", default)]
+    lightning_rules: Vec<crate::lightning::RawLightningRule>,
 }
 
 #[derive(Deserialize)]
@@ -1002,6 +1004,10 @@ pub struct RuleSet {
     /// optional, since 2026-10-25: [`crate::internal`]); a file without
     /// them reads as before.
     pub internal_rules: Vec<crate::internal::InternalRule>,
+    /// The lightning shielding check's rules (`[[lightning_rule]]`,
+    /// optional, since 2026-10-31: [`crate::lightning`]); a file without
+    /// them reads as before.
+    pub lightning_rules: Vec<crate::lightning::LightningRule>,
 }
 
 /// A check a rule file (a design code's preset) is for.
@@ -1019,11 +1025,13 @@ pub enum PresetCheck {
     Strings,
     /// The internal clearance check (`[[internal_rule]]`, 2026-10-25).
     Internal,
+    /// The lightning shielding check (`[[lightning_rule]]`, 2026-10-31).
+    Lightning,
 }
 
 impl PresetCheck {
-    /// `"vertical"`, `"radial"`, `"vegetation"`, `"tension"`, `"strings"`
-    /// or `"internal"`.
+    /// `"vertical"`, `"radial"`, `"vegetation"`, `"tension"`, `"strings"`,
+    /// `"internal"` or `"lightning"`.
     pub fn as_str(self) -> &'static str {
         match self {
             PresetCheck::Vertical => "vertical",
@@ -1032,6 +1040,7 @@ impl PresetCheck {
             PresetCheck::Tension => "tension",
             PresetCheck::Strings => "strings",
             PresetCheck::Internal => "internal",
+            PresetCheck::Lightning => "lightning",
         }
     }
 
@@ -1044,8 +1053,9 @@ impl PresetCheck {
             "tension" => Ok(PresetCheck::Tension),
             "strings" => Ok(PresetCheck::Strings),
             "internal" => Ok(PresetCheck::Internal),
+            "lightning" => Ok(PresetCheck::Lightning),
             other => Err(format!(
-                "checks: \"{other}\" is not vertical, radial, vegetation, tension, strings or internal"
+                "checks: \"{other}\" is not vertical, radial, vegetation, tension, strings, internal or lightning"
             )),
         }
     }
@@ -1582,6 +1592,11 @@ impl RuleSet {
             .into_iter()
             .map(crate::internal::RawInternalRule::resolve)
             .collect::<Result<Vec<_>, _>>()?;
+        let lightning_rules = raw
+            .lightning_rules
+            .into_iter()
+            .map(crate::lightning::RawLightningRule::resolve)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             name: raw.name,
             rules,
@@ -1592,6 +1607,7 @@ impl RuleSet {
             tension_rules,
             string_rules,
             internal_rules,
+            lightning_rules,
         })
     }
 
@@ -1631,6 +1647,7 @@ impl RuleSet {
             tension_rules: Vec::new(),
             string_rules: Vec::new(),
             internal_rules: Vec::new(),
+            lightning_rules: Vec::new(),
         }
     }
 
@@ -1649,6 +1666,7 @@ impl RuleSet {
             PresetCheck::Tension => !self.tension_rules.is_empty(),
             PresetCheck::Strings => !self.string_rules.is_empty(),
             PresetCheck::Internal => !self.internal_rules.is_empty(),
+            PresetCheck::Lightning => !self.lightning_rules.is_empty(),
         }
     }
 
@@ -1744,6 +1762,9 @@ impl RuleSet {
             t.push_str(&r.to_toml());
         }
         for r in &self.internal_rules {
+            t.push_str(&r.to_toml());
+        }
+        for r in &self.lightning_rules {
             t.push_str(&r.to_toml());
         }
         t

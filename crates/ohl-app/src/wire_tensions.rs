@@ -151,6 +151,7 @@ impl WireTensionsWindow {
             tension_rules: self.rules.clone(),
             string_rules: Vec::new(),
             internal_rules: Vec::new(),
+            lightning_rules: Vec::new(),
         }
     }
 

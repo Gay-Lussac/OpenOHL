@@ -1,0 +1,102 @@
+# The lightning shielding check against the classical constructions,
+# computed on their own by reference_lightning.py (no OpenOHL code).
+# Rolling sphere over level ground: r_max, the largest striking
+# distance still reaching the phase, from the sphere resting on the
+# ground and touching the shielding wire (electrogeometric model;
+# Young, Clayton and Hileman 1963; Armstrong and Whitehead 1968);
+# to 2 cm (the program halves to 1 cm). Shielding angle: exact.
+
+[[case]]
+id = "electrical-060"
+title = "Rolling sphere: one shielding wire at 32 m, a phase 5 m out and 8 m below, ground factor 1.0: r_max and the verdict at r = 30 m"
+calculation = "electrical.lightning_cut"
+reference = "Classical construction, computed by benchmarks/electrical/reference_lightning.py"
+[case.inputs]
+method = "sphere"
+shields = [[0.0, 32.0]]
+phase = [5.0, 24.0, 0.0]
+ground = 0.0
+striking_distance = 30.0
+ground_factor = 1.0
+[case.expected]
+r_max_m = { value = 59.36266829794469, abs_tol = 0.02 }
+exposed = { value = 1.0, abs_tol = 0.0 }
+
+[[case]]
+id = "electrical-061"
+title = "Rolling sphere: one shielding wire at 32 m, a phase 5 m out and 8 m below, ground factor 0.8: r_max and the verdict at r = 30 m"
+calculation = "electrical.lightning_cut"
+reference = "Classical construction, computed by benchmarks/electrical/reference_lightning.py"
+[case.inputs]
+method = "sphere"
+shields = [[0.0, 32.0]]
+phase = [5.0, 24.0, 0.0]
+ground = 0.0
+striking_distance = 30.0
+ground_factor = 0.8
+[case.expected]
+r_max_m = { value = 103.49217736337869, abs_tol = 0.02 }
+exposed = { value = 1.0, abs_tol = 0.0 }
+
+[[case]]
+id = "electrical-062"
+title = "Rolling sphere: one shielding wire at 40 m, a phase 6 m out and 10 m below, ground factor 1.0: r_max and the verdict at r = 45 m"
+calculation = "electrical.lightning_cut"
+reference = "Classical construction, computed by benchmarks/electrical/reference_lightning.py"
+[case.inputs]
+method = "sphere"
+shields = [[0.0, 40.0]]
+phase = [6.0, 30.0, 0.25]
+ground = 0.0
+striking_distance = 45.0
+ground_factor = 1.0
+[case.expected]
+r_max_m = { value = 74.80031648752131, abs_tol = 0.02 }
+exposed = { value = 1.0, abs_tol = 0.0 }
+
+[[case]]
+id = "electrical-063"
+title = "Rolling sphere: two shielding wires 12 m apart at 35 m, the outer phase 3 m outside the right one: r_max as with that wire alone, exposed at r = 40 m"
+calculation = "electrical.lightning_cut"
+reference = "Classical construction, computed by benchmarks/electrical/reference_lightning.py"
+[case.inputs]
+method = "sphere"
+shields = [[-6.0, 35.0], [6.0, 35.0]]
+phase = [9.0, 27.0, 0.0]
+ground = 0.0
+striking_distance = 40.0
+[case.expected]
+r_max_m = { value = 47.67109174180442, abs_tol = 0.02 }
+exposed = { value = 1.0, abs_tol = 0.0 }
+
+[[case]]
+id = "electrical-064"
+title = "Shielding angle: the outer phase 3 m outside the right wire, 8 m below, radius 0.2 m: the angle it needs against 25° outer"
+calculation = "electrical.lightning_cut"
+reference = "Classical construction, computed by benchmarks/electrical/reference_lightning.py"
+[case.inputs]
+method = "angle"
+shields = [[-6.0, 35.0], [6.0, 35.0]]
+phase = [9.0, 27.0, 0.2]
+ground = 0.0
+outer_angle = 25.0
+inner_angle = 45.0
+[case.expected]
+needed_deg = { value = 22.306205054907643, abs_tol = 1e-9 }
+exposed = { value = 0.0, abs_tol = 0.0 }
+
+[[case]]
+id = "electrical-065"
+title = "Shielding angle: the middle phase between two wires 12 m apart, 6 m below: covered by the inner angle 45°, not by 30°"
+calculation = "electrical.lightning_cut"
+reference = "Classical construction, computed by benchmarks/electrical/reference_lightning.py"
+[case.inputs]
+method = "angle"
+shields = [[-6.0, 35.0], [6.0, 35.0]]
+phase = [0.0, 29.0, 0.0]
+ground = 0.0
+outer_angle = 30.0
+inner_angle = 45.0
+[case.expected]
+needed_deg = { value = 45.0, abs_tol = 1e-9 }
+exposed = { value = 0.0, abs_tol = 0.0 }

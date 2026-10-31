@@ -234,6 +234,7 @@ pub fn to_rule_set(
         tension_rules: Vec::new(),
         string_rules: Vec::new(),
         internal_rules: Vec::new(),
+        lightning_rules: Vec::new(),
     }
 }
 

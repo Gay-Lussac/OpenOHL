@@ -17,6 +17,7 @@ mod cost_run;
 mod electrical_run;
 mod internal_run;
 mod io_run;
+mod lightning_run;
 mod links_run;
 mod project;
 mod safety_run;
@@ -120,6 +121,13 @@ enum Command {
     /// (factor × RTS), usage, pass or fail. Exit status 0: all within,
     /// 1: some above, 2: an error.
     Tensions(Box<tensions_run::TensionsArgs>),
+    /// The lightning shielding check: per phase and span, in each weather
+    /// case of the `[[lightning_rule]]` tables of a rule file, whether the
+    /// shielding wires cover it — by a fixed shielding angle or the
+    /// rolling sphere (electrogeometric model), in cross-sections square
+    /// to the span: the length exposed, where it is worst, the margin.
+    /// Exit status 0: every phase covered, 1: some exposed, 2: an error.
+    Lightning(Box<lightning_run::LightningArgs>),
     /// The string check: every string in each weather case of the
     /// `[[string_rule]]` tables of a rule file — its load against its own
     /// maximum load, its swing against its own and the rule's limits, the
@@ -1101,6 +1109,14 @@ fn main() -> ExitCode {
         Some(Command::Line(args)) => line(&args, &[], None),
         Some(Command::Zones(args)) => zones_run::command(&args),
         Some(Command::Tensions(args)) => match tensions_run::run(&args) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::from(1),
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some(Command::Lightning(args)) => match lightning_run::run(&args) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::from(1),
             Err(e) => {

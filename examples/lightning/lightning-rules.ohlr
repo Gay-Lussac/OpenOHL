@@ -1,0 +1,20 @@
+# Lightning shielding rules of the shielded example line: invented values
+# to show the check (the shielding angles, the striking distance and the
+# step are the user's or a design code's; none is built in).
+format = "ohl-clearance-rules"
+version = 1
+name = "Lightning shielding example (invented values)"
+checks = ["lightning"]
+
+[[lightning_rule]]
+name = "shielding angle 30°"
+cases = ["max temperature"]
+method = "angle"
+outer_angle = 30.0
+inner_angle = 45.0
+
+[[lightning_rule]]
+name = "rolling sphere 10 kA"
+cases = ["max temperature"]
+method = "sphere"
+stroke_current = 10.0

@@ -601,7 +601,7 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
 /// seconds), the lowest point per metre triangulated; else none — straight between the structures' feet and
 /// level across, said as a warning. `lidar`: the point cloud even with a
 /// surface of the checks.
-fn project_ground(
+pub(crate) fn project_ground(
     file: &std::path::Path,
     line: &ohl_line::Line,
     reach: f64,

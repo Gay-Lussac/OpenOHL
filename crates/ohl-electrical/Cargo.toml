@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ohl-core.workspace = true
 ohl-cables.workspace = true
+ohl-clearance.workspace = true
 ohl-line.workspace = true
 ohl-thermal.workspace = true
 nalgebra.workspace = true

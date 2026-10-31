@@ -22,6 +22,81 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(MagneticSegments));
     registry.register(Box::new(Magnetic2d));
     registry.register(Box::new(Fields2d));
+    registry.register(Box::new(LightningCut));
+}
+
+/// `electrical.lightning_cut`: one phase in one cross-section of the
+/// lightning shielding check: `shields` (`[[across, z], …]`, m), `phase`
+/// (`[across, z, outer radius]`), level ground at `ground` (m), `method`
+/// `"angle"` (`outer_angle`, `inner_angle`, °) or `"sphere"`
+/// (`striking_distance`, m; `ground_factor`, default 1). Outputs: `depth`
+/// (° beyond the angle, or m of the sphere's reach into the phase; ≤ 0
+/// covered), `exposed` (1 or 0), and `needed_deg` (angle) or `r_max_m`
+/// (sphere: the largest striking distance still exposing it).
+struct LightningCut;
+
+impl Calculation for LightningCut {
+    fn id(&self) -> &'static str {
+        "electrical.lightning_cut"
+    }
+
+    fn description(&self) -> &'static str {
+        "Lightning shielding of one phase in one cross-section: shielding angle or rolling sphere, its margin"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::lightning::{Method, StrikingDistance};
+        use ohl_electrical::lightning::{CutWire, check_place};
+        let list = inputs
+            .get("shields")
+            .and_then(|v| v.as_array())
+            .ok_or("input \"shields\": a list of [across, z]")?;
+        let mut shields = Vec::new();
+        for w in list {
+            let xy = numbers(Some(w), "shield", 2)?;
+            shields.push(CutWire {
+                s: xy[0],
+                z: xy[1],
+                r: 0.0,
+            });
+        }
+        let ph = numbers(inputs.get("phase"), "phase", 3)?;
+        let p = CutWire {
+            s: ph[0],
+            z: ph[1],
+            r: ph[2],
+        };
+        let g = float(inputs, "ground")?;
+        let ground: Vec<[f64; 2]> = (-1000..=1000).map(|k| [k as f64, g]).collect();
+        let method = match inputs.get("method").and_then(|v| v.as_str()) {
+            Some("angle") => Method::Angle {
+                outer: float(inputs, "outer_angle")?,
+                inner: float(inputs, "inner_angle")?,
+            },
+            Some("sphere") => Method::Sphere {
+                distance: StrikingDistance::Typed(float(inputs, "striking_distance")?),
+                ground_factor: if inputs.contains_key("ground_factor") {
+                    float(inputs, "ground_factor")?
+                } else {
+                    1.0
+                },
+            },
+            _ => return Err("input \"method\": \"angle\" or \"sphere\"".into()),
+        };
+        let (depth, margin) = check_place(p, &shields, &ground, method);
+        let mut out = Outputs::new();
+        out.insert("depth".into(), depth);
+        out.insert("exposed".into(), if depth > 1e-6 { 1.0 } else { 0.0 });
+        match method {
+            Method::Angle { .. } => {
+                out.insert("needed_deg".into(), margin.unwrap_or(f64::NAN));
+            }
+            Method::Sphere { .. } => {
+                out.insert("r_max_m".into(), margin.unwrap_or(0.0));
+            }
+        }
+        Ok(out)
+    }
 }
 
 /// `electrical.fields_2d`: the electric field strength and the magnetic

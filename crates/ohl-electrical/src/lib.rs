@@ -46,6 +46,7 @@ pub mod earth;
 pub mod electric;
 pub mod field_results;
 pub mod field_views;
+pub mod lightning;
 pub mod magnetic;
 pub mod matrices;
 pub mod parameters;
