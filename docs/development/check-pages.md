@@ -34,7 +34,7 @@ not approved yet.
   object (span, section, structure, circuit, case), its key data in
   columns (a span's length, a structure's type), the table as wide as the
   window and its height dragged by the user (`check_help::list`).
-- **Ticks are fast to flip.** Unticked rows are greyed (as PLS-CADD does);
+- **Ticks are fast to flip.** Unticked rows are greyed;
   **press on a tick and drag across rows**: every row passed takes the new
   state; shift-click ticks a range; **All**, **None** and **Invert** per
   group; a **filter** box keeps only the rows whose name contains the
