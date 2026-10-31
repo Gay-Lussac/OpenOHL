@@ -1045,12 +1045,18 @@ impl<'a> ResultTable<'a> {
                         .get(g)
                         .map_or(String::new(), |c| c.text.clone())
                 };
+                // Each group found by its name in a map (a search through
+                // the groups made thousands of rows slow).
                 let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+                let mut at: std::collections::HashMap<String, usize> = Default::default();
                 for &k in &idx {
                     let t = text(k);
-                    match groups.iter_mut().find(|(n, _)| *n == t) {
-                        Some((_, v)) => v.push(k),
-                        None => groups.push((t, vec![k])),
+                    match at.get(&t) {
+                        Some(&j) => groups[j].1.push(k),
+                        None => {
+                            at.insert(t.clone(), groups.len());
+                            groups.push((t, vec![k]));
+                        }
                     }
                 }
                 groups.sort_by(|a, b| {

@@ -1385,6 +1385,12 @@ impl Line {
         self.nearest_on_routes(at).map(|n| (n.0, n.1))
     }
 
+    /// [`Self::place_along`] on the routes `views` ([`Self::alignment_views`]
+    /// made once for many points).
+    pub fn place_along_in(&self, views: &[AlignmentView], at: [f64; 2]) -> Option<(usize, f64)> {
+        self.nearest_on(views, at).map(|n| (n.0, n.1))
+    }
+
     /// The nearest segment of the routes' centrelines: route index,
     /// distance along it, unit direction.
     fn nearest_on_routes(&self, at: [f64; 2]) -> Option<OnRoute> {

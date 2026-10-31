@@ -209,9 +209,23 @@ pub struct LineSpan {
 /// The spans of the line, in order along it (the first structure's place
 /// along the line, then its id).
 pub fn line_spans(line: &Line) -> Vec<LineSpan> {
+    // Each structure placed once, on the routes made once (placing builds
+    // the routes' views: per point, a long line took seconds).
+    let views = line.alignment_views();
+    let places: std::collections::HashMap<&str, (usize, f64)> = line
+        .structures
+        .iter()
+        .map(|s| {
+            let at = line
+                .place_along_in(&views, [s.position[0], s.position[1]])
+                .unwrap_or((usize::MAX, f64::INFINITY));
+            (s.id.as_str(), at)
+        })
+        .collect();
     let place = |id: &str| {
-        line.structure(id)
-            .and_then(|s| line.place_along([s.position[0], s.position[1]]))
+        places
+            .get(id)
+            .copied()
             .unwrap_or((usize::MAX, f64::INFINITY))
     };
     // Off the alignments (both structures unplaced): the way most of the

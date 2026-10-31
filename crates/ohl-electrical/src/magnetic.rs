@@ -3153,23 +3153,38 @@ pub fn run_keeping(
 
 /// The spans from structure `from` to structure `to` along the line, in
 /// order (consecutive spans, each starting where the one before ends); a
-/// single span also either way round.
+/// single span also either way round. The next span of a run is any later
+/// one in the line's order that starts where the run ends, not only the
+/// next listed: another line's spans placed in between (a crossing line,
+/// a branch) do not break it (2026-10-31: a grid over a run with a
+/// crossing line's spans listed among its own was refused).
 pub(crate) fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<usize>, String> {
-    for (i, first) in spans.iter().enumerate() {
-        if first.from != from {
-            continue;
+    // Breadth first from every span leaving `from`, each span reached once:
+    // the run with the fewest spans.
+    let mut came: Vec<Option<usize>> = vec![None; spans.len()];
+    let mut seen = vec![false; spans.len()];
+    let mut queue = std::collections::VecDeque::new();
+    for (i, s) in spans.iter().enumerate() {
+        if s.from == from {
+            seen[i] = true;
+            queue.push_back(i);
         }
-        let mut run = vec![i];
-        let mut k = i;
-        loop {
-            if spans[k].to == to {
-                return Ok(run);
+    }
+    while let Some(k) = queue.pop_front() {
+        if spans[k].to == to {
+            let mut run = vec![k];
+            while let Some(p) = came[*run.last().expect("the run holds a span")] {
+                run.push(p);
             }
-            if k + 1 >= spans.len() || spans[k + 1].from != spans[k].to {
-                break;
+            run.reverse();
+            return Ok(run);
+        }
+        for j in k + 1..spans.len() {
+            if !seen[j] && spans[j].from == spans[k].to {
+                seen[j] = true;
+                came[j] = Some(k);
+                queue.push_back(j);
             }
-            k += 1;
-            run.push(k);
         }
     }
     spans
@@ -3383,6 +3398,42 @@ pub fn obj(m: &MagneticField) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A run of spans goes on past another line's spans listed among its
+    /// own (a crossing line placed along the route between them), and
+    /// follows the right branch where two spans leave one structure.
+    /// A run of spans goes on past another line's spans listed among its
+    /// own (a crossing line placed along the route between them), and
+    /// follows the right branch where two spans leave one structure.
+    #[test]
+    #[ignore]
+    fn tmp_real_run() {
+        let line: ohl_line::Line = serde_json::from_str(&std::fs::read_to_string("line.json").unwrap()).unwrap();
+        let spans = line_spans(&line);
+        eprintln!("RUN {:?}", run_spans(&spans, "T16", "A23"));
+    }
+
+    #[test]
+    fn runs_skip_spans_listed_in_between() {
+        let span = |a: &str, b: &str| LineSpan {
+            from: a.into(),
+            to: b.into(),
+            wires: Vec::new(),
+        };
+        let spans = vec![
+            span("T1", "T2"),
+            span("T2", "T3"),
+            span("C1", "C2"),
+            span("T2", "B1"),
+            span("C2", "C3"),
+            span("T3", "T4"),
+        ];
+        assert_eq!(run_spans(&spans, "T1", "T4"), Ok(vec![0, 1, 5]));
+        assert_eq!(run_spans(&spans, "T1", "B1"), Ok(vec![0, 3]));
+        assert_eq!(run_spans(&spans, "C2", "C1"), Ok(vec![2]));
+        assert!(run_spans(&spans, "T4", "T1").is_err());
+        assert!(run_spans(&spans, "C1", "T4").is_err());
+    }
 
     /// The per-polyline sum is the sum of [`segment_field`] over its
     /// pieces (within rounding), at points near and far.

@@ -114,6 +114,9 @@ pub struct LightningWindow {
     picked: Option<usize>,
     /// What the views draw: (shown, generation, stale).
     drawn: Option<(bool, u64, bool)>,
+    /// The line's spans counted, by the version of the line it was
+    /// counted on (counted once per version, not every frame).
+    spans: Option<(u64, usize)>,
 }
 
 /// The rule file of the window in a project: in its clearance rules (its
@@ -212,7 +215,7 @@ impl LightningWindow {
     }
 
     /// (rules × cases to run, spans of the line).
-    fn work(&self, model: &Model) -> (usize, usize) {
+    fn work(&mut self, model: &Model) -> (usize, usize) {
         let pairs = model
             .cases
             .iter()
@@ -223,10 +226,15 @@ impl LightningWindow {
                     .count()
             })
             .sum();
-        (
-            pairs,
-            ohl_electrical::cross_section::line_spans(&model.line).len(),
-        )
+        let spans = match self.spans {
+            Some((v, n)) if v == model.line_version => n,
+            _ => {
+                let n = ohl_electrical::cross_section::line_spans(&model.line).len();
+                self.spans = Some((model.line_version, n));
+                n
+            }
+        };
+        (pairs, spans)
     }
 
     /// Starts a check: each weather case of the rules solved in the

@@ -308,7 +308,7 @@ pressure, as it does.
 
 **Sampling.** \\( d\varphi/df = \Delta / (1 + \tan^2\varphi) \le \Delta \\)
 (\\( \Delta = \tan\varphi_1 - \tan\varphi_0 \\)), so no point moves more
-than \\( r_\max \Delta + |r_1 - r_0| \\) per unit of \\( f \\). The swing is
+than \\( r_{\max} \Delta + |r_1 - r_0| \\) per unit of \\( f \\). The swing is
 sampled in \\( n \\) steps of \\( f \\) such that this over \\( n \\) is at most
 0.1 m (at most 2000 steps: a longer swing coarser), and at each sample
 every rule between the line's wires is checked as in any case. To keep a
