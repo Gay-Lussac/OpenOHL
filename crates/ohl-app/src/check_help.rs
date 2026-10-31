@@ -1118,148 +1118,6 @@ pub fn mesh_outside(ui: &mut egui::Ui, tolerance: f64) {
     );
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use egui_kittest::Harness;
-    use egui_kittest::kittest::Queryable;
-
-    /// Every drawing renders, in the dark and the light theme, at the
-    /// values' ends (k = 0 and 0.5, no allowance, no limit, steps off).
-    #[test]
-    fn the_drawings_render_in_both_themes() {
-        for dark in [true, false] {
-            for (k, a, steps, limit) in [(0.0, 0.0, 0, None), (0.5, 20.0, 40, Some(5.0))] {
-                let mut h = Harness::new_ui(move |ui| {
-                    ui.ctx().set_visuals(if dark {
-                        egui::Visuals::dark()
-                    } else {
-                        egui::Visuals::light()
-                    });
-                    falling_tree(ui, k, a);
-                    grow_in(ui, 5.0, 1.0, 0.5);
-                    wind_positions(ui, steps > 0, steps);
-                    tree_base(ui, limit);
-                    unbalanced_ice(ui, steps > 0);
-                    vertical_zone(ui, a / 2.0, k);
-                    radial_zone(ui);
-                    safety_distance(ui, a / 4.0, k);
-                    for g in ohl_clearance::safety_volume::Grouping::ALL {
-                        volume_grouping(ui, g);
-                    }
-                    mesh_outside(ui, k);
-                });
-                h.run();
-                for name in [
-                    "drawing: falling tree",
-                    "drawing: grow-in",
-                    "drawing: wind positions",
-                    "drawing: tree base",
-                    "drawing: unbalanced ice",
-                    "drawing: vertical zone",
-                    "drawing: radial distance",
-                    "drawing: safety distance",
-                    "drawing: mesh outside",
-                ] {
-                    h.get_by_label(name);
-                }
-                assert_eq!(h.query_all_by_label("drawing: grouping").count(), 3);
-            }
-        }
-    }
-
-    /// The solves a choice needs: steps of 10 Pa to 650 Pa from both
-    /// sides are 1 + 64 × 2 + 2 = 131 (the arc suggested); the arc alone
-    /// 3; the case's pressure alone 2 (one side: 1).
-    #[test]
-    fn solves_per_windy_case() {
-        let mut w = WindSteps {
-            stepped: true,
-            step: 10.0,
-            ..WindSteps::default()
-        };
-        assert_eq!(solves_per_case(&w, 650.0, true), 131);
-        assert!(solves_per_case(&w, 650.0, true) > MANY_SOLVES);
-        w.stepped = false;
-        assert_eq!(solves_per_case(&w, 650.0, true), 2);
-        w.arc = true;
-        assert_eq!(solves_per_case(&w, 650.0, true), 3);
-        w.sides = WindSides::Left;
-        assert_eq!(solves_per_case(&w, 650.0, true), 2);
-        w.arc = false;
-        assert_eq!(solves_per_case(&w, 650.0, true), 1);
-        assert_eq!(solves_per_case(&w, 0.0, true), 1);
-    }
-
-    /// The band's margin in the shared wind choice (2026-10-21): shown
-    /// with the swing arc only, with its explanation (conservative); a
-    /// smaller value than the default is warned about, and the default
-    /// is a click away.
-    #[test]
-    fn the_band_margin_with_the_swing_arc() {
-        for (arc, margin) in [(false, 0.15), (true, 0.15), (true, 0.05)] {
-            let mut h = Harness::new_ui(move |ui| {
-                let mut w = WindSteps {
-                    arc,
-                    band_margin: margin,
-                    ..WindSteps::default()
-                };
-                wind_choice(ui, "test", &mut w, true, 600.0, true, true);
-            });
-            h.run();
-            assert_eq!(h.query_by_label("band margin").is_some(), arc);
-            assert_eq!(
-                h.query_all_by_label_contains("conservative")
-                    .next()
-                    .is_some(),
-                arc && margin == 0.15
-            );
-            assert_eq!(
-                h.query_all_by_label_contains("less safe, on your responsibility")
-                    .next()
-                    .is_some(),
-                margin < 0.15
-            );
-            assert_eq!(h.query_by_label("0.15 m").is_some(), margin < 0.15);
-            // The jumpers' own margin beside it (2026-10-21), default 0:
-            // said not to hold the jumper between its blowouts.
-            assert_eq!(h.query_by_label("jumper band margin").is_some(), arc);
-            assert_eq!(
-                h.query_all_by_label_contains("does not hold the jumper between its blowouts")
-                    .next()
-                    .is_some(),
-                arc
-            );
-        }
-    }
-
-    /// The jumpers' band margin (2026-10-21, the owner's decision): a
-    /// value entered is said to be the user's, and the default (0 m) is a
-    /// click away; in a check without jumpers it is greyed.
-    #[test]
-    fn the_jumper_band_margin_is_the_users() {
-        for (margin, jumpers) in [(0.35, true), (0.35, false)] {
-            let mut h = Harness::new_ui(move |ui| {
-                let mut w = WindSteps {
-                    arc: true,
-                    jumper_band_margin: margin,
-                    ..WindSteps::default()
-                };
-                wind_choice(ui, "test", &mut w, false, 600.0, jumpers, true);
-            });
-            h.run();
-            assert!(h.query_by_label("jumper band margin").is_some());
-            assert_eq!(
-                h.query_all_by_label_contains("your value, on your responsibility")
-                    .next()
-                    .is_some(),
-                jumpers
-            );
-            assert!(h.query_by_label("0 m").is_some());
-        }
-    }
-}
-
 /// The heat balance of a conductor (Thermal rating): the current's Joule
 /// heat and the sun heat it; the wind (convection) and its radiation cool
 /// it. The ampacity is the current at which they balance at the maximum
@@ -1668,4 +1526,146 @@ pub fn wire_fit(ui: &mut egui::Ui) {
     p.line_segment([mm, mid], egui::Stroke::new(1.4, ink.key));
     text(&p, mid + egui::vec2(4.0, -4.0), "Δ", ink.key);
     text(&p, mm + egui::vec2(10.0, -10.0), "model", ink.line);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    /// Every drawing renders, in the dark and the light theme, at the
+    /// values' ends (k = 0 and 0.5, no allowance, no limit, steps off).
+    #[test]
+    fn the_drawings_render_in_both_themes() {
+        for dark in [true, false] {
+            for (k, a, steps, limit) in [(0.0, 0.0, 0, None), (0.5, 20.0, 40, Some(5.0))] {
+                let mut h = Harness::new_ui(move |ui| {
+                    ui.ctx().set_visuals(if dark {
+                        egui::Visuals::dark()
+                    } else {
+                        egui::Visuals::light()
+                    });
+                    falling_tree(ui, k, a);
+                    grow_in(ui, 5.0, 1.0, 0.5);
+                    wind_positions(ui, steps > 0, steps);
+                    tree_base(ui, limit);
+                    unbalanced_ice(ui, steps > 0);
+                    vertical_zone(ui, a / 2.0, k);
+                    radial_zone(ui);
+                    safety_distance(ui, a / 4.0, k);
+                    for g in ohl_clearance::safety_volume::Grouping::ALL {
+                        volume_grouping(ui, g);
+                    }
+                    mesh_outside(ui, k);
+                });
+                h.run();
+                for name in [
+                    "drawing: falling tree",
+                    "drawing: grow-in",
+                    "drawing: wind positions",
+                    "drawing: tree base",
+                    "drawing: unbalanced ice",
+                    "drawing: vertical zone",
+                    "drawing: radial distance",
+                    "drawing: safety distance",
+                    "drawing: mesh outside",
+                ] {
+                    h.get_by_label(name);
+                }
+                assert_eq!(h.query_all_by_label("drawing: grouping").count(), 3);
+            }
+        }
+    }
+
+    /// The solves a choice needs: steps of 10 Pa to 650 Pa from both
+    /// sides are 1 + 64 × 2 + 2 = 131 (the arc suggested); the arc alone
+    /// 3; the case's pressure alone 2 (one side: 1).
+    #[test]
+    fn solves_per_windy_case() {
+        let mut w = WindSteps {
+            stepped: true,
+            step: 10.0,
+            ..WindSteps::default()
+        };
+        assert_eq!(solves_per_case(&w, 650.0, true), 131);
+        assert!(solves_per_case(&w, 650.0, true) > MANY_SOLVES);
+        w.stepped = false;
+        assert_eq!(solves_per_case(&w, 650.0, true), 2);
+        w.arc = true;
+        assert_eq!(solves_per_case(&w, 650.0, true), 3);
+        w.sides = WindSides::Left;
+        assert_eq!(solves_per_case(&w, 650.0, true), 2);
+        w.arc = false;
+        assert_eq!(solves_per_case(&w, 650.0, true), 1);
+        assert_eq!(solves_per_case(&w, 0.0, true), 1);
+    }
+
+    /// The band's margin in the shared wind choice (2026-10-21): shown
+    /// with the swing arc only, with its explanation (conservative); a
+    /// smaller value than the default is warned about, and the default
+    /// is a click away.
+    #[test]
+    fn the_band_margin_with_the_swing_arc() {
+        for (arc, margin) in [(false, 0.15), (true, 0.15), (true, 0.05)] {
+            let mut h = Harness::new_ui(move |ui| {
+                let mut w = WindSteps {
+                    arc,
+                    band_margin: margin,
+                    ..WindSteps::default()
+                };
+                wind_choice(ui, "test", &mut w, true, 600.0, true, true);
+            });
+            h.run();
+            assert_eq!(h.query_by_label("band margin").is_some(), arc);
+            assert_eq!(
+                h.query_all_by_label_contains("conservative")
+                    .next()
+                    .is_some(),
+                arc && margin == 0.15
+            );
+            assert_eq!(
+                h.query_all_by_label_contains("less safe, on your responsibility")
+                    .next()
+                    .is_some(),
+                margin < 0.15
+            );
+            assert_eq!(h.query_by_label("0.15 m").is_some(), margin < 0.15);
+            // The jumpers' own margin beside it (2026-10-21), default 0:
+            // said not to hold the jumper between its blowouts.
+            assert_eq!(h.query_by_label("jumper band margin").is_some(), arc);
+            assert_eq!(
+                h.query_all_by_label_contains("does not hold the jumper between its blowouts")
+                    .next()
+                    .is_some(),
+                arc
+            );
+        }
+    }
+
+    /// The jumpers' band margin (2026-10-21, the owner's decision): a
+    /// value entered is said to be the user's, and the default (0 m) is a
+    /// click away; in a check without jumpers it is greyed.
+    #[test]
+    fn the_jumper_band_margin_is_the_users() {
+        for (margin, jumpers) in [(0.35, true), (0.35, false)] {
+            let mut h = Harness::new_ui(move |ui| {
+                let mut w = WindSteps {
+                    arc: true,
+                    jumper_band_margin: margin,
+                    ..WindSteps::default()
+                };
+                wind_choice(ui, "test", &mut w, false, 600.0, jumpers, true);
+            });
+            h.run();
+            assert!(h.query_by_label("jumper band margin").is_some());
+            assert_eq!(
+                h.query_all_by_label_contains("your value, on your responsibility")
+                    .next()
+                    .is_some(),
+                jumpers
+            );
+            assert!(h.query_by_label("0 m").is_some());
+        }
+    }
 }

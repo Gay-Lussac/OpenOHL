@@ -1389,7 +1389,7 @@ impl SafetyVolumeWindow {
 
     /// The report; the row clicked.
     fn report_ui(&self, ui: &mut egui::Ui) -> Option<usize> {
-        let Some(r) = self.report() else { return None };
+        let r = self.report()?;
         let v = &r.volumes;
         ui.label(format!(
             "{} volumes from {} wire positions; weather cases: {}; {} from the conductors, {}.",
