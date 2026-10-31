@@ -1,55 +1,157 @@
 # Electric field
 
 *Built, in active development, not approved yet* (roadmap O18 step 5,
-2026-10-29: the engine and the command line; the window in OHL-Design
-next). The electric field strength (kV/m) of the line's voltages, from
-the wires where they hang in a weather case.
+2026-10-29; the window Checks › Electrical › Electric field… in
+OHL-Design and `ohl electrical electric` on the command line, both on
+the same engine, `crates/ohl-electrical`, `electric`). The electric field
+strength (kV/m) of the line's voltages, from the wires where they hang
+in a weather case.
+
+Every choice below is marked **conservative** (the field computed is at
+least the real one), **not conservative**, or neither, as far as that
+can be told. The program computes the field; **which voltage, which
+places and which limit** an ordinance asks for are yours to give (or a
+plugin's parameter file), never built in.
 
 ## What is computed
 
 The rms of the field's vector,
-\\( E = \sqrt{|E_x|^2 + |E_y|^2 + |E_z|^2} \\), kV/m, at the profiles'
-points (1 m above the ground by default), at given points, in vertical
-cuts and as isosurfaces in volumes — the same places and views as the
-[magnetic field](magnetic-field.md#where), drawn and checked the same
-way (the [cuts and volumes](magnetic-field.md#cuts-volumes-and-what-they-are-drawn-with)).
+
+\\[ E = \sqrt{|\underline E_x|^2 + |\underline E_y|^2 + |\underline E_z|^2} \\]
+
+in kV/m, with \\( \underline E_x, \underline E_y, \underline E_z \\) the
+complex rms phasors of the three components. It is computed:
+
+- on **profiles** across the line (1 m above the ground by default);
+- at **given points** (e.g. places of sensitive use);
+- in vertical **cuts** across the line, with the levels' isolines;
+- in **volumes** over runs of spans, as the levels' isosurfaces.
+
+![Three ways to see the field: a profile, a row of points at a height above the ground with the field plotted along it; a cut, a grid of points in a vertical plane with isolines; a volume, a lattice in a box with surfaces around the wires](../images/theory/field-views.svg)
+
+These are the same places and views as for the [magnetic
+field](magnetic-field.md#where), drawn and checked the same way ([cuts
+and volumes](magnetic-field.md#cuts-volumes-and-what-they-are-drawn-with)).
 Systems of different frequencies are computed apart and added as
-\\( \sqrt{\sum_f E_f^2} \\). DC systems are left out (a static field
-with space charge: another calculation).
+\\( E = \sqrt{\sum_f E_f^2} \\). DC systems are left out (a static field
+with space charge needs another calculation; said).
+
+**What it is compared to.** A limit (kV/m) is optional and yours to give:
+each point then shows its margin (limit − E). No limit is built in. The
+Swiss enforcement guide (BAFU, NISV guide, 8.7) asks for the field at the
+highest operating voltage, the largest sag and, on a double circuit built
+to compensate, one circuit voltage-free, 1 m above the ground (see
+[Standards and sources](#standards-and-sources)). The program takes each
+of these as an input; it chooses none of them for you.
+
+## Inputs and parameters
+
+The window's names, in the order of its Setup tab. Defaults are those of
+a new window; the command line has the same defaults (its option in
+brackets). "Time" is the effect on how long a run takes.
+
+| In the window | Default | Effect on the results | Effect on the time |
+|---|---|---|---|
+| **2 Scope** › weather case | the first case | the wires' places (sag, swing) as solved in it; for the NISV guide the case of the largest sag | a case not solved yet is solved first |
+| voltage between phases, per circuit (`--voltage C=KV`) | the system's nominal voltage, said | the field in proportion; each phase at it over \\( \sqrt3 \\) to earth, at its system's phase angle; **0 kV**: the circuit voltage-free (its wires at earth potential, like the earth wires) | none |
+| Model: **3D** / 2D (`--two-d`) | 3D | 3D: the wires as solved (sag, line angles, the line's length), the jumpers, the ground under the line; 2D: infinite straight wires over level ground at the profile | 2D: a moment; 3D: seconds to minutes |
+| Jumpers: carry their phase's charge | on | near the structures; off: left out (**not conservative** there) | a few more pieces |
+| Ground: **tiled floor** / plane under each point (`--plane`) | tiled floor | the floor follows hollows and ridges; the plane read the largest field up to 8 % low on bumps (**not conservative**) and up to 24 % high in a hollow | the floor: about a second per profile; the plane: none |
+| tiles: profiles and points (`--tile`) | 2 m | the floor's fine tiles; from 4 m to 2 m the profiles moved 1–3 % | grows with the tiles' number squared to cubed (1 m: about 8 times 2 m) |
+| tiles: cuts (`--cut-tile`) | 8 m | 8 m: within 2.8 % of the largest value on even ground (16 m: 8.3 %, 4 m: 0.16 %) | as above |
+| tiles: volumes (`--volume-tile`) | 8 m | as for cuts | as above; the floor of a long run of spans may exceed 2 GB (refused, said before Run) |
+| fitted over ± (plane only, `--ground-radius`) | 10 m | the plane's slope: short follows the ground right under the point (a bank, a ditch), long the slope at large | none |
+| Limit: given | none | the margin at every point | none |
+| Points from CSV… | none | the field at each point: x, y and z (elevation) or height (above the ground), optionally a name | one floor per group of points near one another |
+| **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts and volumes are computed | in proportion to the spans |
+| Profiles | at each ticked span's lowest point | the place: the lowest point of the span's lowest phase conductor; *beside its structures* (10 m into the span from each); *one span* (its lowest point or a place 0–1 along it) | one floor and one row of points per profile |
+| Across: ± / every / at | ± 50 m, every 1 m, at 1 m above the ground | the profile's width, its points' spacing and height | in proportion to the points |
+| 2D cuts at (+ station, in the table) | none | a cut at mid-span, at the span's lowest point or at a distance from its first structure | one floor and one grid per cut |
+| 2D cuts: ± / every / up to | ± 60 m, every 0.5 m, up to 10 m over the highest wire | the cut's size and grid | in proportion to the points |
+| Volumes: every (Volume ticked in the table) | 2 m | how closely the surfaces follow their levels (measured after each run) | halving the step takes 4 to 8 times as long |
+| **4 Model** › Structures' steel: earthed (`--steel`) | off | lowers the field near the structures, raises it at the steel; on the tiled floor only | a profile beside two structures adds their pieces to the floor's system |
+| Wire pieces: as solved / at most | as solved | how far a wire lies off its straight pieces (millimetres); the field moves by about that over the distance | in proportion to the pieces |
+| **5 Views and levels** › levels | 1 and 5 kV/m on, 10 kV/m off | drawing only: the isolines and isosurfaces; none is a limit | each level a little |
+| colour the cuts by band | on | drawing only | none |
+| Cross-sections: also in any cross-section panel I open | off (0.5 m when on) | the field in the plane of each cross-section view opened, after a run | per view opened |
+
+The window says the time of each choice before Run, at the speed of the
+last run on this computer (before a first run: a short measurement).
+The command line has three more floor settings: `--coarse-tile` (8 m),
+`--floor-reach` (200 m) and `--lidar-ground` (the ground from the point
+cloud even when a surface of the checks exists).
+
+## How it works, step by step
+
+1. **The wires.** The line is solved in the weather case: each wire's
+   polyline per span (a bundle subconductor by subconductor), each
+   jumper's shape.
+2. **The charges.** At many cross-sections along each span the charges
+   per metre of all wires follow from the voltages,
+   \\( \underline q = P^{-1}\underline V \\) ([The
+   charges](#the-charges)).
+3. **The 3D model.** Every wire becomes straight pieces of uniform
+   charge, each span in 16 stretches at their own charges ([The 3D
+   model](#the-3d-model)).
+4. **The ground.** For each profile, group of points, cut and volume, a
+   tiled floor on the terrain is solved so that it is at zero potential
+   under the line's charges; with the structures' steel if asked ([The
+   ground](#the-ground)). Or, quickly, a plane under each point with the
+   charges' images.
+5. **The field.** At every point, the field of every piece of charge, of
+   every tile (or every image) and of every piece of steel is added per
+   component, as phasors, then \\( E \\) as above.
+6. **The views.** Profiles are plotted; cuts and volumes are drawn
+   between their points (isolines, isosurfaces), and how far the drawing
+   lies off its level is measured ([magnetic field: cuts, volumes and
+   what they are drawn with](magnetic-field.md#cuts-volumes-and-what-they-are-drawn-with)).
 
 ## The charges
 
-From the cross-section where they are (owner, 2026-10-31; the [line
-parameters](line-parameters.md)' cross-section, each bundle as its
-equivalent wire): in 2D the profile's or point's own cross-section; in 3D
-each span cut into 16 stretches along its length, each at the charges of
-the cross-section at its middle (the wires lower in the middle of a span
-carry more charge than near its ends):
+![Two wires above a perfectly conducting ground and their images below it; d_ij between the wires and D'_ij from one wire to the other's image give the potential coefficients; q = P^-1 V; the field at a point from the charges and the images](../images/theory/e-images.svg)
+
+The charges come from the cross-section where they are (owner,
+2026-10-31; the [line parameters](line-parameters.md)' cross-section,
+each bundle as its equivalent wire):
 
 \\[ \underline q = P^{-1}\,\underline V \\]
 
-with \\( P \\) the potential coefficients with images in a perfectly
-conducting earth (\\( p_{ij} = \ln(D'_{ij}/d_{ij}) / (2\pi\varepsilon_0) \\),
-a wire's own with its equivalent radius) and \\( \underline V \\) the
-voltages to earth: each phase its circuit's voltage between phases over
-\\( \sqrt 3 \\) at its phase angle, every earth wire at zero (it takes
-the charge that keeps it there). Each frequency is solved apart, the
-phases of the others at zero. The voltage per circuit is yours to give;
-a circuit without one takes its **system's nominal voltage, said** — an
-ordinance may ask the highest operating voltage (the NISV does: give it).
-A circuit given 0 kV is voltage-free: its wires at earth potential,
-carrying the charges that keep them there (as the earth wires).
+- \\( P \\): the potential coefficients with images in a perfectly
+  conducting earth, \\( p_{ij} = \ln(D'_{ij}/d_{ij}) / (2\pi\varepsilon_0) \\);
+  a wire's own \\( p_{ii} = \ln(2h_i/r_i) / (2\pi\varepsilon_0) \\) with
+  its height \\( h_i \\) and its (bundle's) equivalent radius \\( r_i \\).
+- \\( \underline V \\): the voltages to earth. Each phase is its
+  circuit's voltage between phases over \\( \sqrt 3 \\), at its phase
+  angle (L1 0°, L2 −120°, L3 +120° unless the system gives others). Every
+  earth wire is at zero: it takes the charge that keeps it there.
+- Each frequency is solved apart, the phases of the others at zero.
+- **The voltage** per circuit is yours to give. A circuit without one
+  takes its **system's nominal voltage, said**: an ordinance may ask
+  the highest operating voltage (the NISV guide does: give it). A circuit
+  given 0 kV is voltage-free: its wires at earth potential, carrying the
+  charges that keep them there.
+
+**Where along the span.** In 2D the profile's or point's own
+cross-section. In 3D each span is cut into **16 stretches** along its
+length, each at the charges of the cross-section at its middle: a wire
+hanging lower in the middle of a span carries more charge than near its
+ends.
+
+![A span between two structures in 16 stretches; each stretch at the charge per metre of the cross-section at its middle; the bars below larger in the middle of the span, where the wire hangs lower](../images/theory/e-stretches.svg)
 
 - **Simplification**: each cross-section's charges from parallel wires at
-  its heights over level ground (as the line parameters take them); in 3D
-  constant within each of a span's 16 stretches (the charge changes by a
-  few per cent over a span, well under 1 % within a stretch). Until
-  2026-10-31 the charges came from the span's mean cross-section (the
-  wires at their mean height): against hvlbuzz that read the field 3.6 %
-  low under the line at mid-span — **not conservative**, replaced. The
-  table of charges per wire and the jumpers still take the span's mean.
-- **Simplification**: a bundle's charge shared equally by its
-  subconductors.
+  their heights over level ground (as the line parameters take them).
+  Neither conservative nor not.
+- **Simplification**: in 3D the charge is constant within each of a
+  span's 16 stretches. The charge changes by a few per cent over a span,
+  well under 1 % within a stretch. Neither conservative nor not.
+- **Corrected 2026-10-31**: until then the charges came from the span's
+  mean cross-section (the wires at their mean height). Against hvlbuzz
+  that read the field 3.6 % low under the line at mid-span — **not
+  conservative**, replaced. The table of charges per wire and the
+  jumpers still take the span's mean.
+- **Assumption**: a bundle's charge shared equally by its subconductors
+  (exact for a regular bundle by symmetry, close for others).
 
 ## The 3D model
 
@@ -68,102 +170,132 @@ with \\( \hat u \\) the piece's direction, \\( L \\) its length,
 piece's line to \\( p \\) (length \\( \rho \\)), \\( \vec r_a = p - a \\),
 \\( \vec r_b = p - b \\). Tested against the infinite line charge
 \\( \lambda/(2\pi\varepsilon_0\rho) \\) and against the integral
-evaluated numerically (Simpson, \\( 10^{-8} \\)). The pieces are summed
-per polyline as for the magnetic field (each vertex's distance once,
-blocks of points), with the same choices of piece length.
+evaluated numerically (Simpson, \\( 10^{-8} \\)).
 
-### The ground
+- **The pieces** are the solver's (some 64 per span), or shorter on
+  request (*Wire pieces: at most*). Each piece's field is exact; the
+  only error is how far the wire curves away from its pieces (the
+  sagitta, millimetres; it falls with the square of the piece's length).
+  The field moves by about that share of the distance (0.04 % at 10 m).
+  Neither conservative nor not. The same pieces and the same sum as for
+  the [magnetic field](magnetic-field.md#the-3d-model) (each vertex's
+  distance once, blocks of 64 points, all cores).
+- **The jumpers** (on by default): a jumper at a section's end carries
+  the charge per metre of that section's end span (its mean
+  cross-section). A jumper not at a section's end is left out, said. Off:
+  all are left out — **not conservative** near the structures.
 
-**By default a tiled conducting floor** (owner, 2026-10-29, after the
-comparison below: "keep the tiled implementation"): around each profile,
-each group of given points near one another along a span (they share a
-floor around their middle, its fine tiles reaching the farthest across)
-and each cut (the cross-section panels' too; a cut's floor in the cut's
-own frame — centred on its plane, its tiles along and across it — since
-2026-10-31, when cuts moved onto the alignment: the same tiles as before
-for a cut square to its span), the floor below is solved;
-about a second each (2026-10-31: its dense system solved by LU on all
-cores, faer — 0.4 s at 4 660 tiles against 8.5 s on one core before, the
-same values to \( 10^{-14} \); filling it and the line's potential at its
-tiles some 0.8 s; the LU grows with the tiles' cube, the rest with their
-square). Two profiles' floors are solved side by side; on a real line 4
-spans' profiles took 4.5 s, 52 s before. **Memory** (owner, 2026-10-31:
-laptops of 16 to 32 GB): a floor takes 16 bytes per pair of tiles while
-it is solved (its table and its factors) — 0.35 GB at 4 660 tiles; side
-by side as many as 1 GB holds; a floor over 2 GB (some 11 000 tiles) is
-refused, said, rather than slowing the computer by swapping. A volume's
-floor grows with its run: 2 850 tiles for one 300 m span, 5 360 for three
-(0.45 GB); the window says the longest run's before Run. **Cuts across the line and volumes on coarser
-tiles by default, each a parameter** (owner, 2026-10-29): a cut's floor
-of 8 m tiles (`cut_tile`); a volume's floor under its whole run of spans
-and 100 m beyond every way, square tiles of 8 m (`volume_tile`). Measured
-against the exact field on even ground, from 1 m above it up: 16 m tiles
-8.3 % of the largest value, **8 m 2.8 %**, 4 m 0.16 % (a 300 m span: 0.5 s,
-1 s and 39 s). A tile near the point is summed finer the nearer the point
-(points closer together than its distance to the tile, up to 96 per
-side): next to coarse tiles the field stays right. The plane under each
-point is kept as the quick choice.
+## The ground
 
-#### The plane under each point
+The ground is a perfect conductor at zero potential: at power frequency
+the earth's conductivity is high enough for the electric field. Two
+models; the **tiled floor is the default** (owner, 2026-10-29: "keep the
+tiled implementation").
 
-The ground is a perfect conductor (at power frequency the earth's
-conductivity is high enough for the electric field). Under each point of
-evaluation the program fits a **plane to the terrain** — its elevation
-there and its slopes from the elevations a radius either side in x and
-in y (`ground_radius`, 10 m by default; without a terrain, straight
-between the structures' feet and level across) — and takes the images of
+![Left: in a hollow, the plane fitted under the point and the charge's image in it; the hollow's sides are not seen. Right: the tiled floor follows the terrain and carries induced charges](../images/theory/e-ground-models.svg)
+
+### The tiled floor (default)
+
+![Left, in plan: fine tiles near the profile, coarse tiles beyond, to 200 m every way. Right, in elevation: the tiles on the terrain with induced charges, a structure's steel cut into pieces of at most 3 m, all at zero potential](../images/theory/e-floor.svg)
+
+Around each profile, each group of given points near one another along a
+span, each cut and each volume, the terrain is laid out as a floor of
+tiles:
+
+- **The tiles.** Each tile is a quadrilateral on the terrain, carrying a
+  uniform charge per square metre. Around a profile: square tiles of the
+  fine size (2 m) within 30 m along the line and 10 m beyond the
+  profile's width across; coarse tiles (8 m) beyond; to 200 m every way.
+  A group of points shares one floor around its middle, its fine tiles
+  reaching the farthest point. A cut's floor lies in the cut's own frame
+  (centred on its plane, its tiles along and across it) with the cut
+  tiles (8 m). A volume's floor runs under its whole run of spans and
+  100 m beyond every way, square tiles of the volume tile size (8 m).
+- **The solution.** The tiles' charges are such that the floor is at
+  zero potential at every tile's centre under the line's charges:
+  \\( A\,\sigma = -\varphi_{line} \\), a dense system solved by LU on all
+  cores (faer). There are no images: the floor's charges are the
+  ground's answer to the line.
+- **The field.** The line's charges plus every tile's. A tile far from
+  the point counts as one point charge; nearer, as 6 × 6; very near, as
+  points closer together than its distance to the tile (up to 96 per
+  side), so the field stays right next to coarse tiles.
+- **Time.** About a second per floor (2026-10-31: 0.4 s for the LU at
+  4 660 tiles, against 8.5 s on one core before, the same values to
+  \\( 10^{-14} \\); filling the table and the line's potential at the
+  tiles some 0.8 s). The LU grows with the tiles' cube, the rest with
+  their square. Two floors are solved side by side; on a real line 4
+  spans' profiles took 4.5 s.
+- **Memory** (owner, 2026-10-31: laptops of 16 to 32 GB). A floor takes
+  16 bytes per pair of tiles while it is solved (its table and its
+  factors): 0.35 GB at 4 660 tiles. As many floors are solved side by
+  side as 1 GB holds (at most 2). A floor over **2 GB** (some 11 000
+  tiles) is refused, said, rather than slowing the computer by swapping.
+  A volume's floor grows with its run: 2 850 tiles for one 300 m span,
+  5 360 for three (0.45 GB); the window says the longest run's before
+  Run.
+- **Why coarser tiles for cuts and volumes** (owner, 2026-10-29, each a
+  parameter). Measured against the exact field on even ground, from 1 m
+  above it up: 16 m tiles 8.3 % of the largest value, **8 m 2.8 %**,
+  4 m 0.16 % (a 300 m span: 0.5 s, 1 s and 39 s).
+- **Its own errors**: the tiles' size and the floor's end at 200 m. On
+  evenly sloping ground, where the plane is exact, within 0.2 % of the
+  profile's largest value. Neither conservative nor not.
+- **The ground's elevation**: the terrain surface (the project's surface
+  of the checks, else its point cloud's ground classes, the lowest point
+  per metre); without one, straight between the structures' feet and
+  level across (**Simplification**).
+
+### The structures' steel (optional)
+
+Off by default (owner, 2026-10-31); only on the tiled floor in 3D.
+
+- Each structure's members — its type's at detail levels 2 and 3, else
+  its own stick drawing; a pole's centreline — are cut into **pieces of
+  at most 3 m**, each with its own unknown charge per metre. A structure
+  with neither (detail level 1) is left out, said.
+- The pieces are solved **together with the floor's tiles**, so that the
+  steel too is at zero potential: held on its surface at each piece's
+  middle. Its radius is the farthest its section reaches from the axis,
+  else 5 cm (a thin wire). Only the steel standing on a floor takes part.
+- The field adds each piece's closed form, as for the wires.
+- **Simplification**: the line's charges are taken as without the steel
+  (they follow from the voltages and the wires; the steel changes them
+  little, except near the clamps).
+- **Tested**: a long earthed bar beside a charged wire over flat ground
+  lowers the field 1 m above the ground as the exact 2D result (the
+  bar's charge \\( q_2 = -\frac{p_{21}}{p_{22}} q_1 \\)) within 0.4 % of
+  the field.
+- **Left out** (the default), the field near the ground beside a
+  structure reads high — **conservative**; at the steel itself, low —
+  **not conservative**. On a real line with stick drawings (about 6
+  members per structure) it changed a profile 12 m from a mast by
+  0.1 %; with lattice members, more.
+- Not with the plane under each point (the steel would be solved again
+  at every point) nor in 2D (said).
+
+### The plane under each point (quick)
+
+Under each point of evaluation the program fits a **plane to the
+terrain**: its elevation there and its slopes from the elevations
+`ground_radius` (10 m) either side in x and in y. It takes the images of
 all charges in that plane, with the opposite sign. The images' field at
 \\( p \\) is the charges' field at \\( p \\)'s mirror point, mirrored
-back (a reflection keeps every distance), so it costs one more sum.
+back (a reflection keeps every distance): one more sum, no system to
+solve.
 
-Why this ground (owner, 2026-10-29, asked "what's easier and actually
-better"): it is continuous along the line (the plane changes with the
-point, no seam at a structure as a plane per span would leave), exact for
-level or evenly sloping ground, and as costly as one more sum; where
-ordinances ask the field — 1 m above the ground — objects (trees,
-buildings, fences) shield it far more than the terrain's curvature
-changes it. **Simplification on uneven ground**: in a hollow or on a
-ridge the real ground is not the plane; a conducting terrain surface
-(charges on its triangles) would follow it, at the cost of a large dense
-system — later, if a comparison shows it matters.
+Why it was built (owner, 2026-10-29, asked "what's easier and actually
+better"): it is continuous along the line (no seam at a structure, as a
+plane per span would leave), exact for level or evenly sloping ground,
+and as costly as one more sum. **Simplification on uneven ground**: in a
+hollow or on a ridge the real ground is not the plane. The comparison
+below made the tiled floor the default.
 
-- **Not modelled by default**: the structures (earthed steel: they lower
-  the field near them), trees, buildings and people (earthed objects
-  shield the field: the field computed is **conservative** away from them
-  and **not conservative** at their tops, where it concentrates).
-- **The structures' steel, earthed** (owner, 2026-10-31; an option, **off
-  by default**): on the tiled floor in 3D, each structure's members (its
-  type's at detail levels 2 and 3, else its own stick drawing; a pole's
-  centreline; a structure with neither, level 1, is left out, said) are
-  cut into pieces of at most 3 m, each with an unknown charge per metre,
-  solved **together with the floor's tiles** so that the steel too is at
-  zero potential (held on its surface at each piece's middle; its radius
-  the farthest its section's solid reaches from the axis, else 5 cm; a
-  thin wire). The field adds each piece's closed form. Only the steel
-  standing on a floor takes part. **Simplification**: the line's charges
-  are taken as without the steel (they follow from the voltages and the
-  wires; the steel changes them little but near the clamps). **Tested**:
-  a long earthed bar beside a charged wire over flat ground lowers the
-  field 1 m above the ground as the exact 2D result (the bar's charge
-  \( q_2 = -\frac{p_{21}}{p_{22}} q_1 \)) within 0.4 % of the field. Left
-  out, the field near the ground beside a structure reads high — **on the
-  safe side**; at the steel itself, low. On a real line with stick
-  drawings (about 6 members per structure) it changed a profile 12 m from
-  a mast by 0.1 %; with lattice members, more. Not with the plane under
-  each point (it would be solved again at every point) nor in 2D (said).
-
-### The plane against a tiled floor (2026-10-29)
+### The plane against the tiled floor (2026-10-29)
 
 The owner asked for "a comparison with a tiled floor … in a valley area
-as well as flatland" on a few extracts of a real line. The reference
-(`GroundModel::Tiled`, `ohl electrical electric --tiled`): around a
-profile's station, the terrain as a floor of square tiles — 2 m within
-30 m along the line and 10 m beyond the profile across, 8 m beyond, to
-200 m every way — each a quadrilateral on the terrain with a uniform
-charge per square metre, solved so that the floor is at zero potential
-at every tile's centre under the line's charges (a dense system, some
-4 000 tiles, about 10 s per profile); the field the line's charges and
-the tiles' (each tile near the point as 6 × 6 point charges).
+as well as flatland" on a few extracts of a real line. The reference: the
+tiled floor above (2 m tiles), about 10 s per profile at the time.
 
 - **The reference's own error**, on the synthetic example's evenly
   sloping ground where the plane is exact: within 0.2 % of the profile's
@@ -202,45 +334,105 @@ tenfold at the bottom (**conservative** there).
 
 So the plane under each point **underestimates the largest field by up
 to some 8 % on the real line's bumps and slopes — not conservative** —
-and overestimates in hollows (conservative) — and differs locally
-by 5–30 % of the largest value (more where the field is weak: a bump of
+and overestimates in hollows (conservative), and differs locally by
+5–30 % of the largest value (more where the field is weak: a bump of
 the ground raises the field on it, a hollow lowers it, which a plane
 cannot follow). Each profile says how far the terrain departs from the
-plane under its largest value (`ground_departure`); where it is metres,
-take the tiled floor for the places that matter (`--tiled`, profiles
-only for now) or add a margin.
+plane under its largest value (`ground_departure`). With the plane, where
+it is metres, add a margin or use the tiled floor (the default).
 
 ## The 2D model
 
 A cross-section's wires as infinite line charges with their images in
 level ground at the cross-section:
-\\( \vec E = \frac{q}{2\pi\varepsilon_0}\left(\frac{\vec r}{r^2} - \frac{\vec r'}{r'^2}\right) \\),
-the same charges as above. Tested: one wire over level ground, the field
-at the ground below it \\( q/(\pi\varepsilon_0 h) \\), in 2D and from a
-long 3D wire with its image; a wire over a tilted plane gives the field of
-the level case turned with it.
+
+\\[ \vec E = \frac{q}{2\pi\varepsilon_0}\left(\frac{\vec r}{r^2} - \frac{\vec r'}{r'^2}\right) \\]
+
+with \\( \vec r \\) from the wire to the point and \\( \vec r' \\) from its
+image. The charges are the cross-section's own (above). Quick, and
+exactly the textbook case — but it assumes every span infinitely long,
+straight and over level ground: the sag along the span, line angles,
+jumpers, the terrain and the steel are not seen. Under the lowest point
+of a long level span it is close to 3D (see Validation). Cuts and volumes
+are 3D only.
+
+Tested: one wire over level ground, the field at the ground below it
+\\( q/(\pi\varepsilon_0 h) \\), in 2D and from a long 3D wire with its
+image; a wire over a tilted plane gives the field of the level case
+turned with it.
+
+## Where: profiles, cuts and volumes
+
+As for the [magnetic field](magnetic-field.md#where):
+
+- **Profiles** are square to the span's axis, at the span's lowest point
+  by default.
+- **Cuts** are vertical planes at a **station of an alignment**,
+  perpendicular to it; at an angle point along the bisector, as a
+  structure stands (owner, 2026-10-31: "cuts are made on the alignment
+  not the circuits or span"). The same plane as the cross-section view
+  opened at that station (one implementation). A span on no alignment
+  can have no cut (said).
+
+![In plan: an alignment with an angle point and the wires along it; a cut at a station perpendicular to the alignment, a cut at the angle point along the bisector, a profile square to its span's axis](../images/theory/field-cut-plane.svg)
+
+- **Volumes** are lattices in a box over a run of ticked spans that
+  follow each other (one volume, no seam at the structures).
+
+## The choices and why
+
+| Choice | Why | Effect on the result |
+|---|---|---|
+| Charges from the cross-section where they are (16 stretches per span in 3D) | the charge follows the sag; the span's mean read 3.6 % low at mid-span | neither; replaced a **not conservative** choice |
+| The tiled floor by default | it follows hollows and ridges; the plane read up to 8 % low on bumps | neither (its error: the tiles, under 3 % at 8 m) |
+| Fine tiles 2 m at profiles, 8 m under cuts and volumes | profiles are where limits are checked; cuts and volumes cover far more ground | cuts and volumes within some 3 % of the largest value on even ground |
+| A floor over 2 GB refused | laptops of 16 to 32 GB; swapping would stall the computer | none (a run is refused, said) |
+| The structures' steel off by default | it needs members (detail level 2 or 3) and time; it lowers the field beside the structures | **conservative** beside a structure, **not conservative** at the steel |
+| The nominal voltage when none is given | a value is needed; said in the notes | **not conservative** where the highest operating voltage is asked: give it |
+| The jumpers on by default | they carry the phase's charge near the structures | off: **not conservative** near the structures |
+| Trees, buildings, people not modelled | not in the model | **conservative** away from them, **not conservative** at their tops |
+| DC systems left out | a static field with space charge needs another method | **not conservative** near a DC system (said) |
 
 ## Validation
 
 Tests in the crate: the closed forms above; on the synthetic double
 circuit the symmetry of a profile, the field proportional to the voltage,
 3D against 2D at mid-span (within 10 %), a cut and a volume with their
-isolines' and surfaces' distance off their levels. **Against hvlbuzz**
-(FKH, an independent program; 2026-10-29): the 2D charges and field on
-three cross-sections, 1 m above the ground — within 0.12 % on 380 kV
-bundles (one charge per bundle at its centre against hvlbuzz's twelve
-round every subconductor), 0.003 % on single wires, with and without an
-earth wire ([validation](../validation/textbook.md#the-2d-fields-against-hvlbuzz-benchmarkselectricalhvlbuzztoml)).
+isolines' and surfaces' distance off their levels; the earthed bar
+(0.4 %); the V-valley (above).
+
+**Against hvlbuzz** (FKH, an independent program; 2026-10-29): the 2D
+charges and field on three cross-sections, 1 m above the ground — within
+0.12 % on 380 kV bundles (one charge per bundle at its centre against
+hvlbuzz's twelve round every subconductor), 0.003 % on single wires, with
+and without an earth wire
+([validation](../validation/textbook.md#the-2d-fields-against-hvlbuzz-benchmarkselectricalhvlbuzztoml)).
+
 And the line's own profile (2026-10-31): the example double circuit at
 the middle of T1–T2, its 2D profile against hvlbuzz on the same
 cross-section within 0.2 % at every point (tested; from the span's mean
 cross-section it was 3.6 % low at the axis); the 3D profile's largest
 value 0.6 % above hvlbuzz's on the plane under each point, 0.8 % on the
-tiled floor — the 2D/3D methods differ (the wires curve up away from the
-middle, the next span adds its field), by up to 2–3 % within ±15 m of the
-axis and more where the field is smallest.
-**Not validated yet** against a published profile (to find: IEC 62110's examples, CIGRE's
-brochures on fields of overhead lines, the NISV guide's examples).
+tiled floor. The 2D and 3D methods differ (the wires curve up away from
+the middle, the next span adds its field), by up to 2–3 % within ±15 m of
+the axis and more where the field is smallest.
+
+**Not validated yet** against a published profile (to find: IEC 62110's
+examples, CIGRE's brochures on fields of overhead lines, the NISV guide's
+examples).
+
+## What is left out
+
+- **Trees, buildings, fences and people.** Earthed objects shield the
+  field: the field computed is **conservative** away from them and **not
+  conservative** at their tops, where it concentrates. A building drawn
+  in a cut or a cross-section view is shown, not modelled.
+- **The structures' steel** unless asked (above).
+- **The earth's resistivity**: the ground is a perfect conductor.
+- **Space charge and corona**; DC systems.
+- **The charges' change by the steel** (the line's charges as without
+  it).
+- **Other lines** (crossings, parallel lines): not in the model yet.
 
 ## Standards and sources
 

@@ -48,6 +48,71 @@ each frequency computed apart, added as
 sum of each frequency's squares — not a physical value (two frequencies
 have no common cycle), only an indication.
 
+![Left: the three phase currents as phasors at 0, −120 and +120 degrees. Middle: at a point every wire adds its field per component as a phasor; B is the rms of the vector. Right: the field vector R + jI traces an ellipse over a cycle; its semi-major axis is B_max](../images/theory/m-phasors.svg)
+
+**What it is compared to.** A limit (µT) is optional and yours to give:
+each point then shows its margin (limit − B) and each profile the width
+where B is at or above it. No limit is built in. Which current, which
+places and which load-flow directions govern are the ordinance's (a
+plugin's parameter file).
+
+## Inputs and parameters
+
+The window's names (Checks › Electrical › Magnetic field…), in the order
+of its Setup tab. Defaults are those of a new window; the command line
+(`ohl electrical magnetic`) has the same unless said (its option in
+brackets). "Time" is the effect on how long a run takes.
+
+| In the window | Default | Effect on the results | Effect on the time |
+|---|---|---|---|
+| **2 Scope** › weather case | the first case | the wires' places (sag, swing) as solved in it | a case not solved yet is solved first |
+| current, per circuit: given for *the circuit* (`--current C=A`) | 0 A | the field in proportion; rms, each phase, balanced at the system's phase angles | none |
+| … or *at its end points* (`--end C@S=A`) | in at the first end, *the rest* out at the last | each section's current by Kirchhoff's current law, branches included ([Currents](#currents)) | none |
+| … or the thermal rating (command line only, `--thermal`) | — | the least ampacity over the circuit's sections, at your conductor temperature and ambient case | none |
+| load flow: along / against the line (`:reverse`) | along | every phase turned by 180°: changes the field where circuits add or compensate | none |
+| Model: **3D** / 2D (`--two-d`) | 3D | 3D: the wires as solved (sag, line angles, the line's length), jumpers, structures' currents; 2D: infinite straight wires at the profile | 2D: a moment |
+| wires at the span's mean height (2D only, `--mean-heights`) | off | on: lower field under the lowest point (**not conservative**) | none |
+| Earth wires: carry the currents the phases induce (`--earth-wires`) | off | either sign: on the synthetic example +5 to 6 % near the ground | small |
+| … through the structures' earthing (`--towers`) | on in the window (off on the command line) | the earth wires as a network over the line, each structure to the ground through its earthing resistance; off: infinitely long, earthed everywhere (far larger currents on a short line) | small |
+| Jumpers: carry their phase's current | on | near the structures; off: **not conservative** there (`--no-jumpers`) | a few more pieces |
+| Limit: given | none (1 µT when ticked) | the margin and the limit line's width | none |
+| Points from CSV… | none | the field at each point | in proportion to the points |
+| **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts, volumes and grids are computed | in proportion to the spans |
+| Profiles | at each ticked span's lowest point | or *beside its structures* (10 m into the span), or *one span* (its lowest point or a place 0–1 along it) | per profile |
+| Across: ± / every / at | ± 50 m, every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
+| From above: every (From above ticked) | 2 m | isolines on a plane at the profiles' height over the spans; drawing only between points | in proportion to the points |
+| 2D cuts at (+ station) / ± / every / up to | none; ± 60 m, every 0.5 m, up to 10 m over the highest wire | a vertical cut on the alignment with isolines | in proportion to the points |
+| Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
+| **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
+| Modelled: the whole line / wires within (`--modelled-within`) | the whole line (2 000 m when ticked) | cuts and volumes only; the difference to the whole line is measured at each run | far quicker on a long line |
+| **5 Views and levels** › levels | 1 and 10 µT on, 100 µT off | drawing only; none is a limit | each level a little |
+| colour the cuts by band; also in any cross-section panel I open | on; off (0.5 m when on) | drawing only; the field in each cross-section view opened after a run | per view opened |
+
+The window says the time of each choice before Run, at the speed of the
+last run on this computer (before a first run: a short measurement
+halved, see [Performance](#performance)).
+
+## How it works, step by step
+
+1. **The wires.** The line is solved in the weather case: each wire's
+   polyline per span, a bundle subconductor by subconductor, each
+   jumper's shape.
+2. **The currents.** Each circuit's current (given, from its end points,
+   or its thermal rating) at its phase angles, each section's direction
+   along its conductor path ([Currents](#currents), [Which way the
+   currents flow](#which-way-the-currents-flow)); optionally the earth
+   wires' and structures' currents ([Earth wire
+   currents](#earth-wire-currents)).
+3. **The field.** At every point, every straight piece of every wire
+   adds its field in closed form (Biot–Savart), per component as a
+   phasor ([The 3D model](#the-3d-model)); then \\( B \\) and
+   \\( B_{max} \\) as above. No ground: the earth's currents are left
+   out ([The ground's return currents](#the-grounds-return-currents--left-out)).
+4. **The views.** Profiles are plotted; grids, cuts and volumes are drawn
+   between their points, and how far the drawing lies off its level is
+   measured ([Cuts, volumes and what they are drawn
+   with](#cuts-volumes-and-what-they-are-drawn-with)).
+
 ## The 3D model
 
 Each conductor and earth wire as the solver gives it in the chosen
@@ -75,8 +140,8 @@ The pieces' fields are summed per component as phasors.
 - **Simplification**: the wire straight between the solver's points. The
   solver says how far the wire lies off its polyline
   (`SpanShape.polyline_error`: the largest sagitta
-  \( R - \sqrt{R^2 - L^2/4} pprox L^2/(8R) \) of a piece of length
-  \( L \) on the catenary's smallest radius of curvature \( R = H/w \);
+  \\( R - \sqrt{R^2 - L^2/4} \approx L^2/(8R) \\) of a piece of length
+  \\( L \\) on the catenary's smallest radius of curvature \\( R = H/w \\);
   some millimetres: 64 pieces per span or part of a span, e.g. 7 m pieces
   and 4 mm on a 450 m span at H/w = 1700 m); the field moves by about that
   share of the distance (0.04 % at 10 m). Neither conservative nor not.
@@ -85,17 +150,17 @@ The pieces' fields are summed per component as phasors.
   on the average of the two quadratics through the piece's ends and a
   neighbouring point (parameter: the length along the polyline); half the
   two quadratics' difference is the placing's estimate, reported with the
-  sagitta bound over the shorter pieces (\( \propto L^2 \)). Where the two
+  sagitta bound over the shorter pieces (\\( \propto L^2 \\)). Where the two
   differ by more than the solver's bound (a kink: a spacer, a clamp, a
   span point) the piece is cut on its chord — no worse than the solver's
-  pieces there. On a catenary of \( C \) = 1500 m, 6.25 m pieces cut to
+  pieces there. On a catenary of \\( C \\) = 1500 m, 6.25 m pieces cut to
   0.9 m put the points within some µm of the curve (the chords lay up to
   3.3 mm off).
 - **The sum** is the same for every piece; it is arranged per polyline
   (each vertex's distance computed once for the two pieces meeting there)
   and per block of 64 points (a wire's pieces stay in the processor's
   cache for the block): equal to the piece-by-piece sum within rounding
-  (\( 10^{-12} \), tested), some times quicker on a long line.
+  (\\( 10^{-12} \\), tested), some times quicker on a long line.
 - **Assumption**: a bundle's current shared equally by its
   subconductors (exact for a regular bundle by symmetry, close for the
   others).
@@ -237,6 +302,8 @@ footing resistances the real currents are smaller. Hence, since
 2026-10-29 (owner: "include … the pylons' steel to improve accuracy"),
 **through the structures' earthing**:
 
+![Four structures and three spans: the earth wire bonded at every structure at its voltage V_n, each structure leading V_n/R_n into the ground; in each span the earth wire current I_e driven by the phases and the voltage difference; Kirchhoff's current law at every structure](../images/theory/m-earth-network.svg)
+
 - Every structure bonds its earth wires (one voltage \\( V_n \\)) and leads
   current into the ground through its **earthing resistance** \\( R_n \\)
   (its own, `Structure.earthing_resistance_ohm`; else the line's; else
@@ -302,6 +369,8 @@ nor not in general (the images oppose their sources' near fields).
 
 ## Where
 
+![Three ways to see the field: a profile, a row of points at a height above the ground with the field plotted along it; a cut, a grid of points in a vertical plane with isolines; a volume, a lattice in a box with surfaces around the wires](../images/theory/field-views.svg)
+
 - **Profiles** across the line at stations (every span's lowest point by
   default — the lowest point of its lowest phase conductor — or a place
   in a span), square to the span's axis, ±50 m every 1 m, at a height
@@ -339,6 +408,8 @@ nor not in general (the images oppose their sources' near fields).
   the highest wire), see below.
 - **Given points** (e.g. places of sensitive use) from a CSV file: x, y and
   an elevation or a height above the ground.
+
+![In plan: an alignment with an angle point and the wires along it; a cut at a station perpendicular to the alignment, a cut at the angle point along the bisector, a profile square to its span's axis](../images/theory/field-cut-plane.svg)
 
 ![A double-circuit line in a vertical cut across it with a house beside it: the grid's points, the isolines of 3, 10 and 30 microtesla cut at the ground; the 3 microtesla line reaches the house](../images/theory/field-cut.svg)
 
@@ -427,7 +498,7 @@ spans — **124 000 pieces** (the solver's, every subconductor's).
 | per polyline (each vertex's distance once for the two pieces meeting there) | 4.7 |
 
 Both give the same field within rounding (largest relative difference
-\( 3\cdot10^{-15} \) on the test line, \( 10^{-12} \) required by the
+\\( 3\cdot10^{-15} \\) on the test line, \\( 10^{-12} \\) required by the
 tests).
 
 **On all cores, sustained.** A laptop's cores slow down under full load:
@@ -495,7 +566,7 @@ around each conductor) needs a step well under its radius.
 - **Approximating far wires** (a multipole or a coarser wire far away) —
   it would change computed values without the user choosing it.
 - **The GPU** — the field sums currents that cancel far from the line
-  (a balanced three-phase line falls as \( 1/d^2 \)); single precision,
+  (a balanced three-phase line falls as \\( 1/d^2 \\)); single precision,
   all most GPUs offer, would lose digits there.
 
 **Continuity between the views' tiles** (2026-10-29). The values are
@@ -517,6 +588,37 @@ vertex to every edge through it (no crack; tested).
 
 The structures' magnetic permeability is not modelled (above); the
 jumpers and the structures' currents are.
+
+## The choices and why
+
+| Choice | Why | Effect on the result |
+|---|---|---|
+| Balanced currents, no harmonics | the governing state the NISV guide describes (2.4.1, 8.1.4) | neither in general (**Assumption**) |
+| The wires in free space (no earth currents, no steel's permeability) | both are small at the profiles' distances (estimated above) | neither in general; small |
+| 3D by default | it sees the sag, line angles, the line's length, jumpers | none; 2D under the lowest point is **conservative** against 3D on sagging spans |
+| 2D at the wires' place in the profile (not the mean height) | the field is largest where the wires hang lowest | **conservative** against the mean height |
+| The jumpers on by default | they carry the current through the structures | off: **not conservative** near the structures |
+| Earth wire currents off by default | they need the earthing resistances; their sign depends on the phasing | either sign: run both when it matters |
+| Through the structures' earthing (when the earth wires are on) | the infinitely long earth wire overstates the currents on a short line by far | neither in general; the line's ends **not conservative** (no substation earthing) |
+| 10 Ω when no earthing resistance is given | a common design target, said | neither |
+| The whole line modelled by default | quality before speed; leaving wires out changes values (measured) | none; *wires within* is the user's choice, its effect said |
+| Only the drawing between points interpolated | speed may only coarsen the display, never computed precision | the drawing's offset from its levels measured and said |
+
+## What is left out
+
+- **The earth's currents** (eddy currents, the return of a net current):
+  [estimated above](#the-grounds-return-currents--left-out), small.
+- **The steel's magnetic permeability** (structures, earth wire cores):
+  estimated above, small beyond a few metres.
+- **Unbalance and harmonics**: the currents are balanced, at power
+  frequency.
+- **A substation's earthing grid** at the line's ends (with the earth
+  wire network): **not conservative** near the ends.
+- **Other lines** (crossings, parallel lines): not in the model yet
+  (said).
+- **DC systems**: a static field (said).
+- **The modelled length** beyond the line's ends: warned where the line is
+  shorter than five times the limit line's reach on either side.
 
 ## Validation
 
