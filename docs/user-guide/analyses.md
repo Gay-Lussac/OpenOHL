@@ -841,7 +841,12 @@ field (isolines, surfaces)** while the window is open:
   first, then the fine one only where a level passes, near the wires and
   wherever a surface goes on. On a real line (7 circuits, 1000 A each), one
   span at 2 m took about a minute with the whole line modelled and 6 s
-  with the wires within 2 km; 1 m takes about four times as long.
+  with the wires within 2 km; 1 m takes about four times as long. Thin,
+  short pieces of a surface (at most 2 steps across, 20 long: a tube
+  thinner than the lattice, e.g. round an earth wire at a high level, met
+  only here and there) are left out and counted with the results
+  (2026-10-31: drawn, they were beads along the wire); a finer step
+  resolves them.
 
 Every value at a grid or lattice point is computed in full; only the
 lines and surfaces between the points are interpolated. **Each run says
@@ -890,6 +895,14 @@ ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     [--terrain FILE | --surface NAME] [--all-points] [--csv OUT.csv]
     [--library WIRES.ohlw]
 ```
+
+**The ground** (both fields, 2026-10-31): `--terrain` or `--surface`;
+without either, a project's **surface of the checks**, else its **point
+cloud's ground** along the whole line (some seconds, said), as in
+OHL-Design. A line file without terrain takes the ground straight between
+the structures' feet and says so as a **warning**: across a valley that
+line passes close under the wires (a 220 kV span read 14.5 kV/m at 1 m
+there, 0.007 kV/m over the real valley floor).
 
 `CIRCUIT` is a circuit's name or its system's id, `*` every circuit;
 `:reverse` sets the load flow against the line. `--thermal` takes each

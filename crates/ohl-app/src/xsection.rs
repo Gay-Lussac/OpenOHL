@@ -800,6 +800,13 @@ pub struct CutView {
     /// for: while the camera is still that one, a panel that settles to
     /// another shape (its first frames) gets the front view again.
     fitted: Option<(Camera, f64)>,
+    /// The front view on the wires (true) or the whole cut (false); none:
+    /// on the wires while a field is drawn in the panel (owner,
+    /// 2026-10-31: across a valley the whole cut left the field's
+    /// isolines a few pixels at the top).
+    pub on_wires: Option<bool>,
+    /// Whether the front view set up was the one on the wires.
+    fitted_wires: bool,
     slab: Option<(SlabKey, Arc<Slab>)>,
     /// The wires and structures of the last frame.
     pub contents: Contents,
@@ -842,6 +849,8 @@ impl CutView {
             fresh: true,
             plane_shown: None,
             fitted: None,
+            on_wires: None,
+            fitted_wires: false,
             slab: None,
             contents: Contents::default(),
             heights: None,
@@ -1204,6 +1213,28 @@ fn bar_ui(ui: &mut egui::Ui, view: &mut CutView) -> Option<Step> {
         {
             view.front();
         }
+        // The front view on the wires or the whole cut (on the wires by
+        // default while a field is drawn).
+        let field =
+            !view.view.electric_field.cuts.is_empty() || !view.view.magnetic_field.cuts.is_empty();
+        let wires = view.on_wires.unwrap_or(field);
+        let (text, hover) = if wires {
+            (
+                "Whole cut",
+                "The front view of the whole cut: from the ground to the top of the wires, \
+                 the whole width",
+            )
+        } else {
+            (
+                "Zoom to the wires",
+                "The front view on the conductors crossing the cut, with 15 m around them \
+                 (the default while a field is drawn here)",
+            )
+        };
+        if ui.button(text).on_hover_text(hover).clicked() {
+            view.on_wires = Some(!wires);
+            view.front();
+        }
         if let Some(c) = view.view.camera.as_mut() {
             for (ortho, text, hover) in [
                 (
@@ -1340,10 +1371,30 @@ fn panel_ui(
     let settled = view
         .fitted
         .is_some_and(|(c, a)| Some(c) == view.view.camera && (a / aspect - 1.0).abs() > 0.01);
-    if view.to_front || view.view.camera.is_none() || settled {
-        let camera = front_camera(&plane, heights, width, aspect);
+    // On the wires while a field is drawn (unless chosen otherwise); a
+    // field arriving after the panel opened re-fits it, the camera
+    // untouched.
+    let field =
+        !view.view.electric_field.cuts.is_empty() || !view.view.magnetic_field.cuts.is_empty();
+    let wires = view.on_wires.unwrap_or(field);
+    let untouched = view
+        .fitted
+        .is_some_and(|(c, _)| Some(c) == view.view.camera);
+    let fit = if wires {
+        wire_box(&view.contents)
+    } else {
+        None
+    };
+    if view.to_front
+        || view.view.camera.is_none()
+        || settled
+        || (untouched && view.fitted_wires != fit.is_some())
+    {
+        let (h, w) = fit.unwrap_or((heights, width));
+        let camera = front_camera(&plane, h, w, aspect);
         view.view.set_camera(camera);
         view.fitted = Some((camera, aspect));
+        view.fitted_wires = fit.is_some();
         view.to_front = false;
         view.plane_shown = Some(plane);
     } else if let Some(old) = view.plane_shown
@@ -1495,6 +1546,26 @@ fn panel_ui(
 /// The heights from the ground to the top of a slab's content: lowest,
 /// highest (the LiDAR points when nothing else is there; 0–50 m when the
 /// slab is empty).
+/// The heights and the half width around the conductors crossing the
+/// plane, with room around them (15 m below and either side, 10 m
+/// above): the front view on the wires. None: no wire crosses it.
+fn wire_box(c: &Contents) -> Option<([f64; 2], f64)> {
+    let mut lo = [f64::INFINITY; 2];
+    let mut hi = [f64::NEG_INFINITY; 2];
+    for p in c.wires.iter().flat_map(|w| w.crossings.iter()) {
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+        }
+    }
+    lo[0].is_finite().then(|| {
+        (
+            [lo[1] - 15.0, hi[1] + 10.0],
+            (lo[0].abs().max(hi[0].abs()) + 15.0).max(20.0),
+        )
+    })
+}
+
 fn heights(slab: &Slab, c: &Contents) -> [f64; 2] {
     let mut zs: Vec<f64> = slab
         .ground

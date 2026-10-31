@@ -802,7 +802,39 @@ pub struct VolumeValues {
     /// Per level: the share of the coarse lattice's points at or above it
     /// (1: the level lies beyond the box everywhere, 0: not reached).
     pub above: Vec<f64>,
+    /// Per level: the thin, short pieces of surface left out
+    /// ([`THIN_PIECE`], [`SHORT_PIECE`]; owner, 2026-10-31: beads along an
+    /// earth wire, a tube centimetres thick the lattice met here and
+    /// there).
+    pub left_out: Vec<usize>,
 }
+
+/// What a volume's level left out ([`VolumeValues::left_out`]), in
+/// words after its other notes (empty: nothing).
+pub fn left_out_text(pieces: usize) -> String {
+    if pieces == 0 {
+        String::new()
+    } else {
+        format!(
+            "; {pieces} thin piece(s) left out (at most {THIN_PIECE} steps across, \
+             {SHORT_PIECE} long: a tube thinner than the lattice, e.g. round an earth wire, \
+             met here and there; a finer step resolves it)"
+        )
+    }
+}
+
+/// A piece of an isosurface at most this many steps of its lattice across
+/// in two directions and at most [`SHORT_PIECE`] long is left out of a
+/// volume: a stretch of a tube thinner than the lattice resolves (round an
+/// earth wire at a high level, met only where a lattice point happens to
+/// lie inside it), drawn as scattered beads. On a real line the beads
+/// along an earth wire at 5 kV/m and 2 m steps were 2–3 m thick and
+/// 4–21 m long; the surface round the conductors, 650 m. Said with each
+/// volume; a finer step resolves them.
+pub const THIN_PIECE: f64 = 2.0;
+
+/// See [`THIN_PIECE`]: the longest piece left out, steps.
+pub const SHORT_PIECE: f64 = 20.0;
 
 /// The isosurfaces of `levels` in a box. `pieces`: the wires' straight
 /// pieces (a coarse cell within a coarse step of one is computed fine).
@@ -1031,10 +1063,13 @@ pub fn volume(
     // The surfaces: in the cells computed fine (a fine cell with a corner
     // not computed is skipped by the contouring).
     let value = |i: usize, j: usize, k: usize| values[id(i, j, k)];
+    let mut left_out = Vec::new();
     let surfaces: Vec<(f64, Mesh)> = levels
         .iter()
         .map(|&l| {
-            let mut m = contour::isosurface(d, &value, l);
+            let (mut m, dropped) =
+                contour::isosurface(d, &value, l).without_thin_pieces(THIN_PIECE, SHORT_PIECE);
+            left_out.push(dropped);
             for v in &mut m.vertices {
                 *v = bounds.place(*v);
             }
@@ -1052,6 +1087,7 @@ pub fn volume(
         computed,
         full,
         above,
+        left_out,
     })
 }
 

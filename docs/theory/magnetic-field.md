@@ -357,7 +357,15 @@ measured):
   **Simplification**: a surface lying wholly between coarse points, away
   from every wire and more than 10 % off the values around it, is not
   found — it would be smaller than a coarse cell. On a real span about
-  half the fine lattice was computed.
+  half the fine lattice was computed. **Thin pieces left out**
+  (2026-10-31): a connected piece of a surface at most 2 steps across in
+  two directions and at most 20 steps long is a stretch of a tube thinner
+  than the lattice (round an earth wire at 5 kV/m: centimetres), met only
+  where a lattice point happens to lie inside it; drawn, such pieces were
+  beads along the wire (2–3 m thick, 4–21 m long at 2 m steps on a real
+  line; the surface round the conductors 650 m). They are left out of the
+  drawing and counted with each volume — a display choice, the values
+  computed unchanged; a finer step resolves the tube.
 
   ![A slice of a volume's lattice: the coarse points, the coarse cells computed fine because a level passes near their corners' values, because a wire is near, or because a surface crosses into them; the levels' surfaces around three wires](../images/theory/field-volume.svg)
 

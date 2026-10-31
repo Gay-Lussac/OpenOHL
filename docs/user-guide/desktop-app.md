@@ -144,7 +144,12 @@ height, ahead) and a scale bar at the bottom.
 same control scheme and keys (Help › Controls › 3D), orbit, pan, zoom
 and fly, the mouse captured in the first-person scheme.
 **Back to the cut view** (or **Home** with the pointer over the panel)
-returns to the front view. **Orthographic** / **Perspective** in the
+returns to the front view. While a field is drawn in the panel (the
+Magnetic or Electric field window's *Cross-sections*), the front view is
+**on the wires** — the conductors crossing the cut with 15 m around them
+(2026-10-31: across a valley the whole cut left the isolines a few pixels
+at the top); **Whole cut** / **Zoom to the wires** switch between the
+two. **Orthographic** / **Perspective** in the
 panel's bar switch the projection (it starts orthographic). There is no
 vertical exaggeration in the panel (heights are always 1:1).
 

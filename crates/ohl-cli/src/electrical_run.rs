@@ -106,9 +106,12 @@ pub struct ElectricArgs {
     /// on even ground; 4 m: 0.2 %, some 40 times as long).
     #[arg(long, default_value_t = 8.0)]
     pub volume_tile: f64,
-    /// The ground from the project's point cloud: its ground classes
-    /// within the floor's reach of the profiles' spans (only those: a few
-    /// extracts read quickly), the lowest point per metre triangulated.
+    /// The ground from the project's point cloud even when the project has
+    /// a surface of the checks: its ground classes within the floor's
+    /// reach of the spans computed, the lowest point per metre
+    /// triangulated. (Without --terrain or --surface the ground is by
+    /// default the project's surface of the checks, else its point
+    /// cloud's, as in OHL-Design.)
     #[arg(long, conflicts_with_all = ["terrain", "surface"])]
     pub lidar_ground: bool,
     /// Leave the jumpers out (by default they carry their phase's charge).
@@ -536,6 +539,89 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
 }
 
 /// `FROM:TO`.
+/// The ground of the fields when no --terrain or --surface is given
+/// (owner, 2026-10-31: the same as OHL-Design's; across a valley the
+/// straight ground between the structures' feet passed close under the
+/// wires): a project's surface of the checks (its setting
+/// `app.check_surface`), else its point cloud's ground classes within
+/// `reach` of every span (the whole line, as OHL-Design: the spans not
+/// computed carry charges too, from their own cross-sections; some
+/// seconds), the lowest point per metre triangulated; else none — straight between the structures' feet and
+/// level across, said as a warning. `lidar`: the point cloud even with a
+/// surface of the checks.
+fn project_ground(
+    file: &std::path::Path,
+    line: &ohl_line::Line,
+    reach: f64,
+    lidar: bool,
+) -> Result<Option<ohl_terrain::Terrain>, String> {
+    let project = file.extension().is_some_and(|e| e == "ohl");
+    if project && !lidar {
+        let session = ohl_session::Session::open(file).map_err(|e| e.to_string())?;
+        if let Some(name) = session.setting("app.check_surface").ok().flatten() {
+            let (points, triangles) = session.surface(&name).map_err(|e| e.to_string())?;
+            println!("  ground: the project's surface of the checks {name}");
+            return Ok(Some(
+                ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?,
+            ));
+        }
+    }
+    let straight = || {
+        println!(
+            "  WARNING ground: none given and none in the file — straight between the structures' \
+             feet and level across; across a valley it passes close under the wires (far too \
+             high values): give --terrain or --surface"
+        );
+        Ok(None)
+    };
+    if !project {
+        return straight();
+    }
+    let Ok(source) = ohl_pointcloud::open_source(&file.display().to_string()) else {
+        return straight();
+    };
+    let all: Vec<(String, String)> = ohl_electrical::cross_section::line_spans(line)
+        .into_iter()
+        .map(|s| (s.from, s.to))
+        .collect();
+    let at = |id: &str| {
+        line.structure(id)
+            .map(|s| [s.position[0], s.position[1]])
+            .ok_or_else(|| format!("no structure {id}"))
+    };
+    let mut lines = Vec::new();
+    for (from, to) in &all {
+        lines.push(vec![at(from)?, at(to)?]);
+    }
+    if lines.is_empty() {
+        return straight();
+    }
+    let corridor = ohl_lidar::Corridor::new(&lines, reach);
+    let scheme = source
+        .class_scheme()
+        .and_then(|t| ohl_lidar::ClassScheme::parse(&t).ok())
+        .unwrap_or_else(ohl_lidar::ClassScheme::asprs);
+    let classes = scheme.codes_with_role("ground");
+    let mut cells = ohl_lidar::LowestPerCell::new(Some(1.0));
+    // Exit clause: decoding is about 1 s per 10⁷ points.
+    let budget = ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+    source.visit(
+        Some(&corridor),
+        Some(&classes),
+        &budget,
+        &mut |x, y, z, _| cells.add(x, y, z),
+    )?;
+    if cells.points().len() < 3 {
+        return straight();
+    }
+    println!(
+        "  ground: {} LiDAR ground cells of 1 m within {reach:.0} m of {} span(s)",
+        cells.points().len(),
+        lines.len()
+    );
+    Ok(Some(cells.terrain(Some(50.0)).map_err(|e| e.to_string())?))
+}
+
 fn span_arg(text: &str, what: &str) -> Result<(String, String), String> {
     let (a, b) = text
         .split_once(':')
@@ -764,7 +850,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
         }
-        (None, None) => None,
+        (None, None) => project_ground(&a.model.file, &line, a.width + 20.0, false)?,
     };
     let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
@@ -927,8 +1013,13 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             vol.pieces,
             left(&vol.left_out)
         );
-        for ((l, mesh), d) in v.surfaces.iter().zip(&v.deviation) {
-            println!("  {l} µT: {} triangles; {}", mesh.triangles.len(), off(d));
+        for (k, ((l, mesh), d)) in v.surfaces.iter().zip(&v.deviation).enumerate() {
+            println!(
+                "  {l} µT: {} triangles; {}{}",
+                mesh.triangles.len(),
+                off(d),
+                ohl_electrical::field_views::left_out_text(v.left_out.get(k).copied().unwrap_or(0))
+            );
         }
     }
     if !m.points.is_empty() {
@@ -1095,44 +1186,13 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
         }
-        (None, None) if a.lidar_ground => {
-            // The spans of the profiles asked for.
-            let mut lines = Vec::new();
-            for st in &settings.stations {
-                let at = |id: &str| {
-                    line.structure(id)
-                        .map(|s| [s.position[0], s.position[1]])
-                        .ok_or_else(|| format!("no structure {id}"))
-                };
-                lines.push(vec![at(&st.from)?, at(&st.to)?]);
-            }
-            if lines.is_empty() {
-                return Err("--lidar-ground: give the extracts as --profile FROM:TO".into());
-            }
-            let corridor = ohl_lidar::Corridor::new(&lines, a.floor_reach + a.width + 20.0);
-            let source = ohl_pointcloud::open_source(&a.model.file.display().to_string())?;
-            let scheme = source
-                .class_scheme()
-                .and_then(|t| ohl_lidar::ClassScheme::parse(&t).ok())
-                .unwrap_or_else(ohl_lidar::ClassScheme::asprs);
-            let classes = scheme.codes_with_role("ground");
-            let mut cells = ohl_lidar::LowestPerCell::new(Some(1.0));
-            let budget =
-                ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-            source.visit(
-                Some(&corridor),
-                Some(&classes),
-                &budget,
-                &mut |x, y, z, _| cells.add(x, y, z),
-            )?;
-            println!(
-                "  ground: {} LiDAR cells of 1 m within {} m of the profiles' spans",
-                cells.points().len(),
-                a.floor_reach + a.width + 20.0
-            );
-            Some(cells.terrain(Some(50.0)).map_err(|e| e.to_string())?)
+        (None, None) => {
+            let reach = match settings.ground_model {
+                ohl_electrical::electric::GroundModel::Tiled(_) => a.floor_reach + a.width + 20.0,
+                ohl_electrical::electric::GroundModel::Plane => a.ground_radius + a.width + 20.0,
+            };
+            project_ground(&a.model.file, &line, reach, a.lidar_ground)?
         }
-        (None, None) => None,
     };
     let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
@@ -1207,16 +1267,17 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             "volume {}–{}: {} of {} lattice points computed ({} m apart)",
             vol.from, vol.to, v.computed, v.full, v.bounds.step
         );
-        for ((l, mesh), d) in v.surfaces.iter().zip(&v.deviation) {
+        for (k, ((l, mesh), d)) in v.surfaces.iter().zip(&v.deviation).enumerate() {
             println!(
-                "  {l} kV/m: {} triangles{}",
+                "  {l} kV/m: {} triangles{}{}",
                 mesh.triangles.len(),
                 d.map_or(String::new(), |d| format!(
                     "; off the level: half within {:.2} %, nine in ten within {:.2} %, at most {:.1} %",
                     d.median * 100.0,
                     d.p90 * 100.0,
                     d.max * 100.0
-                ))
+                )),
+                ohl_electrical::field_views::left_out_text(v.left_out.get(k).copied().unwrap_or(0))
             );
         }
     }
