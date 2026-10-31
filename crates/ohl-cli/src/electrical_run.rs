@@ -117,6 +117,11 @@ pub struct ElectricArgs {
     /// Leave the jumpers out (by default they carry their phase's charge).
     #[arg(long)]
     pub no_jumpers: bool,
+    /// The structures' steel earthed (3D on the tiled floor): their types'
+    /// members and poles at detail levels 2 and 3, else their own stick
+    /// drawings; the others left out, said.
+    #[arg(long)]
+    pub steel: bool,
     /// The longest straight piece of a wire, m (default: the solver's).
     #[arg(long)]
     pub piece_length: Option<f64>,
@@ -620,6 +625,66 @@ fn project_ground(
         lines.len()
     );
     Ok(Some(cells.terrain(Some(50.0)).map_err(|e| e.to_string())?))
+}
+
+/// The structures' steel (`--steel`), as OHL-Design takes it: a type's
+/// members and pole at levels 2 and 3 as placed (each member's radius from
+/// its section's solid, else 5 cm), else the structure's own stick drawing
+/// (5 cm); the structures with neither (level 1) left out, by id.
+fn steel(
+    model: &crate::analysis_run::ModelArgs,
+    line: &ohl_line::Line,
+) -> Result<(Vec<ohl_electrical::electric::SteelMember>, Vec<String>), String> {
+    const DEFAULT_RADIUS: f64 = 0.05;
+    let libs = crate::project::Libraries::resolve(
+        &model.file,
+        crate::project::GivenLibraries {
+            cables: model.library.as_deref(),
+            structures: model.structures.as_deref(),
+            insulators: model.insulators.as_deref(),
+            sections: None,
+        },
+    )?;
+    let bodies = if line.structures.iter().any(|s| s.structure_type.is_some()) {
+        let structures = ohl_structures::StructureLibrary::load_dir(&libs.structures)
+            .map_err(|e| e.to_string())?;
+        let sections =
+            match libs.sections.clone().or_else(|| {
+                Some(ohl_core::files::shipped_library("sections")).filter(|p| p.is_dir())
+            }) {
+                Some(p) => ohl_sections::SectionLibrary::load(&p).unwrap_or_default(),
+                None => Default::default(),
+            };
+        ohl_structures_fe::drawn::Bodies::load(&structures, &sections)
+    } else {
+        Default::default()
+    };
+    let mut steel = Vec::new();
+    let mut left_out = Vec::new();
+    for st in &line.structures {
+        let member = |points: Vec<[f64; 3]>, radius: f64| ohl_electrical::electric::SteelMember {
+            structure: st.id.clone(),
+            points,
+            radius,
+        };
+        let body = st
+            .structure_type
+            .as_deref()
+            .and_then(|t| bodies.get(t, st.extension.as_deref()));
+        if let Some(b) = body {
+            let at = ohl_line::links::feet(st);
+            for (points, radius) in b.placed_steel(at, st.orientation_deg, DEFAULT_RADIUS) {
+                steel.push(member(points, radius));
+            }
+        } else if !st.members.is_empty() {
+            for m in &st.members {
+                steel.push(member(m.clone(), DEFAULT_RADIUS));
+            }
+        } else {
+            left_out.push(st.id.clone());
+        }
+    }
+    Ok((steel, left_out))
 }
 
 fn span_arg(text: &str, what: &str) -> Result<(String, String), String> {
@@ -1163,7 +1228,12 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         cuts,
         volumes,
         levels,
+        ..Default::default()
     };
+    let mut settings = settings;
+    if a.steel {
+        (settings.steel, settings.steel_left_out) = steel(&a.model, &line)?;
+    }
     let mut shapes = Vec::new();
     for (section, r) in line
         .sections

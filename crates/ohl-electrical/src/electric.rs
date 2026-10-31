@@ -257,6 +257,98 @@ impl GroundPlane {
 #[derive(Debug, Clone, Default)]
 pub struct Charges3d {
     groups: Vec<(f64, Vec<Poly>)>,
+    /// The structures' earthed steel ([`Settings::steel`]) in pieces of at
+    /// most [`STEEL_PIECE`]: solved with each tiled floor it stands on.
+    steel: Vec<SteelPiece>,
+}
+
+/// An earthed steel member of a structure (owner, 2026-10-31: the steel
+/// near the pylons, off by default): its axis (structure's members as
+/// placed, m) and its radius (half its section's width, m).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SteelMember {
+    /// The structure.
+    pub structure: String,
+    /// Its axis, a polyline.
+    pub points: Vec<[f64; 3]>,
+    /// Its radius, m.
+    pub radius: f64,
+}
+
+/// The longest piece of steel solved for one charge, m: a member is cut
+/// into pieces no longer (its charge varies along it, most at its ends).
+pub const STEEL_PIECE: f64 = 3.0;
+
+/// A straight piece of earthed steel with its radius.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SteelPiece {
+    a: [f64; 3],
+    b: [f64; 3],
+    radius: f64,
+}
+
+impl SteelPiece {
+    fn mid(&self) -> [f64; 3] {
+        std::array::from_fn(|k| 0.5 * (self.a[k] + self.b[k]))
+    }
+
+    /// Where its potential is held at zero: on its surface at its middle
+    /// (a radius off its axis, across it and level when it can be).
+    fn surface(&self) -> [f64; 3] {
+        let d: [f64; 3] = std::array::from_fn(|k| self.b[k] - self.a[k]);
+        // Across: d × z, else (a vertical piece) along x.
+        let mut n = [d[1], -d[0], 0.0];
+        let l = (n[0] * n[0] + n[1] * n[1]).sqrt();
+        if l < 1e-9 {
+            n = [1.0, 0.0, 0.0];
+        } else {
+            n = n.map(|x| x / l);
+        }
+        let m = self.mid();
+        std::array::from_fn(|k| m[k] + self.radius * n[k])
+    }
+
+    /// The potential at `p` of 1 C/m along it, V (the distance at least its
+    /// radius: a thin wire).
+    fn potential(&self, p: [f64; 3]) -> f64 {
+        let d: [f64; 3] = std::array::from_fn(|k| self.b[k] - self.a[k]);
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        if len < 1e-9 {
+            return 0.0;
+        }
+        let u = d.map(|x| x / len);
+        let r: [f64; 3] = std::array::from_fn(|k| p[k] - self.a[k]);
+        let t = r[0] * u[0] + r[1] * u[1] + r[2] * u[2];
+        let rho = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2] - t * t)
+            .max(0.0)
+            .sqrt()
+            .max(self.radius);
+        K * (((len - t) / rho).asinh() + (t / rho).asinh())
+    }
+}
+
+/// `members` cut into pieces of at most [`STEEL_PIECE`].
+fn steel_pieces(members: &[SteelMember]) -> Vec<SteelPiece> {
+    let mut out = Vec::new();
+    for m in members {
+        for w in m.points.windows(2) {
+            let d: [f64; 3] = std::array::from_fn(|k| w[1][k] - w[0][k]);
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            if len < 1e-6 {
+                continue;
+            }
+            let n = (len / STEEL_PIECE).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let at = |f: f64| std::array::from_fn(|k| w[0][k] + f * d[k]);
+                out.push(SteelPiece {
+                    a: at(i as f64 / n as f64),
+                    b: at((i + 1) as f64 / n as f64),
+                    radius: m.radius.max(0.005),
+                });
+            }
+        }
+    }
+    out
 }
 
 impl Charges3d {
@@ -390,6 +482,13 @@ pub struct Settings {
     pub volumes: Vec<magnetic::VolumeSpec>,
     /// The levels drawn, kV/m, ascending: display only.
     pub levels: Vec<f64>,
+    /// The structures' steel, earthed (owner, 2026-10-31: off by default,
+    /// none): solved with each tiled floor it stands on; not with the
+    /// plane under each point nor in 2D (said).
+    pub steel: Vec<SteelMember>,
+    /// The structures whose steel is not known (no members: detail level
+    /// 1), left out (said).
+    pub steel_left_out: Vec<String>,
 }
 
 impl Default for Settings {
@@ -412,6 +511,8 @@ impl Default for Settings {
             cuts: Vec::new(),
             volumes: Vec::new(),
             levels: Vec::new(),
+            steel: Vec::new(),
+            steel_left_out: Vec::new(),
         }
     }
 }
@@ -730,6 +831,38 @@ fn build_3d(
 ) -> Charges3d {
     let line = src.line;
     let mut out = Charges3d::default();
+    if !settings.steel.is_empty() {
+        match settings.ground_model {
+            GroundModel::Tiled(_) => {
+                out.steel = steel_pieces(&settings.steel);
+                let structures: std::collections::BTreeSet<&str> =
+                    settings.steel.iter().map(|m| m.structure.as_str()).collect();
+                notes.push(format!(
+                    "the structures' steel earthed: {} structure(s), {} members in {} pieces of at most {STEEL_PIECE} m, solved with each tiled floor they stand on (the line's charges as without them)",
+                    structures.len(),
+                    settings.steel.len(),
+                    out.steel.len()
+                ));
+            }
+            GroundModel::Plane => notes.push(
+                "the structures' steel not modelled with the plane under each point (only on the tiled floor)".into(),
+            ),
+        }
+    }
+    if !settings.steel_left_out.is_empty() {
+        let n = settings.steel_left_out.len();
+        let shown: Vec<&str> = settings
+            .steel_left_out
+            .iter()
+            .take(10)
+            .map(String::as_str)
+            .collect();
+        notes.push(format!(
+            "steel of {n} structure(s) not known (no members: detail level 1), left out: {}{}",
+            shown.join(", "),
+            if n > 10 { ", …" } else { "" }
+        ));
+    }
     for section in &line.sections {
         let Some(shape) = src.shapes.iter().find(|s| s.section == section.id) else {
             continue;
@@ -896,6 +1029,11 @@ pub fn run_keeping(
     notes.push(
         "the structures, trees and buildings not modelled (earthed objects lower the field near them and raise it at their tops); the earth a perfect conductor".into(),
     );
+    if settings.model == Model::TwoD && !settings.steel.is_empty() {
+        notes.push(
+            "the structures' steel not modelled in 2D (only in 3D on the tiled floor)".into(),
+        );
+    }
     let model3d = (settings.model == Model::ThreeD).then(|| {
         let stretches = stretch_charges(src, &spans, &settings.voltages);
         build_3d(src, &charges, &stretches, &axes, settings, &mut notes)
@@ -1522,6 +1660,10 @@ impl Frame {
 pub struct Floor {
     panels: Vec<Panel>,
     sigma: Vec<Vec<C>>,
+    /// The structures' steel standing on it and its charges per metre,
+    /// per frequency.
+    steel: Vec<SteelPiece>,
+    steel_q: Vec<Vec<C>>,
 }
 
 impl Floor {
@@ -1537,8 +1679,14 @@ impl Floor {
         ground: &dyn Fn(f64, f64) -> f64,
     ) -> Result<Self, String> {
         let panels = floor_panels(frame, t0, across, floor, ground);
-        let sigma = solve_floor(&panels, charges)?;
-        Ok(Self { panels, sigma })
+        let steel = steel_on(&panels, &charges.steel);
+        let (sigma, steel_q) = solve_floor(&panels, &steel, charges)?;
+        Ok(Self {
+            panels,
+            sigma,
+            steel,
+            steel_q,
+        })
     }
 
     /// The floor under a volume: square tiles of side `tile` along `path`
@@ -1571,8 +1719,14 @@ impl Floor {
                 panels.push(panel(&place, t, s, tile));
             }
         }
-        let sigma = solve_floor(&panels, charges)?;
-        Ok(Self { panels, sigma })
+        let steel = steel_on(&panels, &charges.steel);
+        let (sigma, steel_q) = solve_floor(&panels, &steel, charges)?;
+        Ok(Self {
+            panels,
+            sigma,
+            steel,
+            steel_q,
+        })
     }
 
     /// The tiles of the floor [`Floor::under`] lays under a volume.
@@ -1582,9 +1736,15 @@ impl Floor {
         nt * ns
     }
 
-    /// E (rms) at `p`, V/m: the line's charges and the floor's.
+    /// E (rms) at `p`, V/m: the line's charges, the floor's and its
+    /// steel's.
     pub fn field(&self, p: [f64; 3], charges: &Charges3d) -> f64 {
-        floor_field(p, &self.panels, &self.sigma, charges)
+        floor_field(p, self, charges)
+    }
+
+    /// The pieces of steel solved with it.
+    pub fn steel_pieces(&self) -> usize {
+        self.steel.len()
     }
 
     /// Its tiles.
@@ -1767,15 +1927,70 @@ fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
-/// The tiles' charges per square metre, per frequency of the line's
-/// charges: zero potential at every tile's centre.
-fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, String> {
-    let n = panels.len();
+/// The pieces of `steel` standing on the floor of `panels` (their middle
+/// within its extent in plan).
+fn steel_on(panels: &[Panel], steel: &[SteelPiece]) -> Vec<SteelPiece> {
+    if steel.is_empty() || panels.is_empty() {
+        return Vec::new();
+    }
+    let mut lo = [f64::INFINITY; 2];
+    let mut hi = [f64::NEG_INFINITY; 2];
+    for p in panels {
+        for c in &p.corners {
+            for k in 0..2 {
+                lo[k] = lo[k].min(c[k]);
+                hi[k] = hi[k].max(c[k]);
+            }
+        }
+    }
+    steel
+        .iter()
+        .filter(|s| {
+            let m = s.mid();
+            (0..2).all(|k| m[k] >= lo[k] && m[k] <= hi[k])
+        })
+        .copied()
+        .collect()
+}
+
+/// Per frequency of the line's charges, a charge for each unknown.
+type PerFrequency = Vec<Vec<C>>;
+
+/// The tiles' charges per square metre and the steel's per metre, per
+/// frequency of the line's charges: zero potential at every tile's centre
+/// and on every piece of steel.
+fn solve_floor(
+    panels: &[Panel],
+    steel: &[SteelPiece],
+    charges: &Charges3d,
+) -> Result<(PerFrequency, PerFrequency), String> {
+    let tiles = panels.len();
+    let n = tiles + steel.len();
+    if floor_bytes(n) > FLOOR_MEMORY {
+        return Err(format!(
+            "a tiled floor of {tiles} tiles and {} pieces of steel would take {:.1} GB of memory (at most {:.0} GB)",
+            steel.len(),
+            floor_bytes(n) / 1e9,
+            FLOOR_MEMORY / 1e9
+        ));
+    }
+    // Where the potential is held at zero: tiles' centres, then the
+    // steel's surfaces.
+    let at: Vec<[f64; 3]> = panels
+        .iter()
+        .map(|p| p.centre)
+        .chain(steel.iter().map(SteelPiece::surface))
+        .collect();
     let w = 1.0 / (Q * Q) as f64;
     // The potential coefficients column by column on all cores, into one
     // column-major table (n² coefficients: some 170 MB at 4 600 tiles).
     let coefficient = |i: usize, j: usize| -> f64 {
-        let ci = panels[i].centre;
+        let ci = at[i];
+        if j >= tiles {
+            // A piece of steel, 1 C/m (on itself: a thin wire of its
+            // radius).
+            return steel[j - tiles].potential(ci);
+        }
         let pj = &panels[j];
         if i == j {
             // A disc of the tile's area, at its centre.
@@ -1809,20 +2024,22 @@ fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, Str
     let lu = faer::MatRef::from_column_major_slice(&table, n, n).partial_piv_lu();
     drop(table);
     let mut out = Vec::new();
+    let mut out_steel = Vec::new();
     for (_, polys) in &charges.groups {
-        // The line's potential at every tile, on all cores (every piece of
-        // the line at every tile: seconds on one core for a long line).
-        let at = |p: &Panel| -> C {
+        // The line's potential at every tile and piece of steel, on all
+        // cores (every piece of the line at each: seconds on one core for
+        // a long line).
+        let line_at = |p: &[f64; 3]| -> C {
             polys
                 .iter()
-                .map(|poly| poly.charge * poly.potential(p.centre))
+                .map(|poly| poly.charge * poly.potential(*p))
                 .sum()
         };
         let phi: Vec<C> = std::thread::scope(|scope| {
             let chunk = n.div_ceil(field_views::threads()).max(1);
-            let handles: Vec<_> = panels
+            let handles: Vec<_> = at
                 .chunks(chunk)
-                .map(|c| scope.spawn(move || c.iter().map(at).collect::<Vec<C>>()))
+                .map(|c| scope.spawn(move || c.iter().map(line_at).collect::<Vec<C>>()))
                 .collect();
             handles
                 .into_iter()
@@ -1836,20 +2053,30 @@ fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, Str
         if (0..n).any(|i| !(x[(i, 0)].is_finite() && x[(i, 1)].is_finite())) {
             return Err("the tiled floor's system could not be solved".into());
         }
-        out.push((0..n).map(|i| C::new(x[(i, 0)], x[(i, 1)])).collect());
+        out.push((0..tiles).map(|i| C::new(x[(i, 0)], x[(i, 1)])).collect());
+        out_steel.push((tiles..n).map(|i| C::new(x[(i, 0)], x[(i, 1)])).collect());
     }
-    Ok(out)
+    Ok((out, out_steel))
 }
 
-/// E (rms) at `p` over the tiled floor, V/m: the line's charges and the
-/// tiles'.
-fn floor_field(p: [f64; 3], panels: &[Panel], sigma: &[Vec<C>], charges: &Charges3d) -> f64 {
+/// E (rms) at `p` over the tiled floor, V/m: the line's charges, the
+/// tiles' and the steel's.
+fn floor_field(p: [f64; 3], floor: &Floor, charges: &Charges3d) -> f64 {
+    let (panels, sigma) = (&floor.panels, &floor.sigma);
     let mut inv = Vec::new();
     let direct = charges.sums(p, &mut inv);
     let w = 1.0 / (Q * Q) as f64;
     let mut sum = 0.0;
     for (g, d) in direct.iter().enumerate() {
         let mut e = *d;
+        if let Some(qs) = floor.steel_q.get(g) {
+            for (piece, &q) in floor.steel.iter().zip(qs) {
+                let f = segment_field(piece.a, piece.b, p);
+                for k in 0..3 {
+                    e[k] += q * f[k];
+                }
+            }
+        }
         for (pj, &s) in panels.iter().zip(&sigma[g]) {
             let mut add = |q: [f64; 3], a: f64| {
                 let r = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
@@ -2046,6 +2273,62 @@ pub fn csv(e: &ElectricField) -> String {
 mod tests {
     use super::*;
 
+    /// Earthed steel solved with the floor (owner, 2026-10-31): a long
+    /// earthed bar parallel to a charged wire over flat ground takes the
+    /// induced charge of 2D, \\( q_2 = -\frac{p_{21}}{p_{22}} q_1 \\) (the
+    /// potential coefficients with images): the field 1 m above the ground
+    /// at the middle, with the bar against without it, as in 2D (the
+    /// ratio: the floor's finite extent cancels) — within 0.4 % of the
+    /// field (the bar lowers it to 0.88 at 15 m).
+    #[test]
+    fn an_earthed_bar_takes_its_2d_charge() {
+        let q1 = C::new(1e-6, 0.0);
+        let (y1, z1) = (0.0, 20.0);
+        let (y2, z2, r2) = (6.0, 12.0, 0.05);
+        let mut m = Charges3d::default();
+        m.push(50.0, &[[-300.0, y1, z1], [300.0, y1, z1]], q1);
+        let floor = TiledFloor {
+            fine: 4.0,
+            coarse: 8.0,
+            reach: 120.0,
+            ..TiledFloor::default()
+        };
+        let frame = Frame {
+            origin: [0.0, 0.0],
+            ahead: [1.0, 0.0],
+        };
+        let ground = |_: f64, _: f64| 0.0;
+        let without = Floor::solve(&m, frame, 0.0, 20.0, &floor, &ground).unwrap();
+        m.steel = steel_pieces(&[SteelMember {
+            structure: "bar".into(),
+            points: vec![[-100.0, y2, z2], [100.0, y2, z2]],
+            radius: r2,
+        }]);
+        let with = Floor::solve(&m, frame, 0.0, 20.0, &floor, &ground).unwrap();
+        assert_eq!(with.steel_pieces(), 67);
+        // 2D: the bar's charge from zero potential on it.
+        let p = |a: (f64, f64), b: (f64, f64)| {
+            let d = (a.0 - b.0).hypot(a.1 - b.1);
+            let di = (a.0 - b.0).hypot(a.1 + b.1);
+            (di / d).ln() / (2.0 * PI * EPS0)
+        };
+        let p22 = (2.0 * z2 / r2).ln() / (2.0 * PI * EPS0);
+        let q2 = -p((y1, z1), (y2, z2)) / p22 * q1.re;
+        for y in [-15.0, -6.0, 0.0, 6.0, 9.0, 15.0] {
+            let e = |q2: f64| {
+                let a = line_field(y1, z1, y, 1.0);
+                let b = line_field(y2, z2, y, 1.0);
+                (q1.re * a[0] + q2 * b[0]).hypot(q1.re * a[1] + q2 * b[1])
+            };
+            let ratio_2d = e(q2) / e(0.0);
+            let ratio_3d = with.field([0.0, y, 1.0], &m) / without.field([0.0, y, 1.0], &m);
+            assert!(
+                (ratio_3d - ratio_2d).abs() < 0.006,
+                "at {y} m: 3D {ratio_3d:.4}, 2D {ratio_2d:.4}"
+            );
+        }
+    }
+
     /// A long piece's field is the infinite line charge's
     /// \\( \lambda/(2\pi\varepsilon_0\rho) \\), across it.
     #[test]
@@ -2200,7 +2483,13 @@ mod tests {
             reach: 96.0,
         };
         let panels = floor_panels(Frame::of(&axis), 2e4, 26.0, &floor, &g);
-        let sigma = solve_floor(&panels, &m).unwrap();
+        let (sigma, steel_q) = solve_floor(&panels, &[], &m).unwrap();
+        let floor_v = Floor {
+            panels,
+            sigma,
+            steel: Vec::new(),
+            steel_q,
+        };
         let ys: Vec<f64> = (-25..=25).map(|k| k as f64).collect();
         let ex: Vec<f64> = ys.iter().map(|&y| exact(y, y.abs() + 1.0)).collect();
         let top = ex.iter().copied().fold(0.0, f64::max);
@@ -2208,7 +2497,7 @@ mod tests {
         for (k, &y) in ys.iter().enumerate() {
             let p = [0.0, y, y.abs() + 1.0];
             let pl = m.field(p, &GroundPlane::fitted(&g, p[0], p[1], 10.0));
-            let ti = floor_field(p, &panels, &sigma, &m);
+            let ti = floor_field(p, &floor_v, &m);
             plane_worst = plane_worst.max((pl - ex[k]).abs() / top);
             tiled_worst = tiled_worst.max((ti - ex[k]).abs() / top);
             if ex[k] == top {

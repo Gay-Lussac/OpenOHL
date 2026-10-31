@@ -49,6 +49,18 @@ side (owner, 2026-10-31)**
   Run, in red over the limit. `TiledFloor::seconds` measured again (0.8 s
   for the table and the potentials at 4 660 tiles, growing with the
   square; 0.4 s for the LU, with the cube).
+- The owner asked whether the electric field takes the structures'
+  steel into account near the pylons (it did not), then "plan it" and
+  "off by default, if only 1 leave off, yes": the structures' steel
+  earthed, an option off by default — each structure's members (detail
+  levels 2 and 3, else its own stick drawing; level 1 left out, said) in
+  pieces of at most 3 m solved with each tiled floor they stand on (the
+  floor's unknowns the tiles and the pieces; the line's charges as
+  without the steel); not with the plane under each point nor in 2D
+  (said); tested against the exact 2D result of an earthed bar (0.4 %);
+  the window's 3 Model and `--steel`. And profiles **beside the
+  structures** (both field windows): a given distance (10 m) into each
+  ticked span from both its structures.
 - The owner looked at a valley span of a real line (2D cut with isolines,
   3D volume at 5 kV/m) and asked to fix three things, then "the same for
   the magnetic field": (1) the cross-section panel opens **on the wires**

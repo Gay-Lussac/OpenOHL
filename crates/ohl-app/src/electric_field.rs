@@ -36,7 +36,7 @@ use crate::check_ui;
 use crate::field_overlay::Level;
 use crate::job::{Job, save_csv};
 use crate::magnetic_field::views::{PanelCuts, PieceStats, VolumeSetup};
-use crate::magnetic_field::{Spans, Stations};
+use crate::magnetic_field::{Spans, Stations, beside_stations, profiles_ui};
 use crate::model::Model;
 use crate::span_pick::SpanPick;
 
@@ -68,6 +68,37 @@ pub struct Answer {
 /// A duration in words (the magnetic window's).
 fn magnetic_duration(s: f64) -> String {
     crate::magnetic_field::views::duration(s)
+}
+
+/// The structures' steel for the electric field (owner, 2026-10-31): a
+/// structure type's members and pole at levels 2 and 3 as placed (each
+/// member's radius from its section's solid, else 5 cm), else the
+/// structure's own stick drawing (5 cm); the structures with neither
+/// (level 1) left out, by id.
+pub(crate) fn steel_of(model: &Model) -> (Vec<electric::SteelMember>, Vec<String>) {
+    const DEFAULT_RADIUS: f64 = 0.05;
+    let mut steel = Vec::new();
+    let mut left_out = Vec::new();
+    for st in &model.line.structures {
+        let member = |points: Vec<[f64; 3]>, radius: f64| electric::SteelMember {
+            structure: st.id.clone(),
+            points,
+            radius,
+        };
+        if let Some(b) = crate::scene::drawn_body(&model.bodies, st) {
+            let at = crate::scene::type_origin(st);
+            for (points, radius) in b.placed_steel(at, st.orientation_deg, DEFAULT_RADIUS) {
+                steel.push(member(points, radius));
+            }
+        } else if !st.members.is_empty() {
+            for m in &st.members {
+                steel.push(member(m.clone(), DEFAULT_RADIUS));
+            }
+        } else {
+            left_out.push(st.id.clone());
+        }
+    }
+    (steel, left_out)
 }
 
 /// The default levels, kV/m: display only (no limit).
@@ -115,6 +146,11 @@ pub struct ElectricFieldWindow {
     /// The ground a tiled conducting floor (the default; owner,
     /// 2026-10-29), else a plane under each point.
     tiled: bool,
+    /// The structures' steel earthed (owner, 2026-10-31: off by default).
+    steel: bool,
+    /// The steel counted, by line version: structures with members, their
+    /// members, pieces of steel, structures left out.
+    steel_seen: Option<(u64, [usize; 4])>,
     /// The floor's fine tiles, m.
     tile: f64,
     /// The tiles under the cuts across the line, m (coarser by default;
@@ -187,6 +223,8 @@ impl Default for ElectricFieldWindow {
             two_d: false,
             ground_radius: d.ground_radius,
             tiled: true,
+            steel: false,
+            steel_seen: None,
             tile: 2.0,
             cut_tile: 8.0,
             volume_tile: 8.0,
@@ -237,6 +275,9 @@ struct Stored {
     /// One span's stations: its structures and the place in it (none:
     /// every span at its lowest point).
     span: Option<(String, String, Option<f64>)>,
+    /// Profiles beside the structures: the distance into the spans, m
+    /// (2026-10-31).
+    beside: Option<f64>,
     /// The spans on an alignment unticked and those on none ticked.
     spans_off: Vec<(String, String)>,
     spans_on: Vec<(String, String)>,
@@ -244,6 +285,8 @@ struct Stored {
     two_d: bool,
     ground_radius: Option<f64>,
     tiled: Option<bool>,
+    /// The structures' steel earthed (2026-10-31).
+    steel: bool,
     tile: Option<f64>,
     cut_tile: Option<f64>,
     volume_tile: Option<f64>,
@@ -283,7 +326,7 @@ impl ElectricFieldWindow {
     fn stored(&mut self, model: &Model) -> Stored {
         let spans = self.spans(model);
         let span = match &self.stations {
-            Stations::EverySpan => None,
+            Stations::EverySpan | Stations::Beside { .. } => None,
             Stations::One { span, fraction } => spans
                 .get(*span)
                 .map(|(from, to)| (from.clone(), to.clone(), *fraction)),
@@ -296,12 +339,17 @@ impl ElectricFieldWindow {
             width: Some(self.width),
             step: Some(self.step),
             span,
+            beside: match self.stations {
+                Stations::Beside { distance } => Some(distance),
+                _ => None,
+            },
             spans_off: self.span_pick.off.iter().cloned().collect(),
             spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
             two_d: self.two_d,
             ground_radius: Some(self.ground_radius),
             tiled: Some(self.tiled),
+            steel: self.steel,
             tile: Some(self.tile),
             cut_tile: Some(self.cut_tile),
             volume_tile: Some(self.volume_tile),
@@ -356,11 +404,13 @@ impl ElectricFieldWindow {
                     .position(|(a, b)| *a == from && *b == to)
                     .map(|span| Stations::One { span, fraction })
             })
+            .or(st.beside.map(|distance| Stations::Beside { distance }))
             .unwrap_or_default();
         self.limit = st.limit;
         self.two_d = st.two_d;
         self.ground_radius = st.ground_radius.unwrap_or(d.ground_radius);
         self.tiled = st.tiled.unwrap_or(d.tiled);
+        self.steel = st.steel;
         self.tile = st.tile.unwrap_or(d.tile);
         self.cut_tile = st.cut_tile.unwrap_or(d.cut_tile);
         self.volume_tile = st.volume_tile.unwrap_or(d.volume_tile);
@@ -429,6 +479,33 @@ impl ElectricFieldWindow {
             self.case = case;
         }
         self.open = true;
+    }
+
+    /// The steel counted ([`steel_of`]): structures with members, members,
+    /// pieces of steel, structures left out — once per version of the line.
+    pub(super) fn steel_counts(&mut self, model: &Model) -> [usize; 4] {
+        if let Some((v, c)) = self.steel_seen
+            && v == model.line_version
+        {
+            return c;
+        }
+        let (steel, left_out) = steel_of(model);
+        let structures: std::collections::BTreeSet<&str> =
+            steel.iter().map(|m| m.structure.as_str()).collect();
+        let pieces: usize = steel
+            .iter()
+            .flat_map(|m| m.points.windows(2))
+            .map(|w| {
+                let l = ((w[1][0] - w[0][0]).powi(2)
+                    + (w[1][1] - w[0][1]).powi(2)
+                    + (w[1][2] - w[0][2]).powi(2))
+                .sqrt();
+                (l / electric::STEEL_PIECE).ceil().max(1.0) as usize
+            })
+            .sum();
+        let c = [structures.len(), steel.len(), pieces, left_out.len()];
+        self.steel_seen = Some((model.line_version, c));
+        c
     }
 
     /// About how long a floor of `tiles` takes here, s: as measured on
@@ -526,6 +603,11 @@ impl ElectricFieldWindow {
     /// The settings as the engine takes them.
     fn settings(&mut self, model: &Model) -> Settings {
         let spans = self.spans(model);
+        let steel = if self.steel && !self.two_d {
+            steel_of(model)
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let stations = match &self.stations {
             Stations::EverySpan => match self.span_pick.chosen(model, &spans) {
                 (_, true) => Vec::new(),
@@ -547,6 +629,11 @@ impl ElectricFieldWindow {
                 })
                 .into_iter()
                 .collect(),
+            Stations::Beside { distance } => {
+                let (mut chosen, _) = self.span_pick.chosen(model, &spans);
+                chosen.sort_unstable();
+                beside_stations(model, &spans, &chosen, *distance)
+            }
         };
         Settings {
             model: if self.two_d {
@@ -607,6 +694,8 @@ impl ElectricFieldWindow {
                 .iter()
                 .map(|l| l.value)
                 .collect(),
+            steel: steel.0,
+            steel_left_out: steel.1,
         }
     }
 
@@ -731,10 +820,12 @@ impl ElectricFieldWindow {
                     .any(|c| self.voltage(model, c).is_some_and(|v| v > 0.0))
                 {
                     Some("every circuit voltage-free: give one a voltage (2 Scope)".to_owned())
-                } else if self.stations == Stations::EverySpan && {
-                    let spans = self.spans(model);
-                    self.span_pick.chosen(model, &spans).0.is_empty()
-                } {
+                } else if matches!(self.stations, Stations::EverySpan | Stations::Beside { .. })
+                    && {
+                        let spans = self.spans(model);
+                        self.span_pick.chosen(model, &spans).0.is_empty()
+                    }
+                {
                     Some("no span ticked (2 Scope, Spans)".to_owned())
                 } else {
                     None
@@ -1021,7 +1112,11 @@ impl ElectricFieldWindow {
                                 let spans = self.spans(model);
                                 self.span_pick.chosen(model, &spans).0.len()
                             }
-                            _ => 1,
+                            Stations::Beside { .. } => {
+                                let spans = self.spans(model);
+                                2 * self.span_pick.chosen(model, &spans).0.len()
+                            }
+                            Stations::One { .. } => 1,
                         };
                         help::explain(
                             ui,
@@ -1095,51 +1190,7 @@ impl ElectricFieldWindow {
                 self.span_pick.ui(ui, "electric-field", model, &spans);
                 ui.end_row();
                 ui.label("Profiles");
-                ui.horizontal(|ui| {
-                    let mut every = self.stations == Stations::EverySpan;
-                    ui.radio_value(&mut every, true, "at each ticked span's lowest point");
-                    ui.radio_value(&mut every, false, "one span");
-                    if every {
-                        self.stations = Stations::EverySpan;
-                    } else {
-                        if self.stations == Stations::EverySpan {
-                            self.stations = Stations::One {
-                                span: 0,
-                                fraction: None,
-                            };
-                        }
-                        if let Stations::One { span, fraction } = &mut self.stations {
-                            *span = (*span).min(spans.len().saturating_sub(1));
-                            let name = |k: usize| {
-                                spans
-                                    .get(k)
-                                    .map_or(String::new(), |(a, b)| format!("{a}–{b}"))
-                            };
-                            egui::ComboBox::from_id_salt("electric-field-span")
-                                .selected_text(name(*span))
-                                .show_ui(ui, |ui| {
-                                    for k in 0..spans.len() {
-                                        ui.selectable_value(span, k, name(k));
-                                    }
-                                });
-                            let mut lowest = fraction.is_none();
-                            ui.checkbox(&mut lowest, "at its lowest point");
-                            if lowest {
-                                *fraction = None;
-                            } else {
-                                let f = fraction.get_or_insert(0.5);
-                                crate::style::field(
-                                    ui,
-                                    egui::DragValue::new(f).range(0.0..=1.0).speed(0.01),
-                                )
-                                .on_hover_text(
-                                    "The place in the span from its first structure along the \
-                                     line (0–1)",
-                                );
-                            }
-                        }
-                    }
-                });
+                profiles_ui(ui, "electric-field", &mut self.stations, &spans);
                 ui.end_row();
                 ui.label("Across");
                 ui.horizontal(|ui| {

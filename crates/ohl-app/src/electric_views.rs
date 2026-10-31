@@ -77,6 +77,49 @@ impl ElectricFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
+                // The structures' steel (owner, 2026-10-31: off by default).
+                ui.label("Structures' steel");
+                let [with, members, steel_pieces, left_out] = self.steel_counts(model);
+                ui.add_enabled_ui(self.tiled, |ui| {
+                    ui.checkbox(&mut self.steel, "earthed (on the tiled floor)")
+                        .on_hover_text(
+                            "The structures' steel at earth potential, solved with each tiled \
+                             floor it stands on",
+                        );
+                });
+                ui.end_row();
+                ui.label("");
+                let per = steel_pieces.checked_div(with).unwrap_or(0);
+                let tiles = electric::TiledFloor {
+                    fine: self.tile,
+                    ..Default::default()
+                }
+                .tiles(self.width);
+                let text = if !self.tiled {
+                    "Only on the tiled floor (Ground): with the plane under each point the \
+                     structures are not modelled."
+                        .to_owned()
+                } else {
+                    format!(
+                        "{with} structure(s) with members ({members} members, ≈ {per} pieces of steel \
+                         each); {left_out} without (detail level 1) left out. Lowers the field \
+                         near the structures, raises it at the steel; tens of metres away no \
+                         change. A profile's floor beside two structures {} instead of {}.",
+                        duration(self.floor_seconds(tiles + 2 * per)),
+                        duration(self.floor_seconds(tiles))
+                    )
+                };
+                crate::check_help::explain(
+                    ui,
+                    &text,
+                    "The steel is at earth potential: it takes charges that keep it there, \
+                     solved together with the floor's tiles (each member in pieces of at most \
+                     3 m, its radius from its section). Left out it reads the field near the \
+                     ground beside a structure higher — on the safe side; at the steel itself \
+                     lower. The line's charges are taken as without the steel. Off by default \
+                     (owner, 2026-10-31). Use the profiles beside the structures to see it.",
+                );
+                ui.end_row();
                 ui.label("Wire pieces");
                 ui.horizontal(|ui| {
                     let mut finer = self.piece_length.is_some();
@@ -139,6 +182,9 @@ impl ElectricFieldWindow {
                 let profiles = match self.stations {
                     Stations::EverySpan => self.span_pick.chosen(model, spans).0.len().max(1) as f64,
                     Stations::One { .. } => 1.0,
+                    Stations::Beside { .. } => {
+                        2.0 * self.span_pick.chosen(model, spans).0.len().max(1) as f64
+                    }
                 };
                 let given = self.points.as_ref().map_or(0, |p| p.1.len()) as f64;
                 let points = profiles * across + given;

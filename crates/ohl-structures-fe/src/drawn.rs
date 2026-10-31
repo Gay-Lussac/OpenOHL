@@ -144,6 +144,44 @@ impl DrawnBody {
             + self.pole.as_ref().map_or(0, |p| p.solid.len())
     }
 
+    /// Its steel placed the same way, for the electric field (owner,
+    /// 2026-10-31): each member's axis with its radius (the farthest its
+    /// solid reaches from the axis; without a solid, `default_radius`),
+    /// and the pole's centreline with its mean outer radius.
+    pub fn placed_steel(
+        &self,
+        at: [f64; 3],
+        rotation_deg: f64,
+        default_radius: f64,
+    ) -> Vec<(Vec<[f64; 3]>, f64)> {
+        let mut out: Vec<(Vec<[f64; 3]>, f64)> = self
+            .members
+            .iter()
+            .filter(|m| m.points.len() >= 2)
+            .map(|m| {
+                let radius = member_radius(&m.points, &m.solid).unwrap_or(default_radius);
+                let line = m
+                    .points
+                    .iter()
+                    .map(|p| to_global(at, rotation_deg, *p))
+                    .collect();
+                (line, radius)
+            })
+            .collect();
+        if let Some(p) = &self.pole
+            && p.rings.len() >= 2
+        {
+            let line = p
+                .rings
+                .iter()
+                .map(|(z, _)| to_global(at, rotation_deg, [0.0, 0.0, *z]))
+                .collect();
+            let radius = p.rings.iter().map(|(_, d)| 0.5 * d).sum::<f64>() / p.rings.len() as f64;
+            out.push((line, radius));
+        }
+        out
+    }
+
     /// The pole's outer outline at each of its heights placed the same way
     /// (closed: the first point again at the end), bottom to top; empty
     /// without a pole.
@@ -155,6 +193,28 @@ impl DrawnBody {
                 .collect()
         })
     }
+}
+
+/// The farthest a member's solid reaches from its axis (`points`, its
+/// two ends), m; none without a solid.
+fn member_radius(points: &[[f64; 3]], solid: &[[[f64; 3]; 3]]) -> Option<f64> {
+    let (a, b) = (points.first()?, points.last()?);
+    let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+    let len = norm(d);
+    if solid.is_empty() || len < 1e-9 {
+        return None;
+    }
+    let u = d.map(|x| x / len);
+    let far = solid
+        .iter()
+        .flatten()
+        .map(|q| {
+            let r = sub(*q, *a);
+            let t = r[0] * u[0] + r[1] * u[1] + r[2] * u[2];
+            norm([r[0] - t * u[0], r[1] - t * u[1], r[2] - t * u[2]])
+        })
+        .fold(0.0, f64::max);
+    (far > 0.0).then_some(far)
 }
 
 /// The member `id` of `model` drawn between `points` (its two ends) as a

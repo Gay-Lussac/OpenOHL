@@ -69,6 +69,126 @@ pub(crate) enum Stations {
     /// One span (index into the line's spans), at its lowest point or a
     /// fraction of it.
     One { span: usize, fraction: Option<f64> },
+    /// Beside the structures (owner, 2026-10-31: where the steel matters):
+    /// in each span ticked, `distance` into it from both ends (a span not
+    /// twice as long: its middle).
+    Beside { distance: f64 },
+}
+
+/// The profiles of [`Stations::Beside`] over the spans `chosen`
+/// (indices into `spans`): `distance` into each from both ends, along the
+/// line in plan.
+pub(crate) fn beside_stations(
+    model: &Model,
+    spans: &Spans,
+    chosen: &[usize],
+    distance: f64,
+) -> Vec<StationSpec> {
+    let mut out = Vec::new();
+    for &k in chosen {
+        let (from, to) = &spans[k];
+        let at = |id: &str| model.line.structure(id).map(|s| s.position);
+        let (Some(a), Some(b)) = (at(from), at(to)) else {
+            continue;
+        };
+        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let spec = |fraction: f64| StationSpec {
+            from: from.clone(),
+            to: to.clone(),
+            fraction: Some(fraction),
+        };
+        if len > 2.0 * distance && len > 0.0 {
+            out.push(spec(distance / len));
+            out.push(spec(1.0 - distance / len));
+        } else {
+            out.push(spec(0.5));
+        }
+    }
+    out
+}
+
+/// The Profiles row: at each ticked span's lowest point, beside the
+/// structures, or one span (at its lowest point or a place in it).
+pub(crate) fn profiles_ui(ui: &mut egui::Ui, id: &str, stations: &mut Stations, spans: &Spans) {
+    ui.horizontal(|ui| {
+        #[derive(PartialEq, Clone, Copy)]
+        enum Kind {
+            Lowest,
+            Beside,
+            One,
+        }
+        let mut kind = match stations {
+            Stations::EverySpan => Kind::Lowest,
+            Stations::Beside { .. } => Kind::Beside,
+            Stations::One { .. } => Kind::One,
+        };
+        ui.radio_value(
+            &mut kind,
+            Kind::Lowest,
+            "at each ticked span's lowest point",
+        );
+        ui.radio_value(&mut kind, Kind::Beside, "beside its structures")
+            .on_hover_text(
+                "In each span ticked, a profile this far into it from each of its structures \
+                 (where the structures' steel and the wires near them matter)",
+            );
+        ui.radio_value(&mut kind, Kind::One, "one span");
+        match kind {
+            Kind::Lowest => *stations = Stations::EverySpan,
+            Kind::Beside => {
+                if !matches!(stations, Stations::Beside { .. }) {
+                    *stations = Stations::Beside { distance: 10.0 };
+                }
+                if let Stations::Beside { distance } = stations {
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(distance)
+                            .range(1.0..=500.0)
+                            .speed(0.5)
+                            .suffix(" m"),
+                    );
+                    ui.label("into the span");
+                }
+            }
+            Kind::One => {
+                if !matches!(stations, Stations::One { .. }) {
+                    *stations = Stations::One {
+                        span: 0,
+                        fraction: None,
+                    };
+                }
+                if let Stations::One { span, fraction } = stations {
+                    *span = (*span).min(spans.len().saturating_sub(1));
+                    let name = |k: usize| {
+                        spans
+                            .get(k)
+                            .map_or(String::new(), |(a, b)| format!("{a}–{b}"))
+                    };
+                    egui::ComboBox::from_id_salt((id, "span"))
+                        .selected_text(name(*span))
+                        .show_ui(ui, |ui| {
+                            for k in 0..spans.len() {
+                                ui.selectable_value(span, k, name(k));
+                            }
+                        });
+                    let mut lowest = fraction.is_none();
+                    ui.checkbox(&mut lowest, "at its lowest point");
+                    if lowest {
+                        *fraction = None;
+                    } else {
+                        let f = fraction.get_or_insert(0.5);
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(f).range(0.0..=1.0).speed(0.01),
+                        )
+                        .on_hover_text(
+                            "The place in the span from its first structure along the line (0–1)",
+                        );
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// Every circuit's end points: its label and the structures.
@@ -247,6 +367,9 @@ struct Stored {
     /// One span's stations: its structures and the place in it (none:
     /// every span at its lowest point).
     span: Option<(String, String, Option<f64>)>,
+    /// Profiles beside the structures: the distance into the spans, m
+    /// (2026-10-31).
+    beside: Option<f64>,
     /// The spans on an alignment unticked and those on none ticked.
     spans_off: Vec<(String, String)>,
     spans_on: Vec<(String, String)>,
@@ -293,7 +416,7 @@ impl MagneticFieldWindow {
     fn stored(&mut self, model: &Model) -> Stored {
         let spans = self.spans(model);
         let span = match &self.stations {
-            Stations::EverySpan => None,
+            Stations::EverySpan | Stations::Beside { .. } => None,
             Stations::One { span, fraction } => spans
                 .get(*span)
                 .map(|(from, to)| (from.clone(), to.clone(), *fraction)),
@@ -309,6 +432,10 @@ impl MagneticFieldWindow {
             width: Some(self.width),
             step: Some(self.step),
             span,
+            beside: match self.stations {
+                Stations::Beside { distance } => Some(distance),
+                _ => None,
+            },
             spans_off: self.span_pick.off.iter().cloned().collect(),
             spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
@@ -371,6 +498,7 @@ impl MagneticFieldWindow {
                     .position(|(a, b)| *a == from && *b == to)
                     .map(|span| Stations::One { span, fraction })
             })
+            .or(st.beside.map(|distance| Stations::Beside { distance }))
             .unwrap_or_default();
         self.limit = st.limit;
         self.piece_length = st.piece_length;
@@ -547,6 +675,11 @@ impl MagneticFieldWindow {
                 })
                 .into_iter()
                 .collect(),
+            Stations::Beside { distance } => {
+                let (mut chosen, _) = self.span_pick.chosen(model, &spans);
+                chosen.sort_unstable();
+                beside_stations(model, &spans, &chosen, *distance)
+            }
         };
         Settings {
             model: if self.two_d {
@@ -742,10 +875,12 @@ impl MagneticFieldWindow {
                         .any(|e| e.1.is_some_and(|a| a != 0.0))
                 {
                     Some("give a circuit a current (2 Scope)".to_owned())
-                } else if self.stations == Stations::EverySpan && {
-                    let spans = self.spans(model);
-                    self.span_pick.chosen(model, &spans).0.is_empty()
-                } {
+                } else if matches!(self.stations, Stations::EverySpan | Stations::Beside { .. })
+                    && {
+                        let spans = self.spans(model);
+                        self.span_pick.chosen(model, &spans).0.is_empty()
+                    }
+                {
                     Some("no span ticked (2 Scope, Spans)".to_owned())
                 } else {
                     None
@@ -1038,10 +1173,11 @@ impl MagneticFieldWindow {
                 ui.end_row();
                 ui.label("Earth wires");
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.earth_wires, "carry the currents the phases induce")
-                        .on_hover_text(
-                            "Off: no current in the earth wires",
-                        );
+                    ui.checkbox(
+                        &mut self.earth_wires,
+                        "carry the currents the phases induce",
+                    )
+                    .on_hover_text("Off: no current in the earth wires");
                     if self.earth_wires {
                         ui.checkbox(&mut self.towers, "through the structures' earthing")
                             .on_hover_text(
@@ -1073,48 +1209,7 @@ impl MagneticFieldWindow {
                 self.span_pick.ui(ui, "magnetic-field", model, &spans);
                 ui.end_row();
                 ui.label("Profiles");
-                ui.horizontal(|ui| {
-                    let mut every = self.stations == Stations::EverySpan;
-                    ui.radio_value(&mut every, true, "at each ticked span's lowest point");
-                    ui.radio_value(&mut every, false, "one span");
-                    if every {
-                        self.stations = Stations::EverySpan;
-                    } else {
-                        if self.stations == Stations::EverySpan {
-                            self.stations = Stations::One {
-                                span: 0,
-                                fraction: None,
-                            };
-                        }
-                        if let Stations::One { span, fraction } = &mut self.stations {
-                            *span = (*span).min(spans.len().saturating_sub(1));
-                            let name = |k: usize| {
-                                spans
-                                    .get(k)
-                                    .map_or(String::new(), |(a, b)| format!("{a}–{b}"))
-                            };
-                            egui::ComboBox::from_id_salt("magnetic-field-span")
-                                .selected_text(name(*span))
-                                .show_ui(ui, |ui| {
-                                    for k in 0..spans.len() {
-                                        ui.selectable_value(span, k, name(k));
-                                    }
-                                });
-                            let mut lowest = fraction.is_none();
-                            ui.checkbox(&mut lowest, "at its lowest point");
-                            if lowest {
-                                *fraction = None;
-                            } else {
-                                let f = fraction.get_or_insert(0.5);
-                                crate::style::field(
-                                    ui,
-                                    egui::DragValue::new(f).range(0.0..=1.0).speed(0.01),
-                                )
-                                .on_hover_text("The place in the span from its first structure along the line (0–1)");
-                            }
-                        }
-                    }
-                });
+                profiles_ui(ui, "magnetic-field", &mut self.stations, &spans);
                 ui.end_row();
                 ui.label("Across");
                 ui.horizontal(|ui| {
@@ -1148,12 +1243,11 @@ impl MagneticFieldWindow {
                 ui.label("Limit");
                 ui.horizontal(|ui| {
                     let mut given = self.limit.is_some();
-                    ui.checkbox(&mut given, "given")
-                        .on_hover_text(
-                            "Your limit, µT: the margin at every point and the limit line's \
+                    ui.checkbox(&mut given, "given").on_hover_text(
+                        "Your limit, µT: the margin at every point and the limit line's \
                              extent per profile. None is built in (an ordinance's values come \
                              from its parameter file)",
-                        );
+                    );
                     if !given {
                         self.limit = None;
                     } else {

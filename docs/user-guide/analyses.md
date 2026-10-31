@@ -786,7 +786,9 @@ longer in the line falls back to the default.
   on no alignment (both structures not on one alignment), unticked;
   *all* / *none* per group. The ticks are kept in the project; with none
   ticked, Run says so.
-- **Profiles**: at each ticked span's lowest point, or one span at its
+- **Profiles**: at each ticked span's lowest point, *beside its structures*
+  (2026-10-31: a profile this far into each ticked span from both its
+  structures, 10 m by default), or one span at its
   lowest point or at a place 0–1 along it; **Across** ± the width every step at a
   height above the ground (default ±50 m every 1 m at 1 m). The ground is
   the project's surface for the checks when there is one, else straight
@@ -970,6 +972,14 @@ default.
 - **Jumpers** (3D, on by default): a jumper at a section's end carries
   that section's charge per metre; jumpers not at a section's end are
   left out and listed in the notes.
+- **Structures' steel** (3 Model; 2026-10-31, **off by default**):
+  *earthed (on the tiled floor)* — the structures' members at earth
+  potential, solved with each floor they stand on: the field lower near
+  the structures, higher at the steel. Beside it: how many structures
+  have members (detail levels 2 and 3, else their own stick drawing),
+  how many are left out (level 1) and how much longer a profile's floor
+  beside two structures takes. Use the profiles *beside its structures*
+  to see it. On the command line `--steel`.
 - **Ground** (3D): *tiled floor* (the default since 2026-10-29: the
   owner, "keep the tiled implementation") — the terrain as a conducting
   floor of tiles (fine tiles of 2 m near the profile by default, 8 m

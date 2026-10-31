@@ -124,10 +124,30 @@ ridge the real ground is not the plane; a conducting terrain surface
 (charges on its triangles) would follow it, at the cost of a large dense
 system — later, if a comparison shows it matters.
 
-- **Not modelled**: the structures (earthed steel: they lower the field
-  near them), trees, buildings and people (earthed objects shield the
-  field: the field computed is **conservative** away from them and **not
-  conservative** at their tops, where it concentrates).
+- **Not modelled by default**: the structures (earthed steel: they lower
+  the field near them), trees, buildings and people (earthed objects
+  shield the field: the field computed is **conservative** away from them
+  and **not conservative** at their tops, where it concentrates).
+- **The structures' steel, earthed** (owner, 2026-10-31; an option, **off
+  by default**): on the tiled floor in 3D, each structure's members (its
+  type's at detail levels 2 and 3, else its own stick drawing; a pole's
+  centreline; a structure with neither, level 1, is left out, said) are
+  cut into pieces of at most 3 m, each with an unknown charge per metre,
+  solved **together with the floor's tiles** so that the steel too is at
+  zero potential (held on its surface at each piece's middle; its radius
+  the farthest its section's solid reaches from the axis, else 5 cm; a
+  thin wire). The field adds each piece's closed form. Only the steel
+  standing on a floor takes part. **Simplification**: the line's charges
+  are taken as without the steel (they follow from the voltages and the
+  wires; the steel changes them little but near the clamps). **Tested**:
+  a long earthed bar beside a charged wire over flat ground lowers the
+  field 1 m above the ground as the exact 2D result (the bar's charge
+  \( q_2 = -\frac{p_{21}}{p_{22}} q_1 \)) within 0.4 % of the field. Left
+  out, the field near the ground beside a structure reads high — **on the
+  safe side**; at the steel itself, low. On a real line with stick
+  drawings (about 6 members per structure) it changed a profile 12 m from
+  a mast by 0.1 %; with lattice members, more. Not with the plane under
+  each point (it would be solved again at every point) nor in 2D (said).
 
 ### The plane against a tiled floor (2026-10-29)
 
