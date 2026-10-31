@@ -741,19 +741,27 @@ so. Without a cloud the roles give none (said).
   x, y, z, the LiDAR class — 0 for a survey point — and a survey point's
   code and breakline) and the **ground** (x, y, z one after the other).
   It gives presets: each a name, a description, its **cuts** (`cut`:
-  label, the span's structures, the fraction 0–1 or none for the lowest
-  point, width to either side, height above the highest wire, step),
+  label, the **alignment** and the **station** along it — the plane
+  perpendicular to the alignment there, at an angle point along the
+  bisector, as OHL-Design's cross-section panels (2026-10-31: "cuts are
+  made on the alignment"; the alignments are in the model's
+  `line.alignments`, their points in `line.alignment_points`) — width to
+  either side, height above the highest wire, step),
   its **points** (`place`: name, x, y and an elevation or a height above
   the ground), the isoline levels in µT and kV/m, building **outlines**
   (a ring in plan, ground and top; for its report) and notes.
 - `report(parameters, preset, results)`: the report files (`out-file`:
-  name, media type, bytes) from the field's results, `results` being
-  the `ohl-field-results` JSON ([data model](data-model.md#field-results-json)).
+  name, media type, bytes) from the run's results, `results` being an
+  `ohl-field-results-set` JSON — one `ohl-field-results` document per
+  field run, both from `ohl electrical fields` ([data
+  model](data-model.md#field-results-json)); `report` is called once per
+  run.
 
 **The host checks everything** before it is used
 (`ohl_plugins::field_presets::check_presets`, `check_files`): unique,
-non-empty preset names; at most 1 000 cuts, each in a span of the line
-(either way round), its fraction 0–1, width and step above 0 m, the
+non-empty preset names; at most 1 000 cuts, each on an alignment of the
+line at a station within it (a line without one: said), width and step
+above 0 m, the
 height above the wires 0 m or more, labels unique; at most 4 000 000 cut
 points per preset, **estimated** before the run with 100 m from the
 ground to the highest wire (the real height is known only in the run);
@@ -763,13 +771,14 @@ more, finite, the top not below the ground; report files at most 1 000,
 named without a folder (no `/`, `\`, `:`, not starting with `.`), each
 once, a media type given. A failure is an error naming the plugin.
 
-**From the command line** (`ohl electrical magnetic` and `electric`,
+**From the command line** (`ohl electrical magnetic`, `electric` and
+`fields` — both fields in one run, one report —,
 [analyses](../user-guide/analyses.md)): `--preset-plugin DIR [--params
 FILE] [--preset NAME] [--out DIR] [--cloud SPEC]` gathers the input (the
 cloud of `--cloud`, else the project's; the survey points of
 `--terrain`), calls `field-presets`, adds the chosen preset's cuts (with
 their labels) and points to those given and its levels to `--level`,
-runs the field as without it, then calls `report` with the results and
+runs the field(s) as without it, then calls `report` once with the set of results and
 writes the files into `--out` (default: the current folder). `ohl plugin
 info` lists the export (`optional exports: field-presets`). In
 OHL-Design: not yet.
@@ -786,9 +795,12 @@ guide](../user-guide/analyses.md#building-cuts)) is the building plugin:
 it clusters the building points (LiDAR role `building`, survey codes
 from its parameters) on a plan grid, draws footprints, heights and
 floors, and gives per building the governing cut, the nearest point's
-cut and the places of sensitive use; its `report` writes per field
-`buildings-B.csv` / `-E.csv`, the cuts' CSV grids and SVG drawings,
-`points-*.csv` and `buildings.geojson`. Its logic is plain Rust tested
+cut and the places of sensitive use — the cuts on the nearest alignment
+at the building's stations along it (its own copy of the core's plane
+rule, `model::Alignment::plane_at`; a line without an alignment: no cut,
+said); its `report` writes from one run's set `buildings.csv` (both
+fields' columns), `points.csv`, per cut a CSV grid and an SVG drawing per
+field, `buildings.geojson` and `notes.txt`. Its logic is plain Rust tested
 natively (`cargo test` in its folder: clustering, footprints, cuts,
 places, shuffle independence, a report of invented results); only
 `src/wasm.rs` touches the interface, compiled for `wasm32` alone (the
@@ -796,15 +808,16 @@ component's export names cannot be linked natively). Two things travel
 **through the preset's notes** because `report` receives only the
 parameters, the preset and the results: each building's summary
 (`building B001: points 425; area 96.0 m²; centroid X Y; ground … m;
-eaves … m; roof … m; floors 3; span T1–T2; stations A B m; axis … m;
-conductor … m`) and each cut's wire crossings (`cut LABEL: wire NL1
--5.00 414.92; …; wire EW 0.00 432.66 earth`); the report reads them
+eaves … m; roof … m; floors 3; span T1–T2; alignment main; stations A B
+m; axis … m; conductor … m`) and each cut's wire crossings on its plane
+(`cut LABEL: wire North L1 -5.00 414.92; …; wire EW 0.00 432.66 earth`);
+the report reads them
 back. Its manifest asks for every survey point within 100 m (`survey-codes
 = ["*"]`, the parameters choose the building and ground codes) and, for
 up to 2 000 000 points, more than the default limits (`[limits]`
 60 s, 1 024 MiB; the reason in the manifest). The CLI test
-`crates/ohl-cli/tests/building_cuts.rs` runs both fields on an invented
-point cloud and survey.
+`crates/ohl-cli/tests/building_cuts.rs` runs both fields in one run
+(`ohl electrical fields`) on an invented point cloud and survey.
 
 ## String limits: what a plugin sees
 

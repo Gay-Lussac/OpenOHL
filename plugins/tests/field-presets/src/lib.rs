@@ -7,19 +7,22 @@
 //! (`examples/electrical/double-circuit.ohl.json`, structures T1–T2–T3)
 //! for the tests (`ohl-plugins`, `ohl electrical magnetic|electric
 //! --preset-plugin`) — not a building analysis. Preset `default`: a cut
-//! labelled `house-A` in the middle of T1–T2 and one labelled `house-B`
-//! at T2–T3's lowest point, points `house-A` (4 m above the ground) and
-//! `house-B` (at 405 m), levels 1 µT and 0.5 kV/m, one outline; its notes
-//! echo what it received. Preset `points-only`: the two points alone.
+//! labelled `house-A` at station 150 m of the alignment `main` (the
+//! middle of T1–T2) and one labelled `house-B` at 450 m (the middle of
+//! T2–T3), points `house-A` (4 m above the ground) and `house-B` (at
+//! 405 m), levels 1 µT and 0.5 kV/m, one outline; its notes echo what it
+//! received. Preset `points-only`: the two points alone.
 //!
-//! The parameters choose a fault for the host's checks: `bad = "span"`
-//! (a cut in T1–T3, no span), `bad = "fraction"` (1.5), `bad = "name"`
+//! The parameters choose a fault for the host's checks: `bad =
+//! "alignment"` (a cut on an alignment `other`, not in the line), `bad =
+//! "station"` (a station of 700 m, beyond the alignment), `bad = "name"`
 //! (a point named twice), `bad = "file"` (a report file `../x.txt`),
 //! `bad = "fail"` (its own error).
 //!
 //! `report` writes `summary.txt`: the preset's name, its counts, the
-//! results' size and whether they are `ohl-field-results`, and how many
-//! times each cut's label appears in them.
+//! results' size, whether they are an `ohl-field-results-set` and how
+//! many field documents it holds, and how many times each cut's label
+//! appears in them.
 
 wit_bindgen::generate!({
     inline: r#"
@@ -55,12 +58,11 @@ fn bad(parameters: &str) -> Option<&str> {
     })
 }
 
-fn cut(label: &str, from: &str, to: &str, fraction: Option<f64>) -> Cut {
+fn cut(label: &str, alignment: &str, station: f64) -> Cut {
     Cut {
         label: label.into(),
-        from: from.into(),
-        to: to.into(),
-        fraction,
+        alignment: alignment.into(),
+        station,
         width: 20.0,
         above: 5.0,
         step: 2.0,
@@ -69,7 +71,7 @@ fn cut(label: &str, from: &str, to: &str, fraction: Option<f64>) -> Cut {
 
 impl exports::ohl::plugin::field_presets::Guest for Presets {
     fn parameters_template() -> String {
-        "# Invented test parameters\n# bad = \"span\"   # span, fraction, name, file or fail\n"
+        "# Invented test parameters\n# bad = \"station\"   # alignment, station, name, file or fail\n"
             .into()
     }
 
@@ -110,10 +112,7 @@ impl exports::ohl::plugin::field_presets::Guest for Presets {
                 }
             ),
         ];
-        let mut cuts = vec![
-            cut("house-A", "T1", "T2", Some(0.5)),
-            cut("house-B", "T2", "T3", None),
-        ];
+        let mut cuts = vec![cut("house-A", "main", 150.0), cut("house-B", "main", 450.0)];
         let mut points = vec![
             Place {
                 name: "house-A".into(),
@@ -131,8 +130,8 @@ impl exports::ohl::plugin::field_presets::Guest for Presets {
             },
         ];
         match fault {
-            Some("span") => cuts.push(cut("x", "T1", "T3", None)),
-            Some("fraction") => cuts[0].fraction = Some(1.5),
+            Some("alignment") => cuts.push(cut("x", "other", 10.0)),
+            Some("station") => cuts[0].station = 700.0,
             Some("name") => points[1].name = "house-A".into(),
             _ => {}
         }
@@ -171,12 +170,13 @@ impl exports::ohl::plugin::field_presets::Guest for Presets {
         results: String,
     ) -> Result<Vec<OutFile>, String> {
         let mut text = format!(
-            "preset {}\ncuts {}\npoints {}\nresults bytes {}\nohl-field-results {}\n",
+            "preset {}\ncuts {}\npoints {}\nresults bytes {}\nohl-field-results-set {}\nfields {}\n",
             preset.name,
             preset.cuts.len(),
             preset.points.len(),
             results.len(),
-            results.contains("\"ohl-field-results\"")
+            results.contains("\"ohl-field-results-set\""),
+            results.matches("\"format\":\"ohl-field-results\"").count()
         );
         for c in &preset.cuts {
             let n = results

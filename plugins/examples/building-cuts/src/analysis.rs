@@ -4,8 +4,10 @@
 
 //! From the points and the model to the presets: the buildings (clusters
 //! of building points, surveyed outlines), their heights and floors,
-//! their spans, the cuts across the line at each of them and their places
-//! of sensitive use.
+//! their spans, the cuts across the line at each of them — placed on the
+//! alignment, at the building's stations along it (owner, 2026-10-31:
+//! "cuts are made on the alignment not the circuits or span") — and their
+//! places of sensitive use.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -14,7 +16,7 @@ use crate::geom::{
     P2, ccw, centroid, convex_hull, distance_to_area, nearest_on_segment, percentile,
     segment_to_area, signed_area, simplify_ring,
 };
-use crate::model::{Model, Span};
+use crate::model::{Alignment, Model, Span};
 use crate::params::{OutlineKind, Params, matches_any};
 
 /// A point the host gathered.
@@ -59,7 +61,10 @@ pub struct Building {
     pub span: usize,
     /// Every span it lies beside (its own first).
     pub spans: Vec<usize>,
-    /// Its footprint's stations along `span`, from its first structure, m.
+    /// The alignment its cuts are placed on (index into the model's
+    /// alignments): the nearest within `max_distance`; none: no cut.
+    pub alignment: Option<usize>,
+    /// Its footprint's stations along the alignment, m.
     pub stations: (f64, f64),
     /// The smallest plan distance from its footprint to the axis, m.
     pub axis_distance: f64,
@@ -74,12 +79,10 @@ pub struct Building {
 pub struct CutOut {
     /// Its label: the cuts merged into it (`B001-gov+B001-near`).
     pub label: String,
-    /// The span's structure its fraction is measured from.
-    pub from: String,
-    /// The other.
-    pub to: String,
-    /// Its place in the span, 0–1.
-    pub fraction: f64,
+    /// The alignment it is placed on.
+    pub alignment: String,
+    /// Its station along the alignment, m.
+    pub station: f64,
     /// Either side of the axis, m.
     pub width: f64,
     /// Above the highest wire, m.
@@ -255,9 +258,9 @@ fn boundary_samples(ring: &[P2], step: f64) -> Vec<P2> {
     out
 }
 
-/// A building found, its own notes, and per span where a phase
-/// conductor comes nearest it (span, distance, station).
-type Found = (Building, Vec<String>, Vec<(usize, f64, f64)>);
+/// A building found, its own notes, and the point of a phase conductor
+/// that comes nearest it (none: no phase conductor).
+type Found = (Building, Vec<String>, Option<[f64; 3]>);
 
 /// The kinds of cut per building, in priority order (a merged cut is
 /// placed at its first member's station).
@@ -447,29 +450,19 @@ pub fn analyse(
         let span = beside[0].0;
         let mut spans: Vec<usize> = beside.iter().map(|b| b.0).collect();
         spans[1..].sort_unstable();
-        // The nearest phase conductor: overall, and per span where on it.
+        // The nearest phase conductor and where on it.
         let bb = bbox(&c.ring);
         let mut conductor = f64::INFINITY;
-        let mut per_span: Vec<(usize, f64, f64)> = Vec::new(); // span, distance, station
-        // What a wire must come nearer than to matter: the best of its
-        // span (the governing cut there), else the best overall.
-        let bound = |per_span: &[(usize, f64, f64)], conductor: f64, span: Option<usize>| match span
-        {
-            Some(s) => per_span
-                .iter()
-                .find(|p| p.0 == s)
-                .map_or(f64::INFINITY, |p| p.1),
-            None => conductor,
-        };
+        let mut nearest: Option<[f64; 3]> = None;
         for &(k, wb) in &phase_boxes {
             let w = &model.wires[k];
-            if box_gap(bb, wb) > bound(&per_span, conductor, w.span) {
+            if box_gap(bb, wb) > conductor {
                 continue;
             }
             for seg in w.points.windows(2) {
                 let (a, b) = (seg[0], seg[1]);
                 let sb = bbox(&[[a[0], a[1]], [b[0], b[1]]]);
-                if box_gap(bb, sb) > bound(&per_span, conductor, w.span) {
+                if box_gap(bb, sb) > conductor {
                     continue;
                 }
                 let len = (b[0] - a[0]).hypot(b[1] - a[1]).hypot(b[2] - a[2]);
@@ -482,23 +475,41 @@ pub fn analyse(
                         a[2] + t * (b[2] - a[2]),
                     ];
                     let d = prism_distance(p, &c.ring, ground_z, roof);
-                    conductor = conductor.min(d);
-                    if let Some(s) = w.span {
-                        let station = model.spans[s].local([p[0], p[1]]).0;
-                        match per_span.iter_mut().find(|q| q.0 == s) {
-                            Some(q) if d < q.1 => {
-                                q.1 = d;
-                                q.2 = station;
-                            }
-                            Some(_) => {}
-                            None => per_span.push((s, d, station)),
-                        }
+                    if d < conductor {
+                        conductor = d;
+                        nearest = Some(p);
                     }
                 }
             }
         }
-        let s = &model.spans[span];
-        let (lo, hi) = t_range(s, &c.ring);
+        // The alignment its cuts go on: the nearest within reach.
+        let samples = boundary_samples(&c.ring, 0.5);
+        let alignment = model
+            .alignments
+            .iter()
+            .enumerate()
+            .map(|(k, al)| {
+                let d = samples
+                    .iter()
+                    .map(|p| al.distance(*p))
+                    .fold(f64::INFINITY, f64::min);
+                (k, d)
+            })
+            .filter(|(_, d)| *d <= params.max_distance)
+            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+            .map(|x| x.0);
+        let stations = match alignment {
+            Some(k) => station_range(&model.alignments[k], &c.ring),
+            None => {
+                if !model.alignments.is_empty() {
+                    own_notes.push(format!(
+                        "no alignment within {} m: no cut",
+                        params.max_distance
+                    ));
+                }
+                (0.0, 0.0)
+            }
+        };
         let area = signed_area(&c.ring);
         buildings.push((
             Building {
@@ -513,13 +524,14 @@ pub fn analyse(
                 floors,
                 span,
                 spans,
-                stations: (lo.max(0.0), hi.min(s.length)),
+                alignment,
+                stations,
                 axis_distance: axis,
                 conductor_distance: conductor,
                 cuts: Vec::new(),
             },
             own_notes,
-            per_span,
+            nearest,
         ));
     }
     if beyond > 0 {
@@ -543,53 +555,37 @@ pub fn analyse(
         b.0.id = format!("B{:03}", k + 1);
     }
 
-    // Cuts: per span, the members (station, priority, building, name).
+    // Cuts: per alignment, the members (station, priority, building,
+    // name) — the building's stations along the alignment drive them.
     let mut members: BTreeMap<usize, Vec<(f64, usize, usize, String)>> = BTreeMap::new();
-    for (bi, (b, own, per_span)) in buildings.iter_mut().enumerate() {
-        for &k in &b.spans {
-            let s = &model.spans[k];
-            let (lo, hi) = t_range(s, &b.ring);
-            let (lo, hi) = (lo.max(0.0), hi.min(s.length));
-            let name = |tag: &str| {
-                if b.spans.len() > 1 {
-                    format!("{}-{}{}-{tag}", b.id, s.from, s.to)
-                } else {
-                    format!("{}-{tag}", b.id)
-                }
-            };
-            let list = members.entry(k).or_default();
-            match per_span.iter().find(|p| p.0 == k) {
-                Some(&(_, _, station)) => {
-                    list.push((station.clamp(lo, hi), 0, bi, name(TAGS[0])));
-                }
-                None => own.push(format!(
-                    "no phase conductor in span {}–{}: no governing cut there",
-                    s.from, s.to
-                )),
-            }
-            list.push((nearest_station(s, &b.ring, lo, hi), 1, bi, name(TAGS[1])));
-            if params.centroid_cut {
-                let t = s.local(b.centroid).0.clamp(lo, hi);
-                list.push((t, 2, bi, name(TAGS[2])));
-            }
+    for (bi, (b, own, nearest)) in buildings.iter_mut().enumerate() {
+        let Some(k) = b.alignment else {
+            continue;
+        };
+        let al = &model.alignments[k];
+        let (lo, hi) = b.stations;
+        let name = |tag: &str| format!("{}-{tag}", b.id);
+        let list = members.entry(k).or_default();
+        match nearest {
+            // The governing cut: where a phase conductor comes closest.
+            Some(p) => list.push((
+                al.project([p[0], p[1]]).0.clamp(lo, hi),
+                0,
+                bi,
+                name(TAGS[0]),
+            )),
+            None => own.push("no phase conductor: no governing cut".to_owned()),
         }
-        if b.spans.len() > 1 {
-            let names: Vec<String> = b
-                .spans
-                .iter()
-                .map(|&k| format!("{}–{}", model.spans[k].from, model.spans[k].to))
-                .collect();
-            own.push(format!(
-                "it lies beside {} spans ({}): cuts in each",
-                b.spans.len(),
-                names.join(", ")
-            ));
+        list.push((nearest_station(al, &b.ring, lo, hi), 1, bi, name(TAGS[1])));
+        if params.centroid_cut {
+            let t = al.project(b.centroid).0.clamp(lo, hi);
+            list.push((t, 2, bi, name(TAGS[2])));
         }
     }
     let mut cuts = Vec::new();
-    let mut cut_spans = Vec::new();
+    let mut cut_planes = Vec::new();
     for (k, mut list) in members {
-        let s = &model.spans[k];
+        let al = &model.alignments[k];
         list.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
         let mut groups: Vec<Vec<(f64, usize, usize, String)>> = Vec::new();
         for m in list {
@@ -604,20 +600,19 @@ pub fn analyse(
                 .min_by(|a, b| a.1.cmp(&b.1).then(a.2.cmp(&b.2)))
                 .expect("a member");
             let station = rep.0;
+            let plane = al.plane_at(station);
             let label = g.iter().map(|m| m.3.as_str()).collect::<Vec<_>>().join("+");
             // Wide enough for every building the cut crosses.
             let mut reach: f64 = 0.0;
-            for (b, _, _) in &buildings {
-                if !b.spans.contains(&k) {
+            for (bi, (b, _, _)) in buildings.iter().enumerate() {
+                if b.alignment != Some(k) {
                     continue;
                 }
-                let (lo, hi) = t_range(s, &b.ring);
-                let ours = g
-                    .iter()
-                    .any(|m| m.2 < buildings.len() && buildings[m.2].0.id == b.id);
+                let (lo, hi) = b.stations;
+                let ours = g.iter().any(|m| m.2 == bi);
                 if ours || (lo - 1e-9..=hi + 1e-9).contains(&station) {
                     for p in &b.ring {
-                        reach = reach.max(s.local(*p).1.abs());
+                        reach = reach.max(plane.offset(*p).abs());
                     }
                 }
             }
@@ -626,14 +621,13 @@ pub fn analyse(
             }
             cuts.push(CutOut {
                 label,
-                from: s.from.clone(),
-                to: s.to.clone(),
-                fraction: (station / s.length).clamp(0.0, 1.0),
+                alignment: al.id.clone(),
+                station,
                 width: params.min_width.max(reach + params.cut_margin),
                 above: params.above,
                 step: params.step,
             });
-            cut_spans.push((k, station));
+            cut_planes.push(plane);
         }
     }
     if cuts.len() > MAX_CUTS {
@@ -667,16 +661,15 @@ pub fn analyse(
         }
     }
 
-    // The wires each cut crosses.
+    // The wires each cut crosses (on its plane, within its width).
     let mut crossings = Vec::new();
-    for (c, &(k, station)) in cuts.iter().zip(&cut_spans) {
-        let s = &model.spans[k];
+    for (c, plane) in cuts.iter().zip(&cut_planes) {
         let mut parts = Vec::new();
-        for w in model.wires.iter().filter(|w| w.span == Some(k)) {
+        for w in &model.wires {
             for seg in w.points.windows(2) {
                 let (ta, tb) = (
-                    s.local([seg[0][0], seg[0][1]]).0 - station,
-                    s.local([seg[1][0], seg[1][1]]).0 - station,
+                    plane.along([seg[0][0], seg[0][1]]),
+                    plane.along([seg[1][0], seg[1][1]]),
                 );
                 if (ta <= 0.0 && tb > 0.0) || (ta >= 0.0 && tb < 0.0) {
                     let f = ta / (ta - tb);
@@ -685,14 +678,17 @@ pub fn analyse(
                         seg[0][1] + f * (seg[1][1] - seg[0][1]),
                         seg[0][2] + f * (seg[1][2] - seg[0][2]),
                     ];
-                    parts.push(format!(
-                        "wire {} {:.2} {:.2}{}",
-                        w.section,
-                        s.local([p[0], p[1]]).1,
-                        p[2],
-                        if w.phase { "" } else { " earth" }
-                    ));
-                    break;
+                    let s = plane.offset([p[0], p[1]]);
+                    if s.abs() <= c.width {
+                        parts.push(format!(
+                            "wire {} {:.2} {:.2}{}",
+                            w.label,
+                            s,
+                            p[2],
+                            if w.phase { "" } else { " earth" }
+                        ));
+                        break;
+                    }
                 }
             }
         }
@@ -776,10 +772,10 @@ pub fn analyse(
             places.len()
         ));
     }
-    if model.routed {
+    if model.alignments.is_empty() {
         notes.push(
-            "the line has routes: its spans are taken in the direction they are drawn; where the \
-             routes run the other way a cut lands at 1 - its fraction (the report says so)"
+            "the line has no alignment: no cut placed (a cut is placed at a station of an \
+             alignment, perpendicular to it); the places of sensitive use are given"
                 .to_owned(),
         );
     }
@@ -821,12 +817,24 @@ fn t_range(s: &Span, ring: &[P2]) -> (f64, f64) {
         })
 }
 
-/// The station of the footprint's point nearest the axis within `lo`–`hi`
-/// (a side parallel to the axis: its middle).
-fn nearest_station(s: &Span, ring: &[P2], lo: f64, hi: f64) -> f64 {
+/// The footprint's stations along the alignment (its boundary projected),
+/// least and largest, within the alignment.
+fn station_range(al: &Alignment, ring: &[P2]) -> (f64, f64) {
+    let (lo, hi) = boundary_samples(ring, 0.25)
+        .into_iter()
+        .map(|p| al.project(p).0)
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), t| {
+            (lo.min(t), hi.max(t))
+        });
+    (lo.clamp(0.0, al.length), hi.clamp(0.0, al.length))
+}
+
+/// The station of the footprint's point nearest the alignment within
+/// `lo`–`hi` (a side parallel to it: its middle).
+fn nearest_station(al: &Alignment, ring: &[P2], lo: f64, hi: f64) -> f64 {
     let samples: Vec<(f64, f64)> = boundary_samples(ring, 0.25)
         .into_iter()
-        .map(|p| s.local(p))
+        .map(|p| al.project(p))
         .filter(|(t, _)| (lo - 1e-9..=hi + 1e-9).contains(t))
         .map(|(t, d)| (t, d.abs()))
         .collect();
@@ -850,9 +858,13 @@ fn nearest_station(s: &Span, ring: &[P2], lo: f64, hi: f64) -> f64 {
 /// A building's summary as a note (the report reads it back).
 pub fn summary_note(b: &Building, model: &Model) -> String {
     let s = &model.spans[b.span];
+    let alignment = b
+        .alignment
+        .map_or("none".to_owned(), |k| model.alignments[k].id.clone());
     format!(
         "building {}: points {}; area {:.1} m²; centroid {:.2} {:.2}; ground {:.2} m; eaves {:.2} m; \
-         roof {:.2} m; floors {}; span {}–{}; stations {:.1} {:.1} m; axis {:.2} m; conductor {:.2} m",
+         roof {:.2} m; floors {}; span {}–{}; alignment {alignment}; stations {:.1} {:.1} m; \
+         axis {:.2} m; conductor {:.2} m",
         b.id,
         b.points,
         b.area,

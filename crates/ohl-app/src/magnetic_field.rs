@@ -792,19 +792,15 @@ impl MagneticFieldWindow {
                 Vec::new()
             } else {
                 self.span_pick
-                    .cuts_asked(model, &spans)
+                    .cut_places(model, &spans)
+                    .0
                     .into_iter()
-                    .map(|((from, to), at)| {
-                        let len = crate::span_pick::span_length(model, &(from.clone(), to.clone()));
-                        magnetic::CutSpec {
-                            from,
-                            to,
-                            fraction: at.fraction(len),
-                            width: self.cut_width,
-                            above: self.cut_above,
-                            step: self.cut_step,
-                            label: None,
-                        }
+                    .map(|at| magnetic::CutSpec {
+                        at,
+                        width: self.cut_width,
+                        above: self.cut_above,
+                        step: self.cut_step,
+                        label: None,
                     })
                     .collect()
             },
@@ -1426,11 +1422,18 @@ impl MagneticFieldWindow {
             let largest = c.values.values.iter().copied().fold(0.0, f64::max);
             rows.push(ResultRow {
                 kind: "Cut",
-                place: format!("{}–{} at {:.0} m", c.from, c.to, c.at),
+                place: format!(
+                    "{} at {:.0} m{} (span {}–{})",
+                    c.alignment,
+                    c.station,
+                    if c.angle_point { ", angle point" } else { "" },
+                    c.from,
+                    c.to
+                ),
                 max: format!("{largest:.1} µT"),
                 note: "at the wires; isolines at the levels".into(),
                 button: "Open cut",
-                action: field_results::open_cut(model, &c.from, &c.to, c.at, self.cut_width),
+                action: field_results::open_cut(c, self.cut_width),
             });
         }
         let per = a

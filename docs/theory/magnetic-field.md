@@ -312,10 +312,28 @@ nor not in general (the images oppose their sources' near fields).
   step (`grid_step`): the levels' isolines **from above** (plan and 3D
   view).
 - **Vertical cuts across the line** (2026-10-29): a grid in a vertical
-  plane square to a span's axis (or a cross-section panel's plane), ± the
-  width, from the lowest ground under it to some metres over the highest
-  wire, every step; every point computed (also under the ground; the
-  drawing stops at the ground, straight between the columns).
+  plane, ± the width, from the lowest ground under it to some metres over
+  the highest wire, every step; every point computed (also under the
+  ground; the drawing stops at the ground, straight between the
+  columns). **The plane** (owner, 2026-10-31: "cuts are made on the
+  alignment not the circuits or span"): at a station of an alignment,
+  vertical and perpendicular to the alignment there; within 1 cm of an
+  alignment point (an angle point) along the **bisector** of the two
+  directions, as a structure stands — the same placement as a
+  cross-section panel (one implementation, `ohl_line::route::plane_at`),
+  so the run's cut and the panel opened at its station are one plane.
+  A place in a span (its middle, its lowest point, a distance from its
+  first structure) is first turned into the alignment station of that
+  place, between the stations of the span's structures. Where the
+  alignment and the span's chord are not parallel (a span beside the
+  alignment, or the bisector at an angle point) the plane crosses the
+  wires obliquely: the field is computed in that plane all the same (3D,
+  the wires as solved), and a cut through an angle point shows both
+  spans' wires as they meet at the structure. A span on no alignment
+  can have no cut. The ground under the cut: the terrain where given,
+  else straight between the feet of the span the plane crosses at the
+  axis. The cross-section panels' own cuts (computed whenever a panel
+  opens) take the panel's plane as it is.
 - **Volumes** (2026-10-29): the isosurfaces of the levels in a box over a
   span (± the width, from the lowest ground under it to some metres over
   the highest wire), see below.

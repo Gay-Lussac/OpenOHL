@@ -111,6 +111,36 @@ impl CutAt {
             CutAt::From(m) => Some((m / len.max(1e-9)).clamp(0.0, 1.0)),
         }
     }
+
+    /// The cut of this chip in span `ids` as the engine takes it (owner,
+    /// 2026-10-31: "cuts are made on the alignment"): the middle and a
+    /// distance at the alignment station of that place (between the
+    /// stations of the span's structures on its alignment); the lowest
+    /// point, found by the run, placed by it at its alignment station
+    /// likewise. A span on no alignment: why no cut can be placed.
+    pub fn place(
+        self,
+        line: &ohl_line::Line,
+        views: &[ohl_line::route::AlignmentView],
+        ids: &SpanIds,
+        len: f64,
+    ) -> Result<ohl_electrical::magnetic::CutAt, String> {
+        use ohl_electrical::magnetic::CutAt as At;
+        match self.fraction(len) {
+            Some(f) => {
+                let (alignment, station) = line.span_station(views, &ids.0, &ids.1, f)?;
+                Ok(At::Station { alignment, station })
+            }
+            None => {
+                line.span_alignment(views, &ids.0, &ids.1)?;
+                Ok(At::InSpan {
+                    from: ids.0.clone(),
+                    to: ids.1.clone(),
+                    fraction: None,
+                })
+            }
+        }
+    }
 }
 
 /// A column of ticks that a drag runs along ([`SpanPick::table`]).
@@ -302,6 +332,34 @@ impl SpanPick {
             }
         }
         out
+    }
+
+    /// The cuts asked in the ticked spans as the engine places them
+    /// ([`CutAt::place`]), in the line's order; and, for those that
+    /// cannot be placed (a span on no alignment), why — once per span.
+    pub fn cut_places(
+        &mut self,
+        model: &crate::model::Model,
+        spans: &Spans,
+    ) -> (Vec<ohl_electrical::magnetic::CutAt>, Vec<String>) {
+        let asked = self.cuts_asked(model, spans);
+        if asked.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let views = model.line.alignment_views();
+        let mut placed = Vec::new();
+        let mut why: Vec<String> = Vec::new();
+        for (ids, at) in asked {
+            match at.place(&model.line, &views, &ids, span_length(model, &ids)) {
+                Ok(c) => placed.push(c),
+                Err(e) => {
+                    if !why.contains(&e) {
+                        why.push(e);
+                    }
+                }
+            }
+        }
+        (placed, why)
     }
 
     /// Ticks span `k` only (tests).

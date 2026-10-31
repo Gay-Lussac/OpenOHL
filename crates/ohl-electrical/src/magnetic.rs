@@ -379,19 +379,18 @@ pub struct Settings {
     pub levels: Vec<f64>,
 }
 
-/// A vertical cut across the line at a place in a span: offsets to
-/// `width` either side of the axis, from the lowest ground under it to
-/// `above` over its highest wire. The default is a placeholder to fill
-/// (struct update syntax; no span, zero sizes).
+/// A vertical cut across the line (owner, 2026-10-31: "cuts are made on
+/// the alignment not the circuits or span"): at a station of an
+/// alignment, its plane perpendicular to the alignment — at an angle
+/// point along the bisector — as the cross-section panels place theirs
+/// ([`ohl_line::route::plane_at`]); offsets to `width` either side of the
+/// axis, from the lowest ground under it to `above` over its highest
+/// wire. The default is a placeholder to fill (struct update syntax; no
+/// alignment, zero sizes).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct CutSpec {
-    /// A structure of the span.
-    pub from: String,
-    /// The other.
-    pub to: String,
-    /// The place from the first structure (0–1); `None`: the lowest
-    /// point of the span's lowest phase conductor.
-    pub fraction: Option<f64>,
+    /// Where.
+    pub at: CutAt,
     /// To either side, m.
     pub width: f64,
     /// Above the highest wire crossing the cut, m.
@@ -402,6 +401,223 @@ pub struct CutSpec {
     /// for a plugin's cuts, e.g. the building it is for).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+}
+
+/// Where a cut is.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CutAt {
+    /// At a station of an alignment.
+    Station {
+        /// The alignment's id.
+        alignment: String,
+        /// m along it from its start (within it).
+        station: f64,
+    },
+    /// At a place of the span between structures `from` and `to`: the
+    /// fraction from the first (0–1), `None` the lowest point of its
+    /// lowest phase conductor. Placed at the alignment station of that
+    /// place (the span's structures' stations on its alignment,
+    /// [`ohl_line::Line::span_station`]); the result says which
+    /// ([`FieldCut::alignment`], [`FieldCut::station`]).
+    InSpan {
+        /// A structure of the span.
+        from: String,
+        /// The other.
+        to: String,
+        /// The place from the first structure (0–1); `None`: the lowest
+        /// point.
+        fraction: Option<f64>,
+    },
+}
+
+impl Default for CutAt {
+    fn default() -> Self {
+        CutAt::Station {
+            alignment: String::new(),
+            station: 0.0,
+        }
+    }
+}
+
+impl CutAt {
+    /// In words, for errors: "alignment A at 120.0 m" or "span T1–T2".
+    pub fn describe(&self) -> String {
+        match self {
+            CutAt::Station { alignment, station } => {
+                format!("alignment {alignment} at {station:.1} m")
+            }
+            CutAt::InSpan { from, to, .. } => format!("span {from}–{to}"),
+        }
+    }
+}
+
+/// A cut placed on the line: its span, plane and station.
+pub(crate) struct PlacedCut {
+    /// The span (index into the spans) the plane crosses at the axis.
+    pub span: usize,
+    /// The plane.
+    pub plane: ohl_line::route::Plane,
+    /// Its alignment and station.
+    pub alignment: String,
+    pub station: f64,
+    /// At an angle point of the alignment (along the bisector).
+    pub angle_point: bool,
+    /// Where the plane crosses the span's chord, m from its first
+    /// structure.
+    pub at: f64,
+}
+
+/// Places cut `c` on the line (its alignments `views`, its spans and
+/// their axes). A span on no alignment, an alignment not in the line, a
+/// station beyond it or in no span with wires: an error saying so.
+pub(crate) fn place_cut(
+    src: &Sources<'_>,
+    views: &[ohl_line::route::AlignmentView],
+    spans: &[LineSpan],
+    axes: &[Option<Axis>],
+    c: &CutSpec,
+) -> Result<PlacedCut, String> {
+    let line = src.line;
+    let find = |from: &str, to: &str| {
+        spans
+            .iter()
+            .position(|s| (s.from == from && s.to == to) || (s.from == to && s.to == from))
+            .ok_or_else(|| format!("no span between structures {from} and {to}"))
+    };
+    let (alignment, station, known) = match &c.at {
+        CutAt::Station { alignment, station } => (alignment.clone(), *station, None),
+        CutAt::InSpan { from, to, fraction } => {
+            let i = find(from, to)?;
+            let axis = axes[i]
+                .as_ref()
+                .ok_or_else(|| format!("span {from}–{to}: no axis"))?;
+            let f = match fraction {
+                Some(f) if (0.0..=1.0).contains(f) => *f,
+                Some(f) => return Err(format!("a place in the span from 0 to 1, not {f}")),
+                None => lowest_station(src, &spans[i], axis) / axis.length,
+            };
+            let (a, s) = line.span_station(views, &spans[i].from, &spans[i].to, f)?;
+            (a, s, Some(i))
+        }
+    };
+    let view = views
+        .iter()
+        .find(|v| v.id == alignment)
+        .ok_or_else(|| format!("alignment {alignment} is not in the line"))?;
+    let placed = view.plane_at(station)?;
+    if !(station.is_finite() && (-1e-6..=placed.length + 1e-6).contains(&station)) {
+        return Err(format!(
+            "alignment {alignment}: station {station:.2} m beyond it (0–{:.2} m)",
+            placed.length
+        ));
+    }
+    let span = match known {
+        Some(i) => i,
+        None => span_at_station(line, view, spans, placed.station)?,
+    };
+    let axis = axes[span]
+        .as_ref()
+        .ok_or_else(|| format!("span {}–{}: no axis", spans[span].from, spans[span].to))?;
+    // Where the plane meets the span's chord (the chord's direction
+    // across the plane; a chord along the plane: its middle).
+    let o = placed.plane.origin;
+    let (da, db) = (
+        placed.plane.along([axis.a[0], axis.a[1], 0.0]),
+        placed.plane.along([axis.b[0], axis.b[1], 0.0]),
+    );
+    let at = if (da - db).abs() > 1e-9 {
+        (da / (da - db)).clamp(0.0, 1.0) * axis.length
+    } else {
+        axis.local(&[o[0], o[1], 0.0]).0.clamp(0.0, axis.length)
+    };
+    Ok(PlacedCut {
+        span,
+        plane: placed.plane,
+        alignment,
+        station: placed.station,
+        angle_point: placed.angle_point,
+        // No -0.0.
+        at: at + 0.0,
+    })
+}
+
+/// The grid of cut `c` placed as `placed` in span `span`: ± its width
+/// on the plane, from the lowest ground along it (the terrain's, else the
+/// span's between its feet) to `above` over the span's highest wire.
+pub(crate) fn cut_box(
+    src: &Sources<'_>,
+    span: &LineSpan,
+    axis: &Axis,
+    placed: &PlacedCut,
+    c: &CutSpec,
+) -> VerticalCut {
+    let n = (2.0 * c.width / c.step).ceil().max(1.0) as usize;
+    let low = (0..=n)
+        .map(|k| {
+            let p = placed
+                .plane
+                .at(-c.width + 2.0 * c.width * k as f64 / n as f64);
+            let (t, s) = axis.local(&[p[0], p[1], 0.0]);
+            axis.ground(src.ground, t, s)
+        })
+        .fold(f64::INFINITY, f64::min);
+    VerticalCut {
+        origin: placed.plane.origin,
+        right: placed.plane.right(),
+        left: -c.width,
+        right_offset: c.width,
+        bottom: low.floor(),
+        top: highest_wire(src, span).unwrap_or(low + 50.0) + c.above,
+        step: c.step,
+    }
+}
+
+/// The span of `spans` the alignment `view` runs through at `station`:
+/// between the structures of its run on either side (at a structure, the
+/// span ahead, else the one behind) with wires between them.
+fn span_at_station(
+    line: &ohl_line::Line,
+    view: &ohl_line::route::AlignmentView,
+    spans: &[LineSpan],
+    station: f64,
+) -> Result<usize, String> {
+    let st = view.stations(line).map_err(|e| e.to_string())?;
+    let run: Vec<(f64, &str)> = view
+        .run()
+        .filter_map(|id| {
+            st.iter()
+                .find(|s| &s.structure == id)
+                .map(|s| (s.station, id.as_str()))
+        })
+        .collect();
+    let find = |a: &str, b: &str| {
+        spans
+            .iter()
+            .position(|s| (s.from == a && s.to == b) || (s.from == b && s.to == a))
+    };
+    let mut behind = None;
+    for w in run.windows(2) {
+        let ((sa, a), (sb, b)) = (w[0], w[1]);
+        let (lo, hi) = (sa.min(sb), sa.max(sb));
+        if station < lo - 1e-6 || station > hi + 1e-6 {
+            continue;
+        }
+        if let Some(i) = find(a, b) {
+            if (station - hi).abs() <= 1e-6 && behind.is_none() {
+                // At the structure ahead: the span ahead if there is one.
+                behind = Some(i);
+                continue;
+            }
+            return Ok(i);
+        }
+    }
+    behind.ok_or_else(|| {
+        format!(
+            "alignment {} at {station:.1} m: in no span with wires",
+            view.id
+        )
+    })
 }
 
 /// A volume over a span: `width` to either side of its axis, from the
@@ -648,11 +864,19 @@ pub struct MagneticField {
 pub struct FieldCut {
     /// The cut's label ([`CutSpec::label`]), when given.
     pub label: Option<String>,
-    /// The span's first structure.
+    /// The alignment it is placed on (2026-10-31: cuts are made on the
+    /// alignment).
+    pub alignment: String,
+    /// Its station on the alignment, m.
+    pub station: f64,
+    /// At an angle point of the alignment: the plane along the bisector.
+    pub angle_point: bool,
+    /// The span it crosses at the axis: its first structure.
     pub from: String,
     /// Its second.
     pub to: String,
-    /// The station, m from the first structure.
+    /// Where the plane crosses the span's chord, m from its first
+    /// structure.
     pub at: f64,
     /// The values, µT.
     pub values: CutValues,
@@ -2743,12 +2967,6 @@ pub fn run_keeping(
     let mut cuts = Vec::new();
     let mut volumes = Vec::new();
     if let Some(m) = &model3d {
-        let find = |from: &str, to: &str| {
-            spans
-                .iter()
-                .position(|s| (s.from == from && s.to == to) || (s.from == to && s.to == from))
-                .ok_or_else(|| format!("no span between structures {from} and {to}"))
-        };
         let ut_of = |w: &Wires3d, ps: &[[f64; 3]]| -> Vec<f64> {
             w.field_block(ps).iter().map(|b| b.0 * 1e6).collect()
         };
@@ -2779,36 +2997,20 @@ pub fn run_keeping(
                 max: at(1.0),
             })
         };
+        let views = src.line.alignment_views();
         for c in &settings.cuts {
             check_cancel(progress)?;
-            let i = find(&c.from, &c.to)?;
+            let placed = place_cut(src, &views, &spans, &axes, c).map_err(|e| {
+                format!(
+                    "cut {}: {e}",
+                    c.label.as_deref().unwrap_or(&c.at.describe())
+                )
+            })?;
+            let i = placed.span;
             let axis = axes[i]
                 .as_ref()
-                .ok_or_else(|| format!("span {}–{}: no axis", c.from, c.to))?;
-            let t = match c.fraction {
-                Some(f) if (0.0..=1.0).contains(&f) => f * axis.length,
-                Some(f) => return Err(format!("a place in the span from 0 to 1, not {f}")),
-                None => lowest_station(src, &spans[i], axis),
-            };
-            let n = (2.0 * c.width / c.step).ceil().max(1.0) as usize;
-            let low = (0..=n)
-                .map(|k| {
-                    axis.ground(
-                        src.ground,
-                        t,
-                        -c.width + 2.0 * c.width * k as f64 / n as f64,
-                    )
-                })
-                .fold(f64::INFINITY, f64::min);
-            let cut = VerticalCut {
-                origin: axis.plan(t, 0.0),
-                right: axis.right,
-                left: -c.width,
-                right_offset: c.width,
-                bottom: low.floor(),
-                top: highest_wire(src, &spans[i]).unwrap_or(low + 50.0) + c.above,
-                step: c.step,
-            };
+                .ok_or_else(|| format!("span {}–{}: no axis", spans[i].from, spans[i].to))?;
+            let cut = cut_box(src, &spans[i], axis, &placed, c);
             let ground = |x: f64, y: f64| {
                 let (t, s) = axis.local(&[x, y, 0.0]);
                 Some(axis.ground(src.ground, t, s))
@@ -2841,9 +3043,12 @@ pub fn run_keeping(
                 .collect();
             cuts.push(FieldCut {
                 label: c.label.clone(),
+                alignment: placed.alignment,
+                station: placed.station,
+                angle_point: placed.angle_point,
                 from: spans[i].from.clone(),
                 to: spans[i].to.clone(),
-                at: t,
+                at: placed.at,
                 pieces: wires.count(),
                 left_out: left_out(&w, &pts),
                 values,

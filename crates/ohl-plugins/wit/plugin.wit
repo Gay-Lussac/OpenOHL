@@ -392,17 +392,17 @@ interface field-presets {
         ground: list<f64>,
     }
 
-    /// A vertical cut across the line in a span.
+    /// A vertical cut across the line at a station of an alignment, its
+    /// plane perpendicular to the alignment (at an angle point along the
+    /// bisector), as the cross-section panels place theirs (2026-10-31:
+    /// "cuts are made on the alignment").
     record cut {
         /// Its label, shown with the results ("": none).
         label: string,
-        /// A structure of the span.
-        %from: string,
-        /// The other.
-        to: string,
-        /// The place from the first structure (0–1); none: the lowest
-        /// point of the span's lowest phase conductor.
-        fraction: option<f64>,
+        /// The alignment's id (the export model's `line.alignments`).
+        alignment: string,
+        /// m along the alignment from its start (within it).
+        station: f64,
         /// To either side of the axis, m (above 0).
         width: f64,
         /// Above the highest wire crossing the cut, m (0 or more).
@@ -475,8 +475,9 @@ interface field-presets {
     field-presets: func(input: field-input) -> result<list<field-preset>, string>;
 
     /// The report files of `preset` (as the host checked it), from the
-    /// field's `results` (JSON, format `ohl-field-results`). The error
-    /// says why there are none.
+    /// run's `results` (JSON, format `ohl-field-results-set`: one
+    /// document per field computed, magnetic first). The error says why
+    /// there are none.
     report: func(parameters: string, preset: field-preset, results: string) -> result<list<out-file>, string>;
 }
 

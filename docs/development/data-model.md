@@ -725,10 +725,16 @@ points), `jumpers` (the jumpers carry their phase's current,
 network through the structures' earthing, their currents as paths),
 `grid_step` (m; none: `step`),
 `piece_length` (m; none: the solver's pieces), `modelled_within` (m; none:
-the whole line — cuts and volumes only), `cuts` [`CutSpec` {`from`, `to`,
-`fraction`?, `width`, `above`, `step`, `label`? (2026-10-31: carried to
-the result, e.g. a plugin's building; `CutSpec` has a `Default` for
-struct update syntax)}], `volumes` [`VolumeSpec` {`from`,
+the whole line — cuts and volumes only), `cuts` [`CutSpec` {`at`:
+`CutAt` (2026-10-31, "cuts are made on the alignment": `Station`
+{`alignment`, `station` m} — the plane perpendicular to the alignment
+there, at an angle point along the bisector, `ohl_line::route::plane_at`,
+the cross-section panels' own placement — or `InSpan` {`from`, `to`,
+`fraction`? (none: the lowest point)}, converted by the run to the
+alignment station of that place, `Line::span_station`), `width`,
+`above`, `step`, `label`? (2026-10-31: carried to the result, e.g. a
+plugin's building; `CutSpec` has a `Default` for struct update
+syntax)}], `volumes` [`VolumeSpec` {`from`,
 `to`, `width`, `above`, `step`}], `levels` (µT, ascending; display
 only). `thermal_currents` gives the circuits' thermal ratings (the
 least over a circuit's sections of bundle × ampacity, in an ambient case
@@ -740,7 +746,9 @@ and at a temperature given). Results `MagneticField`: `currents`
 `reach` m, `warnings`}], `grids` [`FieldGrid` {…, `deviation` per level}],
 `towers` [`TowerCurrent` {`structure`, `frequency_hz`, `amps`,
 `angle_deg`, `resistance_ohm`, `assumed`}] (2026-10-29),
-`cuts` [`FieldCut` {`label`?, `from`, `to`, `at`, `values`: `field_views::CutValues`
+`cuts` [`FieldCut` {`label`?, `alignment`, `station` (where it was
+placed), `angle_point`, `from`, `to` (the span its plane crosses at the
+axis), `at` (where it crosses the span's chord, m from `from`), `values`: `field_views::CutValues`
 {`cut`: `VerticalCut` {`origin`, `right`, `left`, `right_offset`,
 `bottom`, `top`, `step`}, `offsets`, `elevations`, `ground` per column,
 `values` µT row by row}, `pieces`, `left_out`}], `volumes` [`FieldVolume`
@@ -766,40 +774,50 @@ axis), `height` (above the ground), `b_ut` (rms of the vector), `major_ut`
 them (since 2026-10-31 a last column `label`, a cut's label on its rows;
 the electric field's CSV the same). Methods: [Magnetic field](../theory/magnetic-field.md).
 
-<a id="field-results-json"></a>**Field results JSON** (`ohl-field-results`
-version 1, `ohl_electrical::field_results::{magnetic_json,
-electric_json}`, 2026-10-31; derived, written by `ohl electrical
-magnetic|electric --json` and handed to a field-presets plugin's
-`report`): `{"format": "ohl-field-results", "version": 1, "quantity":
-"B" | "E", "unit": "µT" | "kV/m", "model": "three_d" | "two_d", "case":
-{"name", "temperature_c"}, "settings": <the run's Settings without
-stations, grids, points, cuts, volumes>, "limit", "cuts": [{"label",
-"from", "to", "at", "quantity", "unit", "plane": {"origin": [x, y],
-"right": [dx, dy]}, "offsets", "elevations", "ground" (per column, null:
-none known), "values" (row by row, every point, also under the ground),
-"isolines": [{"level", "lines": [[[offset, elevation], …], …]}] (the
-settings' levels, `CutValues::isolines`: cut at the ground)}], "points":
-[{"name", "x", "y", "z", "offset", "height", "value", "major" (B only),
+<a id="field-results-json"></a>**Field results JSON** (2026-10-31;
+derived, written by `ohl electrical magnetic|electric|fields --json` and
+handed to a field-presets plugin's `report`). A run's results are a
+**set** (`ohl_electrical::field_results::set_json`; the owner: "Ok for 1
+but keep it clean"): `{"format": "ohl-field-results-set", "version": 1,
+"case": {"name", "temperature_c"}, "fields": [<one document per field
+computed, magnetic first>]}` — one document from `magnetic` or
+`electric`, two from `fields`. Each document is `ohl-field-results`
+**version 2** (`magnetic_value`, `electric_value`; version 1 had no
+alignment on a cut): `{"format": "ohl-field-results", "version": 2,
+"quantity": "B" | "E", "unit": "µT" | "kV/m", "model": "three_d" |
+"two_d", "case": {"name", "temperature_c"}, "settings": <the run's
+Settings without stations, grids, points, cuts, volumes>, "limit",
+"cuts": [{"label", "alignment", "station", "angle_point", "from", "to",
+"at", "quantity", "unit", "plane": {"origin": [x, y], "right": [dx,
+dy]}, "offsets", "elevations", "ground" (per column, null: none known),
+"values" (row by row, every point, also under the ground), "isolines":
+[{"level", "lines": [[[offset, elevation], …], …]}] (the settings'
+levels, `CutValues::isolines`: cut at the ground)}], "points": [{"name",
+"x", "y", "z", "offset", "height", "value", "major" (B only),
 "margin"}], "notes"}`. Nothing is computed for it: the results as they
 are (a value in the CSV is the same to its 5 decimals).
 
 **The building-cuts plugin's files** (`plugins/examples/building-cuts`,
-2026-10-31; derived, written by its `report` into `--out`, one set per
-field, `Q` = `B` or `E`, unit columns `uT` / `kV_m`): `buildings-Q.csv`
-(`id, points, area_m2, centroid_x, centroid_y, ground_z, eaves_z,
-roof_z, floors, span, station_from_m, station_to_m, axis_distance_m,
-conductor_distance_m, cuts, max_section_Q_…, max_places_Q_…` [B:
-`max_places_B_major_uT`] [with a limit: `limit_…, margin_…`]),
-`points-Q.csv` (`name, building, floor, place, x, y, z, height_m, Q_…`
-[B: `B_major_uT`] [`margin_…`]), `cut-LABEL-Q.csv` (`offset_m,
-elevation_m, ground_m, Q_…, below_ground`), `cut-LABEL-Q.svg`,
-`notes-Q.txt`; the same for both fields: `buildings.geojson` (features
-`kind` = `building` (Polygon, its summary as properties), `cut`
-(LineString), `place` (Point)), `buildings.dxf` (R12, optional). Its
+2026-10-31; derived, written by its `report` into `--out` from one run's
+set; `Q` = `B` or `E`, unit columns `uT` / `kV_m`; a field not run has
+no columns and no files): `buildings.csv` (`id, points, area_m2,
+centroid_x, centroid_y, ground_z, eaves_z, roof_z, floors, span,
+alignment, station_from_m, station_to_m, axis_distance_m,
+conductor_distance_m, cuts`, then per field `max_section_Q_…,
+max_places_Q_…` [B: `max_places_B_major_uT`] [with a limit: `limit_Q_…,
+margin_Q_…`]), `points.csv` (`name, building, floor, place, x, y, z,
+height_m`, then per field `Q_…` [B: `B_major_uT`] [`margin_Q_…`]),
+`cut-LABEL-Q.csv` (`offset_m, elevation_m, ground_m, Q_…,
+below_ground`), `cut-LABEL-Q.svg` (one drawing per cut and field),
+`notes.txt`, `buildings.geojson` (features `kind` = `building` (Polygon,
+its summary as properties), `cut` (LineString, with its `alignment` and
+`station`), `place` (Point)), `buildings.dxf` (R12, optional). Its
 presets carry two kinds of **notes** the report reads back: `building
 ID: points N; area A m²; centroid X Y; ground Z m; eaves Z m; roof Z m;
-floors N; span FROM–TO; stations T0 T1 m; axis D m; conductor D m` and
-`cut LABEL: wire SECTION OFFSET Z[ earth]; …` (fields split at `; `).
+floors N; span FROM–TO; alignment ID; stations T0 T1 m; axis D m;
+conductor D m` (stations along the alignment) and `cut LABEL: wire NAME
+OFFSET Z[ earth]; …` (NAME the circuit and phase, else the section;
+fields split at `; `).
 
 ### Display and criteria
 
@@ -2854,7 +2872,7 @@ above**.
 | any world with the optional export `system-styles` (`system-styles`; world `system-style-plugin`; looked for by the host by name: a 0.3 plugin without it unchanged; 2026-10-27) | `list<system-info { id, name, owner, number, voltage-kv, frequency-hz: option<f64>, dc, phases: list<string>, fields, sections: u32 }>`: the line's systems | `result<list<system-style { color: option<string>, phases: list<phase-style { code: option<string>, angle-deg: option<f64> }> }>, string>`: written as `System::color`, `SystemPhase::code` and (only when ticked) `SystemPhase::angle_deg` when the user applies them (one command with the wire colours) |
 | a check plugin with the optional export `check-weather` (`code.wit`, world `check-weather-export`; looked for by the host by name: a 0.3 plugin without it unchanged; 2026-10-27) | a check's id | `option<weather-hint { temperature-c, wind-pa, ice: bool }>`: the weather case the check's window ticks when it opens with none chosen (the project's case matching it; nothing written) |
 | a plugin with the optional export `member-capacity` (`code.wit`, worlds `member-capacity-plugin` / `member-capacity-export`; looked for by name, additive to 0.3; 2026-10-27) | `methods()`; `member-capacities(method, strength, list<member-input>)`: per member id, kind, shape and dimensions, area, iy, iz, iv, wy, wz, E, fy, fu, length, k, lk, its design data as TOML (`capacity::design_toml`), axial force, end moments, the crossing partner's axial force (`capacity::capacity_inputs`) | `list<member-result { compression, compression-governs, tension, tension-governs, notes }>`: used by `check::member_usage_with` in place of the model's method (`WasmHost::member_capacities`); `ohl structures fe --capacity-plugin` |
-| any world with the optional export `field-presets` (`plugin.wit`, worlds `field-preset-plugin` / `field-presets-export`; looked for by name, additive to 0.3; 2026-10-31); the manifest's `[field-input]` table (`roles`, `ground-roles`, `ground-cell`, `survey-codes`, `reach`, `max-points`; unknown keys refused; `ohl_plugins::FieldInputTable`) says what the host gathers (`ohl_io::field_input::gather`) | `parameters-template()`; `field-presets(field-input { parameters: TOML, model: <export model JSON, the case run>, points: list<input-point { x, y, z, class (0: survey), code, line }>, ground: x, y, z flat (lowest per cell) })`; `report(parameters, preset, results: <ohl-field-results JSON>)` | `result<list<field-preset { name, description, cuts: list<cut { label, from, to, fraction?, width, above, step }>, points: list<place { name, x, y, z?, height? }>, levels-ut, levels-kv-m, outlines: list<outline { id, ring: x, y flat, ground, top }>, notes }>, string>`, every value checked by the host (`field_presets::check_presets`: spans exist, fractions 0–1, sizes above 0, cut points capped, names unique) before the cuts (`CutSpec.label` from the cut's label) and points are added to the run; `report` → `list<out-file { name, media-type, bytes }>`, names without a folder (`check_files`); `ohl electrical magnetic|electric --preset-plugin` |
+| any world with the optional export `field-presets` (`plugin.wit`, worlds `field-preset-plugin` / `field-presets-export`; looked for by name, additive to 0.3; 2026-10-31); the manifest's `[field-input]` table (`roles`, `ground-roles`, `ground-cell`, `survey-codes`, `reach`, `max-points`; unknown keys refused; `ohl_plugins::FieldInputTable`) says what the host gathers (`ohl_io::field_input::gather`) | `parameters-template()`; `field-presets(field-input { parameters: TOML, model: <export model JSON, the case run>, points: list<input-point { x, y, z, class (0: survey), code, line }>, ground: x, y, z flat (lowest per cell) })`; `report(parameters, preset, results: <ohl-field-results-set JSON: one ohl-field-results document per field run>)` | `result<list<field-preset { name, description, cuts: list<cut { label, alignment, station, width, above, step }> (2026-10-31: on the alignment), points: list<place { name, x, y, z?, height? }>, levels-ut, levels-kv-m, outlines: list<outline { id, ring: x, y flat, ground, top }>, notes }>, string>`, every value checked by the host (`field_presets::check_presets`: the alignment in the line, the station within it, sizes above 0, cut points capped, names unique) before the cuts (`CutSpec.label` from the cut's label) and points are added to the run; `report` → `list<out-file { name, media-type, bytes }>`, names without a folder (`check_files`); `ohl electrical magnetic|electric|fields --preset-plugin` |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:

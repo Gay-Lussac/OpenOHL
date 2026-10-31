@@ -125,8 +125,10 @@ fn a_drag_across_the_ticks_flips_the_rows() {
     assert_eq!(after.len(), before.len() - 3, "the other rows unchanged");
 }
 
-/// A cut asked at mid-span in the table is computed by the run, and
-/// Results › Open cut opens a cross-section panel at its station.
+/// A cut asked at mid-span in the table is computed by the run on the
+/// alignment (at the alignment station of the span's middle), and Results
+/// › Open cut opens a cross-section panel on the same plane (owner,
+/// 2026-10-31: "cuts are made on the alignment").
 #[test]
 fn a_cut_station_is_computed_and_opened() {
     let mut harness = electric();
@@ -138,7 +140,7 @@ fn a_cut_station_is_computed_and_opened() {
         r.electric_field.start(&r.model, &ctx);
     }
     wait(&mut harness);
-    let (len, at) = {
+    let (len, at, cut) = {
         let r = harness.state_mut().ready().unwrap();
         let Some(Ok(a)) = &r.electric_field.job.result else {
             panic!("a field")
@@ -146,7 +148,18 @@ fn a_cut_station_is_computed_and_opened() {
         assert_eq!(a.field.cuts.len(), 1, "the cut asked");
         let c = &a.field.cuts[0];
         let len = crate::span_pick::span_length(&r.model, &(c.from.clone(), c.to.clone()));
-        (len, c.at)
+        // At the alignment station of the span's middle.
+        let views = r.model.line.alignment_views();
+        let (alignment, station) = r
+            .model
+            .line
+            .span_station(&views, &c.from, &c.to, 0.5)
+            .unwrap();
+        assert_eq!(
+            (c.alignment.as_str(), c.station),
+            (alignment.as_str(), station)
+        );
+        (len, c.at, c.values.cut)
     };
     assert!((at - 0.5 * len).abs() < 1.0, "at mid-span: {at} of {len}");
     harness.get_by_label("Open cut").click();
@@ -154,6 +167,51 @@ fn a_cut_station_is_computed_and_opened() {
     let r = harness.state_mut().ready().unwrap();
     assert_eq!(r.xsections.views.len(), 1, "a panel opened");
     assert!(r.visible.contains(&crate::scene::Layer::ElectricField));
+    // The panel's plane is the run's cut's: the same numbers.
+    let view = r.xsections.views.values().next().unwrap();
+    let placed = view.placed.as_ref().expect("placed");
+    assert_eq!(placed.plane.origin, cut.origin);
+    assert_eq!(placed.plane.right(), cut.right);
+}
+
+/// A cut asked in a span on no alignment cannot be placed (cuts are made
+/// on the alignment): why is said; the lowest point of a span on one is
+/// left to the run, which places it at its alignment station.
+#[test]
+fn a_cut_on_no_alignment_is_said() {
+    let mut harness = electric();
+    let r = harness.state_mut().ready().unwrap();
+    let line = r.model.line.clone();
+    let spans: Vec<(String, String)> = ohl_electrical::cross_section::line_spans(&line)
+        .into_iter()
+        .map(|s| (s.from, s.to))
+        .collect();
+    let views = line.alignment_views();
+    let placed = crate::span_pick::CutAt::Lowest
+        .place(&line, &views, &spans[0], 100.0)
+        .unwrap();
+    assert!(matches!(
+        placed,
+        ohl_electrical::magnetic::CutAt::InSpan { fraction: None, .. }
+    ));
+    let at = crate::span_pick::CutAt::From(25.0)
+        .place(&line, &views, &spans[0], 100.0)
+        .unwrap();
+    assert!(matches!(
+        at,
+        ohl_electrical::magnetic::CutAt::Station { .. }
+    ));
+    // The same line without its alignments.
+    let mut bare = line.clone();
+    bare.alignments.clear();
+    let views = bare.alignment_views();
+    for chip in [
+        crate::span_pick::CutAt::Mid,
+        crate::span_pick::CutAt::Lowest,
+    ] {
+        let e = chip.place(&bare, &views, &spans[0], 100.0).unwrap_err();
+        assert!(e.contains("on no alignment"), "{e}");
+    }
 }
 
 /// A volume ticked in the table: Results › Show in 3D turns the 3D view
@@ -221,7 +279,14 @@ fn the_magnetic_table_asks_cuts_volumes_and_grids() {
         if let Some(res) = &r.magnetic_field.job.result {
             let a = res.as_ref().expect("a field");
             assert_eq!(a.field.cuts.len(), 2, "the two cuts asked");
-            assert!((a.field.cuts[1].at - 100.0).abs() < 1e-6);
+            // 100 m from the first structure: at that place's alignment
+            // station (the alignment runs through the structures).
+            assert!(
+                (a.field.cuts[1].at - 100.0).abs() < 1e-3,
+                "{}",
+                a.field.cuts[1].at
+            );
+            assert!(!a.field.cuts[0].alignment.is_empty());
             assert_eq!(a.field.volumes.len(), 1);
             assert_eq!(a.field.grids.len(), 1);
             break;

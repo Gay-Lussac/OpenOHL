@@ -10,6 +10,69 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**Field cuts on the alignment; both fields in one run; the 2D cut
+drawing (owner, 2026-10-31)**
+
+- The owner: "should be the alignment direction (cuts are made on the
+  alignment not the circuits or span)". A field cut is now placed at a
+  **station of an alignment**, its plane perpendicular to the alignment
+  and at an angle point along the bisector — exactly as OHL-Design's
+  cross-section panels place theirs. The placement was moved from the
+  application into the line crate (`ohl_line::route::{Plane, plane_at,
+  direction_at, AT_VERTEX}`, `AlignmentView::plane_at`) and both the
+  engine and the panels call it: one implementation, the same plane
+  (the panel's tests unchanged). `CutSpec.at` is `CutAt::Station
+  {alignment, station}`, or `CutAt::InSpan {from, to, fraction?}` — a
+  span's place (its middle, its lowest point, a distance), converted by
+  the run to the alignment station of that place between its
+  structures' stations (`Line::span_station`); the result
+  (`FieldCut.alignment`, `station`, `angle_point`; `from`, `to`, `at`
+  now the span crossed at the axis and where) says where it went. A span
+  on no alignment, an alignment not in the line or a station beyond it
+  is an error saying so. Changed with it: the field windows' chips are
+  converted to alignment stations (a span on no alignment: no cut, said
+  under the table), Results › Open cut opens the panel at the cut's
+  alignment station — the very plane computed (the old
+  span-to-alignment conversion and its mismatch gone); the electric
+  field's cut floor in the cut's own frame. The command line: `--cut
+  ALIGNMENT@STATION[#LABEL]`; the older `FROM:TO[@F]` still taken,
+  converted and said. The plugin interface (`field-presets`, built
+  today, not released) changed in place: `cut { label, alignment,
+  station, width, above, step }`, the host checking that the alignment
+  is in the line and the station within it.
+- The synthetic double circuit (`examples/electrical`) got its route
+  and alignment `main` through T1–T3 (the cuts need one; its other
+  results are unchanged).
+- The owner, on one summary of both fields: "Ok for 1 but keep it
+  clean". Built as a command of its own, `ohl electrical fields`: the
+  options both fields share once, each field's own, levels and limits
+  per field (`--level-ut`, `--level-kv-m`, `--limit-ut`,
+  `--limit-kv-m`); the magnetic and then the electric field on the same
+  places and ground; the results as a **set**
+  (`ohl-field-results-set` version 1: the case and one
+  `ohl-field-results` document per field, now version 2 with the cuts'
+  alignment and station), written by `--json` of all three commands and
+  handed **once** to a preset plugin's `report` (the single-field
+  commands hand a set of one). The building-cuts plugin writes one
+  `buildings.csv` with both fields' columns, one `points.csv`, per cut
+  a CSV grid and an SVG per field (one drawing per field, each at full
+  size, rather than two side by side), the plan files and `notes.txt`
+  once.
+- The owner: "what I need for now is for it to be able to draw the 2D
+  cut at the right place and show the ground, building, line and
+  calculation results". The building-cuts plugin places its cuts on the
+  nearest alignment at the building's stations along it (governing: the
+  closest approach to a phase conductor; nearest point to the axis;
+  optionally the centroid) with its own copy of the plane rule, a line
+  without an alignment getting none (said). Its SVG per cut and field,
+  1:1: the ground profile along the cut (filled below), each building's
+  section where the cut crosses its footprint (ground to eaves, the roof
+  dashed above) with its id and largest value, every conductor and earth
+  wire crossing labelled by circuit and phase, the axis, light bands
+  between the levels, the isolines with a legend, elevation and offset
+  scales and a scale bar — everything inside the viewBox (a test checks
+  every coordinate; the drawings were rasterised and looked at).
+
 **The building-cuts plugin (owner, 2026-10-31: "go ahead")**
 
 - The owner asked for "a plugin that can cluster buildings (groups of

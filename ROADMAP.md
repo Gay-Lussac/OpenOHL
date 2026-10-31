@@ -531,17 +531,18 @@ core staying independent of them.
      decides from the points the host gathers (the manifest's
      `[field-input]`: LiDAR class roles, the ground thinned, survey
      codes, a reach) and the solved model where cuts (with a label) and
-     points are needed; the core runs the magnetic or electric field
-     there and gives the results back as `ohl-field-results` JSON for the
-     plugin's report files (`ohl electrical magnetic|electric
-     --preset-plugin`, [plugins](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/plugins.md#field-presets)).
+     points are needed (cuts at alignment stations, 2026-10-31); the core
+     runs the magnetic or electric field — or both in one run, `ohl
+     electrical fields` — there and gives the results back as one
+     `ohl-field-results-set` JSON for the plugin's report files (`ohl
+     electrical magnetic|electric|fields --preset-plugin`, [plugins](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/plugins.md#field-presets)).
      *The building plugin built 2026-10-31 (in active development, not
      approved yet; owner: "go ahead"):* `plugins/examples/building-cuts`
      clusters the building points (LiDAR role, survey codes), gives per
      building the governing and nearest-point cuts and the places of
-     sensitive use per floor, and reports per field the buildings'
-     summary, the cuts' CSV grids and SVG drawings, the places and a
-     GeoJSON ([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/analyses.md#building-cuts)).
+     sensitive use per floor, and reports the buildings' summary (both
+     fields' columns), the cuts' CSV grids and 1:1 SVG drawings per
+     field, the places and a GeoJSON ([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/analyses.md#building-cuts)).
      The field presets in OHL-Design: not yet; the `cross-sections`
      export for noise methods: not yet.
 7. [ ] **Corona and surface gradient** in the core or the plugin: the

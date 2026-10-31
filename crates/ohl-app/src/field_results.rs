@@ -107,36 +107,16 @@ pub fn list(ui: &mut egui::Ui, id: &str, rows: &[ResultRow]) -> Option<RowAction
     out
 }
 
-/// The station of the place `fraction` of the span `from`–`to` on an
-/// alignment holding both its structures: (alignment, station, m).
-pub fn alignment_station(
-    model: &Model,
-    from: &str,
-    to: &str,
-    fraction: f64,
-) -> Option<(String, f64)> {
-    let view =
-        model.line.alignment_views().into_iter().find(|v| {
-            v.structures.iter().any(|s| s == from) && v.structures.iter().any(|s| s == to)
-        })?;
-    let st = view.stations(&model.line).ok()?;
-    let s = |id: &str| st.iter().find(|x| x.structure == id).map(|x| x.station);
-    let (a, b) = (s(from)?, s(to)?);
-    Some((view.id.clone(), a + fraction.clamp(0.0, 1.0) * (b - a)))
-}
-
-/// The request opening a cut at `at` m along the span `from`–`to` (from
-/// its first structure), ± `width`; none when no alignment holds it.
-pub fn open_cut(model: &Model, from: &str, to: &str, at: f64, width: f64) -> RowAction {
-    let len = crate::span_pick::span_length(model, &(from.to_owned(), to.to_owned()));
-    match alignment_station(model, from, to, at / len.max(1e-9)) {
-        Some((alignment, station)) => RowAction::Ask(FieldRequest::OpenCut {
-            alignment,
-            station,
-            width,
-        }),
-        None => RowAction::None,
-    }
+/// The request opening a cross-section panel on the plane of the run's
+/// cut `c` (± `width`): at its alignment station, which the panel places
+/// as the engine did (one implementation, `ohl_line::route::plane_at`;
+/// 2026-10-31: cuts are made on the alignment).
+pub fn open_cut(c: &ohl_electrical::magnetic::FieldCut, width: f64) -> RowAction {
+    RowAction::Ask(FieldRequest::OpenCut {
+        alignment: c.alignment.clone(),
+        station: c.station,
+        width,
+    })
 }
 
 /// The request looking at `target` (a volume's surfaces' centre) across

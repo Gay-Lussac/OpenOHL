@@ -2,13 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The report of one field's results (`ohl-field-results`): the host
-//! calls it once per run, with the magnetic field's results or the
-//! electric field's. Every file carrying field values is named with the
-//! quantity (`buildings-B.csv`, `buildings-E.csv`, …), so running both
-//! fields into one folder keeps both; the files without field values
-//! (`buildings.geojson`, `buildings.dxf`) are the same bytes from either
-//! run.
+//! The report of a run's results (`ohl-field-results-set`, 2026-10-31:
+//! one run of both fields, one report — the owner: "Ok for 1 but keep it
+//! clean"): `buildings.csv` with the magnetic and the electric field's
+//! columns side by side, one `points.csv`, per cut one CSV grid and one
+//! SVG drawing per field (`cut-LABEL-B.csv`, `cut-LABEL-B.svg`,
+//! `cut-LABEL-E.…`), the plan files (`buildings.geojson`, optionally
+//! `buildings.dxf`) and `notes.txt` once. A run of one field (`ohl
+//! electrical magnetic` or `electric`) gives that field's columns and
+//! files alone.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -41,6 +43,9 @@ fn file(name: String, media_type: &str, text: String) -> File {
 /// A cut of the results.
 struct ResultCut {
     label: String,
+    alignment: String,
+    station: f64,
+    angle_point: bool,
     from: String,
     to: String,
     at: f64,
@@ -73,6 +78,9 @@ impl ResultCut {
     fn parse(c: &Value) -> Self {
         Self {
             label: c["label"].as_str().unwrap_or("").to_owned(),
+            alignment: c["alignment"].as_str().unwrap_or("").to_owned(),
+            station: c["station"].as_f64().unwrap_or(f64::NAN),
+            angle_point: c["angle_point"].as_bool().unwrap_or(false),
             from: c["from"].as_str().unwrap_or("").to_owned(),
             to: c["to"].as_str().unwrap_or("").to_owned(),
             at: c["at"].as_f64().unwrap_or(f64::NAN),
@@ -125,6 +133,19 @@ impl ResultCut {
         )
     }
 
+    /// The ground at offset `s` (straight between the columns), if known.
+    fn ground_at(&self, s: f64) -> Option<f64> {
+        let k = self.offsets.iter().position(|o| *o >= s)?;
+        let g = |i: usize| self.ground.get(i).copied().flatten();
+        if k == 0 {
+            return g(0);
+        }
+        let (a, b) = (self.offsets[k - 1], self.offsets[k]);
+        let (ga, gb) = (g(k - 1)?, g(k)?);
+        let t = if b > a { (s - a) / (b - a) } else { 0.0 };
+        Some(ga + t * (gb - ga))
+    }
+
     /// The largest value with offset in `s0`–`s1` and elevation in
     /// `z0`–`z1`, each widened by half a step (the grid's nearest points
     /// outside count: conservative).
@@ -149,11 +170,86 @@ impl ResultCut {
     }
 }
 
+/// One field's results.
+struct FieldIn {
+    /// `B` or `E`.
+    q: String,
+    /// Its unit as the results give it (`µT`, `kV/m`).
+    unit: String,
+    /// Its unit in a column name (`uT`, `kV_m`).
+    unit_col: &'static str,
+    /// The magnetic field (a point's cycle's largest too).
+    magnetic: bool,
+    /// The limit of the parameters, if any.
+    limit: Option<f64>,
+    /// Digits of its values.
+    digits: usize,
+    cuts: Vec<ResultCut>,
+    points: Vec<Value>,
+    notes: Vec<String>,
+}
+
+impl FieldIn {
+    fn parse(v: &Value, params: &Params) -> Result<Self, String> {
+        if v["format"] != "ohl-field-results" {
+            return Err("results: a field that is not ohl-field-results".into());
+        }
+        let q = v["quantity"].as_str().unwrap_or("B").to_owned();
+        let magnetic = q == "B";
+        Ok(Self {
+            unit: v["unit"]
+                .as_str()
+                .unwrap_or(if magnetic { "µT" } else { "kV/m" })
+                .to_owned(),
+            unit_col: if magnetic { "uT" } else { "kV_m" },
+            limit: if magnetic {
+                params.limit_ut
+            } else {
+                params.limit_kv_m
+            },
+            digits: if magnetic { 3 } else { 4 },
+            cuts: v["cuts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(ResultCut::parse)
+                .collect(),
+            points: v["points"].as_array().cloned().unwrap_or_default(),
+            notes: v["notes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|n| n.as_str().unwrap_or("").to_owned())
+                .collect(),
+            magnetic,
+            q,
+        })
+    }
+}
+
+/// The fields of `results`: an `ohl-field-results-set` (one document per
+/// field), or a single `ohl-field-results` document.
+fn fields_of(results: &str, params: &Params) -> Result<Vec<FieldIn>, String> {
+    let v: Value = serde_json::from_str(results).map_err(|e| format!("results: {e}"))?;
+    let docs: Vec<&Value> = match v["format"].as_str() {
+        Some("ohl-field-results-set") => v["fields"].as_array().into_iter().flatten().collect(),
+        Some("ohl-field-results") => vec![&v],
+        _ => return Err("results: not an ohl-field-results-set".into()),
+    };
+    if docs.is_empty() {
+        return Err("results: no field".into());
+    }
+    docs.into_iter()
+        .map(|d| FieldIn::parse(d, params))
+        .collect()
+}
+
 /// A building of the preset: its outline and its summary note's fields.
 struct BuildingIn {
     id: String,
     ring: Vec<P2>,
     ground: f64,
+    eaves: f64,
     top: f64,
     fields: BTreeMap<String, String>,
 }
@@ -164,6 +260,7 @@ struct Section {
     s0: f64,
     s1: f64,
     z0: f64,
+    eaves: f64,
     z1: f64,
 }
 
@@ -188,8 +285,11 @@ fn summary_fields(notes: &[String]) -> BTreeMap<String, BTreeMap<String, String>
     out
 }
 
-/// A cut's wires from its note: `cut LABEL: wire NL1 -5.00 415.20; wire EW 0.00 430.00 earth`.
-fn crossings(notes: &[String]) -> BTreeMap<String, Vec<(String, f64, f64, bool)>> {
+/// A wire crossing a cut: its label, offset, elevation, an earth wire.
+type Crossing = (String, f64, f64, bool);
+
+/// A cut's wires from its note: `cut LABEL: wire North L1 -5.00 415.20; wire EW 0.00 430.00 earth`.
+fn crossings(notes: &[String]) -> BTreeMap<String, Vec<Crossing>> {
     let mut out = BTreeMap::new();
     for n in notes {
         let Some(rest) = n.strip_prefix("cut ") else {
@@ -254,168 +354,247 @@ fn opt(v: Option<f64>, digits: usize) -> String {
         .map_or(String::new(), |x| format!("{x:.digits$}"))
 }
 
-/// The report files of `results` (one field) for `preset`.
-pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<File>, String> {
-    let v: Value = serde_json::from_str(results).map_err(|e| format!("results: {e}"))?;
-    if v["format"] != "ohl-field-results" {
-        return Err("results: not ohl-field-results".into());
+fn max_of(values: impl IntoIterator<Item = Option<f64>>) -> Option<f64> {
+    values
+        .into_iter()
+        .flatten()
+        .fold(None, |a: Option<f64>, x| Some(a.map_or(x, |a| a.max(x))))
+}
+
+/// A building's section in cut `c`, if the cut crosses its footprint
+/// within its width.
+fn section_of(c: &ResultCut, b: &BuildingIn) -> Option<Section> {
+    let (lo, hi) = c.span();
+    let (s0, s1) = line_interval(c.origin, c.right, &b.ring)?;
+    if s1 < lo || s0 > hi {
+        return None;
     }
-    let q = v["quantity"].as_str().unwrap_or("B").to_owned();
-    let unit = v["unit"].as_str().unwrap_or("").to_owned();
-    let magnetic = q == "B";
-    let unit_col = if magnetic { "uT" } else { "kV_m" };
-    let limit = if magnetic {
-        params.limit_ut
-    } else {
-        params.limit_kv_m
-    };
-    let digits = if magnetic { 3 } else { 4 };
+    Some(Section {
+        s0: s0.max(lo),
+        s1: s1.min(hi),
+        z0: b.ground,
+        eaves: b.eaves.clamp(b.ground, b.top),
+        z1: b.top,
+    })
+}
+
+/// The report files of the run's `results` for `preset`.
+pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<File>, String> {
+    let fields = fields_of(results, params)?;
     let summaries = summary_fields(&preset.notes);
     let wires = crossings(&preset.notes);
     let buildings: Vec<BuildingIn> = preset
         .outlines
         .iter()
-        .map(|o| BuildingIn {
-            id: o.id.clone(),
-            ring: o.ring.clone(),
-            ground: o.ground,
-            top: o.top,
-            fields: summaries.get(&o.id).cloned().unwrap_or_default(),
+        .map(|o| {
+            let fields = summaries.get(&o.id).cloned().unwrap_or_default();
+            let eaves = fields
+                .get("eaves")
+                .and_then(|e| e.split(' ').next())
+                .and_then(|e| e.parse().ok())
+                .unwrap_or(o.top);
+            BuildingIn {
+                id: o.id.clone(),
+                ring: o.ring.clone(),
+                ground: o.ground,
+                eaves,
+                top: o.top,
+                fields,
+            }
         })
-        .collect();
-    let cuts: Vec<ResultCut> = v["cuts"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(ResultCut::parse)
         .collect();
     let mut warnings = Vec::new();
     let mut files = Vec::new();
-    let mut section_max: BTreeMap<String, f64> = BTreeMap::new();
-    for c in &cuts {
-        if let Some(p) = preset.cuts.iter().find(|p| p.label == c.label)
-            && p.from == c.to
-            && p.to == c.from
-            && (p.fraction - 0.5).abs() > 1e-9
-        {
-            warnings.push(format!(
-                "cut {}: the engine measured it from {} (asked from {}): it lies at {:.1} m from \
-                 {}, not where the plugin placed it",
-                c.label, c.from, p.from, c.at, c.from
+    // Per field: the largest value in each building's sections.
+    let mut section_max: Vec<BTreeMap<String, f64>> = Vec::new();
+    for f in &fields {
+        let mut max: BTreeMap<String, f64> = BTreeMap::new();
+        for c in &f.cuts {
+            if let Some(p) = preset.cuts.iter().find(|p| p.label == c.label)
+                && (p.alignment != c.alignment || (p.station - c.station).abs() > 1e-6)
+            {
+                warnings.push(format!(
+                    "cut {}: computed at {} {:.2} m, asked at {} {:.2} m",
+                    c.label, c.alignment, c.station, p.alignment, p.station
+                ));
+            }
+            let mut sections: Vec<(&BuildingIn, Section, Option<f64>)> = Vec::new();
+            for b in &buildings {
+                let Some(sec) = section_of(c, b) else {
+                    continue;
+                };
+                let m = c.largest_in(sec.s0, sec.s1, sec.z0, sec.z1);
+                if let Some(m) = m {
+                    let e = max.entry(b.id.clone()).or_insert(f64::NEG_INFINITY);
+                    *e = e.max(m);
+                }
+                sections.push((b, sec, m));
+            }
+            let base = format!("cut-{}-{}", safe_name(&c.label), f.q);
+            files.push(file(format!("{base}.csv"), "text/csv", cut_csv(c, f)));
+            files.push(file(
+                format!("{base}.svg"),
+                "image/svg+xml",
+                cut_svg(
+                    c,
+                    f,
+                    &sections,
+                    wires.get(&c.label).map_or(&[][..], |w| &w[..]),
+                ),
             ));
         }
-        let (lo, hi) = c.span();
-        let mut sections: Vec<(&BuildingIn, Section, Option<f64>)> = Vec::new();
-        for b in &buildings {
-            let Some((s0, s1)) = line_interval(c.origin, c.right, &b.ring) else {
-                continue;
-            };
-            if s1 < lo || s0 > hi {
-                continue;
-            }
-            let sec = Section {
-                s0: s0.max(lo),
-                s1: s1.min(hi),
-                z0: b.ground,
-                z1: b.top,
-            };
-            let m = c.largest_in(sec.s0, sec.s1, sec.z0, sec.z1);
-            if let Some(m) = m {
-                let e = section_max.entry(b.id.clone()).or_insert(f64::NEG_INFINITY);
-                *e = e.max(m);
-            }
-            sections.push((b, sec, m));
-        }
-        let base = format!("cut-{}-{q}", safe_name(&c.label));
+        section_max.push(max);
+    }
+    files.push(file("points.csv".into(), "text/csv", points_csv(&fields)));
+    files.push(file(
+        "buildings.csv".into(),
+        "text/csv",
+        buildings_csv(&fields, &buildings, &section_max, preset),
+    ));
+    // The plan files: the cuts' places are the same in every field.
+    let plan_cuts = &fields[0].cuts;
+    files.push(file(
+        "buildings.geojson".into(),
+        "application/geo+json",
+        geojson(&buildings, plan_cuts, preset),
+    ));
+    if params.dxf {
         files.push(file(
-            format!("{base}.csv"),
-            "text/csv",
-            cut_csv(c, &q, unit_col, digits),
-        ));
-        files.push(file(
-            format!("{base}.svg"),
-            "image/svg+xml",
-            cut_svg(
-                c,
-                &q,
-                &unit,
-                &sections,
-                wires.get(&c.label).map_or(&[][..], |w| &w[..]),
-                digits,
-            ),
+            "buildings.dxf".into(),
+            "image/vnd.dxf",
+            dxf(&buildings, plan_cuts, preset),
         ));
     }
-    // The places.
-    let mut point_max: BTreeMap<String, f64> = BTreeMap::new();
-    let mut major_max: BTreeMap<String, f64> = BTreeMap::new();
-    let mut pts = String::new();
-    let _ = write!(
-        pts,
-        "name,building,floor,place,x,y,z,height_m,{q}_{unit_col}"
+    let quantities: Vec<String> = fields
+        .iter()
+        .map(|f| format!("{} ({})", f.q, f.unit))
+        .collect();
+    let mut text = format!(
+        "building-cuts report, {}, preset {}\n\n",
+        quantities.join(" and "),
+        preset.name
     );
-    if magnetic {
-        let _ = write!(pts, ",{q}_major_{unit_col}");
+    for w in &warnings {
+        let _ = writeln!(text, "WARNING {w}");
     }
-    if limit.is_some() {
-        let _ = write!(pts, ",margin_{unit_col}");
+    for n in &preset.notes {
+        let _ = writeln!(text, "plugin: {n}");
+    }
+    for f in &fields {
+        for n in &f.notes {
+            let _ = writeln!(text, "field {}: {n}", f.q);
+        }
+    }
+    files.push(file("notes.txt".into(), "text/plain", text));
+    Ok(files)
+}
+
+/// Every place, a row: its value in each field (B also the cycle's
+/// largest) and, with a limit, the margin.
+fn points_csv(fields: &[FieldIn]) -> String {
+    let mut pts = String::from("name,building,floor,place,x,y,z,height_m");
+    for f in fields {
+        let (q, u) = (&f.q, f.unit_col);
+        let _ = write!(pts, ",{q}_{u}");
+        if f.magnetic {
+            let _ = write!(pts, ",{q}_major_{u}");
+        }
+        if f.limit.is_some() {
+            let _ = write!(pts, ",margin_{q}_{u}");
+        }
     }
     pts.push('\n');
-    for p in v["points"].as_array().into_iter().flatten() {
+    // The places in the first field's order; the others by name.
+    let by_name: Vec<BTreeMap<&str, &Value>> = fields
+        .iter()
+        .map(|f| {
+            f.points
+                .iter()
+                .map(|p| (p["name"].as_str().unwrap_or(""), p))
+                .collect()
+        })
+        .collect();
+    for p in &fields[0].points {
         let name = p["name"].as_str().unwrap_or("");
         let parts: Vec<&str> = name.split('-').collect();
-        let id = parts.first().copied().unwrap_or("").to_owned();
-        let value = p["value"].as_f64();
-        let major = p["major"].as_f64();
-        if let Some(x) = value {
-            let e = point_max.entry(id.clone()).or_insert(f64::NEG_INFINITY);
-            *e = e.max(x);
-        }
-        if let Some(x) = major {
-            let e = major_max.entry(id.clone()).or_insert(f64::NEG_INFINITY);
-            *e = e.max(x);
-        }
         let _ = write!(
             pts,
-            "{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{}",
             csv_field(name),
-            csv_field(&id),
+            csv_field(parts.first().copied().unwrap_or("")),
             parts.get(1).copied().unwrap_or(""),
             parts.get(2).copied().unwrap_or(""),
             opt(p["x"].as_f64(), 2),
             opt(p["y"].as_f64(), 2),
             opt(p["z"].as_f64(), 2),
             opt(p["height"].as_f64(), 2),
-            opt(value, digits),
         );
-        if magnetic {
-            let _ = write!(pts, ",{}", opt(major, digits));
-        }
-        if let Some(l) = limit {
-            // The larger of the value and the cycle's largest.
-            let worst = match (value, major) {
-                (Some(a), Some(b)) => Some(a.max(b)),
-                (a, b) => a.or(b),
-            };
-            let _ = write!(pts, ",{}", opt(worst.map(|x| l - x), digits));
+        for (f, map) in fields.iter().zip(&by_name) {
+            let q = map.get(name);
+            let value = q.and_then(|q| q["value"].as_f64());
+            let major = q.and_then(|q| q["major"].as_f64());
+            let _ = write!(pts, ",{}", opt(value, f.digits));
+            if f.magnetic {
+                let _ = write!(pts, ",{}", opt(major, f.digits));
+            }
+            if let Some(l) = f.limit {
+                // The larger of the value and the cycle's largest.
+                let worst = max_of([value, major]);
+                let _ = write!(pts, ",{}", opt(worst.map(|x| l - x), f.digits));
+            }
         }
         pts.push('\n');
     }
-    // The summary.
-    let mut sum = String::new();
-    let _ = write!(
-        sum,
-        "id,points,area_m2,centroid_x,centroid_y,ground_z,eaves_z,roof_z,floors,span,\
-         station_from_m,station_to_m,axis_distance_m,conductor_distance_m,cuts,\
-         max_section_{q}_{unit_col},max_places_{q}_{unit_col}"
+    pts
+}
+
+/// A row per building: what it is, where, and per field the largest value
+/// in its sections and at its places, with a limit the margin.
+fn buildings_csv(
+    fields: &[FieldIn],
+    buildings: &[BuildingIn],
+    section_max: &[BTreeMap<String, f64>],
+    preset: &PresetOut,
+) -> String {
+    let mut sum = String::from(
+        "id,points,area_m2,centroid_x,centroid_y,ground_z,eaves_z,roof_z,floors,span,alignment,\
+         station_from_m,station_to_m,axis_distance_m,conductor_distance_m,cuts",
     );
-    if magnetic {
-        let _ = write!(sum, ",max_places_{q}_major_{unit_col}");
-    }
-    if limit.is_some() {
-        let _ = write!(sum, ",limit_{unit_col},margin_{unit_col}");
+    for f in fields {
+        let (q, u) = (&f.q, f.unit_col);
+        let _ = write!(sum, ",max_section_{q}_{u},max_places_{q}_{u}");
+        if f.magnetic {
+            let _ = write!(sum, ",max_places_{q}_major_{u}");
+        }
+        if f.limit.is_some() {
+            let _ = write!(sum, ",limit_{q}_{u},margin_{q}_{u}");
+        }
     }
     sum.push('\n');
-    for b in &buildings {
+    // Per field, per building: the largest at its places (value, cycle).
+    let place_max: Vec<(BTreeMap<String, f64>, BTreeMap<String, f64>)> = fields
+        .iter()
+        .map(|f| {
+            let (mut v, mut m) = (BTreeMap::new(), BTreeMap::new());
+            for p in &f.points {
+                let id = p["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .split('-')
+                    .next()
+                    .unwrap_or("")
+                    .to_owned();
+                for (map, key) in [(&mut v, "value"), (&mut m, "major")] {
+                    if let Some(x) = p[key].as_f64() {
+                        let e = map.entry(id.clone()).or_insert(f64::NEG_INFINITY);
+                        *e = e.max(x);
+                    }
+                }
+            }
+            (v, m)
+        })
+        .collect();
+    for b in buildings {
         let f = |k: &str| b.fields.get(k).cloned().unwrap_or_default();
         let first = |k: &str| f(k).split(' ').next().unwrap_or("").to_owned();
         let centroid: Vec<String> = f("centroid").split(' ').map(str::to_owned).collect();
@@ -429,12 +608,9 @@ pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<
                     .any(|m| m.starts_with(&format!("{}-", b.id)))
             })
             .count();
-        let sec = section_max.get(&b.id).copied();
-        let pm = point_max.get(&b.id).copied();
-        let mm = major_max.get(&b.id).copied();
         let _ = write!(
             sum,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             csv_field(&b.id),
             first("points"),
             first("area"),
@@ -445,64 +621,50 @@ pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<
             first("roof"),
             first("floors"),
             csv_field(&f("span")),
+            csv_field(&f("alignment")),
             stations.first().cloned().unwrap_or_default(),
             stations.get(1).cloned().unwrap_or_default(),
             first("axis"),
             first("conductor"),
             n_cuts,
-            opt(sec, digits),
-            opt(pm, digits),
         );
-        if magnetic {
-            let _ = write!(sum, ",{}", opt(mm, digits));
-        }
-        if let Some(l) = limit {
-            // Conservative: the largest of the section and the places
-            // (their value and their cycle's largest).
-            let worst = [sec, pm, mm]
-                .into_iter()
-                .flatten()
-                .fold(None, |a: Option<f64>, x| Some(a.map_or(x, |a| a.max(x))));
-            let _ = write!(sum, ",{l},{}", opt(worst.map(|w| l - w), digits));
+        for (k, field) in fields.iter().enumerate() {
+            let sec = section_max[k].get(&b.id).copied();
+            let pm = place_max[k].0.get(&b.id).copied();
+            let mm = place_max[k].1.get(&b.id).copied();
+            let _ = write!(sum, ",{},{}", opt(sec, field.digits), opt(pm, field.digits));
+            if field.magnetic {
+                let _ = write!(sum, ",{}", opt(mm, field.digits));
+            }
+            if let Some(l) = field.limit {
+                // Conservative: the largest of the section and the places
+                // (their value and their cycle's largest).
+                let worst = max_of([sec, pm, mm]);
+                let _ = write!(sum, ",{l},{}", opt(worst.map(|w| l - w), field.digits));
+            }
         }
         sum.push('\n');
     }
-    files.push(file(format!("buildings-{q}.csv"), "text/csv", sum));
-    files.push(file(format!("points-{q}.csv"), "text/csv", pts));
-    files.push(file(
-        "buildings.geojson".into(),
-        "application/geo+json",
-        geojson(&buildings, &cuts, preset),
-    ));
-    if params.dxf {
-        files.push(file(
-            "buildings.dxf".into(),
-            "image/vnd.dxf",
-            dxf(&buildings, &cuts, preset),
-        ));
-    }
-    let mut text = format!(
-        "building-cuts report, {q} ({unit}), preset {}\n\n",
-        preset.name
-    );
-    for w in &warnings {
-        let _ = writeln!(text, "WARNING {w}");
-    }
-    for n in &preset.notes {
-        let _ = writeln!(text, "plugin: {n}");
-    }
-    for n in v["notes"].as_array().into_iter().flatten() {
-        let _ = writeln!(text, "field: {}", n.as_str().unwrap_or(""));
-    }
-    files.push(file(format!("notes-{q}.txt"), "text/plain", text));
-    Ok(files)
+    sum
 }
 
-fn cut_csv(c: &ResultCut, q: &str, unit_col: &str, digits: usize) -> String {
+fn cut_csv(c: &ResultCut, f: &FieldIn) -> String {
+    let (q, unit_col, digits) = (&f.q, f.unit_col, f.digits);
     let mut s = format!(
-        "# cut {}, span {}–{} at {:.2} m; {q} at every point of the grid, below_ground 1 where under the ground\n\
+        "# cut {}, alignment {} at {:.2} m{} (span {}–{} at {:.2} m); {q} at every point of the \
+         grid, below_ground 1 where under the ground\n\
          offset_m,elevation_m,ground_m,{q}_{unit_col},below_ground\n",
-        c.label, c.from, c.to, c.at
+        c.label,
+        c.alignment,
+        c.station,
+        if c.angle_point {
+            ", an angle point: along the bisector"
+        } else {
+            ""
+        },
+        c.from,
+        c.to,
+        c.at
     );
     for (r, z) in c.elevations.iter().enumerate() {
         for (k, o) in c.offsets.iter().enumerate() {
@@ -525,22 +687,109 @@ const COLOURS: [&str; 8] = [
     "#2b6cb0", "#2f855a", "#b7791f", "#c05621", "#c53030", "#97266d", "#553c9a", "#1a202c",
 ];
 
+/// `colour` (`#rrggbb`) as a light band: 16 % of it over white (an
+/// opaque colour: adjacent cells do not darken where they meet).
+fn tint(colour: &str) -> String {
+    let c = |k: usize| u8::from_str_radix(colour.get(k..k + 2).unwrap_or("ff"), 16).unwrap_or(255);
+    let t = |v: u8| (0.16 * f64::from(v) + 0.84 * 255.0).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", t(c(1)), t(c(3)), t(c(5)))
+}
+
+/// About how wide a text of `chars` characters is at `size` px.
+fn text_width(text: &str, size: f64) -> f64 {
+    text.chars().count() as f64 * size * 0.6
+}
+
+/// A tick spacing (1, 2, 5 × 10ⁿ m) at least `min_px` apart at `scale`.
+fn tick(scale: f64, min_px: f64) -> f64 {
+    let mut t = 1.0;
+    loop {
+        for f in [1.0, 2.0, 5.0] {
+            if f * t * scale >= min_px {
+                return f * t;
+            }
+        }
+        t *= 10.0;
+    }
+}
+
+/// The 2D cut drawn 1:1 (owner, 2026-10-31: "draw the 2D cut at the right
+/// place and show the ground, building, line and calculation results"):
+/// the ground profile along the cut, each building's section where the
+/// cut crosses its footprint (from its ground to its eaves, the roof
+/// above dashed, labelled with its id and its largest value), every
+/// conductor and earth wire crossing (labelled), the axis, the field's
+/// bands between the levels (light) and its isolines with a legend, the
+/// elevation and offset scales. Everything lies inside the viewBox.
 fn cut_svg(
     c: &ResultCut,
-    q: &str,
-    unit: &str,
+    f: &FieldIn,
     sections: &[(&BuildingIn, Section, Option<f64>)],
-    wires: &[(String, f64, f64, bool)],
-    digits: usize,
+    wires: &[Crossing],
 ) -> String {
+    let (q, unit, digits) = (&f.q, &f.unit, f.digits);
     let (lo, hi) = c.span();
-    let zlo = c.elevations.first().copied().unwrap_or(0.0);
-    let zhi = c.elevations.last().copied().unwrap_or(zlo + 1.0);
+    let zgrid = c.elevations.first().copied().unwrap_or(0.0);
+    let zhi = c.elevations.last().copied().unwrap_or(zgrid + 1.0);
+    // Some ground shown under the grid's lowest row.
+    let zlo = zgrid - (0.06 * (zhi - zgrid)).max(3.0);
     let width_m = (hi - lo).max(1.0);
-    let scale = (900.0 / width_m).clamp(2.0, 20.0);
-    let (left, top, right, bottom) = (60.0, 50.0, 170.0, 70.0);
-    let w = left + width_m * scale + right;
-    let h = top + (zhi - zlo).max(1.0) * scale + bottom;
+    let height_m = (zhi - zlo).max(1.0);
+    // One scale both ways (1:1), the drawing some 1 000 px wide.
+    let scale = (1000.0 / width_m).clamp(3.0, 20.0);
+    let largest = max_of(sections.iter().map(|s| s.2));
+    let title = format!(
+        "Cut {} — {q} in {unit}{}",
+        c.label,
+        largest.map_or(String::new(), |m| format!(
+            "; largest in a building's section {m:.digits$} {unit}"
+        ))
+    );
+    let subtitle = format!(
+        "alignment {} at {:.1} m{} (span {}–{} at {:.1} m); looking ahead along the alignment, \
+         offsets to the right positive; 1:1",
+        c.alignment,
+        c.station,
+        if c.angle_point {
+            ", an angle point: along the bisector"
+        } else {
+            ""
+        },
+        c.from,
+        c.to,
+        c.at
+    );
+    // The legend's entries (colour or kind, text).
+    let mut legend: Vec<(String, String)> = c
+        .isolines
+        .iter()
+        .enumerate()
+        .map(|(k, (l, _))| (COLOURS[k % COLOURS.len()].to_owned(), format!("{l} {unit}")))
+        .collect();
+    for (kind, text) in [
+        ("ground", "ground"),
+        ("building", "building to its eaves"),
+        ("roof", "roof (eaves to top)"),
+        ("phase", "phase conductor"),
+        ("earth", "earth wire"),
+        ("axis", "axis of the alignment"),
+    ] {
+        legend.push((kind.to_owned(), text.to_owned()));
+    }
+    let legend_w = legend
+        .iter()
+        .map(|(_, t)| text_width(t, 11.0))
+        .fold(text_width(&format!("{q} levels"), 12.0), f64::max)
+        + 50.0;
+    let (left, top, bottom) = (64.0, 70.0, 74.0);
+    let right = legend_w + 24.0;
+    let plot_w = width_m * scale;
+    let plot_h = height_m * scale;
+    let legend_h = 24.0 + 18.0 * legend.len() as f64;
+    let w = (left + plot_w + right)
+        .max(left + text_width(&title, 15.0) + 16.0)
+        .max(left + text_width(&subtitle, 11.0) + 16.0);
+    let h = (top + plot_h + bottom).max(top + legend_h + 16.0);
     let x = |s: f64| left + (s - lo) * scale;
     let y = |z: f64| top + (zhi - z) * scale;
     let mut o = String::new();
@@ -550,65 +799,164 @@ fn cut_svg(
          viewBox=\"0 0 {w:.1} {h:.1}\" font-family=\"sans-serif\" font-size=\"11\">"
     );
     let _ = writeln!(o, "<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>");
-    let largest = sections
+    let _ = writeln!(
+        o,
+        "<text x=\"{left}\" y=\"24\" font-size=\"15\" font-weight=\"bold\">{}</text>",
+        xml(&title)
+    );
+    let _ = writeln!(
+        o,
+        "<text x=\"{left}\" y=\"42\" fill=\"#444\">{}</text>",
+        xml(&subtitle)
+    );
+    let _ = writeln!(
+        o,
+        "<clipPath id=\"plot\"><rect x=\"{:.1}\" y=\"{:.1}\" width=\"{plot_w:.1}\" height=\"{plot_h:.1}\"/></clipPath>",
+        x(lo),
+        y(zhi)
+    );
+    // The bands between the levels, above the ground (light; a row's
+    // cells of one band joined).
+    let levels: Vec<f64> = c.isolines.iter().map(|l| l.0).collect();
+    let band = |v: f64| levels.iter().filter(|l| v >= **l).count();
+    let (nc, nr) = (c.offsets.len(), c.elevations.len());
+    let _ = writeln!(
+        o,
+        "<g clip-path=\"url(#plot)\" shape-rendering=\"crispEdges\">"
+    );
+    if !levels.is_empty() && nc > 1 && nr > 1 {
+        for r in 0..nr - 1 {
+            let (z0, z1) = (c.elevations[r], c.elevations[r + 1]);
+            let mut run: Option<(usize, usize)> = None; // (start column, band)
+            let flush = |o: &mut String, run: Option<(usize, usize)>, end: usize| {
+                if let Some((k0, b)) = run
+                    && b > 0
+                {
+                    let _ = writeln!(
+                        o,
+                        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"/>",
+                        x(c.offsets[k0]),
+                        y(z1),
+                        (c.offsets[end] - c.offsets[k0]) * scale,
+                        (z1 - z0) * scale,
+                        tint(COLOURS[(b - 1) % COLOURS.len()])
+                    );
+                }
+            };
+            for k in 0..nc - 1 {
+                let v =
+                    (c.value(r, k) + c.value(r, k + 1) + c.value(r + 1, k) + c.value(r + 1, k + 1))
+                        / 4.0;
+                let s = (c.offsets[k] + c.offsets[k + 1]) / 2.0;
+                let under = c.ground_at(s).is_some_and(|g| (z0 + z1) / 2.0 < g);
+                let b = if under || !v.is_finite() { 0 } else { band(v) };
+                match run {
+                    Some((_, rb)) if rb == b => {}
+                    _ => {
+                        flush(&mut o, run, k);
+                        run = Some((k, b));
+                    }
+                }
+            }
+            flush(&mut o, run, nc - 1);
+        }
+    }
+    let _ = writeln!(o, "</g>");
+    // The ground: filled below its profile.
+    let ground: Vec<(f64, f64)> = c
+        .offsets
         .iter()
-        .filter_map(|s| s.2)
-        .fold(None, |a: Option<f64>, v| Some(a.map_or(v, |a| a.max(v))));
-    let _ = writeln!(
-        o,
-        "<text x=\"{left}\" y=\"20\" font-size=\"14\">{}</text>",
-        xml(&format!(
-            "Cut {}: span {}–{} at {:.1} m; {q} in {unit}{}",
-            c.label,
-            c.from,
-            c.to,
-            c.at,
-            largest.map_or(String::new(), |m| format!(
-                "; largest in a building's section {m:.digits$} {unit}"
-            ))
-        ))
-    );
-    let _ = writeln!(
-        o,
-        "<text x=\"{left}\" y=\"36\" fill=\"#555\">{}</text>",
-        xml("looking from the first structure to the second; offsets to the right positive, 1:1")
-    );
+        .zip(&c.ground)
+        .filter_map(|(s, g)| g.map(|g| (*s, g)))
+        .collect();
+    if ground.len() > 1 {
+        let mut pts: Vec<String> = ground
+            .iter()
+            .map(|(s, g)| format!("{:.1},{:.1}", x(*s), y(g.max(zlo))))
+            .collect();
+        let line = pts.join(" ");
+        pts.push(format!(
+            "{:.1},{:.1}",
+            x(ground[ground.len() - 1].0),
+            y(zlo)
+        ));
+        pts.push(format!("{:.1},{:.1}", x(ground[0].0), y(zlo)));
+        let _ = writeln!(
+            o,
+            "<polygon points=\"{}\" fill=\"#d9c7a7\" stroke=\"none\"/>\
+             <polyline points=\"{line}\" fill=\"none\" stroke=\"#7b5e3b\" stroke-width=\"2\"/>",
+            pts.join(" ")
+        );
+    }
     // The frame.
     let _ = writeln!(
         o,
-        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"none\" stroke=\"#bbb\"/>",
+        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{plot_w:.1}\" height=\"{plot_h:.1}\" fill=\"none\" stroke=\"#999\"/>",
         x(lo),
-        y(zhi),
-        width_m * scale,
-        (zhi - zlo) * scale
+        y(zhi)
+    );
+    // The scales: elevations on the left, offsets below.
+    let tz = tick(scale, 36.0);
+    let mut z = (zlo / tz).ceil() * tz;
+    while z <= zhi + 1e-9 {
+        let _ = writeln!(
+            o,
+            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#999\"/>\
+             <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" fill=\"#444\">{z:.0}</text>",
+            x(lo) - 5.0,
+            y(z),
+            x(lo),
+            y(z),
+            x(lo) - 8.0,
+            y(z) + 4.0
+        );
+        z += tz;
+    }
+    let _ = writeln!(
+        o,
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"#444\">elevation m</text>",
+        8.0,
+        y(zhi) - 8.0
+    );
+    let ts = tick(scale, 48.0);
+    let mut s = (lo / ts).ceil() * ts;
+    while s <= hi + 1e-9 {
+        let _ = writeln!(
+            o,
+            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#999\"/>\
+             <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" fill=\"#444\">{s:.0}</text>",
+            x(s),
+            y(zlo),
+            x(s),
+            y(zlo) + 5.0,
+            x(s),
+            y(zlo) + 18.0
+        );
+        s += ts;
+    }
+    let _ = writeln!(
+        o,
+        "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" fill=\"#444\">offset from the axis, m (right positive)</text>",
+        x((lo + hi) / 2.0),
+        y(zlo) + 34.0
     );
     // The axis.
     if lo <= 0.0 && hi >= 0.0 {
         let _ = writeln!(
             o,
-            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#888\" stroke-dasharray=\"6 4\"/>",
+            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-dasharray=\"8 5\"/>\
+             <text x=\"{:.1}\" y=\"{:.1}\" fill=\"#666\">axis</text>",
             x(0.0),
             y(zhi),
             x(0.0),
-            y(zlo)
-        );
-    }
-    // The ground.
-    let ground: Vec<String> = c
-        .offsets
-        .iter()
-        .zip(&c.ground)
-        .filter_map(|(s, g)| g.map(|g| format!("{:.1},{:.1}", x(*s), y(g))))
-        .collect();
-    if ground.len() > 1 {
-        let _ = writeln!(
-            o,
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"#7b5e3b\" stroke-width=\"2\"/>",
-            ground.join(" ")
+            y(zlo),
+            x(0.0) + 4.0,
+            y(zhi) + 12.0
         );
     }
     // The isolines.
-    for (k, (level, lines)) in c.isolines.iter().enumerate() {
+    let _ = writeln!(o, "<g clip-path=\"url(#plot)\">");
+    for (k, (_, lines)) in c.isolines.iter().enumerate() {
         let colour = COLOURS[k % COLOURS.len()];
         for line in lines {
             if line.len() < 2 {
@@ -620,60 +968,129 @@ fn cut_svg(
                 .collect();
             let _ = writeln!(
                 o,
-                "<polyline points=\"{}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.5\"/>",
+                "<polyline points=\"{}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.6\"/>",
                 pts.join(" ")
             );
         }
-        let ly = top + 20.0 * k as f64;
-        let lx = left + width_m * scale + 20.0;
+    }
+    let _ = writeln!(o, "</g>");
+    // The buildings' sections: ground to eaves, the roof dashed above;
+    // their labels staggered where they would overlap.
+    let mut taken: Vec<(f64, f64, f64)> = Vec::new(); // x0, x1, y
+    for (b, sec, m) in sections {
+        let (x0, x1) = (x(sec.s0), x(sec.s1).max(x(sec.s0) + 1.0));
         let _ = writeln!(
             o,
-            "<line x1=\"{lx:.1}\" y1=\"{ly:.1}\" x2=\"{:.1}\" y2=\"{ly:.1}\" stroke=\"{colour}\" stroke-width=\"2\"/>\
-             <text x=\"{:.1}\" y=\"{:.1}\">{}</text>",
-            lx + 24.0,
-            lx + 30.0,
-            ly + 4.0,
-            xml(&format!("{level} {unit}"))
+            "<rect x=\"{x0:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"#8a8a8a\" fill-opacity=\"0.45\" stroke=\"#222\" stroke-width=\"1.2\"/>",
+            y(sec.eaves),
+            x1 - x0,
+            ((sec.eaves - sec.z0) * scale).max(1.0)
+        );
+        if sec.z1 > sec.eaves + 0.05 {
+            let _ = writeln!(
+                o,
+                "<rect x=\"{x0:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"#8a8a8a\" fill-opacity=\"0.15\" stroke=\"#222\" stroke-dasharray=\"4 3\"/>",
+                y(sec.z1),
+                x1 - x0,
+                (sec.z1 - sec.eaves) * scale
+            );
+        }
+        let text = match m {
+            Some(m) => format!("{} max {m:.digits$} {unit}", b.id),
+            None => b.id.clone(),
+        };
+        let tw = text_width(&text, 11.0);
+        let cx = ((x0 + x1) / 2.0).clamp(x(lo) + tw / 2.0, x(hi) - tw / 2.0);
+        let mut ty = y(sec.z1) - 6.0;
+        while taken
+            .iter()
+            .any(|(a, b, yy)| (ty - yy).abs() < 13.0 && cx - tw / 2.0 < *b && cx + tw / 2.0 > *a)
+        {
+            ty -= 14.0;
+        }
+        let ty = ty.max(y(zhi) + 12.0);
+        taken.push((cx - tw / 2.0, cx + tw / 2.0, ty));
+        let _ = writeln!(
+            o,
+            "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" font-weight=\"bold\" fill=\"#111\" \
+             stroke=\"#ffffff\" stroke-width=\"3\" paint-order=\"stroke\">{}</text>",
+            xml(&text)
         );
     }
-    // The buildings' sections.
-    for (b, s, m) in sections {
-        let _ = writeln!(
-            o,
-            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"#999\" fill-opacity=\"0.25\" stroke=\"#333\"/>",
-            x(s.s0),
-            y(s.z1),
-            ((s.s1 - s.s0) * scale).max(1.0),
-            ((s.z1 - s.z0) * scale).max(1.0)
-        );
-        let _ = writeln!(
-            o,
-            "<text x=\"{:.1}\" y=\"{:.1}\">{}</text>",
-            x(s.s0),
-            y(s.z1) - 4.0,
-            xml(&match m {
-                Some(m) => format!("{} (largest {m:.digits$} {unit})", b.id),
-                None => b.id.clone(),
-            })
-        );
-    }
-    // The wires crossing the cut.
+    // The wires crossing the cut, labelled outwards from the axis.
     for (name, s, z, earth) in wires {
         let colour = if *earth { "#2f855a" } else { "#9b2c2c" };
+        let (tx, anchor) = if *s < -1e-6 {
+            (x(*s) - 7.0, "end")
+        } else {
+            (x(*s) + 7.0, "start")
+        };
         let _ = writeln!(
             o,
-            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3.5\" fill=\"{colour}\"/>\
-             <text x=\"{:.1}\" y=\"{:.1}\" font-size=\"9\" fill=\"{colour}\">{}</text>",
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"4\" fill=\"{colour}\" stroke=\"#fff\"/>\
+             <text x=\"{tx:.1}\" y=\"{:.1}\" font-size=\"10\" text-anchor=\"{anchor}\" fill=\"{colour}\" \
+             stroke=\"#ffffff\" stroke-width=\"3\" paint-order=\"stroke\">{}</text>",
             x(*s),
             y(*z),
-            x(*s) + 5.0,
-            y(*z) - 4.0,
+            y(*z) + 3.5,
             xml(name)
         );
     }
-    // The scale: 10 m (5 m when wide on the page).
-    let bar = if scale > 30.0 { 5.0 } else { 10.0 };
-    let by = h - 25.0;
+    // The legend.
+    let lx = left + plot_w + 24.0;
+    let _ = writeln!(
+        o,
+        "<text x=\"{lx:.1}\" y=\"{:.1}\" font-size=\"12\" font-weight=\"bold\">{}</text>",
+        top + 4.0,
+        xml(&format!("{q} levels"))
+    );
+    for (k, (kind, text)) in legend.iter().enumerate() {
+        let ly = top + 24.0 + 18.0 * k as f64;
+        let mark = match kind.as_str() {
+            "ground" => format!(
+                "<rect x=\"{lx:.1}\" y=\"{:.1}\" width=\"26\" height=\"8\" fill=\"#d9c7a7\" stroke=\"#7b5e3b\"/>",
+                ly - 4.0
+            ),
+            "building" => format!(
+                "<rect x=\"{lx:.1}\" y=\"{:.1}\" width=\"26\" height=\"10\" fill=\"#8a8a8a\" fill-opacity=\"0.45\" stroke=\"#222\"/>",
+                ly - 5.0
+            ),
+            "roof" => format!(
+                "<rect x=\"{lx:.1}\" y=\"{:.1}\" width=\"26\" height=\"10\" fill=\"#8a8a8a\" fill-opacity=\"0.15\" stroke=\"#222\" stroke-dasharray=\"4 3\"/>",
+                ly - 5.0
+            ),
+            "phase" | "earth" => format!(
+                "<circle cx=\"{:.1}\" cy=\"{ly:.1}\" r=\"4\" fill=\"{}\"/>",
+                lx + 13.0,
+                if kind == "earth" {
+                    "#2f855a"
+                } else {
+                    "#9b2c2c"
+                }
+            ),
+            "axis" => format!(
+                "<line x1=\"{lx:.1}\" y1=\"{ly:.1}\" x2=\"{:.1}\" y2=\"{ly:.1}\" stroke=\"#666\" stroke-dasharray=\"8 5\"/>",
+                lx + 26.0
+            ),
+            colour => format!(
+                "<rect x=\"{lx:.1}\" y=\"{:.1}\" width=\"26\" height=\"10\" fill=\"{}\"/>\
+                 <line x1=\"{lx:.1}\" y1=\"{ly:.1}\" x2=\"{:.1}\" y2=\"{ly:.1}\" stroke=\"{colour}\" stroke-width=\"2\"/>",
+                ly - 5.0,
+                tint(colour),
+                lx + 26.0
+            ),
+        };
+        let _ = writeln!(
+            o,
+            "{mark}<text x=\"{:.1}\" y=\"{:.1}\">{}</text>",
+            lx + 34.0,
+            ly + 4.0,
+            xml(text)
+        );
+    }
+    // The scale bar.
+    let bar = tick(scale, 60.0);
+    let by = h - 14.0;
     let _ = writeln!(
         o,
         "<line x1=\"{left}\" y1=\"{by:.1}\" x2=\"{:.1}\" y2=\"{by:.1}\" stroke=\"#000\" stroke-width=\"3\"/>\
@@ -681,15 +1098,6 @@ fn cut_svg(
         left + bar * scale,
         left + bar * scale + 6.0,
         by + 4.0
-    );
-    let _ = writeln!(
-        o,
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"#555\">{}</text>",
-        left + bar * scale + 60.0,
-        by + 4.0,
-        xml(&format!(
-            "offsets {lo:.0} to {hi:.0} m, elevations {zlo:.0} to {zhi:.0} m"
-        ))
     );
     o.push_str("</svg>\n");
     o
@@ -726,7 +1134,8 @@ fn geojson(buildings: &[BuildingIn], cuts: &[ResultCut], preset: &PresetOut) -> 
         let b = [c.origin[0] + hi * c.right[0], c.origin[1] + hi * c.right[1]];
         features.push(serde_json::json!({
             "type": "Feature",
-            "properties": {"kind": "cut", "label": c.label, "from": c.from, "to": c.to, "at": c.at},
+            "properties": {"kind": "cut", "label": c.label, "alignment": c.alignment,
+                "station": c.station, "from": c.from, "to": c.to, "at": c.at},
             "geometry": {"type": "LineString", "coordinates": [a, b]},
         }));
     }

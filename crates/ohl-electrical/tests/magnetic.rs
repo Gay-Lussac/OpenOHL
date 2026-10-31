@@ -303,9 +303,10 @@ fn a_vertical_cut_across_the_line() {
         currents: both(1000.0, false),
         stations: vec![mid("T1", "T2")],
         cuts: vec![magnetic::CutSpec {
-            from: "T1".into(),
-            to: "T2".into(),
-            fraction: Some(0.5),
+            at: magnetic::CutAt::Station {
+                alignment: "main".into(),
+                station: 150.0,
+            },
             width: 40.0,
             above: 10.0,
             step: 1.0,
@@ -334,11 +335,18 @@ fn a_vertical_cut_across_the_line() {
     )
     .unwrap();
     assert_eq!(json["format"], "ohl-field-results");
-    assert_eq!(json["version"], 1);
+    assert_eq!(json["version"], 2);
     assert_eq!(json["case"]["name"], "still air");
     assert!(json["settings"]["cuts"].is_null() && json["settings"]["height"] == 1.0);
     let cut = &json["cuts"][0];
     assert_eq!(cut["label"], "house A");
+    assert_eq!(cut["alignment"], "main");
+    assert_eq!(cut["station"], 150.0);
+    assert_eq!(
+        (cut["from"].as_str(), cut["to"].as_str()),
+        (Some("T1"), Some("T2"))
+    );
+    assert!((cut["at"].as_f64().unwrap() - 150.0).abs() < 1e-9);
     assert_eq!(cut["quantity"], "B");
     let values: Vec<f64> = cut["values"]
         .as_array()
@@ -395,6 +403,173 @@ fn a_vertical_cut_across_the_line() {
         }
     }
     assert!(worst < 0.05, "isoline off its level by {worst}");
+}
+
+fn run_result(
+    line: &Line,
+    library: &ohl_cables::Library,
+    settings: &Settings,
+) -> Result<magnetic::MagneticField, String> {
+    let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+    let shapes: Vec<_> = ohl_line::solve::solve_line(line, library, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let src = Sources {
+        line,
+        library,
+        shapes: &shapes,
+        temperature: Temperature::from_celsius(40.0),
+        ground: None,
+        jumpers: &[],
+    };
+    magnetic::run(&src, settings, None)
+}
+
+/// The example turned at T2 by `deg` to the right: T3 (its wires and its
+/// alignment point) moved.
+fn turned(deg: f64) -> (Line, ohl_cables::Library) {
+    let (mut line, library) = example();
+    let a = deg.to_radians();
+    let (x, y) = (300.0 + 300.0 * a.cos(), -300.0 * a.sin());
+    let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+    let (dx, dy) = (x - t3.position[0], y - t3.position[1]);
+    t3.position[0] = x;
+    t3.position[1] = y;
+    for w in &mut t3.wires {
+        w.position[0] += dx;
+        w.position[1] += dy;
+    }
+    let p3 = line
+        .alignment_points
+        .iter_mut()
+        .find(|p| p.id == "P3")
+        .unwrap();
+    p3.position[0] = x;
+    p3.position[1] = y;
+    (line, library)
+}
+
+fn cut_at(at: magnetic::CutAt) -> magnetic::CutSpec {
+    magnetic::CutSpec {
+        at,
+        width: 20.0,
+        above: 5.0,
+        step: 2.0,
+        label: None,
+    }
+}
+
+/// A cut is placed on the alignment (owner, 2026-10-31: "cuts are made on
+/// the alignment not the circuits or span"): at an angle point along the
+/// bisector, on exactly the plane the cross-section panels take
+/// (`ohl_line::route::plane_at`, which OHL-Design's panels call); the span
+/// ahead of the structure is the one crossed.
+#[test]
+fn a_cut_at_an_angle_point_lies_along_the_bisector() {
+    let (line, library) = turned(20.0);
+    let s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        cuts: vec![cut_at(magnetic::CutAt::Station {
+            alignment: "main".into(),
+            station: 300.0,
+        })],
+        ..Settings::default()
+    };
+    let m = field(&line, &library, &s);
+    let c = &m.cuts[0];
+    assert!(c.angle_point);
+    assert_eq!((c.alignment.as_str(), c.station), ("main", 300.0));
+    assert_eq!((c.from.as_str(), c.to.as_str()), ("T2", "T3"));
+    // The panel's plane, the same numbers.
+    let view = line.alignment_views().remove(0);
+    let panel = view.plane_at(300.0).unwrap();
+    assert!(panel.angle_point);
+    assert_eq!(c.values.cut.origin, panel.plane.origin);
+    assert_eq!(c.values.cut.right, panel.plane.right());
+    // Along the bisector: the plane's ahead halfway between the two
+    // directions (0° and −20°), i.e. −10°.
+    let ahead = panel.plane.ahead;
+    let want = (-10f64).to_radians();
+    assert!((ahead[0] - want.cos()).abs() < 1e-12 && (ahead[1] - want.sin()).abs() < 1e-12);
+    assert!((c.values.cut.origin[0] - 300.0).abs() < 1e-9 && c.values.cut.origin[1].abs() < 1e-9);
+    // Off an angle point: perpendicular to the alignment's segment.
+    let s2 = Settings {
+        cuts: vec![cut_at(magnetic::CutAt::Station {
+            alignment: "main".into(),
+            station: 450.0,
+        })],
+        ..s.clone()
+    };
+    let m2 = field(&line, &library, &s2);
+    let c2 = &m2.cuts[0];
+    assert!(!c2.angle_point);
+    let p2 = view.plane_at(450.0).unwrap().plane;
+    assert_eq!(c2.values.cut.origin, p2.origin);
+    assert_eq!(c2.values.cut.right, p2.right());
+    assert!((c2.at - 150.0).abs() < 1e-6, "{}", c2.at);
+}
+
+/// A place in a span (the old placement, still taken) is converted to the
+/// alignment station of that place, said in the result; a station beyond
+/// the alignment and a line without an alignment are errors saying so.
+#[test]
+fn a_span_place_becomes_an_alignment_station() {
+    let (line, library) = example();
+    let s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        cuts: vec![
+            cut_at(magnetic::CutAt::InSpan {
+                from: "T2".into(),
+                to: "T3".into(),
+                fraction: Some(0.25),
+            }),
+            cut_at(magnetic::CutAt::InSpan {
+                from: "T1".into(),
+                to: "T2".into(),
+                fraction: None,
+            }),
+        ],
+        ..Settings::default()
+    };
+    let m = field(&line, &library, &s);
+    assert_eq!(m.cuts[0].alignment, "main");
+    assert!((m.cuts[0].station - 375.0).abs() < 1e-9);
+    assert!((m.cuts[0].at - 75.0).abs() < 1e-9);
+    // The lowest point: where the profile at the lowest point is.
+    let lowest = field(
+        &line,
+        &library,
+        &Settings {
+            stations: vec![StationSpec {
+                from: "T1".into(),
+                to: "T2".into(),
+                fraction: None,
+            }],
+            cuts: Vec::new(),
+            ..s.clone()
+        },
+    );
+    assert!((m.cuts[1].station - lowest.profiles[0].at).abs() < 1e-6);
+    // Beyond the alignment (600 m long).
+    let beyond = Settings {
+        cuts: vec![cut_at(magnetic::CutAt::Station {
+            alignment: "main".into(),
+            station: 650.0,
+        })],
+        ..s.clone()
+    };
+    let e = run_result(&line, &library, &beyond).unwrap_err();
+    assert!(e.contains("beyond"), "{e}");
+    // No alignment: no cut, said.
+    let mut bare = line.clone();
+    bare.alignments.clear();
+    bare.alignment_points.clear();
+    bare.routes.clear();
+    let e = run_result(&bare, &library, &s).unwrap_err();
+    assert!(e.contains("on no alignment"), "{e}");
 }
 
 /// A volume over a span: a surface per level, every vertex on its level

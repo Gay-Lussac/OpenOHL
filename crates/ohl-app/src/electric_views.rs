@@ -347,7 +347,10 @@ impl ElectricFieldWindow {
             _ => st.count as f64,
         };
         let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
-        let cuts = self.span_pick.cuts_asked(model, spans).len();
+        // The cuts as the engine places them (on the alignment); why the
+        // others cannot be.
+        let (placed, unplaced) = self.span_pick.cut_places(model, spans);
+        let cuts = placed.len();
         let runs = self.span_pick.volume_runs(model, spans);
         let ticked: usize = runs.iter().map(|r| r.1).sum();
         egui::Grid::new("electric-field-sizes")
@@ -394,11 +397,21 @@ impl ElectricFieldWindow {
                          its isolines at the levels (5); Results › Open cut shows it on the wires.",
                         duration(points * pieces * rate)
                     ),
-                    "The cut is perpendicular to the span (between its two structures), from \
-                     the lowest ground to this far over the highest wire; on the tiled floor \
+                    "The cut is a vertical plane at the alignment station of its place in the \
+                     span (between its structures' stations), perpendicular to the alignment — \
+                     at an angle point along the bisector — as a cross-section panel opened \
+                     there; from the lowest ground to this far over the highest wire; on the tiled floor \
                      its own floor of the cut tiles (Ground).",
                 );
                 ui.end_row();
+                for why in &unplaced {
+                    ui.label("");
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        format!("No cut placed: {why}."),
+                    );
+                    ui.end_row();
+                }
                 // The volumes: their spans ticked in the table.
                 ui.label("Volumes");
                 ui.horizontal(|ui| {
