@@ -10,9 +10,10 @@
 # flags leaves the old one behind. This removes, in every profile
 # (debug, release, the wasm targets'), what no build has read for DAYS days
 # (by the files' access time): the compiled crates (`deps`, `examples`) file
-# by file — a crate whose file is gone Cargo compiles again — and the
-# incremental caches crate by crate. Never the build scripts' output
-# (`build`) or Cargo's records (`.fingerprint`): Cargo takes a build
+# by file, then the records of the libraries removed (prune_builds.py: a
+# library whose record stays is taken for built and a later build fails)
+# — and the incremental caches crate by crate. Never the build scripts'
+# output (`build`) or their records: Cargo takes a build
 # script's output as there while its record says it ran, and a build then
 # fails (2026-10-24: libsqlite3-sys' bindgen.rs). Still above MAX_GB: the same with one
 # day; still above: that folder's debug builds removed whole (the next
@@ -70,6 +71,15 @@ prune "$days"
 if [ "$(size_gb)" -gt "$max_gb" ]; then
     prune 1
 fi
+# Again after the files removed by age: prune_builds.py also removes the
+# records (`.fingerprint`) of the libraries now gone — without that, Cargo
+# took a library removed by age (one read only by the doc tests, whose
+# access time macOS hardly updates) for up to date and the doc tests
+# failed, "can't find crate" (2026-10-31).
+for profile in "$dir"/* "$dir"/*/*; do
+    [ -d "$profile/.fingerprint" ] || continue
+    python3 -I "$here/prune_builds.py" "$profile" 2 >/dev/null || true
+done
 if [ "$(size_gb)" -gt "$max_gb" ]; then
     rm -rf "$dir/debug"
 fi
