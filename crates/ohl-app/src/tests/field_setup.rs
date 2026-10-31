@@ -333,10 +333,18 @@ fn a_case_not_solved_yet_is_solved_for_the_run() {
         panic!("an electric field")
     };
     assert!(e.field.profiles.iter().all(|p| p.max_kv_m > 0.0));
-    assert!(!e.field.notes.iter().any(|n| n.contains("not solved")), "{:?}", e.field.notes);
+    assert!(
+        !e.field.notes.iter().any(|n| n.contains("not solved")),
+        "{:?}",
+        e.field.notes
+    );
     let Some(Ok(b)) = &r.magnetic_field.job.result else {
         panic!("a magnetic field")
     };
     assert!(b.field.profiles.iter().any(|p| p.max_ut > 0.0));
-    assert!(!b.field.notes.iter().any(|n| n.contains("not solved")), "{:?}", b.field.notes);
+    assert!(
+        !b.field.notes.iter().any(|n| n.contains("not solved")),
+        "{:?}",
+        b.field.notes
+    );
 }
