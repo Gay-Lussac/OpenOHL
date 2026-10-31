@@ -51,6 +51,8 @@ clap.workspace = true
 [dev-dependencies]
 # An invented orthophoto for the tests of the plan's backgrounds.
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The building-cuts plugin's SVG files parsed in its test.
+roxmltree = "0.21"
 
 [lints]
 workspace = true

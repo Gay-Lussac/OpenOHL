@@ -976,6 +976,99 @@ the current folder). Every value the plugin gives is checked first
 names without a folder): [Writing
 plugins](../development/plugins.md#field-presets).
 
+<a id="building-cuts"></a>**The building-cuts plugin** (example plugin
+`plugins/examples/building-cuts`, 2026-10-31; built, in active
+development, not approved yet) finds the **buildings** near the line and
+gives the cuts and points the fields need at each of them:
+
+- **Buildings** from the point cloud's class role `building` and from
+  survey points whose code matches `building_codes` (default `BLD*`).
+  The points are put on a plan grid (`cell`, 0.5 m); cells closer than
+  `gap` (1.5 m) belong to one building; fewer than `min_points` (20)
+  points or a footprint under `min_area` (10 m²) is no building (the
+  count left out is said). Survey points with a breakline id form one
+  outline each, in the surveyed order. The result depends on the points,
+  not on their order.
+- **Footprint**: the convex hull of the points (default), or with
+  `outline = "cells"` the cells' boundary traced (an L-shape keeps its
+  notch), corners within `simplify` (0.25 m) of the simplified line
+  dropped. The cells' outline runs on the cells' edges: up to one cell
+  wider than the points on each side.
+- **Heights**: the ground is the 10th percentile (`ground_percentile`)
+  of the ground points 2–5 m around the footprint (`ground_ring`; the
+  point cloud's ground role and the survey's `ground_codes`; farther
+  ones, then the building's lowest point, when none — said); the eaves
+  the 50th percentile of the building's elevations, the roof the 98th;
+  **floors** = ceil((eaves − ground) / `floor_height` (3 m)), at least 1.
+  A building whose eaves are less than 2 m over its ground (a surveyed
+  footprint) is taken `default_height` (6 m) high, said.
+- **Cuts** across the line, perpendicular to the span's chord as the
+  engine computes them: per building the **governing cut** — the station
+  where its box (footprint × ground to roof) comes closest in 3D to a
+  phase conductor as solved in the case run — and the cut at its
+  footprint's **point nearest the axis** (a side parallel to the axis:
+  its middle), optionally its centroid's (`centroid_cut`); cuts of one
+  span within `merge` (2 m) are one, labelled with all of them
+  (`B007-gov+B007-near`). A building beside two spans (across a
+  structure) gets cuts in each, said. Each cut reaches `cut_margin`
+  (10 m) beyond the buildings it crosses (at least `min_width`, 20 m),
+  `above` (5 m) over the highest wire, points `step` (1 m) apart; when
+  the host's limit of 4 000 000 cut points a run would be passed, the
+  step is raised and said.
+- **Places of sensitive use** (the given points): the corners and the
+  midpoints of the footprint's sides facing the line, and its point
+  nearest the axis, at `first_height` + k × `floor_height` (1.5 m, 4.5 m,
+  …) above the ground, one per floor, named `B007-F2-c1-h4.5` (building,
+  floor, corner `c` / midpoint `m` / nearest point `n`, height).
+  **Conservative**: the top floor's place may lie above the eaves (a
+  7 m building has places at 1.5, 4.5 and 7.5 m).
+
+Its two presets: `buildings` (the cuts and the places) and `places` (the
+places alone, quicker). Its parameters: a TOML file
+(`plugins/examples/building-cuts/example-parameters.toml`; every key
+optional, the defaults above). Isolines at `levels_ut` and `levels_kv_m`
+(0.1, 1, 10, 100 µT; 0.1, 1, 5 kV/m); a limit (`limit_ut`, `limit_kv_m`)
+gives each building's margin — **no ordinance's value is built in**.
+
+**One field per run, both into one folder.** The host runs one field and
+hands its results to the plugin's report, so run the magnetic and the
+electric field one after the other with the same `--out`: every file
+with field values carries the quantity in its name and both stay side by
+side; the files without values are the same from either run.
+
+| File | What |
+|---|---|
+| `buildings-B.csv`, `buildings-E.csv` | a row per building: id, points, area, centroid, ground / eaves / roof elevation, floors, span, station range along it, smallest plan distance to the axis, smallest 3D distance to a phase conductor, its cuts, the largest value in its sections of the cuts, the largest at its places (B: also the cycle's largest), and with a limit the limit and the margin — the margin from the largest of all of them (**conservative**) |
+| `points-B.csv`, `points-E.csv` | every place: building, floor, place, x, y, z, height, the value (B: and the cycle's largest), the margin |
+| `cut-LABEL-B.csv`, `cut-LABEL-E.csv` | a cut's grid: offset, elevation, ground, value, below the ground (1/0) |
+| `cut-LABEL-B.svg`, `cut-LABEL-E.svg` | the cut drawn 1:1: the ground, the isolines with their legend, each building's section (footprint across the cut, ground to roof) with its largest value, the wires crossing the cut, the axis, a 10 m scale |
+| `buildings.geojson` | the footprints (with their summary), the cuts' lines and the places, in the line's coordinate system |
+| `buildings.dxf` | with `dxf = true`: the same in plan (R12: layers BUILDINGS, CUTS, PLACES) |
+| `notes-B.txt`, `notes-E.txt` | what the plugin assumed and found, the field's notes, warnings |
+
+A building's section in a cut takes the grid's points up to half a step
+outside it (**conservative**). The plugin measures a cut's place from
+the span's structures in the direction the sections are drawn; on a line
+with routes the engine may take a span the other way round — then the
+report warns that the cut landed elsewhere.
+
+```text
+ohl electrical magnetic examples/electrical/double-circuit.ohl.json \
+    --library examples/electrical/wires.ohlw --current '*=1000' \
+    --terrain survey.csv --cloud project.ohl \
+    --preset-plugin plugins/examples/building-cuts \
+    --params plugins/examples/building-cuts/example-parameters.toml --out report
+ohl electrical electric examples/electrical/double-circuit.ohl.json \
+    --library examples/electrical/wires.ohlw \
+    --terrain survey.csv --cloud project.ohl \
+    --preset-plugin plugins/examples/building-cuts \
+    --params plugins/examples/building-cuts/example-parameters.toml --out report
+```
+
+(`survey.csv`, `project.ohl`: your survey and a project with its point
+cloud; the plugin is built with `cargo build --release --target
+wasm32-wasip2` in its folder.)
+
 Try it on the synthetic example:
 
 ```text
