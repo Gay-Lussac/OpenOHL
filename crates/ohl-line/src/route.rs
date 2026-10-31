@@ -980,9 +980,16 @@ impl Line {
     }
 
     /// The alignments each structure is on (indices in `alignments`): those
-    /// with a point tied to it; else, for a structure giving its routes,
-    /// the nearest alignment of each of them; else those it stands within
-    /// [`NEAR_ALIGNMENT`] of.
+    /// with a point tied to it; for a structure giving its routes, the
+    /// nearest alignment of each of them; else (owner, 2026-10-31: "it
+    /// should just be pylons less than a few meters from an alignment
+    /// point without a pylon already on the alignment point") those with
+    /// a point no structure is tied to within [`NEAR_ALIGNMENT`] of it,
+    /// and those it stands within [`NEAR_ALIGNMENT`] of between their
+    /// points when a span of the line runs along the alignment from it to
+    /// a structure on it (a suspension tower on the straight; another
+    /// line's towers beside or under it are not, their spans not running
+    /// along it from the line's).
     fn near_alignments(&self) -> std::collections::BTreeMap<String, Vec<usize>> {
         let mut out = std::collections::BTreeMap::new();
         let tied: std::collections::BTreeMap<&str, &str> = self
@@ -995,6 +1002,18 @@ impl Line {
             .alignments
             .iter()
             .map(|a| positions(&Self::points_of_in(a, &index)))
+            .collect();
+        // Each alignment's points no structure is tied to.
+        let free_points: Vec<Vec<Point>> = self
+            .alignments
+            .iter()
+            .map(|a| {
+                Self::points_of_in(a, &index)
+                    .iter()
+                    .filter(|p| p.structure.is_none())
+                    .map(|p| p.position)
+                    .collect()
+            })
             .collect();
         // The structures tied to a point of each alignment.
         let tied_on: Vec<std::collections::HashSet<&str>> = self
@@ -1026,16 +1045,63 @@ impl Line {
                     }
                 }
             } else {
-                for (k, l) in lines.iter().enumerate() {
-                    if !ks.contains(&k) && beside(l, s.position) <= NEAR_ALIGNMENT {
+                for (k, free) in free_points.iter().enumerate() {
+                    if !ks.contains(&k)
+                        && free.iter().any(|p| {
+                            (p[0] - s.position[0]).hypot(p[1] - s.position[1]) <= NEAR_ALIGNMENT
+                        })
+                    {
                         ks.push(k);
                     }
                 }
             }
-            ks.sort_unstable();
             if !ks.is_empty() {
                 out.insert(s.id.clone(), ks);
             }
+        }
+        // Between the points: reached along the alignment by a span from a
+        // structure on it, again until none is added (a run of towers on
+        // the straight).
+        let spans: Vec<(&str, &str)> = self
+            .sections
+            .iter()
+            .flat_map(|s| s.points.windows(2))
+            .map(|w| (w[0].structure.as_str(), w[1].structure.as_str()))
+            .filter(|(a, b)| a != b)
+            .collect();
+        let at: std::collections::HashMap<&str, &crate::Structure> =
+            self.structures.iter().map(|s| (s.id.as_str(), s)).collect();
+        for (k, l) in lines.iter().enumerate() {
+            let near: std::collections::HashSet<&str> = self
+                .structures
+                .iter()
+                .filter(|s| {
+                    s.routes.is_empty()
+                        && !out.get(&s.id).is_some_and(|ks| ks.contains(&k))
+                        && beside(l, s.position) <= NEAR_ALIGNMENT
+                })
+                .map(|s| s.id.as_str())
+                .collect();
+            let mut added = true;
+            while added {
+                added = false;
+                for &(a, b) in &spans {
+                    for (on, x) in [(a, b), (b, a)] {
+                        if near.contains(x)
+                            && !out.get(x).is_some_and(|ks| ks.contains(&k))
+                            && out.get(on).is_some_and(|ks| ks.contains(&k))
+                            && let (Some(pa), Some(pb)) = (at.get(on), at.get(x))
+                            && chord_along(l, pa.position, pb.position)
+                        {
+                            out.entry(x.to_owned()).or_default().push(k);
+                            added = true;
+                        }
+                    }
+                }
+            }
+        }
+        for ks in out.values_mut() {
+            ks.sort_unstable();
         }
         out
     }
@@ -1683,9 +1749,17 @@ mod tests {
     #[test]
     fn structures_go_on_the_routes_of_their_alignments() {
         let mut line = crate::tests::example();
-        // A structure 4 m beside main's alignment is on it; 6 m away it is
-        // on no route, until it gives one.
+        // A structure 4 m beside main's alignment between two of its points
+        // is on it when a span of the line runs along it from one on it
+        // (owner, 2026-10-31), not alone (another line's tower); 6 m away
+        // it is on no route, until it gives one.
         let main = line.points_of(line.alignment_by_id("main").unwrap());
+        let view = line
+            .alignment_views()
+            .into_iter()
+            .find(|v| v.id == "main")
+            .unwrap();
+        let from = view.structures[0].clone();
         let [a, b] = [main[0].position, main[1].position];
         let n = (b[0] - a[0]).hypot(b[1] - a[1]);
         let side = [-(b[1] - a[1]) / n, (b[0] - a[0]) / n];
@@ -1701,6 +1775,20 @@ mod tests {
         s.position = at(4.0);
         s.routes.clear();
         line.structures.push(s);
+        assert!(line.routes_of("X").is_empty());
+        let mut span = line.sections[0].clone();
+        span.id = "to-X".into();
+        span.points = vec![
+            crate::SectionPoint {
+                structure: from,
+                set: span.points[0].set,
+            },
+            crate::SectionPoint {
+                structure: "X".into(),
+                set: span.points[0].set,
+            },
+        ];
+        line.sections.push(span);
         assert_eq!(line.routes_of("X"), ["main"]);
         line.structures.last_mut().unwrap().position = at(6.0);
         assert!(line.routes_of("X").is_empty());

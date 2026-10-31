@@ -2211,9 +2211,10 @@ pub(crate) mod tests {
     #[test]
     fn a_crossing_line_under_a_span_keeps_the_span() {
         // Another line's structure 3 m beside the alignment under T1–T2,
-        // none of its own spans along it: near the alignment, but away
-        // from the run (the span passes over it); T1–T2 follow each other
-        // in the run and are drawn, the structure too.
+        // none of its own spans along it: not on the alignment (owner,
+        // 2026-10-31: only structures at its points, or reached along it
+        // by a span of the line); T1–T2 follow each other in the run and
+        // are drawn, the structure too (within the line width).
         let (mut line, shapes, jumpers, _) = solved();
         let mut c = line.structure("T1").unwrap().clone();
         c.id = "X1".into();
@@ -2223,8 +2224,8 @@ pub(crate) mod tests {
         line.structures.push(c);
         let views = line.alignment_views();
         let main = &views[0];
-        assert_eq!(main.structures[..3], ["T1", "X1", "T2"]);
-        assert_eq!(main.away, ["X1"]);
+        assert_eq!(main.structures[..3], ["T1", "T2", "T3"]);
+        assert!(main.away.is_empty());
         assert!(main.consecutive("T1", "T2") && main.along(&line, "T1", "T2"));
         let stations = main.stations(&line).unwrap();
         assert!((stations[0].ahead_span - 310.0).abs() < 1e-6);

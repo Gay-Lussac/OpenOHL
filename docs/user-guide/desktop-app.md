@@ -839,7 +839,7 @@ The palette is yours: remembered on this computer, not in the project. **OK** us
 
 A line is laid out in three steps, kept as three kinds of record in the project: a **route** (a path of the line), its **alignments** (each on exactly one route, in their order along it) and the **alignment points** (PIs) of each alignment, in order. An alignment cannot exist without its route. A point is an object of its own: it may be on no alignment yet, on one, or on several — with its own place (order number) in each. Where alignments of different routes meet they share the point, so the point — and a structure tied to it — is on all their routes. Structures, sections, jumpers and what hangs on structures are put on routes **from the alignments**, nothing to keep by hand:
 
-- a structure tied to an alignment point, or within 5 m of an alignment, is on that alignment's route;
+- a structure is on an alignment, and its route, when it is tied to one of its points, or stands within 5 m of one of its points no structure is tied to, or stands within 5 m of the alignment between its points with a span of the line running along the alignment to it from a structure on it (a suspension tower on the straight; owner, 2026-10-31). Another line's towers near the alignment are not on it: their spans cross it or run beside it, not on from the line's;
 - a structure away from every alignment (a crossing line) is on no route until you give its route(s) — in its window (Edit, or when placing it) or the Structures table's **routes** column; it is said in yellow after an edit, and in its properties;
 - a section is on the routes of its structures (one running from a route into another is on both), a jumper on those of its two ends.
 

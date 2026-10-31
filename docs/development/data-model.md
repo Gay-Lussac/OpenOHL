@@ -308,9 +308,13 @@ alignment keeps its points.
 **What is on a route** is worked out, not stored (`Line::structure_routes`,
 `Line::wire_routes`, `Line::alignment_views`):
 
-- a **structure** tied to an alignment point, or within 5 m of an
-  alignment (`NEAR_ALIGNMENT`, beside it or within 5 m of an end), is on
-  that alignment and its route; a structure giving its own `routes` is on those (stationed on
+- a **structure** is on an alignment and its route when it is tied to
+  one of its points, or within 5 m (`NEAR_ALIGNMENT`) of one of its
+  points no structure is tied to, or within 5 m of the alignment between
+  its points (beside it or within 5 m of an end) with a span of the line
+  running along the alignment to it from a structure on it, repeated
+  along a run of such towers (owner, 2026-10-31: another line's towers
+  near the alignment are not on it); a structure giving its own `routes` is on those (stationed on
   the nearest alignment of each); at a junction it is on every route
   meeting there;
 - a **section** is on the routes of its structures (one running from a

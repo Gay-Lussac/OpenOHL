@@ -483,6 +483,16 @@ ticked, an honest time left (owner, 2026-10-30)**
   the others (crossing lines, connections from the middle) go last,
   unticked by default. Only the two field windows list spans to choose;
   the other checks choose sections and circuits.
+- The owner, then: "change the alignment part, it should just be pylons
+  less than a few meters from an alignment point without a pylon already
+  on the alignment point. Otherwise it's not in the alignment"; and, asked:
+  a tower on the straight between two points is on it when a span of the
+  line runs along the alignment to it (suspension towers keep their
+  station), and a tower giving its routes stays on them, away. So
+  `near_alignments`: tied; within 5 m of an untied point; within 5 m
+  between the points reached along it by a span from a structure on it.
+  On the real lines the main runs kept every tower and lost the crossing
+  towers a branch had taken in.
 - The owner, then: "for the magnetic field it should be the same...
   volumes and results computed only on selected spans". The list is the
   windows' **Spans** row (Scope): the profiles, the isolines from above
