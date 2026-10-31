@@ -49,6 +49,21 @@ side (owner, 2026-10-31)**
   Run, in red over the limit. `TiledFloor::seconds` measured again (0.8 s
   for the table and the potentials at 4 660 tiles, growing with the
   square; 0.4 s for the LU, with the cube).
+- The owner looked at a valley span of a real line (2D cut with isolines,
+  3D volume at 5 kV/m) and asked to fix three things, then "the same for
+  the magnetic field": (1) the cross-section panel opens **on the wires**
+  while a field is drawn in it (the conductors crossing the cut, 15 m
+  around them; re-fitted when the field arrives, the camera untouched;
+  **Whole cut** / **Zoom to the wires**); (2) **thin, short pieces of a
+  volume's surfaces left out** (at most 2 steps across in two directions,
+  20 long: beads along an earth wire), counted with the results — display
+  only; (3) the command line's **ground by default the project's** (its
+  surface of the checks, else its point cloud's ground along the whole
+  line, as OHL-Design), straight between the feet only for a line file,
+  said as a warning: across the valley the straight ground passed close
+  under the wires (14.5 kV/m at 1 m instead of 0.007) and dropped six
+  sections' charges as "at or below the ground". Both fields (the panel
+  and the volumes are shared; the magnetic command's points too).
 - Explained to the owner (asked "what is the fundamental role played by
   these tiles"): the ground's induced charge, solved so the ground stays
   at zero potential; each tile's charge acts on every other's, hence a

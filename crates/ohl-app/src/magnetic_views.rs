@@ -674,13 +674,15 @@ impl MagneticFieldWindow {
                     ui,
                     if n == 0 {
                         format!(
-                            "    {l} µT: no surface — {}",
-                            nowhere(vv.above.get(k).copied().unwrap_or(0.0))
+                            "    {l} µT: no surface — {}{}",
+                            nowhere(vv.above.get(k).copied().unwrap_or(0.0)),
+                            field_views::left_out_text(vv.left_out.get(k).copied().unwrap_or(0))
                         )
                     } else {
                         format!(
-                            "    {l} µT: {n} triangles, off the level by {}",
-                            off_text(d)
+                            "    {l} µT: {n} triangles, off the level by {}{}",
+                            off_text(d),
+                            field_views::left_out_text(vv.left_out.get(k).copied().unwrap_or(0))
                         )
                     },
                 );

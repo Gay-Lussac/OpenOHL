@@ -166,6 +166,70 @@ pub struct Mesh {
     pub triangles: Vec<[u32; 3]>,
 }
 
+impl Mesh {
+    /// Leaves out its thin, short connected pieces: at most `thin` across
+    /// in two of the axes and at most `long` in the third (in its own
+    /// coordinates) — the pieces left and how many were left out.
+    pub fn without_thin_pieces(self, thin: f64, long: f64) -> (Mesh, usize) {
+        let n = self.vertices.len();
+        let mut parent: Vec<usize> = (0..n).collect();
+        fn root(p: &mut [usize], mut i: usize) -> usize {
+            while p[i] != i {
+                p[i] = p[p[i]];
+                i = p[i];
+            }
+            i
+        }
+        for t in &self.triangles {
+            let a = root(&mut parent, t[0] as usize);
+            for &c in &t[1..] {
+                let b = root(&mut parent, c as usize);
+                if a != b {
+                    parent[b] = a;
+                }
+            }
+        }
+        // Each piece's extent.
+        let mut lo: HashMap<usize, [f64; 3]> = HashMap::new();
+        let mut hi: HashMap<usize, [f64; 3]> = HashMap::new();
+        for (i, v) in self.vertices.iter().enumerate() {
+            let r = root(&mut parent, i);
+            let l = lo.entry(r).or_insert(*v);
+            let h = hi.entry(r).or_insert(*v);
+            for k in 0..3 {
+                l[k] = l[k].min(v[k]);
+                h[k] = h[k].max(v[k]);
+            }
+        }
+        let small = |r: usize| {
+            let mut e: [f64; 3] = std::array::from_fn(|k| hi[&r][k] - lo[&r][k]);
+            e.sort_by(f64::total_cmp);
+            e[1] <= thin && e[2] <= long
+        };
+        let mut dropped = std::collections::HashSet::new();
+        let mut map = vec![u32::MAX; n];
+        let mut out = Mesh::default();
+        for t in &self.triangles {
+            let r = root(&mut parent, t[0] as usize);
+            if small(r) {
+                dropped.insert(r);
+                continue;
+            }
+            let mut tri = [0u32; 3];
+            for (k, &c) in t.iter().enumerate() {
+                let c = c as usize;
+                if map[c] == u32::MAX {
+                    map[c] = out.vertices.len() as u32;
+                    out.vertices.push(self.vertices[c]);
+                }
+                tri[k] = map[c];
+            }
+            out.triangles.push(tri);
+        }
+        (out, dropped.len())
+    }
+}
+
 /// The six tetrahedra of a cube (corners numbered by bits: x 1, y 2, z 4),
 /// all around its diagonal 0–7, so neighbouring cubes split their shared
 /// faces alike and the surface has no cracks.
@@ -312,6 +376,29 @@ pub fn isosurface(n: [usize; 3], value: &dyn Fn(usize, usize, usize) -> f64, lev
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A volume's thin short pieces are left out, counted (owner,
+    /// 2026-10-31: beads along an earth wire); a long piece stays.
+    #[test]
+    fn small_pieces_are_left_out() {
+        // A long strip (10 units) and a small triangle (1 unit).
+        let m = Mesh {
+            vertices: vec![
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [20.0, 0.0, 0.0],
+                [21.0, 0.0, 0.0],
+                [20.0, 1.0, 0.0],
+            ],
+            triangles: vec![[0, 1, 2], [0, 2, 3], [4, 5, 6]],
+        };
+        let (kept, dropped) = m.without_thin_pieces(2.0, 5.0);
+        assert_eq!(dropped, 1);
+        assert_eq!(kept.triangles.len(), 2);
+        assert_eq!(kept.vertices.len(), 4);
+    }
 
     /// A circle's isoline: closed, every point at the radius (the values
     /// fall as 1/r, so the logarithmic placement is exact on the axes).

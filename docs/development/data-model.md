@@ -746,7 +746,8 @@ take a run of spans following each other, 2026-10-29), `values`:
 (points x, y, ground; mitred offsets at its angles), `width`, `bottom`,
 `top`, `step`},
 `surfaces` [(level, `contour::Mesh` {`vertices`, `triangles`})],
-`deviation` per level, `computed`, `full`, `above` per level}, `pieces`,
+`deviation` per level, `computed`, `full`, `above` per level, `left_out`
+per level (thin short pieces of surface left out, 2026-10-31)}, `pieces`,
 `left_out`}], `pieces` (`Pieces` {`count`, `longest`, `off_wire`,
 `interpolation`}), a `Deviation` being {`points`, `median`, `p90`, `max`}
 (relative to the level, or to the whole line's field for `left_out`);
