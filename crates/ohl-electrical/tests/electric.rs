@@ -119,6 +119,7 @@ fn a_cut_and_a_volume() {
             width: 30.0,
             above: 5.0,
             step: 1.0,
+            ..Default::default()
         }],
         volumes: vec![magnetic::VolumeSpec {
             from: "T1".into(),
@@ -222,6 +223,7 @@ fn the_tiled_floor_is_the_default() {
             width: 20.0,
             above: 5.0,
             step: 2.0,
+            ..Default::default()
         }],
         ..s.clone()
     };

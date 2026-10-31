@@ -525,6 +525,18 @@ core staying independent of them.
      `cross-sections` (the cross-section record sent, tables and drawings
      given back), so any field or noise method can be added the same way
      (also, for instance, radio interference or surface gradient).
+     *Field presets built 2026-10-31 (in active development, not
+     approved yet; owner: "implement in the core what's required for the
+     building plugin"):* a plugin's optional `field-presets` export
+     decides from the points the host gathers (the manifest's
+     `[field-input]`: LiDAR class roles, the ground thinned, survey
+     codes, a reach) and the solved model where cuts (with a label) and
+     points are needed; the core runs the magnetic or electric field
+     there and gives the results back as `ohl-field-results` JSON for the
+     plugin's report files (`ohl electrical magnetic|electric
+     --preset-plugin`, [plugins](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/plugins.md#field-presets)).
+     The building plugin itself and the field presets in OHL-Design: not
+     yet; the `cross-sections` export for noise methods: not yet.
 7. [ ] **Corona and surface gradient** in the core or the plugin: the
    conductor surface gradient per subconductor (Markt–Mengele or a charge
    simulation), the onset gradient (Peek) and the margin, per section —

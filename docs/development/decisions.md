@@ -75,6 +75,44 @@ validated)**
   or grid of an older file keeps its step, its spans now ticked in the
   table.
 
+**Core extension points for a building plugin (owner, 2026-10-31)**
+
+- A future WebAssembly plugin ("building-cuts") is to cluster the
+  buildings' points (the LiDAR role `building`, survey codes), decide per
+  building where vertical field cuts and points are needed, run the
+  magnetic and electric fields there through the core, and export 2D
+  cuts and a summary. The owner approved the core extension points for
+  it and asked: "implement in the core what's required for the building
+  plugin". Built (additive, plugin interface still 0.3, no host
+  callbacks — a plugin stays a pure function):
+- **E1, the points for a plugin, declared in its manifest**: a
+  `[field-input]` table (`roles`, `ground-roles`, `ground-cell`,
+  `survey-codes`, `reach`, `max-points`; unknown keys refused); the host
+  gathers them (`ohl_io::field_input::gather`: one pass of the point
+  cloud within the reach of the spans, the ground the lowest point per
+  cell, survey points by code); a role the class scheme lacks, or more
+  points than `max-points`, is an error saying so.
+- **E2, the optional export `field-presets`** (`parameters-template`,
+  `field-presets`, `report`): the plugin gets its parameters, the export
+  model and the points, gives presets of cuts (with labels), points,
+  levels, outlines and notes, and later makes its report files from the
+  results. The host checks every value before use (spans exist,
+  fractions 0–1, sizes above 0, at most 4 000 000 cut points per preset
+  estimated with 100 m from the ground to the highest wire, names
+  unique, file names without a folder). A plugin built before loads as
+  it is.
+- **E3, a label on a cut** (`CutSpec.label`, `FieldCut.label`, `--cut
+  FROM:TO@F#LABEL`, the CSV's last column `label`).
+- **E4, the results as JSON** (`ohl-field-results` version 1: cuts with
+  values, ground and isolines, points, the settings and the case; `--json`
+  on `ohl electrical magnetic` and `electric`). Nothing new is computed.
+- **E5a, the command line**: `--preset-plugin DIR [--params] [--preset]
+  [--out] [--cloud]` gathers, calls the plugin, adds its cuts and points
+  to the run, and writes its report files. `ohl electrical electric`
+  also gained `--csv` (the CSV function existed). In OHL-Design: not yet.
+  The test plugin `plugins/tests/field-presets` gives invented, fixed
+  presets for the synthetic double circuit.
+
 **The electric field's charges where the wires are; its floors side by
 side (owner, 2026-10-31)**
 

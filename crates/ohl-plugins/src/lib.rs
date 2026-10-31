@@ -37,7 +37,12 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+pub mod field_presets;
 pub mod settings;
+pub use field_presets::{
+    FIELD_PRESETS, FIELD_PRESETS_EXPORT, FieldInput, FieldInputTable, FieldPreset, InputPoint,
+    OutFile, Outline, Place, PresetCut,
+};
 pub use settings::{
     Consent, PluginSettings, SETTINGS_FILE, STORAGE_ID, USER_DIR, consent_for,
     load_shared_consents, set_consents, shared_storage_dir, user_dir,
@@ -488,6 +493,10 @@ pub struct Manifest {
     /// the application chooses one.
     #[serde(default, rename = "class-scheme")]
     pub class_schemes: Vec<ManifestTemplate>,
+    /// `[field-input]`: the points the host gathers for the plugin's
+    /// `field-presets` export (2026-10-31; none: none gathered).
+    #[serde(default, rename = "field-input")]
+    pub field_input: Option<FieldInputTable>,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -538,6 +547,9 @@ impl Manifest {
                     )));
                 }
             }
+        }
+        if let Some(f) = &manifest.field_input {
+            f.check().map_err(|m| bad(format!("field-input: {m}")))?;
         }
         let mut names = std::collections::BTreeSet::new();
         for c in &manifest.columns {
@@ -1931,8 +1943,9 @@ impl WasmHost {
 
     /// Loads the plugin in `dir` in the world of each extension point its
     /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
-    /// none of these: the minimal `plugin` world) and says what it
-    /// describes: `ohl plugin info`.
+    /// none of these: the `field-preset-plugin` world when it has the
+    /// `field-presets` export, else the minimal `plugin` world) and says
+    /// what it describes: `ohl plugin info`.
     pub fn describe_any(&self, dir: &Path) -> Result<Description, PluginError> {
         let manifest = Manifest::load(dir)?;
         let has = |p: &str| manifest.plugin.extension_points.iter().any(|e| e == p);
@@ -2005,6 +2018,19 @@ impl WasmHost {
                 details.push(format!("check {}: {}", c.id, c.title));
             }
             worlds.push("check-plugin");
+        }
+        if self.has_field_presets(dir)? {
+            let template = self.field_parameters_template(dir)?;
+            details.push(format!(
+                "optional exports: field-presets (parameter template: {} lines)",
+                template.lines().count()
+            ));
+            if worlds.is_empty()
+                && let Some(i) = self.describe_field_preset_plugin(dir)?
+            {
+                info = Some(i);
+                worlds.push("field-preset-plugin");
+            }
         }
         if worlds.is_empty() {
             info = Some(self.load(dir)?.describe()?);

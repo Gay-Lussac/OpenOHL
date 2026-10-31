@@ -1459,6 +1459,7 @@ pub fn run_keeping(
                 _ => field_views::vertical_cut(&cut, &kv, Some(&g), progress)?,
             };
             cuts.push(magnetic::FieldCut {
+                label: c.label.clone(),
                 from: spans[i].from.clone(),
                 to: spans[i].to.clone(),
                 at: t,
@@ -2211,39 +2212,45 @@ fn csv_field(s: &str) -> String {
 }
 
 /// The results as CSV: one row per profile point, given point and cut
-/// point (kV/m).
+/// point (kV/m; a cut's rows with its label in the last column).
 pub fn csv(e: &ElectricField) -> String {
     use std::fmt::Write;
     let mut out = String::from(
-        "kind,from,to,station_m,name,x,y,z,offset_m,height_m,e_kv_m,limit_kv_m,margin_kv_m\n",
+        "kind,from,to,station_m,name,x,y,z,offset_m,height_m,e_kv_m,limit_kv_m,margin_kv_m,label\n",
     );
     let num = |x: Option<f64>| x.map_or(String::new(), |v| format!("{v:.4}"));
-    let row =
-        |out: &mut String, kind: &str, from: &str, to: &str, at: Option<f64>, p: &FieldPoint| {
-            let _ = writeln!(
-                out,
-                "{kind},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{},{}",
-                csv_field(from),
-                csv_field(to),
-                num(at),
-                csv_field(&p.name),
-                p.x,
-                p.y,
-                p.z,
-                p.offset,
-                p.height,
-                p.e_kv_m,
-                num(e.limit_kv_m),
-                num(p.margin_kv_m),
-            );
-        };
+    let row = |out: &mut String,
+               kind: &str,
+               from: &str,
+               to: &str,
+               at: Option<f64>,
+               p: &FieldPoint,
+               label: &str| {
+        let _ = writeln!(
+            out,
+            "{kind},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{},{},{}",
+            csv_field(from),
+            csv_field(to),
+            num(at),
+            csv_field(&p.name),
+            p.x,
+            p.y,
+            p.z,
+            p.offset,
+            p.height,
+            p.e_kv_m,
+            num(e.limit_kv_m),
+            num(p.margin_kv_m),
+            csv_field(label),
+        );
+    };
     for pr in &e.profiles {
         for p in &pr.points {
-            row(&mut out, "profile", &pr.from, &pr.to, Some(pr.at), p);
+            row(&mut out, "profile", &pr.from, &pr.to, Some(pr.at), p, "");
         }
     }
     for p in &e.points {
-        row(&mut out, "point", "", "", None, p);
+        row(&mut out, "point", "", "", None, p, "");
     }
     for c in &e.cuts {
         let v = &c.values;
@@ -2262,7 +2269,15 @@ pub fn csv(e: &ElectricField) -> String {
                     e_kv_m: kv,
                     margin_kv_m: e.limit_kv_m.map(|l| l - kv),
                 };
-                row(&mut out, "cut", &c.from, &c.to, Some(c.at), &p);
+                row(
+                    &mut out,
+                    "cut",
+                    &c.from,
+                    &c.to,
+                    Some(c.at),
+                    &p,
+                    c.label.as_deref().unwrap_or(""),
+                );
             }
         }
     }

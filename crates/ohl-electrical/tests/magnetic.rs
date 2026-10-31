@@ -309,10 +309,57 @@ fn a_vertical_cut_across_the_line() {
             width: 40.0,
             above: 10.0,
             step: 1.0,
+            label: Some("house A".into()),
         }],
         ..Settings::default()
     };
     let (m, wires) = field_keeping(&line, &library, &s);
+    // The label carried to the result and the CSV's last column.
+    assert_eq!(m.cuts[0].label.as_deref(), Some("house A"));
+    let csv = magnetic::csv(&m);
+    assert!(csv.lines().next().unwrap().ends_with(",label"));
+    assert!(
+        csv.lines()
+            .filter(|l| l.starts_with("cut,"))
+            .all(|l| l.ends_with(",house A"))
+    );
+    // The results as `ohl-field-results` JSON: the CSV's values, the
+    // label, the isolines of the levels.
+    let levels = Settings {
+        levels: vec![5.0],
+        ..s.clone()
+    };
+    let json: serde_json::Value = serde_json::from_str(
+        &ohl_electrical::field_results::magnetic_json(&m, &levels, "still air", 40.0),
+    )
+    .unwrap();
+    assert_eq!(json["format"], "ohl-field-results");
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["case"]["name"], "still air");
+    assert!(json["settings"]["cuts"].is_null() && json["settings"]["height"] == 1.0);
+    let cut = &json["cuts"][0];
+    assert_eq!(cut["label"], "house A");
+    assert_eq!(cut["quantity"], "B");
+    let values: Vec<f64> = cut["values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    let from_csv: Vec<f64> = csv
+        .lines()
+        .filter(|l| l.starts_with("cut,"))
+        .map(|l| l.split(',').nth(10).unwrap().parse().unwrap())
+        .collect();
+    assert_eq!(values.len(), from_csv.len());
+    assert!(
+        values
+            .iter()
+            .zip(&from_csv)
+            .all(|(a, b)| (a - b).abs() <= 0.6e-5)
+    );
+    assert_eq!(cut["isolines"][0]["level"], 5.0);
+    assert!(!cut["isolines"][0]["lines"].as_array().unwrap().is_empty());
     let c = &m.cuts[0].values;
     let nc = c.offsets.len();
     assert_eq!(nc, 81);

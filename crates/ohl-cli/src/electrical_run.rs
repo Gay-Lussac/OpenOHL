@@ -125,9 +125,9 @@ pub struct ElectricArgs {
     /// The longest straight piece of a wire, m (default: the solver's).
     #[arg(long)]
     pub piece_length: Option<f64>,
-    /// A vertical cut across span FROM:TO at its lowest point or a fraction.
-    /// Repeatable.
-    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
+    /// A vertical cut across span FROM:TO at its lowest point or a fraction,
+    /// with an optional label after # (carried to the results). Repeatable.
+    #[arg(long, value_name = "FROM:TO[@FRACTION][#LABEL]")]
     pub cut: Vec<String>,
     /// Between a cut's points, m.
     #[arg(long, default_value_t = 0.5)]
@@ -153,6 +153,43 @@ pub struct ElectricArgs {
     /// Print every profile point.
     #[arg(long)]
     pub all_points: bool,
+    /// Write every point as CSV here.
+    #[arg(long)]
+    pub csv: Option<PathBuf>,
+    #[command(flatten)]
+    pub plugin: FieldPluginArgs,
+}
+
+/// The results as JSON and the field presets of a plugin, for `ohl
+/// electrical magnetic` and `electric` (2026-10-31: the core extension
+/// points for a building plugin).
+#[derive(Args)]
+pub struct FieldPluginArgs {
+    /// Write the results as JSON here (format `ohl-field-results` 1: the
+    /// cuts with their isolines, the given points, the settings).
+    #[arg(long)]
+    pub json: Option<PathBuf>,
+    /// A plugin with the `field-presets` export: the points its manifest
+    /// asks for are gathered (the point cloud's, --terrain's survey
+    /// points), it gives the cuts and points to compute (added to those
+    /// given here), and makes its report files from the results.
+    #[arg(long, value_name = "DIR")]
+    pub preset_plugin: Option<PathBuf>,
+    /// The plugin's parameters, a TOML file (default: its template).
+    #[arg(long, requires = "preset_plugin")]
+    pub params: Option<PathBuf>,
+    /// The plugin's preset to run, by name (default: its first).
+    #[arg(long, requires = "preset_plugin")]
+    pub preset: Option<String>,
+    /// The folder the plugin's report files are written to (default: the
+    /// current folder).
+    #[arg(long, requires = "preset_plugin")]
+    pub out: Option<PathBuf>,
+    /// The point cloud the plugin's points come from: a COPC file or a
+    /// project's cloud (FILE.ohl or FILE.ohl#name); default: the
+    /// project's, if any.
+    #[arg(long, requires = "preset_plugin")]
+    pub cloud: Option<String>,
 }
 
 /// `ohl electrical magnetic`.
@@ -256,8 +293,9 @@ pub struct MagneticArgs {
     pub modelled_within: Option<f64>,
     /// A vertical cut across span FROM:TO at its lowest point or at a
     /// fraction of it (3D): --width to either side, from the ground to
-    /// --above over the highest wire. Repeatable.
-    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
+    /// --above over the highest wire; an optional label after # (carried
+    /// to the results). Repeatable.
+    #[arg(long, value_name = "FROM:TO[@FRACTION][#LABEL]")]
     pub cut: Vec<String>,
     /// Between a cut's points, m.
     #[arg(long, default_value_t = 0.5)]
@@ -300,6 +338,8 @@ pub struct MagneticArgs {
     /// Write every point as CSV here.
     #[arg(long)]
     pub csv: Option<PathBuf>,
+    #[command(flatten)]
+    pub plugin: FieldPluginArgs,
 }
 
 /// `ohl electrical parameters`.
@@ -827,18 +867,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         .collect::<Result<Vec<_>, _>>()?;
     let mut cuts = Vec::new();
     for c in &a.cut {
-        let (span, fraction) = match c.split_once('@') {
-            Some((s, f)) => (
-                s,
-                Some(
-                    f.trim()
-                        .parse::<f64>()
-                        .map_err(|_| format!("--cut {c}: {f} is not a fraction 0–1"))?,
-                ),
-            ),
-            None => (c.as_str(), None),
-        };
-        let (from, to) = span_arg(span, "--cut")?;
+        let (from, to, fraction, label) = cut_arg(c)?;
         cuts.push(magnetic::CutSpec {
             from,
             to,
@@ -846,6 +875,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             width: a.width,
             above: a.above,
             step: a.cut_step,
+            label,
         });
     }
     let mut volumes = Vec::new();
@@ -871,7 +901,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", p.display()))?,
         None => Vec::new(),
     };
-    let settings = Settings {
+    let mut settings = Settings {
         model: if a.two_d { Model::TwoD } else { Model::ThreeD },
         heights_2d: if a.mean_heights {
             Heights2d::Mean
@@ -925,6 +955,20 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         .into_iter()
         .filter_map(Result::ok)
         .collect();
+    let preset = preset_from_plugin(
+        &a.plugin,
+        &a.model.file,
+        a.terrain.as_deref(),
+        &line,
+        &case,
+        &shapes,
+        &jumpers,
+    )?;
+    if let Some(p) = &preset {
+        settings.cuts.extend(preset_cuts(&p.preset));
+        settings.points.extend(preset_points(&p.preset));
+        add_levels(&mut settings.levels, &p.preset.levels_ut);
+    }
     let src = ohl_electrical::Sources {
         line: &line,
         library: &library,
@@ -1055,7 +1099,8 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         let v = &c.values;
         let max = v.values.iter().copied().fold(0.0, f64::max);
         println!(
-            "cut {}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} µT; {} pieces{}",
+            "cut {}{}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} µT; {} pieces{}",
+            c.label.as_ref().map_or(String::new(), |l| format!("{l} ")),
             c.from,
             c.to,
             c.at,
@@ -1113,7 +1158,13 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         std::fs::write(path, magnetic::obj(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("written: {}", path.display());
     }
-    Ok(())
+    let json = ohl_electrical::field_results::magnetic_json(
+        &m,
+        &settings,
+        &case.name,
+        case.temperature.celsius(),
+    );
+    write_results(&a.plugin, &json, preset)
 }
 
 /// A span FROM:TO with an optional @FRACTION.
@@ -1168,7 +1219,7 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
     }
     let mut cuts = Vec::new();
     for c in &a.cut {
-        let (from, to, fraction) = span_at(c, "--cut")?;
+        let (from, to, fraction, label) = cut_arg(c)?;
         cuts.push(magnetic::CutSpec {
             from,
             to,
@@ -1176,6 +1227,7 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             width: a.width,
             above: a.above,
             step: a.cut_step,
+            label,
         });
     }
     let mut volumes = Vec::new();
@@ -1201,7 +1253,7 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", p.display()))?,
         None => Vec::new(),
     };
-    let settings = Settings {
+    let mut settings = Settings {
         model: if a.two_d { Model::TwoD } else { Model::ThreeD },
         voltages,
         height: a.height,
@@ -1230,7 +1282,6 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         levels,
         ..Default::default()
     };
-    let mut settings = settings;
     if a.steel {
         (settings.steel, settings.steel_left_out) = steel(&a.model, &line)?;
     }
@@ -1268,6 +1319,20 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
         .as_ref()
         .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
+    let preset = preset_from_plugin(
+        &a.plugin,
+        &a.model.file,
+        a.terrain.as_deref(),
+        &line,
+        &case,
+        &shapes,
+        &jumpers,
+    )?;
+    if let Some(p) = &preset {
+        settings.cuts.extend(preset_cuts(&p.preset));
+        settings.points.extend(preset_points(&p.preset));
+        add_levels(&mut settings.levels, &p.preset.levels_kv_m);
+    }
     let src = ohl_electrical::Sources {
         line: &line,
         library: &library,
@@ -1322,7 +1387,8 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         let v = &c.values;
         let max = v.values.iter().copied().fold(0.0, f64::max);
         println!(
-            "cut {}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} kV/m",
+            "cut {}{}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} kV/m",
+            c.label.as_ref().map_or(String::new(), |l| format!("{l} ")),
             c.from,
             c.to,
             c.at,
@@ -1368,6 +1434,226 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
                 p.margin_kv_m.map_or("—".into(), |x| format!("{x:.4}"))
             );
         }
+    }
+    if let Some(path) = &a.csv {
+        std::fs::write(path, electric::csv(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    let json = ohl_electrical::field_results::electric_json(
+        &m,
+        &settings,
+        &case.name,
+        case.temperature.celsius(),
+    );
+    write_results(&a.plugin, &json, preset)
+}
+
+/// `--cut FROM:TO[@FRACTION][#LABEL]`.
+fn cut_arg(text: &str) -> Result<(String, String, Option<f64>, Option<String>), String> {
+    let (spec, label) = match text.split_once('#') {
+        Some((s, l)) if !l.trim().is_empty() => (s, Some(l.trim().to_owned())),
+        Some((s, _)) => (s, None),
+        None => (text, None),
+    };
+    let (from, to, fraction) = span_at(spec, "--cut")?;
+    Ok((from, to, fraction, label))
+}
+
+/// A plugin's preset, chosen and checked, with what its report needs.
+struct PresetRun {
+    host: ohl_plugins::WasmHost,
+    dir: PathBuf,
+    parameters: String,
+    preset: ohl_plugins::FieldPreset,
+}
+
+/// The preset of `--preset-plugin` (none without it): the points its
+/// manifest's `[field-input]` asks for gathered (the point cloud of
+/// `--cloud`, else the project's; the survey points of `terrain`), the
+/// plugin given them, its parameters and the solved model, its presets
+/// checked by the host, the one named by `--preset` (else the first)
+/// taken.
+fn preset_from_plugin(
+    a: &FieldPluginArgs,
+    file: &std::path::Path,
+    terrain: Option<&std::path::Path>,
+    line: &ohl_line::Line,
+    case: &ohl_weather::WeatherCase,
+    shapes: &[ohl_line::solve::SectionShape],
+    jumpers: &[ohl_line::jumper::JumperShape],
+) -> Result<Option<PresetRun>, String> {
+    let Some(dir) = &a.preset_plugin else {
+        return Ok(None);
+    };
+    let host = ohl_plugins::WasmHost::new().map_err(|e| e.to_string())?;
+    let manifest = ohl_plugins::Manifest::load(dir).map_err(|e| e.to_string())?;
+    if !host.has_field_presets(dir).map_err(|e| e.to_string())? {
+        return Err(format!(
+            "{}: plugin {} has no field-presets export",
+            dir.display(),
+            manifest.plugin.name
+        ));
+    }
+    let parameters = match &a.params {
+        Some(p) => std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
+        None => host
+            .field_parameters_template(dir)
+            .map_err(|e| e.to_string())?,
+    };
+    let spans: Vec<(String, String)> = ohl_electrical::cross_section::line_spans(line)
+        .into_iter()
+        .map(|s| (s.from, s.to))
+        .collect();
+    let at = |id: &str| {
+        line.structure(id)
+            .map(|s| [s.position[0], s.position[1]])
+            .ok_or_else(|| format!("no structure {id}"))
+    };
+    let mut polylines = Vec::new();
+    for (from, to) in &spans {
+        polylines.push(vec![at(from)?, at(to)?]);
+    }
+    let table = manifest.field_input.clone().unwrap_or_default();
+    let wants_cloud = !table.roles.is_empty() || !table.ground_roles.is_empty();
+    let cloud = match (&a.cloud, wants_cloud) {
+        (_, false) => None,
+        (Some(spec), true) => Some(ohl_pointcloud::open_source(spec)?),
+        (None, true) if file.extension().is_some_and(|e| e == "ohl") => {
+            ohl_pointcloud::open_source(&file.display().to_string()).ok()
+        }
+        (None, true) => None,
+    };
+    let survey = match terrain {
+        Some(path) if !table.survey_codes.is_empty() => ohl_terrain::read_points(
+            &std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?,
+        )
+        .map_err(|e| format!("{}: {e}", path.display()))?,
+        _ => Vec::new(),
+    };
+    // Exit clause: decoding is about 1 s per 10⁷ points.
+    let budget = ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+    let gathered = ohl_io::field_input::gather(
+        &table,
+        cloud
+            .as_deref()
+            .map(|c| c as &dyn ohl_pointcloud::PointSource),
+        &survey,
+        &polylines,
+        &budget,
+    )?;
+    let model = ohl_io::ExportModel::new(
+        line,
+        &[(
+            case.name.clone(),
+            case.summary(),
+            shapes.to_vec(),
+            jumpers.to_vec(),
+        )],
+    )
+    .to_json();
+    let input = ohl_plugins::FieldInput {
+        parameters: parameters.clone(),
+        model,
+        points: gathered.points,
+        ground: gathered.ground,
+    };
+    let presets = host
+        .field_presets(dir, &input, &spans)
+        .map_err(|e| e.to_string())?;
+    let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
+    let preset = match &a.preset {
+        Some(n) => presets.iter().find(|p| &p.name == n).ok_or_else(|| {
+            format!(
+                "plugin {}: no preset \"{n}\" (it gives: {})",
+                manifest.plugin.name,
+                names.join(", ")
+            )
+        })?,
+        None => presets
+            .first()
+            .ok_or_else(|| format!("plugin {}: no preset for this line", manifest.plugin.name))?,
+    }
+    .clone();
+    for n in &gathered.notes {
+        println!("  plugin input: {n}");
+    }
+    println!(
+        "  preset {} of plugin {} (of {}): {} cuts, {} points, {} outlines",
+        preset.name,
+        manifest.plugin.name,
+        names.join(", "),
+        preset.cuts.len(),
+        preset.points.len(),
+        preset.outlines.len()
+    );
+    for n in &preset.notes {
+        println!("  plugin note: {n}");
+    }
+    Ok(Some(PresetRun {
+        host,
+        dir: dir.clone(),
+        parameters,
+        preset,
+    }))
+}
+
+/// A preset's cuts as the fields take them.
+fn preset_cuts(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::CutSpec> {
+    p.cuts
+        .iter()
+        .map(|c| ohl_electrical::magnetic::CutSpec {
+            from: c.from.clone(),
+            to: c.to.clone(),
+            fraction: c.fraction,
+            width: c.width,
+            above: c.above,
+            step: c.step,
+            label: (!c.label.is_empty()).then(|| c.label.clone()),
+        })
+        .collect()
+}
+
+/// A preset's points as the fields take them.
+fn preset_points(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::GivenPoint> {
+    p.points
+        .iter()
+        .map(|q| ohl_electrical::magnetic::GivenPoint {
+            name: q.name.clone(),
+            x: q.x,
+            y: q.y,
+            z: q.z,
+            height: q.height,
+        })
+        .collect()
+}
+
+/// `levels` with `extra` added, ascending, each once.
+fn add_levels(levels: &mut Vec<f64>, extra: &[f64]) {
+    levels.extend_from_slice(extra);
+    levels.sort_by(f64::total_cmp);
+    levels.dedup();
+}
+
+/// Writes `--json` and, with a preset, the plugin's report files of the
+/// results (`json`) into `--out`.
+fn write_results(a: &FieldPluginArgs, json: &str, preset: Option<PresetRun>) -> Result<(), String> {
+    if let Some(path) = &a.json {
+        std::fs::write(path, json).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    let Some(p) = preset else {
+        return Ok(());
+    };
+    let files = p
+        .host
+        .field_report(&p.dir, &p.parameters, &p.preset, json)
+        .map_err(|e| e.to_string())?;
+    let out = a.out.clone().unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    for f in &files {
+        let path = out.join(&f.name);
+        std::fs::write(&path, &f.bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {} ({})", path.display(), f.media_type);
     }
     Ok(())
 }

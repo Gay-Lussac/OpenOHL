@@ -922,10 +922,13 @@ ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     [--profile FROM:TO[@FRACTION]]… [--width 50] [--height 1] [--step 1]
     [--grid FROM:TO]… [--grid-step M] [--points FILE.csv] [--limit µT]
     [--piece-length M] [--modelled-within M]
-    [--cut FROM:TO[@FRACTION]]… [--cut-step 0.5]
+    [--cut FROM:TO[@FRACTION][#LABEL]]… [--cut-step 0.5]
     [--volume FROM:TO]… [--volume-step 1] [--above 10] [--level µT]…
     [--obj SURFACES.obj]
     [--terrain FILE | --surface NAME] [--all-points] [--csv OUT.csv]
+    [--json OUT.json]
+    [--preset-plugin DIR [--params FILE.toml] [--preset NAME] [--out DIR]
+        [--cloud FILE.copc.laz|PROJECT.ohl[#NAME]]]
     [--library WIRES.ohlw]
 ```
 
@@ -950,8 +953,30 @@ from the ground to `--above` over the highest wire; its points in the
 CSV as `cut` rows), `--volume` the isosurfaces of the `--level` values
 over a span (written by `--obj` as a Wavefront OBJ file, one object per
 span and level); both say how far their drawings lie off the levels, and
-with `--modelled-within` what the wires left out change. Try it on the
-synthetic example:
+with `--modelled-within` what the wires left out change. A cut may carry
+a **label** after `#` (e.g. `--cut T1:T2@0.5#house 12`): it is printed
+with the cut and written in the CSV's last column (`label`) and the JSON.
+
+`--json` writes the results as JSON (format `ohl-field-results`: the
+cuts with their values, ground and isolines of the `--level` values, the
+given points, the settings and the case; [data
+model](../development/data-model.md#field-results-json)).
+
+**Field presets from a plugin** (2026-10-31; built, in active
+development, not approved yet): `--preset-plugin DIR` names a plugin
+with the `field-presets` export (e.g. a future building plugin). The
+points its manifest asks for are gathered — the point cloud of
+`--cloud` (default: the project's) and the survey points of `--terrain`
+—, the plugin gives the cuts and points to compute (with its parameters
+from `--params`, else its template; its preset `--preset`, else its
+first), they are added to those you give, the field is run as without
+it, and the plugin's report files are written into `--out` (default:
+the current folder). Every value the plugin gives is checked first
+(spans that exist, fractions 0–1, sizes above 0, names unique, file
+names without a folder): [Writing
+plugins](../development/plugins.md#field-presets).
+
+Try it on the synthetic example:
 
 ```text
 ohl electrical magnetic examples/electrical/double-circuit.ohl.json \
@@ -1072,4 +1097,8 @@ objects lower the field beside them and raise it at their tops).
 
 **On the command line:** `ohl electrical electric LINE.ohl.json|PROJECT.ohl`
 with the voltages, profiles, points, cuts and volumes as options
-(`ohl electrical electric --help`).
+(`ohl electrical electric --help`); as for the magnetic field, cuts may
+carry a label (`--cut FROM:TO@F#LABEL`), `--csv` writes every point,
+`--json` the results (`ohl-field-results`), and `--preset-plugin DIR
+[--params FILE] [--preset NAME] [--out DIR] [--cloud SPEC]` takes a
+plugin's field presets (above).

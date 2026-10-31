@@ -695,6 +695,91 @@ The test plugin `plugins/tests/member-capacity` gives an invented
 method (`area-yield`: area × yield both ways, not a design code) to prove
 the interface (host test, CLI test).
 
+## Field presets
+
+*2026-10-31; built, in active development, not approved yet.* The owner
+approved core extension points for a future building plugin (it finds
+the buildings near the line in the point cloud and the survey, decides
+where the magnetic and electric fields are needed, and exports 2D cuts
+and a summary). A plugin gives **field presets** — vertical cuts across
+the line and given points — through the optional export `field-presets`
+(`crates/ohl-plugins/wit/plugin.wit`: the `field-preset-plugin` world,
+or `export ohl:plugin/field-presets@0.1.0` beside another world;
+extension point `field-presets`; additive to 0.3 — a plugin without it
+loads as before). **The plugin stays a pure function**: no host
+callbacks. The host gathers the points before the call, runs the field
+after it, and calls the plugin once more with the results.
+
+**What it asks for**, in the manifest (unknown keys refused; lengths as
+numbers in m or with a unit):
+
+```toml
+[field-input]
+roles = ["building"]          # LiDAR class roles, by the cloud's class scheme
+ground-roles = ["ground"]     # thinned by the host: the lowest point per cell
+ground-cell = "2 m"           # default 2 m
+survey-codes = ["BLD*"]       # survey points' codes (`*`, `?`, any case)
+reach = "100 m"               # within this of the spans in plan (default 100 m)
+max-points = 2000000          # more is refused, said (default; at most 50 000 000)
+```
+
+The host (`ohl_io::field_input::gather`) reads the points of the roles
+and the ground roles within the reach of the spans (one pass of the
+point cloud, `PointSource::visit` with a corridor), the ground thinned
+to the lowest point per cell, and the survey points whose code matches;
+a role the cloud's class scheme (else ASPRS) does not have is an error
+naming it and the scheme; more points than `max-points` an error saying
+so. Without a cloud the roles give none (said).
+
+**The calls**:
+
+- `parameters-template()`: the plugin's parameters as a TOML template
+  (given back when the user gives none).
+- `field-presets(input)`: `input` holds the parameters, the **model**
+  (the export model JSON the exporters receive, `ohl-export-model`: the
+  line and the case the field is run in), the **points** (`input-point`:
+  x, y, z, the LiDAR class — 0 for a survey point — and a survey point's
+  code and breakline) and the **ground** (x, y, z one after the other).
+  It gives presets: each a name, a description, its **cuts** (`cut`:
+  label, the span's structures, the fraction 0–1 or none for the lowest
+  point, width to either side, height above the highest wire, step),
+  its **points** (`place`: name, x, y and an elevation or a height above
+  the ground), the isoline levels in µT and kV/m, building **outlines**
+  (a ring in plan, ground and top; for its report) and notes.
+- `report(parameters, preset, results)`: the report files (`out-file`:
+  name, media type, bytes) from the field's results, `results` being
+  the `ohl-field-results` JSON ([data model](data-model.md#field-results-json)).
+
+**The host checks everything** before it is used
+(`ohl_plugins::field_presets::check_presets`, `check_files`): unique,
+non-empty preset names; at most 1 000 cuts, each in a span of the line
+(either way round), its fraction 0–1, width and step above 0 m, the
+height above the wires 0 m or more, labels unique; at most 4 000 000 cut
+points per preset, **estimated** before the run with 100 m from the
+ground to the highest wire (the real height is known only in the run);
+at most 100 000 points, names unique, coordinates finite, an elevation or
+a height of 0 m or more; levels above 0; outlines of three corners or
+more, finite, the top not below the ground; report files at most 1 000,
+named without a folder (no `/`, `\`, `:`, not starting with `.`), each
+once, a media type given. A failure is an error naming the plugin.
+
+**From the command line** (`ohl electrical magnetic` and `electric`,
+[analyses](../user-guide/analyses.md)): `--preset-plugin DIR [--params
+FILE] [--preset NAME] [--out DIR] [--cloud SPEC]` gathers the input (the
+cloud of `--cloud`, else the project's; the survey points of
+`--terrain`), calls `field-presets`, adds the chosen preset's cuts (with
+their labels) and points to those given and its levels to `--level`,
+runs the field as without it, then calls `report` with the results and
+writes the files into `--out` (default: the current folder). `ohl plugin
+info` lists the export (`optional exports: field-presets`). In
+OHL-Design: not yet.
+
+The test plugin `plugins/tests/field-presets` gives fixed, **invented**
+cuts and points for the synthetic double circuit
+(`examples/electrical/double-circuit.ohl.json`) and a report echoing
+their counts into one file (host tests, CLI test); its parameters ask
+for faults the host must refuse.
+
 ## String limits: what a plugin sees
 
 A string may carry limits — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits)). Absent means not given: nothing checks it. Given, OpenOHL's String checks compare it with the solved string (since 2026-10-24), and a plugin (or a report, or a script) may check it too, where its rules need it. What it gets:

@@ -870,6 +870,7 @@ impl ElectricFieldWindow {
                             width: self.cut_width,
                             above: self.cut_above,
                             step: self.cut_step,
+                            label: None,
                         }
                     })
                     .collect()

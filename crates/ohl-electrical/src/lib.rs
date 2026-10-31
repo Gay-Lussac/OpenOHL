@@ -44,6 +44,7 @@ pub mod contour;
 pub mod cross_section;
 pub mod earth;
 pub mod electric;
+pub mod field_results;
 pub mod field_views;
 pub mod magnetic;
 pub mod matrices;
