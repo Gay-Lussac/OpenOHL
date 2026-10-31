@@ -844,15 +844,27 @@ impl MagneticFieldWindow {
         };
         let line = model.line.clone();
         let library = model.library.clone();
-        let shapes = solved.shapes.clone();
-        let jumpers = solved.jumpers.clone();
+        let mut shapes = solved.shapes.clone();
+        let mut jumpers = solved.jumpers.clone();
         let case = solved.case.clone();
+        // A case the app has not solved yet (it solves a case when it is
+        // shown): solved for the run, in the background (2026-10-31: the
+        // run took no wire and gave 0 kV/m).
+        let unsolved = !solved.solved_for(model.wind);
+        let wind = model.wind;
         let ground = model.ground_for_checks();
         let settings = self.settings(model);
         self.run_levels = settings.levels.clone();
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
         self.job.start_at(ctx, model.revision(), move || {
+            if unsolved {
+                progress.set_stage(format!("solving the weather case {}", case.name));
+                let s = crate::model::Solved::with_wind(&line, &library, case.clone(), wind);
+                shapes = s.shapes;
+                jumpers = s.jumpers;
+                progress.set_stage(String::new());
+            }
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
             let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = ground
                 .as_ref()
@@ -868,15 +880,29 @@ impl MagneticFieldWindow {
             let (mut field, wires) = magnetic::run_keeping(&src, &settings, Some(&progress))?;
             let work = progress.total.load(Ordering::Relaxed) as f64
                 * wires.as_ref().map_or(0, |w| w.count()) as f64;
-            for id in line
+            // One warning for the sections the case does not hold (owner,
+            // 2026-10-31: not one line each).
+            let missing: Vec<&str> = line
                 .sections
                 .iter()
-                .map(|s| &s.id)
-                .filter(|id| !shapes.iter().any(|s| &s.section == *id))
-            {
+                .map(|s| s.id.as_str())
+                .filter(|id| !shapes.iter().any(|s| s.section == *id))
+                .collect();
+            if !missing.is_empty() {
+                // The engine's own note per cross-section, said once here.
                 field
                     .notes
-                    .push(format!("section {id}: not solved in this case, left out"));
+                    .retain(|n| !n.ends_with(": not solved, left out"));
+                let shown: Vec<&str> = missing.iter().take(5).copied().collect();
+                field.notes.insert(
+                    0,
+                    format!(
+                        "{} section(s) not solved in this case, left out: {}{}",
+                        missing.len(),
+                        shown.join(", "),
+                        if missing.len() > 5 { ", …" } else { "" }
+                    ),
+                );
             }
             if g.is_none() {
                 field.notes.push(

@@ -32,6 +32,8 @@ max_gb="${3:-60}"
 
 [ -d "$dir" ] || exit 0
 
+here=$(cd "$(dirname "$0")" && pwd)
+
 size_gb() {
     du -sk "$dir" 2>/dev/null | awk '{ printf "%d", $1 / 1048576 }'
 }
@@ -41,9 +43,13 @@ prune() {
     # The profiles: target/<profile> and target/<triple>/<profile>.
     for profile in "$dir"/* "$dir"/*/*; do
         [ -d "$profile/.fingerprint" ] || continue
+        # The builds none of whose files was read within the age, each
+        # removed whole with its record (prune_builds.py) — never file by
+        # file: a library left with its `.rmeta` and without its `.rlib`
+        # was taken for built (2026-10-31).
+        python3 -I "$here/prune_builds.py" "$profile" 2 "$age" >/dev/null || true
         for sub in deps examples; do
             [ -d "$profile/$sub" ] || continue
-            find "$profile/$sub" -type f -atime +"$age" -delete 2>/dev/null
             find "$profile/$sub" -mindepth 1 -type d -empty -delete 2>/dev/null
         done
         # Incremental caches: a crate's whole folder when none of its files
@@ -62,7 +68,6 @@ prune() {
 before=$(size_gb)
 # Every profile: the last 2 builds of each crate kept, the older removed
 # (owner, 2026-10-29; tools/prune_builds.py).
-here=$(cd "$(dirname "$0")" && pwd)
 for profile in "$dir"/* "$dir"/*/*; do
     [ -d "$profile/.fingerprint" ] || continue
     python3 -I "$here/prune_builds.py" "$profile" 2 >/dev/null || true

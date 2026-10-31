@@ -4,11 +4,14 @@
 # License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 """Keep only the newest builds of every crate in a Cargo build profile.
 
-    python3 -I tools/prune_builds.py PROFILE_DIR [KEEP]
+    python3 -I tools/prune_builds.py PROFILE_DIR [KEEP] [DAYS]
 
 PROFILE_DIR: e.g. target/debug. KEEP: builds kept per crate and kind
 (default 2; owner, 2026-10-29: "only keep the last 2 builds at all
-times"). Cargo names every build of a crate by a hash of its source, flags
+times"). DAYS: also every build none of whose files was read for DAYS
+days, removed whole (2026-10-31: removed file by file, a library kept its
+`.rmeta` and lost its `.rlib`, its record stayed, and the doc tests failed,
+"can't find crate"). Cargo names every build of a crate by a hash of its source, flags
 and features (`deps/<crate>-<hash>.*`) and never removes one it no longer
 needs: each change of the code leaves the old build behind — its
 libraries, its test programs and, on macOS with debug information, all its
@@ -41,7 +44,7 @@ def kind_of(files):
     return "other"
 
 
-def prune_deps(deps, keep, gone):
+def prune_deps(deps, keep, gone, days=None):
     builds = defaultdict(list)  # (crate, hash) -> [(path, mtime, ext)]
     for f in os.listdir(deps):
         m = NAME.match(f)
@@ -53,9 +56,24 @@ def prune_deps(deps, keep, gone):
     for (crate, h), files in builds.items():
         by_crate[(crate, kind_of(files))].append((max(f[1] for f in files), h))
     removed = 0
+    if days is not None:
+        import time
+        old = time.time() - days * 86400
+        for (crate, h), files in builds.items():
+            read = max(max(os.path.getatime(f[0]), f[1]) for f in files)
+            if read < old:
+                gone.add(f"{crate}-{h}")
+                for p, _, _ in files:
+                    try:
+                        removed += os.path.getsize(p)
+                        os.remove(p)
+                    except OSError:
+                        pass
     for (crate, _), hashes in by_crate.items():
         hashes.sort(reverse=True)
         for _, h in hashes[keep:]:
+            if f"{crate}-{h}" in gone:
+                continue
             gone.add(f"{crate}-{h}")
             for p, _, _ in builds[(crate, h)]:
                 try:
@@ -93,12 +111,13 @@ def main(argv):
         return 2
     profile = argv[0]
     keep = int(argv[1]) if len(argv) > 1 else 2
+    days = float(argv[2]) if len(argv) > 2 else None
     removed = 0
     gone = set()
     for sub in ("deps", "examples"):
         d = os.path.join(profile, sub)
         if os.path.isdir(d):
-            removed += prune_deps(d, keep, gone)
+            removed += prune_deps(d, keep, gone, days)
     # Their records, so that Cargo builds them again when it needs them —
     # and any record left by an earlier prune whose library is gone (a record names the package with hyphens, a build the crate
     # with underscores).
@@ -108,6 +127,8 @@ def main(argv):
     if os.path.isdir(deps):
         for f in os.listdir(deps):
             m = NAME.match(f)
+            # A library is there with its `.rlib` or `.rmeta` both or
+            # alone as built; one left with only part of its files is not.
             if m:
                 present.add(f"{m.group(1)}-{m.group(2)}")
     if os.path.isdir(fp):

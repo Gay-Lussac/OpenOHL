@@ -10,6 +10,22 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**The field windows solve their weather case; one warning for sections
+left out (owner, 2026-10-31)**
+
+- The owner ran the Electric field on a real line in a weather case the
+  app had not solved yet (it solves a case when it is shown): the run took
+  no wire, gave 0 kV/m, an empty volume (Show in 3D greyed) and listed
+  every section as not solved — "it's the same issue with the magnetic
+  field". Both windows now solve such a case for the run, in the
+  background. And "avoid writing a long list in the results with all the
+  not solved span but just do one warning": the sections a case does not
+  hold are said in one warning (how many, the first five).
+- The build folders' pruning removed a build file by file by age: a
+  library kept its `.rmeta`, lost its `.rlib`, its record stayed and the
+  checks' doc tests failed ("can't find crate"). Builds are now removed by
+  age whole, with their records (`tools/prune_builds.py DAYS`).
+
 **Field cuts on the alignment; both fields in one run; the 2D cut
 drawing (owner, 2026-10-31)**
 

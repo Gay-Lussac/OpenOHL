@@ -298,3 +298,45 @@ fn the_magnetic_table_asks_cuts_volumes_and_grids() {
     assert_eq!(harness.query_all_by_label("Open cut").count(), 2);
     assert_eq!(harness.query_all_by_label("Show in 3D").count(), 2);
 }
+
+/// A weather case the app has not solved yet (it solves a case when it is
+/// shown) is solved for the run, in both field windows (2026-10-31: the
+/// run took no wire and gave 0 kV/m, listing every section as not
+/// solved); sections a case does not hold are said in one warning.
+#[test]
+fn a_case_not_solved_yet_is_solved_for_the_run() {
+    let mut harness = electric();
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let k = r.electric_field.case;
+        let case = r.model.cases[k].case.clone();
+        r.model.cases[k] = crate::model::Solved::pending(case.clone());
+        r.electric_field.start(&r.model, &ctx);
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        r.magnetic_field.set_current(&circuits[0].label(), 800.0);
+        r.magnetic_field.show(k);
+        r.magnetic_field.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if r.magnetic_field.job.result.is_some() && r.electric_field.job.result.is_some() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no fields");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let r = harness.state_mut().ready().unwrap();
+    let Some(Ok(e)) = &r.electric_field.job.result else {
+        panic!("an electric field")
+    };
+    assert!(e.field.profiles.iter().all(|p| p.max_kv_m > 0.0));
+    assert!(!e.field.notes.iter().any(|n| n.contains("not solved")), "{:?}", e.field.notes);
+    let Some(Ok(b)) = &r.magnetic_field.job.result else {
+        panic!("a magnetic field")
+    };
+    assert!(b.field.profiles.iter().any(|p| p.max_ut > 0.0));
+    assert!(!b.field.notes.iter().any(|n| n.contains("not solved")), "{:?}", b.field.notes);
+}
