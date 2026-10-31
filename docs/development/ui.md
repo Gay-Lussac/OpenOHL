@@ -2,6 +2,8 @@
 
 Rules every page, menu and window of the desktop app (`crates/ohl-app`)
 follows. A change that breaks one needs a reason written next to it.
+The check and calculation windows follow, besides, the [check pages'
+design guidelines](check-pages.md).
 
 ## Names
 

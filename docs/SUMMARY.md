@@ -100,6 +100,7 @@
 - [Points on the wires and their objects (proposal)](development/line-points-and-objects.md)
 - [Performance and time budgets](development/performance.md)
 - [Desktop app conventions](development/ui.md)
+- [Check pages: design guidelines](development/check-pages.md)
 - [Structure detail levels in checks](development/structure-detail.md)
 - [Building structures, levels 1 to 3](development/structure-building.md)
 - [Structure application crates](development/structure-app.md)
