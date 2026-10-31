@@ -98,6 +98,7 @@ mod span_pick;
 mod span_tool;
 mod spot;
 mod starter;
+mod string_builder;
 mod string_checks;
 mod structure_app;
 mod structure_desk;

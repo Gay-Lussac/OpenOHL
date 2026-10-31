@@ -82,11 +82,13 @@ pub enum Panel {
     Clearances,
     /// Line › Structures › Spot structures.
     Spot,
+    /// Line › Structures › String builder (2026-10-31).
+    StringBuilder,
 }
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 26] = [
+    pub const ALL: [Panel; 27] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -113,6 +115,7 @@ impl Panel {
         Panel::BillOfMaterials,
         Panel::Clearances,
         Panel::Spot,
+        Panel::StringBuilder,
     ];
 
     /// A name until its window gave its title.
@@ -144,6 +147,7 @@ impl Panel {
             Panel::BillOfMaterials => "Bill of materials: wires",
             Panel::Clearances => "Clearances",
             Panel::Spot => "Spot structures",
+            Panel::StringBuilder => "String builder",
         }
     }
 }

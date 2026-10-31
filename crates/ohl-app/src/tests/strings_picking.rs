@@ -966,9 +966,9 @@ fn the_string_shapes_are_a_table() {
         ohl_structures::ShapeKind::Box
     );
     // A kind that does not read: refused, nothing written.
-    set_cell(&mut harness, k, &key, "kind", "torus");
+    set_cell(&mut harness, k, &key, "kind", "ring");
     let e = apply_table(&mut harness, k, false).unwrap_err();
-    assert!(e.contains("sphere, cylinder, box or cone"), "{e}");
+    assert!(e.contains("sphere, cylinder, box, cone or torus"), "{e}");
     harness.state_mut().ready().unwrap().tables.remove(&k);
     // The freedoms and two strings in the String library.
     let i = TableKind::Insulators;

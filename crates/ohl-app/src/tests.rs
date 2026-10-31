@@ -25,6 +25,7 @@ mod objects;
 mod plugins_hosting;
 mod project;
 mod session_edits;
+mod string_builder;
 mod strings_colours;
 mod strings_picking;
 mod structures_menus;

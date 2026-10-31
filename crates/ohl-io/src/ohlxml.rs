@@ -33,8 +33,9 @@ fn num(x: f64) -> String {
 }
 
 /// The attributes of a string's own shape (line file version 8): its
-/// line-file keys, sizes in metres.
-const SHAPE_ATTRS: [&str; 13] = [
+/// line-file keys, sizes in metres (`tube`: a torus, line file version
+/// 12).
+const SHAPE_ATTRS: [&str; 14] = [
     "name",
     "kind",
     "state",
@@ -45,6 +46,7 @@ const SHAPE_ATTRS: [&str; 13] = [
     "length",
     "width",
     "depth",
+    "tube",
     "offset_across",
     "offset_along",
     "shared",

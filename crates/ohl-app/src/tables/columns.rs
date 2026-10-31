@@ -294,7 +294,12 @@ pub(super) const STRING_SHAPES: &[Column] = &[
         "the insulator assembly carrying it (String library): every string with that label has it; a line's string may override it by name",
     ),
     ("shape", 130.0, Yes, "its name, unique on the assembly"),
-    ("kind", 80.0, Yes, "sphere, cylinder, box or cone"),
+    (
+        "kind",
+        80.0,
+        Yes,
+        "sphere, cylinder, box, cone or torus (a grading ring)",
+    ),
     (
         "state",
         90.0,
@@ -311,7 +316,7 @@ pub(super) const STRING_SHAPES: &[Column] = &[
         "diameter",
         70.0,
         Yes,
-        "m: sphere, cylinder; a cone's at its end nearer the top",
+        "m: sphere, cylinder; a cone's at its end nearer the top; a torus's outer diameter",
     ),
     (
         "end diameter",
@@ -327,6 +332,12 @@ pub(super) const STRING_SHAPES: &[Column] = &[
     ),
     ("width", 60.0, Yes, "m, a box's across"),
     ("depth", 60.0, Yes, "m, a box's along"),
+    (
+        "tube",
+        60.0,
+        Yes,
+        "m, a torus's tube diameter (less than half its diameter)",
+    ),
     (
         "offset across",
         85.0,

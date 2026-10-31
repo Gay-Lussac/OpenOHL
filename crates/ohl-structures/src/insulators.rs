@@ -41,8 +41,8 @@
 //!
 //! **Volumes on the strings** (version 4, optional,
 //! [`crate::string_volumes`]): the basic shapes the assembly carries
-//! (`[[shape]]`: sphere, cylinder, box or cone, grounded, electrified or
-//! insulated), whether they swing and twist with the string
+//! (`[[shape]]`: sphere, cylinder, box, cone or torus — version 5 —,
+//! grounded, electrified or insulated), whether they swing and twist with the string
 //! (`swing_across`, `swing_along`, `twist`: free or blocked) and several
 //! strings in one assembly (`strings`, `arrangement`, `spacing`) — for the
 //! internal clearances (roadmap O6). Written only when given.
@@ -55,13 +55,15 @@ use serde::Deserialize;
 pub const INSULATOR_FILE_EXTENSION: &str = "ohli";
 /// Format identifier.
 pub const INSULATOR_FILE_FORMAT: &str = "ohl-insulator";
-/// Newest format version read: 4 adds the optional volumes on the strings
+/// Newest format version read: 5 adds the torus among the shapes on the
+/// strings (`kind = "torus"`, `tube`: a grading ring; owner 2026-10-31),
+/// written only by an assembly with one (else 4 or older, as before); 4 adds the optional volumes on the strings
 /// (`[[shape]]`, the freedoms, several strings: [`StringVolumes`]); 3 writes two strings to one clamp as
 /// `kind = "suspension"` with `legs = 2` (`kind = "v_string"` of the
 /// versions before still read); 2 adds the optional limits (`max_load`,
 /// `max_swing`, `max_swing_across`, `max_swing_along`,
 /// [`InsulatorLimits`]); version 1 files read as before.
-pub const INSULATOR_FILE_VERSION: u32 = 4;
+pub const INSULATOR_FILE_VERSION: u32 = 5;
 
 /// The version that brought `legs` (written only by an assembly of two
 /// strings).
@@ -70,6 +72,8 @@ const LEGS_VERSION: u32 = 3;
 const LIMITS_VERSION: u32 = 2;
 /// The version that brought the volumes on the strings.
 const VOLUMES_VERSION: u32 = 4;
+/// The version that brought the torus.
+const TORUS_VERSION: u32 = 5;
 
 /// An insulator's axial stiffness EA when it gives none, N (the line's
 /// default too: `ohl_line::solve::DEFAULT_INSULATOR_STIFFNESS`).
@@ -365,8 +369,8 @@ impl InsulatorAssembly {
     }
 
     /// The assembly as an `.ohli` file (what [`Library::load_dir`] reads
-    /// back), values in SI units: version 4 when it gives volumes on the
-    /// strings, else 3 for two strings to one clamp (`legs = 2`), else 2
+    /// back), values in SI units: version 5 when one of its shapes is a
+    /// torus, else 4 when it gives volumes on the strings, else 3 for two strings to one clamp (`legs = 2`), else 2
     /// when it gives limits, else 1 (the oldest version that holds it, so
     /// an older program still reads it).
     ///
@@ -377,7 +381,9 @@ impl InsulatorAssembly {
             AssemblyKind::Suspension | AssemblyKind::VString => "suspension",
             AssemblyKind::Strain => "strain",
         };
-        let version = if !self.volumes.is_empty() {
+        let version = if self.volumes.has_torus() {
+            TORUS_VERSION
+        } else if !self.volumes.is_empty() {
             VOLUMES_VERSION
         } else if self.kind == AssemblyKind::VString {
             LEGS_VERSION
@@ -596,8 +602,19 @@ mod tests {
         ] {
             assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
         }
-        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 5\n{base}")).unwrap_err();
+        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 6\n{base}")).unwrap_err();
         assert!(e.to_string().contains("newer"), "{e}");
+    }
+
+    /// A grading ring of 0.5 m with a tube of 50 mm at the wire end
+    /// (INVENTED sizes).
+    fn grading_ring() -> crate::string_volumes::StringShape {
+        use crate::string_volumes::{Along, ElectricalState, ShapeKind, StringShape};
+        let mut r = StringShape::new("ring", ShapeKind::Torus, ElectricalState::Electrified);
+        r.at = Along::Fraction(0.95);
+        r.diameter = 0.5;
+        r.tube = 0.05;
+        r
     }
 
     /// The volumes on the strings (version 4): absent, the file stays as
@@ -629,6 +646,15 @@ mod tests {
         let text = given.to_toml();
         assert!(text.contains("version = 4"), "{text}");
         assert_eq!(parse(&text).unwrap().volumes, given.volumes);
+        // A grading ring: the file of version 5, read back the same.
+        let mut ringed = given.clone();
+        ringed.volumes.shapes.push(grading_ring());
+        let text = ringed.to_toml();
+        assert!(
+            text.contains("version = 5") && text.contains("kind = \"torus\""),
+            "{text}"
+        );
+        assert_eq!(parse(&text).unwrap().volumes, ringed.volumes);
         for bad in [
             "[[shape]]\nname = \"x\"\nkind = \"sphere\"\nstate = \"grounded\"\nat = \"4 m\"\ndiameter = \"0.2 m\"",
             "strings = 2",

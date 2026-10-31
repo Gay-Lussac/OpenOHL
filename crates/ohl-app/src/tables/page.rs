@@ -415,6 +415,8 @@ pub enum TableAction {
     EditInStructureApp(String),
     /// Open a cross-section at this structure ([`crate::xsection`]).
     CrossSection(String),
+    /// Open the String builder on this assembly ([`crate::string_builder`]).
+    StringBuilder(String),
 }
 
 impl TablePage {
@@ -658,6 +660,25 @@ impl TablePage {
                     .small()
                     .weak(),
             );
+            // The String builder on an assembly (2026-10-31): the shapes
+            // built in a window of their own, with a preview.
+            if matches!(kind, TableKind::StringShapes | TableKind::Insulators)
+                && let Some((_, library)) = model.types.as_ref()
+            {
+                ui.separator();
+                ui.menu_button("String builder ▾", |ui| {
+                    for a in library.iter() {
+                        if ui.button(format!("{} — {}", a.id, a.name)).clicked() {
+                            action = Some(TableAction::StringBuilder(a.id.clone()));
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "An assembly's shapes in the String builder: presets, common fittings, a \
+                     grading ring (torus), each field explained, a preview",
+                );
+            }
             if !editable {
                 ui.label(egui::RichText::new("read-only").small().weak());
             }

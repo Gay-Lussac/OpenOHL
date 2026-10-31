@@ -71,6 +71,38 @@ radius, exact. Two solids that touch or overlap are 0 apart (a sphere's
 radius beyond that: negative, into it). A volume whose centre lies inside
 a member's closed solid counts as 0.
 
+**A torus** (a grading ring, 2026-10-31, owner: "the builder window with
+a torus"; built, in active development, not approved yet) is the one
+volume that is **not convex**, so GJK cannot measure it whole. It is its
+centre circle — radius \\(R = (D - t)/2\\), \\(D\\) its outer diameter,
+\\(t\\) its tube's — grown by the tube's radius \\(r = t/2\\): every point
+of it lies within \\(r\\) of the circle.
+
+- **Against a point or a sphere: exact.** From a point at distance
+  \\(\rho\\) from the ring's axis and \\(h\\) above its plane, the nearest
+  point of the circle is \\(\sqrt{(\rho - R)^2 + h^2}\\) away; the
+  distance to the torus is that less \\(r\\) (and a sphere's radius).
+- **Against a segment, a triangle, a box, a cylinder or cone, or another
+  torus: by chords, conservative.** The circle is replaced by the polygon
+  of \\(n\\) equal chords inscribed in it. A point of the circle lies at most
+  the **sagitta** \\(s = R\,(1 - \cos(\pi/n))\\) from its chord, so every
+  point of the torus lies within \\(r + s\\) of a chord: each chord is
+  measured as a convex segment by GJK, grown by \\(r + s\\), and the least
+  of them taken. The distance found is **never more than the exact one
+  (conservative)** and at most \\(2s\\) less (a chord lies inside the circle
+  by at most \\(s\\), and is grown by \\(s\\) more). \\(n\\) is chosen from
+  \\(R\\) so that \\(s \le 0.25\\) mm (at least 24 chords): the distance is
+  **at most 0.5 mm below the exact one**. Two tori: both circles by their
+  chords, at most 1 mm below. *Conservative assumption:* the chords'
+  margin is added in full, everywhere along the ring, where the exact
+  shortfall is smaller between the chords' ends.
+
+Measured against the exact distances (tests: by hand — a segment through
+the hole, a plane over the ring, a box beside it, two stacked rings, two
+linked rings — and against 60 random segments, each sampled at 20 000
+points in closed form), the distance found was never above the exact one
+and never more than \\(2s\\) below.
+
 ## Placing the volumes on a solved string
 
 The volumes belong to the string's insulator assembly (the string
@@ -102,8 +134,8 @@ wire point), *across* and *along*.
 - **Where each volume is.** Its centre is on the **solved** axis at its
   distance from the top (a fraction of the solved length, or metres),
   moved by its offsets along *across* and *along*. Its own axis (a
-  cylinder's, a cone's, a box's length) lies along the axis the freedoms
-  give.
+  cylinder's, a cone's, a box's length, a torus's: the ring square to the
+  string, around it) lies along the axis the freedoms give.
 
 **Several strings in one assembly** (double, triple): the line models them
 as one string on their middle. Each string's copy of a volume is moved by

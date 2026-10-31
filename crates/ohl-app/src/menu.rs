@@ -168,6 +168,9 @@ pub enum Command {
     /// Structures group. A window building a structure type, not a tool
     /// held (no click in a view).
     NewPylon,
+    /// Open the String builder (Line › Structures; 2026-10-31): an
+    /// assembly's volumes on the strings built from basic shapes.
+    StringBuilder,
 }
 
 impl Command {
@@ -189,6 +192,7 @@ impl Command {
         out.extend(crate::tables::TableKind::ALL.map(Command::Table));
         out.extend(Tool::ALL.map(Command::Hold));
         out.push(Command::NewPylon);
+        out.push(Command::StringBuilder);
         out
     }
 
@@ -221,6 +225,7 @@ impl Command {
             Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => t.name().into(),
             Command::NewPylon => "New structure from a template…".into(),
+            Command::StringBuilder => "String builder…".into(),
         }
     }
 
@@ -236,6 +241,11 @@ impl Command {
             Command::NewPylon => Some(
                 "A structure type of level 1 from a structure template: the face's dimensions, \
                  suspension or strain",
+            ),
+            Command::StringBuilder => Some(
+                "An insulator assembly's volumes on the strings from basic shapes (sphere, \
+                 cylinder, box, cone, torus), each grounded, electrified or insulated, for the \
+                 internal clearances",
             ),
             Command::Save => {
                 Some("The project written through, the library pages with changes saved")
@@ -297,6 +307,7 @@ impl Command {
             Command::Table(k) => format!("table-{}", k.key()),
             Command::Hold(t) => format!("tool-{}", t.key_name()),
             Command::NewPylon => "new-pylon".into(),
+            Command::StringBuilder => "string-builder".into(),
         }
     }
 

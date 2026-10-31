@@ -68,7 +68,10 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 11 adds the line's electrical settings
+/// Latest line file version: 12 adds the torus among a string's own
+/// volumes (`kind = "torus"`, `tube`: a grading ring; owner 2026-10-31),
+/// written only by a line with one (else 11 or older, [`Line::to_json`]);
+/// 11 adds the line's electrical settings
 /// (`electrical`: soil resistivity, earth return method, the wires' height
 /// in a span; [`electrical::ElectricalSettings`], roadmap O18, 2026-10-27),
 /// written only when they are not the defaults (else 10 or older,
@@ -97,7 +100,11 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 11;
+pub const LINE_FILE_VERSION: u32 = 12;
+
+/// The version before the torus: what a line without one is written as
+/// (when it has electrical settings).
+const BEFORE_TORUS_VERSION: u32 = 11;
 
 /// The version before the electrical settings: what a line without them
 /// is written as (when it has the in-the-blocks option or a jumper given
@@ -3378,7 +3385,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 11 with electrical
+    /// line, so an older program still reads it: 12 with a torus among a
+    /// string's own volumes, else 11 with electrical
     /// settings other than the defaults or a soil resistivity at a structure, else 10 with the simplified
     /// in-the-blocks model or a jumper given by its tension, else 9 with
     /// local winds, else
@@ -3394,13 +3402,21 @@ impl Line {
             || !self.structure_loads.broken_cases.is_empty();
         let sheaves =
             !self.solver.blocks.is_default() || self.jumpers.iter().any(|j| j.tension.is_some());
+        let torus = self.structures.iter().any(|s| {
+            s.strings.iter().any(|x| {
+                x.shapes
+                    .iter()
+                    .any(|y| y.kind == ohl_structures::ShapeKind::Torus)
+            })
+        });
         let written = match (sheaves, winds, shapes) {
+            _ if torus => LINE_FILE_VERSION,
             _ if !self.electrical.is_default()
                 || self.structures.iter().any(|s| {
                     s.soil_resistivity_ohm_m.is_some() || s.earthing_resistance_ohm.is_some()
                 }) =>
             {
-                LINE_FILE_VERSION
+                BEFORE_TORUS_VERSION
             }
             (true, _, _) => BEFORE_ELECTRICAL_VERSION,
             (false, true, _) => BEFORE_SHEAVES_VERSION,

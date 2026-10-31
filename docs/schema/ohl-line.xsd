@@ -366,13 +366,14 @@
                     <xs:element name="shape" minOccurs="0" maxOccurs="unbounded">
                       <xs:annotation>
                         <xs:documentation>A basic volume on the string
-                          (roadmap O6): kind sphere, cylinder, box or cone;
+                          (roadmap O6): kind sphere, cylinder, box, cone or
+                          torus;
                           state grounded, electrified or insulated; its
                           centre along the string from its top, at (m) or
                           at_fraction (0 to 1); sizes in m (sphere:
                           diameter; cylinder: diameter, length; box: width,
                           depth, length; cone: diameter, end_diameter,
-                          length); offset_across / offset_along from the
+                          length; torus: diameter (outer), tube); offset_across / offset_along from the
                           string's axis (m); shared: one for an assembly of
                           several strings.</xs:documentation>
                       </xs:annotation>
@@ -385,6 +386,7 @@
                               <xs:enumeration value="cylinder"/>
                               <xs:enumeration value="box"/>
                               <xs:enumeration value="cone"/>
+                              <xs:enumeration value="torus"/>
                             </xs:restriction>
                           </xs:simpleType>
                         </xs:attribute>
@@ -404,6 +406,7 @@
                         <xs:attribute name="length" type="xs:double"/>
                         <xs:attribute name="width" type="xs:double"/>
                         <xs:attribute name="depth" type="xs:double"/>
+                        <xs:attribute name="tube" type="xs:double"/>
                         <xs:attribute name="offset_across" type="xs:double" default="0"/>
                         <xs:attribute name="offset_along" type="xs:double" default="0"/>
                         <xs:attribute name="shared" type="xs:boolean" default="false"/>
