@@ -170,7 +170,7 @@ WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plug
 
 ## Tech stack (ADR-0002)
 
-- **Core & engines**: Rust (speed, memory safety, background threads), `nalgebra` for linear algebra, a skyline LDLᵀ solver for structure FE.
+- **Core & engines**: Rust (speed, memory safety, background threads), `nalgebra` for linear algebra, `faer` for large dense systems (the electric field's tiled floors), a skyline LDLᵀ solver for structure FE.
 - **Renderer**: `wgpu` (Vulkan / Metal / DirectX 12; WebGPU in the browser).
 - **GUI toolkit**: egui with wgpu ([ADR-0009](adr/0009-gui-toolkit.md)).
 - **Networking**: QUIC (`quinn`, TLS via `rustls`) for the application; HTTPS + WebSocket (`tokio-tungstenite`) for the web client.

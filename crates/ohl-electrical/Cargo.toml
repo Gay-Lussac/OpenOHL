@@ -14,6 +14,7 @@ ohl-cables.workspace = true
 ohl-line.workspace = true
 ohl-thermal.workspace = true
 nalgebra.workspace = true
+faer.workspace = true
 serde.workspace = true
 
 [dev-dependencies]

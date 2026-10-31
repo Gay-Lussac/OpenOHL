@@ -1071,15 +1071,19 @@ mod tests {
         for _ in 0..10 {
             p.plan_floor(3700);
         }
-        // Before anything: the floors as expected (some 7 s each).
+        // Before anything: the floors as expected.
         let first = p.seconds_left(Duration::ZERO).unwrap();
-        assert!((first - 70.0).abs() < 1.0, "{first}");
+        let expected = 10.0 * crate::electric::TiledFloor::seconds(3700);
+        assert!(
+            (first - expected).abs() < 0.01 * expected,
+            "{first} {expected}"
+        );
         let token = p.floor_begins(3700);
         std::thread::sleep(Duration::from_millis(20));
         p.floor_ends(token);
         p.done.store(100, Ordering::Relaxed);
-        // The floor took 20 ms against 7 s expected: the nine left at
-        // that speed, and the points left at theirs.
+        // The floor took 20 ms against its expected time: the nine left
+        // at that speed, and the points left at theirs.
         let left = p.seconds_left(Duration::from_millis(25)).unwrap();
         let per_floor = p.floor_speed().unwrap() * crate::electric::TiledFloor::seconds(3700);
         assert!(left > 8.0 * per_floor, "{left} against {per_floor} a floor");

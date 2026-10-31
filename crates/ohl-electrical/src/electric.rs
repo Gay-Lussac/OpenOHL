@@ -1606,21 +1606,35 @@ impl TiledFloor {
     }
 
     /// About how long a floor of `tiles` takes to solve on this computer,
-    /// s: its dense system (some 7 s for 3 700 tiles measured here,
-    /// 2026-10-29; the time grows with the tiles' cube).
+    /// s (measured here, 2026-10-31, 10 cores): its table and the line's
+    /// potential at its tiles, some 0.8 s at 4 660 tiles, growing with the
+    /// tiles' square; its LU on all cores (faer), some 0.4 s, growing with
+    /// their cube. The run's progress corrects it by the floors solved.
     pub fn seconds(tiles: usize) -> f64 {
-        7.0 * (tiles as f64 / 3700.0).powi(3)
+        let r = tiles as f64 / 4660.0;
+        0.8 * r * r + 0.4 * r * r * r
     }
 }
 
-/// How many floors of `tiles` are solved at the same time: each on its
-/// own core (half the cores, the other half filling the systems), at most
-/// 4 and as many as about 1 GB holds (8 bytes a coefficient: some 170 MB
+/// The memory a floor of `tiles` takes while it is solved, bytes: its
+/// table of coefficients and faer's factors of it (8 bytes each, two
+/// copies of tiles² coefficients).
+pub fn floor_bytes(tiles: usize) -> f64 {
+    16.0 * (tiles as f64).powi(2)
+}
+
+/// The most memory one floor may take, bytes (owner, 2026-10-31: laptops
+/// of 16 to 32 GB): 2 GB, some 11 000 tiles. A larger floor is refused,
+/// said, rather than slowing the computer down by swapping.
+pub const FLOOR_MEMORY: f64 = 2.0e9;
+
+/// How many floors of `tiles` are solved at the same time: at most 2 (each
+/// LU already on all cores with faer: 4 real spans' profiles 5.8 s one at
+/// a time, 4.5 s two, 4.3 s four) and as many as 1 GB holds (some 350 MB
 /// for a profile's 4 660 tiles).
 fn floors_at_once(tiles: usize) -> usize {
-    let bytes = 8.0 * (tiles as f64).powi(2);
-    let by_memory = (1.0e9 / bytes.max(1.0)).floor() as usize;
-    (field_views::threads() / 2).min(by_memory).clamp(1, 4)
+    let by_memory = (1.0e9 / floor_bytes(tiles).max(1.0)).floor() as usize;
+    (field_views::threads() / 2).min(by_memory).clamp(1, 2)
 }
 
 /// Runs `solve` (a floor of `tiles`) with `progress` saying so (its
@@ -1631,6 +1645,14 @@ fn with_floor<T>(
     tiles: usize,
     solve: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
+    if floor_bytes(tiles) > FLOOR_MEMORY {
+        return Err(format!(
+            "{what}: a tiled floor of {tiles} tiles would take {:.1} GB of memory (at most {:.0} GB): \
+             fewer spans, coarser tiles or the plane under each point",
+            floor_bytes(tiles) / 1e9,
+            FLOOR_MEMORY / 1e9
+        ));
+    }
     let token = progress.map(|p| {
         p.set_stage(format!("{what}: a tiled floor of {tiles} tiles"));
         p.floor_begins(tiles)
@@ -1750,45 +1772,42 @@ fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
 fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, String> {
     let n = panels.len();
     let w = 1.0 / (Q * Q) as f64;
-    // The potential coefficients row by row on all cores.
-    let rows: Vec<usize> = (0..n).collect();
-    let mut a = nalgebra::DMatrix::<f64>::zeros(n, n);
-    let row = |i: usize| -> Vec<f64> {
+    // The potential coefficients column by column on all cores, into one
+    // column-major table (n² coefficients: some 170 MB at 4 600 tiles).
+    let coefficient = |i: usize, j: usize| -> f64 {
         let ci = panels[i].centre;
-        (0..n)
-            .map(|j| {
-                let pj = &panels[j];
-                if i == j {
-                    // A disc of the tile's area, at its centre.
-                    (pj.area / PI).sqrt() / (2.0 * EPS0)
-                } else if dist(ci, pj.centre) > 4.0 * pj.size {
-                    K * pj.area / dist(ci, pj.centre)
-                } else {
-                    pj.sub
-                        .iter()
-                        .map(|q| K * pj.area * w / dist(ci, *q).max(1e-6))
-                        .sum()
-                }
-            })
-            .collect()
-    };
-    let filled: Vec<Vec<f64>> = std::thread::scope(|scope| {
-        let chunk = n.div_ceil(field_views::threads()).max(1);
-        let handles: Vec<_> = rows
-            .chunks(chunk)
-            .map(|c| scope.spawn(move || c.iter().map(|&i| row(i)).collect::<Vec<_>>()))
-            .collect();
-        handles
-            .into_iter()
-            .flat_map(|h| h.join().expect("a row"))
-            .collect()
-    });
-    for (i, r) in filled.iter().enumerate() {
-        for (j, v) in r.iter().enumerate() {
-            a[(i, j)] = *v;
+        let pj = &panels[j];
+        if i == j {
+            // A disc of the tile's area, at its centre.
+            (pj.area / PI).sqrt() / (2.0 * EPS0)
+        } else if dist(ci, pj.centre) > 4.0 * pj.size {
+            K * pj.area / dist(ci, pj.centre)
+        } else {
+            pj.sub
+                .iter()
+                .map(|q| K * pj.area * w / dist(ci, *q).max(1e-6))
+                .sum()
         }
-    }
-    let lu = a.lu();
+    };
+    let mut table = vec![0.0; n * n];
+    std::thread::scope(|scope| {
+        let per = n.div_ceil(field_views::threads()).max(1);
+        for (c, cols) in table.chunks_mut(per * n).enumerate() {
+            scope.spawn(move || {
+                for (k, col) in cols.chunks_mut(n).enumerate() {
+                    let j = c * per + k;
+                    for (i, v) in col.iter_mut().enumerate() {
+                        *v = coefficient(i, j);
+                    }
+                }
+            });
+        }
+    });
+    // LU with partial pivoting on all cores (faer; owner, 2026-10-31: some
+    // 20 times nalgebra's on one core at 4 600 tiles, the same values to
+    // 1e-14).
+    let lu = faer::MatRef::from_column_major_slice(&table, n, n).partial_piv_lu();
+    drop(table);
     let mut out = Vec::new();
     for (_, polys) in &charges.groups {
         // The line's potential at every tile, on all cores (every piece of
@@ -1810,12 +1829,14 @@ fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, Str
                 .flat_map(|h| h.join().expect("a tile's potential"))
                 .collect()
         });
-        let re = DVector::from_iterator(n, phi.iter().map(|c| -c.re));
-        let im = DVector::from_iterator(n, phi.iter().map(|c| -c.im));
-        let (Some(sr), Some(si)) = (lu.solve(&re), lu.solve(&im)) else {
+        // The real and imaginary parts as two right-hand sides.
+        let rhs =
+            faer::Mat::<f64>::from_fn(n, 2, |i, k| if k == 0 { -phi[i].re } else { -phi[i].im });
+        let x = faer::linalg::solvers::Solve::solve(&lu, &rhs);
+        if (0..n).any(|i| !(x[(i, 0)].is_finite() && x[(i, 1)].is_finite())) {
             return Err("the tiled floor's system could not be solved".into());
-        };
-        out.push((0..n).map(|k| C::new(sr[k], si[k])).collect());
+        }
+        out.push((0..n).map(|i| C::new(x[(i, 0)], x[(i, 1)])).collect());
     }
     Ok(out)
 }

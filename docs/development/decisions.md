@@ -36,8 +36,27 @@ side (owner, 2026-10-31)**
   on all cores, a slow power replaced by the exact \( r^2\sqrt{r^2} \):
   4 real spans' profiles 15 s instead of 52 s, the values unchanged by
   these. The progress counts floors solved side by side.
-- Open (asked): a parallel LU (a dependency, faer) and volumes' floors per
-  span instead of one per run (a run's floor grows with its length cubed).
+- The owner, asked how much a parallel LU would bring (measured on
+  floor-like systems: 14× at 2 850 tiles, 22× at 4 660, 31× at 8 000, the
+  same solutions to 1e-14): "go ahead with faer" (the tech stack's choice
+  for large dense systems, ADR 0002). The floors' LU now faer's on all
+  cores, filled column by column into one table; 4 real spans' profiles
+  4.5 s (52 s in the morning); two floors side by side. "Make sure we can
+  keep memory not too high … laptops with 16 up to 32 GB": a floor's
+  memory counted (16 bytes per pair of tiles: its table and its factors),
+  side by side as many as 1 GB holds, one over 2 GB refused, said; the
+  window says a volume's longest run's floor (tiles, memory, time) before
+  Run, in red over the limit. `TiledFloor::seconds` measured again (0.8 s
+  for the table and the potentials at 4 660 tiles, growing with the
+  square; 0.4 s for the LU, with the cube).
+- Explained to the owner (asked "what is the fundamental role played by
+  these tiles"): the ground's induced charge, solved so the ground stays
+  at zero potential; each tile's charge acts on every other's, hence a
+  table of tiles². A plain cut-off by distance is not taken (a tile's
+  effect falls only as 1/distance while the tiles at a distance grow with
+  it); coarser far tiles, a floor per span and compressed far groups
+  (fast multipole, H-matrices) are the sound ways. Open: volumes' floors
+  per span (asked), a measured smaller reach.
 
 ## 2026-10-30
 
