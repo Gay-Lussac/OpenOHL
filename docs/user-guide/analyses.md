@@ -780,12 +780,21 @@ longer in the line falls back to the default.
 - **Jumpers** (3D, on by default, 2026-10-29): a jumper between two
   section ends of one phase carries that phase's current; jumpers on taps
   or between different phases are left out and listed in the notes.
-- **Spans** (2026-10-30): the spans computed — the profiles, the
-  isolines from above and the volumes are computed over the spans ticked
-  only. Per alignment its spans in station order, ticked; then the spans
-  on no alignment (both structures not on one alignment), unticked;
-  *all* / *none* per group. The ticks are kept in the project; with none
-  ticked, Run says so.
+**3 Spans and what to compute in each** (2026-10-31, the owner's
+validated rework; the same in both field windows). **The span table**:
+every span a row — per alignment its spans in station order, ticked;
+then the spans on no alignment (both structures not on one alignment),
+unticked — with its length, its profile, its **2D cuts at** (the
+stations asked: *+ station* at mid-span, at its lowest point or a
+distance from its first structure; a click on a station's chip removes
+it), its **Volume** and (magnetic) its **From above**. An unticked span
+is greyed and nothing is computed in it. **Press on a tick and drag
+across the rows**: every row passed takes the state the press gave;
+shift-click ticks a range; a filter (part of a span's
+name), *All*, *None* and *Invert* act on the rows shown. The table is as
+tall as you drag its handle. The ticks, the stations and the volumes are
+kept in the project; with no span ticked, Run says so. Under the table:
+
 - **Profiles**: at each ticked span's lowest point, *beside its structures*
   (2026-10-31: a profile this far into each ticked span from both its
   structures, 10 m by default), or one span at its
@@ -793,13 +802,29 @@ longer in the line falls back to the default.
   height above the ground (default ±50 m every 1 m at 1 m). The ground is
   the project's surface for the checks when there is one, else straight
   between the structures' feet.
+- **From above**, **2D cuts**, **Volumes** (3D): their sizes — the
+  grids' step; the cuts' half width, step and reach over the highest wire
+  (default ±60 m every 0.5 m to 10 m over it); the volumes' step — each
+  with how many the table asks and how long they take (5 Views below).
+
+Beside **Run**, a summary: the spans, profiles, cuts and volumes the run
+will compute and about how long. In **2 Scope**:
+
 - **Limit**: optional, µT: the margin at every point and the limit line's
   extent on every profile.
 - **Points from CSV…**: places to evaluate (e.g. places of sensitive use),
   a CSV with a header naming `x`, `y` and `z` (elevation) or `height`
   (above the ground), optionally `name`.
 
-**3 Model** (3D; 2026-10-29). Every setting says beside it what it
+**Results** (2026-10-31): first a list of everything computed — every
+profile, cut, volume and grid with its largest value and a note — and a
+button on each: **Plot** shows the profile below, **Open cut** opens a
+cross-section panel at the cut's station on the wires (the cut computed
+by the run drawn in it), **Show in 3D** turns the 3D view to the volume
+or grid and shows the field's layer.
+
+**4 Model** (3D; 2026-10-29; folded since 2026-10-31: open it to change
+the model). Every setting says beside it what it
 changes in the results and about how long it takes on this computer —
 from the last run's speed, else a short measurement (a laptop slows to
 about half speed after a few seconds of full load; the estimate allows
@@ -819,7 +844,7 @@ for it).
   the wires left out change it (on a real line of 28 km, 2 km changed it
   by at most 0.03 % and made a volume ten times quicker).
 
-**4 Views and levels** (2026-10-29). The **levels** are a table of
+**5 Views and levels** (2026-10-29). The **levels** are a table of
 values (µT) with a colour each, ticked to draw them, **+ level**, **+ the
 limit** (the limit given above) — display only, none is a limit. *Colour
 the cuts by band* fills a cut's cells with the colour of the highest
@@ -827,17 +852,23 @@ level at or below their value. The views, drawn on the layer **Magnetic
 field (isolines, surfaces)** while the window is open:
 
 - **From above**: isolines at the profiles' height above the ground over
-  the spans ticked, ± the width, a grid every step (default 2 m); in
+  the spans with *From above* ticked in the table, ± the width, a grid
+  every step (default 2 m; its step under the table); in
   the plan and the 3D view. Spans following each other along the line
   make one grid, bent at the line angles: the isolines run through the
   structures unbroken.
-- **Cross-sections**: the field in **every cross-section panel open**
+- **2D cuts**: at the stations asked in the table (*+ station*), computed
+  by the run; their size under the table. **Results › Open cut** opens a
+  cross-section panel there, on the wires.
+- **Cross-sections**: *also in any cross-section panel I open*
   (**Cross-section…**, C), every step (default 0.5 m) — open a cut at a
   building to see the field around it with the ground, the LiDAR points
   and the line. Computed after a run whenever a panel opens or moves
   (some seconds each), from the run's wires.
-- **Volume**: isosurfaces of the levels over the spans ticked (one
-  volume along each run of ticked spans following each other, bent at the line angles: no seam at the structures),
+- **Volume**: isosurfaces of the levels over the spans with *Volume*
+  ticked in the table (one volume along each run of them following each
+  other, bent at the line angles: no seam at the structures; its step
+  under the table; **Results › Show in 3D** turns the 3D view to it),
   ± the width, from the ground to 10 m over the highest wire, the lattice every
   step (default 2 m), drawn translucent in the 3D view. A coarse lattice
   first, then the fine one only where a level passes, near the wires and
@@ -972,7 +1003,7 @@ default.
 - **Jumpers** (3D, on by default): a jumper at a section's end carries
   that section's charge per metre; jumpers not at a section's end are
   left out and listed in the notes.
-- **Structures' steel** (3 Model; 2026-10-31, **off by default**):
+- **Structures' steel** (4 Model; 2026-10-31, **off by default**):
   *earthed (on the tiled floor)* — the structures' members at earth
   potential, solved with each floor they stand on: the field lower near
   the structures, higher at the steel. Beside it: how many structures
@@ -996,25 +1027,33 @@ default.
   `--cut-tile`, `--volume-tile`. Progress bars: the run's in the footer
   (saying which floor is being solved), the cross-section panels' under
   *Cross-sections* and in the results.
-- **Profiles**, **Across**, **Points from CSV…**: as for the [magnetic
-  field](#electrical-magnetic-field) (default ±50 m every 1 m at 1 m
-  above the ground).
+- **Points from CSV…**: as for the [magnetic
+  field](#electrical-magnetic-field).
 - **Limit**: optional, kV/m: the margin at every point and per profile.
 
-**3 Model** (3D): **Wire pieces** *as solved* or *at most* a length, as
+**3 Spans and what to compute in each** (2026-10-31): the span table, the
+**Profiles** and **Across** (default ±50 m every 1 m at 1 m above the
+ground) and the sizes of the **2D cuts** and **Volumes**, as for the
+[magnetic field](#electrical-magnetic-field) (no isolines from above
+yet); the volumes' floor (tiles, memory, time) beside them. The summary
+beside **Run** and the **Results** list (Plot, Open cut, Show in 3D) as
+there.
+
+**4 Model** (3D; folded): the structures' steel, **Wire pieces** *as solved* or *at most* a length, as
 for the magnetic field (each piece's field exact, in closed form; the
 only error is how far the wire curves away from it). Beside it the
 profiles' time: every point sums every piece twice (the charges and
 their images), estimated from the last run's speed, else from a short
 measurement on this computer. The whole line is always modelled.
 
-**4 Views and levels**: the **levels** (kV/m; default 1 and 5 kV/m
+**5 Views and levels**: the **levels** (kV/m; default 1 and 5 kV/m
 drawn, 10 kV/m not; display only, none is a limit; **+ the limit**),
-*colour the cuts by band*, the field in **every cross-section panel
-open** (every step, default 0.5 m; computed from the run's charges
-whenever a panel opens or moves) and a **volume** over the spans ticked (isosurfaces
-of the levels, one volume along each run of ticked spans, ± the width, from the ground to
-10 m over the highest wire) — each with its time beside it, drawn on the
+*colour the cuts by band*, the field *also in any cross-section panel I
+open* (every step, default 0.5 m; computed from the run's charges
+whenever a panel opens or moves); the cuts and volumes asked in the
+table (isosurfaces of the levels, one volume along each run of spans
+with *Volume* ticked, ± the width, from the ground to 10 m over the
+highest wire) — each with its time beside it, drawn on the
 layer **Electric field (isolines, surfaces)** while the window is open,
 as for the magnetic field. Not yet: isolines from above.
 

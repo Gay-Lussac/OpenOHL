@@ -70,9 +70,31 @@ impl ElectricFieldWindow {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
-        // The spans ticked (Scope): the views are computed over them.
-        let ticked = self.span_pick.chosen(model, spans).0.len();
-        crate::check_ui::section(ui, 3, "Model", None);
+        crate::check_ui::section(ui, 4, "Model", None);
+        // Folded by default (owner, 2026-10-31: the setup easy to read):
+        // each setting with its effect and time when opened.
+        egui::CollapsingHeader::new("Wire pieces, structures' steel, the ground's tiles")
+            .id_salt("electric-field-model-fold")
+            .default_open(false)
+            .show(ui, |ui| {
+                self.model_ui(ui, model, spans, &st, (pieces, rate, rate_from))
+            });
+        crate::check_ui::section(ui, 5, "Views and levels", None);
+        self.levels_ui(ui, rate, rate_from, pieces);
+    }
+
+    /// Section 4's settings (folded): the steel, the wire pieces, the
+    /// profiles' time. `(pieces, rate, rate_from)`: the pieces, the time
+    /// per piece and point and where it comes from.
+    fn model_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        spans: &Spans,
+        st: &PieceStats,
+        (pieces, rate, rate_from): (f64, f64, &str),
+    ) {
+        let st = *st;
         egui::Grid::new("electric-field-model")
             .num_columns(2)
             .spacing([10.0, 4.0])
@@ -205,7 +227,11 @@ impl ElectricFieldWindow {
         let per_span =
             (st.span() / self.piece_length.unwrap_or(st.longest).max(0.1)).ceil() as usize;
         crate::field_help::pieces(ui, per_span);
-        crate::check_ui::section(ui, 4, "Views and levels", None);
+    }
+
+    /// Section 5: the levels drawn, the cuts coloured by band, and the
+    /// field in any cross-section panel opened.
+    fn levels_ui(&mut self, ui: &mut egui::Ui, rate: f64, rate_from: &str, pieces: f64) {
         crate::field_help::cut(ui, self.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.label(egui::RichText::new("Levels drawn (kV/m, display only: none is a limit)").small());
@@ -257,16 +283,10 @@ impl ElectricFieldWindow {
             }
             ui.checkbox(&mut self.fill, "colour the cuts by band");
         });
-        let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
         egui::Grid::new("electric-field-views")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("From above");
-                ui.label(
-                    egui::RichText::new("isolines: not yet for the electric field").weak(),
-                );
-                ui.end_row();
                 // The cross-section panels.
                 if self.panel.job.running() {
                     ui.label("");
@@ -276,7 +296,11 @@ impl ElectricFieldWindow {
                 ui.label("Cross-sections");
                 ui.horizontal(|ui| {
                     let mut on = self.in_cuts.is_some();
-                    ui.checkbox(&mut on, "the field in every cross-section panel open, every");
+                    ui.checkbox(&mut on, "also in any cross-section panel I open, every")
+                        .on_hover_text(
+                            "Besides the cuts asked in the table: the field in every \
+                             cross-section panel you open (C), computed when it opens or moves",
+                        );
                     if !on {
                         self.in_cuts = None;
                     } else {
@@ -309,29 +333,92 @@ impl ElectricFieldWindow {
                     );
                     ui.end_row();
                 }
-                // A volume.
-                ui.label("Volume");
+            });
+    }
+
+    /// The sizes of what the table asks (section 3, 3D; owner, 2026-10-31:
+    /// one line under the table): the cuts' width, step and reach, the
+    /// volumes' step, each with how long it takes.
+    pub(super) fn sizes_ui(&mut self, ui: &mut egui::Ui, model: &Model, spans: &Spans) {
+        let st = self.piece_stats(model);
+        let (rate, rate_from) = self.rate();
+        let pieces = match self.piece_length {
+            Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
+            _ => st.count as f64,
+        };
+        let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
+        let cuts = self.span_pick.cuts_asked(model, spans).len();
+        let runs = self.span_pick.volume_runs(model, spans);
+        let ticked: usize = runs.iter().map(|r| r.1).sum();
+        egui::Grid::new("electric-field-sizes")
+            .num_columns(2)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("2D cuts");
                 ui.horizontal(|ui| {
-                    let mut on = self.volume.is_some();
-                    ui.checkbox(&mut on, "isosurfaces");
-                    if !on {
-                        self.volume = None;
-                    } else {
-                        let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
-                        ui.label(format!("over the {ticked} span(s) ticked,"));
-                        ui.label(format!("±{} m, every", self.width));
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut v.step)
-                                .range(0.25..=20.0)
-                                .speed(0.05)
-                                .suffix(" m"),
-                        );
-                    }
+                    ui.label("±");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.cut_width)
+                            .range(5.0..=500.0)
+                            .speed(1.0)
+                            .suffix(" m"),
+                    );
+                    ui.label("every");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.cut_step)
+                            .range(0.05..=10.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    );
+                    ui.label("up to");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.cut_above)
+                            .range(0.0..=100.0)
+                            .speed(0.5)
+                            .suffix(" m"),
+                    );
+                    ui.label("over the highest wire");
                 });
                 ui.end_row();
-                if let Some(v) = &self.volume {
-                    let n = ticked.max(1) as f64;
+                let points =
+                    (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
+                ui.label("");
+                crate::check_help::explain(
+                    ui,
+                    &format!(
+                        "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
+                         each, {} per cut ({rate_from}). Each a vertical plane across its span, \
+                         its isolines at the levels (5); Results › Open cut shows it on the wires.",
+                        duration(points * pieces * rate)
+                    ),
+                    "The cut is perpendicular to the span (between its two structures), from \
+                     the lowest ground to this far over the highest wire; on the tiled floor \
+                     its own floor of the cut tiles (Ground).",
+                );
+                ui.end_row();
+                // The volumes: their spans ticked in the table.
+                ui.label("Volumes");
+                ui.horizontal(|ui| {
+                    let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
+                    ui.label(format!(
+                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±{} m, every",
+                        runs.len(),
+                        self.width
+                    ));
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut v.step)
+                            .range(0.25..=20.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    );
+                });
+                ui.end_row();
+                if let (Some(v), true) = (&self.volume, ticked > 0) {
+                    let n = ticked as f64;
                     let full =
                         n * (st.span() / v.step) * (2.0 * self.width / v.step) * (70.0 / v.step);
                     let share = self.volume_share.unwrap_or(0.5);
@@ -344,7 +431,7 @@ impl ElectricFieldWindow {
                              ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
                              step takes about 4 to 8 times as long and places the surfaces closer \
                              to their levels; thin surfaces around the conductors need a fine \
-                             step. Each run says how far, per level.",
+                             step. Results › Show in 3D turns the 3D view to it.",
                             st.span(),
                             full / 1e6,
                             share * 100.0,
@@ -360,13 +447,14 @@ impl ElectricFieldWindow {
                          level passes, near the wires, and wherever a surface goes on; every \
                          lattice point is computed in full, only the surface between the points \
                          is interpolated. Drawn translucent in the 3D view, each level in its \
-                         colour.",
+                         colour. Spans with Volume ticked that follow each other make one \
+                         volume (no seam at the structures).",
                     );
                     ui.end_row();
                     // The floor under the longest run (owner, 2026-10-31:
                     // laptops of 16 to 32 GB): its memory said before Run.
                     if self.tiled {
-                        let longest = self.span_pick.run_lengths(model, spans).into_iter().max().unwrap_or(1);
+                        let longest = runs.iter().map(|r| r.1).max().unwrap_or(1);
                         let tiles = electric::Floor::tiles_under(
                             st.span() * longest as f64,
                             self.width,
@@ -374,7 +462,7 @@ impl ElectricFieldWindow {
                         );
                         let bytes = electric::floor_bytes(tiles);
                         let text = format!(
-                            "Its floor: the longest run of ticked spans ({longest}) ≈ {tiles} tiles of \
+                            "Its floor: the longest volume ({longest} span(s)) ≈ {tiles} tiles of \
                              {} m, ≈ {:.2} GB of memory while solved, {}.",
                             self.volume_tile,
                             bytes / 1e9,
@@ -385,9 +473,9 @@ impl ElectricFieldWindow {
                             crate::menu::error_label(
                                 ui,
                                 format!(
-                                    "{text} Over the {:.0} GB a floor may take: tick fewer spans \
-                                     following each other, or coarser tiles under the volumes \
-                                     (Ground), or the plane under each point.",
+                                    "{text} Over the {:.0} GB a floor may take: tick Volume in \
+                                     fewer spans following each other, or coarser tiles under \
+                                     the volumes (Ground), or the plane under each point.",
                                     electric::FLOOR_MEMORY / 1e9
                                 ),
                             );
@@ -404,6 +492,72 @@ impl ElectricFieldWindow {
                     }
                 }
             });
+    }
+
+    /// What the run will compute and about how long it takes (owner,
+    /// 2026-10-31: a summary beside Run): the spans ticked, the profiles,
+    /// the cuts, the volumes.
+    pub(super) fn summary(&mut self, model: &Model) -> String {
+        let spans = self.spans(model);
+        let n = self.span_pick.chosen(model, &spans).0.len();
+        let profiles = match self.stations {
+            Stations::EverySpan => n,
+            Stations::Beside { .. } => 2 * n,
+            Stations::One { .. } => 1,
+        };
+        let (cuts, volumes) = if self.two_d {
+            (0, 0)
+        } else {
+            (
+                self.span_pick.cuts_asked(model, &spans).len(),
+                self.span_pick.volume_runs(model, &spans).len(),
+            )
+        };
+        let st = self.piece_stats(model);
+        let (rate, _) = self.rate();
+        let pieces = match self.piece_length {
+            Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
+            _ => st.count as f64,
+        };
+        let across = (2.0 * self.width / self.step.max(0.01)).round() + 1.0;
+        let cut_points =
+            (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
+        let mut seconds = (profiles as f64 * across + cuts as f64 * cut_points) * pieces * rate;
+        if self.tiled && !self.two_d {
+            let floor = electric::TiledFloor {
+                fine: self.tile,
+                ..Default::default()
+            };
+            seconds += profiles as f64 * self.floor_seconds(floor.tiles(self.width));
+            seconds += cuts as f64
+                * self.floor_seconds(
+                    electric::TiledFloor {
+                        fine: self.cut_tile,
+                        coarse: self.cut_tile.max(8.0),
+                        ..Default::default()
+                    }
+                    .tiles(self.cut_width),
+                );
+        }
+        if let Some(v) = &self.volume
+            && volumes > 0
+        {
+            let ticked: usize = self
+                .span_pick
+                .volume_runs(model, &spans)
+                .iter()
+                .map(|r| r.1)
+                .sum();
+            let full = ticked as f64
+                * (st.span() / v.step)
+                * (2.0 * self.width / v.step)
+                * (70.0 / v.step);
+            seconds += full * self.volume_share.unwrap_or(0.5) * pieces * rate;
+        }
+        format!(
+            "{n} span(s) · {profiles} profile(s) · {cuts} cut(s) · {volumes} volume(s) — {}",
+            duration(seconds)
+        )
     }
 
     /// The results of the views: what each measured.
@@ -663,6 +817,12 @@ impl ElectricFieldWindow {
                 if let Some(l) = levels.iter().find(|l| l.value == *level) {
                     o.surfaces.push((l.rgb, mesh.clone()));
                 }
+            }
+            // The cuts asked in the table (owner, 2026-10-31): drawn in
+            // their planes, so a panel opened there (Open cut) shows them.
+            for c in &a.field.cuts {
+                o.cuts
+                    .push(field_overlay::cut_drawing(&c.values, &levels, self.fill));
             }
         }
         for c in &self.panel.done {

@@ -40,6 +40,41 @@ window with a torus")**
   from the ring's size (sagitta ≤ 0.25 mm). Marked as conservative in the
   theory page.
 
+**The field windows' Setup and Results reworked (owner, 2026-10-31,
+validated)**
+
+- The owner: "the menus for the setup need a UI rework. the selection or
+  deselection window for the spans is too small. i need a faster way to
+  select or unselect them ([another program] greys them out and you drag the mouse
+  across while holding the click to flip the choices. then for the 2d
+  cuts it should be asked at which stations we want one and in 3d if the
+  span is ticked and 3d too it should display it in the 3d view when we
+  click on the results … it has to be easy and understandable. please
+  offer modifications i can validate". Seven points proposed with a
+  mockup; the owner: "all validated, go ahead".
+- Both windows: **3 Spans and what to compute in each** — one span table
+  (`span_pick`), as tall as its handle is dragged (egui had shrunk the
+  list to 64 px), unticked rows greyed, a press on a tick dragged across
+  rows gives each the press's state, shift-click a range, a filter, All /
+  None / Invert; per span its profile, **2D cuts at** stations (*+
+  station*: mid-span, its lowest point, a distance from its first
+  structure; the run computes them, `Settings.cuts`), **Volume** and
+  (magnetic) **From above** (runs of ticked spans following each other:
+  one volume, one grid). Under it the Profiles, Across and the sizes of
+  the cuts, volumes and grids with their times. **4 Model** folded; **5
+  Views and levels** with *also in any cross-section panel I open*. A
+  summary beside Run (spans, profiles, cuts, volumes, time).
+- **Results** first list every profile, cut, volume and grid with its
+  largest value: **Plot**, **Open cut** (a cross-section panel at the
+  cut's station on the wires, the run's cut drawn in it: the field
+  layer's cuts), **Show in 3D** (the 3D view turned to the volume's
+  surfaces, the field's layer shown) — the windows' `requests`, carried
+  out by the application (`field_results`).
+- Stored per project line: the spans' cuts, volumes and grids
+  (`cuts`, `volume_spans`, `above_spans`) and the cuts' sizes; a volume
+  or grid of an older file keeps its step, its spans now ticked in the
+  table.
+
 **The electric field's charges where the wires are; its floors side by
 side (owner, 2026-10-31)**
 

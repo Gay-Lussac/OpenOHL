@@ -20,7 +20,7 @@ use ohl_electrical::contour::Mesh;
 use ohl_electrical::field_views::{self, CutValues, Deviation, VerticalCut};
 use ohl_electrical::magnetic::{self, Wires3d};
 
-use super::{MagneticFieldWindow, Spans};
+use super::{MagneticFieldWindow, Spans, Stations};
 use crate::field_overlay::{self, Level, Overlay};
 use crate::job::Job;
 use crate::model::Model;
@@ -269,12 +269,10 @@ impl MagneticFieldWindow {
     }
 
     /// The setup of the model and the views (sections 3 and 4).
-    pub(super) fn views_ui(&mut self, ui: &mut egui::Ui, model: &Model, spans: &Spans) {
+    pub(super) fn views_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let st = self.piece_stats(model);
         let (rate, rate_from) = self.rate();
         let pieces = self.pieces_with(&st, self.piece_length);
-        // The spans ticked (Scope): the views are computed over them.
-        let ticked = self.span_pick.chosen(model, spans).0.len();
         // The wires a view takes (modelled within): the share of the line
         // within the distance either side of the view.
         let line = st.line.max(1.0);
@@ -284,7 +282,13 @@ impl MagneticFieldWindow {
                 None => pieces,
             }
         };
-        crate::check_ui::section(ui, 3, "Model", None);
+        crate::check_ui::section(ui, 4, "Model", None);
+        // Folded by default (owner, 2026-10-31: the setup easy to read):
+        // each setting with its effect and time when opened.
+        egui::CollapsingHeader::new("Wire pieces, the wires modelled")
+            .id_salt("magnetic-field-model-fold")
+            .default_open(false)
+            .show(ui, |ui| {
         egui::Grid::new("magnetic-field-model")
             .num_columns(2)
             .spacing([10.0, 4.0])
@@ -397,7 +401,8 @@ impl MagneticFieldWindow {
             crate::field_help::pieces(ui, per_span);
             crate::field_help::modelled(ui, self.modelled_within);
         });
-        crate::check_ui::section(ui, 4, "Views and levels", None);
+            });
+        crate::check_ui::section(ui, 5, "Views and levels", None);
         crate::field_help::cut(ui, self.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.label(egui::RichText::new("Levels drawn (µT, display only: none is a limit)").small());
@@ -449,51 +454,10 @@ impl MagneticFieldWindow {
             }
             ui.checkbox(&mut self.fill, "colour the cuts by band");
         });
-        let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
         egui::Grid::new("magnetic-field-views")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                // From above.
-                ui.label("From above");
-                ui.horizontal(|ui| {
-                    let mut on = self.above.is_some();
-                    ui.checkbox(&mut on, "isolines");
-                    if !on {
-                        self.above = None;
-                    } else {
-                        let a = self.above.get_or_insert(Above { step: 2.0 });
-                        ui.label(format!("at {} m above the ground, ±{} m, every", self.height, self.width));
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut a.step)
-                                .range(0.1..=50.0)
-                                .speed(0.1)
-                                .suffix(" m"),
-                        );
-                        ui.label(format!("over the {ticked} span(s) ticked"));
-                    }
-                });
-                ui.end_row();
-                if let Some(a) = &self.above {
-                    let length = st.span() * ticked as f64;
-                    let points = (length / a.step + 1.0) * (2.0 * self.width / a.step + 1.0);
-                    ui.label("");
-                    crate::check_help::explain(
-                        ui,
-                        &format!(
-                            "≈ {points:.0} points, {} ({rate_from}). The values at the points are \
-                             exact; an isoline is drawn straight between points {} m apart, so \
-                             where it bends it may lie off by up to about half a step (each run \
-                             says how far, per level).",
-                            duration(points * pieces * rate),
-                            a.step
-                        ),
-                        "The grids follow the ground at the profiles' height; their isolines are \
-                         drawn on the plan and in the 3D view.",
-                    );
-                    ui.end_row();
-                }
                 // The cross-section panels.
                 if self.panel.job.running() {
                     ui.label("");
@@ -503,7 +467,11 @@ impl MagneticFieldWindow {
                 ui.label("Cross-sections");
                 ui.horizontal(|ui| {
                     let mut on = self.in_cuts.is_some();
-                    ui.checkbox(&mut on, "the field in every cross-section panel open, every");
+                    ui.checkbox(&mut on, "also in any cross-section panel I open, every")
+                        .on_hover_text(
+                            "Besides the cuts asked in the table: the field in every \
+                             cross-section panel you open (C), computed when it opens or moves",
+                        );
                     if !on {
                         self.in_cuts = None;
                     } else {
@@ -534,29 +502,138 @@ impl MagneticFieldWindow {
                     );
                     ui.end_row();
                 }
-                // A volume.
-                ui.label("Volume");
+            });
+    }
+
+    /// The sizes of what the table asks (section 3, 3D; owner, 2026-10-31:
+    /// one line under the table): the isolines from above' step, the
+    /// cuts' width, step and reach, the volumes' step, each with how long
+    /// it takes.
+    pub(super) fn sizes_ui(&mut self, ui: &mut egui::Ui, model: &Model, spans: &Spans) {
+        let st = self.piece_stats(model);
+        let (rate, rate_from) = self.rate();
+        let pieces = self.pieces_with(&st, self.piece_length);
+        let line = st.line.max(1.0);
+        let taken = |d: Option<f64>, extent: f64| -> f64 {
+            match d {
+                Some(d) => pieces * ((2.0 * d + extent) / line).min(1.0),
+                None => pieces,
+            }
+        };
+        let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
+        let cuts = self.span_pick.cuts_asked(model, spans).len();
+        let above: usize = self
+            .span_pick
+            .above_runs(model, spans)
+            .iter()
+            .map(|r| r.1)
+            .sum();
+        let runs = self.span_pick.volume_runs(model, spans);
+        let ticked: usize = runs.iter().map(|r| r.1).sum();
+        egui::Grid::new("magnetic-field-sizes")
+            .num_columns(2)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("From above");
                 ui.horizontal(|ui| {
-                    let mut on = self.volume.is_some();
-                    ui.checkbox(&mut on, "isosurfaces");
-                    if !on {
-                        self.volume = None;
-                    } else {
-                        let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
-                        ui.label(format!("over the {ticked} span(s) ticked,"));
-                        ui.label(format!("±{} m, every", self.width));
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut v.step)
-                                .range(0.25..=20.0)
-                                .speed(0.05)
-                                .suffix(" m"),
-                        );
-                    }
+                    let a = self.above.get_or_insert(Above { step: 2.0 });
+                    ui.label(format!(
+                        "isolines in {above} span(s) with From above ticked, at {} m above the \
+                         ground, ±{} m, every",
+                        self.height, self.width
+                    ));
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut a.step)
+                            .range(0.1..=50.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    );
                 });
                 ui.end_row();
-                if let Some(v) = &self.volume {
-                    let n = ticked.max(1) as f64;
+                if let (Some(a), true) = (&self.above, above > 0) {
+                    let length = st.span() * above as f64;
+                    let points = (length / a.step + 1.0) * (2.0 * self.width / a.step + 1.0);
+                    ui.label("");
+                    crate::check_help::explain(
+                        ui,
+                        &format!(
+                            "≈ {points:.0} points, {} ({rate_from}). The values at the points are \
+                             exact; an isoline is drawn straight between points {} m apart, so \
+                             where it bends it may lie off by up to about half a step (each run \
+                             says how far, per level).",
+                            duration(points * pieces * rate),
+                            a.step
+                        ),
+                        "The grids follow the ground at the profiles' height; their isolines are \
+                         drawn on the plan and in the 3D view. Spans with From above ticked that \
+                         follow each other make one grid.",
+                    );
+                    ui.end_row();
+                }
+                ui.label("2D cuts");
+                ui.horizontal(|ui| {
+                    ui.label("±");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.cut_width)
+                            .range(5.0..=500.0)
+                            .speed(1.0)
+                            .suffix(" m"),
+                    );
+                    ui.label("every");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.cut_step)
+                            .range(0.05..=10.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    );
+                    ui.label("up to");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.cut_above)
+                            .range(0.0..=100.0)
+                            .speed(0.5)
+                            .suffix(" m"),
+                    );
+                    ui.label("over the highest wire");
+                });
+                ui.end_row();
+                let points =
+                    (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
+                ui.label("");
+                crate::check_help::explain(
+                    ui,
+                    &format!(
+                        "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
+                         each, {} per cut ({rate_from}). Each a vertical plane across its span, \
+                         its isolines at the levels (5); Results › Open cut shows it on the wires.",
+                        duration(points * taken(self.modelled_within, 0.0) * rate)
+                    ),
+                    "The cut is perpendicular to the span (between its two structures), from \
+                     the lowest ground to this far over the highest wire.",
+                );
+                ui.end_row();
+                ui.label("Volumes");
+                ui.horizontal(|ui| {
+                    let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
+                    ui.label(format!(
+                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±{} m, every",
+                        runs.len(),
+                        self.width
+                    ));
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut v.step)
+                            .range(0.25..=20.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    );
+                });
+                ui.end_row();
+                if let (Some(v), true) = (&self.volume, ticked > 0) {
+                    let n = ticked as f64;
                     let full =
                         n * (st.span() / v.step) * (2.0 * self.width / v.step) * (70.0 / v.step);
                     let share = self.volume_share.unwrap_or(0.5);
@@ -571,7 +648,7 @@ impl MagneticFieldWindow {
                              to their levels: on a real line 2 m put the 1 µT surface within \
                              0.05 % for nine points in ten, the 10 µT one within 1 %, the 100 µT \
                              one (a thin tube around each conductor) within 15 % — 1 m within \
-                             0.01 %, 0.3 % and 4 %. Each run says how far, per level.",
+                             0.01 %, 0.3 % and 4 %. Results › Show in 3D turns the 3D view to it.",
                             st.span(),
                             full / 1e6,
                             share * 100.0,
@@ -587,11 +664,68 @@ impl MagneticFieldWindow {
                          level passes, near the wires, and wherever a surface goes on; every \
                          lattice point is computed in full, only the surface between the points \
                          is interpolated. Drawn translucent in the 3D view, each level in its \
-                         colour.",
+                         colour. Spans with Volume ticked that follow each other make one \
+                         volume (no seam at the structures).",
                     );
                     ui.end_row();
                 }
             });
+    }
+
+    /// What the run will compute and about how long it takes (owner,
+    /// 2026-10-31: a summary beside Run): the spans ticked, the profiles,
+    /// the cuts, the volumes, the grids from above.
+    pub(super) fn summary(&mut self, model: &Model) -> String {
+        let spans = self.spans(model);
+        let n = self.span_pick.chosen(model, &spans).0.len();
+        let profiles = match self.stations {
+            Stations::EverySpan => n,
+            Stations::Beside { .. } => 2 * n,
+            Stations::One { .. } => 1,
+        };
+        let (cuts, volume_spans, volumes, above) = if self.two_d {
+            (0, 0, 0, 0)
+        } else {
+            let runs = self.span_pick.volume_runs(model, &spans);
+            (
+                self.span_pick.cuts_asked(model, &spans).len(),
+                runs.iter().map(|r| r.1).sum::<usize>(),
+                runs.len(),
+                self.span_pick
+                    .above_runs(model, &spans)
+                    .iter()
+                    .map(|r| r.1)
+                    .sum::<usize>(),
+            )
+        };
+        let st = self.piece_stats(model);
+        let (rate, _) = self.rate();
+        let pieces = self.pieces_with(&st, self.piece_length);
+        let across = (2.0 * self.width / self.step.max(0.01)).round() + 1.0;
+        let cut_points =
+            (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
+        let mut points = profiles as f64 * across + cuts as f64 * cut_points;
+        if let Some(a) = &self.above {
+            points += (st.span() * above as f64 / a.step + 1.0)
+                * (2.0 * self.width / a.step + 1.0)
+                * (above > 0) as u8 as f64;
+        }
+        if let Some(v) = &self.volume {
+            points += volume_spans as f64
+                * (st.span() / v.step)
+                * (2.0 * self.width / v.step)
+                * (70.0 / v.step)
+                * self.volume_share.unwrap_or(0.5);
+        }
+        let grids = if above > 0 {
+            format!(" · {above} span(s) from above")
+        } else {
+            String::new()
+        };
+        format!(
+            "{n} span(s) · {profiles} profile(s) · {cuts} cut(s) · {volumes} volume(s){grids} — {}",
+            duration(points * pieces * rate)
+        )
     }
 
     /// The results of the views: what each measured.
@@ -878,6 +1012,12 @@ impl MagneticFieldWindow {
                 if let Some(l) = levels.iter().find(|l| l.value == *level) {
                     o.surfaces.push((l.rgb, mesh.clone()));
                 }
+            }
+            // The cuts asked in the table (owner, 2026-10-31): drawn in
+            // their planes, so a panel opened there (Open cut) shows them.
+            for c in &a.field.cuts {
+                o.cuts
+                    .push(field_overlay::cut_drawing(&c.values, &levels, self.fill));
             }
         }
         for c in &self.panel.done {

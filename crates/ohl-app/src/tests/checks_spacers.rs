@@ -1661,7 +1661,7 @@ fn setup_shots(harness: &mut Harness<'_, App>, dir: &std::path::Path, name: &str
             modifiers: egui::Modifiers::NONE,
             phase: egui::TouchPhase::Move,
         });
-        harness.run();
+        harness.run_steps(4);
     }
 }
 
