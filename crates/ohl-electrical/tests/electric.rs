@@ -316,3 +316,52 @@ fn a_volume_on_the_tiled_floor() {
     // 2.8 %, 4 m 0.16 %.)
     assert!(worst < 0.10 * top, "{} of {}", worst, top);
 }
+
+/// The 2D profile from its own cross-section's charges (owner,
+/// 2026-10-31): the example double circuit at the middle of T1–T2 against
+/// hvlbuzz 2.0 on the same cross-section
+/// (benchmarks/electrical/hvlbuzz/D-example-double-circuit-T1-T2.json, its
+/// profile beside it): within 0.2 % at every point (from the span's mean
+/// cross-section it was 3.6 % low at the axis). 3D differs by the 2D/3D
+/// methods (the wires curve up away from the middle, the next span):
+/// its largest value within 2 % of hvlbuzz's.
+#[test]
+fn the_2d_profile_matches_hvlbuzz_on_its_cross_section() {
+    let csv = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../benchmarks/electrical/hvlbuzz/D-example-double-circuit-T1-T2_profile.csv"),
+    )
+    .unwrap();
+    let hvl: Vec<(f64, f64)> = csv
+        .lines()
+        .skip(1)
+        .map(|l| {
+            let mut f = l.split(';').map(|v| v.trim().parse::<f64>().unwrap());
+            (f.next().unwrap(), f.next().unwrap() / 1e3)
+        })
+        .collect();
+    let at = |model| Settings {
+        model,
+        stations: vec![mid("T1", "T2")],
+        ground_model: electric::GroundModel::Plane,
+        ..Settings::default()
+    };
+    let two = field(&at(Model::TwoD));
+    let p = &two.profiles[0];
+    assert_eq!(p.points.len(), hvl.len());
+    for (q, (s, e)) in p.points.iter().zip(&hvl) {
+        assert!((q.offset - s).abs() < 1e-9);
+        assert!(
+            (q.e_kv_m - e).abs() <= 2e-3 * e,
+            "at {s} m: {} against {e}",
+            q.e_kv_m
+        );
+    }
+    let largest = hvl.iter().map(|h| h.1).fold(0.0, f64::max);
+    let three = field(&at(Model::ThreeD));
+    let m = three.profiles[0].max_kv_m;
+    assert!(
+        (m - largest).abs() <= 0.02 * largest,
+        "3D {m} against {largest}"
+    );
+}

@@ -8,6 +8,37 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-31
+
+**The electric field's charges where the wires are; its floors side by
+side (owner, 2026-10-31)**
+
+- The owner asked for the 2D field on a cut of a circuit next to hvlbuzz's:
+  on the example double circuit (T1–T2, mid-span) the program read 3.6 %
+  low at the axis — its charges came from the span's mean cross-section
+  (the wires at their mean height), the field from where the wires hang
+  at the profile: not conservative. Given the same cross-section, both
+  agree within 0.2 %. The owner: "go ahead but keep in mind some
+  differences can happen due to the 2D/3D methods". The charges now from
+  the cross-section where they are: in 2D the profile's or point's own;
+  in 3D each span in 16 stretches, each at the charges of the
+  cross-section at its middle (`electric::STRETCHES`). 2D now equals
+  hvlbuzz on that cross-section (a crate test, hvlbuzz's project and
+  profile in `benchmarks/electrical/hvlbuzz/D-example-double-circuit-T1-T2*`);
+  3D 0.6–0.8 % above it at the largest value. On a real line the profiles'
+  largest values moved by −3.3 % to +4.9 % (one low span +15.6 %).
+- The owner: "try the computations of the 3D over a span and see for
+  time optimisations". Measured on one 300 m span: the profile's floor
+  (4 660 tiles) 7.5 s, nearly all of it its dense LU on one core; a
+  volume's floor 1 s, its points 0.6 s (2 m) to 2.3 s (1 m). Now the
+  profiles' floors solved up to 4 at once (as many as about 1 GB holds),
+  the line's potential at the tiles on all cores, the stretches' charges
+  on all cores, a slow power replaced by the exact \( r^2\sqrt{r^2} \):
+  4 real spans' profiles 15 s instead of 52 s, the values unchanged by
+  these. The progress counts floors solved side by side.
+- Open (asked): a parallel LU (a dependency, faer) and volumes' floors per
+  span instead of one per run (a run's floor grows with its length cubed).
+
 ## 2026-10-30
 
 **The electrical windows: no overlapping text, drawings, the spans

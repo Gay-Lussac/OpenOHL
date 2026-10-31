@@ -48,8 +48,22 @@ pub struct Progress {
     floors_planned: AtomicU64,
     floors_done: AtomicU64,
     floors_took: AtomicU64,
-    /// The floor being solved: when it began and its expected time (µs).
-    floor_now: std::sync::Mutex<Option<(Instant, u64)>>,
+    /// The floors being solved (several at once: [`Progress::parallel_floors`]):
+    /// each its token, when it began and its expected time (µs); and since
+    /// when one has been under way.
+    floor_now: std::sync::Mutex<FloorsNow>,
+    /// The time while floors were solved (none of the points'), ns.
+    floors_wall: AtomicU64,
+    /// Floors solved at the same time (0 taken as 1).
+    floors_at_once: AtomicUsize,
+}
+
+/// The floors under way.
+#[derive(Debug, Default)]
+struct FloorsNow {
+    next: u64,
+    running: Vec<(u64, Instant, u64)>,
+    since: Option<Instant>,
 }
 
 /// The time a floor of `tiles` is expected to take, µs.
@@ -77,24 +91,45 @@ impl Progress {
             .fetch_add(floor_cost(tiles), Ordering::Relaxed);
     }
 
-    /// A floor of `tiles` begins (one not planned is added).
-    pub fn floor_begins(&self, tiles: usize) {
-        let cost = floor_cost(tiles);
-        let done = self.floors_done.load(Ordering::Relaxed);
-        self.floors_planned
-            .fetch_max(done + cost, Ordering::Relaxed);
-        if let Ok(mut f) = self.floor_now.lock() {
-            *f = Some((Instant::now(), cost));
-        }
+    /// Floors solved `n` at the same time from now on (the time left
+    /// divides the floors' by it).
+    pub fn parallel_floors(&self, n: usize) {
+        self.floors_at_once.store(n.max(1), Ordering::Relaxed);
     }
 
-    /// The floor begun last is solved.
-    pub fn floor_ends(&self) {
-        if let Ok(mut f) = self.floor_now.lock()
-            && let Some((since, cost)) = f.take()
-        {
+    /// A floor of `tiles` begins (one not planned is added): its token
+    /// for [`Progress::floor_ends`].
+    pub fn floor_begins(&self, tiles: usize) -> u64 {
+        let cost = floor_cost(tiles);
+        let Ok(mut f) = self.floor_now.lock() else {
+            return 0;
+        };
+        let running: u64 = f.running.iter().map(|r| r.2).sum();
+        let done = self.floors_done.load(Ordering::Relaxed);
+        self.floors_planned
+            .fetch_max(done + running + cost, Ordering::Relaxed);
+        f.next += 1;
+        let token = f.next;
+        f.running.push((token, Instant::now(), cost));
+        f.since.get_or_insert_with(Instant::now);
+        token
+    }
+
+    /// The floor of `token` is solved.
+    pub fn floor_ends(&self, token: u64) {
+        let Ok(mut f) = self.floor_now.lock() else {
+            return;
+        };
+        if let Some(k) = f.running.iter().position(|r| r.0 == token) {
+            let (_, since, cost) = f.running.remove(k);
             self.floors_done.fetch_add(cost, Ordering::Relaxed);
             self.floors_took
+                .fetch_add(since.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+        if f.running.is_empty()
+            && let Some(since) = f.since.take()
+        {
+            self.floors_wall
                 .fetch_add(since.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
     }
@@ -117,25 +152,35 @@ impl Progress {
         let planned = self.floors_planned.load(Ordering::Relaxed) as f64 * 1e-6;
         let solved = self.floors_done.load(Ordering::Relaxed) as f64 * 1e-6;
         let took = self.floors_took.load(Ordering::Relaxed) as f64 * 1e-9;
-        let (running, now) = self
-            .floor_now
-            .lock()
-            .ok()
-            .and_then(|f| *f)
-            .map_or((0.0, 0.0), |(since, cost)| {
-                (since.elapsed().as_secs_f64(), cost as f64 * 1e-6)
-            });
+        let at_once = self.floors_at_once.load(Ordering::Relaxed).max(1) as f64;
         // This computer's speed against the expected one (thermal
-        // throttling, other work): from the floors solved.
+        // throttling, other work, floors solved side by side): from the
+        // floors solved.
         let scale = if solved > 0.0 { took / solved } else { 1.0 };
-        let floors = (planned - solved - now).max(0.0) * scale
-            + (now * scale - running).max(0.1 * now * scale);
+        let (now, running_left, wall) = self.floor_now.lock().map_or((0.0, 0.0, 0.0), |f| {
+            let now: f64 = f.running.iter().map(|r| r.2 as f64 * 1e-6).sum();
+            let left: f64 = f
+                .running
+                .iter()
+                .map(|r| {
+                    let c = r.2 as f64 * 1e-6 * scale;
+                    (c - r.1.elapsed().as_secs_f64()).max(0.1 * c)
+                })
+                .sum();
+            (
+                now,
+                left,
+                f.since.map_or(0.0, |s| s.elapsed().as_secs_f64()),
+            )
+        });
+        let floors = ((planned - solved - now).max(0.0) * scale + running_left) / at_once;
         let floors = if planned > 0.0 { floors } else { 0.0 };
         let points_left = total.saturating_sub(done);
         let points = if points_left == 0 {
             Some(0.0)
         } else if done > 0 {
-            let time = (elapsed.as_secs_f64() - took - running).max(0.0);
+            let floor_time = self.floors_wall.load(Ordering::Relaxed) as f64 * 1e-9 + wall;
+            let time = (elapsed.as_secs_f64() - floor_time).max(0.0);
             Some(time / done as f64 * points_left as f64)
         } else {
             None
@@ -1029,9 +1074,9 @@ mod tests {
         // Before anything: the floors as expected (some 7 s each).
         let first = p.seconds_left(Duration::ZERO).unwrap();
         assert!((first - 70.0).abs() < 1.0, "{first}");
-        p.floor_begins(3700);
+        let token = p.floor_begins(3700);
         std::thread::sleep(Duration::from_millis(20));
-        p.floor_ends();
+        p.floor_ends(token);
         p.done.store(100, Ordering::Relaxed);
         // The floor took 20 ms against 7 s expected: the nine left at
         // that speed, and the points left at theirs.

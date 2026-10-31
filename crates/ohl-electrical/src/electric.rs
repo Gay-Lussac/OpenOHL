@@ -6,13 +6,18 @@
 //! development, not approved yet; owner, 2026-10-29: "E field comes after
 //! this").
 //!
-//! **Charges.** Per span, from its mean cross-section: the potential
+//! **Charges.** From the cross-section where they are (owner,
+//! 2026-10-31: from the span's mean cross-section they read the field 3–4 %
+//! low where the wires hang lowest, against hvlbuzz): the potential
 //! coefficients of the line parameters (a perfectly conducting earth, air
 //! of permittivity \\( \varepsilon_0 \\)) and the voltages to earth — each
 //! phase its system's voltage between phases over \\( \sqrt 3 \\) at its
 //! phase angle, the earth wires at zero — give the charge per metre of
 //! every wire, \\( q = P^{-1} V \\) (a bundle as its equivalent wire, the
-//! charge shared equally by its subconductors).
+//! charge shared equally by its subconductors). 2D: of the profile's or
+//! point's own cross-section; 3D: each span in [`STRETCHES`] stretches,
+//! each at the charges of the cross-section at its middle. The table of
+//! charges per wire and the jumpers: the span's mean cross-section.
 //!
 //! **3D** ([`Model::ThreeD`]): every wire as solved, a bundle
 //! subconductor by subconductor, and the jumpers (at their phase's
@@ -609,11 +614,117 @@ pub fn charges(wires: &[Wire], volts: &[C]) -> Option<Vec<C>> {
 /// whole bundle's.
 type ChargeMap = BTreeMap<(String, usize), Vec<(f64, C)>>;
 
+/// The stretches a span is cut into along its length for the 3D charges,
+/// each at the charge of the cross-section at its middle (owner,
+/// 2026-10-31): the charge follows the sag (from the span's mean
+/// cross-section it read the field 3–4 % low at midspan against hvlbuzz).
+/// 16: the charge changes by a few per cent over a span, by well under
+/// 1 % within a stretch; each stretch one polyline (some 25 % more
+/// vertices than one per span).
+pub const STRETCHES: usize = 16;
+
+/// Per (section id, span index): its line span (index) and per stretch,
+/// per frequency, the charge per metre (empty: the span's mean taken).
+type StretchCharges = BTreeMap<(String, usize), (usize, Vec<Vec<(f64, C)>>)>;
+
+/// One wire's charges in one stretch: (section id, span index), the
+/// stretch, per frequency the charge per metre.
+type StretchCharge = ((String, usize), usize, Vec<(f64, C)>);
+
+/// The charges of every span's stretches ([`STRETCHES`]): the
+/// cross-section at each stretch's middle, \\( q = P^{-1} V \\).
+fn stretch_charges(
+    src: &Sources<'_>,
+    spans: &[cross_section::LineSpan],
+    voltages: &[CircuitVoltage],
+) -> StretchCharges {
+    // Each span's stretches on all cores (some 0.1 s a span of a long
+    // line: its wires placed at each stretch's middle).
+    let one = |i: usize| {
+        let span = &spans[i];
+        let mut out: Vec<StretchCharge> = Vec::new();
+        for k in 0..STRETCHES {
+            let fraction = (k as f64 + 0.5) / STRETCHES as f64;
+            let Ok(cs) = cross_section::cross_section(src, span, StationAt::Fraction(fraction))
+            else {
+                continue;
+            };
+            let per_f = cross_section_charges(&cs, voltages, &mut BTreeMap::new(), &mut Vec::new());
+            for (w, wire) in cs.wires.iter().enumerate() {
+                out.push((
+                    (wire.section.clone(), wire.span),
+                    k,
+                    per_f.iter().map(|(f, q)| (*f, q[w])).collect(),
+                ));
+            }
+        }
+        (i, out)
+    };
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let parts: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..field_views::threads())
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut got = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        if i >= spans.len() {
+                            break;
+                        }
+                        got.push(one(i));
+                    }
+                    got
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a span's stretches"))
+            .collect()
+    });
+    let mut out = StretchCharges::new();
+    for (i, list) in parts {
+        for (key, k, q) in list {
+            let e = out
+                .entry(key)
+                .or_insert_with(|| (i, vec![Vec::new(); STRETCHES]));
+            e.1[k] = q;
+        }
+    }
+    out
+}
+
+/// A polyline cut into its runs of pieces in one stretch of the span
+/// along `axis` (each piece by its middle): (stretch, points), the runs
+/// sharing their end points.
+fn stretch_runs(poly: &[[f64; 3]], axis: &Axis) -> Vec<(usize, Vec<[f64; 3]>)> {
+    let mut out: Vec<(usize, Vec<[f64; 3]>)> = Vec::new();
+    for w in poly.windows(2) {
+        let mid = [
+            0.5 * (w[0][0] + w[1][0]),
+            0.5 * (w[0][1] + w[1][1]),
+            0.5 * (w[0][2] + w[1][2]),
+        ];
+        let (t, _) = axis.local(&mid);
+        let k = ((t / axis.length.max(1e-9) * STRETCHES as f64)
+            .floor()
+            .max(0.0) as usize)
+            .min(STRETCHES - 1);
+        match out.last_mut() {
+            Some(run) if run.0 == k => run.1.push(w[1]),
+            _ => out.push((k, vec![w[0], w[1]])),
+        }
+    }
+    out
+}
+
 /// The 3D model: every wire's span with its charge per metre (shared by
 /// the subconductors), and the jumpers at their phase's.
 fn build_3d(
     src: &Sources<'_>,
     charges: &ChargeMap,
+    stretches: &StretchCharges,
+    axes: &[Option<Axis>],
     settings: &Settings,
     notes: &mut Vec<String>,
 ) -> Charges3d {
@@ -636,9 +747,29 @@ fn build_3d(
             };
             let subs = section.subconductor_polylines(&centre);
             let n = subs.len().max(1) as f64;
-            for &(f, q) in list {
-                for poly in &subs {
-                    out.push(f, poly, q / n);
+            // Each stretch of the span at the charge of its own
+            // cross-section (the wire lower in the middle carries more).
+            let along = stretches
+                .get(&(section.id.clone(), j))
+                .and_then(|(i, bins)| Some((axes.get(*i)?.as_ref()?, bins)));
+            for poly in &subs {
+                match along {
+                    Some((axis, bins)) => {
+                        for (k, run) in stretch_runs(poly, axis) {
+                            let list = match bins.get(k) {
+                                Some(b) if !b.is_empty() => b,
+                                _ => list,
+                            };
+                            for &(f, q) in list {
+                                out.push(f, &run, q / n);
+                            }
+                        }
+                    }
+                    None => {
+                        for &(f, q) in list {
+                            out.push(f, poly, q / n);
+                        }
+                    }
                 }
             }
         }
@@ -765,13 +896,23 @@ pub fn run_keeping(
     notes.push(
         "the structures, trees and buildings not modelled (earthed objects lower the field near them and raise it at their tops); the earth a perfect conductor".into(),
     );
-    let model3d =
-        (settings.model == Model::ThreeD).then(|| build_3d(src, &charges, settings, &mut notes));
+    let model3d = (settings.model == Model::ThreeD).then(|| {
+        let stretches = stretch_charges(src, &spans, &settings.voltages);
+        build_3d(src, &charges, &stretches, &axes, settings, &mut notes)
+    });
     if let Some(m) = &model3d {
+        let ground = match settings.ground_model {
+            GroundModel::Plane => format!(
+                "the ground under each point a plane fitted over ±{} m, the charges' images in it (exact for level or evenly sloping ground, a simplification on uneven ground)",
+                settings.ground_radius
+            ),
+            GroundModel::Tiled(_) => {
+                "the ground a conducting floor of tiles around each profile, group of points, cut and volume (said with each)".to_owned()
+            }
+        };
         notes.push(format!(
-            "3D: {} straight pieces of charge; the ground under each point a plane fitted over ±{} m, the charges' images in it (exact for level or evenly sloping ground, a simplification on uneven ground)",
-            m.count(),
-            settings.ground_radius
+            "3D: {} straight pieces of charge, each span in {STRETCHES} stretches at the charge of its own cross-section; {ground}",
+            m.count()
         ));
     }
     // The ground: the terrain's, else straight between the structures'
@@ -864,8 +1005,67 @@ pub fn run_keeping(
             }
         }
     }
+    // The profiles' floors solved side by side (owner, 2026-10-31: "see
+    // for time optimisations"; a floor's dense system takes seconds on one
+    // core): several at once, each with its own memory.
+    let mut profile_floors: Vec<Option<Floor>> = (0..stations.len()).map(|_| None).collect();
+    if let (Some(m), GroundModel::Tiled(floor)) = (&model3d, settings.ground_model) {
+        let tiles = floor.tiles(settings.width);
+        let at_once = floors_at_once(tiles).min(stations.len()).max(1);
+        if let Some(p) = progress {
+            p.parallel_floors(at_once);
+        }
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let solved: Vec<(usize, Result<Floor, String>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..at_once)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let mut out = Vec::new();
+                        loop {
+                            let k = next.fetch_add(1, Ordering::Relaxed);
+                            if k >= stations.len() || magnetic::check_cancel(progress).is_err() {
+                                break;
+                            }
+                            let (i, t) = stations[k];
+                            let span = &spans[i];
+                            let axis = axes[i].as_ref().expect("an axis");
+                            out.push((
+                                k,
+                                with_floor(
+                                    progress,
+                                    &format!("profile {}–{}", span.from, span.to),
+                                    tiles,
+                                    || {
+                                        Floor::solve(
+                                            m,
+                                            Frame::of(axis),
+                                            t,
+                                            settings.width,
+                                            &floor,
+                                            &ground,
+                                        )
+                                    },
+                                ),
+                            ));
+                        }
+                        out
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().expect("a floor"))
+                .collect()
+        });
+        if let Some(p) = progress {
+            p.parallel_floors(1);
+        }
+        for (k, r) in solved {
+            profile_floors[k] = Some(r?);
+        }
+    }
     let mut profiles = Vec::new();
-    for &(i, t) in &stations {
+    for (k, &(i, t)) in stations.iter().enumerate() {
         magnetic::check_cancel(progress)?;
         let span = &spans[i];
         let axis = axes[i].as_ref().expect("an axis");
@@ -879,13 +1079,10 @@ pub fn run_keeping(
             .collect();
         let mut tiles = None;
         let values: Vec<f64> = match (&model3d, settings.ground_model) {
-            (Some(m), GroundModel::Tiled(floor)) => {
-                let fl = with_floor(
-                    progress,
-                    &format!("profile {}–{}", span.from, span.to),
-                    floor.tiles(settings.width),
-                    || Floor::solve(m, Frame::of(axis), t, settings.width, &floor, &ground),
-                )?;
+            (Some(m), GroundModel::Tiled(_)) => {
+                let fl = profile_floors[k]
+                    .take()
+                    .ok_or_else(|| "stopped".to_owned())?;
                 tiles = Some(fl.tiles());
                 let pts: Vec<[f64; 3]> = places.iter().map(|p| p.0).collect();
                 let f =
@@ -899,7 +1096,7 @@ pub fn run_keeping(
             (None, _) => {
                 let cs =
                     cross_section::cross_section(src, span, StationAt::Fraction(t / axis.length))?;
-                let lines = charges_2d(&cs, &charges);
+                let lines = own_charges_2d(&cs, &settings.voltages);
                 let g0 = cs.ground.elevation;
                 if let Some(pr) = progress {
                     pr.done.fetch_add(offsets.len(), Ordering::Relaxed);
@@ -1043,7 +1240,11 @@ pub fn run_keeping(
                     &spans[i],
                     StationAt::Fraction(t / a.length),
                 )?;
-                field_2d(&charges_2d(&cs, &charges), -s, z - cs.ground.elevation)
+                field_2d(
+                    &own_charges_2d(&cs, &settings.voltages),
+                    -s,
+                    z - cs.ground.elevation,
+                )
             }
         };
         points.push(FieldPoint {
@@ -1412,6 +1613,16 @@ impl TiledFloor {
     }
 }
 
+/// How many floors of `tiles` are solved at the same time: each on its
+/// own core (half the cores, the other half filling the systems), at most
+/// 4 and as many as about 1 GB holds (8 bytes a coefficient: some 170 MB
+/// for a profile's 4 660 tiles).
+fn floors_at_once(tiles: usize) -> usize {
+    let bytes = 8.0 * (tiles as f64).powi(2);
+    let by_memory = (1.0e9 / bytes.max(1.0)).floor() as usize;
+    (field_views::threads() / 2).min(by_memory).clamp(1, 4)
+}
+
 /// Runs `solve` (a floor of `tiles`) with `progress` saying so (its
 /// time counted apart from the points').
 fn with_floor<T>(
@@ -1420,13 +1631,13 @@ fn with_floor<T>(
     tiles: usize,
     solve: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    if let Some(p) = progress {
-        p.floor_begins(tiles);
+    let token = progress.map(|p| {
         p.set_stage(format!("{what}: a tiled floor of {tiles} tiles"));
-    }
+        p.floor_begins(tiles)
+    });
     let out = solve();
-    if let Some(p) = progress {
-        p.floor_ends();
+    if let (Some(p), Some(t)) = (progress, token) {
+        p.floor_ends(t);
         p.set_stage(String::new());
     }
     out
@@ -1580,15 +1791,25 @@ fn solve_floor(panels: &[Panel], charges: &Charges3d) -> Result<Vec<Vec<C>>, Str
     let lu = a.lu();
     let mut out = Vec::new();
     for (_, polys) in &charges.groups {
-        let phi: Vec<C> = panels
-            .iter()
-            .map(|p| {
-                polys
-                    .iter()
-                    .map(|poly| poly.charge * poly.potential(p.centre))
-                    .sum()
-            })
-            .collect();
+        // The line's potential at every tile, on all cores (every piece of
+        // the line at every tile: seconds on one core for a long line).
+        let at = |p: &Panel| -> C {
+            polys
+                .iter()
+                .map(|poly| poly.charge * poly.potential(p.centre))
+                .sum()
+        };
+        let phi: Vec<C> = std::thread::scope(|scope| {
+            let chunk = n.div_ceil(field_views::threads()).max(1);
+            let handles: Vec<_> = panels
+                .chunks(chunk)
+                .map(|c| scope.spawn(move || c.iter().map(at).collect::<Vec<C>>()))
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().expect("a tile's potential"))
+                .collect()
+        });
         let re = DVector::from_iterator(n, phi.iter().map(|c| -c.re));
         let im = DVector::from_iterator(n, phi.iter().map(|c| -c.im));
         let (Some(sr), Some(si)) = (lu.solve(&re), lu.solve(&im)) else {
@@ -1611,9 +1832,8 @@ fn floor_field(p: [f64; 3], panels: &[Panel], sigma: &[Vec<C>], charges: &Charge
         for (pj, &s) in panels.iter().zip(&sigma[g]) {
             let mut add = |q: [f64; 3], a: f64| {
                 let r = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
-                let r3 = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2])
-                    .max(1e-12)
-                    .powf(1.5);
+                let r2 = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).max(1e-12);
+                let r3 = r2 * r2.sqrt();
                 for k in 0..3 {
                     e[k] += s * (K * a * r[k] / r3);
                 }
@@ -1665,22 +1885,25 @@ fn floor_field(p: [f64; 3], panels: &[Panel], sigma: &[Vec<C>], charges: &Charge
 type LineCharge = (f64, f64, Vec<(f64, C)>);
 
 /// A cross-section's line charges for the 2D model: (across, height above
-/// the cross-section's ground, per frequency the charge per metre), each
-/// bundle's charge shared by its subconductors.
-fn charges_2d(cs: &CrossSection, charges: &ChargeMap) -> Vec<LineCharge> {
-    let mut out = Vec::new();
-    for w in &cs.wires {
-        let Some(list) = charges.get(&(w.section.clone(), w.span)) else {
-            continue;
-        };
-        out.push((
-            // Left is positive in the 2D frame.
-            -w.offset,
-            w.elevation - cs.ground.elevation,
-            list.clone(),
-        ));
-    }
-    out
+/// the cross-section's ground, per frequency the charge per metre), from
+/// its own wires (owner, 2026-10-31: against hvlbuzz the span's mean
+/// cross-section read the field 3–4 % low where the wires hang lowest):
+/// \\( q = P^{-1} V \\) of this cross-section, the bundle's charge shared by
+/// its subconductors.
+fn own_charges_2d(cs: &CrossSection, voltages: &[CircuitVoltage]) -> Vec<LineCharge> {
+    let per_f = cross_section_charges(cs, voltages, &mut BTreeMap::new(), &mut Vec::new());
+    cs.wires
+        .iter()
+        .enumerate()
+        .map(|(k, w)| {
+            (
+                // Left is positive in the 2D frame.
+                -w.offset,
+                w.elevation - cs.ground.elevation,
+                per_f.iter().map(|(f, q)| (*f, q[k])).collect(),
+            )
+        })
+        .collect()
 }
 
 /// E (rms) at `(y, z)` of 2D line charges over level ground, V/m.
