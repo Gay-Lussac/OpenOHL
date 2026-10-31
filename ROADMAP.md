@@ -535,8 +535,15 @@ core staying independent of them.
      there and gives the results back as `ohl-field-results` JSON for the
      plugin's report files (`ohl electrical magnetic|electric
      --preset-plugin`, [plugins](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/plugins.md#field-presets)).
-     The building plugin itself and the field presets in OHL-Design: not
-     yet; the `cross-sections` export for noise methods: not yet.
+     *The building plugin built 2026-10-31 (in active development, not
+     approved yet; owner: "go ahead"):* `plugins/examples/building-cuts`
+     clusters the building points (LiDAR role, survey codes), gives per
+     building the governing and nearest-point cuts and the places of
+     sensitive use per floor, and reports per field the buildings'
+     summary, the cuts' CSV grids and SVG drawings, the places and a
+     GeoJSON ([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/analyses.md#building-cuts)).
+     The field presets in OHL-Design: not yet; the `cross-sections`
+     export for noise methods: not yet.
 7. [ ] **Corona and surface gradient** in the core or the plugin: the
    conductor surface gradient per subconductor (Markt–Mengele or a charge
    simulation), the onset gradient (Peek) and the margin, per section —

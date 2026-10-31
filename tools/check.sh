@@ -77,6 +77,13 @@ for d in plugins/examples/* plugins/tests/* plugins/codes/*; do
 done
 echo plugins-built
 
+# The plugins' own native tests (plain Rust, beside their WebAssembly
+# build; built in the check's target folder, pruned with it).
+for d in plugins/examples/building-cuts; do
+    (cd "$d" && $C fmt --check && CARGO_TARGET_DIR="$OUT" $C test -q > /dev/null) || { echo "plugin-tests-FAILED $d"; exit 1; }
+done
+echo plugin-tests-ok
+
 OHL_REQUIRE_PLUGIN_TESTS=1 OHL_REQUIRE_GPU_TESTS=1 $C test -q --no-fail-fast --workspace --exclude ohl-py > "$LOG" 2>&1 || {
     grep -E "FAILED|panicked|^error" "$LOG" | head -30
     echo "tests-FAILED (all output: $LOG)"

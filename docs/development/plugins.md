@@ -780,6 +780,32 @@ cuts and points for the synthetic double circuit
 their counts into one file (host tests, CLI test); its parameters ask
 for faults the host must refuse.
 
+The example plugin **`plugins/examples/building-cuts`** (2026-10-31;
+built, in active development, not approved yet; [user
+guide](../user-guide/analyses.md#building-cuts)) is the building plugin:
+it clusters the building points (LiDAR role `building`, survey codes
+from its parameters) on a plan grid, draws footprints, heights and
+floors, and gives per building the governing cut, the nearest point's
+cut and the places of sensitive use; its `report` writes per field
+`buildings-B.csv` / `-E.csv`, the cuts' CSV grids and SVG drawings,
+`points-*.csv` and `buildings.geojson`. Its logic is plain Rust tested
+natively (`cargo test` in its folder: clustering, footprints, cuts,
+places, shuffle independence, a report of invented results); only
+`src/wasm.rs` touches the interface, compiled for `wasm32` alone (the
+component's export names cannot be linked natively). Two things travel
+**through the preset's notes** because `report` receives only the
+parameters, the preset and the results: each building's summary
+(`building B001: points 425; area 96.0 m²; centroid X Y; ground … m;
+eaves … m; roof … m; floors 3; span T1–T2; stations A B m; axis … m;
+conductor … m`) and each cut's wire crossings (`cut LABEL: wire NL1
+-5.00 414.92; …; wire EW 0.00 432.66 earth`); the report reads them
+back. Its manifest asks for every survey point within 100 m (`survey-codes
+= ["*"]`, the parameters choose the building and ground codes) and, for
+up to 2 000 000 points, more than the default limits (`[limits]`
+60 s, 1 024 MiB; the reason in the manifest). The CLI test
+`crates/ohl-cli/tests/building_cuts.rs` runs both fields on an invented
+point cloud and survey.
+
 ## String limits: what a plugin sees
 
 A string may carry limits — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits)). Absent means not given: nothing checks it. Given, OpenOHL's String checks compare it with the solved string (since 2026-10-24), and a plugin (or a report, or a script) may check it too, where its rules need it. What it gets:

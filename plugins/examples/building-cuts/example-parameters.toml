@@ -1,0 +1,26 @@
+# Example parameters of the building-cuts plugin. Every key is optional;
+# the full list with the defaults is the plugin's template (TEMPLATE in
+# src/params.rs), taken when no --params is given. Invented values for
+# the synthetic double circuit (examples/electrical); no limit of an
+# ordinance is built in: give your own.
+
+# Survey points: building and ground codes (`*`, `?`, any case).
+building_codes = ["BLD*"]
+ground_codes = ["GND*"]
+
+# The footprint: the cells' traced boundary instead of the convex hull
+# (L-shaped and courtyard buildings).
+outline = "cells"
+
+# A cut through each building's centroid as well.
+centroid_cut = true
+
+# Coarser cuts for a quick look (the default is 1 m).
+step = 2.0
+
+# Margins against your own limits.
+limit_ut = 1.0
+limit_kv_m = 5.0
+
+# A plan DXF of the outlines, the cuts and the places.
+dxf = true

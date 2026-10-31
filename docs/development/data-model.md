@@ -783,6 +783,24 @@ settings' levels, `CutValues::isolines`: cut at the ground)}], "points":
 "margin"}], "notes"}`. Nothing is computed for it: the results as they
 are (a value in the CSV is the same to its 5 decimals).
 
+**The building-cuts plugin's files** (`plugins/examples/building-cuts`,
+2026-10-31; derived, written by its `report` into `--out`, one set per
+field, `Q` = `B` or `E`, unit columns `uT` / `kV_m`): `buildings-Q.csv`
+(`id, points, area_m2, centroid_x, centroid_y, ground_z, eaves_z,
+roof_z, floors, span, station_from_m, station_to_m, axis_distance_m,
+conductor_distance_m, cuts, max_section_Q_…, max_places_Q_…` [B:
+`max_places_B_major_uT`] [with a limit: `limit_…, margin_…`]),
+`points-Q.csv` (`name, building, floor, place, x, y, z, height_m, Q_…`
+[B: `B_major_uT`] [`margin_…`]), `cut-LABEL-Q.csv` (`offset_m,
+elevation_m, ground_m, Q_…, below_ground`), `cut-LABEL-Q.svg`,
+`notes-Q.txt`; the same for both fields: `buildings.geojson` (features
+`kind` = `building` (Polygon, its summary as properties), `cut`
+(LineString), `place` (Point)), `buildings.dxf` (R12, optional). Its
+presets carry two kinds of **notes** the report reads back: `building
+ID: points N; area A m²; centroid X Y; ground Z m; eaves Z m; roof Z m;
+floors N; span FROM–TO; stations T0 T1 m; axis D m; conductor D m` and
+`cut LABEL: wire SECTION OFFSET Z[ earth]; …` (fields split at `; `).
+
 ### Display and criteria
 
 | Entity.field | Type | Unit | Meaning |

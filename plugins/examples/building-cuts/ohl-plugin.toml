@@ -1,0 +1,30 @@
+[plugin]
+name = "building-cuts"
+version = "0.1.0"
+description = "Buildings near the line from the point cloud and the survey: the magnetic and electric field's cuts across the line at each building and its places of sensitive use; CSV, SVG and GeoJSON reports"
+sdk = "0.3"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/building_cuts.wasm"
+extension-points = ["field-presets"]
+
+# What the host gathers: the point cloud's building and ground classes
+# (the ground thinned to the lowest point per 1 m cell) and every survey
+# point near the line (the parameters choose the building and ground
+# codes among them).
+[field-input]
+roles = ["building"]
+ground-roles = ["ground"]
+ground-cell = "1 m"
+survey-codes = ["*"]
+reach = "100 m"
+max-points = 2000000
+
+# More than the defaults (5 s, 256 MiB): up to 2 000 000 points cross
+# into the plugin, held three times at the peak (the call's list, the
+# records, the plugin's own copy: some 60 bytes each, about 350 MiB) and
+# the plan grid. Clustering and measuring take some 0.2 s per 1 000 000
+# points natively (400 buildings, 2026-10-31); the time allows for the
+# copying in and a slower machine.
+[limits]
+seconds = 60
+memory-mib = 1024

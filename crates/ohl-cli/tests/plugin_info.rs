@@ -58,6 +58,11 @@ fn plugin_info_knows_every_world() {
             "field-preset-plugin",
             "optional exports: field-presets",
         ),
+        (
+            "examples/building-cuts",
+            "field-preset-plugin",
+            "optional exports: field-presets",
+        ),
     ];
     for (relative, world, detail) in cases {
         let Some(dir) = built(relative) else {

@@ -10,6 +10,52 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**The building-cuts plugin (owner, 2026-10-31: "go ahead")**
+
+- The owner asked for "a plugin that can cluster buildings (groups of
+  survey data points) and then preset the calculations of the cuts in
+  the electric and magnetic field to export the 2D cuts at the exact
+  points it's needed"; the plan was validated, then "go ahead". Built
+  as the example WebAssembly plugin `plugins/examples/building-cuts`
+  (Rust, MPL-2.0) on the core's field presets (below), no core change.
+- **Buildings**: the LiDAR role `building` and survey codes from the
+  parameters; a plan occupancy grid (0.5 m), cells closer than 1.5 m
+  joined by union–find (the result independent of the points' order),
+  clusters under 20 points or 10 m² dropped; survey points with a
+  breakline id one outline each. Footprint the convex hull, or the
+  cells' traced boundary (`outline = "cells"`, Douglas–Peucker).
+  Ground the 10th percentile of the ground 2–5 m around, eaves the 50th
+  and roof the 98th percentile of the building's points, floors
+  ceil((eaves − ground) / 3 m); ids `B001…` in station order.
+- **Cuts** perpendicular to the span chord as the engine computes them:
+  per building the governing cut (where its box comes closest in 3D to a
+  phase conductor as solved) and the cut at its point nearest the axis,
+  a centroid cut optional, cuts within 2 m merged; a building across a
+  structure gets cuts in both spans, said. **Places of sensitive use**:
+  the corners and midpoints of the sides facing the line and the point
+  nearest the axis, at 1.5 m + k · 3 m above the ground per floor, named
+  `B007-F2-c1-h4.5`. Limits only from the parameters: no ordinance value
+  built in.
+- **Both fields in one summary**: the host runs one field per call and
+  the plugin cannot read files, so each run writes its own files named by
+  the quantity (`buildings-B.csv`, `buildings-E.csv`, `cut-…-B.svg`, …)
+  into the same `--out`; the files without field values
+  (`buildings.geojson`, `buildings.dxf`) are the same bytes from either
+  run. One file with both fields would need the host to run both fields
+  in one call or to hand back the files already written: not done (no
+  core change).
+- What `report` needs beyond the results — each building's summary and
+  each cut's wire crossings — travels in the preset's notes in a fixed
+  form, shown to the user and read back by the report.
+- Conservative choices, said in the user guide: the top floor's place
+  may lie above the eaves; a building's section takes the grid's points
+  up to half a step outside it; the margin is taken from the largest of
+  the section, the places' values and (B) the cycle's largest.
+- Not yet: the plugin in OHL-Design (the core's field presets are
+  command-line only so far); a span direction from the line's routes
+  (the plugin takes the drawn direction and the report warns when the
+  engine measured a cut from the other end).
+
 **The String builder, with a torus (owner, 2026-10-31: "the builder
 window with a torus")**
 
