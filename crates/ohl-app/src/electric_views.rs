@@ -317,6 +317,45 @@ impl ElectricFieldWindow {
                          colour.",
                     );
                     ui.end_row();
+                    // The floor under the longest run (owner, 2026-10-31:
+                    // laptops of 16 to 32 GB): its memory said before Run.
+                    if self.tiled {
+                        let longest = self.span_pick.run_lengths(model, spans).into_iter().max().unwrap_or(1);
+                        let tiles = electric::Floor::tiles_under(
+                            st.span() * longest as f64,
+                            self.width,
+                            self.volume_tile,
+                        );
+                        let bytes = electric::floor_bytes(tiles);
+                        let text = format!(
+                            "Its floor: the longest run of ticked spans ({longest}) ≈ {tiles} tiles of \
+                             {} m, ≈ {:.2} GB of memory while solved, {}.",
+                            self.volume_tile,
+                            bytes / 1e9,
+                            duration(self.floor_seconds(tiles))
+                        );
+                        ui.label("");
+                        if bytes > electric::FLOOR_MEMORY {
+                            crate::menu::error_label(
+                                ui,
+                                format!(
+                                    "{text} Over the {:.0} GB a floor may take: tick fewer spans \
+                                     following each other, or coarser tiles under the volumes \
+                                     (Ground), or the plane under each point.",
+                                    electric::FLOOR_MEMORY / 1e9
+                                ),
+                            );
+                        } else {
+                            crate::check_help::explain(
+                                ui,
+                                &text,
+                                "A volume's floor runs along its whole run of spans and 100 m \
+                                 beyond: its memory grows with the run's length squared, its \
+                                 time faster still.",
+                            );
+                        }
+                        ui.end_row();
+                    }
                 }
             });
     }

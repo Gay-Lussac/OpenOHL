@@ -155,6 +155,24 @@ impl SpanPick {
         crate::magnetic_field::runs(&ticked)
     }
 
+    /// How many spans each run of ticked spans holds ([`SpanPick::runs`]).
+    pub fn run_lengths(&mut self, model: &crate::model::Model, spans: &Spans) -> Vec<usize> {
+        let (mut chosen, _) = self.chosen(model, spans);
+        chosen.sort_unstable();
+        let mut out: Vec<(String, usize)> = Vec::new();
+        for k in chosen {
+            let (a, b) = &spans[k];
+            match out.last_mut() {
+                Some(last) if last.0 == *a => {
+                    last.0 = b.clone();
+                    last.1 += 1;
+                }
+                _ => out.push((b.clone(), 1)),
+            }
+        }
+        out.into_iter().map(|r| r.1).collect()
+    }
+
     /// Ticks span `k` only (tests).
     #[cfg(test)]
     pub fn only(&mut self, model: &crate::model::Model, spans: &Spans, k: usize) {

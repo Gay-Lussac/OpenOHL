@@ -79,13 +79,18 @@ comparison below: "keep the tiled implementation"): around each profile,
 each group of given points near one another along a span (they share a
 floor around their middle, its fine tiles reaching the farthest across)
 and each cut (the cross-section panels' too), the floor below is solved;
-some seconds each (its dense system grows with the tiles' cube: about
-7 s for 3 700 tiles here, on one core). **The profiles' floors are solved
-side by side** (2026-10-31): up to 4 at once, as many as about 1 GB holds
-(some 170 MB each at 4 600 tiles); on a real line 4 spans' profiles took
-15 s instead of 52 s, the values unchanged. A volume's floor grows with
-its run: 2 850 tiles for one 300 m span (about 2 s), 5 360 for three
-(about 15 s). **Cuts across the line and volumes on coarser
+about a second each (2026-10-31: its dense system solved by LU on all
+cores, faer — 0.4 s at 4 660 tiles against 8.5 s on one core before, the
+same values to \( 10^{-14} \); filling it and the line's potential at its
+tiles some 0.8 s; the LU grows with the tiles' cube, the rest with their
+square). Two profiles' floors are solved side by side; on a real line 4
+spans' profiles took 4.5 s, 52 s before. **Memory** (owner, 2026-10-31:
+laptops of 16 to 32 GB): a floor takes 16 bytes per pair of tiles while
+it is solved (its table and its factors) — 0.35 GB at 4 660 tiles; side
+by side as many as 1 GB holds; a floor over 2 GB (some 11 000 tiles) is
+refused, said, rather than slowing the computer by swapping. A volume's
+floor grows with its run: 2 850 tiles for one 300 m span, 5 360 for three
+(0.45 GB); the window says the longest run's before Run. **Cuts across the line and volumes on coarser
 tiles by default, each a parameter** (owner, 2026-10-29): a cut's floor
 of 8 m tiles (`cut_tile`); a volume's floor under its whole run of spans
 and 100 m beyond every way, square tiles of 8 m (`volume_tile`). Measured
