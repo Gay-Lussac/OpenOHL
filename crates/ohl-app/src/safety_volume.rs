@@ -472,8 +472,10 @@ enum Part {
     Included,
     /// The distance (3 Rules).
     Distance,
-    /// The wire positions (4 Settings).
+    /// The wire positions (4 Model).
     Positions,
+    /// The mesh's tolerance (4 Model).
+    Mesh,
 }
 
 /// The Safety volumes window.
@@ -851,7 +853,7 @@ impl SafetyVolumeWindow {
                              conductors' surface is a tube; the tubes of a wire, circuit or \
                              system are joined into one closed mesh that holds the exact volume \
                              whole and lies outside it by at most the tolerance where it is \
-                             smooth (4 Settings).",
+                             smooth (4 Model).",
                             |ui| {
                                 ui.horizontal(|ui| {
                                     help::safety_distance(ui, 4.0, 1.0);
@@ -871,8 +873,13 @@ impl SafetyVolumeWindow {
                         check_ui::section(ui, 3, "Rules", None);
                         self.settings_ui(ui, model, presets, &mut out, Part::Distance);
                         ui.separator();
-                        check_ui::section(ui, 4, "Settings", None);
-                        self.settings_ui(ui, model, presets, &mut out, Part::Positions);
+                        // The modelling settings, folded (check pages'
+                        // guidelines): the wire positions, the mesh.
+                        check_ui::model_section(ui, WINDOW, 4, |ui| {
+                            self.settings_ui(ui, model, presets, &mut out, Part::Positions);
+                            ui.separator();
+                            self.settings_ui(ui, model, presets, &mut out, Part::Mesh);
+                        });
                         ui.separator();
                         if let Some(a) = help::heading(ui, "Export", "safety-volumes-export") {
                             out.guide = Some(a);
@@ -1272,8 +1279,9 @@ impl SafetyVolumeWindow {
             });
                 help::volume_grouping(ui, s.grouping);
             });
-            ui.separator();
-            // Mesh: the tolerance.
+        }
+        // Mesh: the tolerance.
+        if part == Part::Mesh {
             heading(ui, "Mesh", "safety-volumes-mesh");
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
@@ -1323,6 +1331,8 @@ impl SafetyVolumeWindow {
                 "Saved without its meshes (too large): run it again to see and export them.",
             );
         }
+        // What was assumed and left out, folded above the table.
+        crate::check_ui::notes_fold(ui, "safety-volume-rows", &v.notes);
         // The shared results table (owner, 2026-10-28): sortable, units in
         // the headers, CSV (the colour of each volume: in the views).
         use crate::check_ui::{Cell, Col};
@@ -1377,19 +1387,6 @@ impl SafetyVolumeWindow {
             .small()
             .weak(),
         );
-        if !v.notes.is_empty() {
-            help::list(
-                ui,
-                "safety-volume-list-2",
-                110.0,
-                egui::ScrollArea::vertical().id_salt("safety-volume-notes"),
-                |ui| {
-                    for n in &v.notes {
-                        ui.label(egui::RichText::new(n).small());
-                    }
-                },
-            );
-        }
     }
 
     fn save_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {

@@ -14,6 +14,7 @@ use crate::selection::Selection;
 
 mod alignments;
 mod backgrounds_lines;
+mod check_shots;
 mod check_windows;
 mod checks_spacers;
 mod clearances;
@@ -49,6 +50,13 @@ pub(crate) fn submenu(h: &mut Harness<'_, App>, menu: &str, sub: &str) {
     h.run();
     h.get_by_label(&format!("{sub} ⏵")).hover();
     h.run();
+}
+
+/// Opens the check window's *Model* (folded by default, 2026-10-31:
+/// [`crate::check_ui::model_section`]), where its modelling settings are.
+pub(crate) fn open_model(h: &mut Harness<'_, App>) {
+    h.get_by_label_contains("  Model").click_accesskit();
+    h.run_steps(3);
 }
 
 /// Opens Line › `sub` (Terrain, Structures, Sections, Criteria).

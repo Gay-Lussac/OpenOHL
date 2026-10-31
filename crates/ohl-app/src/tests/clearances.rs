@@ -484,6 +484,8 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
         });
     }
     harness.run();
+    // The wind in 4 Model (folded by default).
+    open_model(&mut harness);
     // 600 Pa in 10 Pa steps: 1 + 59 × 2 + 2 solves, the arc suggested.
     let text = harness
         .query_all_by_label_contains("121 solves for a windy case of 600 Pa")

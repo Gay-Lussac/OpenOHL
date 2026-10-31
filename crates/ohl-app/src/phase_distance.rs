@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -1589,13 +1589,17 @@ impl PhaseDistanceWindow {
             });
         ui.separator();
         check_ui::section(ui, 2, "Scope", None);
-        self.settings_ui(ui, model);
+        self.scope_ui(ui, model);
         ui.separator();
         check_ui::section(ui, 3, "Rules", None);
-        // The insulation levels of the circuits, then the plugin's
-        // values (the distances z).
+        // The values file, the insulation levels of the circuits, then the
+        // plugin's values (the distances z).
+        self.values_file_ui(ui);
         self.levels_ui(ui, model, &mut out);
         self.values_ui(ui, model);
+        ui.separator();
+        // The modelling settings, folded (check pages' guidelines).
+        check_ui::model_section(ui, self.kind.page(), 4, |ui| self.model_ui(ui));
         out
     }
 
@@ -1764,6 +1768,11 @@ impl PhaseDistanceWindow {
     /// The values as tables (read only; an admin may edit them: kept in
     /// the project).
     fn values_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        // Without the check plugin (and no file chosen) there are no values:
+        // said once, at the top and in the footer.
+        if self.check().is_err() && self.file.is_none() && self.values.is_none() {
+            return;
+        }
         let current = self.current_values(model);
         let admin = is_admin(model);
         egui::CollapsingHeader::new("Values used")
@@ -1863,7 +1872,88 @@ impl PhaseDistanceWindow {
             });
     }
 
-    fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+    /// *2 Scope*: the weather cases (Distance between conductors: several,
+    /// each checked on its own, the shared tick menu's title; Under unequal
+    /// wind: one, the shared case combo), the circuits and routes. Wrapped:
+    /// nothing scrolls sideways.
+    fn scope_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+        if self.kind == Kind::UnequalWind {
+            // One case: the combo the other single-case windows use, each
+            // case with its wind.
+            let with_wind: Vec<String> = model
+                .cases
+                .iter()
+                .map(|c| format!("{} ({:.0} Pa)", c.case.name, c.case.wind_pressure.si()))
+                .collect();
+            let mut k = self
+                .cases
+                .first()
+                .copied()
+                .unwrap_or(0)
+                .min(names.len().saturating_sub(1));
+            check_ui::ScopePicker::new(self.kind.page(), &model.line)
+                .cases(check_ui::Cases::One(&with_wind, &mut k))
+                .ui(ui);
+            if !names.is_empty() && self.cases.first() != Some(&k) {
+                self.cases = BTreeSet::from([k]);
+            }
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                // Several cases, each checked on its own: the tick menu
+                // (titled as the shared one), with the case groups.
+                let n = self.cases.iter().filter(|&&k| k < names.len()).count();
+                let title = format!("Weather cases: {n} of {}", names.len());
+                crate::menu::options_menu(ui, &title, |ui| {
+                    ui.label(
+                        egui::RichText::new("each checked on its own (LeV: f at 10 °C, still air)")
+                            .small()
+                            .weak(),
+                    );
+                    let mut ticked: Vec<usize> = self.cases.iter().copied().collect();
+                    let groups = crate::case_groups::groups(model);
+                    if crate::case_groups::pick_indices(ui, model, &groups, &mut ticked) {
+                        self.cases = ticked.into_iter().collect();
+                    }
+                    help::list(
+                        ui,
+                        "phase-distance-list-2",
+                        420.0,
+                        egui::ScrollArea::vertical(),
+                        |ui| {
+                            for (k, n) in names.iter().enumerate() {
+                                let mut on = self.cases.contains(&k);
+                                if ui.checkbox(&mut on, n).changed() {
+                                    if on {
+                                        self.cases.insert(k);
+                                    } else {
+                                        self.cases.remove(&k);
+                                    }
+                                }
+                            }
+                        },
+                    );
+                });
+            });
+        }
+        // The circuits and routes (owner, 2026-10-28: the scope of every
+        // check window, the shared picker).
+        if check_ui::ScopePicker::new(self.kind.page(), &model.line)
+            .wires(&mut self.scope, false)
+            .ui(ui)
+        {
+            self.circuits = self
+                .scope
+                .circuits
+                .as_ref()
+                .map(|c| c.iter().cloned().collect());
+        }
+    }
+
+    /// The values file (in *3 Rules*, before the values used): another
+    /// file instead of the project's copy or the plugin's, and the
+    /// plugin's own choices.
+    fn values_file_ui(&mut self, ui: &mut egui::Ui) {
         let choices = self
             .check()
             .map(|c| c.info.choices.clone())
@@ -1873,7 +1963,7 @@ impl PhaseDistanceWindow {
             .map_or(PHASE_DISTANCE_FILE_EXTENSION.to_owned(), |c| {
                 c.info.values_extension.clone()
             });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .button("Choose a values file…")
                 .on_hover_text("Another values file instead of the values used")
@@ -1910,142 +2000,96 @@ impl PhaseDistanceWindow {
                     });
             }
         });
-        ui.horizontal(|ui| {
-            let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-            if self.kind == Kind::UnequalWind {
-                let shown = self
-                    .cases
-                    .first()
-                    .and_then(|k| model.cases.get(*k))
-                    .map_or("—".to_owned(), |c| {
-                        format!("{} ({:.0} Pa)", c.case.name, c.case.wind_pressure.si())
-                    });
-                ui.label("Weather case")
-                    .on_hover_text("Its wind (the most), temperature and ice");
-                egui::ComboBox::from_id_salt("unequal-wind-case")
-                    .selected_text(shown)
-                    .show_ui(ui, |ui| {
-                        for (k, c) in model.cases.iter().enumerate() {
-                            let text =
-                                format!("{} ({:.0} Pa)", c.case.name, c.case.wind_pressure.si());
-                            if ui
-                                .selectable_label(self.cases.first() == Some(&k), text)
-                                .clicked()
-                            {
-                                self.cases = BTreeSet::from([k]);
-                            }
-                        }
-                    });
-                ui.label("wind step");
-                crate::style::field(
-                    ui,
-                    egui::DragValue::new(&mut self.wind_step)
-                        .range(1.0..=1000.0)
-                        .speed(1.0)
-                        .suffix(" Pa"),
-                )
-                .on_hover_text(
-                    "The wind on one conductor from none to the case's in these steps (the \
-                     case's always included); the line is solved at each, and at the share of \
-                     each",
-                );
-                let mut share = self.low_share * 100.0;
-                ui.label("the other from");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut share)
-                            .range(0.0..=100.0)
-                            .speed(1.0)
-                            .suffix(" %"),
-                    )
-                    .on_hover_text(
-                        "The other conductor's wind from this share of the first's up to it \
-                         (LeV: up to 40 % less, 60 %)",
-                    )
-                    .changed()
-                {
-                    self.low_share = share / 100.0;
-                }
-            } else {
-                let title = match self.cases.len() {
-                    0 => "Weather cases: none".to_owned(),
-                    1 => format!(
-                        "Weather case: {}",
-                        names
-                            .get(*self.cases.first().expect("one"))
-                            .map_or("", String::as_str)
-                    ),
-                    n => format!("Weather cases: {n}"),
-                };
-                crate::menu::options_menu(ui, &title, |ui| {
-                    ui.label(
-                        egui::RichText::new("each checked on its own (LeV: f at 10 °C, still air)")
-                            .small()
-                            .weak(),
-                    );
-                    let mut ticked: Vec<usize> = self.cases.iter().copied().collect();
-                    let groups = crate::case_groups::groups(model);
-                    if crate::case_groups::pick_indices(ui, model, &groups, &mut ticked) {
-                        self.cases = ticked.into_iter().collect();
-                    }
-                    help::list(
+    }
+
+    /// *4 Model*: how the wires are solved and measured — the wind steps
+    /// and the other conductor's share (under unequal wind), the stations
+    /// along a span, the nearby spans; a labelled row each, what it
+    /// changes under it.
+    fn model_ui(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new((self.kind.page(), "model"))
+            .num_columns(2)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                if self.kind == Kind::UnequalWind {
+                    ui.label("Wind step");
+                    crate::style::field(
                         ui,
-                        "phase-distance-list-2",
-                        420.0,
-                        egui::ScrollArea::vertical(),
-                        |ui| {
-                            for (k, n) in names.iter().enumerate() {
-                                let mut on = self.cases.contains(&k);
-                                if ui.checkbox(&mut on, n).changed() {
-                                    if on {
-                                        self.cases.insert(k);
-                                    } else {
-                                        self.cases.remove(&k);
-                                    }
-                                }
-                            }
-                        },
+                        egui::DragValue::new(&mut self.wind_step)
+                            .range(1.0..=1000.0)
+                            .speed(1.0)
+                            .suffix(" Pa"),
+                    );
+                    ui.end_row();
+                    ui.label("Other conductor's wind from");
+                    let mut share = self.low_share * 100.0;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut share)
+                                .range(0.0..=100.0)
+                                .speed(1.0)
+                                .suffix(" %"),
+                        )
+                        .changed()
+                    {
+                        self.low_share = share / 100.0;
+                    }
+                    ui.end_row();
+                } else {
+                    // Under unequal wind the closest approach is exact: no
+                    // stations.
+                    ui.label("Stations every");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.settings.spacing)
+                            .range(0.1..=50.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    );
+                    ui.end_row();
+                }
+                ui.label("Nearby spans");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.settings.nearby, "too");
+                    ui.add_enabled(
+                        self.settings.nearby,
+                        egui::DragValue::new(&mut self.settings.max_distance)
+                            .range(1.0..=200.0)
+                            .speed(0.5)
+                            .prefix("within ")
+                            .suffix(" m"),
                     );
                 });
-            }
-            // The circuits and routes (owner, 2026-10-28: the scope of every
-            // check window, the shared picker).
-            if check_ui::ScopePicker::new(self.kind.page(), &model.line)
-                .wires(&mut self.scope, false)
-                .ui(ui)
-            {
-                self.circuits = self
-                    .scope
-                    .circuits
-                    .as_ref()
-                    .map(|c| c.iter().cloned().collect());
-            }
-            // Under unequal wind the closest approach is exact: no stations.
-            if self.kind == Kind::Span {
-                ui.label("stations every");
-                crate::style::field(
-                    ui,
-                    egui::DragValue::new(&mut self.settings.spacing)
-                        .range(0.1..=50.0)
-                        .speed(0.1)
-                        .suffix(" m"),
-                );
-            }
-            ui.checkbox(&mut self.settings.nearby, "nearby spans too")
-                .on_hover_text(
-                    "Also conductors not between the same two structures (another line, the \
-                     next span), measured where closer than the distance",
-                );
-            ui.add_enabled(
-                self.settings.nearby,
-                egui::DragValue::new(&mut self.settings.max_distance)
-                    .range(1.0..=200.0)
-                    .speed(0.5)
-                    .prefix("within ")
-                    .suffix(" m"),
-            )
-            .on_hover_text("Keep it above the largest z (about 12 m at 380 kV)");
-        });
+                ui.end_row();
+            });
+        if self.kind == Kind::UnequalWind {
+            help::explain(
+                ui,
+                "Wind step: the wind on one conductor from none to the case's in these steps.",
+                "The case's wind is always included; the line is solved at each step, and at the \
+                 share of each. Smaller: more solves, a longer run.",
+            );
+            help::explain(
+                ui,
+                "Other conductor's wind: from this share of the first's up to it.",
+                "LeV: up to 40 % less, 60 %. A lower share makes the two conductors swing more \
+                 unequally: closer approaches.",
+            );
+        } else {
+            help::explain(
+                ui,
+                "Stations: where along each span the distance is measured.",
+                "The distance between two conductors is measured at stations this far apart \
+                 along the span; smaller finds the closest point more exactly, at more \
+                 measurements.",
+            );
+        }
+        help::explain(
+            ui,
+            "Nearby spans: also conductors not between the same two structures.",
+            "Another line, the next span: measured where closer than this distance. Keep it \
+             above the largest z (about 12 m at 380 kV).",
+        );
     }
 
     /// The circuits ticked with their voltage and the plugin's circuit
@@ -2248,18 +2292,6 @@ impl PhaseDistanceWindow {
                 .small()
                 .weak(),
             );
-            if ui
-                .button("Export all CSV…")
-                .on_hover_text("Every pair with every value, as a CSV file")
-                .clicked()
-            {
-                let name = if unequal {
-                    "unequal-wind.csv"
-                } else {
-                    "phase-distance.csv"
-                };
-                save_csv(name, &csv(report));
-            }
         });
         use check_ui::{Cell, Col};
         let mut cols = vec![
@@ -2363,6 +2395,16 @@ impl PhaseDistanceWindow {
             .rows(rows)
             .group_by(&[0, 1, if unequal { 13 } else { 16 }])
             .csv(csv_name)
+            .full_csv(
+                if unequal {
+                    "unequal-wind.csv"
+                } else {
+                    "phase-distance.csv"
+                },
+                "Every pair kept with every value (the sags, k, the winds, the points' \
+                 coordinates)",
+                || csv(report),
+            )
             .below(check_ui::FOLDS_BELOW)
             .ui(ui)
         {

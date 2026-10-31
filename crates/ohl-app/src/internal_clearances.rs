@@ -25,7 +25,7 @@ use ohl_clearance::rules::{PresetCheck, RuleSet};
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -160,6 +160,24 @@ pub fn wind_study(model: &Model, bodies: &[StructureBody]) -> WindStudy {
 /// same as `ohl internal`).
 pub fn structure_bodies(model: &Model) -> Vec<StructureBody> {
     ohl_clearance::internal::structure_bodies(&model.line, &model.bodies)
+}
+
+/// How many of the line's structures have a body (detail level 2 or 3:
+/// their type drawn with members or a pole), of how many: the same test
+/// as [`structure_bodies`], without placing them.
+pub fn bodies_count(model: &Model) -> (usize, usize) {
+    let with = model
+        .line
+        .structures
+        .iter()
+        .filter(|st| {
+            st.structure_type
+                .as_deref()
+                .and_then(|t| model.bodies.get(t, st.extension.as_deref()))
+                .is_some()
+        })
+        .count();
+    (with, model.line.structures.len())
 }
 
 /// Each case solved (the case, its sections, its jumpers) as the check
@@ -472,8 +490,27 @@ impl InternalClearancesWindow {
                             ui,
                             "At each structure with a body: the conductors near it, its jumpers and its strings' \
                              live ends against its members, per weather case.",
-                            "None ticked: every voltage",
+                            "Run solves the line in each weather case of the rules, with its \
+                             jumpers. At each structure with a body (detail level 2 or 3) the \
+                             electrified parts — the conductors out to the rule's reach, the \
+                             jumpers, the strings' live ends and electrified shapes — are measured \
+                             to every member (to its surface where its section is known, else to \
+                             its centre line: on the unsafe side, said per row) and to the strings' \
+                             grounded shapes, and compared with the rule's distance at the part's \
+                             voltage. Earth wires and structures without a body are not checked.",
                         );
+                        // Which structures can be checked, before Run.
+                        let (with, all) = bodies_count(model);
+                        if with < all {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{with} of {all} structures have a body (detail levels 2 and \
+                                     3): the others are listed as not checked."
+                                ))
+                                .small()
+                                .color(ui.visuals().warn_fg_color),
+                            );
+                        }
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
                         if check_ui::ScopePicker::new("internal-clearances-scope", &model.line)
@@ -736,6 +773,44 @@ impl InternalClearancesWindow {
         if let Some(what) = stale {
             *run |= crate::revision::banner(ui, what, !self.job.running());
         }
+        // The verdict (the shared banner), first: green when every part is
+        // at its distance, red with the smallest margin (or when nothing
+        // was checked).
+        let failed = report.report.failures().count();
+        let worst = report
+            .report
+            .rows
+            .iter()
+            .min_by(|a, b| (a.distance - a.required).total_cmp(&(b.distance - b.required)));
+        let text = match worst {
+            Some(r) if failed > 0 => format!(
+                "✖ {failed} part{} × case too near — worst {} {}: {:.2} m of {:.2} m (margin \
+                 {:+.2} m), rule {}, case {}",
+                if failed == 1 { "" } else { "s" },
+                r.structure,
+                r.part,
+                r.distance,
+                r.required,
+                r.distance - r.required,
+                report.rules[r.rule].name,
+                r.case
+            ),
+            Some(r) => format!(
+                "✔ Every part at its distance ({} parts × cases; smallest margin {:+.2} m)",
+                report.report.rows.len(),
+                r.distance - r.required
+            ),
+            None => format!(
+                "✖ Nothing checked: no structure with a body takes a rule ({} structure(s) not \
+                 checked)",
+                report.report.not_checked.len()
+            ),
+        };
+        if check_ui::verdict(ui, failed > 0 || worst.is_none(), &text, failed > 0)
+            && let Some(r) = worst
+        {
+            out.go = Some(Selection::Structure(r.structure.clone()));
+        }
         for n in &report.report.notes {
             ui.label(egui::RichText::new(n).small().weak());
         }
@@ -753,16 +828,6 @@ impl InternalClearancesWindow {
                 });
             });
         }
-        let failed = report.report.failures().count();
-        ui.horizontal(|ui| {
-            ui.label(format!(
-                "{} parts × cases checked, {failed} too near",
-                report.report.rows.len()
-            ));
-            if ui.button("Export CSV…").clicked() {
-                save_csv("internal-clearances.csv", &report.report.csv(&report.rules));
-            }
-        });
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // goes to its structure.
         use check_ui::{Cell, Col};
@@ -813,6 +878,12 @@ impl InternalClearancesWindow {
         .rows(rows)
         .group_by(&[0, 3, 4])
         .csv("internal-clearances-table.csv")
+        .full_csv(
+            "internal-clearances.csv",
+            "Every row with every field (the member, the points on the part and on the member), \
+             as ohl internal writes it",
+            || report.report.csv(&report.rules),
+        )
         .ui(ui)
         {
             out.go = Some(Selection::Structure(

@@ -1460,6 +1460,18 @@ impl Ready {
         }
     }
 
+    /// Selects every one of `targets` (a check's result row about several
+    /// objects: a circuit's or a section's spans), the views brought to
+    /// the first; nothing when empty.
+    pub fn go_to_all(&mut self, targets: Vec<Selection>) {
+        let mut it = targets.into_iter();
+        let Some(first) = it.next() else {
+            return;
+        };
+        self.go_to(first);
+        self.model.selected_also = it.collect();
+    }
+
     /// Makes a table's changes: the sections' display cases, the session
     /// commands as one, the file written; its pending changes go when done.
     pub fn apply_table(&mut self, kind: crate::tables::TableKind, changes: crate::tables::Changes) {
@@ -2415,6 +2427,9 @@ impl eframe::App for App {
                     ready.view3d.dirty.insert(Layer::ElectricField);
                 }
                 let out = ready.line_parameters.ui(&ctx, &ready.model);
+                if let Some(spans) = out.select {
+                    ready.go_to_all(spans);
+                }
                 if let Some(settings) = out.settings {
                     let command = ready
                         .model

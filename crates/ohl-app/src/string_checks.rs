@@ -23,7 +23,7 @@ use ohl_clearance::strings::{self, Measure, Source, StringKind, StringReport, St
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -314,7 +314,15 @@ impl StringChecksWindow {
                             ui,
                             "Every string as solved, per weather case: its load and swing against its limits, the \
                              suspension strings' uplift.",
-                            "None ticked: every voltage (0 kV: earth wires)",
+                            "Run solves the line in each weather case of the rules and takes every \
+                             string as solved, at every point of the sections of the rule's kind \
+                             and voltages. Load: its axial force against its own maximum load (the \
+                             string's, else its insulator's). Own swing: its swing from straight \
+                             down, across and along the line, against its own swing limits; the \
+                             rule's swing limits are checked besides where the rule gives them. \
+                             Uplift: a suspension string fails when it goes slack, or is pushed \
+                             beyond the compression it may take. No limit is built in: they are \
+                             the strings' own and the rules'.",
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
@@ -396,6 +404,7 @@ impl StringChecksWindow {
         voltages.sort_by(f64::total_cmp);
         voltages.dedup();
         let t = check_ui::RuleTable::new("string-check-rules", &mut self.rules, &voltages)
+            .heads("Checks", "Strings")
             .add(
                 "A string rule",
                 "for every string in every case: their own limits and uplift",
@@ -535,19 +544,35 @@ impl StringChecksWindow {
         if let Some(what) = stale {
             *run |= crate::revision::banner(ui, what, !self.job.running());
         }
-        for n in &report.report.notes {
-            ui.label(egui::RichText::new(n).small().weak());
-        }
+        // The verdict (the shared banner): green when every limit is met,
+        // red with the worst (the rows come failures first, then the
+        // largest usage).
         let failed = report.report.failures().count();
-        ui.horizontal(|ui| {
-            ui.label(format!(
-                "{} limits × strings × cases checked, {failed} beyond",
+        let worst = report.report.rows.first();
+        let text = match worst {
+            Some(r) if failed > 0 => format!(
+                "✖ {failed} limit{} beyond — worst {} {}: {} {}, rule {}, case {}",
+                if failed == 1 { "" } else { "s" },
+                r.structure,
+                r.string,
+                r.measure.describe(),
+                against(r),
+                report.rules[r.rule].name,
+                r.case
+            ),
+            Some(_) => format!(
+                "✔ Every string within its limits ({} limits × strings × cases)",
                 report.report.rows.len()
-            ));
-            if ui.button("Export CSV…").clicked() {
-                save_csv("string-checks.csv", &report.report.csv(&report.rules));
-            }
-        });
+            ),
+            None => "✖ Nothing checked: no string takes a rule's limit".to_owned(),
+        };
+        if check_ui::verdict(ui, failed > 0 || worst.is_none(), &text, failed > 0)
+            && let Some(r) = worst
+        {
+            out.go = Some(Selection::Structure(r.structure.clone()));
+        }
+        // What was assumed and left out, folded above the table.
+        check_ui::notes_fold(ui, "string-check-rows", &report.report.notes);
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // goes to its structure.
         use check_ui::{Cell, Col};
@@ -618,12 +643,40 @@ impl StringChecksWindow {
         .rows(rows)
         .group_by(&[2, 3, 0, 4])
         .csv("string-checks-table.csv")
+        .full_csv(
+            "string-checks.csv",
+            "Every row with every field (section, point, forces in N, the point), as ohl strings \
+             writes it",
+            || report.report.csv(&report.rules),
+        )
         .ui(ui)
         {
             out.go = Some(Selection::Structure(
                 report.report.rows[k].structure.clone(),
             ));
         }
+    }
+}
+
+/// A row's value against its limit, in words: "52.1 kN of 40.0 kN (130 %)",
+/// "62.0° of 45.0°", "slack".
+fn against(r: &strings::StringRow) -> String {
+    match r.measure {
+        Measure::Load => format!(
+            "{:.1} kN of {:.1} kN ({:.0} %)",
+            r.value / 1000.0,
+            r.limit / 1000.0,
+            100.0 * r.usage
+        ),
+        Measure::Uplift => (if r.pass {
+            "hangs"
+        } else if r.value < 0.0 {
+            "pushed"
+        } else {
+            "slack"
+        })
+        .to_owned(),
+        _ => format!("{:.1}° of {:.1}°", r.value, r.limit),
     }
 }
 

@@ -55,6 +55,9 @@ pub struct CheckLibraryWindow {
     selected: Option<String>,
 }
 
+/// The window's smallest height, px (empty, it shrank to 116 px).
+const MIN_HEIGHT: f32 = 360.0;
+
 impl CheckLibraryWindow {
     /// Opens the window.
     pub fn show(&mut self) {
@@ -71,6 +74,9 @@ impl CheckLibraryWindow {
     /// The page (a dock page: floating first, it may be docked).
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         let mut out = Out::default();
+        // Empty, the window keeps a usable height (it shrank to its two
+        // lines of text).
+        ui.set_min_height(MIN_HEIGHT);
         self.contents(ui, model, &mut out);
         if out.apply.is_some() {
             self.since = None;

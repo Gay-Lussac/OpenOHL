@@ -361,7 +361,9 @@ impl LoadsPage {
                 }),
                 hover: "Solve every section in every load case (finite elements)",
                 scope: None,
-                info: self.took.map(|t| format!("computed in {t:.1?}")),
+                info: self
+                    .took
+                    .map(|t| format!("computed in {:.1} s", t.as_secs_f64())),
             };
             let overrides = &mut self.overrides;
             match crate::check_ui::run_footer(ui, f, |ui| {
@@ -478,7 +480,9 @@ impl LoadsPage {
         }
         ui.horizontal(|ui| {
             let names: Vec<&str> = results.iter().map(|r| r.case.name.as_str()).collect();
-            egui::ComboBox::from_label("load case")
+            // Labels before their controls (the desktop app's rule).
+            ui.label("Load case");
+            egui::ComboBox::from_id_salt("structure-loads-case")
                 .selected_text(names[self.case.min(names.len() - 1)])
                 .width(220.0)
                 .show_ui(ui, |ui| {
@@ -486,12 +490,17 @@ impl LoadsPage {
                         ui.selectable_value(&mut self.case, k, *n);
                     }
                 });
-            ui.label("structure");
+            ui.label("Structure");
             ui.add(egui::TextEdit::singleline(&mut self.filter).desired_width(100.0));
             ui.checkbox(&mut self.unfactored, "unfactored");
+            // The table's Export CSV… writes the case shown; this one
+            // every case (named apart, check pages' guidelines §4).
             if ui
-                .button("Export CSV…")
-                .on_hover_text("Every load case, every attachment")
+                .button("Export every case (CSV)…")
+                .on_hover_text(
+                    "Every load case, every attachment, as one CSV file (the table's Export \
+                     CSV… writes the case shown)",
+                )
                 .clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("CSV", &["csv"])
@@ -634,7 +643,8 @@ impl LoadsPage {
                 0 => "governing (every case)".to_owned(),
                 k => names.get(k - 1).cloned().unwrap_or_default(),
             };
-            egui::ComboBox::from_label("load case")
+            ui.label("Load case");
+            egui::ComboBox::from_id_salt("structure-usage-case")
                 .selected_text(shown)
                 .width(220.0)
                 .show_ui(ui, |ui| {
@@ -643,7 +653,7 @@ impl LoadsPage {
                         ui.selectable_value(&mut self.usage_case, k + 1, n);
                     }
                 });
-            ui.label("structure");
+            ui.label("Structure");
             ui.add(egui::TextEdit::singleline(&mut self.filter).desired_width(100.0));
             if ui
                 .button("Export CSV…")
@@ -778,7 +788,9 @@ impl LoadsPage {
                 egui::RichText::new(text).monospace().color(colour)
             }
         };
-        egui::ScrollArea::vertical()
+        // Both ways: its many columns scroll sideways in the window's
+        // 860 px rather than widening it.
+        egui::ScrollArea::both()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 egui::Grid::new("structure-usage")

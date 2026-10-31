@@ -23,7 +23,7 @@ use ohl_clearance::tension::{self, TensionMeasure, TensionReport, TensionRule};
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -314,7 +314,13 @@ impl WireTensionsWindow {
                             ui,
                             "The tension of every span against the largest a rule allows: a factor of the wire \
                              type's rated tensile strength (RTS), per weather case.",
-                            "set the factor",
+                            "Run solves the line in each weather case of the rules. In every span \
+                             of the wires a rule applies to, the tension (by default the larger \
+                             end tension, at the most tensioned support; or the horizontal \
+                             tension, as the rule says) is compared with the rule's factor × the \
+                             wire type's RTS. The usage is tension / allowed; above 100 % the span \
+                             fails. No factor is built in: the rules' factors are yours or a \
+                             design-code plugin's preset.",
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
@@ -525,6 +531,7 @@ impl WireTensionsWindow {
         run: &mut bool,
         out: &mut Out,
     ) {
+        use check_ui::{Cell, Col};
         let report = match &self.job.result {
             None => {
                 ui.label("Run to check every span.");
@@ -539,22 +546,48 @@ impl WireTensionsWindow {
         if let Some(what) = stale {
             *run |= crate::revision::banner(ui, what, !self.job.running());
         }
+        // The verdict (the shared banner), first: green when every span is
+        // within its allowed tension, red with the highest usage.
+        let failed = report.report.failures().count();
+        let worst = report
+            .report
+            .rows
+            .iter()
+            .max_by(|a, b| a.usage.total_cmp(&b.usage));
+        let text = match worst {
+            Some(r) if failed > 0 => format!(
+                "✖ {failed} span{} × case above the allowed tension — worst {}: {:.1} kN of \
+                 {:.1} kN ({:.0} %), rule {}, case {}",
+                if failed == 1 { "" } else { "s" },
+                Cell::span(&r.section, r.span).text,
+                r.tension / 1000.0,
+                r.allowed / 1000.0,
+                100.0 * r.usage,
+                report.rules[r.rule].name,
+                r.case
+            ),
+            Some(r) => format!(
+                "✔ Every span within its allowed tension ({} spans × cases × rules; highest usage \
+                 {:.0} %)",
+                report.report.rows.len(),
+                100.0 * r.usage
+            ),
+            None => "✖ Nothing checked: no span takes a rule's weather case".to_owned(),
+        };
+        if check_ui::verdict(ui, failed > 0 || worst.is_none(), &text, failed > 0)
+            && let Some(r) = worst
+        {
+            out.go = Some(Selection::Span {
+                section: r.section.clone(),
+                span: r.span,
+            });
+            out.case = Some(r.case.clone());
+        }
         for n in &report.report.notes {
             ui.label(egui::RichText::new(n).small().weak());
         }
-        let failed = report.report.failures().count();
-        ui.horizontal(|ui| {
-            ui.label(format!(
-                "{} spans × cases × rules, {failed} above the allowed tension",
-                report.report.rows.len()
-            ));
-            if ui.button("Export CSV…").clicked() {
-                save_csv("wire-tensions.csv", &report.report.csv(&report.rules));
-            }
-        });
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // selects its span and draws it in the row's weather case.
-        use check_ui::{Cell, Col};
         let rows: Vec<check_ui::Row> = report
             .report
             .rows
@@ -590,6 +623,12 @@ impl WireTensionsWindow {
         .rows(rows)
         .group_by(&[1, 2, 0])
         .csv("wire-tensions-table.csv")
+        .full_csv(
+            "wire-tensions.csv",
+            "Every row with every field (wire type, RTS, factor, tensions in N, the point), as \
+             ohl tensions writes it",
+            || report.report.csv(&report.rules),
+        )
         .ui(ui)
         {
             let r = &report.report.rows[k];
@@ -757,6 +796,8 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         harness.run();
+        // The verdict first (2026-10-31), red: every span fails.
+        harness.get_by_label_contains("above the allowed tension — worst");
         let r = harness.state_mut().ready().unwrap();
         assert_eq!(r.marks_from, crate::app::MarksFrom::Tensions);
         assert!(!r.view3d.marks.is_empty());

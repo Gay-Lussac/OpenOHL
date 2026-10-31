@@ -770,7 +770,7 @@ impl VegetationWindow {
 
     fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(spec) = model.cloud.clone() else {
-            self.job.result = Some(Err("no point cloud in this model".into()));
+            self.job.result = Some(Err(check_ui::NO_CLOUD.into()));
             return;
         };
         let classes = self.settings.classes_of(&model.scheme);
@@ -1097,7 +1097,7 @@ impl VegetationWindow {
             ctx,
             crate::dockable::Panel::Vegetation,
             CHECK_TITLE,
-            [900.0, 760.0],
+            [860.0, 760.0],
             &mut open,
             |ui| {
                 // Out of date: said at the top, Run again beside.
@@ -1172,15 +1172,14 @@ impl VegetationWindow {
                         check_ui::section(ui, 3, "Rules", None);
                         self.preset_ui(ui, model, presets, &mut out);
                         ui.separator();
-                        check_ui::section(ui, 4, "Settings", None);
-                        egui::CollapsingHeader::new("Settings")
-                            .id_salt("vegetation-settings")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                self.settings_ui(ui, model, &mut out);
-                                ui.separator();
-                                self.colors_ui(ui, model);
-                            });
+                        // The modelling settings, folded (check pages'
+                        // guidelines); the colours in the views after.
+                        check_ui::model_section(ui, PANEL, 4, |ui| {
+                            self.settings_ui(ui, model, &mut out);
+                        });
+                        ui.separator();
+                        check_ui::section(ui, 5, "Colours in the views", None);
+                        self.colors_ui(ui, model);
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, PANEL, |ui| {
                         match &self.job.result {
@@ -1243,11 +1242,11 @@ impl VegetationWindow {
     /// Why the check cannot run, if it cannot ("Before Run: …").
     pub fn why_not_run(&self, model: &Model) -> Option<String> {
         if model.cloud.is_none() {
-            return Some("no point cloud in this model".into());
+            return Some(check_ui::NO_CLOUD.into());
         }
         if self.settings.classes_of(&model.scheme).is_empty() {
             return Some(format!(
-                "no class chosen, and no class of \"{}\" has the role vegetation (4 Settings)",
+                "no class chosen, and no class of \"{}\" has the role vegetation (4 Model)",
                 model.scheme.name
             ));
         }

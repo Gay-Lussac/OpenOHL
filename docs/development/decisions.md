@@ -10,6 +10,56 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**The check windows' small reworks (owner, 2026-10-31: "go ahead with
+all small stuff", after the review against the [check pages'
+guidelines](check-pages.md))** — layout and wording only: no check
+computes anything differently.
+
+- **4 Model, folded by default** (`check_ui::model_section`): the
+  modelling settings leave *2 Scope* — Vertical and Radial clearances'
+  *Solved by* (their structure and section overrides to the footer, as
+  every other window has them), Safety volumes' mesh tolerance, Distance
+  between conductors' stations and nearby spans and Under unequal wind's
+  wind step and share. *4 Settings* is *4 Model* where it holds modelling
+  settings (Vertical, Radial, Clearances, Safety volumes, Vegetation —
+  its inner *Settings* fold gone, its colours a *5 Colours in the
+  views*); Line parameters and As-built wires, with no *3*, number it
+  *3 Model* (they jumped from 2 to 4). As-built wires' one-row settings
+  are labelled rows, each explained.
+- **The verdict banner** in Wire tensions (highest usage), String checks
+  (the worst limit) and Internal clearances (smallest margin), as the
+  ground windows; red too when nothing was checked.
+- **What it checks** of Wire tensions, String checks and Internal
+  clearances: the (?) text was a stray field hint; now what the check
+  does, from its theory.
+- **One export place**: where a window wrote a second CSV beside the
+  table's, it is **Full report (CSV)…** next to the table's *Export
+  CSV…* (Wire tensions, String checks, Internal clearances, Galloping,
+  Line parameters, Distance between conductors); As-built wires' second
+  export was the table's again and went; Structure loads' is *Export
+  every case (CSV)…*.
+- **Notes folded above the table** in Clearances, Galloping, String
+  checks, Line parameters and Safety volumes; Clearances' table has a
+  **Margin [m]** column (found less required, from its rows).
+- String checks' rule table names its last columns **Checks** and
+  **Strings** (`RuleTable::heads`); the rule table's cells are cut at 20
+  characters (the full text on hover) so the six columns fit 860 px.
+- Distance between conductors: *Weather cases: n of m* (a window of
+  several cases keeps its tick menu, titled as the shared one); Under
+  unequal wind takes the shared weather case list; *Choose a values
+  file…* and the plugin's choices in *3 Rules*; the missing plugin said
+  at the top and in the footer only; the scope row wraps.
+- **Widths** 860 px: Vegetation, Distance between conductors, Under
+  unequal wind, Structure loads (its Usage table scrolls sideways).
+- Smaller: labels before their controls (Structure loads); Performed
+  checks keeps a height when empty; "computed in 3.7 s" in every footer
+  (Thermal rating said "3.7s"); a Thermal rating or Line parameters row
+  selects its section's (circuit's) spans; Line parameters one dash for
+  a missing value; Internal clearances says before Run how many
+  structures have a body; Galloping says under its parameter file its
+  methods and requirement (read with the check's own reader); no point
+  cloud: where to import one (File › Import › LiDAR points (LAS/LAZ)).
+
 **The String builder, with a torus (owner, 2026-10-31: "the builder
 window with a torus")**
 

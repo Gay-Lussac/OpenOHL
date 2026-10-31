@@ -21,7 +21,7 @@ use ohl_line::electrical::{
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 
 use crate::model::Model;
 
@@ -36,6 +36,9 @@ pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 pub struct Out {
     /// New electrical settings for the line (one command).
     pub settings: Option<ElectricalSettings>,
+    /// A row clicked: the spans of its circuit's (or stretch's) sections
+    /// to select.
+    pub select: Option<Vec<crate::selection::Selection>>,
 }
 
 /// The answer: the parameters and the weather case.
@@ -166,13 +169,16 @@ impl LineParametersWindow {
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
                         ui.separator();
-                        check_ui::section(ui, 4, "Settings", None);
-                        if let Some(s) = settings_ui(ui, model) {
+                        // The line's electrical settings (they change the
+                        // results): folded, as every window's model.
+                        if let Some(Some(s)) =
+                            check_ui::model_section(ui, WINDOW, 3, |ui| settings_ui(ui, model))
+                        {
                             out.settings = Some(s);
                         }
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
-                        self.results_ui(ui, &stale, &mut run);
+                        out.select = self.results_ui(ui, model, &stale, &mut run);
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
@@ -195,15 +201,22 @@ impl LineParametersWindow {
         out
     }
 
-    fn results_ui(&mut self, ui: &mut egui::Ui, stale: &Option<String>, run: &mut bool) {
+    /// The results; the spans to select when a row was clicked.
+    fn results_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        stale: &Option<String>,
+        run: &mut bool,
+    ) -> Option<Vec<crate::selection::Selection>> {
         let answer = match &self.job.result {
             None => {
                 ui.label("Run to compute the line parameters.");
-                return;
+                return None;
             }
             Some(Err(e)) => {
                 crate::menu::error_label(ui, e.as_str());
-                return;
+                return None;
             }
             Some(Ok(a)) => a,
         };
@@ -216,20 +229,18 @@ impl LineParametersWindow {
             answer.case,
             p.method.describe()
         ));
-        for n in &p.notes {
-            ui.label(egui::RichText::new(n).small().weak());
-        }
-        let rows = report::rows(p, &[]);
-        ui.horizontal(|ui| {
-            ui.label(format!(
-                "{} circuit(s), {} span(s)",
+        ui.label(
+            egui::RichText::new(format!(
+                "{} circuit(s), {} span(s); a row clicked selects its sections",
                 p.circuits.len(),
                 p.spans.len()
-            ));
-            if ui.button("Export CSV…").clicked() {
-                save_csv("line-parameters.csv", &report::csv(p, &[]));
-            }
-        });
+            ))
+            .small()
+            .weak(),
+        );
+        // What was assumed, folded above the table.
+        check_ui::notes_fold(ui, WINDOW, &p.notes);
+        let rows = report::rows(p, &[]);
         // One table (owner, 2026-10-28: the shared results table): the
         // circuits, their stretches and the mutual couplings, grouped by
         // circuit at will, sortable, as CSV.
@@ -240,7 +251,7 @@ impl LineParametersWindow {
                 format!("{:.3} + j{:.3}", z[2 * k], z[2 * k + 1]),
                 z[2 * k].hypot(z[2 * k + 1]),
             ),
-            None => Cell::text("—"),
+            None => num(None, 3),
         };
         let table: Vec<check_ui::Row> = rows
             .iter()
@@ -286,13 +297,13 @@ impl LineParametersWindow {
                             Cell::text(&r.circuit),
                             Cell::text("zero sequence mutual"),
                             num(Some(r.length_km), 3),
-                            Cell::text(""),
-                            Cell::text(""),
-                            Cell::text(""),
+                            num(None, 4),
+                            num(None, 4),
+                            num(None, 3),
                             num(Some(z[0]), 4),
                             num(Some(z[1]), 4),
-                            Cell::text(""),
-                            Cell::text(""),
+                            num(None, 3),
+                            num(None, 3),
                             Cell::sorted(
                                 format!("{:.3} + j{:.3}", z[0] * r.length_km, z[1] * r.length_km),
                                 (z[0] * r.length_km).hypot(z[1] * r.length_km),
@@ -304,7 +315,7 @@ impl LineParametersWindow {
                 Some(check_ui::Row::new(cells, false))
             })
             .collect();
-        check_ui::ResultTable::new(
+        let clicked = check_ui::ResultTable::new(
             "line-parameters-rows",
             vec![
                 Col::text("Circuit"),
@@ -324,7 +335,62 @@ impl LineParametersWindow {
         .no_filter()
         .group_by(&[0])
         .csv("line-parameters-table.csv")
-        .ui(ui);
+        .full_csv(
+            "line-parameters.csv",
+            "Every row with every field (the totals besides), as ohl electrical writes it",
+            || report::csv(p, &[]),
+        )
+        .ui(ui)?;
+        // The row clicked: its circuit's sections (a stretch: its own; a
+        // coupling: both circuits').
+        let kept: Vec<&Row> = rows
+            .iter()
+            .filter(|r| matches!(r.kind, "circuit" | "stretch" | "coupling"))
+            .collect();
+        let r = kept.get(clicked)?;
+        let sections: Vec<&ohl_line::Section> = if r.kind == "stretch" {
+            model
+                .line
+                .sections
+                .iter()
+                .filter(|s| r.sections.contains(&s.id))
+                .collect()
+        } else {
+            let names: Vec<&str> = r.circuit.split(" – ").collect();
+            let keys: Vec<&ohl_electrical::parameters::CircuitKey> = p
+                .circuits
+                .iter()
+                .map(|c| &c.key)
+                .filter(|k| names.contains(&k.label().as_str()))
+                .collect();
+            model
+                .line
+                .sections
+                .iter()
+                .filter(|s| {
+                    keys.iter().any(|k| {
+                        if k.circuit.is_empty() {
+                            s.system.as_deref() == Some(k.system.as_str())
+                        } else {
+                            s.circuit_name == k.circuit
+                        }
+                    })
+                })
+                .collect()
+        };
+        Some(
+            sections
+                .iter()
+                .flat_map(|s| {
+                    (0..s.points.len().saturating_sub(1)).map(|k| {
+                        crate::selection::Selection::Span {
+                            section: s.id.clone(),
+                            span: k,
+                        }
+                    })
+                })
+                .collect(),
+        )
     }
 }
 
