@@ -14,9 +14,11 @@ needs: each change of the code leaves the old build behind — its
 libraries, its test programs and, on macOS with debug information, all its
 object files. This keeps, per crate and kind (library, program or test,
 dynamic library), the KEEP builds written last and removes every file of
-the others; in `incremental`, the KEEP newest caches per crate. Nothing
-else is touched (not `build`, not `.fingerprint`): a build later makes
-again whatever it needs.
+the others, with their record in `.fingerprint` (2026-10-31: without it
+Cargo took a removed library for up to date and a later build failed,
+"extern location … does not exist"); in `incremental`, the KEEP newest
+caches per crate. Nothing else is touched (not `build`): a build later
+makes again whatever it needs.
 """
 
 import os
@@ -39,7 +41,7 @@ def kind_of(files):
     return "other"
 
 
-def prune_deps(deps, keep):
+def prune_deps(deps, keep, gone):
     builds = defaultdict(list)  # (crate, hash) -> [(path, mtime, ext)]
     for f in os.listdir(deps):
         m = NAME.match(f)
@@ -54,6 +56,7 @@ def prune_deps(deps, keep):
     for (crate, _), hashes in by_crate.items():
         hashes.sort(reverse=True)
         for _, h in hashes[keep:]:
+            gone.add(f"{crate}-{h}")
             for p, _, _ in builds[(crate, h)]:
                 try:
                     removed += os.path.getsize(p)
@@ -91,10 +94,34 @@ def main(argv):
     profile = argv[0]
     keep = int(argv[1]) if len(argv) > 1 else 2
     removed = 0
+    gone = set()
     for sub in ("deps", "examples"):
         d = os.path.join(profile, sub)
         if os.path.isdir(d):
-            removed += prune_deps(d, keep)
+            removed += prune_deps(d, keep, gone)
+    # Their records, so that Cargo builds them again when it needs them —
+    # and any record left by an earlier prune whose library is gone (a record names the package with hyphens, a build the crate
+    # with underscores).
+    fp = os.path.join(profile, ".fingerprint")
+    deps = os.path.join(profile, "deps")
+    present = set()
+    if os.path.isdir(deps):
+        for f in os.listdir(deps):
+            m = NAME.match(f)
+            if m:
+                present.add(f"{m.group(1)}-{m.group(2)}")
+    if os.path.isdir(fp):
+        for d in os.listdir(fp):
+            m = NAME.match(d)
+            if not m:
+                continue
+            key = f"{m.group(1).replace('-', '_')}-{m.group(2)}"
+            p = os.path.join(fp, d)
+            # Libraries only: a dependency's library that is gone is not
+            # built again (a program or test that is gone is).
+            built = any(f.startswith("lib-") for f in os.listdir(p))
+            if key in gone or (built and key not in present):
+                shutil.rmtree(p, ignore_errors=True)
     inc = os.path.join(profile, "incremental")
     if os.path.isdir(inc):
         removed += prune_incremental(inc, keep)
