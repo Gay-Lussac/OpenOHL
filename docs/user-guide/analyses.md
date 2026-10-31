@@ -362,10 +362,14 @@ panel scrolls: **Run** (runs in the background) and its status. At its
 top — when what the run was computed from changed — the banner *Out of
 date: … changed since this run* with **Run again**; under the results,
 the name to **save** the run as.
-Below, the **Preset** dropdown, then the settings in four groups. Each
-value has a short explanation beside it (more on hover), each group a
-link to its section here (**… user guide ↗**), and small drawings follow
-the values typed.
+Below, in the check windows' sections: *2 Scope* (circuits, routes,
+sections, weather cases), *3 Rules* — the **Preset** dropdown, then the
+**Grow-in** and **Fall-in** values (the clearance, growth, buffer and
+allowance; under *Rules* since 2026-10-31, the owner's choice) — and
+*4 Model*, folded: the **wire positions** and the **search**. Each value
+has a short explanation beside it (more on hover), each group a link to
+its section here (**… user guide ↗**), and small drawings follow the
+values typed.
 
 #### Vegetation: wire positions
 

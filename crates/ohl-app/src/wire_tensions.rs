@@ -294,6 +294,11 @@ impl WireTensionsWindow {
                     .why_not_run()
                     .or_else(|| self.scope.why_not(&model.line));
                 let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
+                let rule_cases = model
+                    .cases
+                    .iter()
+                    .filter(|c| self.rules.iter().any(|r| r.applies(&c.case.name)))
+                    .count();
                 let findings = match &self.job.result {
                     Some(Ok(r)) => Some(r.report.failures().count()),
                     _ => None,
@@ -321,6 +326,12 @@ impl WireTensionsWindow {
                              wire type's RTS. The usage is tension / allowed; above 100 % the span \
                              fails. No factor is built in: the rules' factors are yours or a \
                              design-code plugin's preset.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            "wire-tensions-window",
+                            "The wires solved in each weather case of the rules; per span the tension at its most tensioned support (or the horizontal tension, as the rule says) against the rule's factor × the wire type's RTS.",
+                            help::tension_check,
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
@@ -362,6 +373,7 @@ impl WireTensionsWindow {
                         why.clone(),
                         "Solve each weather case of the rules and check the tension of every span against its allowed tension",
                         Some(scope_words),
+                        Some(check_ui::scope_plan(&model.line, &self.scope, rule_cases)),
                         |ui| {
                             changed |= overrides.ui(ui);
                         },

@@ -456,6 +456,11 @@ pub struct Out {
     pub status: Option<(String, bool)>,
     /// A section of the user guide to open (its anchor in [`GUIDE`]).
     pub guide: Option<&'static str>,
+    /// A volume's row clicked: its first span selected, the 3D view
+    /// turned to it (the check pages' guidelines: every row leads to what
+    /// it is about).
+    pub select: Option<crate::selection::Selection>,
+    pub look: Option<crate::field_results::FieldRequest>,
 }
 
 /// The id of the window's body, tabs and footer.
@@ -899,7 +904,9 @@ impl SafetyVolumeWindow {
                         Some(Ok(_)) => {
                             // The table in the room the save and the
                             // export leave; they scroll under it.
-                            self.report_ui(ui);
+                            if let Some(k) = self.report_ui(ui) {
+                                self.row_clicked(k, &mut out);
+                            }
                             egui::ScrollArea::vertical()
                                 .id_salt("safety-volume-results")
                                 .auto_shrink([false, false])
@@ -915,6 +922,34 @@ impl SafetyVolumeWindow {
                         }
                     }),
                 }
+                // The volumes of what is ticked, in each case ticked.
+                let plan = {
+                    let s = &self.settings;
+                    let items = scope_items(&model.line, s.scope);
+                    let chosen = match s.scope {
+                        Scope::Systems => &s.systems,
+                        Scope::Circuits => &s.circuits,
+                        Scope::Spans => &s.spans,
+                    };
+                    let n = items
+                        .iter()
+                        .filter(|x| crate::tick_list::ticked(chosen, &x.key))
+                        .count();
+                    let one = match s.scope {
+                        Scope::Systems => "system",
+                        Scope::Circuits => "circuit",
+                        Scope::Spans => "span",
+                    };
+                    check_ui::Plan::new(
+                        format!(
+                            "{} in {}, one volume per {}",
+                            check_ui::count(n, one),
+                            check_ui::count(self.cases.len(), "case"),
+                            s.grouping.as_str()
+                        ),
+                        n * self.cases.len(),
+                    )
+                };
                 help::footer(ui, WINDOW, |ui| {
                     let overrides = &mut self.overrides;
                     again |= check_ui::job_footer(
@@ -923,6 +958,7 @@ impl SafetyVolumeWindow {
                         why.clone(),
                         "Solve the cases ticked and build the volumes (in the background)",
                         None,
+                        Some(plan),
                         |ui| {
                             overrides.ui(ui);
                         },
@@ -1314,8 +1350,46 @@ impl SafetyVolumeWindow {
         }
     }
 
-    fn report_ui(&self, ui: &mut egui::Ui) {
-        let Some(r) = self.report() else { return };
+    /// Row `k` of the report clicked: the volume's first span selected,
+    /// the 3D view looking at its mesh across its longer side.
+    fn row_clicked(&self, k: usize, out: &mut Out) {
+        let Some(vol) = self.report().and_then(|r| r.volumes.volumes.get(k)) else {
+            return;
+        };
+        if let Some(section) = vol.sections.first() {
+            out.select = Some(crate::selection::Selection::Span {
+                section: section.clone(),
+                span: 0,
+            });
+        }
+        let v = &vol.mesh.vertices;
+        if v.is_empty() {
+            return;
+        }
+        let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+        for p in v {
+            for i in 0..3 {
+                lo[i] = lo[i].min(p[i]);
+                hi[i] = hi[i].max(p[i]);
+            }
+        }
+        let (dx, dy) = (hi[0] - lo[0], hi[1] - lo[1]);
+        // Looking across the longer side, from far enough to see it.
+        let ahead = if dx >= dy {
+            0.0
+        } else {
+            std::f64::consts::FRAC_PI_2
+        };
+        out.look = Some(crate::field_results::FieldRequest::Look {
+            target: [0, 1, 2].map(|i| 0.5 * (lo[i] + hi[i])),
+            distance: (0.8 * dx.hypot(dy)).clamp(60.0, 5000.0),
+            yaw: ahead + std::f64::consts::FRAC_PI_2 * 0.6,
+        });
+    }
+
+    /// The report; the row clicked.
+    fn report_ui(&self, ui: &mut egui::Ui) -> Option<usize> {
+        let Some(r) = self.report() else { return None };
         let v = &r.volumes;
         ui.label(format!(
             "{} volumes from {} wire positions; weather cases: {}; {} from the conductors, {}.",
@@ -1360,24 +1434,22 @@ impl SafetyVolumeWindow {
                 )
             })
             .collect();
-        crate::check_ui::ResultTable::new(
-            "safety-volume-rows",
-            vec![
-                Col::text("Volume"),
-                Col::num("Voltage"),
-                Col::num("Distance [m]"),
-                Col::num("Triangles"),
-                Col::num("Volume [m³]"),
-                Col::num("Outside by ≤ [m]")
-                    .tip("The most the mesh lies outside the exact volume where it is smooth"),
-                Col::num("Time [s]"),
-            ],
-        )
-        .rows(rows)
-        .no_filter()
-        .csv("safety-volumes.csv")
-        .below(260.0)
-        .ui(ui);
+        let cols = vec![
+            Col::text("Volume"),
+            Col::num("Voltage"),
+            Col::num("Distance [m]"),
+            Col::num("Triangles"),
+            Col::num("Volume [m³]"),
+            Col::num("Outside by ≤ [m]")
+                .tip("The most the mesh lies outside the exact volume where it is smooth"),
+            Col::num("Time [s]"),
+        ];
+        let clicked = crate::check_ui::ResultTable::new("safety-volume-rows", cols)
+            .rows(rows)
+            .no_filter()
+            .csv("safety-volumes.csv")
+            .below(260.0)
+            .ui(ui);
         ui.label(
             egui::RichText::new(
                 "Each mesh holds the whole exact volume (never inside it) and lies outside it by \
@@ -1387,6 +1459,7 @@ impl SafetyVolumeWindow {
             .small()
             .weak(),
         );
+        clicked
     }
 
     fn save_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
@@ -1537,6 +1610,12 @@ pub fn handle(r: &mut crate::app::Ready, out: Out) {
             Ok(m) => (format!("user guide opened: {m}"), false),
             Err(e) => (e, true),
         });
+    }
+    if let Some(s) = out.select {
+        r.select(s);
+    }
+    if let Some(look) = out.look {
+        crate::app::field_request(r, look, crate::scene::Layer::SafetyVolume);
     }
 }
 

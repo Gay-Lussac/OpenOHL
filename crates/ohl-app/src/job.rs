@@ -25,6 +25,12 @@ pub struct Job<T> {
     /// The run's cancel token: Stop cancels it (a computation that looks
     /// at it ends early; one that does not finishes unseen).
     cancel: Option<ohl_core::budget::CancelToken>,
+    /// How much the run under way computes, and the answer taken
+    /// (objects × cases, as its window counts them): the next run's time
+    /// is estimated from the last one ([`Job::estimate`]).
+    pub run_units: usize,
+    /// How much the last answer computed (0: not counted).
+    pub units: usize,
 }
 
 impl<T> Default for Job<T> {
@@ -36,6 +42,8 @@ impl<T> Default for Job<T> {
             stamp: Default::default(),
             generation: 0,
             cancel: None,
+            run_units: 0,
+            units: 0,
         }
     }
 }
@@ -66,6 +74,14 @@ impl<T: Send + 'static> Job<T> {
         }
         self.stamp.started(now);
         self.start(ctx, work);
+    }
+
+    /// About how long a run computing `units` takes, s, from the last
+    /// answer's time (none before a counted run).
+    pub fn estimate(&self, units: usize) -> Option<f64> {
+        let took = self.took?.as_secs_f64();
+        (self.units > 0 && self.result.as_ref().is_some_and(|r| r.is_ok()))
+            .then(|| took * units as f64 / self.units as f64)
     }
 
     /// Since when it runs.
@@ -119,6 +135,7 @@ impl<T: Send + 'static> Job<T> {
             Err(TryRecvError::Disconnected) => Err("the computation stopped".into()),
         };
         self.took = Some(t.elapsed());
+        self.units = self.run_units;
         self.stamp.arrived();
         if let Err(e) = &r {
             log::warn!("{e}");

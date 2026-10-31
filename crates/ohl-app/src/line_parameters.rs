@@ -189,6 +189,14 @@ impl LineParametersWindow {
                         "Compute the line parameters from the wires as solved in the weather case \
                          chosen (the conductor temperature for the resistances is the case's)",
                         None,
+                        Some(check_ui::Plan::new(
+                            format!(
+                                "{} in {}, R, X and B per circuit",
+                                check_ui::count(model.line.sections.len(), "section"),
+                                names.get(self.case).map_or("-", String::as_str)
+                            ),
+                            model.line.sections.len(),
+                        )),
                         |_| {},
                     );
                 });
@@ -238,6 +246,24 @@ impl LineParametersWindow {
             .small()
             .weak(),
         );
+        // Why sequence values are empty, said outside the folded notes
+        // (2026-10-31: on the synthetic example they all were, unexplained).
+        let partial: Vec<String> = p
+            .circuits
+            .iter()
+            .filter(|c| c.phases.len() != 3)
+            .map(|c| format!("{} ({} phase(s))", c.key.label(), c.phases.len()))
+            .collect();
+        if !partial.is_empty() {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                egui::RichText::new(format!(
+                    "No sequence values for {}: they need three phases (Notes).",
+                    partial.join(", ")
+                ))
+                .small(),
+            );
+        }
         // What was assumed, folded above the table.
         check_ui::notes_fold(ui, WINDOW, &p.notes);
         let rows = report::rows(p, &[]);

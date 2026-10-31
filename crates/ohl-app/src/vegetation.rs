@@ -1172,10 +1172,14 @@ impl VegetationWindow {
                         check_ui::section(ui, 3, "Rules", None);
                         self.preset_ui(ui, model, presets, &mut out);
                         ui.separator();
+                        self.rule_values_ui(ui, model, &mut out);
+                        ui.separator();
                         // The modelling settings, folded (check pages'
                         // guidelines); the colours in the views after.
                         check_ui::model_section(ui, PANEL, 4, |ui| {
                             self.settings_ui(ui, model, &mut out);
+                            ui.separator();
+                            self.search_ui(ui, model, &mut out);
                         });
                         ui.separator();
                         check_ui::section(ui, 5, "Colours in the views", None);
@@ -1205,6 +1209,7 @@ impl VegetationWindow {
                 again |= help::footer(ui, PANEL, |ui| {
                     let scope = check_ui::scope_words(&model.line, &self.scope, true);
                     let overrides = &mut self.overrides;
+                    let plan = check_ui::scope_plan(&model.line, &self.scope, self.cases.len());
                     check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -1212,6 +1217,7 @@ impl VegetationWindow {
                         "Solve the cases, read the vegetation points again and check every span \
                          in scope",
                         Some(scope),
+                        Some(plan),
                         |ui| {
                             overrides.ui(ui);
                         },
@@ -1480,12 +1486,8 @@ impl VegetationWindow {
         }
     }
 
+    /// The wire positions (4 Model).
     fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
-        let voltages = ohl_clearance::zone::line_voltages(&model.line);
-        let num = |ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, max: f64| {
-            ui.label(label);
-            crate::style::field(ui, egui::DragValue::new(v).speed(speed).range(0.0..=max));
-        };
         // Wire positions.
         Self::heading(ui, "Wire positions", "vegetation-wire-positions", out);
         let cases = &mut self.cases;
@@ -1556,7 +1558,18 @@ impl VegetationWindow {
                 help::unbalanced_ice(ui, s.ice.0 != Ice::Off);
             });
         });
-        ui.separator();
+    }
+
+    /// The values the rules give (3 Rules; owner, 2026-10-31: the
+    /// clearance, growth, buffer and allowance under Rules, their drawings
+    /// unchanged): grow-in and fall-in.
+    fn rule_values_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
+        let voltages = ohl_clearance::zone::line_voltages(&model.line);
+        let num = |ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, max: f64| {
+            ui.label(label);
+            crate::style::field(ui, egui::DragValue::new(v).speed(speed).range(0.0..=max));
+        };
+        let s = &mut self.settings;
         // Grow-in.
         Self::heading(ui, "Grow-in", "vegetation-grow-in", out);
         ui.horizontal_top(|ui| {
@@ -1666,7 +1679,15 @@ impl VegetationWindow {
                 help::tree_base(ui, s.base_limit.0.then_some(s.base_limit.1));
             });
         });
-        ui.separator();
+    }
+
+    /// Where the vegetation points are searched (4 Model).
+    fn search_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
+        let num = |ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, max: f64| {
+            ui.label(label);
+            crate::style::field(ui, egui::DragValue::new(v).speed(speed).range(0.0..=max));
+        };
+        let s = &mut self.settings;
         // Search.
         Self::heading(ui, "Search", "vegetation-search", out);
         ui.horizontal(|ui| {

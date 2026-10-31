@@ -5,8 +5,11 @@
 //! A searchable tick list, shared: a search field that filters the rows
 //! as you type (by label or key, a substring, upper and lower case
 //! alike), **All**, **None** and **Invert** acting on the rows shown only,
-//! a count "n of m ticked", and the rows in a scroll box of fixed height
-//! (only the rows in view are laid out, so hundreds stay quick).
+//! a count "n of m ticked", and the rows in a scroll box the user drags
+//! taller (only the rows in view are laid out, so hundreds stay quick).
+//! As the check pages' guidelines ask (2026-10-31): unticked rows greyed,
+//! a press on a row dragged across others gives them all its new state,
+//! shift-click ticks a range.
 //!
 //! What is ticked is `None` (every row, also rows added later) or the
 //! keys ticked.
@@ -145,36 +148,142 @@ pub fn tick_list(
         }
         ui.label(egui::RichText::new(count).small().weak());
     });
+    // A drag ends with the button.
+    let drag_key = id.with("drag");
+    let anchor_key = id.with("anchor");
+    let pressed_key = id.with("pressed");
+    if !ui.input(|i| i.pointer.primary_down()) {
+        ui.data_mut(|d| d.remove::<bool>(drag_key));
+    }
+    let pressed = ui.input(|i| i.pointer.primary_pressed());
+    let shift = ui.input(|i| i.modifiers.shift);
+    let set = |chosen: &mut Option<Vec<String>>, key: &str, on: bool| {
+        let list = chosen.get_or_insert_with(|| items.iter().map(|x| x.key.clone()).collect());
+        let has = list.iter().any(|x| x == key);
+        if on && !has {
+            list.push(key.to_owned());
+        } else if !on && has {
+            list.retain(|x| x != key);
+        }
+    };
     egui::Frame::group(ui.style())
         .inner_margin(4.0)
         .show(ui, |ui| {
             let row = ui.spacing().interact_size.y;
-            egui::ScrollArea::vertical()
-                .id_salt(id.with("rows"))
-                .min_scrolled_height(height)
-                .max_height(height)
-                .auto_shrink([true, false])
-                .show_rows(ui, row, shown.len(), |ui, range| {
+            crate::check_help::list_rows(
+                ui,
+                id.with("height"),
+                height,
+                egui::ScrollArea::vertical()
+                    .id_salt(id.with("rows"))
+                    .auto_shrink([true, false]),
+                row,
+                shown.len(),
+                |ui, range| {
                     ui.set_min_width(240.0);
                     if shown.is_empty() {
                         ui.label(egui::RichText::new("nothing found").small().weak());
                     }
-                    for &k in &shown[range] {
+                    for (n, &k) in shown.iter().enumerate().take(range.end).skip(range.start) {
                         let item = &items[k];
-                        let mut on = ticked(chosen, &item.key);
-                        if ui.checkbox(&mut on, &item.label).changed() {
-                            let list = chosen.get_or_insert_with(|| {
-                                items.iter().map(|x| x.key.clone()).collect()
-                            });
-                            if on {
-                                list.push(item.key.clone());
-                            } else {
-                                list.retain(|x| x != &item.key);
+                        let on = ticked(chosen, &item.key);
+                        let width = ui.available_width().max(240.0);
+                        let (rect, resp) =
+                            ui.allocate_exact_size(egui::vec2(width, row), egui::Sense::click());
+                        resp.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::WidgetType::Checkbox,
+                                true,
+                                on,
+                                &item.label,
+                            )
+                        });
+                        // Over it by the pointer's place: a drag started on
+                        // another row keeps egui's hover on that one.
+                        let over = ui
+                            .input(|i| i.pointer.latest_pos())
+                            .is_some_and(|p| rect.contains(p) && ui.is_rect_visible(rect));
+                        let drag = ui.data(|d| d.get_temp::<bool>(drag_key));
+                        if over && pressed {
+                            let v = !on;
+                            let anchor = ui.data(|d| d.get_temp::<usize>(anchor_key));
+                            match anchor {
+                                Some(a) if shift && a < shown.len() => {
+                                    for &j in &shown[a.min(n)..=a.max(n)] {
+                                        set(chosen, &items[j].key, v);
+                                    }
+                                }
+                                _ => set(chosen, &item.key, v),
                             }
+                            ui.data_mut(|d| {
+                                d.insert_temp(drag_key, v);
+                                d.insert_temp(anchor_key, n);
+                                d.insert_temp(pressed_key, n);
+                            });
+                            changed = true;
+                        } else if over
+                            && let Some(v) = drag
+                            && v != on
+                        {
+                            set(chosen, &item.key, v);
                             changed = true;
                         }
+                        // A click without a press on it (the keyboard, a
+                        // screen reader) flips it; a press flipped it
+                        // already.
+                        if resp.clicked() {
+                            let by_press = ui.data_mut(|d| d.remove_temp::<usize>(pressed_key));
+                            if by_press != Some(n) {
+                                set(chosen, &item.key, !on);
+                                ui.data_mut(|d| d.insert_temp(anchor_key, n));
+                                changed = true;
+                            }
+                        }
+                        // A box and the label; unticked greyed.
+                        let on = ticked(chosen, &item.key);
+                        let visuals = ui.visuals();
+                        let colour = if on {
+                            visuals.text_color()
+                        } else {
+                            visuals.weak_text_color()
+                        };
+                        if resp.hovered() {
+                            ui.painter().rect_filled(rect, 2.0, visuals.faint_bg_color);
+                        }
+                        let b = egui::Rect::from_center_size(
+                            egui::pos2(rect.left() + 9.0, rect.center().y),
+                            egui::vec2(12.0, 12.0),
+                        );
+                        ui.painter().rect_stroke(
+                            b,
+                            2.0,
+                            egui::Stroke::new(1.0, colour),
+                            egui::StrokeKind::Inside,
+                        );
+                        if on {
+                            ui.painter().line(
+                                vec![
+                                    egui::pos2(b.left() + 2.5, b.center().y),
+                                    egui::pos2(b.center().x - 1.0, b.bottom() - 3.0),
+                                    egui::pos2(b.right() - 2.5, b.top() + 3.0),
+                                ],
+                                egui::Stroke::new(1.6, colour),
+                            );
+                        }
+                        ui.painter().text(
+                            egui::pos2(rect.left() + 22.0, rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            &item.label,
+                            egui::TextStyle::Body.resolve(ui.style()),
+                            colour,
+                        );
+                        resp.on_hover_text(
+                            "Click to flip; press and drag across rows to give them all this \
+                             state; shift-click: the range from the row clicked before",
+                        );
                     }
-                });
+                },
+            );
         });
     changed
 }

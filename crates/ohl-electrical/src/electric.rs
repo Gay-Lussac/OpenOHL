@@ -22,19 +22,22 @@
 //! **3D** ([`Model::ThreeD`]): every wire as solved, a bundle
 //! subconductor by subconductor, and the jumpers (at their phase's
 //! charge per metre), as straight pieces of uniform charge; the field of a
-//! piece in closed form ([`segment_field`]). The ground: at every point a
-//! plane fitted to the terrain under it ([`Settings::ground_radius`]) and
-//! the images of all charges in it (owner, 2026-10-29: continuous along the
-//! line, exact for level or evenly sloping ground — a simplification on
-//! uneven ground). **2D** ([`Model::TwoD`]): the cross-section's wires as
+//! piece in closed form ([`segment_field`]). The ground, by default: a
+//! tiled conducting floor following the terrain, its tiles' charges solved
+//! with the wires' (a dense LU, [`floor_bytes`]), and with the structures'
+//! steel when asked ([`SteelMember`], pieces held at zero potential); or,
+//! the faster choice, at every point a plane fitted to the terrain under
+//! it ([`Settings::ground_radius`]) and the images of all charges in it
+//! (owner, 2026-10-29: exact for level or evenly sloping ground — a
+//! simplification on uneven ground). **2D** ([`Model::TwoD`]): the cross-section's wires as
 //! infinite line charges over level ground at the cross-section.
 //!
 //! Reported: the rms of the vector
 //! \\( E = \sqrt{|E_x|^2 + |E_y|^2 + |E_z|^2} \\), kV/m; systems of
 //! different frequencies added as \\( \sqrt{\sum_f E_f^2} \\). DC systems
 //! left out (a static field and space charge: another calculation).
-//! **Not modelled**: the structures (earthed steel: they lower the field
-//! near them), trees, buildings and people (objects at earth potential
+//! **Not modelled**: the structures unless their steel is asked for
+//! (earthed steel lowers the field near them), trees, buildings and people (objects at earth potential
 //! shield the field: conservative away from them, not at their tops),
 //! the ground's resistivity (the earth a perfect conductor at power
 //! frequency). A limit is optional input (kV/m), never built in.

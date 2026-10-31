@@ -10,6 +10,46 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**The check windows' bigger reworks a–g (owner, 2026-10-31: "go ahead
+with the bigger reworks a to g")**
+
+- a. Every check window says before Run what it will compute and about
+  how long, scaled from its own last run on this computer
+  (`check_ui::Plan`, `Job::estimate`): the rule-based checks by the line's
+  spans × the cases (they solve the whole line in each case; a scope only
+  narrows what is checked), Galloping and As-built by the spans in scope,
+  Safety volumes by what is ticked × the cases, Thermal by the sections in
+  scope, Structure loads by load cases × structures.
+- b. Thermal rating in the numbered sections, with a circuit, route and
+  section picker in Scope; the clearance-limit search takes the sections
+  in scope only (`ohl_thermal::limit::clearance_limits_of`: each section
+  was searched on its own already, so the others are only skipped). Its
+  scope is kept for the session, not yet in the project.
+- c. Structure loads: Setup and Results tabs, *1 What it checks* (with a
+  drawing) and *2 Scope*: the load cases ticked (only they are solved)
+  and the structures ticked (their loads kept).
+- d. The shared tick list (`tick_list`, used by Safety volumes and the
+  scope menus) got the span table's handling: unticked rows greyed, press
+  and drag across rows to flip them, shift-click a range, its height
+  dragged. A Safety volumes row clicked selects the volume's first span
+  and turns the 3D view onto the volume.
+- e. Vegetation: the grow-in and fall-in values (clearance, growth,
+  buffer, allowance) under *3 Rules*, their drawings unchanged; wire
+  positions and search under *4 Model*.
+- f. Drawings in *How it is computed* for Wire tensions, String checks,
+  Internal clearances, Galloping, As-built wires, Thermal rating (two)
+  and Structure loads.
+- g. Line parameters' empty R, X and B on the synthetic example were no
+  calculation gap: its circuits have one and two phases, and sequence
+  values need three. Said now, in the notes and above the table.
+- The electric and magnetic field theory pages reworked (owner: "clearly
+  explain the parameters, how it works and the choices made"): a table of
+  every setting (default, effect on results and time), the steps, the
+  choices with conservative or not, eight new illustrations. The Electric
+  field window's help texts still spoke of the span's mean cross-section
+  and a plane under each point: corrected to the stretches and the tiled
+  floor.
+
 **The field windows solve their weather case; one warning for sections
 left out (owner, 2026-10-31)**
 

@@ -294,6 +294,11 @@ impl StringChecksWindow {
                     .why_not_run()
                     .or_else(|| self.scope.why_not(&model.line));
                 let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
+                let rule_cases = model
+                    .cases
+                    .iter()
+                    .filter(|c| self.rules.iter().any(|r| r.applies(&c.case.name)))
+                    .count();
                 let findings = match &self.job.result {
                     Some(Ok(r)) => Some(r.report.failures().count()),
                     _ => None,
@@ -323,6 +328,12 @@ impl StringChecksWindow {
                              Uplift: a suspension string fails when it goes slack, or is pushed \
                              beyond the compression it may take. No limit is built in: they are \
                              the strings' own and the rules'.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            "string-checks-window",
+                            "The wires solved in each weather case of the rules; per string its axial force, its swing across and along the line, and whether it goes slack.",
+                            help::string_check,
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
@@ -364,6 +375,7 @@ impl StringChecksWindow {
                         why.clone(),
                         "Solve each weather case of the rules and check every string",
                         Some(scope_words),
+                        Some(check_ui::scope_plan(&model.line, &self.scope, rule_cases)),
                         |ui| {
                             changed |= overrides.ui(ui);
                         },

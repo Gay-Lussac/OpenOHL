@@ -416,7 +416,7 @@ fn stop_cancels_a_run_and_a_new_result_opens_results() {
             let tab = crate::check_ui::tabs(ui, "stop-test", None, s.0.generation, false);
             s.2 = tab == crate::check_ui::Tab::Results;
             s.0.poll();
-            if crate::check_ui::job_footer(ui, &mut s.0, None, "run", None, |_| {}) {
+            if crate::check_ui::job_footer(ui, &mut s.0, None, "run", None, None, |_| {}) {
                 let token = s.0.cancel_token();
                 s.1 = Some(token.clone());
                 let ctx = ui.ctx().clone();

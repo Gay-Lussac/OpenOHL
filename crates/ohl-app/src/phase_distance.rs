@@ -1432,6 +1432,10 @@ impl PhaseDistanceWindow {
                 });
             }
         }
+        // The whole line solved in each case ticked; the pairs of the
+        // scope's sections measured.
+        let scope_words = check_ui::scope_words(&model.line, &self.scope, false);
+        let plan = check_ui::scope_plan(&model.line, &self.scope, self.cases.len());
         help::footer(ui, page, |ui| {
             let overrides = &mut self.overrides;
             if check_ui::job_footer(
@@ -1439,7 +1443,8 @@ impl PhaseDistanceWindow {
                 &mut self.job,
                 why.clone(),
                 "Compute the distances between the conductors with the plugin's values",
-                None,
+                Some(scope_words),
+                Some(plan),
                 |ui| {
                     overrides.ui(ui);
                 },

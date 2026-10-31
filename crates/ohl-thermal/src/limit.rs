@@ -323,6 +323,26 @@ pub fn clearance_limits(
     budget: &Budget,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Vec<SectionLimit>, String> {
+    clearance_limits_of(
+        line, library, base, rules, targets, options, None, budget, progress,
+    )
+}
+
+/// [`clearance_limits`] of the sections in `only` (`None`: every one;
+/// the Thermal rating window's scope, 2026-10-31): each section is
+/// searched on its own, so the others are only skipped.
+#[allow(clippy::too_many_arguments)]
+pub fn clearance_limits_of(
+    line: &Line,
+    library: &Library,
+    base: &WeatherCase,
+    rules: &[Rule],
+    targets: &mut Targets,
+    options: &LimitOptions,
+    only: Option<&std::collections::BTreeSet<String>>,
+    budget: &Budget,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<Vec<SectionLimit>, String> {
     options.validate()?;
     let (rules, classes) = chosen_rules(rules, targets.point_classes, &base.name);
     if rules.is_empty() {
@@ -358,9 +378,14 @@ pub fn clearance_limits(
         checked_any: false,
     };
     let mut run = budget.start();
-    let n = line.sections.len();
+    let sections: Vec<&ohl_line::Section> = line
+        .sections
+        .iter()
+        .filter(|s| only.is_none_or(|o| o.contains(&s.id)))
+        .collect();
+    let n = sections.len();
     let mut out = Vec::with_capacity(n);
-    for (k, section) in line.sections.iter().enumerate() {
+    for (k, section) in sections.into_iter().enumerate() {
         progress(k, n);
         let limit = search.section(section, options, &mut run);
         if !search.checked_any && limit.result.is_ok() {

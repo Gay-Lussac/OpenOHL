@@ -198,6 +198,16 @@ impl WireFitWindow {
             .then(|| check_ui::NO_CLOUD.to_owned())
             .or_else(|| self.scope.why_not(&model.line));
         let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
+        // About six section solves a span, each read against the cloud.
+        let (sections, spans) = check_ui::scope_counts(&model.line, &self.scope);
+        let plan = check_ui::Plan::new(
+            format!(
+                "{} ({}) fitted to the point cloud",
+                check_ui::count(sections, "section"),
+                check_ui::count(spans, "span")
+            ),
+            spans,
+        );
         let findings = match &self.job.result {
             Some(Ok(r)) => Some(r.iter().filter(|r| matches!(r.fit, Some(Ok(_)))).count()),
             _ => None,
@@ -231,6 +241,12 @@ impl WireFitWindow {
                             "The conductor temperature at the survey from the model's sags; \
                              the difference of the sag and of the mid-span height between the \
                              fitted wire and the model.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            "wirefit-window",
+                            "Per span, a catenary fitted to the points of the wire classes near it (least squares, outliers dropped); the model searched for the temperature at which it hangs the same.",
+                            help::wire_fit,
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
@@ -327,6 +343,7 @@ impl WireFitWindow {
                         why.clone(),
                         "Read the wire points and fit a catenary in every span",
                         Some(scope_words),
+                        Some(plan),
                         |_| {},
                     );
                 });

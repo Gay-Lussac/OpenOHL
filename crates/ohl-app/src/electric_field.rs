@@ -1075,11 +1075,12 @@ impl ElectricFieldWindow {
                             ui,
                             "The electric field strength (kV/m, the rms of the vector) of the \
                              line's voltages, from the wires where they hang in a weather case.",
-                            "The charge per metre of every wire from its span's mean cross-section \
-                             (q = inv(P) · V, the line parameters' potential coefficients); 3D from the \
-                             solved wires and jumpers as pieces of uniform charge with their \
-                             images in the ground under each point, or 2D (infinite line charges \
-                             over level ground). The structures, trees and buildings are not \
+                            "The charge per metre of every wire from the cross-section where it is \
+                             (q = inv(P) · V, the line parameters' potential coefficients; 3D: each \
+                             span in 16 stretches); 3D from the solved wires and jumpers as pieces \
+                             of uniform charge over the ground as a tiled conducting floor (or a \
+                             plane under each point, 4 Model), the structures' steel optional; 2D: \
+                             infinite line charges over level ground. Trees and buildings are not \
                              modelled. A limit is yours to give; none is built in. Built, in \
                              active development, not approved yet.",
                         );
@@ -1259,8 +1260,8 @@ impl ElectricFieldWindow {
                     ui.selectable_value(&mut self.two_d, false, "3D")
                         .on_hover_text(
                             "The wires as solved (sag, line angles, the line's length) and the \
-                         jumpers as pieces of uniform charge, the ground under each point a \
-                         plane with the charges' images in it",
+                         jumpers as pieces of uniform charge over the ground (a tiled \
+                         conducting floor by default, 4 Model)",
                         );
                     ui.selectable_value(&mut self.two_d, true, "2D")
                         .on_hover_text(
@@ -1281,7 +1282,8 @@ impl ElectricFieldWindow {
                         "3D: every point sums every piece of charge twice (the charges and their \
                          images): the time below (4 Model)."
                     },
-                    "Both take the same charges per wire (the span's mean cross-section). 3D \
+                    "Both take the charges of the cross-section where they are (3D: 16 \
+                     stretches per span). 3D \
                      sees what the span does along it; 2D assumes every span infinitely long \
                      and straight, its ground level.",
                 );

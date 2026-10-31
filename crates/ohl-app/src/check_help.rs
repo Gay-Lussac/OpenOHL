@@ -133,7 +133,36 @@ pub fn list<R>(
 ) -> R {
     let height = list_height(ui.ctx(), id, default);
     let out = scroll.max_height(height).show(ui, add);
-    let (inner, inner_width) = (out.inner, out.inner_rect.width());
+    list_handle(ui, id, height, out.inner_rect.width());
+    out.inner
+}
+
+/// A [`list`] of `rows` rows `row` px high, only those in view laid out
+/// (hundreds stay quick): `add` gets the range in view.
+pub fn list_rows(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug + Copy,
+    default: f32,
+    scroll: egui::ScrollArea,
+    row: f32,
+    rows: usize,
+    add: impl FnOnce(&mut egui::Ui, std::ops::Range<usize>),
+) {
+    let height = list_height(ui.ctx(), id, default);
+    let out = scroll
+        .max_height(height)
+        .min_scrolled_height(height)
+        .show_rows(ui, row, rows, add);
+    list_handle(ui, id, height, out.inner_rect.width());
+}
+
+/// The grip under a [`list`] dragging its height.
+fn list_handle(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug + Copy,
+    height: f32,
+    inner_width: f32,
+) {
     // The handle: a short grip across, the cursor saying it resizes; as
     // wide as the list (not the space left: a window sized to its content
     // would widen itself every frame and move its buttons).
@@ -166,7 +195,6 @@ pub fn list<R>(
             ui.ctx().request_repaint();
         }
     }
-    inner
 }
 
 /// The memory key of a check window's footer height.
@@ -1230,4 +1258,414 @@ mod tests {
             assert!(h.query_by_label("0 m").is_some());
         }
     }
+}
+
+/// The heat balance of a conductor (Thermal rating): the current's Joule
+/// heat and the sun heat it; the wind (convection) and its radiation cool
+/// it. The ampacity is the current at which they balance at the maximum
+/// temperature.
+pub fn heat_balance(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: heat balance",
+        "Seen along the wire: Joule heat I²R and the sun's heat in; convection (the wind) and \
+         radiation out. The ampacity is the current I for which heat in = heat out at the \
+         maximum conductor temperature.",
+    );
+    let c = egui::pos2(r.center().x + 6.0, r.center().y + 4.0);
+    p.circle_filled(c, 11.0, ink.wire);
+    // Dark on the wire's colour, in either theme.
+    text(&p, c + egui::vec2(-7.0, 0.0), "I²R", egui::Color32::BLACK);
+    let s = egui::Stroke::new(1.3, ink.key);
+    // The sun, top left, heating it.
+    let sun = egui::pos2(r.left() + 16.0, r.top() + 14.0);
+    p.circle_stroke(sun, 5.0, egui::Stroke::new(1.0, ink.key));
+    p.arrow(sun + egui::vec2(6.0, 4.0), (c - sun) * 0.55, s);
+    text(&p, sun + egui::vec2(9.0, -6.0), "solar", ink.key);
+    // The wind, from the left, carrying heat away to the right.
+    let cool = egui::Stroke::new(1.3, ink.line);
+    for dy in [-5.0, 5.0] {
+        p.line_segment(
+            [
+                egui::pos2(r.left() + 6.0, c.y + dy),
+                egui::pos2(c.x - 16.0, c.y + dy),
+            ],
+            egui::Stroke::new(1.0, ink.faint),
+        );
+    }
+    p.arrow(c + egui::vec2(14.0, 0.0), egui::vec2(26.0, 0.0), cool);
+    text(&p, c + egui::vec2(16.0, -8.0), "convection", ink.line);
+    p.arrow(c + egui::vec2(9.0, 9.0), egui::vec2(16.0, 14.0), cool);
+    text(&p, c + egui::vec2(12.0, 26.0), "radiation", ink.line);
+    text(
+        &p,
+        egui::pos2(r.left() + 4.0, r.bottom() - 8.0),
+        "wind",
+        ink.faint,
+    );
+}
+
+/// The clearance-limited temperature (Thermal rating): the span sags as
+/// the wire heats; the limit is the temperature at which its lowest point
+/// reaches the clearance the rules ask above the ground.
+pub fn clearance_limit(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: clearance-limited temperature",
+        "The section is solved again at higher temperatures in the weather case heated; the \
+         limit is the highest temperature at which the ground and point rules are still met \
+         (found by a scan, then halving, to the tolerance).",
+    );
+    let (a, b) = (
+        egui::pos2(r.left() + 10.0, r.top() + 10.0),
+        egui::pos2(r.right() - 10.0, r.top() + 10.0),
+    );
+    p.line_segment(
+        [a, a + egui::vec2(0.0, 52.0)],
+        egui::Stroke::new(1.5, ink.line),
+    );
+    p.line_segment(
+        [b, b + egui::vec2(0.0, 52.0)],
+        egui::Stroke::new(1.5, ink.line),
+    );
+    let ground = r.bottom() - 10.0;
+    p.line_segment(
+        [
+            egui::pos2(r.left() + 4.0, ground),
+            egui::pos2(r.right() - 4.0, ground),
+        ],
+        egui::Stroke::new(1.0, ink.line),
+    );
+    let rule = ground - 14.0;
+    dashed(
+        &p,
+        egui::pos2(r.left() + 4.0, rule),
+        egui::pos2(r.right() - 4.0, rule),
+        ink.key,
+    );
+    text(
+        &p,
+        egui::pos2(r.right() - 34.0, rule + 7.0),
+        "rule",
+        ink.key,
+    );
+    let sag = |depth: f32| -> Vec<egui::Pos2> {
+        (0..=24)
+            .map(|k| {
+                let t = k as f32 / 24.0;
+                egui::pos2(a.x + (b.x - a.x) * t, a.y + 4.0 * depth * t * (1.0 - t))
+            })
+            .collect()
+    };
+    p.add(egui::Shape::line(
+        sag(22.0),
+        egui::Stroke::new(1.0, ink.faint),
+    ));
+    p.add(egui::Shape::line(
+        sag(rule - a.y),
+        egui::Stroke::new(1.5, ink.wire),
+    ));
+    text(
+        &p,
+        egui::pos2(r.center().x - 30.0, a.y + 16.0),
+        "cold",
+        ink.faint,
+    );
+    text(
+        &p,
+        egui::pos2(r.left() + 16.0, rule - 8.0),
+        "at the limit",
+        ink.wire,
+    );
+}
+
+/// The loads on a structure (Structure loads): a tower, a string hanging
+/// from a structure point, the wire's pull on both sides; at the point,
+/// the load split into T (across the line), L (along it) and V (down).
+pub fn structure_loads(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 100.0),
+        "drawing: structure loads",
+        "At each structure point: the forces of the strings hanging from it, from the wires \
+         solved in the load case's weather case, split into T across the line (the bisector at \
+         an angle), L along it and V down, then times the load case's factors.",
+    );
+    let base = egui::pos2(r.left() + 46.0, r.bottom() - 6.0);
+    let top = egui::pos2(base.x, r.top() + 10.0);
+    let s = egui::Stroke::new(1.5, ink.line);
+    // The tower: two legs and a cross-arm.
+    p.line_segment([base + egui::vec2(-12.0, 0.0), top], s);
+    p.line_segment([base + egui::vec2(12.0, 0.0), top], s);
+    let arm = egui::pos2(top.x, top.y + 14.0);
+    let point = egui::pos2(arm.x + 30.0, arm.y);
+    p.line_segment([arm + egui::vec2(-20.0, 0.0), point], s);
+    p.circle_filled(point, 2.5, ink.key);
+    // The string and the wire through its clamp.
+    let clamp = point + egui::vec2(0.0, 16.0);
+    p.line_segment([point, clamp], egui::Stroke::new(1.2, ink.faint));
+    p.line_segment(
+        [clamp + egui::vec2(-38.0, 8.0), clamp],
+        egui::Stroke::new(1.3, ink.wire),
+    );
+    p.line_segment(
+        [clamp, clamp + egui::vec2(38.0, 10.0)],
+        egui::Stroke::new(1.3, ink.wire),
+    );
+    // The load at the point: V down, T across (drawn to the right), L
+    // along (drawn into the page, slanted).
+    let k = egui::Stroke::new(1.4, ink.key);
+    let at = egui::pos2(r.right() - 46.0, r.top() + 30.0);
+    p.circle_filled(at, 2.5, ink.key);
+    p.arrow(at, egui::vec2(0.0, 26.0), k);
+    text(&p, at + egui::vec2(4.0, 30.0), "V", ink.key);
+    p.arrow(at, egui::vec2(28.0, 0.0), k);
+    text(&p, at + egui::vec2(30.0, 0.0), "T", ink.key);
+    p.arrow(at, egui::vec2(-16.0, -14.0), k);
+    text(&p, at + egui::vec2(-24.0, -18.0), "L", ink.key);
+    dashed(&p, point, at, ink.faint);
+}
+
+/// Points of a hanging wire from `a` to `b` sagging `depth` px at its
+/// middle (a parabola, as the drawings show a span).
+fn sag_line(a: egui::Pos2, b: egui::Pos2, depth: f32) -> Vec<egui::Pos2> {
+    (0..=24)
+        .map(|k| {
+            let t = k as f32 / 24.0;
+            egui::pos2(
+                a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t + 4.0 * depth * t * (1.0 - t),
+            )
+        })
+        .collect()
+}
+
+/// The tension check (Wire tensions): a span between two supports of
+/// different heights, its tension largest at the higher support; the
+/// horizontal tension the same all along; the rule's factor × RTS.
+pub fn tension_check(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: wire tension",
+        "The tension along a span is largest at its higher support (T); its horizontal part H \
+         is the same all along. The rule checks T (or H, as it says) against its factor × the \
+         wire type's rated tensile strength.",
+    );
+    let a = egui::pos2(r.left() + 18.0, r.top() + 34.0);
+    let b = egui::pos2(r.right() - 22.0, r.top() + 14.0);
+    let s = egui::Stroke::new(1.5, ink.line);
+    p.line_segment([a, egui::pos2(a.x, r.bottom() - 6.0)], s);
+    p.line_segment([b, egui::pos2(b.x, r.bottom() - 6.0)], s);
+    p.add(egui::Shape::line(
+        sag_line(a, b, 30.0),
+        egui::Stroke::new(1.5, ink.wire),
+    ));
+    let k = egui::Stroke::new(1.4, ink.key);
+    // At the higher support: the tension along the wire, and H.
+    p.arrow(b, egui::vec2(-28.0, 18.0), k);
+    text(&p, b + egui::vec2(-36.0, 24.0), "T", ink.key);
+    p.arrow(b, egui::vec2(-28.0, 0.0), egui::Stroke::new(1.0, ink.faint));
+    text(&p, b + egui::vec2(-38.0, -6.0), "H", ink.faint);
+    text(
+        &p,
+        egui::pos2(r.left() + 28.0, r.bottom() - 10.0),
+        "T ≤ factor × RTS",
+        ink.key,
+    );
+}
+
+/// The string check (String checks): a suspension string swung by the
+/// wind, its axial force F against its maximum load and its swing angle
+/// against its limit; a string pulled up by the wire goes slack (uplift).
+pub fn string_check(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: string load, swing and uplift",
+        "Each string as solved: its axial force F against its maximum load; its swing φ from \
+         straight down against its limits; a suspension string whose wire pulls it up goes \
+         slack (uplift) and fails.",
+    );
+    let s = egui::Stroke::new(1.5, ink.line);
+    // A cross-arm with the swung string.
+    let top = egui::pos2(r.left() + 46.0, r.top() + 12.0);
+    p.line_segment(
+        [top + egui::vec2(-34.0, 0.0), top + egui::vec2(24.0, 0.0)],
+        s,
+    );
+    let down = top + egui::vec2(0.0, 52.0);
+    dashed(&p, top, down, ink.faint);
+    let clamp = top + egui::vec2(24.0, 46.0);
+    p.line_segment([top, clamp], egui::Stroke::new(2.0, ink.wire));
+    p.circle_filled(clamp, 2.5, ink.wire);
+    text(&p, top + egui::vec2(4.0, 30.0), "φ", ink.key);
+    p.arrow(clamp, (top - clamp) * 0.45, egui::Stroke::new(1.4, ink.key));
+    text(&p, clamp + egui::vec2(4.0, -14.0), "F", ink.key);
+    text(
+        &p,
+        egui::pos2(r.left() + 6.0, r.bottom() - 8.0),
+        "wind",
+        ink.faint,
+    );
+    // Uplift: the wire lower on both sides pulls the clamp up, the string
+    // slack.
+    let top2 = egui::pos2(r.right() - 36.0, r.top() + 34.0);
+    p.line_segment(
+        [top2 + egui::vec2(-14.0, 0.0), top2 + egui::vec2(14.0, 0.0)],
+        s,
+    );
+    let clamp2 = top2 + egui::vec2(0.0, -10.0);
+    p.add(egui::Shape::line(
+        vec![
+            top2,
+            top2 + egui::vec2(3.0, -4.0),
+            top2 + egui::vec2(-2.0, -7.0),
+            clamp2,
+        ],
+        egui::Stroke::new(1.2, ink.key),
+    ));
+    p.line_segment(
+        [clamp2 + egui::vec2(-30.0, 26.0), clamp2],
+        egui::Stroke::new(1.3, ink.wire),
+    );
+    p.line_segment(
+        [clamp2, clamp2 + egui::vec2(30.0, 26.0)],
+        egui::Stroke::new(1.3, ink.wire),
+    );
+    text(&p, top2 + egui::vec2(-16.0, 24.0), "uplift", ink.key);
+}
+
+/// The internal clearance (Internal clearances): a live part near a
+/// member of the structure's body, the distance to the member's surface
+/// against the rule's distance at the part's voltage.
+pub fn internal_clearance(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: internal clearance",
+        "At a structure with a body: from each live part (conductor, jumper, a string's live \
+         end) to the surface of every member, against the rule's distance at the part's voltage \
+         (the dashed circle). Where a member's section is unknown, to its centre line.",
+    );
+    let s = egui::Stroke::new(1.5, ink.line);
+    // A lattice: two legs and bracing.
+    let (l, rr) = (r.left() + 30.0, r.left() + 70.0);
+    let (t, b) = (r.top() + 8.0, r.bottom() - 6.0);
+    p.line_segment([egui::pos2(l, b), egui::pos2(l + 8.0, t)], s);
+    p.line_segment([egui::pos2(rr, b), egui::pos2(rr - 8.0, t)], s);
+    for k in 0..3 {
+        let y0 = b - k as f32 * 24.0;
+        let y1 = y0 - 24.0;
+        p.line_segment(
+            [
+                egui::pos2(l + 2.0 + k as f32 * 2.6, y0),
+                egui::pos2(rr - 4.6 - k as f32 * 2.6, y1),
+            ],
+            egui::Stroke::new(1.0, ink.line),
+        );
+    }
+    // A cross-arm member, drawn with its width.
+    let arm_y = r.top() + 22.0;
+    p.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(rr - 8.0, arm_y - 2.5),
+            egui::pos2(r.right() - 20.0, arm_y + 2.5),
+        ),
+        1.0,
+        ink.line,
+    );
+    // The live part (a jumper's point) below it.
+    let live = egui::pos2(r.right() - 58.0, arm_y + 34.0);
+    p.circle_filled(live, 3.0, ink.wire);
+    p.circle_stroke(live, 24.0, egui::Stroke::new(1.0, ink.faint));
+    p.arrow(
+        live,
+        egui::vec2(0.0, arm_y + 2.5 - live.y),
+        egui::Stroke::new(1.4, ink.key),
+    );
+    text(&p, live + egui::vec2(4.0, -14.0), "d", ink.key);
+    text(&p, live + egui::vec2(14.0, 18.0), "rule", ink.faint);
+}
+
+/// The galloping ellipses (Galloping): around each wire an ellipse sized
+/// from its sag; the distance between two wires' ellipses against the
+/// file's requirement.
+pub fn galloping_ellipses(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: galloping ellipses",
+        "Seen along the line at mid-span: around each wire an ellipse whose axes come from its \
+         sag by the method's coefficients (often tilted, offset upwards); the clearance is the \
+         shortest distance between two wires' ellipses.",
+    );
+    let w1 = egui::pos2(r.left() + 52.0, r.top() + 30.0);
+    let w2 = egui::pos2(r.left() + 120.0, r.top() + 58.0);
+    let ellipse = |c: egui::Pos2, a: f32, b: f32| -> Vec<egui::Pos2> {
+        (0..=40)
+            .map(|k| {
+                let t = k as f32 / 40.0 * std::f32::consts::TAU;
+                egui::pos2(c.x + a * t.cos(), c.y - 6.0 + b * t.sin())
+            })
+            .collect()
+    };
+    for c in [w1, w2] {
+        p.add(egui::Shape::closed_line(
+            ellipse(c, 14.0, 22.0),
+            egui::Stroke::new(1.2, ink.faint),
+        ));
+        p.circle_filled(c, 3.0, ink.wire);
+    }
+    // The gap between them.
+    let a = egui::pos2(w1.x + 12.0, w1.y + 4.0);
+    let b = egui::pos2(w2.x - 12.0, w2.y - 16.0);
+    p.line_segment([a, b], egui::Stroke::new(1.4, ink.key));
+    text(
+        &p,
+        egui::pos2((a.x + b.x) / 2.0 + 4.0, (a.y + b.y) / 2.0 - 4.0),
+        "c",
+        ink.key,
+    );
+    text(&p, w1 + egui::vec2(-46.0, -26.0), "b from sag", ink.faint);
+}
+
+/// The as-built fit (As-built wires): the LiDAR points of a wire, the
+/// catenary fitted to them, and the model's wire; the sag difference at
+/// mid-span.
+pub fn wire_fit(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: wire fitted to the points",
+        "The points of the wire classes near a span, a catenary fitted to them (solid) and the \
+         model's wire in still air (dashed); Δ is the difference of the sags; the conductor \
+         temperature at the survey is the one at which the model hangs as the fitted wire.",
+    );
+    let a = egui::pos2(r.left() + 12.0, r.top() + 14.0);
+    let b = egui::pos2(r.right() - 12.0, r.top() + 18.0);
+    let fit = sag_line(a, b, 46.0);
+    // Points scattered along the fitted wire.
+    for (k, q) in fit.iter().enumerate().skip(1).step_by(2) {
+        let j = ((k * 37) % 7) as f32 - 3.0;
+        p.circle_filled(*q + egui::vec2(0.0, j * 0.7), 1.4, ink.faint);
+    }
+    p.add(egui::Shape::line(
+        fit.clone(),
+        egui::Stroke::new(1.4, ink.wire),
+    ));
+    let model = sag_line(a, b, 36.0);
+    p.extend(egui::Shape::dashed_line(
+        &model,
+        egui::Stroke::new(1.0, ink.line),
+        3.0,
+        2.0,
+    ));
+    let mid = fit[12];
+    let mm = model[12];
+    p.line_segment([mm, mid], egui::Stroke::new(1.4, ink.key));
+    text(&p, mid + egui::vec2(4.0, -4.0), "Δ", ink.key);
+    text(&p, mm + egui::vec2(10.0, -10.0), "model", ink.line);
 }

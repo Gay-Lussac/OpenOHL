@@ -1444,28 +1444,132 @@ pub fn run_footer(
     action
 }
 
+/// What a run will compute, said before Run (owner, 2026-10-31, the
+/// check pages' guidelines: "4 spans · 3 cases — about 25 s"): the words,
+/// and how much it computes (objects × cases, counted the same way from
+/// run to run) for the time estimated from the last run.
+#[derive(Debug, Clone, Default)]
+pub struct Plan {
+    pub what: String,
+    pub units: usize,
+}
+
+impl Plan {
+    /// `what`, computing `units`.
+    pub fn new(what: impl Into<String>, units: usize) -> Self {
+        Self {
+            what: what.into(),
+            units,
+        }
+    }
+
+    /// The footer's line: what, about how long (from the last run of
+    /// `job`, else measured on the first), and the last run's time.
+    pub fn words<T: Send + 'static>(&self, job: &crate::job::Job<T>) -> String {
+        let time = match job.estimate(self.units) {
+            Some(s) => format!(" — {} (from the last run)", plan_duration(s)),
+            None if self.units > 0 => " — time measured on the first run".into(),
+            None => String::new(),
+        };
+        let last = job
+            .took
+            .map(|t| format!(" · last run {:.1} s", t.as_secs_f64()))
+            .unwrap_or_default();
+        format!("{}{time}{last}", self.what)
+    }
+}
+
+/// The plan of a check run on `scope` in `cases` weather cases: "3
+/// sections (12 spans) in 2 cases". The line is solved whole in each case
+/// (a scope only narrows what is checked), so the time goes with the
+/// line's spans × the cases.
+pub fn scope_plan(line: &ohl_line::Line, scope: &Scope, cases: usize) -> Plan {
+    let (sections, spans) = scope_counts(line, scope);
+    let all: usize = line
+        .sections
+        .iter()
+        .map(|s| s.points.len().saturating_sub(1))
+        .sum();
+    Plan::new(
+        format!(
+            "{} ({}) in {}",
+            count(sections, "section"),
+            count(spans, "span"),
+            count(cases, "case")
+        ),
+        all.max(1) * cases,
+    )
+}
+
+/// The sections and their spans `scope` takes of `line`.
+pub fn scope_counts(line: &ohl_line::Line, scope: &Scope) -> (usize, usize) {
+    let ids = scope.sections_of(line);
+    let spans = line
+        .sections
+        .iter()
+        .filter(|s| ids.contains(&s.id))
+        .map(|s| s.points.len().saturating_sub(1))
+        .sum();
+    (ids.len(), spans)
+}
+
+/// "about 12 s", "about 3.5 min".
+pub fn plan_duration(s: f64) -> String {
+    if s < 1.0 {
+        "under a second".into()
+    } else if s < 90.0 {
+        format!("about {s:.0} s")
+    } else if s < 5400.0 {
+        format!("about {:.1} min", s / 60.0)
+    } else {
+        format!("about {:.1} h", s / 3600.0)
+    }
+}
+
+/// `n` `one`s, the plural with an s ("1 span", "4 spans").
+pub fn count(n: usize, one: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else if let Some(stem) = one.strip_suffix('y') {
+        format!("{n} {stem}ies")
+    } else if one.ends_with('s') || one.ends_with("sh") || one.ends_with("ch") {
+        format!("{n} {one}es")
+    } else {
+        format!("{n} {one}s")
+    }
+}
+
 /// The footer of a window computed by a [`crate::job::Job`]: its
 /// progress while it runs (Stop discards the run: the previous results
-/// stay), else how long the last run took.
+/// stay), else what a run will compute and about how long it takes
+/// (`plan`), or how long the last run took.
 pub fn job_footer<T: Send + 'static>(
     ui: &mut egui::Ui,
     job: &mut crate::job::Job<T>,
     why_not: Option<String>,
     hover: &str,
     scope: Option<String>,
+    plan: Option<Plan>,
     extra: impl FnOnce(&mut egui::Ui),
 ) -> bool {
+    let units = plan.as_ref().map_or(0, |p| p.units);
     let f = RunFooter {
         running: job.elapsed().map(Progress::elapsed),
         why_not,
         hover,
         scope,
-        info: job
-            .took
-            .map(|t| format!("computed in {:.1} s", t.as_secs_f64())),
+        info: match &plan {
+            Some(p) => Some(p.words(job)),
+            None => job
+                .took
+                .map(|t| format!("computed in {:.1} s", t.as_secs_f64())),
+        },
     };
     match run_footer(ui, f, extra) {
-        Action::Run => true,
+        Action::Run => {
+            job.run_units = units;
+            true
+        }
         Action::Stop => {
             job.stop();
             false

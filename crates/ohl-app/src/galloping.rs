@@ -196,6 +196,16 @@ impl GallopingWindow {
             .map_or(Some("the model has no weather case".to_owned()), |_| None)
             .or_else(|| self.scope.why_not(&model.line));
         let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
+        // The case is solved already: the time goes with the spans checked.
+        let (sections, spans) = check_ui::scope_counts(&model.line, &self.scope);
+        let plan = check_ui::Plan::new(
+            format!(
+                "{} ({}), the ellipses of each span",
+                check_ui::count(sections, "section"),
+                check_ui::count(spans, "span")
+            ),
+            spans,
+        );
         let findings = match &self.job.result {
             Some(Ok(r)) => Some(r.rows.iter().filter(|r| short(r)).count()),
             _ => None,
@@ -229,6 +239,12 @@ impl GallopingWindow {
                             "Each method of the parameter file sizes an ellipse around each wire \
                              from its sag in the weather case chosen; the distance between the \
                              ellipses of two wires is compared with the requirement of the file.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            "galloping-window",
+                            "The weather case's sags; per wire an ellipse by the method's coefficients; per pair of wires the shortest distance between their ellipses.",
+                            help::galloping_ellipses,
                         );
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
@@ -367,6 +383,7 @@ impl GallopingWindow {
                         "Size the ellipses of every span by the parameter file in the case chosen \
                          and check their clearances",
                         Some(scope_words),
+                        Some(plan),
                         |ui| {
                             overrides.ui(ui);
                         },

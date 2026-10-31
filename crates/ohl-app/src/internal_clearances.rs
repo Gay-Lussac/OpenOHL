@@ -470,6 +470,11 @@ impl InternalClearancesWindow {
                     .why_not_run()
                     .or_else(|| self.scope.why_not(&model.line));
                 let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
+                let rule_cases = model
+                    .cases
+                    .iter()
+                    .filter(|c| self.rules.iter().any(|r| r.applies(&c.case.name)))
+                    .count();
                 let findings = match &self.job.result {
                     Some(Ok(r)) => Some(r.report.failures().count()),
                     _ => None,
@@ -498,6 +503,12 @@ impl InternalClearancesWindow {
                              its centre line: on the unsafe side, said per row) and to the strings' \
                              grounded shapes, and compared with the rule's distance at the part's \
                              voltage. Earth wires and structures without a body are not checked.",
+                        );
+                        check_ui::how_computed(
+                            ui,
+                            "internal-clearances-window",
+                            "The wires and jumpers solved in each weather case of the rules; at each structure with a body, every live part measured to every member's surface.",
+                            help::internal_clearance,
                         );
                         // Which structures can be checked, before Run.
                         let (with, all) = bodies_count(model);
@@ -551,6 +562,7 @@ impl InternalClearancesWindow {
                         why.clone(),
                         "Solve each weather case of the rules and check every structure with a body",
                         Some(scope_words),
+                        Some(check_ui::scope_plan(&model.line, &self.scope, rule_cases)),
                         |ui| {
                             changed |= overrides.ui(ui);
                         },

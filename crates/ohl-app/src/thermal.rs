@@ -57,8 +57,13 @@ pub struct ThermalWindow {
     pub base_case: usize,
     /// Temperature range and resolution of the search.
     pub options: LimitOptions,
+    /// The sections rated and searched (2 Scope; owner, 2026-10-31).
+    pub scope: crate::check_ui::Scope,
     /// The last search's results (or why there are none).
     pub limits: Option<Outcome>,
+    /// How many sections the last search took (its time per section
+    /// estimates the next).
+    searched: usize,
     /// How long it took.
     pub took: Option<Duration>,
     job: Option<Job>,
@@ -83,7 +88,9 @@ impl Default for ThermalWindow {
             max_temperature: 80.0,
             base_case: 0,
             options: LimitOptions::default(),
+            scope: Default::default(),
             limits: None,
+            searched: 0,
             took: None,
             job: None,
             stamp: Default::default(),
@@ -167,7 +174,11 @@ impl ThermalWindow {
         let cancel = CancelToken::new();
         let (tx, rx) = channel();
         let (c, d, token) = (ctx.clone(), done.clone(), cancel.clone());
-        let sections = line.sections.len();
+        let only = self.scope.keeps(&model.line);
+        let sections = only
+            .as_ref()
+            .map_or(line.sections.len(), std::collections::BTreeSet::len);
+        self.searched = sections;
         self.stamp.started(model.revision());
         std::thread::spawn(move || {
             let r = (|| -> Outcome {
@@ -218,15 +229,16 @@ impl ThermalWindow {
                     point_classes: &classes,
                     points: (!points.is_empty()).then_some(&mut feed as _),
                 };
-                let budget = ohl_thermal::limit::default_budget(&options, line.sections.len())
-                    .cancel_token(token);
-                ohl_thermal::limit::clearance_limits(
+                let budget =
+                    ohl_thermal::limit::default_budget(&options, sections).cancel_token(token);
+                ohl_thermal::limit::clearance_limits_of(
                     &line,
                     &library,
                     &base,
                     &rules,
                     &mut targets,
                     &options,
+                    only.as_ref(),
                     &budget,
                     &mut |k, _| {
                         d.store(k, Ordering::Relaxed);
@@ -319,85 +331,151 @@ pub fn window(
     go
 }
 
-/// The Setup tab: the ambient cases, the method, the clearance-limit
-/// settings.
+/// The Setup tab in the check pages' sections (owner, 2026-10-31): 1 What
+/// it checks, 2 Scope (the sections, the ambient cases, the weather case
+/// heated), 3 What to compute (the ampacity's method and temperature, the
+/// clearance limit's range), 4 Model (the search's step and tolerance).
 fn body(ui: &mut egui::Ui, w: &mut ThermalWindow, model: &Model) {
-    ui.horizontal(|ui| {
-        ui.label("Ambient cases");
-        let name = w.file.as_ref().map_or("none".to_owned(), |p| {
-            p.file_name()
-                .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-        });
-        ui.label(egui::RichText::new(name).strong());
-        if ui
-            .button("Choose…")
-            .on_hover_text("An ambient case file (.ohlta): air, wind, sun")
-            .clicked()
-            && let Some(p) = rfd::FileDialog::new()
-                .add_filter(
-                    "Thermal ambient cases",
-                    &[ohl_thermal::ambient::AMBIENT_FILE_EXTENSION],
-                )
-                .pick_file()
-        {
-            w.choose(p);
-        }
+    use crate::check_ui;
+    check_ui::section(ui, 1, "What it checks", None);
+    help::explain(
+        ui,
+        "Per section: the current it may carry (ampacity) in each ambient case, and the hottest \
+         it may run before a ground or point clearance rule fails.",
+        "The ampacity is computed at once as the window is drawn (IEEE 738 or CIGRE TB 601 heat \
+         balance). The clearance-limited temperature is searched on Run: each section solved \
+         again at higher temperatures in the weather case heated, checked by the ground and \
+         point rules of the wire clearances' rule file. The model is not changed.",
+    );
+    check_ui::how_computed(
+        ui,
+        "thermal-window",
+        "Heat in (Joule I²R, the sun) equals heat out (convection by the wind, radiation) at the \
+         conductor temperature: solved for the current at the maximum temperature. The \
+         clearance limit: a scan upwards by the step, then halving to the tolerance; the \
+         ampacity is given again at the limit found.",
+        |ui| {
+            ui.horizontal_top(|ui| {
+                help::heat_balance(ui);
+                help::clearance_limit(ui);
+            });
+        },
+    );
+    ui.separator();
+
+    check_ui::section(ui, 2, "Scope", None);
+    let running = w.running();
+    ui.add_enabled_ui(!running, |ui| {
+        check_ui::ScopePicker::new("thermal-window", &model.line)
+            .wires(&mut w.scope, true)
+            .ui(ui);
     });
-    ui.horizontal(|ui| {
-        ui.label("Method");
-        egui::ComboBox::from_id_salt("thermal-method")
-            .selected_text(w.method.title())
-            .show_ui(ui, |ui| {
-                for m in Method::ALL {
-                    ui.selectable_value(&mut w.method, m, m.title());
+    egui::Grid::new("thermal-scope")
+        .num_columns(2)
+        .spacing([10.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Ambient cases");
+            ui.horizontal(|ui| {
+                let name = w.file.as_ref().map_or("none".to_owned(), |p| {
+                    p.file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+                });
+                ui.label(egui::RichText::new(name).strong());
+                if ui
+                    .button("Choose…")
+                    .on_hover_text("An ambient case file (.ohlta): air, wind, sun")
+                    .clicked()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .add_filter(
+                            "Thermal ambient cases",
+                            &[ohl_thermal::ambient::AMBIENT_FILE_EXTENSION],
+                        )
+                        .pick_file()
+                {
+                    w.choose(p);
                 }
             });
-        ui.label("Maximum temperature");
-        crate::style::field(
-            ui,
-            egui::DragValue::new(&mut w.max_temperature)
-                .range(-20.0..=300.0)
-                .suffix(" °C"),
-        );
-    });
-    let cases = match &w.ambient {
-        Some(Ok(set)) => set.cases.clone(),
+            ui.end_row();
+            ui.label("Weather case heated");
+            ui.add_enabled_ui(!running, |ui| {
+                let name = |k: usize| model.cases.get(k).map_or("", |c| c.case.name.as_str());
+                egui::ComboBox::from_id_salt("thermal-base")
+                    .selected_text(name(w.base_case))
+                    .show_ui(ui, |ui| {
+                        for k in 0..model.cases.len() {
+                            ui.selectable_value(&mut w.base_case, k, name(k));
+                        }
+                    });
+            });
+            ui.end_row();
+        });
+    match &w.ambient {
+        Some(Ok(set)) => {
+            for c in &set.cases {
+                ui.label(
+                    egui::RichText::new(format!("{}: {}", c.name, c.summary()))
+                        .small()
+                        .weak(),
+                );
+            }
+        }
         Some(Err(e)) => {
-            ui.colored_label(ui.visuals().error_fg_color, e);
-            Vec::new()
+            crate::menu::error_label(ui, e.as_str());
         }
         None => {
             ui.label(
-                egui::RichText::new("Choose an ambient case file (.ohlta).")
-                    .small()
-                    .weak(),
-            );
-            Vec::new()
-        }
-    };
-    for c in &cases {
-        ui.label(
-            egui::RichText::new(format!("{}: {}", c.name, c.summary()))
+                egui::RichText::new(
+                    "Choose an ambient case file (.ohlta): one ampacity column per case.",
+                )
                 .small()
                 .weak(),
-        );
+            );
+        }
     }
+    help::explain(
+        ui,
+        "The ampacity is given for each ambient case; the clearance limit is searched in the \
+         weather case heated (its wind and ice, the wire at other temperatures).",
+        "Ambient cases (air temperature, wind speed and direction, sun) only enter the heat \
+         balance. The weather case heated gives the loads on the wires while their temperature \
+         is raised: usually still air at the ambient temperature.",
+    );
     ui.separator();
 
-    // Clearance limit controls (fixed while a search runs).
-    let running = w.running();
-    ui.add_enabled_ui(!running, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Weather case heated");
-            let name = |k: usize| model.cases.get(k).map_or("", |c| c.case.name.as_str());
-            egui::ComboBox::from_id_salt("thermal-base")
-                .selected_text(name(w.base_case))
+    check_ui::section(ui, 3, "What to compute", None);
+    egui::Grid::new("thermal-compute")
+        .num_columns(2)
+        .spacing([10.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Method");
+            egui::ComboBox::from_id_salt("thermal-method")
+                .selected_text(w.method.title())
                 .show_ui(ui, |ui| {
-                    for k in 0..model.cases.len() {
-                        ui.selectable_value(&mut w.base_case, k, name(k));
+                    for m in Method::ALL {
+                        ui.selectable_value(&mut w.method, m, m.title());
                     }
                 });
-            ui.label("from");
+            ui.end_row();
+            ui.label("Maximum temperature");
+            crate::style::field(
+                ui,
+                egui::DragValue::new(&mut w.max_temperature)
+                    .range(-20.0..=300.0)
+                    .suffix(" °C"),
+            );
+            ui.end_row();
+        });
+    help::explain(
+        ui,
+        "The ampacity at this conductor temperature, per ambient case: shown at once (well under \
+         a millisecond per section).",
+        "IEEE 738 and CIGRE TB 601 differ mostly in convection at low wind and in the sun's \
+         heat; CIGRE TB 207 is the older CIGRE method. The heat terms of each value are on \
+         hover in the Results.",
+    );
+    ui.add_enabled_ui(!running, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Clearance limit searched from");
             crate::style::field(
                 ui,
                 egui::DragValue::new(&mut w.options.min_temperature)
@@ -411,7 +489,50 @@ fn body(ui: &mut egui::Ui, w: &mut ThermalWindow, model: &Model) {
                     .range(w.options.min_temperature + 1.0..=400.0)
                     .suffix(" °C"),
             );
-        })
+        });
+    });
+    help::explain(
+        ui,
+        "Run searches each section's clearance-limited temperature in this range; a limit \
+         beyond it is said as \"above\" or \"below\".",
+        "The rules are the ground and point rules of the wire clearances' rule file (Checks › \
+         Wire clearances › Rule file) that apply to the weather case heated. A wider range \
+         takes a few more solves per section.",
+    );
+    ui.separator();
+
+    check_ui::model_section(ui, "thermal-window", 4, |ui| {
+        ui.add_enabled_ui(!running, |ui| {
+            egui::Grid::new("thermal-model")
+                .num_columns(2)
+                .spacing([10.0, 4.0])
+                .show(ui, |ui| {
+                    ui.label("Scan step");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut w.options.scan_step)
+                            .range(0.5..=50.0)
+                            .suffix(" °C"),
+                    );
+                    ui.end_row();
+                    ui.label("Tolerance");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut w.options.tolerance)
+                            .range(0.05..=10.0)
+                            .suffix(" °C"),
+                    );
+                    ui.end_row();
+                });
+        });
+        help::explain(
+            ui,
+            "The search goes up by the step until a rule fails, then halves the bracket down to \
+             the tolerance: about range/step + log₂(step/tolerance) solves per section.",
+            "A smaller step finds a limit hidden between two steps (a rule failing then passing \
+             again is rare: a span lowering onto an obstacle and moving past it); a smaller \
+             tolerance adds one solve per halving.",
+        );
     });
 }
 
@@ -445,7 +566,13 @@ fn results(
         }
     };
     let k = table(ui, w, model, &cases)?;
-    let s = model.line.sections.get(k)?;
+    let ids = w.scope.sections_of(&model.line);
+    let s = model
+        .line
+        .sections
+        .iter()
+        .filter(|s| ids.contains(&s.id))
+        .nth(k)?;
     Some(
         (0..s.points.len().saturating_sub(1))
             .map(|span| crate::selection::Selection::Span {
@@ -456,46 +583,72 @@ fn results(
     )
 }
 
-/// The Run footer: the clearance-limited temperature of every section
-/// (Stop and the progress while it runs).
+/// The Run footer: the clearance-limited temperature of the sections in
+/// scope (Stop and the progress while it runs); before Run, what it will
+/// search and about how long (from the last search).
 fn run_ui(
     ui: &mut egui::Ui,
     w: &mut ThermalWindow,
     model: &Model,
     rules: Option<&Result<Vec<Rule>, String>>,
 ) {
+    use crate::check_ui;
     let usable = match rules {
         Some(Ok(r)) => Some(r.clone()),
         _ => None,
     };
-    if let Some(job) = &w.job {
+    let running = w.job.as_ref().map(|job| {
         let done = job.done.load(Ordering::Relaxed);
-        ui.add(
-            egui::ProgressBar::new(done as f32 / job.sections.max(1) as f32)
-                .text(format!("section {done} of {}", job.sections))
-                .desired_width(240.0),
-        );
-        if help::stop_button(ui, "Stop the search: the previous results stay") {
-            job.cancel.cancel();
+        let mut p = check_ui::Progress::of(job.started.elapsed(), done, job.sections);
+        p.text = format!("section {done} of {}; {}", job.sections, p.text);
+        p
+    });
+    let (sections, _) = check_ui::scope_counts(&model.line, &w.scope);
+    let estimate = match (w.took, &w.limits) {
+        (Some(t), Some(Ok(_))) if w.searched > 0 => Some(format!(
+            " — {} (from the last search)",
+            check_ui::plan_duration(t.as_secs_f64() * sections as f64 / w.searched as f64)
+        )),
+        _ => Some(" — time measured on the first search".to_owned()),
+    };
+    let last = w
+        .took
+        .map(|t| format!(" · last search {:.1} s", t.as_secs_f64()))
+        .unwrap_or_default();
+    let why = usable
+        .is_none()
+        .then(|| "choose a rule file: Checks › Wire clearances › Rule file".to_owned())
+        .or_else(|| w.scope.why_not(&model.line))
+        .or_else(|| {
+            model
+                .cases
+                .is_empty()
+                .then(|| "the model has no weather case".to_owned())
+        });
+    let f = check_ui::RunFooter {
+        running,
+        why_not: why,
+        hover: "The clearance-limited temperature: per section, the highest conductor \
+                temperature at which the ground and point rules of the rule file are met",
+        scope: Some(check_ui::scope_words(&model.line, &w.scope, true)),
+        info: Some(format!(
+            "clearance limit of {}{}{last}",
+            check_ui::count(sections, "section"),
+            estimate.unwrap_or_default()
+        )),
+    };
+    match check_ui::run_footer(ui, f, |_| {}) {
+        check_ui::Action::Run => {
+            if let Some(r) = usable {
+                w.start(model, r, ui.ctx());
+            }
         }
-    } else if help::run_button(
-        ui,
-        true,
-        "The clearance-limited temperature: per section, the highest conductor temperature at \
-         which the ground and point rules of the rule file are met (to 0.5 °C)",
-        usable
-            .is_none()
-            .then_some("Choose a rule file: Checks › Wire clearances › Rule file"),
-    ) && let Some(r) = usable
-    {
-        w.start(model, r, ui.ctx());
-    }
-    if let Some(t) = w.took {
-        ui.label(
-            egui::RichText::new(format!("computed in {:.1} s", t.as_secs_f64()))
-                .small()
-                .weak(),
-        );
+        check_ui::Action::Stop => {
+            if let Some(job) = &w.job {
+                job.cancel.cancel();
+            }
+        }
+        check_ui::Action::None => {}
     }
 }
 
@@ -520,6 +673,14 @@ fn table(
         Ok(Limit::AboveRange) => Some(w.options.max_temperature),
         _ => None,
     };
+    // The sections in scope, in the line's order.
+    let ids = w.scope.sections_of(&model.line);
+    let shown: Vec<&ohl_line::Section> = model
+        .line
+        .sections
+        .iter()
+        .filter(|s| ids.contains(&s.id))
+        .collect();
     // The ratings, made again only when what they come from changed.
     let key = {
         use std::hash::{Hash, Hasher};
@@ -528,7 +689,8 @@ fn table(
         format!("{:?}", w.method).hash(&mut h);
         w.max_temperature.to_bits().hash(&mut h);
         format!("{cases:?}").hash(&mut h);
-        for s in &model.line.sections {
+        for s in &shown {
+            s.id.hash(&mut h);
             by_section
                 .get(s.id.as_str())
                 .and_then(|l| limit_t(l))
@@ -539,9 +701,7 @@ fn table(
     };
     let mut kept = w.ratings.borrow_mut();
     if kept.as_ref().is_none_or(|(k, _)| *k != key) {
-        let rows = model
-            .line
-            .sections
+        let rows = shown
             .iter()
             .map(|s| {
                 let conductor = model
@@ -588,9 +748,7 @@ fn table(
             cols.push(Col::num(format!("{} at limit [A]", c.name)));
         }
     }
-    let rows: Vec<crate::check_ui::Row> = model
-        .line
-        .sections
+    let rows: Vec<crate::check_ui::Row> = shown
         .iter()
         .zip(ratings)
         .map(|(s, (at_max, at_limit))| {

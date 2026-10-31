@@ -544,6 +544,16 @@ pub fn line_parameters(
                 key.label()
             ));
         }
+        // Said, else its sequence columns are only empty (2026-10-31: the
+        // synthetic example's circuits have one and two phases).
+        if n != 3 {
+            let labels: Vec<&str> = phase_map.values().map(|v| v.0.as_str()).collect();
+            notes.push(format!(
+                "{}: {n} phase(s) modelled ({}); the sequence values need three phases, so they are left empty; its phase matrices are given",
+                key.label(),
+                labels.join(", ")
+            ));
+        }
         out_circuits.push(CircuitParameters {
             key: key.clone(),
             frequency_hz: *f,

@@ -185,6 +185,19 @@ pub struct LoadsPage {
     pub colour_structures: bool,
     /// What the results were computed from ([`crate::revision`]).
     stamp: crate::revision::Stamp,
+    /// The load cases computed, by name (`None`: every one; 2 Scope,
+    /// owner 2026-10-31).
+    pub cases_ticked: Option<Vec<String>>,
+    /// The structures computed, by id (`None`: every one).
+    pub structures: Option<Vec<String>>,
+    /// The load case file's case names, as last read (file, names or why
+    /// not).
+    case_names: Option<(std::path::PathBuf, Result<Vec<String>, String>)>,
+    /// Counts the answers taken (a new one opens the Results tab).
+    generation: u64,
+    /// How much the last run computed (cases × structures): its time
+    /// estimates the next.
+    units: (usize, usize),
 }
 
 impl LoadsPage {
@@ -254,6 +267,10 @@ impl LoadsPage {
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.structures);
         let filter = self.overrides.filter(model);
+        // The load cases and structures ticked (2 Scope).
+        let ticked = self.cases_ticked.clone();
+        let structures = self.structures.clone();
+        self.units.1 = self.plan_units(model);
         let (tx, rx) = channel();
         let c = ctx.clone();
         self.stamp.started(model.revision());
@@ -262,11 +279,19 @@ impl LoadsPage {
                 .clone()
                 .and_then(|_| ohl_loads::LoadCases::load(&path))
                 .and_then(|set| {
+                    let cases: Vec<_> = set
+                        .cases
+                        .into_iter()
+                        .filter(|c| crate::tick_list::ticked(&ticked, &c.name))
+                        .collect();
+                    if cases.is_empty() {
+                        return Err("no load case ticked (2 Scope)".to_owned());
+                    }
                     ohl_loads::structure_loads(
                         &line,
                         &library,
                         &weather,
-                        &set.cases,
+                        &cases,
                         &ohl_loads::default_budget(),
                     )
                 });
@@ -278,6 +303,12 @@ impl LoadsPage {
                         c.loads.retain(|l| on.contains(&l.structure));
                         c.missing.retain(|m| on.contains(&m.structure));
                     }
+                }
+                for c in loads.iter_mut() {
+                    c.loads
+                        .retain(|l| crate::tick_list::ticked(&structures, &l.structure));
+                    c.missing
+                        .retain(|m| crate::tick_list::ticked(&structures, &m.structure));
                 }
                 // The structure override: a load case at a structure with
                 // groups only when its weather case is in them.
@@ -330,6 +361,8 @@ impl LoadsPage {
             self.results = Some(r);
             self.stamp.arrived();
             self.running = None;
+            self.generation += 1;
+            self.units.0 = self.units.1;
         }
     }
 
@@ -342,11 +375,93 @@ impl LoadsPage {
             .flatten()
     }
 
-    /// The page; returns a structure to go to. Run in the footer at the
-    /// bottom left, always visible (owner, 2026-10-21); the rest scrolls
-    /// above it.
+    /// The load case file's case names (read again when the file
+    /// changed).
+    fn names(&mut self, model: &Model) -> Option<&Result<Vec<String>, String>> {
+        let path = model.sources.load_cases.clone()?;
+        if self.case_names.as_ref().is_none_or(|(p, _)| *p != path) {
+            let names = ohl_loads::LoadCases::load(&path)
+                .map(|set| set.cases.into_iter().map(|c| c.name).collect());
+            self.case_names = Some((path, names));
+        }
+        self.case_names.as_ref().map(|(_, n)| n)
+    }
+
+    /// The load cases ticked and the structures ticked.
+    fn counts(&mut self, model: &Model) -> (usize, usize) {
+        let ticked = self.cases_ticked.clone();
+        let cases = match self.names(model) {
+            Some(Ok(n)) => n
+                .iter()
+                .filter(|c| crate::tick_list::ticked(&ticked, c))
+                .count(),
+            _ => 0,
+        };
+        let structures = model
+            .line
+            .structures
+            .iter()
+            .filter(|s| crate::tick_list::ticked(&self.structures, &s.id))
+            .count();
+        (cases, structures)
+    }
+
+    /// How much a run computes: load cases × structures.
+    fn plan_units(&mut self, model: &Model) -> usize {
+        let (c, s) = self.counts(model);
+        c * s
+    }
+
+    /// The window: Setup and Results tabs (owner, 2026-10-31, the check
+    /// pages' guidelines), Run in the footer at the bottom, always
+    /// visible; returns a structure to go to.
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
-        let go = help::body(ui, "loads-page", |ui| self.body_ui(ui, model));
+        let mut go = None;
+        let (cases, structures) = self.counts(model);
+        let why = if model.sources.load_cases.is_none() {
+            Some(
+                "no load case file: add one in the Load cases library (Line › Criteria)".to_owned(),
+            )
+        } else if cases == 0 {
+            Some("tick a load case (2 Scope)".to_owned())
+        } else if structures == 0 {
+            Some("tick a structure (2 Scope)".to_owned())
+        } else {
+            None
+        };
+        let findings = match &self.results {
+            Some(Ok(r)) => Some(r.iter().map(|c| c.loads.len()).sum()),
+            _ => None,
+        };
+        let tab = crate::check_ui::tabs(
+            ui,
+            "loads-page",
+            findings,
+            self.generation,
+            why.is_some() && !self.running(),
+        );
+        match tab {
+            crate::check_ui::Tab::Setup => {
+                help::body(ui, "loads-page", |ui| self.setup_ui(ui, model));
+            }
+            crate::check_ui::Tab::Results => {
+                go = crate::check_ui::results_area(ui, "loads-page", |ui| self.body_ui(ui, model));
+            }
+        }
+        let units = cases * structures;
+        let estimate = match self.took {
+            Some(t) if self.units.0 > 0 && matches!(self.results, Some(Ok(_))) => format!(
+                " — {} (from the last run)",
+                crate::check_ui::plan_duration(
+                    t.as_secs_f64() * units as f64 / self.units.0 as f64
+                )
+            ),
+            _ => " — time measured on the first run".to_owned(),
+        };
+        let last = self
+            .took
+            .map(|t| format!(" · last run {:.1} s", t.as_secs_f64()))
+            .unwrap_or_default();
         help::footer(ui, "loads-page", |ui| {
             // The shared Run footer (2026-10-27): Run greyed with its
             // reason, Stop while it runs (the previous results stay).
@@ -355,15 +470,15 @@ impl LoadsPage {
                     .running
                     .as_ref()
                     .map(|(t, _)| crate::check_ui::Progress::elapsed(t.elapsed())),
-                why_not: model.sources.load_cases.is_none().then(|| {
-                    "no load case file: add one in the Load cases library (Line › Criteria)"
-                        .to_owned()
-                }),
-                hover: "Solve every section in every load case (finite elements)",
+                why_not: why,
+                hover: "Solve every section in every load case ticked and add up the loads at \
+                        the structures ticked",
                 scope: None,
-                info: self
-                    .took
-                    .map(|t| format!("computed in {:.1} s", t.as_secs_f64())),
+                info: Some(format!(
+                    "{} × {}{estimate}{last}",
+                    crate::check_ui::count(cases, "load case"),
+                    crate::check_ui::count(structures, "structure")
+                )),
             };
             let overrides = &mut self.overrides;
             match crate::check_ui::run_footer(ui, f, |ui| {
@@ -381,39 +496,134 @@ impl LoadsPage {
         go
     }
 
-    /// The page above its footer.
+    /// The Setup tab: 1 What it checks (with its drawing), 2 Scope (the
+    /// load case file, the load cases and structures ticked).
+    fn setup_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        use crate::check_ui;
+        check_ui::section(ui, 1, "What it checks", None);
+        help::explain(
+            ui,
+            "The loads the wires and strings put on each structure, at every point they hang \
+             from, in each load case; and how much of its capacity each structure uses.",
+            "Every section is solved in the load case's weather case (finite elements); the \
+             forces at its clamps are carried up the strings to the structure points, \
+             transverse, longitudinal and vertical in the structure's axes, times the load \
+             case's factors; the wind on the structure is added. The usage compares them with \
+             the type's allowable spans and loads, its structure model and its pole. The model \
+             is not changed.",
+        );
+        check_ui::how_computed(
+            ui,
+            "loads-page",
+            "Per load case: the weather case's wires solved; at each structure point the sum of \
+             its strings' forces, split into T (across the line, the bisector at an angle), L \
+             (along it) and V (down); factored by the case's V, T and L factors (unfactored \
+             shown on request).",
+            help::structure_loads,
+        );
+        ui.separator();
+        check_ui::section(ui, 2, "Scope", None);
+        match &model.sources.load_cases {
+            Some(p) => {
+                ui.horizontal(|ui| {
+                    ui.label("Load case file");
+                    ui.label(
+                        egui::RichText::new(
+                            p.file_name()
+                                .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                        )
+                        .strong(),
+                    );
+                    if ui.button("Load cases library…").clicked() {
+                        crate::menu::request_page(
+                            ui.ctx(),
+                            crate::app::Tab::Library(crate::library::LibraryKind::LoadCases),
+                        );
+                    }
+                });
+            }
+            None => {
+                // Expected in a new project: not an error.
+                ui.label("No load case file yet: the structure loads are computed for its cases.");
+                ui.label(
+                    egui::RichText::new(
+                        "Add one in the Load cases library (Line › Criteria): Browse… for a \
+                         .ohllc file, or New file… from a template.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                if ui.button("Open the Load cases library").clicked() {
+                    crate::menu::request_page(
+                        ui.ctx(),
+                        crate::app::Tab::Library(crate::library::LibraryKind::LoadCases),
+                    );
+                }
+                return;
+            }
+        }
+        let running = self.running();
+        let names = self.names(model).cloned();
+        ui.add_enabled_ui(!running, |ui| {
+            ui.columns(2, |cols| {
+                cols[0].strong("Load cases");
+                match &names {
+                    Some(Ok(n)) => {
+                        let items: Vec<crate::tick_list::Item> = n
+                            .iter()
+                            .map(|c| crate::tick_list::Item::new(c, c))
+                            .collect();
+                        crate::tick_list::tick_list(
+                            &mut cols[0],
+                            "loads-cases",
+                            &items,
+                            &mut self.cases_ticked,
+                            180.0,
+                        );
+                    }
+                    Some(Err(e)) => {
+                        crate::menu::error_label(&mut cols[0], e.as_str());
+                    }
+                    None => {}
+                }
+                cols[1].strong("Structures");
+                let items: Vec<crate::tick_list::Item> = model
+                    .line
+                    .structures
+                    .iter()
+                    .map(|s| {
+                        crate::tick_list::Item::new(
+                            &s.id,
+                            match &s.structure_type {
+                                Some(t) => format!("{} — {t}", s.id),
+                                None => s.id.clone(),
+                            },
+                        )
+                    })
+                    .collect();
+                crate::tick_list::tick_list(
+                    &mut cols[1],
+                    "loads-structures",
+                    &items,
+                    &mut self.structures,
+                    180.0,
+                );
+            });
+        });
+        help::explain(
+            ui,
+            "Only the load cases ticked are solved; the loads are kept at the structures ticked.",
+            "Every section is still solved in each case ticked (a structure's loads come from \
+             the spans on both sides), so fewer structures do not make a run much faster; fewer \
+             load cases do. With View › Work on route, only that route's structures are kept.",
+        );
+    }
+
+    /// The Results tab.
     fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
         let mut go = None;
-        ui.horizontal(|ui| {
-            match &model.sources.load_cases {
-                Some(p) => ui.label(
-                    egui::RichText::new(format!(
-                        "load cases: {}",
-                        p.file_name()
-                            .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-                    ))
-                    .small(),
-                ),
-                None => ui.label(egui::RichText::new("no load case file").small().weak()),
-            };
-        });
         if model.sources.load_cases.is_none() {
-            // Expected in a new project: not an error.
-            ui.label("No load case file yet: the structure loads are computed for its cases.");
-            ui.label(
-                egui::RichText::new(
-                    "Add one in the Load cases library (Line › Criteria): Browse… for a .ohllc \
-                     file, or New file… from a template.",
-                )
-                .small()
-                .weak(),
-            );
-            if ui.button("Open the Load cases library").clicked() {
-                crate::menu::request_page(
-                    ui.ctx(),
-                    crate::app::Tab::Library(crate::library::LibraryKind::LoadCases),
-                );
-            }
+            ui.label("No load case file yet (Setup › 2 Scope).");
             return None;
         }
         let results = match &self.results {

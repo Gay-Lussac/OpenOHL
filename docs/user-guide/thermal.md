@@ -148,22 +148,34 @@ up to about a second per section and limit.
 
 ## Desktop application
 
-**Checks › Thermal rating…** opens a window:
+**Checks › Thermal rating…** opens a window in the check windows'
+sections (2026-10-31):
 
-- **Ambient cases** — the project's `.ohlta` file (next to a line file) is
-  taken at once;
-  *Choose…* for another; each case in a few words below.
-- **Method** and **maximum temperature** — the table shows at once the
-  ampacity of every section in every ambient case (hover a value for the
-  heat terms).
-- **Weather case heated** and the temperature range — then
-  **Run** (the window's footer, bottom left; greyed without a rule file)
-  runs the clearance-limited temperature search in the background with a
-  progress bar (**Stop** stops it), using the rule file chosen under
-  Checks › Wire clearances and the ground and LiDAR points of the checks. The
-  table gains the limit per section, the governing span and the ampacity at
-  the limit per ambient case; the footer then says how long it took
-  ("computed in 3.7 s"). A row clicked selects its section's spans and
-  brings the views to them (2026-10-31).
+- **1 What it checks** — in short, and *How it is computed* with two
+  drawings: the heat balance (Joule and solar heat in, convection and
+  radiation out) and the span sagging down to the clearance rule as it
+  heats.
+- **2 Scope** — the **circuits, routes and sections** rated and searched
+  (the same tick menus as the other checks: fewer sections, a shorter
+  search); the **ambient cases**: the project's `.ohlta` file (next to a
+  line file) is taken at once, *Choose…* for another, each case in a few
+  words below; the **weather case heated**.
+- **3 What to compute** — **Method** and **maximum temperature**: the
+  table shows at once the ampacity of every section in scope in every
+  ambient case (hover a value for the heat terms); the **range** the
+  clearance limit is searched in.
+- **4 Model**, folded — the search's **scan step** and **tolerance**
+  (about range/step + log₂(step/tolerance) solves per section).
+
+**Run** (the window's footer, bottom left; greyed, with the reason,
+without a rule file or a section in scope) runs the clearance-limited
+temperature search in the background with a progress bar (**Stop** stops
+it), using the rule file chosen under Checks › Wire clearances and the
+ground and LiDAR points of the checks. Before Run, the footer says what
+it will search and about how long, from the last search ("clearance limit
+of 3 sections — about 4 s (from the last search)"). The table gains the
+limit per section, the governing span and the ampacity at the limit per
+ambient case. A row clicked selects its section's spans and brings the
+views to them (2026-10-31).
 
 Nothing in the model changes.

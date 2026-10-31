@@ -195,6 +195,14 @@ fn check_windows_rendered_for_review() {
         let window = window_rect(&harness, shot.title);
         let body = egui::pos2(window.center().x, window.top() + 200.0);
         save(&mut harness, &dir, &format!("{}-setup-1", shot.name));
+        // How it is computed opened: its drawings (closed again after).
+        if let Some(h) = harness.query_by_label("How it is computed") {
+            h.click();
+            harness.run_steps(4);
+            save(&mut harness, &dir, &format!("{}-how", shot.name));
+            harness.get_by_label("How it is computed").click();
+            harness.run_steps(4);
+        }
         for i in 2..=4 {
             wheel(&mut harness, body, -550.0);
             save(&mut harness, &dir, &format!("{}-setup-{i}", shot.name));

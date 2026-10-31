@@ -34,7 +34,8 @@ not approved yet.
   object (span, section, structure, circuit, case), its key data in
   columns (a span's length, a structure's type), the table as wide as the
   window and its height dragged by the user (`check_help::list`).
-- **Ticks are fast to flip.** Unticked rows are greyed;
+- **Ticks are fast to flip** (`span_pick` for spans; `tick_list` for every
+  other list, both since 2026-10-31). Unticked rows are greyed;
   **press on a tick and drag across rows**: every row passed takes the new
   state; shift-click ticks a range; **All**, **None** and **Invert** per
   group; a **filter** box keeps only the rows whose name contains the
@@ -57,7 +58,10 @@ not approved yet.
   short line (`check_help::explain`), the longer text behind a (?). The
   drawings follow the values typed.
 - **Before Run, a summary**: what will be computed and about how long it
-  takes ("4 spans · 3 profiles · 2 cuts · 1 volume — about 25 s"). When
+  takes ("4 spans · 3 profiles · 2 cuts · 1 volume — about 25 s"):
+  `check_ui::Plan` (its words and how much it computes; the time scaled
+  from the window's last run, `Job::estimate`), `check_ui::scope_plan` for
+  the checks that solve the line in each case of their rules. When
   Run is greyed, the footer says why and where to fix it.
 - **Assumptions are said**, conservative or not, in the setup where they
   are chosen and in the results' notes.
