@@ -53,6 +53,11 @@ fn plugin_info_knows_every_world() {
             "optional exports: structure-wind, rule-presets",
         ),
         ("tests/code-old", "code-plugin", "parameter template:"),
+        (
+            "tests/field-presets",
+            "field-preset-plugin",
+            "optional exports: field-presets",
+        ),
     ];
     for (relative, world, detail) in cases {
         let Some(dir) = built(relative) else {

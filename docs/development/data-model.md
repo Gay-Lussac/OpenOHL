@@ -724,7 +724,9 @@ network through the structures' earthing, their currents as paths),
 `grid_step` (m; none: `step`),
 `piece_length` (m; none: the solver's pieces), `modelled_within` (m; none:
 the whole line — cuts and volumes only), `cuts` [`CutSpec` {`from`, `to`,
-`fraction`?, `width`, `above`, `step`}], `volumes` [`VolumeSpec` {`from`,
+`fraction`?, `width`, `above`, `step`, `label`? (2026-10-31: carried to
+the result, e.g. a plugin's building; `CutSpec` has a `Default` for
+struct update syntax)}], `volumes` [`VolumeSpec` {`from`,
 `to`, `width`, `above`, `step`}], `levels` (µT, ascending; display
 only). `thermal_currents` gives the circuits' thermal ratings (the
 least over a circuit's sections of bundle × ampacity, in an ambient case
@@ -736,7 +738,7 @@ and at a temperature given). Results `MagneticField`: `currents`
 `reach` m, `warnings`}], `grids` [`FieldGrid` {…, `deviation` per level}],
 `towers` [`TowerCurrent` {`structure`, `frequency_hz`, `amps`,
 `angle_deg`, `resistance_ohm`, `assumed`}] (2026-10-29),
-`cuts` [`FieldCut` {`from`, `to`, `at`, `values`: `field_views::CutValues`
+`cuts` [`FieldCut` {`label`?, `from`, `to`, `at`, `values`: `field_views::CutValues`
 {`cut`: `VerticalCut` {`origin`, `right`, `left`, `right_offset`,
 `bottom`, `top`, `step`}, `offsets`, `elevations`, `ground` per column,
 `values` µT row by row}, `pieces`, `left_out`}], `volumes` [`FieldVolume`
@@ -759,7 +761,25 @@ Wavefront OBJ; `points`, each a
 `FieldPoint` {`name`, `x`, `y`, `z`, `offset` (to the right of the span's
 axis), `height` (above the ground), `b_ut` (rms of the vector), `major_ut`
 (the cycle's largest), `margin_ut` (limit − B)}, `notes`; `csv` writes
-them. Methods: [Magnetic field](../theory/magnetic-field.md).
+them (since 2026-10-31 a last column `label`, a cut's label on its rows;
+the electric field's CSV the same). Methods: [Magnetic field](../theory/magnetic-field.md).
+
+<a id="field-results-json"></a>**Field results JSON** (`ohl-field-results`
+version 1, `ohl_electrical::field_results::{magnetic_json,
+electric_json}`, 2026-10-31; derived, written by `ohl electrical
+magnetic|electric --json` and handed to a field-presets plugin's
+`report`): `{"format": "ohl-field-results", "version": 1, "quantity":
+"B" | "E", "unit": "µT" | "kV/m", "model": "three_d" | "two_d", "case":
+{"name", "temperature_c"}, "settings": <the run's Settings without
+stations, grids, points, cuts, volumes>, "limit", "cuts": [{"label",
+"from", "to", "at", "quantity", "unit", "plane": {"origin": [x, y],
+"right": [dx, dy]}, "offsets", "elevations", "ground" (per column, null:
+none known), "values" (row by row, every point, also under the ground),
+"isolines": [{"level", "lines": [[[offset, elevation], …], …]}] (the
+settings' levels, `CutValues::isolines`: cut at the ground)}], "points":
+[{"name", "x", "y", "z", "offset", "height", "value", "major" (B only),
+"margin"}], "notes"}`. Nothing is computed for it: the results as they
+are (a value in the CSV is the same to its 5 decimals).
 
 ### Display and criteria
 
@@ -2814,6 +2834,7 @@ above**.
 | any world with the optional export `system-styles` (`system-styles`; world `system-style-plugin`; looked for by the host by name: a 0.3 plugin without it unchanged; 2026-10-27) | `list<system-info { id, name, owner, number, voltage-kv, frequency-hz: option<f64>, dc, phases: list<string>, fields, sections: u32 }>`: the line's systems | `result<list<system-style { color: option<string>, phases: list<phase-style { code: option<string>, angle-deg: option<f64> }> }>, string>`: written as `System::color`, `SystemPhase::code` and (only when ticked) `SystemPhase::angle_deg` when the user applies them (one command with the wire colours) |
 | a check plugin with the optional export `check-weather` (`code.wit`, world `check-weather-export`; looked for by the host by name: a 0.3 plugin without it unchanged; 2026-10-27) | a check's id | `option<weather-hint { temperature-c, wind-pa, ice: bool }>`: the weather case the check's window ticks when it opens with none chosen (the project's case matching it; nothing written) |
 | a plugin with the optional export `member-capacity` (`code.wit`, worlds `member-capacity-plugin` / `member-capacity-export`; looked for by name, additive to 0.3; 2026-10-27) | `methods()`; `member-capacities(method, strength, list<member-input>)`: per member id, kind, shape and dimensions, area, iy, iz, iv, wy, wz, E, fy, fu, length, k, lk, its design data as TOML (`capacity::design_toml`), axial force, end moments, the crossing partner's axial force (`capacity::capacity_inputs`) | `list<member-result { compression, compression-governs, tension, tension-governs, notes }>`: used by `check::member_usage_with` in place of the model's method (`WasmHost::member_capacities`); `ohl structures fe --capacity-plugin` |
+| any world with the optional export `field-presets` (`plugin.wit`, worlds `field-preset-plugin` / `field-presets-export`; looked for by name, additive to 0.3; 2026-10-31); the manifest's `[field-input]` table (`roles`, `ground-roles`, `ground-cell`, `survey-codes`, `reach`, `max-points`; unknown keys refused; `ohl_plugins::FieldInputTable`) says what the host gathers (`ohl_io::field_input::gather`) | `parameters-template()`; `field-presets(field-input { parameters: TOML, model: <export model JSON, the case run>, points: list<input-point { x, y, z, class (0: survey), code, line }>, ground: x, y, z flat (lowest per cell) })`; `report(parameters, preset, results: <ohl-field-results JSON>)` | `result<list<field-preset { name, description, cuts: list<cut { label, from, to, fraction?, width, above, step }>, points: list<place { name, x, y, z?, height? }>, levels-ut, levels-kv-m, outlines: list<outline { id, ring: x, y flat, ground, top }>, notes }>, string>`, every value checked by the host (`field_presets::check_presets`: spans exist, fractions 0–1, sizes above 0, cut points capped, names unique) before the cuts (`CutSpec.label` from the cut's label) and points are added to the run; `report` → `list<out-file { name, media-type, bytes }>`, names without a folder (`check_files`); `ohl electrical magnetic|electric --preset-plugin` |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:

@@ -347,3 +347,152 @@ world system-style-plugin {
 world system-styles-export {
     export system-styles;
 }
+
+/// Field presets a plugin gives (optional export of any plugin, extension
+/// point `field-presets`; owner 2026-10-31: the core extension points for
+/// a building plugin): from the points the host gathers as the
+/// manifest's `[field-input]` table asks (LiDAR points of some class
+/// roles, the ground thinned, survey points of some codes, near the line)
+/// and the solved model, the plugin decides where vertical cuts across
+/// the line and given points are needed; the host runs the magnetic or
+/// electric field there and hands the results back (`ohl-field-results`
+/// JSON) for the plugin's report files. A pure function like every
+/// plugin: no host callbacks. Added 2026-10-31 to interface version 0.3
+/// without changing anything else: plugins built before load as they
+/// are, and give none.
+interface field-presets {
+    /// A point the host gathered, metres in the line's coordinate system.
+    record input-point {
+        /// Easting, m.
+        x: f64,
+        /// Northing, m.
+        y: f64,
+        /// Elevation, m.
+        z: f64,
+        /// The LiDAR class (0 for a survey point).
+        class: u8,
+        /// A survey point's feature code ("" for a LiDAR point).
+        code: string,
+        /// A survey point's breakline id ("" for none).
+        line: string,
+    }
+
+    /// What the plugin decides from.
+    record field-input {
+        /// The user's parameters (TOML; the plugin's template when none
+        /// are given).
+        parameters: string,
+        /// The solved model, as the exporters receive it (JSON, format
+        /// `ohl-export-model`): the line and the case the field is run in.
+        model: string,
+        /// The points of the manifest's roles and survey codes.
+        points: list<input-point>,
+        /// The ground: the lowest point of the ground roles per cell, as
+        /// x0, y0, z0, x1, y1, z1, … (m).
+        ground: list<f64>,
+    }
+
+    /// A vertical cut across the line in a span.
+    record cut {
+        /// Its label, shown with the results ("": none).
+        label: string,
+        /// A structure of the span.
+        %from: string,
+        /// The other.
+        to: string,
+        /// The place from the first structure (0–1); none: the lowest
+        /// point of the span's lowest phase conductor.
+        fraction: option<f64>,
+        /// To either side of the axis, m (above 0).
+        width: f64,
+        /// Above the highest wire crossing the cut, m (0 or more).
+        above: f64,
+        /// Between the cut's points, m (above 0).
+        step: f64,
+    }
+
+    /// A point the field is asked at.
+    record place {
+        /// Its name, unique in the preset.
+        name: string,
+        /// Easting, m.
+        x: f64,
+        /// Northing, m.
+        y: f64,
+        /// Elevation, m; none: `height` above the ground.
+        z: option<f64>,
+        /// Height above the ground, m (when `z` is none).
+        height: option<f64>,
+    }
+
+    /// A building's outline the plugin found (for its report; the host
+    /// only checks it).
+    record outline {
+        /// Its id, unique in the preset.
+        id: string,
+        /// The ring in plan: x0, y0, x1, y1, … (m; three corners or more).
+        ring: list<f64>,
+        /// Its ground elevation, m.
+        ground: f64,
+        /// Its top, m.
+        top: f64,
+    }
+
+    /// A preset: where the field is computed.
+    record field-preset {
+        /// Its name, unique among the presets given.
+        name: string,
+        /// What it is for, in words.
+        description: string,
+        /// The cuts.
+        cuts: list<cut>,
+        /// The points.
+        points: list<place>,
+        /// Levels of the magnetic field's isolines, µT (above 0).
+        levels-ut: list<f64>,
+        /// Levels of the electric field's isolines, kV/m (above 0).
+        levels-kv-m: list<f64>,
+        /// The buildings' outlines.
+        outlines: list<outline>,
+        /// What was assumed or left out, in words (shown to the user).
+        notes: list<string>,
+    }
+
+    /// A file of the report.
+    record out-file {
+        /// Its name, without a folder.
+        name: string,
+        /// Its media type, e.g. "text/csv".
+        media-type: string,
+        /// Its bytes.
+        bytes: list<u8>,
+    }
+
+    /// The plugin's parameters, as a TOML template with their defaults.
+    parameters-template: func() -> string;
+
+    /// The presets for `input`. The error says why there are none.
+    field-presets: func(input: field-input) -> result<list<field-preset>, string>;
+
+    /// The report files of `preset` (as the host checked it), from the
+    /// field's `results` (JSON, format `ohl-field-results`). The error
+    /// says why there are none.
+    report: func(parameters: string, preset: field-preset, results: string) -> result<list<out-file>, string>;
+}
+
+/// A plugin that gives field presets only (extension point
+/// `field-presets`).
+world field-preset-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export field-presets;
+}
+
+/// The `field-presets` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world field-presets-export {
+    export field-presets;
+}

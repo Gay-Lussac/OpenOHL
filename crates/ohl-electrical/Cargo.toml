@@ -16,9 +16,9 @@ ohl-thermal.workspace = true
 nalgebra.workspace = true
 faer.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 ohl-weather.workspace = true
 
 [lints]

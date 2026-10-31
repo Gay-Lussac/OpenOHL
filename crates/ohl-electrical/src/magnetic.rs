@@ -381,8 +381,9 @@ pub struct Settings {
 
 /// A vertical cut across the line at a place in a span: offsets to
 /// `width` either side of the axis, from the lowest ground under it to
-/// `above` over its highest wire.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// `above` over its highest wire. The default is a placeholder to fill
+/// (struct update syntax; no span, zero sizes).
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct CutSpec {
     /// A structure of the span.
     pub from: String,
@@ -397,6 +398,10 @@ pub struct CutSpec {
     pub above: f64,
     /// Between the grid's points, m.
     pub step: f64,
+    /// Its label, carried to the result ([`FieldCut::label`]; 2026-10-31,
+    /// for a plugin's cuts, e.g. the building it is for).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// A volume over a span: `width` to either side of its axis, from the
@@ -641,6 +646,8 @@ pub struct MagneticField {
 /// A vertical cut's values and its span.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FieldCut {
+    /// The cut's label ([`CutSpec::label`]), when given.
+    pub label: Option<String>,
     /// The span's first structure.
     pub from: String,
     /// Its second.
@@ -2833,6 +2840,7 @@ pub fn run_keeping(
                 })
                 .collect();
             cuts.push(FieldCut {
+                label: c.label.clone(),
                 from: spans[i].from.clone(),
                 to: spans[i].to.clone(),
                 at: t,
@@ -3062,45 +3070,51 @@ fn csv_field(s: &str) -> String {
     }
 }
 
-/// The results as CSV: one row per profile point, grid point and given
-/// point.
+/// The results as CSV: one row per profile point, grid point, given
+/// point and cut point (a cut's rows with its label in the last column).
 pub fn csv(m: &MagneticField) -> String {
     let mut out = String::from(
-        "kind,from,to,station_m,name,x,y,z,offset_m,height_m,b_ut,b_major_ut,limit_ut,margin_ut\n",
+        "kind,from,to,station_m,name,x,y,z,offset_m,height_m,b_ut,b_major_ut,limit_ut,margin_ut,label\n",
     );
     let num = |x: Option<f64>| x.map_or(String::new(), |v| format!("{v:.4}"));
-    let row =
-        |out: &mut String, kind: &str, from: &str, to: &str, at: Option<f64>, p: &FieldPoint| {
-            let _ = writeln!(
-                out,
-                "{kind},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{:.5},{},{}",
-                csv_field(from),
-                csv_field(to),
-                num(at),
-                csv_field(&p.name),
-                p.x,
-                p.y,
-                p.z,
-                p.offset,
-                p.height,
-                p.b_ut,
-                p.major_ut,
-                num(m.limit_ut),
-                num(p.margin_ut),
-            );
-        };
+    let row = |out: &mut String,
+               kind: &str,
+               from: &str,
+               to: &str,
+               at: Option<f64>,
+               p: &FieldPoint,
+               label: &str| {
+        let _ = writeln!(
+            out,
+            "{kind},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{:.5},{},{},{}",
+            csv_field(from),
+            csv_field(to),
+            num(at),
+            csv_field(&p.name),
+            p.x,
+            p.y,
+            p.z,
+            p.offset,
+            p.height,
+            p.b_ut,
+            p.major_ut,
+            num(m.limit_ut),
+            num(p.margin_ut),
+            csv_field(label),
+        );
+    };
     for pr in &m.profiles {
         for p in &pr.points {
-            row(&mut out, "profile", &pr.from, &pr.to, Some(pr.at), p);
+            row(&mut out, "profile", &pr.from, &pr.to, Some(pr.at), p, "");
         }
     }
     for g in &m.grids {
         for p in &g.points {
-            row(&mut out, "grid", &g.from, &g.to, None, p);
+            row(&mut out, "grid", &g.from, &g.to, None, p, "");
         }
     }
     for p in &m.points {
-        row(&mut out, "point", "", "", None, p);
+        row(&mut out, "point", "", "", None, p, "");
     }
     for c in &m.cuts {
         let v = &c.values;
@@ -3120,7 +3134,15 @@ pub fn csv(m: &MagneticField) -> String {
                     major_ut: f64::NAN,
                     margin_ut: m.limit_ut.map(|l| l - b),
                 };
-                row(&mut out, "cut", &c.from, &c.to, Some(c.at), &p);
+                row(
+                    &mut out,
+                    "cut",
+                    &c.from,
+                    &c.to,
+                    Some(c.at),
+                    &p,
+                    c.label.as_deref().unwrap_or(""),
+                );
             }
         }
     }
