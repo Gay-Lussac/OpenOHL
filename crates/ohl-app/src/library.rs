@@ -317,7 +317,7 @@ const INSULATOR: &[Field] = &[
 
 const SHAPE: &[Field] = &[
     ("name", "\"clamp\"", "unique on the assembly"),
-    ("kind", "\"sphere\"", "sphere, cylinder, box or cone"),
+    ("kind", "\"sphere\"", "sphere, cylinder, box, cone or torus"),
     (
         "state",
         "\"electrified\"",
@@ -336,7 +336,7 @@ const SHAPE: &[Field] = &[
     (
         "diameter",
         "\"0.2 m\"",
-        "sphere, cylinder; a cone's at its end nearer the top",
+        "sphere, cylinder; a cone's at its end nearer the top; a torus's outer",
     ),
     ("end_diameter", "\"0 m\"", "a cone's at its other end"),
     (
@@ -346,6 +346,11 @@ const SHAPE: &[Field] = &[
     ),
     ("width", "\"0.2 m\"", "a box's across"),
     ("depth", "\"0.2 m\"", "a box's along"),
+    (
+        "tube",
+        "\"0.05 m\"",
+        "a torus's tube diameter (under half its diameter)",
+    ),
     (
         "offset_across",
         "\"0.25 m\"",

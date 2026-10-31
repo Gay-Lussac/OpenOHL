@@ -4,7 +4,9 @@
 
 //! **Volumes on the strings** (roadmap O6, second part; owner 2026-10-19,
 //! details confirmed; built 2026-10-25): the basic shapes an insulator
-//! assembly carries — spheres, cylinders, boxes and cones — each with an
+//! assembly carries — spheres, cylinders, boxes, cones and tori (a
+//! grading ring: owner 2026-10-31, "the builder window with a torus") —
+//! each with an
 //! **electrical state**, how they move with the string (**freedoms** in
 //! the string's own axes) and **several strings in one assembly**
 //! (double, triple). The internal clearance check
@@ -12,7 +14,9 @@
 //! conductors against the grounded shapes and the structure's body.
 //!
 //! In an `.ohli` file (version 4, written only when an assembly has any of
-//! it):
+//! it; version 5 when one of its shapes is a torus, so that a program
+//! reading version 4 refuses the file by its version rather than by an
+//! unknown kind):
 //!
 //! ```toml
 //! swing_across = "free"     # free (default) or blocked
@@ -24,7 +28,7 @@
 //!
 //! [[shape]]
 //! name = "clamp"
-//! kind = "box"              # sphere, cylinder, box or cone
+//! kind = "box"              # sphere, cylinder, box, cone or torus
 //! state = "electrified"     # grounded, electrified or insulated
 //! at_fraction = 1.0         # its centre along the string from its top
 //! width = "0.6 m"           # box: across; depth: along; length: on the axis
@@ -40,6 +44,13 @@
 //! arcing horn beside it). Its axis (cylinder, cone, box length) lies on
 //! the string's axis. A cone's `diameter` is at its end nearer the
 //! string's top, `end_diameter` (default 0, a point) at the other.
+//!
+//! A **torus** (a grading ring) lies square to the string's axis, around
+//! it: `diameter` is the ring's **outer** diameter (across the whole ring,
+//! as measured with a rule over it), `tube` the diameter of its tube; the
+//! ring's centre line is then of diameter `diameter − tube`. The tube must
+//! be less than half the outer diameter (a ring with a hole). Offsets move
+//! it off the axis like the other shapes (a ring around a horn).
 //!
 //! A line's string may **override** a shape of its assembly by name (its
 //! `shapes`: each replaces the assembly's shape of the same name, or adds
@@ -61,15 +72,19 @@ pub enum ShapeKind {
     /// A cone or a truncated one on the string's axis (`diameter` at its
     /// end nearer the top, `end_diameter` at the other, `length`).
     Cone,
+    /// A torus around the string's axis, square to it: a grading ring
+    /// (`diameter` its outer diameter, `tube` its tube's; 2026-10-31).
+    Torus,
 }
 
 impl ShapeKind {
     /// Every kind, in the order the editors offer them.
-    pub const ALL: [ShapeKind; 4] = [
+    pub const ALL: [ShapeKind; 5] = [
         ShapeKind::Sphere,
         ShapeKind::Cylinder,
         ShapeKind::Box,
         ShapeKind::Cone,
+        ShapeKind::Torus,
     ];
 
     /// Its name in the files.
@@ -79,12 +94,23 @@ impl ShapeKind {
             ShapeKind::Cylinder => "cylinder",
             ShapeKind::Box => "box",
             ShapeKind::Cone => "cone",
+            ShapeKind::Torus => "torus",
         }
     }
 
     /// From its name in the files.
     pub fn parse(text: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.as_str() == text.trim())
+    }
+
+    /// It takes a `length` on the string's axis (cylinder, box, cone).
+    pub fn takes_length(self) -> bool {
+        matches!(self, ShapeKind::Cylinder | ShapeKind::Box | ShapeKind::Cone)
+    }
+
+    /// It takes a `diameter` (all but the box).
+    pub fn takes_diameter(self) -> bool {
+        self != ShapeKind::Box
     }
 }
 
@@ -226,7 +252,8 @@ pub struct StringShape {
     pub state: ElectricalState,
     /// Where its centre is along the string.
     pub at: Along,
-    /// Sphere, cylinder: its diameter; cone: at its end nearer the top, m.
+    /// Sphere, cylinder: its diameter; cone: at its end nearer the top;
+    /// torus: the ring's outer diameter, m.
     pub diameter: f64,
     /// Cone: the diameter at its end nearer the wire point, m (0: a
     /// point).
@@ -237,6 +264,8 @@ pub struct StringShape {
     pub width: f64,
     /// Box: along, m.
     pub depth: f64,
+    /// Torus: its tube's diameter, m.
+    pub tube: f64,
     /// Its centre's offset from the string's axis in the string's own axes
     /// (across, along), m.
     pub offset: [f64; 2],
@@ -268,6 +297,8 @@ pub struct ShapeFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     depth: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    tube: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     offset_across: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     offset_along: Option<Length>,
@@ -292,6 +323,7 @@ impl TryFrom<ShapeFile> for StringShape {
             ShapeKind::Cylinder => &["diameter", "length"],
             ShapeKind::Box => &["width", "depth", "length"],
             ShapeKind::Cone => &["diameter", "end_diameter", "length"],
+            ShapeKind::Torus => &["diameter", "tube"],
         };
         let given = [
             ("diameter", f.diameter),
@@ -299,6 +331,7 @@ impl TryFrom<ShapeFile> for StringShape {
             ("length", f.length),
             ("width", f.width),
             ("depth", f.depth),
+            ("tube", f.tube),
         ];
         for (key, v) in given {
             if v.is_some() && !takes.contains(&key) {
@@ -315,6 +348,7 @@ impl TryFrom<ShapeFile> for StringShape {
             length: si(f.length),
             width: si(f.width),
             depth: si(f.depth),
+            tube: si(f.tube),
             offset: [si(f.offset_across), si(f.offset_along)],
             shared: f.shared,
             name: f.name.clone(),
@@ -339,14 +373,15 @@ impl From<StringShape> for ShapeFile {
             state: s.state,
             at,
             at_fraction,
-            diameter: some(s.diameter, k != ShapeKind::Box),
+            diameter: some(s.diameter, k.takes_diameter()),
             end_diameter: some(
                 s.end_diameter,
                 k == ShapeKind::Cone && s.end_diameter != 0.0,
             ),
-            length: some(s.length, k != ShapeKind::Sphere),
+            length: some(s.length, k.takes_length()),
             width: some(s.width, k == ShapeKind::Box),
             depth: some(s.depth, k == ShapeKind::Box),
+            tube: some(s.tube, k == ShapeKind::Torus),
             offset_across: some(s.offset[0], s.offset[0] != 0.0),
             offset_along: some(s.offset[1], s.offset[1] != 0.0),
             shared: s.shared,
@@ -368,6 +403,7 @@ impl StringShape {
             length: 0.2,
             width: 0.2,
             depth: 0.2,
+            tube: 0.05,
             offset: [0.0; 2],
             shared: false,
         }
@@ -387,8 +423,11 @@ impl StringShape {
         if k != ShapeKind::Cone {
             self.end_diameter = 0.0;
         }
-        if k == ShapeKind::Sphere {
+        if !k.takes_length() {
             self.length = 0.0;
+        }
+        if k != ShapeKind::Torus {
+            self.tube = 0.0;
         }
         self
     }
@@ -429,6 +468,17 @@ impl StringShape {
                     );
                 }
             }
+            ShapeKind::Torus => {
+                positive("diameter", self.diameter)?;
+                positive("tube", self.tube)?;
+                if self.tube * 2.0 >= self.diameter {
+                    return Err(
+                        "a torus's tube must be less than half its outer diameter (a ring \
+                         with a hole)"
+                            .into(),
+                    );
+                }
+            }
         }
         match self.at {
             Along::Fraction(x) if !(0.0..=1.0).contains(&x) => {
@@ -442,6 +492,13 @@ impl StringShape {
             }
             _ => Ok(()),
         }
+    }
+
+    /// A torus's radii: of its centre line (major) and of its tube
+    /// (minor), m; none for another kind.
+    pub fn torus_radii(&self) -> Option<(f64, f64)> {
+        (self.kind == ShapeKind::Torus)
+            .then(|| ((self.diameter - self.tube) / 2.0, self.tube / 2.0))
     }
 
     /// The shape as a `[[shape]]` table of an `.ohli` file (values with
@@ -465,6 +522,7 @@ impl StringShape {
             ("length", f.length),
             ("width", f.width),
             ("depth", f.depth),
+            ("tube", f.tube),
             ("offset_across", f.offset_across),
             ("offset_along", f.offset_along),
         ] {
@@ -519,6 +577,11 @@ impl StringVolumes {
     /// None given.
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
+    }
+
+    /// One of its shapes is a torus (an `.ohli` file of version 5).
+    pub fn has_torus(&self) -> bool {
+        self.shapes.iter().any(|s| s.kind == ShapeKind::Torus)
     }
 
     /// What is wrong (none: nothing): each shape, names unique, several
@@ -670,6 +733,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!((cone.diameter, cone.end_diameter), (0.1, 0.4));
+        // A grading ring: 0.6 m across, a tube of 60 mm.
+        let ring = shape(
+            "name = \"ring\"\nkind = \"torus\"\nstate = \"electrified\"\nat_fraction = 0.95\n\
+             diameter = \"0.6 m\"\ntube = \"60 mm\"",
+        )
+        .unwrap();
+        assert_eq!(ring.kind, ShapeKind::Torus);
+        let (major, minor) = ring.torus_radii().unwrap();
+        assert!((major - 0.27).abs() < 1e-12 && (minor - 0.03).abs() < 1e-12);
+        assert_eq!(
+            shape(&ring.to_toml().replace("[[shape]]", "")).unwrap(),
+            ring
+        );
+        let json = serde_json::to_string(&ring).unwrap();
+        assert!(
+            json.contains("\"tube\":0.06") && !json.contains("length"),
+            "{json}"
+        );
+        assert_eq!(serde_json::from_str::<StringShape>(&json).unwrap(), ring);
+        assert_eq!(
+            StringShape::new("t", ShapeKind::Torus, ElectricalState::Grounded).check(),
+            Ok(())
+        );
         for bad in [
             "kind = \"sphere\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"0 m\"",
             "kind = \"sphere\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"1 m\"\nlength = \"1 m\"",
@@ -679,6 +765,9 @@ mod tests {
             "kind = \"sphere\"\nstate = \"grounded\"\nat_fraction = 1.5\ndiameter = \"1 m\"",
             "kind = \"sphere\"\nstate = \"live\"\nat_fraction = 0.5\ndiameter = \"1 m\"",
             "kind = \"torus\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"1 m\"",
+            "kind = \"torus\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"1 m\"\ntube = \"0.5 m\"",
+            "kind = \"torus\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"1 m\"\ntube = \"0.1 m\"\nlength = \"1 m\"",
+            "kind = \"ring\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"1 m\"",
             "kind = \"cone\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"0 m\"\nlength = \"1 m\"",
             "kind = \"sphere\"\nstate = \"grounded\"\nat_fraction = 0.5\ndiameter = \"1 m\"\nsize = 2",
         ] {

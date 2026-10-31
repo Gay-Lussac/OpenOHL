@@ -367,6 +367,9 @@ impl TabViewer for Viewer<'_> {
                     Some(crate::tables::TableAction::CrossSection(id)) => {
                         r.cross_section_at(&id);
                     }
+                    Some(crate::tables::TableAction::StringBuilder(id)) => {
+                        r.string_builder.open_on(&id);
+                    }
                     Some(crate::tables::TableAction::ShowCase(_)) | None => {}
                 }
                 None

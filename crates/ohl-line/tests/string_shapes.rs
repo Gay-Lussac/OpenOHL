@@ -5,7 +5,8 @@
 //! A string's own volumes (line file version 8, roadmap O6): a line
 //! without them is written as version 7 (an older program still reads
 //! it); with them as version 8, read back the same; files of version 7 and
-//! before read without them. Sizes INVENTED.
+//! before read without them; a torus among them (version 12, 2026-10-31)
+//! raises it to 12. Sizes INVENTED.
 
 use ohl_line::{LINE_FILE_VERSION, Line};
 use ohl_structures::{Along, ElectricalState, ShapeKind, StringShape};
@@ -45,5 +46,27 @@ fn own_shapes_raise_the_version_only_when_given() {
         .flat_map(|s| &s.strings)
         .find(|x| !x.shapes.is_empty())
         .unwrap();
-    assert_eq!(again.shapes, vec![horn]);
+    assert_eq!(again.shapes, vec![horn.clone()]);
+    // A grading ring of its own: version 12, read back the same.
+    let st = line
+        .structures
+        .iter_mut()
+        .find(|s| !s.strings.is_empty())
+        .unwrap();
+    let mut ring = StringShape::new("ring", ShapeKind::Torus, ElectricalState::Electrified);
+    ring.at = Along::Fraction(1.0);
+    ring.diameter = 0.5;
+    ring.tube = 0.04;
+    st.strings[0].shapes.push(ring.clone());
+    let text = line.to_json();
+    assert!(text.contains("\"version\": 12,"), "{}", &text[..80]);
+    assert!(text.contains("\"tube\": 0.04"));
+    let back = Line::from_json(&text).unwrap();
+    let again = back
+        .structures
+        .iter()
+        .flat_map(|s| &s.strings)
+        .find(|x| !x.shapes.is_empty())
+        .unwrap();
+    assert_eq!(again.shapes, vec![horn, ring]);
 }

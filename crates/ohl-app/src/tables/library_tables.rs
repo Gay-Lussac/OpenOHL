@@ -339,11 +339,12 @@ pub(super) fn string_shape_rows(model: &Model) -> Vec<Row> {
                         k.as_str().into(),
                         s.state.as_str().into(),
                         along_text(s.at),
-                        size(s.diameter, k != ShapeKind::Box),
+                        size(s.diameter, k.takes_diameter()),
                         size(s.end_diameter, k == ShapeKind::Cone),
-                        size(s.length, k != ShapeKind::Sphere),
+                        size(s.length, k.takes_length()),
                         size(s.width, k == ShapeKind::Box),
                         size(s.depth, k == ShapeKind::Box),
+                        size(s.tube, k == ShapeKind::Torus),
                         f(s.offset[0], 3),
                         f(s.offset[1], 3),
                         if s.shared { "yes" } else { "" }.into(),
@@ -362,7 +363,7 @@ fn read_shape(c: &Cells, assembly: &str) -> Result<ohl_structures::StringShape, 
     let what = |col: &str| format!("{assembly} {name}: {col}");
     let kind = ShapeKind::parse(&c.get(2)).ok_or_else(|| {
         format!(
-            "{assembly} {name}: kind \"{}\": sphere, cylinder, box or cone",
+            "{assembly} {name}: kind \"{}\": sphere, cylinder, box, cone or torus",
             c.get(2).trim()
         )
     })?;
@@ -382,8 +383,9 @@ fn read_shape(c: &Cells, assembly: &str) -> Result<ohl_structures::StringShape, 
         length: size(7, "length")?,
         width: size(8, "width")?,
         depth: size(9, "depth")?,
-        offset: [size(10, "offset across")?, size(11, "offset along")?],
-        shared: matches!(c.get(12).trim(), "yes" | "true" | "1"),
+        tube: size(10, "tube")?,
+        offset: [size(11, "offset across")?, size(12, "offset along")?],
+        shared: matches!(c.get(13).trim(), "yes" | "true" | "1"),
         ..StringShape::new(&name, kind, state)
     }
     .sizes_of_its_kind();

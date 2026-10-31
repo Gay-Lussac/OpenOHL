@@ -46,7 +46,9 @@
 //! a point (no fitting's size counted: on the unsafe side unless its
 //! fittings are given as shapes). The shapes are measured exactly as
 //! convex solids ([`crate::volumes::separation`]: a lower bound within
-//! 1 nm, conservative).
+//! 1 nm, conservative); a torus (a grading ring, not convex) exactly
+//! against a point, else by the chords of its circle — never more than
+//! the exact distance, at most 0.5 mm less (conservative).
 //!
 //! Earthed wires (earth wires: no potential) are not electrified and not
 //! checked. A structure without a body (level 1) is listed as not checked.
@@ -1714,6 +1716,56 @@ mod tests {
                 .iter()
                 .any(|n| n.contains("no string carries volumes"))
         );
+        // A grading ring of its own at T2's S1 (a torus, 2026-10-31;
+        // INVENTED: 1 m across, a tube of 0.1 m, its centre 0.3 m below the
+        // top; the tower-side horn overridden as insulated): the arm
+        // through the string's top passes about 0.3 m over its circle,
+        // 0.25 m from its surface (a little less: the string leans in still
+        // air; by its chords at most 0.5 mm less, never more) — too close
+        // for the rule's 1 m.
+        let mut ring = ohl_structures::StringShape::new(
+            "grading ring",
+            ohl_structures::ShapeKind::Torus,
+            ohl_structures::ElectricalState::Electrified,
+        );
+        ring.at = ohl_structures::Along::Metres(0.3);
+        ring.diameter = 1.0;
+        ring.tube = 0.1;
+        // The tower-side horn (nearer) left out there.
+        let mut horn = fits[0]
+            .volumes
+            .shapes
+            .iter()
+            .find(|s| s.name == "tower-side horn")
+            .unwrap()
+            .clone();
+        horn.state = ohl_structures::ElectricalState::Insulated;
+        let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        t2.strings
+            .iter_mut()
+            .find(|x| x.label == "S1")
+            .unwrap()
+            .shapes
+            .extend([horn, ring]);
+        let ringed = string_fits(&line, &insulators);
+        let r6 = run(&line, &ringed, &[still_case(&shapes, &jumpers)]);
+        let ring_row = r6
+            .rows
+            .iter()
+            .find(|x| x.part.to_string() == "string S1 grading ring")
+            .expect("the ring checked");
+        assert!(
+            ring_row
+                .member
+                .as_deref()
+                .is_some_and(|m| m.starts_with("arm")),
+            "{ring_row:?}"
+        );
+        assert!(
+            ring_row.distance <= 0.25 + 1e-6 && ring_row.distance > 0.23,
+            "{ring_row:?}"
+        );
+        assert!(ring_row.distance < ring_row.required);
     }
 
     /// Internal rules in a rule file read and write back; defaults (every

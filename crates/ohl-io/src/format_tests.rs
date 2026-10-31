@@ -517,6 +517,7 @@ fn xsd_lists_every_element_written() {
         "max_swing_along_deg",
         "at_fraction",
         "end_diameter",
+        "tube",
         "offset_across",
         "offset_along",
         "shared",

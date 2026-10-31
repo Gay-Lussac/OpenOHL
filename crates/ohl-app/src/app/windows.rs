@@ -795,6 +795,7 @@ pub(super) fn tool_windows(
     crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     r.bom.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);
+    string_builder_window(ctx, r);
     pylon_windows(ctx, r);
     let Some((impact, confirmed)) = r.confirm.clone() else {
         return;
@@ -1205,6 +1206,22 @@ pub(super) fn controls_grid(ui: &mut egui::Ui, id: &str, rows: &[(String, String
             ui.end_row();
         }
     });
+}
+
+/// Line › Structures › String builder ([`crate::string_builder`]): its
+/// save written into the string library as the String shapes table's
+/// (one undoable change); Internal clearances… opens that window.
+fn string_builder_window(ctx: &egui::Context, r: &mut Ready) {
+    match r.string_builder.show(ctx, &r.model) {
+        crate::string_builder::Out::None => {}
+        crate::string_builder::Out::Save(path, text) => {
+            let ok = r.write_insulator_files(&[(path, Some(text))]) == Some(true);
+            r.string_builder.saved(ok, r.status.clone());
+        }
+        crate::string_builder::Out::InternalClearances => {
+            r.internal_clearances.show(&r.model);
+        }
+    }
 }
 
 /// Help › Controls › 3D / Plan / Profile: how the view is moved and

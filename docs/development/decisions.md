@@ -10,6 +10,36 @@ of Parts A, B and C).
 
 ## 2026-10-31
 
+**The String builder, with a torus (owner, 2026-10-31: "the builder
+window with a torus")**
+
+- A **String builder** window in OHL-Design (Line › Structures › String
+  builder…; the String shapes and String library tables' **String
+  builder ▾**): an insulator assembly's volumes on the strings built from
+  basic shapes, each grounded, electrified or insulated — presets (I
+  string, V string's legs, double string), the common fittings in one
+  click (top fitting, insulator, arcing horns, clamp, grading ring,
+  yoke), each field explained beside it, a front and side preview in the
+  string's own axes in the states' colours. Saving writes the assembly's
+  file through the String shapes table's path (one undoable change). The
+  presets' sizes are invented starting values, said so.
+- A new shape kind, the **torus** (a grading ring): around the string's
+  axis, square to it; `diameter` its **outer** diameter (what a rule
+  across the ring measures), `tube` its tube's diameter (below half the
+  outer one). A format change: an `.ohli` with a torus is written as
+  **version 5** (a program reading version 4 refuses it by its version,
+  not by an unknown kind; without a torus the file stays 4 or older), a
+  line file with one among a string's own shapes as **version 12** (else
+  11 or older); the OHL XML's `<shape>` takes `tube`.
+- The internal clearances measure a torus — the one volume that is not
+  convex — **exactly against points and spheres** (closed form), and
+  against segments, triangles, boxes, cylinders, cones and other tori **by
+  the chords of its circle**, each grown by the tube and the chords'
+  sagitta: never farther than the exact distance (**conservative**), at
+  most 0.5 mm nearer (1 mm between two tori), the chords' count chosen
+  from the ring's size (sagitta ≤ 0.25 mm). Marked as conservative in the
+  theory page.
+
 **The electric field's charges where the wires are; its floors side by
 side (owner, 2026-10-31)**
 

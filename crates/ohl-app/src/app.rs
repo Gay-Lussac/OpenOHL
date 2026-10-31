@@ -325,6 +325,8 @@ pub struct Ready {
     pub bom: crate::bom::BomWindow,
     /// Line › Structures › Spot structures.
     pub spot: crate::spot::SpotWindow,
+    /// Line › Structures › String builder (2026-10-31).
+    pub string_builder: crate::string_builder::StringBuilder,
     /// Edit › Tools › New pylon from a template…, when open.
     pub pylon_builder: Option<crate::pylon_builder::PylonBuilder>,
     /// Checks › Galloping ellipses.
@@ -529,6 +531,7 @@ impl Ready {
             thermal: Default::default(),
             bom: Default::default(),
             spot: Default::default(),
+            string_builder: Default::default(),
             pylon_builder: None,
             galloping: Default::default(),
             wire_tensions: Default::default(),
@@ -1495,25 +1498,11 @@ impl Ready {
             }
         }
         // The string library's files first (the commands use them).
-        if let Some((first, _)) = library.first() {
-            for (path, text) in &library {
-                let result = match text {
-                    Some(text) => path
-                        .parent()
-                        .map_or(Ok(()), std::fs::create_dir_all)
-                        .and_then(|()| std::fs::write(path, text)),
-                    None => std::fs::remove_file(path),
-                };
-                if let Err(e) = result {
-                    self.status = Some((format!("{}: {e}", path.display()), true));
-                    return;
-                }
+        if !library.is_empty() {
+            match self.write_insulator_files(&library) {
+                Some(ok) => done = ok,
+                None => return,
             }
-            self.library_saved(
-                crate::library::LibraryKind::Insulators,
-                crate::library::PageAction::Saved(first.clone()),
-            );
-            done = !self.status.as_ref().is_some_and(|(_, e)| *e);
         }
         let n = commands.len();
         if n > 0 && done {
@@ -1584,6 +1573,37 @@ impl Ready {
                     .or(Some(("not applied".into(), true)));
             }
         }
+    }
+
+    /// Writes (path, text) or deletes (path, None) files of the string
+    /// library, then saves them as a library page does (into the project,
+    /// one undoable change: [`Self::library_saved`]): `Some(true)` done,
+    /// `Some(false)` written but not kept, `None` a file not written (said
+    /// in the status). Used by the String library tables and the String
+    /// builder ([`crate::string_builder`]).
+    pub fn write_insulator_files(
+        &mut self,
+        library: &[(std::path::PathBuf, Option<String>)],
+    ) -> Option<bool> {
+        let (first, _) = library.first()?;
+        for (path, text) in library {
+            let result = match text {
+                Some(text) => path
+                    .parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| std::fs::write(path, text)),
+                None => std::fs::remove_file(path),
+            };
+            if let Err(e) = result {
+                self.status = Some((format!("{}: {e}", path.display()), true));
+                return None;
+            }
+        }
+        self.library_saved(
+            crate::library::LibraryKind::Insulators,
+            crate::library::PageAction::Saved(first.clone()),
+        );
+        Some(!self.status.as_ref().is_some_and(|(_, e)| *e))
     }
 
     /// Writes a table's file (weather cases), then the model reads its

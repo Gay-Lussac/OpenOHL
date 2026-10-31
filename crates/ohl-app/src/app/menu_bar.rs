@@ -442,6 +442,7 @@ pub(super) fn menus(
             ui.label(egui::RichText::new("Libraries").small().weak());
             item(ui, Command::Library(LibraryKind::StructureTypes), out);
             item(ui, Command::Library(LibraryKind::Insulators), out);
+            item(ui, Command::StringBuilder, out);
             ui.separator();
             ui.label(egui::RichText::new("Tables").small().weak());
             item(ui, Command::Table(TableKind::Structures), out);
@@ -999,6 +1000,19 @@ pub(super) fn run_command(
         Command::Hold(t) => r.hotbar.hold(t),
         Command::NewPylon => {
             r.pylon_builder = Some(crate::pylon_builder::PylonBuilder::new(&r.model));
+        }
+        Command::StringBuilder => {
+            // The selected string's assembly, else the one shown before.
+            let id = match &r.selection {
+                Selection::String { structure, label } => r
+                    .model
+                    .line
+                    .structure(structure)
+                    .and_then(|s| s.string(label))
+                    .and_then(|x| x.insulator.clone()),
+                _ => None,
+            };
+            r.string_builder.open_on(id.as_deref().unwrap_or(""));
         }
     }
 }
