@@ -13,6 +13,11 @@ of Parts A, B and C).
 **The String builder, with a torus (owner, 2026-10-31: "the builder
 window with a torus")**
 
+- Confirmed by the owner ("ok ok and ok"): a torus's `diameter` is its
+  outer diameter (across the whole ring); insulator files are written as
+  version 5 and line files as version 12 only when they hold a torus; the
+  V-string preset puts its fittings on each leg (each leg its own string).
+
 - A **String builder** window in OHL-Design (Line › Structures › String
   builder…; the String shapes and String library tables' **String
   builder ▾**): an insulator assembly's volumes on the strings built from
