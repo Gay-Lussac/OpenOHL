@@ -5,7 +5,9 @@
 //! `ohl electrical …`: electrical calculations of a line (roadmap O18) —
 //! `parameters`: its line parameters per circuit, stretch and span;
 //! `magnetic`: the magnetic flux density of its currents in profiles across
-//! it, grids and given points ([`ohl_electrical`]).
+//! it, grids, cuts, volumes and given points; `electric`: the electric field
+//! strength of its voltages likewise; `fields`: both in one run, one set of
+//! results ([`ohl_electrical`]).
 
 use std::path::PathBuf;
 
@@ -35,11 +37,17 @@ pub enum ElectricalCommand {
     /// solved with their images in the ground under each point, or 2D; an
     /// optional limit with the margin.
     Electric(Box<ElectricArgs>),
+    /// Both fields in one run (2026-10-31): the magnetic field of the
+    /// currents and the electric field of the voltages at the same
+    /// profiles, cuts, volumes and points, over the same ground; one JSON
+    /// set of results and one report of a --preset-plugin.
+    Fields(Box<FieldsArgs>),
 }
 
-/// `ohl electrical electric`.
+/// What both fields take (`ohl electrical magnetic`, `electric`,
+/// `fields`): the line and its case, the ground, the places.
 #[derive(Args)]
-pub struct ElectricArgs {
+pub struct FieldCommonArgs {
     #[command(flatten)]
     pub model: ModelArgs,
     /// Weather case file (.ohlwc) holding the case the wires hang in.
@@ -59,80 +67,51 @@ pub struct ElectricArgs {
     /// A terrain surface of the project file for the ground.
     #[arg(long)]
     pub surface: Option<String>,
-    /// A circuit's voltage between phases: CIRCUIT=KV (CIRCUIT: its name or
-    /// its system's id, `*` every circuit). Repeatable; default: the
-    /// system's nominal voltage, said.
-    #[arg(long, value_name = "CIRCUIT=KV")]
-    pub voltage: Vec<String>,
-    /// 2D: the cross-section's wires as infinite line charges.
+    /// The 2D model (infinite straight parallel conductors) instead of 3D.
     #[arg(long)]
     pub two_d: bool,
-    /// A profile: FROM:TO or FROM:TO@FRACTION. Repeatable; default every
-    /// span at its lowest point.
+    /// A profile: FROM:TO (a span's structures) at its lowest point, or
+    /// FROM:TO@FRACTION (0–1 of the span from the first along the line).
+    /// Repeatable; default every span at its lowest point.
     #[arg(long, value_name = "FROM:TO[@FRACTION]")]
     pub profile: Vec<String>,
-    /// The profiles reach this far to either side, m.
+    /// The profiles (and cuts, volumes, grids) reach this far to either
+    /// side, m.
     #[arg(long, default_value_t = 50.0)]
     pub width: f64,
-    /// Height above the ground of the profiles and points, m.
+    /// Height above the ground of the profiles, the grids and the points
+    /// without one, m.
     #[arg(long, default_value_t = 1.0)]
     pub height: f64,
-    /// Between profile points, m.
+    /// Between profile and grid points, m.
     #[arg(long, default_value_t = 1.0)]
     pub step: f64,
-    /// The ground plane under a point is fitted over this distance either
-    /// side, m.
-    #[arg(long, default_value_t = 10.0)]
-    pub ground_radius: f64,
-    /// The ground a plane under each point (quick; not conservative on
-    /// bumps) instead of the tiled conducting floor around each profile,
-    /// group of points and cut (the default: some seconds each).
-    #[arg(long)]
-    pub plane: bool,
-    /// The tiled floor's fine tiles, m (near the profile).
-    #[arg(long, default_value_t = 2.0)]
-    pub tile: f64,
-    /// The tiled floor's coarse tiles, m (a whole multiple of --tile).
-    #[arg(long, default_value_t = 8.0)]
-    pub coarse_tile: f64,
-    /// The tiled floor reaches this far every way from the station, m.
-    #[arg(long, default_value_t = 200.0)]
-    pub floor_reach: f64,
-    /// The tiles under the cuts across the line, m (coarser than the
-    /// profiles' by default).
-    #[arg(long, default_value_t = 8.0)]
-    pub cut_tile: f64,
-    /// The tiles under the volumes, m (8 m: some 3 % of the largest value
-    /// on even ground; 4 m: 0.2 %, some 40 times as long).
-    #[arg(long, default_value_t = 8.0)]
-    pub volume_tile: f64,
-    /// The ground from the project's point cloud even when the project has
-    /// a surface of the checks: its ground classes within the floor's
-    /// reach of the spans computed, the lowest point per metre
-    /// triangulated. (Without --terrain or --surface the ground is by
-    /// default the project's surface of the checks, else its point
-    /// cloud's, as in OHL-Design.)
-    #[arg(long, conflicts_with_all = ["terrain", "surface"])]
-    pub lidar_ground: bool,
-    /// Leave the jumpers out (by default they carry their phase's charge).
-    #[arg(long)]
-    pub no_jumpers: bool,
-    /// The structures' steel earthed (3D on the tiled floor): their types'
-    /// members and poles at detail levels 2 and 3, else their own stick
-    /// drawings; the others left out, said.
-    #[arg(long)]
-    pub steel: bool,
-    /// The longest straight piece of a wire, m (default: the solver's).
+    /// The longest straight piece of a wire, m (3D; default: the solver's
+    /// pieces, 64 per span or part of a span). Shorter pieces lie closer
+    /// to the wire and take longer.
     #[arg(long)]
     pub piece_length: Option<f64>,
-    /// A vertical cut across span FROM:TO at its lowest point or a fraction,
-    /// with an optional label after # (carried to the results). Repeatable.
-    #[arg(long, value_name = "FROM:TO[@FRACTION][#LABEL]")]
+    /// Leave the jumpers out (by default they carry their phase's current
+    /// and charge).
+    #[arg(long)]
+    pub no_jumpers: bool,
+    /// A vertical cut across the line at a station of an alignment (3D;
+    /// 2026-10-31: cuts are made on the alignment): its plane
+    /// perpendicular to the alignment, at an angle point along the
+    /// bisector, as OHL-Design's cross-section panels; --width to either
+    /// side, from the ground to --above over the highest wire; an
+    /// optional label after # (carried to the results). The older
+    /// FROM:TO[@FRACTION] (a span's place; its lowest point without @) is
+    /// converted to the alignment station of that place, said.
+    /// Repeatable.
+    #[arg(long, value_name = "ALIGNMENT@STATION[#LABEL]")]
     pub cut: Vec<String>,
     /// Between a cut's points, m.
     #[arg(long, default_value_t = 0.5)]
     pub cut_step: f64,
-    /// A volume over the spans from FROM to TO along the line. Repeatable.
+    /// A volume over the spans from FROM to TO along the line (3D): the
+    /// isosurfaces of the levels, --width to either side, from the ground
+    /// to --above over the highest wire. Repeatable.
     #[arg(long, value_name = "FROM:TO")]
     pub volume: Vec<String>,
     /// The volumes' fine lattice step, m.
@@ -141,79 +120,20 @@ pub struct ElectricArgs {
     /// Cuts and volumes reach this far over the highest wire, m.
     #[arg(long, default_value_t = 10.0)]
     pub above: f64,
-    /// A level for the isolines and isosurfaces, kV/m. Repeatable.
-    #[arg(long)]
-    pub level: Vec<f64>,
-    /// Points to evaluate: a CSV with x, y and z or height.
+    /// Points from a CSV file: a header with x, y and z (elevation) or
+    /// height (above the ground), optionally name.
     #[arg(long)]
     pub points: Option<PathBuf>,
-    /// A limit, kV/m: the margin per point (none is built in).
-    #[arg(long)]
-    pub limit: Option<f64>,
-    /// Print every profile point.
+    /// Print every profile point (default: a summary per profile).
     #[arg(long)]
     pub all_points: bool,
-    /// Write every point as CSV here.
-    #[arg(long)]
-    pub csv: Option<PathBuf>,
     #[command(flatten)]
     pub plugin: FieldPluginArgs,
 }
 
-/// The results as JSON and the field presets of a plugin, for `ohl
-/// electrical magnetic` and `electric` (2026-10-31: the core extension
-/// points for a building plugin).
+/// The magnetic field's own options (`magnetic`, `fields`).
 #[derive(Args)]
-pub struct FieldPluginArgs {
-    /// Write the results as JSON here (format `ohl-field-results` 1: the
-    /// cuts with their isolines, the given points, the settings).
-    #[arg(long)]
-    pub json: Option<PathBuf>,
-    /// A plugin with the `field-presets` export: the points its manifest
-    /// asks for are gathered (the point cloud's, --terrain's survey
-    /// points), it gives the cuts and points to compute (added to those
-    /// given here), and makes its report files from the results.
-    #[arg(long, value_name = "DIR")]
-    pub preset_plugin: Option<PathBuf>,
-    /// The plugin's parameters, a TOML file (default: its template).
-    #[arg(long, requires = "preset_plugin")]
-    pub params: Option<PathBuf>,
-    /// The plugin's preset to run, by name (default: its first).
-    #[arg(long, requires = "preset_plugin")]
-    pub preset: Option<String>,
-    /// The folder the plugin's report files are written to (default: the
-    /// current folder).
-    #[arg(long, requires = "preset_plugin")]
-    pub out: Option<PathBuf>,
-    /// The point cloud the plugin's points come from: a COPC file or a
-    /// project's cloud (FILE.ohl or FILE.ohl#name); default: the
-    /// project's, if any.
-    #[arg(long, requires = "preset_plugin")]
-    pub cloud: Option<String>,
-}
-
-/// `ohl electrical magnetic`.
-#[derive(Args)]
-pub struct MagneticArgs {
-    #[command(flatten)]
-    pub model: ModelArgs,
-    /// Weather case file (.ohlwc) holding the case the wires hang in.
-    #[arg(long, requires = "case")]
-    pub weather: Option<PathBuf>,
-    /// The weather case the wires hang in (default: still air at
-    /// --temperature).
-    #[arg(long, requires = "weather")]
-    pub case: Option<String>,
-    /// Conductor temperature without --case, °C.
-    #[arg(long, default_value_t = 40.0)]
-    pub temperature: f64,
-    /// Terrain file for the ground (default: straight between the
-    /// structures' feet, level across).
-    #[arg(long, conflicts_with = "surface")]
-    pub terrain: Option<PathBuf>,
-    /// A terrain surface of the project file for the ground.
-    #[arg(long)]
-    pub surface: Option<String>,
+pub struct MagneticOptions {
     /// A circuit's current: CIRCUIT=AMPS, or CIRCUIT=AMPS:reverse for a
     /// load flow against the line's direction (CIRCUIT: its name or its
     /// system's id, `*` every circuit). Repeatable.
@@ -256,90 +176,176 @@ pub struct MagneticArgs {
     /// structures' currents in the field (3D).
     #[arg(long, requires = "earth_wires")]
     pub towers: bool,
-    /// A profile: FROM:TO (a span's structures) at its lowest point, or
-    /// FROM:TO@FRACTION (0–1 of the span from the first along the line).
-    /// Repeatable; default every span at its lowest point.
-    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
-    pub profile: Vec<String>,
-    /// The profiles reach this far to either side, m.
-    #[arg(long, default_value_t = 50.0)]
-    pub width: f64,
-    /// Height above the ground of the profiles, the grids and the points
-    /// without one, m.
-    #[arg(long, default_value_t = 1.0)]
-    pub height: f64,
-    /// Between profile and grid points, m.
-    #[arg(long, default_value_t = 1.0)]
-    pub step: f64,
     /// A grid on a horizontal plane over span FROM:TO. Repeatable.
     #[arg(long, value_name = "FROM:TO")]
     pub grid: Vec<String>,
     /// Between grid points, m (default: --step).
     #[arg(long)]
     pub grid_step: Option<f64>,
-    /// The longest straight piece of a wire, m (3D; default: the solver's
-    /// pieces, 64 per span or part of a span). Shorter pieces lie closer
-    /// to the wire and take longer.
-    #[arg(long)]
-    pub piece_length: Option<f64>,
-    /// Leave the jumpers out (by default they carry their phase's
-    /// current).
-    #[arg(long)]
-    pub no_jumpers: bool,
     /// Cuts and volumes take the wires within this plan distance of them
     /// only, m (default: the whole line); the difference to the whole
     /// line's field is computed at some of their points and said.
     #[arg(long)]
     pub modelled_within: Option<f64>,
-    /// A vertical cut across span FROM:TO at its lowest point or at a
-    /// fraction of it (3D): --width to either side, from the ground to
-    /// --above over the highest wire; an optional label after # (carried
-    /// to the results). Repeatable.
-    #[arg(long, value_name = "FROM:TO[@FRACTION][#LABEL]")]
-    pub cut: Vec<String>,
-    /// Between a cut's points, m.
-    #[arg(long, default_value_t = 0.5)]
-    pub cut_step: f64,
-    /// A volume over span FROM:TO (3D): the isosurfaces of the --level
-    /// values, --width to either side, from the ground to --above over
-    /// the highest wire. Repeatable.
-    #[arg(long, value_name = "FROM:TO")]
-    pub volume: Vec<String>,
-    /// The volumes' fine lattice step, m.
-    #[arg(long, default_value_t = 1.0)]
-    pub volume_step: f64,
-    /// Cuts and volumes reach this far over the highest wire, m.
-    #[arg(long, default_value_t = 10.0)]
-    pub above: f64,
-    /// A level for the isolines and isosurfaces, µT. Repeatable.
-    #[arg(long)]
-    pub level: Vec<f64>,
-    /// Write the volumes' isosurfaces to this Wavefront OBJ file.
-    #[arg(long)]
-    pub obj: Option<PathBuf>,
-    /// Points from a CSV file: a header with x, y and z (elevation) or
-    /// height (above the ground), optionally name.
-    #[arg(long)]
-    pub points: Option<PathBuf>,
-    /// A limit, µT: the margin per point and the limit line's width per
-    /// profile (no limit is built in).
-    #[arg(long)]
-    pub limit: Option<f64>,
-    /// The 2D model (infinite straight parallel conductors) instead of 3D.
-    #[arg(long)]
-    pub two_d: bool,
     /// With --two-d: the wires at the span's mean height (the line
     /// parameters' rule) instead of where they cross the station.
     #[arg(long, requires = "two_d")]
     pub mean_heights: bool,
-    /// Print every profile point (default: a summary per profile).
+}
+
+/// The electric field's own options (`electric`, `fields`).
+#[derive(Args)]
+pub struct ElectricOptions {
+    /// A circuit's voltage between phases: CIRCUIT=KV (CIRCUIT: its name or
+    /// its system's id, `*` every circuit). Repeatable; default: the
+    /// system's nominal voltage, said.
+    #[arg(long, value_name = "CIRCUIT=KV")]
+    pub voltage: Vec<String>,
+    /// The ground plane under a point is fitted over this distance either
+    /// side, m.
+    #[arg(long, default_value_t = 10.0)]
+    pub ground_radius: f64,
+    /// The ground a plane under each point (quick; not conservative on
+    /// bumps) instead of the tiled conducting floor around each profile,
+    /// group of points and cut (the default: some seconds each).
     #[arg(long)]
-    pub all_points: bool,
+    pub plane: bool,
+    /// The tiled floor's fine tiles, m (near the profile).
+    #[arg(long, default_value_t = 2.0)]
+    pub tile: f64,
+    /// The tiled floor's coarse tiles, m (a whole multiple of --tile).
+    #[arg(long, default_value_t = 8.0)]
+    pub coarse_tile: f64,
+    /// The tiled floor reaches this far every way from the station, m.
+    #[arg(long, default_value_t = 200.0)]
+    pub floor_reach: f64,
+    /// The tiles under the cuts across the line, m (coarser than the
+    /// profiles' by default).
+    #[arg(long, default_value_t = 8.0)]
+    pub cut_tile: f64,
+    /// The tiles under the volumes, m (8 m: some 3 % of the largest value
+    /// on even ground; 4 m: 0.2 %, some 40 times as long).
+    #[arg(long, default_value_t = 8.0)]
+    pub volume_tile: f64,
+    /// The ground from the project's point cloud even when the project has
+    /// a surface of the checks: its ground classes within the floor's
+    /// reach of the spans computed, the lowest point per metre
+    /// triangulated. (Without --terrain or --surface the ground is by
+    /// default the project's surface of the checks, else its point
+    /// cloud's, as in OHL-Design.)
+    #[arg(long, conflicts_with_all = ["terrain", "surface"])]
+    pub lidar_ground: bool,
+    /// The structures' steel earthed (3D on the tiled floor): their types'
+    /// members and poles at detail levels 2 and 3, else their own stick
+    /// drawings; the others left out, said.
+    #[arg(long)]
+    pub steel: bool,
+}
+
+/// `ohl electrical electric`.
+#[derive(Args)]
+pub struct ElectricArgs {
+    #[command(flatten)]
+    pub common: FieldCommonArgs,
+    #[command(flatten)]
+    pub electric: ElectricOptions,
+    /// A level for the isolines and isosurfaces, kV/m. Repeatable.
+    #[arg(long)]
+    pub level: Vec<f64>,
+    /// A limit, kV/m: the margin per point (none is built in).
+    #[arg(long)]
+    pub limit: Option<f64>,
     /// Write every point as CSV here.
     #[arg(long)]
     pub csv: Option<PathBuf>,
+}
+
+/// `ohl electrical magnetic`.
+#[derive(Args)]
+pub struct MagneticArgs {
     #[command(flatten)]
-    pub plugin: FieldPluginArgs,
+    pub common: FieldCommonArgs,
+    #[command(flatten)]
+    pub magnetic: MagneticOptions,
+    /// A level for the isolines and isosurfaces, µT. Repeatable.
+    #[arg(long)]
+    pub level: Vec<f64>,
+    /// A limit, µT: the margin per point and the limit line's width per
+    /// profile (no limit is built in).
+    #[arg(long)]
+    pub limit: Option<f64>,
+    /// Write the volumes' isosurfaces to this Wavefront OBJ file.
+    #[arg(long)]
+    pub obj: Option<PathBuf>,
+    /// Write every point as CSV here.
+    #[arg(long)]
+    pub csv: Option<PathBuf>,
+}
+
+/// `ohl electrical fields`: both fields in one run (owner, 2026-10-31:
+/// "Ok for 1 but keep it clean").
+#[derive(Args)]
+pub struct FieldsArgs {
+    #[command(flatten)]
+    pub common: FieldCommonArgs,
+    #[command(flatten)]
+    pub magnetic: MagneticOptions,
+    #[command(flatten)]
+    pub electric: ElectricOptions,
+    /// A level of the magnetic field's isolines and isosurfaces, µT.
+    /// Repeatable.
+    #[arg(long, value_name = "µT")]
+    pub level_ut: Vec<f64>,
+    /// A level of the electric field's isolines and isosurfaces, kV/m.
+    /// Repeatable.
+    #[arg(long, value_name = "KV/M")]
+    pub level_kv_m: Vec<f64>,
+    /// A limit of the magnetic field, µT (none is built in).
+    #[arg(long, value_name = "µT")]
+    pub limit_ut: Option<f64>,
+    /// A limit of the electric field, kV/m (none is built in).
+    #[arg(long, value_name = "KV/M")]
+    pub limit_kv_m: Option<f64>,
+    /// Write the magnetic field's points as CSV here.
+    #[arg(long)]
+    pub csv_magnetic: Option<PathBuf>,
+    /// Write the electric field's points as CSV here.
+    #[arg(long)]
+    pub csv_electric: Option<PathBuf>,
+}
+
+/// The results as JSON and the field presets of a plugin, for `ohl
+/// electrical magnetic`, `electric` and `fields` (2026-10-31: the core
+/// extension points for a building plugin).
+#[derive(Args)]
+pub struct FieldPluginArgs {
+    /// Write the results as JSON here (format `ohl-field-results-set` 1:
+    /// one `ohl-field-results` 2 document per field computed — the cuts
+    /// with their isolines, the given points, the settings).
+    #[arg(long)]
+    pub json: Option<PathBuf>,
+    /// A plugin with the `field-presets` export: the points its manifest
+    /// asks for are gathered (the point cloud's, --terrain's survey
+    /// points), it gives the cuts and points to compute (added to those
+    /// given here), and makes its report files from the results of the
+    /// run (one report, also of both fields with `fields`).
+    #[arg(long, value_name = "DIR")]
+    pub preset_plugin: Option<PathBuf>,
+    /// The plugin's parameters, a TOML file (default: its template).
+    #[arg(long, requires = "preset_plugin")]
+    pub params: Option<PathBuf>,
+    /// The plugin's preset to run, by name (default: its first).
+    #[arg(long, requires = "preset_plugin")]
+    pub preset: Option<String>,
+    /// The folder the plugin's report files are written to (default: the
+    /// current folder).
+    #[arg(long, requires = "preset_plugin")]
+    pub out: Option<PathBuf>,
+    /// The point cloud the plugin's points come from: a COPC file or a
+    /// project's cloud (FILE.ohl or FILE.ohl#name); default: the
+    /// project's, if any.
+    #[arg(long, requires = "preset_plugin")]
+    pub cloud: Option<String>,
 }
 
 /// `ohl electrical parameters`.
@@ -398,6 +404,7 @@ pub fn run(command: ElectricalCommand) -> Result<(), String> {
         ElectricalCommand::Parameters(a) => parameters(&a),
         ElectricalCommand::Magnetic(a) => magnetic(&a),
         ElectricalCommand::Electric(a) => electric(&a),
+        ElectricalCommand::Fields(a) => fields(&a),
     }
 }
 
@@ -762,10 +769,29 @@ fn current_arg(text: &str) -> Result<ohl_electrical::magnetic::CircuitCurrent, S
     })
 }
 
-fn magnetic(a: &MagneticArgs) -> Result<(), String> {
-    use ohl_electrical::magnetic::{self, Heights2d, Model, Settings, StationSpec};
-    let (mut line, library) = load(&a.model)?;
-    let case = match (&a.weather, &a.case) {
+/// The line, its wire library and its case solved: what every field run
+/// starts from.
+struct Solved {
+    line: ohl_line::Line,
+    library: ohl_cables::Library,
+    case: ohl_weather::WeatherCase,
+    shapes: Vec<ohl_line::solve::SectionShape>,
+    jumpers: Vec<ohl_line::jumper::JumperShape>,
+}
+
+/// The line of `c` loaded, its weather case chosen.
+fn load_case(
+    c: &FieldCommonArgs,
+) -> Result<
+    (
+        ohl_line::Line,
+        ohl_cables::Library,
+        ohl_weather::WeatherCase,
+    ),
+    String,
+> {
+    let (mut line, library) = load(&c.model)?;
+    let case = match (&c.weather, &c.case) {
         (Some(path), Some(name)) => {
             let set = ohl_weather::WeatherCases::load(path)?;
             line.set_weather_cases(&set.cases);
@@ -774,28 +800,167 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
                 .next()
                 .ok_or_else(|| format!("no weather case {name}"))?
         }
-        _ => ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(a.temperature)),
+        _ => ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(c.temperature)),
     };
+    Ok((line, library, case))
+}
+
+/// The sections and jumpers of `line` solved in `case` (a section not
+/// solved said and left out).
+fn solve(
+    line: ohl_line::Line,
+    library: ohl_cables::Library,
+    case: ohl_weather::WeatherCase,
+) -> Solved {
+    let mut shapes = Vec::new();
+    for (section, r) in line
+        .sections
+        .iter()
+        .zip(ohl_line::solve::solve_line(&line, &library, &case))
+    {
+        match r {
+            Ok(s) => shapes.push(s),
+            Err(e) => println!("  section {} not solved: {e}", section.id),
+        }
+    }
+    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+    Solved {
+        line,
+        library,
+        case,
+        shapes,
+        jumpers,
+    }
+}
+
+/// The ground: `--terrain`, `--surface`, else the project's
+/// ([`project_ground`], within `reach` of the spans; `lidar`: its point
+/// cloud's).
+fn terrain(
+    c: &FieldCommonArgs,
+    line: &ohl_line::Line,
+    reach: f64,
+    lidar: bool,
+) -> Result<Option<ohl_terrain::Terrain>, String> {
+    match (&c.terrain, &c.surface) {
+        (Some(path), _) => Ok(Some(
+            ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?,
+        )),
+        (None, Some(name)) => {
+            let session = ohl_session::Session::open(&c.model.file).map_err(|e| e.to_string())?;
+            let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
+            Ok(Some(
+                ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?,
+            ))
+        }
+        (None, None) => project_ground(&c.model.file, line, reach, lidar),
+    }
+}
+
+/// The places both fields take from `c`: the profiles, the cuts (with
+/// whether each was given as a span's place, converted), the volumes, the
+/// points.
+struct Places {
+    stations: Vec<ohl_electrical::magnetic::StationSpec>,
+    cuts: Vec<ohl_electrical::magnetic::CutSpec>,
+    volumes: Vec<ohl_electrical::magnetic::VolumeSpec>,
+    points: Vec<ohl_electrical::magnetic::GivenPoint>,
+}
+
+fn places(c: &FieldCommonArgs) -> Result<Places, String> {
+    use ohl_electrical::magnetic::{self, StationSpec};
+    let mut stations = Vec::new();
+    for p in &c.profile {
+        let (from, to, fraction) = span_at(p, "--profile")?;
+        stations.push(StationSpec { from, to, fraction });
+    }
+    let mut cuts = Vec::new();
+    for text in &c.cut {
+        let (at, label) = cut_arg(text)?;
+        cuts.push(magnetic::CutSpec {
+            at,
+            width: c.width,
+            above: c.above,
+            step: c.cut_step,
+            label,
+        });
+    }
+    let mut volumes = Vec::new();
+    for v in &c.volume {
+        let (from, to) = span_arg(v, "--volume")?;
+        volumes.push(magnetic::VolumeSpec {
+            from,
+            to,
+            width: c.width,
+            above: c.above,
+            step: c.volume_step,
+        });
+    }
+    let points = match &c.points {
+        Some(p) => magnetic::parse_points(
+            &std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
+        )
+        .map_err(|e| format!("{}: {e}", p.display()))?,
+        None => Vec::new(),
+    };
+    Ok(Places {
+        stations,
+        cuts,
+        volumes,
+        points,
+    })
+}
+
+/// The levels given, ascending; an error when volumes are asked without.
+fn levels(given: &[f64], volumes: bool, flag: &str) -> Result<Vec<f64>, String> {
+    if volumes && given.is_empty() {
+        return Err(format!("give the volumes' levels: {flag}"));
+    }
+    let mut levels = given.to_vec();
+    levels.sort_by(f64::total_cmp);
+    Ok(levels)
+}
+
+/// The circuits' currents of `o` (with where each comes from), and the
+/// currents at the end points. With `--ends`: the end points listed,
+/// `None`.
+#[allow(clippy::type_complexity)]
+fn currents(
+    o: &MagneticOptions,
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+) -> Result<
+    Option<(
+        Vec<ohl_electrical::magnetic::CircuitCurrent>,
+        Vec<(String, String)>,
+        Vec<ohl_electrical::magnetic::EndCurrent>,
+    )>,
+    String,
+> {
+    use ohl_electrical::magnetic;
     let mut currents = Vec::new();
     let mut sources: Vec<(String, String)> = Vec::new();
-    if let Some(path) = &a.thermal {
-        let method = ohl_thermal::Method::parse(&a.method)?;
-        let name = a.ambient_case.clone().unwrap_or_default();
+    if let Some(path) = &o.thermal {
+        let method = ohl_thermal::Method::parse(&o.method)?;
+        let name = o.ambient_case.clone().unwrap_or_default();
         let ambient = ohl_thermal::ambient::AmbientCases::load(path)?
             .select(std::slice::from_ref(&name))?
             .into_iter()
             .next()
             .ok_or_else(|| format!("no ambient case {name}"))?;
-        let t = a.max_temp.unwrap_or_default();
+        let t = o.max_temp.unwrap_or_default();
         for mut c in magnetic::thermal_currents(
-            &line,
-            &library,
+            line,
+            library,
             method,
             &ambient,
             t,
             &ohl_line::Defaults::default(),
         )? {
-            c.reverse = a.reverse.contains(&c.circuit);
+            c.reverse = o.reverse.contains(&c.circuit);
             sources.push((
                 c.circuit.clone(),
                 format!(
@@ -807,19 +972,19 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             currents.push(c);
         }
     }
-    for c in &a.current {
+    for c in &o.current {
         let c = current_arg(c)?;
         sources.push((c.circuit.clone(), "given".into()));
         currents.push(c);
     }
-    if a.ends {
-        for (key, ends) in magnetic::circuit_ends(&line) {
+    if o.ends {
+        for (key, ends) in magnetic::circuit_ends(line) {
             println!("circuit {}: end points {}", key.label(), ends.join(", "));
         }
-        return Ok(());
+        return Ok(None);
     }
     let mut ends = Vec::new();
-    for e in &a.end {
+    for e in &o.end {
         let (left, value) = e
             .split_once('=')
             .ok_or_else(|| format!("--end {e}: CIRCUIT@STRUCTURE=A"))?;
@@ -844,145 +1009,360 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
                 .into(),
         );
     }
-    let mut stations = Vec::new();
-    for p in &a.profile {
-        let (span, fraction) = match p.split_once('@') {
-            Some((s, f)) => (
-                s,
-                Some(
-                    f.trim()
-                        .parse::<f64>()
-                        .map_err(|_| format!("--profile {p}: {f} is not a fraction 0–1"))?,
-                ),
-            ),
-            None => (p.as_str(), None),
-        };
-        let (from, to) = span_arg(span, "--profile")?;
-        stations.push(StationSpec { from, to, fraction });
-    }
-    let grids = a
+    Ok(Some((currents, sources, ends)))
+}
+
+/// The magnetic field's settings.
+fn magnetic_settings(
+    c: &FieldCommonArgs,
+    o: &MagneticOptions,
+    p: &Places,
+    currents: Vec<ohl_electrical::magnetic::CircuitCurrent>,
+    ends: Vec<ohl_electrical::magnetic::EndCurrent>,
+    levels: Vec<f64>,
+    limit: Option<f64>,
+) -> Result<ohl_electrical::magnetic::Settings, String> {
+    use ohl_electrical::magnetic::{Heights2d, Model, Settings};
+    let grids = o
         .grid
         .iter()
         .map(|g| span_arg(g, "--grid"))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut cuts = Vec::new();
-    for c in &a.cut {
-        let (from, to, fraction, label) = cut_arg(c)?;
-        cuts.push(magnetic::CutSpec {
-            from,
-            to,
-            fraction,
-            width: a.width,
-            above: a.above,
-            step: a.cut_step,
-            label,
-        });
-    }
-    let mut volumes = Vec::new();
-    for v in &a.volume {
-        let (from, to) = span_arg(v, "--volume")?;
-        volumes.push(magnetic::VolumeSpec {
-            from,
-            to,
-            width: a.width,
-            above: a.above,
-            step: a.volume_step,
-        });
-    }
-    if !volumes.is_empty() && a.level.is_empty() {
-        return Err("give the volumes' levels: --level µT".into());
-    }
-    let mut levels = a.level.clone();
-    levels.sort_by(f64::total_cmp);
-    let points = match &a.points {
-        Some(p) => magnetic::parse_points(
-            &std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
-        )
-        .map_err(|e| format!("{}: {e}", p.display()))?,
-        None => Vec::new(),
-    };
-    let mut settings = Settings {
-        model: if a.two_d { Model::TwoD } else { Model::ThreeD },
-        heights_2d: if a.mean_heights {
+    Ok(Settings {
+        model: if c.two_d { Model::TwoD } else { Model::ThreeD },
+        heights_2d: if o.mean_heights {
             Heights2d::Mean
         } else {
             Heights2d::Station
         },
         currents,
         ends,
-        earth_wires: a.earth_wires,
-        towers: a.towers,
-        height: a.height,
-        width: a.width,
-        step: a.step,
-        stations,
+        earth_wires: o.earth_wires,
+        towers: o.towers,
+        height: c.height,
+        width: c.width,
+        step: c.step,
+        stations: p.stations.clone(),
         grids,
-        grid_step: a.grid_step,
-        points,
-        limit_ut: a.limit,
-        piece_length: a.piece_length,
-        modelled_within: a.modelled_within,
-        jumpers: !a.no_jumpers,
-        cuts,
-        volumes,
+        grid_step: o.grid_step,
+        points: p.points.clone(),
+        limit_ut: limit,
+        piece_length: c.piece_length,
+        modelled_within: o.modelled_within,
+        jumpers: !c.no_jumpers,
+        cuts: p.cuts.clone(),
+        volumes: p.volumes.clone(),
         levels,
-    };
-    let mut shapes = Vec::new();
-    for (section, r) in line
-        .sections
-        .iter()
-        .zip(ohl_line::solve::solve_line(&line, &library, &case))
-    {
-        match r {
-            Ok(s) => shapes.push(s),
-            Err(e) => println!("  section {} not solved: {e}", section.id),
-        }
+    })
+}
+
+/// The electric field's settings (the structures' steel with `--steel`).
+fn electric_settings(
+    c: &FieldCommonArgs,
+    o: &ElectricOptions,
+    p: &Places,
+    line: &ohl_line::Line,
+    levels: Vec<f64>,
+    limit: Option<f64>,
+) -> Result<ohl_electrical::electric::Settings, String> {
+    use ohl_electrical::electric::{self, CircuitVoltage, Settings};
+    use ohl_electrical::magnetic::Model;
+    let mut voltages = Vec::new();
+    for v in &o.voltage {
+        let (circuit, kv) = v
+            .split_once('=')
+            .ok_or_else(|| format!("--voltage {v}: CIRCUIT=KV"))?;
+        voltages.push(CircuitVoltage {
+            circuit: circuit.trim().to_owned(),
+            kv: kv
+                .trim()
+                .parse()
+                .map_err(|_| format!("--voltage {v}: {kv} is not a number of kV"))?,
+        });
     }
-    let terrain = match (&a.terrain, &a.surface) {
-        (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
-        (None, Some(name)) => {
-            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
-            let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
-            Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
-        }
-        (None, None) => project_ground(&a.model.file, &line, a.width + 20.0, false)?,
+    let mut settings = Settings {
+        model: if c.two_d { Model::TwoD } else { Model::ThreeD },
+        voltages,
+        height: c.height,
+        width: c.width,
+        step: c.step,
+        stations: p.stations.clone(),
+        points: p.points.clone(),
+        limit_kv_m: limit,
+        ground_radius: o.ground_radius,
+        ground_model: if !o.plane {
+            electric::GroundModel::Tiled(electric::TiledFloor {
+                fine: o.tile,
+                coarse: o.coarse_tile,
+                reach: o.floor_reach,
+                ..Default::default()
+            })
+        } else {
+            electric::GroundModel::Plane
+        },
+        cut_tile: o.cut_tile,
+        volume_tile: o.volume_tile,
+        jumpers: !c.no_jumpers,
+        piece_length: c.piece_length,
+        cuts: p.cuts.clone(),
+        volumes: p.volumes.clone(),
+        levels,
+        ..Default::default()
     };
-    let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
+    if o.steel {
+        (settings.steel, settings.steel_left_out) = steel(&c.model, line)?;
+    }
+    Ok(settings)
+}
+
+/// How far around the spans the electric field needs the ground, m.
+fn electric_reach(c: &FieldCommonArgs, o: &ElectricOptions) -> f64 {
+    if o.plane {
+        o.ground_radius + c.width + 20.0
+    } else {
+        o.floor_reach + c.width + 20.0
+    }
+}
+
+/// The ground closure of `terrain` as the fields take it.
+fn ground_of(
+    terrain: &Option<ohl_terrain::Terrain>,
+) -> impl Fn(f64, f64) -> Option<f64> + Sync + '_ {
+    move |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y))
+}
+
+fn magnetic(a: &MagneticArgs) -> Result<(), String> {
+    use ohl_electrical::magnetic;
+    let (line, library, case) = load_case(&a.common)?;
+    let Some((currents, sources, ends)) = currents(&a.magnetic, &line, &library)? else {
+        return Ok(());
+    };
+    let p = places(&a.common)?;
+    let levels = levels(&a.level, !p.volumes.is_empty(), "--level µT")?;
+    let mut settings =
+        magnetic_settings(&a.common, &a.magnetic, &p, currents, ends, levels, a.limit)?;
+    let s = solve(line, library, case);
+    let terrain = terrain(&a.common, &s.line, a.common.width + 20.0, false)?;
+    let height = ground_of(&terrain);
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
         .as_ref()
         .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
-    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
-        .into_iter()
-        .filter_map(Result::ok)
-        .collect();
-    let preset = preset_from_plugin(
-        &a.plugin,
-        &a.model.file,
-        a.terrain.as_deref(),
-        &line,
-        &case,
-        &shapes,
-        &jumpers,
-    )?;
+    let preset = preset_from_plugin(&a.common, &s)?;
     if let Some(p) = &preset {
         settings.cuts.extend(preset_cuts(&p.preset));
         settings.points.extend(preset_points(&p.preset));
         add_levels(&mut settings.levels, &p.preset.levels_ut);
     }
     let src = ohl_electrical::Sources {
-        line: &line,
-        library: &library,
-        shapes: &shapes,
-        temperature: case.temperature,
+        line: &s.line,
+        library: &s.library,
+        shapes: &s.shapes,
+        temperature: s.case.temperature,
         ground,
-        jumpers: &jumpers,
+        jumpers: &s.jumpers,
     };
     let m = magnetic::run(&src, &settings, None)?;
+    print_magnetic(&s, &m, &settings, &sources, a.common.all_points);
+    if let Some(path) = &a.csv {
+        std::fs::write(path, magnetic::csv(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    if let Some(path) = &a.obj {
+        std::fs::write(path, magnetic::obj(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    let (name, t) = (&s.case.name, s.case.temperature.celsius());
+    let json = ohl_electrical::field_results::set_json(
+        vec![ohl_electrical::field_results::magnetic_value(
+            &m, &settings, name, t,
+        )],
+        name,
+        t,
+    );
+    write_results(&a.common.plugin, &json, preset)
+}
+
+fn electric(a: &ElectricArgs) -> Result<(), String> {
+    use ohl_electrical::electric;
+    let (line, library, case) = load_case(&a.common)?;
+    let p = places(&a.common)?;
+    let levels = levels(&a.level, !p.volumes.is_empty(), "--level kV/m")?;
+    let mut settings = electric_settings(&a.common, &a.electric, &p, &line, levels, a.limit)?;
+    let s = solve(line, library, case);
+    let terrain = terrain(
+        &a.common,
+        &s.line,
+        electric_reach(&a.common, &a.electric),
+        a.electric.lidar_ground,
+    )?;
+    let height = ground_of(&terrain);
+    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
+        .as_ref()
+        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
+    let preset = preset_from_plugin(&a.common, &s)?;
+    if let Some(p) = &preset {
+        settings.cuts.extend(preset_cuts(&p.preset));
+        settings.points.extend(preset_points(&p.preset));
+        add_levels(&mut settings.levels, &p.preset.levels_kv_m);
+    }
+    let src = ohl_electrical::Sources {
+        line: &s.line,
+        library: &s.library,
+        shapes: &s.shapes,
+        temperature: s.case.temperature,
+        ground,
+        jumpers: &s.jumpers,
+    };
+    let e = electric::run(&src, &settings, None)?;
+    print_electric(&s, &e, &settings, a.common.all_points);
+    if let Some(path) = &a.csv {
+        std::fs::write(path, electric::csv(&e)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    let (name, t) = (&s.case.name, s.case.temperature.celsius());
+    let json = ohl_electrical::field_results::set_json(
+        vec![ohl_electrical::field_results::electric_value(
+            &e, &settings, name, t,
+        )],
+        name,
+        t,
+    );
+    write_results(&a.common.plugin, &json, preset)
+}
+
+/// `ohl electrical fields`: both fields on the same places and ground,
+/// one set of results, one report.
+fn fields(a: &FieldsArgs) -> Result<(), String> {
+    use ohl_electrical::{electric, field_results, magnetic};
+    let (line, library, case) = load_case(&a.common)?;
+    let Some((currents, sources, ends)) = currents(&a.magnetic, &line, &library)? else {
+        return Ok(());
+    };
+    let p = places(&a.common)?;
+    let volumes = !p.volumes.is_empty();
+    let mut ms = magnetic_settings(
+        &a.common,
+        &a.magnetic,
+        &p,
+        currents,
+        ends,
+        levels(&a.level_ut, volumes, "--level-ut µT")?,
+        a.limit_ut,
+    )?;
+    let mut es = electric_settings(
+        &a.common,
+        &a.electric,
+        &p,
+        &line,
+        levels(&a.level_kv_m, volumes, "--level-kv-m kV/m")?,
+        a.limit_kv_m,
+    )?;
+    let s = solve(line, library, case);
+    // The electric field's reach: it holds the magnetic field's.
+    let terrain = terrain(
+        &a.common,
+        &s.line,
+        electric_reach(&a.common, &a.electric),
+        a.electric.lidar_ground,
+    )?;
+    let height = ground_of(&terrain);
+    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
+        .as_ref()
+        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
+    let preset = preset_from_plugin(&a.common, &s)?;
+    if let Some(p) = &preset {
+        for (cuts, points) in [
+            (&mut ms.cuts, &mut ms.points),
+            (&mut es.cuts, &mut es.points),
+        ] {
+            cuts.extend(preset_cuts(&p.preset));
+            points.extend(preset_points(&p.preset));
+        }
+        add_levels(&mut ms.levels, &p.preset.levels_ut);
+        add_levels(&mut es.levels, &p.preset.levels_kv_m);
+    }
+    let src = ohl_electrical::Sources {
+        line: &s.line,
+        library: &s.library,
+        shapes: &s.shapes,
+        temperature: s.case.temperature,
+        ground,
+        jumpers: &s.jumpers,
+    };
+    let m = magnetic::run(&src, &ms, None)?;
+    print_magnetic(&s, &m, &ms, &sources, a.common.all_points);
+    let e = electric::run(&src, &es, None)?;
+    print_electric(&s, &e, &es, a.common.all_points);
+    if let Some(path) = &a.csv_magnetic {
+        std::fs::write(path, magnetic::csv(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    if let Some(path) = &a.csv_electric {
+        std::fs::write(path, electric::csv(&e)).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    let (name, t) = (&s.case.name, s.case.temperature.celsius());
+    let json = field_results::set_json(
+        vec![
+            field_results::magnetic_value(&m, &ms, name, t),
+            field_results::electric_value(&e, &es, name, t),
+        ],
+        name,
+        t,
+    );
+    write_results(&a.common.plugin, &json, preset)
+}
+
+/// A cut's line of the summary: its label, alignment station (said when
+/// it was given as a span's place), span, grid and largest value.
+fn cut_line(
+    spec: Option<&ohl_electrical::magnetic::CutSpec>,
+    c: &ohl_electrical::magnetic::FieldCut,
+    unit: &str,
+) -> String {
+    let v = &c.values;
+    let max = v.values.iter().copied().fold(0.0, f64::max);
+    let converted = match spec.map(|s| &s.at) {
+        Some(ohl_electrical::magnetic::CutAt::InSpan { from, to, fraction }) => format!(
+            " (given as {from}:{to}{}: converted to {}@{:.2}, cuts are placed on the alignment)",
+            fraction.map_or(String::new(), |f| format!("@{f}")),
+            c.alignment,
+            c.station
+        ),
+        _ => String::new(),
+    };
+    format!(
+        "cut {}{}@{:.1}{}{converted}: span {}–{} at {:.1} m, {} × {} points ({} m apart), max {max:.3} {unit}",
+        c.label.as_ref().map_or(String::new(), |l| format!("{l} ")),
+        c.alignment,
+        c.station,
+        if c.angle_point {
+            " (angle point: along the bisector)"
+        } else {
+            ""
+        },
+        c.from,
+        c.to,
+        c.at,
+        v.offsets.len(),
+        v.elevations.len(),
+        v.cut.step,
+    )
+}
+
+/// The magnetic field's summary on the terminal.
+fn print_magnetic(
+    s: &Solved,
+    m: &ohl_electrical::magnetic::MagneticField,
+    settings: &ohl_electrical::magnetic::Settings,
+    sources: &[(String, String)],
+    all_points: bool,
+) {
     println!(
         "Magnetic flux density of {} in \"{}\" ({:.1} °C): {}, {} m above the ground{}",
-        line.name,
-        case.name,
-        case.temperature.celsius(),
+        s.line.name,
+        s.case.name,
+        s.case.temperature.celsius(),
         m.model.describe(),
         m.height,
         match m.limit_ut {
@@ -1055,7 +1435,7 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         for w in &p.warnings {
             println!("    warning: {w}");
         }
-        if a.all_points {
+        if all_points {
             for q in &p.points {
                 println!(
                     "    {:>8.1} m  {:>9.4} µT  (largest over the cycle {:.4}){}",
@@ -1095,18 +1475,10 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         ),
         None => String::new(),
     };
-    for c in &m.cuts {
-        let v = &c.values;
-        let max = v.values.iter().copied().fold(0.0, f64::max);
+    for (k, c) in m.cuts.iter().enumerate() {
         println!(
-            "cut {}{}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} µT; {} pieces{}",
-            c.label.as_ref().map_or(String::new(), |l| format!("{l} ")),
-            c.from,
-            c.to,
-            c.at,
-            v.offsets.len(),
-            v.elevations.len(),
-            v.cut.step,
+            "{}; {} pieces{}",
+            cut_line(settings.cuts.get(k), c, "µT"),
             c.pieces,
             left(&c.left_out)
         );
@@ -1150,203 +1522,20 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
             );
         }
     }
-    if let Some(path) = &a.csv {
-        std::fs::write(path, magnetic::csv(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
-        println!("written: {}", path.display());
-    }
-    if let Some(path) = &a.obj {
-        std::fs::write(path, magnetic::obj(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
-        println!("written: {}", path.display());
-    }
-    let json = ohl_electrical::field_results::magnetic_json(
-        &m,
-        &settings,
-        &case.name,
-        case.temperature.celsius(),
-    );
-    write_results(&a.plugin, &json, preset)
 }
 
-/// A span FROM:TO with an optional @FRACTION.
-fn span_at(text: &str, flag: &str) -> Result<(String, String, Option<f64>), String> {
-    let (span, fraction) = match text.split_once('@') {
-        Some((s, f)) => (
-            s,
-            Some(
-                f.trim()
-                    .parse::<f64>()
-                    .map_err(|_| format!("{flag} {text}: {f} is not a fraction 0–1"))?,
-            ),
-        ),
-        None => (text, None),
-    };
-    let (from, to) = span_arg(span, flag)?;
-    Ok((from, to, fraction))
-}
-
-fn electric(a: &ElectricArgs) -> Result<(), String> {
-    use ohl_electrical::electric::{self, CircuitVoltage, Settings};
-    use ohl_electrical::magnetic::{self, Model, StationSpec};
-    let (mut line, library) = load(&a.model)?;
-    let case = match (&a.weather, &a.case) {
-        (Some(path), Some(name)) => {
-            let set = ohl_weather::WeatherCases::load(path)?;
-            line.set_weather_cases(&set.cases);
-            set.select(std::slice::from_ref(name), &[])?
-                .into_iter()
-                .next()
-                .ok_or_else(|| format!("no weather case {name}"))?
-        }
-        _ => ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(a.temperature)),
-    };
-    let mut voltages = Vec::new();
-    for v in &a.voltage {
-        let (c, kv) = v
-            .split_once('=')
-            .ok_or_else(|| format!("--voltage {v}: CIRCUIT=KV"))?;
-        voltages.push(CircuitVoltage {
-            circuit: c.trim().to_owned(),
-            kv: kv
-                .trim()
-                .parse()
-                .map_err(|_| format!("--voltage {v}: {kv} is not a number of kV"))?,
-        });
-    }
-    let mut stations = Vec::new();
-    for p in &a.profile {
-        let (from, to, fraction) = span_at(p, "--profile")?;
-        stations.push(StationSpec { from, to, fraction });
-    }
-    let mut cuts = Vec::new();
-    for c in &a.cut {
-        let (from, to, fraction, label) = cut_arg(c)?;
-        cuts.push(magnetic::CutSpec {
-            from,
-            to,
-            fraction,
-            width: a.width,
-            above: a.above,
-            step: a.cut_step,
-            label,
-        });
-    }
-    let mut volumes = Vec::new();
-    for v in &a.volume {
-        let (from, to) = span_arg(v, "--volume")?;
-        volumes.push(magnetic::VolumeSpec {
-            from,
-            to,
-            width: a.width,
-            above: a.above,
-            step: a.volume_step,
-        });
-    }
-    if !volumes.is_empty() && a.level.is_empty() {
-        return Err("give the volumes' levels: --level kV/m".into());
-    }
-    let mut levels = a.level.clone();
-    levels.sort_by(f64::total_cmp);
-    let points = match &a.points {
-        Some(p) => magnetic::parse_points(
-            &std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
-        )
-        .map_err(|e| format!("{}: {e}", p.display()))?,
-        None => Vec::new(),
-    };
-    let mut settings = Settings {
-        model: if a.two_d { Model::TwoD } else { Model::ThreeD },
-        voltages,
-        height: a.height,
-        width: a.width,
-        step: a.step,
-        stations,
-        points,
-        limit_kv_m: a.limit,
-        ground_radius: a.ground_radius,
-        ground_model: if !a.plane {
-            electric::GroundModel::Tiled(electric::TiledFloor {
-                fine: a.tile,
-                coarse: a.coarse_tile,
-                reach: a.floor_reach,
-                ..Default::default()
-            })
-        } else {
-            electric::GroundModel::Plane
-        },
-        cut_tile: a.cut_tile,
-        volume_tile: a.volume_tile,
-        jumpers: !a.no_jumpers,
-        piece_length: a.piece_length,
-        cuts,
-        volumes,
-        levels,
-        ..Default::default()
-    };
-    if a.steel {
-        (settings.steel, settings.steel_left_out) = steel(&a.model, &line)?;
-    }
-    let mut shapes = Vec::new();
-    for (section, r) in line
-        .sections
-        .iter()
-        .zip(ohl_line::solve::solve_line(&line, &library, &case))
-    {
-        match r {
-            Ok(s) => shapes.push(s),
-            Err(e) => println!("  section {} not solved: {e}", section.id),
-        }
-    }
-    let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
-        .into_iter()
-        .filter_map(Result::ok)
-        .collect();
-    let terrain = match (&a.terrain, &a.surface) {
-        (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
-        (None, Some(name)) => {
-            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
-            let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
-            Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
-        }
-        (None, None) => {
-            let reach = match settings.ground_model {
-                ohl_electrical::electric::GroundModel::Tiled(_) => a.floor_reach + a.width + 20.0,
-                ohl_electrical::electric::GroundModel::Plane => a.ground_radius + a.width + 20.0,
-            };
-            project_ground(&a.model.file, &line, reach, a.lidar_ground)?
-        }
-    };
-    let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
-    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
-        .as_ref()
-        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
-    let preset = preset_from_plugin(
-        &a.plugin,
-        &a.model.file,
-        a.terrain.as_deref(),
-        &line,
-        &case,
-        &shapes,
-        &jumpers,
-    )?;
-    if let Some(p) = &preset {
-        settings.cuts.extend(preset_cuts(&p.preset));
-        settings.points.extend(preset_points(&p.preset));
-        add_levels(&mut settings.levels, &p.preset.levels_kv_m);
-    }
-    let src = ohl_electrical::Sources {
-        line: &line,
-        library: &library,
-        shapes: &shapes,
-        temperature: case.temperature,
-        ground,
-        jumpers: &jumpers,
-    };
-    let m = electric::run(&src, &settings, None)?;
+/// The electric field's summary on the terminal.
+fn print_electric(
+    s: &Solved,
+    m: &ohl_electrical::electric::ElectricField,
+    settings: &ohl_electrical::electric::Settings,
+    all_points: bool,
+) {
     println!(
         "Electric field strength of {} in \"{}\" ({:.1} °C): {}, {} m above the ground{}",
-        line.name,
-        case.name,
-        case.temperature.celsius(),
+        s.line.name,
+        s.case.name,
+        s.case.temperature.celsius(),
         m.model.describe(),
         m.height,
         match m.limit_kv_m {
@@ -1371,7 +1560,7 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             p.ground_departure,
             p.tiles.map_or(String::new(), |n| n.to_string())
         );
-        if a.all_points {
+        if all_points {
             for q in &p.points {
                 println!(
                     "    {:>8.1} m  {:>9.4} kV/m{}",
@@ -1383,19 +1572,8 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             }
         }
     }
-    for c in &m.cuts {
-        let v = &c.values;
-        let max = v.values.iter().copied().fold(0.0, f64::max);
-        println!(
-            "cut {}{}–{} at {:.1} m: {} × {} points ({} m apart), max {max:.3} kV/m",
-            c.label.as_ref().map_or(String::new(), |l| format!("{l} ")),
-            c.from,
-            c.to,
-            c.at,
-            v.offsets.len(),
-            v.elevations.len(),
-            v.cut.step
-        );
+    for (k, c) in m.cuts.iter().enumerate() {
+        println!("{}", cut_line(settings.cuts.get(k), c, "kV/m"));
     }
     for vol in &m.volumes {
         let v = &vol.values;
@@ -1435,28 +1613,57 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
             );
         }
     }
-    if let Some(path) = &a.csv {
-        std::fs::write(path, electric::csv(&m)).map_err(|e| format!("{}: {e}", path.display()))?;
-        println!("written: {}", path.display());
-    }
-    let json = ohl_electrical::field_results::electric_json(
-        &m,
-        &settings,
-        &case.name,
-        case.temperature.celsius(),
-    );
-    write_results(&a.plugin, &json, preset)
 }
 
-/// `--cut FROM:TO[@FRACTION][#LABEL]`.
-fn cut_arg(text: &str) -> Result<(String, String, Option<f64>, Option<String>), String> {
+/// A span FROM:TO with an optional @FRACTION.
+fn span_at(text: &str, flag: &str) -> Result<(String, String, Option<f64>), String> {
+    let (span, fraction) = match text.split_once('@') {
+        Some((s, f)) => (
+            s,
+            Some(
+                f.trim()
+                    .parse::<f64>()
+                    .map_err(|_| format!("{flag} {text}: {f} is not a fraction 0–1"))?,
+            ),
+        ),
+        None => (text, None),
+    };
+    let (from, to) = span_arg(span, flag)?;
+    Ok((from, to, fraction))
+}
+
+/// `--cut ALIGNMENT@STATION[#LABEL]` (a station in m, `m` after it
+/// allowed); the older `FROM:TO[@FRACTION][#LABEL]` (a `:` before the
+/// `@`) as a span's place, converted by the run to its alignment station.
+fn cut_arg(text: &str) -> Result<(ohl_electrical::magnetic::CutAt, Option<String>), String> {
+    use ohl_electrical::magnetic::CutAt;
     let (spec, label) = match text.split_once('#') {
         Some((s, l)) if !l.trim().is_empty() => (s, Some(l.trim().to_owned())),
         Some((s, _)) => (s, None),
         None => (text, None),
     };
-    let (from, to, fraction) = span_at(spec, "--cut")?;
-    Ok((from, to, fraction, label))
+    let place = spec.rsplit_once('@').map_or(spec, |(p, _)| p);
+    if place.contains(':') {
+        let (from, to, fraction) = span_at(spec, "--cut")?;
+        return Ok((CutAt::InSpan { from, to, fraction }, label));
+    }
+    let (alignment, station) = spec
+        .rsplit_once('@')
+        .ok_or_else(|| format!("--cut {text}: ALIGNMENT@STATION (m along the alignment)"))?;
+    let s = station.trim();
+    let s = s.strip_suffix('m').unwrap_or(s).trim();
+    let station = s
+        .parse::<f64>()
+        .ok()
+        .filter(|x| x.is_finite())
+        .ok_or_else(|| format!("--cut {text}: {station} is not a station in m"))?;
+    Ok((
+        CutAt::Station {
+            alignment: alignment.trim().to_owned(),
+            station,
+        },
+        label,
+    ))
 }
 
 /// A plugin's preset, chosen and checked, with what its report needs.
@@ -1469,19 +1676,13 @@ struct PresetRun {
 
 /// The preset of `--preset-plugin` (none without it): the points its
 /// manifest's `[field-input]` asks for gathered (the point cloud of
-/// `--cloud`, else the project's; the survey points of `terrain`), the
+/// `--cloud`, else the project's; the survey points of `--terrain`), the
 /// plugin given them, its parameters and the solved model, its presets
-/// checked by the host, the one named by `--preset` (else the first)
-/// taken.
-fn preset_from_plugin(
-    a: &FieldPluginArgs,
-    file: &std::path::Path,
-    terrain: Option<&std::path::Path>,
-    line: &ohl_line::Line,
-    case: &ohl_weather::WeatherCase,
-    shapes: &[ohl_line::solve::SectionShape],
-    jumpers: &[ohl_line::jumper::JumperShape],
-) -> Result<Option<PresetRun>, String> {
+/// checked by the host against the line's alignments, the one named by
+/// `--preset` (else the first) taken.
+fn preset_from_plugin(c: &FieldCommonArgs, s: &Solved) -> Result<Option<PresetRun>, String> {
+    let a = &c.plugin;
+    let (file, terrain, line) = (&c.model.file, c.terrain.as_deref(), &s.line);
     let Some(dir) = &a.preset_plugin else {
         return Ok(None);
     };
@@ -1503,6 +1704,16 @@ fn preset_from_plugin(
     let spans: Vec<(String, String)> = ohl_electrical::cross_section::line_spans(line)
         .into_iter()
         .map(|s| (s.from, s.to))
+        .collect();
+    let alignments: Vec<(String, f64)> = line
+        .alignment_views()
+        .iter()
+        .map(|v| {
+            (
+                v.id.clone(),
+                ohl_line::route::plan_length(&v.centreline(line)),
+            )
+        })
         .collect();
     let at = |id: &str| {
         line.structure(id)
@@ -1544,10 +1755,10 @@ fn preset_from_plugin(
     let model = ohl_io::ExportModel::new(
         line,
         &[(
-            case.name.clone(),
-            case.summary(),
-            shapes.to_vec(),
-            jumpers.to_vec(),
+            s.case.name.clone(),
+            s.case.summary(),
+            s.shapes.clone(),
+            s.jumpers.clone(),
         )],
     )
     .to_json();
@@ -1558,7 +1769,7 @@ fn preset_from_plugin(
         ground: gathered.ground,
     };
     let presets = host
-        .field_presets(dir, &input, &spans)
+        .field_presets(dir, &input, &alignments)
         .map_err(|e| e.to_string())?;
     let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
     let preset = match &a.preset {
@@ -1597,14 +1808,15 @@ fn preset_from_plugin(
     }))
 }
 
-/// A preset's cuts as the fields take them.
+/// A preset's cuts as the fields take them: at their alignment stations.
 fn preset_cuts(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::CutSpec> {
     p.cuts
         .iter()
         .map(|c| ohl_electrical::magnetic::CutSpec {
-            from: c.from.clone(),
-            to: c.to.clone(),
-            fraction: c.fraction,
+            at: ohl_electrical::magnetic::CutAt::Station {
+                alignment: c.alignment.clone(),
+                station: c.station,
+            },
             width: c.width,
             above: c.above,
             step: c.step,
@@ -1634,8 +1846,8 @@ fn add_levels(levels: &mut Vec<f64>, extra: &[f64]) {
     levels.dedup();
 }
 
-/// Writes `--json` and, with a preset, the plugin's report files of the
-/// results (`json`) into `--out`.
+/// Writes `--json` (the run's `ohl-field-results-set`, `json`) and, with
+/// a preset, the plugin's report files of it into `--out`.
 fn write_results(a: &FieldPluginArgs, json: &str, preset: Option<PresetRun>) -> Result<(), String> {
     if let Some(path) = &a.json {
         std::fs::write(path, json).map_err(|e| format!("{}: {e}", path.display()))?;

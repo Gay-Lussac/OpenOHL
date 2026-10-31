@@ -521,7 +521,10 @@ impl MagneticFieldWindow {
             }
         };
         let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
-        let cuts = self.span_pick.cuts_asked(model, spans).len();
+        // The cuts as the engine places them (on the alignment); why the
+        // others cannot be.
+        let (placed, unplaced) = self.span_pick.cut_places(model, spans);
+        let cuts = placed.len();
         let above: usize = self
             .span_pick
             .above_runs(model, spans)
@@ -611,10 +614,17 @@ impl MagneticFieldWindow {
                          its isolines at the levels (5); Results › Open cut shows it on the wires.",
                         duration(points * taken(self.modelled_within, 0.0) * rate)
                     ),
-                    "The cut is perpendicular to the span (between its two structures), from \
-                     the lowest ground to this far over the highest wire.",
+                    "The cut is a vertical plane at the alignment station of its place in the \
+                     span (between its structures' stations), perpendicular to the alignment — \
+                     at an angle point along the bisector — as a cross-section panel opened \
+                     there; from the lowest ground to this far over the highest wire.",
                 );
                 ui.end_row();
+                for why in &unplaced {
+                    ui.label("");
+                    ui.colored_label(ui.visuals().warn_fg_color, format!("No cut placed: {why}."));
+                    ui.end_row();
+                }
                 ui.label("Volumes");
                 ui.horizontal(|ui| {
                     let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });

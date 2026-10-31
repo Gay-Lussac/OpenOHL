@@ -379,7 +379,145 @@ pub fn point_at(polyline: &[Point], station: f64, offset: f64) -> [f64; 2] {
     polyline.first().map_or([0.0, 0.0], |p| [p[0], p[1]])
 }
 
+/// A station this close to an alignment point (m) is cut along the
+/// bisector of the angle there, as structures stand.
+pub const AT_VERTEX: f64 = 0.01;
+
+/// A vertical plane across an alignment: a point of it and the direction
+/// looked in (ahead, a unit vector in plan). One implementation for the
+/// cross-section panels and the fields' cuts (owner, 2026-10-31: "cuts
+/// are made on the alignment not the circuits or span"): see
+/// [`plane_at`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plane {
+    /// A point of the plane (on the axis), plan.
+    pub origin: [f64; 2],
+    /// The direction looked in: ahead along the alignment.
+    pub ahead: [f64; 2],
+}
+
+impl Plane {
+    /// The direction to the right of the line, looking ahead.
+    pub fn right(&self) -> [f64; 2] {
+        [self.ahead[1], -self.ahead[0]]
+    }
+
+    /// How far `p` lies ahead of the plane, m.
+    pub fn along(&self, p: [f64; 3]) -> f64 {
+        (p[0] - self.origin[0]) * self.ahead[0] + (p[1] - self.origin[1]) * self.ahead[1]
+    }
+
+    /// How far `p` lies right of the axis, m (left negative).
+    pub fn offset(&self, p: [f64; 3]) -> f64 {
+        let r = self.right();
+        (p[0] - self.origin[0]) * r[0] + (p[1] - self.origin[1]) * r[1]
+    }
+
+    /// The plan point of the plane `offset` right of the axis.
+    pub fn at(&self, offset: f64) -> [f64; 2] {
+        let r = self.right();
+        [
+            self.origin[0] + offset * r[0],
+            self.origin[1] + offset * r[1],
+        ]
+    }
+
+    /// The direction looked in as a bearing: degrees clockwise from
+    /// north (grid north).
+    pub fn bearing_deg(&self) -> f64 {
+        self.ahead[0]
+            .atan2(self.ahead[1])
+            .to_degrees()
+            .rem_euclid(360.0)
+    }
+}
+
+/// The plane across an alignment at a station ([`plane_at`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StationPlane {
+    /// The plane.
+    pub plane: Plane,
+    /// The station, m (kept within the alignment).
+    pub station: f64,
+    /// The alignment's length, m.
+    pub length: f64,
+    /// At an angle point of the alignment: the plane along the bisector.
+    pub angle_point: bool,
+}
+
+/// The length of a polyline in plan, m.
+pub fn plan_length(pts: &[Point]) -> f64 {
+    pts.windows(2)
+        .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))
+        .sum()
+}
+
+/// The direction ahead at `station` along `centre` (unit, plan), and
+/// whether the station is at an angle point: there (within
+/// [`AT_VERTEX`]), the bisector of the two segments' directions (the
+/// plane across the line is then the bisector of the line angle, as a
+/// structure stands there).
+pub fn direction_at(centre: &[Point], station: f64) -> Option<([f64; 2], bool)> {
+    let mut segs: Vec<(f64, f64, [f64; 2])> = Vec::new();
+    let mut start = 0.0;
+    for w in centre.windows(2) {
+        let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+        let len = dx.hypot(dy);
+        if len <= 0.0 {
+            continue;
+        }
+        segs.push((start, start + len, [dx / len, dy / len]));
+        start += len;
+    }
+    let k = segs
+        .iter()
+        .position(|s| station <= s.1)
+        .unwrap_or(segs.len().checked_sub(1)?);
+    let s = segs[k];
+    let bisector = |a: [f64; 2], b: [f64; 2]| {
+        let v = [a[0] + b[0], a[1] + b[1]];
+        let n = v[0].hypot(v[1]);
+        if n < 1e-9 { b } else { [v[0] / n, v[1] / n] }
+    };
+    let turns = |a: [f64; 2], b: [f64; 2]| (a[0] * b[1] - a[1] * b[0]).abs() > 1e-9;
+    if station - s.0 < AT_VERTEX && k > 0 {
+        let a = segs[k - 1].2;
+        return Some((bisector(a, s.2), turns(a, s.2)));
+    }
+    if s.1 - station < AT_VERTEX && k + 1 < segs.len() {
+        let b = segs[k + 1].2;
+        return Some((bisector(s.2, b), turns(s.2, b)));
+    }
+    Some((s.2, false))
+}
+
+/// The vertical plane across the centreline `centre` at `station`:
+/// perpendicular to it, at an angle point along the bisector; the station
+/// kept within the centreline. `None`: a centreline without length.
+pub fn plane_at(centre: &[Point], station: f64) -> Option<StationPlane> {
+    let length = plan_length(centre);
+    if centre.len() < 2 || length <= 0.0 {
+        return None;
+    }
+    let station = station.clamp(0.0, length);
+    let origin = point_at(centre, station, 0.0);
+    let (ahead, angle_point) = direction_at(centre, station)?;
+    Some(StationPlane {
+        plane: Plane { origin, ahead },
+        station,
+        length,
+        angle_point,
+    })
+}
+
 impl AlignmentView {
+    /// The plane across the alignment at `station` ([`plane_at`]); an
+    /// error naming it when it has no length.
+    pub fn plane_at(&self, station: f64) -> Result<StationPlane, String> {
+        plane_at(&positions(&self.alignment), station)
+            .ok_or_else(|| format!("alignment {} has no length", self.id))
+    }
+
     /// The alignment's centreline: its points (`line` is not needed any
     /// more; kept for the callers).
     pub fn centreline(&self, _line: &Line) -> Vec<Point> {
@@ -633,6 +771,55 @@ impl Line {
                 let pis = positions(&v.alignment);
                 (project(&pis, pa).0, project(&pis, pb).0)
             })
+    }
+
+    /// The alignment a span between structures `a` and `b` runs along
+    /// (of `views`, [`Self::alignment_views`]): the first whose run has
+    /// them following each other, else the first it runs along
+    /// ([`AlignmentView::along`]), else the first holding both; with the
+    /// stations of `a` and `b` on it. An error saying so when none holds
+    /// both.
+    pub fn span_alignment<'v>(
+        &self,
+        views: &'v [AlignmentView],
+        a: &str,
+        b: &str,
+    ) -> Result<(&'v AlignmentView, f64, f64), String> {
+        let holds = |v: &&AlignmentView| {
+            v.structures.iter().any(|s| s == a) && v.structures.iter().any(|s| s == b)
+        };
+        let view = views
+            .iter()
+            .find(|v| v.consecutive(a, b))
+            .or_else(|| views.iter().find(|v| v.along(self, a, b)))
+            .or_else(|| views.iter().find(holds))
+            .ok_or_else(|| {
+                format!(
+                    "the span {a}–{b} is on no alignment: a cut is placed at a station of an \
+                     alignment"
+                )
+            })?;
+        let pis = positions(&view.alignment);
+        let at = |id: &str| {
+            self.structure(id)
+                .map(|s| project(&pis, s.position).0)
+                .ok_or_else(|| format!("structure {id} is not in the line"))
+        };
+        Ok((view, at(a)?, at(b)?))
+    }
+
+    /// The alignment station of the place `fraction` (0–1) of the span
+    /// from structure `a` to `b`: on its alignment ([`Self::span_alignment`]),
+    /// between the stations of its structures.
+    pub fn span_station(
+        &self,
+        views: &[AlignmentView],
+        a: &str,
+        b: &str,
+        fraction: f64,
+    ) -> Result<(String, f64), String> {
+        let (view, sa, sb) = self.span_alignment(views, a, b)?;
+        Ok((view.id.clone(), sa + fraction.clamp(0.0, 1.0) * (sb - sa)))
     }
 
     /// Whether span point `p` of `section` lies within its span: a
@@ -1613,5 +1800,31 @@ mod tests {
                 .to_string()
                 .contains("unknown route")
         );
+    }
+
+    /// The plane across an alignment (2026-10-31, shared by the
+    /// cross-section panels and the fields' cuts): perpendicular to it,
+    /// along the bisector at an angle point, the station held within it.
+    #[test]
+    fn the_plane_at_a_station() {
+        let a = 30f64.to_radians();
+        let c = [
+            [0.0, 0.0, 0.0],
+            [100.0, 0.0, 0.0],
+            [100.0 + 100.0 * a.cos(), 100.0 * a.sin(), 0.0],
+        ];
+        let p = plane_at(&c, 50.0).unwrap();
+        assert!(!p.angle_point);
+        assert_eq!(p.plane.origin, [50.0, 0.0]);
+        assert_eq!(p.plane.ahead, [1.0, 0.0]);
+        assert_eq!(p.plane.right(), [0.0, -1.0]);
+        let p = plane_at(&c, 100.0).unwrap();
+        assert!(p.angle_point);
+        let h = 15f64.to_radians();
+        assert!((p.plane.ahead[0] - h.cos()).abs() < 1e-12);
+        assert!((p.plane.ahead[1] - h.sin()).abs() < 1e-12);
+        let p = plane_at(&c, 500.0).unwrap();
+        assert!((p.station - 200.0).abs() < 1e-9 && (p.length - 200.0).abs() < 1e-9);
+        assert!(plane_at(&c[..1], 0.0).is_none());
     }
 }

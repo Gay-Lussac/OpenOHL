@@ -47,10 +47,6 @@ use crate::view3d::{CutOutline, View3d};
 /// plane (along the line) is shown, m.
 pub const DEFAULT_DEPTH: f64 = 10.0;
 
-/// A station this close to an alignment point (m) is cut along the
-/// bisector of the angle there, as structures stand.
-const AT_VERTEX: f64 = 0.01;
-
 /// The side of the cells of the LiDAR index, m.
 const CELL: f64 = 8.0;
 
@@ -82,50 +78,9 @@ pub struct CutSpec {
 }
 
 /// The cut's plane, vertical: a point of it and the direction looked in
-/// (ahead, a unit vector in plan).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Plane {
-    /// A point of the plane (on the axis), plan.
-    pub origin: [f64; 2],
-    /// The direction looked in: ahead along the alignment.
-    pub ahead: [f64; 2],
-}
-
-impl Plane {
-    /// The direction to the right of the line, looking ahead.
-    pub fn right(&self) -> [f64; 2] {
-        [self.ahead[1], -self.ahead[0]]
-    }
-
-    /// How far `p` lies ahead of the plane, m.
-    pub fn along(&self, p: [f64; 3]) -> f64 {
-        (p[0] - self.origin[0]) * self.ahead[0] + (p[1] - self.origin[1]) * self.ahead[1]
-    }
-
-    /// How far `p` lies right of the axis, m (left negative).
-    pub fn offset(&self, p: [f64; 3]) -> f64 {
-        let r = self.right();
-        (p[0] - self.origin[0]) * r[0] + (p[1] - self.origin[1]) * r[1]
-    }
-
-    /// The plan point of the plane `offset` right of the axis.
-    pub fn at(&self, offset: f64) -> [f64; 2] {
-        let r = self.right();
-        [
-            self.origin[0] + offset * r[0],
-            self.origin[1] + offset * r[1],
-        ]
-    }
-
-    /// The direction looked in as a bearing: degrees clockwise from
-    /// north (grid north).
-    pub fn bearing_deg(&self) -> f64 {
-        self.ahead[0]
-            .atan2(self.ahead[1])
-            .to_degrees()
-            .rem_euclid(360.0)
-    }
-}
+/// (ahead, a unit vector in plan) — the line's own ([`ohl_line::route::Plane`]),
+/// shared with the fields' cuts (2026-10-31).
+pub use ohl_line::route::{AT_VERTEX, Plane, direction_at, plan_length};
 
 /// A cut placed on the line.
 #[derive(Debug, Clone, PartialEq)]
@@ -139,51 +94,6 @@ pub struct Placed {
     /// At an angle point of the alignment (a station cut along the
     /// bisector).
     pub angle_point: bool,
-}
-
-/// The length of a polyline in plan, m.
-fn plan_length(pts: &[[f64; 3]]) -> f64 {
-    pts.windows(2)
-        .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))
-        .sum()
-}
-
-/// The direction ahead at `station` along `centre` (unit, plan), and
-/// whether the station is at an angle point: there, the bisector of the
-/// two segments' directions (the plane across the line is then the
-/// bisector of the line angle, as a structure stands there).
-pub fn direction_at(centre: &[[f64; 3]], station: f64) -> Option<([f64; 2], bool)> {
-    let mut segs: Vec<(f64, f64, [f64; 2])> = Vec::new();
-    let mut start = 0.0;
-    for w in centre.windows(2) {
-        let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
-        let len = dx.hypot(dy);
-        if len <= 0.0 {
-            continue;
-        }
-        segs.push((start, start + len, [dx / len, dy / len]));
-        start += len;
-    }
-    let k = segs
-        .iter()
-        .position(|s| station <= s.1)
-        .unwrap_or(segs.len().checked_sub(1)?);
-    let s = segs[k];
-    let bisector = |a: [f64; 2], b: [f64; 2]| {
-        let v = [a[0] + b[0], a[1] + b[1]];
-        let n = v[0].hypot(v[1]);
-        if n < 1e-9 { b } else { [v[0] / n, v[1] / n] }
-    };
-    let turns = |a: [f64; 2], b: [f64; 2]| (a[0] * b[1] - a[1] * b[0]).abs() > 1e-9;
-    if station - s.0 < AT_VERTEX && k > 0 {
-        let a = segs[k - 1].2;
-        return Some((bisector(a, s.2), turns(a, s.2)));
-    }
-    if s.1 - station < AT_VERTEX && k + 1 < segs.len() {
-        let b = segs[k + 1].2;
-        return Some((bisector(s.2, b), turns(s.2, b)));
-    }
-    Some((s.2, false))
 }
 
 /// Places cut `spec` on `line` (its alignments `views`).
@@ -203,15 +113,13 @@ pub fn place(
     }
     match &spec.at {
         At::Station(s) => {
-            let station = s.clamp(0.0, length);
-            let origin = ohl_line::route::point_at(&centre, station, 0.0);
-            let (ahead, angle_point) = direction_at(&centre, station)
-                .ok_or_else(|| format!("alignment {} has no direction", spec.alignment))?;
+            // The plane the fields' cuts are computed on too.
+            let p = view.plane_at(*s)?;
             Ok(Placed {
-                plane: Plane { origin, ahead },
-                station,
-                length,
-                angle_point,
+                plane: p.plane,
+                station: p.station,
+                length: p.length,
+                angle_point: p.angle_point,
             })
         }
         At::Structure(id) => {

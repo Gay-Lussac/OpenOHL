@@ -43,9 +43,8 @@ fn to_wit(p: analysis::PresetOut) -> FieldPreset {
             .into_iter()
             .map(|c| Cut {
                 label: c.label,
-                from: c.from,
-                to: c.to,
-                fraction: Some(c.fraction),
+                alignment: c.alignment,
+                station: c.station,
                 width: c.width,
                 above: c.above,
                 step: c.step,
@@ -87,9 +86,8 @@ fn from_wit(p: FieldPreset) -> analysis::PresetOut {
             .into_iter()
             .map(|c| analysis::CutOut {
                 label: c.label,
-                from: c.from,
-                to: c.to,
-                fraction: c.fraction.unwrap_or(f64::NAN),
+                alignment: c.alignment,
+                station: c.station,
                 width: c.width,
                 above: c.above,
                 step: c.step,

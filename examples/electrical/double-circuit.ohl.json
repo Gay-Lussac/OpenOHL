@@ -3,6 +3,53 @@
   "version": 7,
   "name": "Synthetic double circuit (electrical example)",
   "crs": "",
+  "routes": [
+    {
+      "id": "main",
+      "name": "Synthetic double circuit"
+    }
+  ],
+  "alignments": [
+    {
+      "id": "main",
+      "name": "Synthetic double circuit",
+      "route": "main",
+      "points": [
+        "P1",
+        "P2",
+        "P3"
+      ]
+    }
+  ],
+  "alignment_points": [
+    {
+      "id": "P1",
+      "position": [
+        0.0,
+        0.0,
+        400.0
+      ],
+      "structure": "T1"
+    },
+    {
+      "id": "P2",
+      "position": [
+        300.0,
+        0.0,
+        402.0
+      ],
+      "structure": "T2"
+    },
+    {
+      "id": "P3",
+      "position": [
+        600.0,
+        0.0,
+        398.0
+      ],
+      "structure": "T3"
+    }
+  ],
   "structures": [
     {
       "id": "T1",

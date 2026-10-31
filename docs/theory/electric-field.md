@@ -78,7 +78,10 @@ blocks of points), with the same choices of piece length.
 comparison below: "keep the tiled implementation"): around each profile,
 each group of given points near one another along a span (they share a
 floor around their middle, its fine tiles reaching the farthest across)
-and each cut (the cross-section panels' too), the floor below is solved;
+and each cut (the cross-section panels' too; a cut's floor in the cut's
+own frame — centred on its plane, its tiles along and across it — since
+2026-10-31, when cuts moved onto the alignment: the same tiles as before
+for a cut square to its span), the floor below is solved;
 about a second each (2026-10-31: its dense system solved by LU on all
 cores, faer — 0.4 s at 4 660 tiles against 8.5 s on one core before, the
 same values to \( 10^{-14} \); filling it and the line's potential at its

@@ -49,7 +49,7 @@ use serde::Serialize;
 
 use crate::cross_section::{self, Axis, CrossSection, PhaseData, Sources, StationAt};
 use crate::earth::EPS0;
-use crate::field_views::{self, CutValues, VerticalCut, VolumeBox, VolumeValues, compute_all};
+use crate::field_views::{self, CutValues, VolumeBox, VolumeValues, compute_all};
 use crate::magnetic::{self, GivenPoint, Model, Progress, StationSpec};
 use crate::matrices::{self, Wire};
 use crate::parameters::{CircuitKey, DEFAULT_FREQUENCY_HZ};
@@ -1401,42 +1401,20 @@ pub fn run_keeping(
     let mut volumes = Vec::new();
     if model3d.is_some() {
         let kv = |ps: &[[f64; 3]]| -> Vec<f64> { e_at(ps).into_iter().map(|e| e / 1e3).collect() };
-        let find = |from: &str, to: &str| {
-            spans
-                .iter()
-                .position(|s| (s.from == from && s.to == to) || (s.from == to && s.to == from))
-                .ok_or_else(|| format!("no span between structures {from} and {to}"))
-        };
+        let views = src.line.alignment_views();
         for c in &settings.cuts {
             magnetic::check_cancel(progress)?;
-            let i = find(&c.from, &c.to)?;
+            let placed = magnetic::place_cut(src, &views, &spans, &axes, c).map_err(|e| {
+                format!(
+                    "cut {}: {e}",
+                    c.label.clone().unwrap_or_else(|| c.at.describe())
+                )
+            })?;
+            let i = placed.span;
             let axis = axes[i]
                 .as_ref()
-                .ok_or_else(|| format!("span {}–{}: no axis", c.from, c.to))?;
-            let t = match c.fraction {
-                Some(f) if (0.0..=1.0).contains(&f) => f * axis.length,
-                Some(f) => return Err(format!("a place in the span from 0 to 1, not {f}")),
-                None => magnetic::lowest_station(src, &spans[i], axis),
-            };
-            let n = (2.0 * c.width / c.step).ceil().max(1.0) as usize;
-            let low = (0..=n)
-                .map(|k| {
-                    axis.ground(
-                        src.ground,
-                        t,
-                        -c.width + 2.0 * c.width * k as f64 / n as f64,
-                    )
-                })
-                .fold(f64::INFINITY, f64::min);
-            let cut = VerticalCut {
-                origin: axis.plan(t, 0.0),
-                right: axis.right,
-                left: -c.width,
-                right_offset: c.width,
-                bottom: low.floor(),
-                top: magnetic::highest_wire(src, &spans[i]).unwrap_or(low + 50.0) + c.above,
-                step: c.step,
-            };
+                .ok_or_else(|| format!("span {}–{}: no axis", spans[i].from, spans[i].to))?;
+            let cut = magnetic::cut_box(src, &spans[i], axis, &placed, c);
             let g = |x: f64, y: f64| Some(ground(x, y));
             let values: CutValues = match (&model3d, settings.ground_model) {
                 (Some(m), GroundModel::Tiled(floor)) => {
@@ -1445,11 +1423,22 @@ pub fn run_keeping(
                         coarse: settings.cut_tile.max(floor.coarse),
                         ..floor
                     };
+                    // The cut's own floor, in the cut's frame (station 0
+                    // on the plane, offsets along it).
                     let fl = with_floor(
                         progress,
-                        &format!("cut {}–{}", c.from, c.to),
+                        &format!("cut {}", c.label.clone().unwrap_or_else(|| c.at.describe())),
                         floor.tiles(c.width),
-                        || Floor::solve(m, Frame::of(axis), t, c.width, &floor, &ground),
+                        || {
+                            Floor::solve(
+                                m,
+                                Frame::of_cut(placed.plane.origin, placed.plane.right()),
+                                0.0,
+                                c.width,
+                                &floor,
+                                &ground,
+                            )
+                        },
                     )?;
                     let f = |ps: &[[f64; 3]]| -> Vec<f64> {
                         ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
@@ -1460,9 +1449,12 @@ pub fn run_keeping(
             };
             cuts.push(magnetic::FieldCut {
                 label: c.label.clone(),
+                alignment: placed.alignment.clone(),
+                station: placed.station,
+                angle_point: placed.angle_point,
                 from: spans[i].from.clone(),
                 to: spans[i].to.clone(),
-                at: t,
+                at: placed.at,
                 pieces: model3d.as_ref().map_or(0, Charges3d::count),
                 left_out: None,
                 values,

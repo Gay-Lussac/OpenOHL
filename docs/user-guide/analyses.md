@@ -806,7 +806,15 @@ then the spans on no alignment (both structures not on one alignment),
 unticked — with its length, its profile, its **2D cuts at** (the
 stations asked: *+ station* at mid-span, at its lowest point or a
 distance from its first structure; a click on a station's chip removes
-it), its **Volume** and (magnetic) its **From above**. An unticked span
+it), its **Volume** and (magnetic) its **From above**. **A cut is made
+on the alignment** (owner, 2026-10-31: "cuts are made on the alignment
+not the circuits or span"): each chip is placed at the alignment station
+of that place in the span (between its structures' stations; the lowest
+point found by the run, then placed the same way), the cut's plane
+perpendicular to the alignment — at an angle point along the bisector —
+exactly as a cross-section panel opened there. A span on no alignment
+can have no cut: the window says why under the table and the run leaves
+it out. An unticked span
 is greyed and nothing is computed in it. **Press on a tick and drag
 across the rows**: every row passed takes the state the press gave;
 shift-click ticks a range; a filter (part of a span's
@@ -838,9 +846,10 @@ will compute and about how long. In **2 Scope**:
 **Results** (2026-10-31): first a list of everything computed — every
 profile, cut, volume and grid with its largest value and a note — and a
 button on each: **Plot** shows the profile below, **Open cut** opens a
-cross-section panel at the cut's station on the wires (the cut computed
-by the run drawn in it), **Show in 3D** turns the 3D view to the volume
-or grid and shows the field's layer.
+cross-section panel at the cut's alignment station on the wires — on the
+very plane the run computed, the cut drawn in it —, **Show in 3D** turns
+the 3D view to the volume or grid and shows the field's layer. A cut's
+row names its alignment and station (and the span it crosses).
 
 **4 Model** (3D; 2026-10-29; folded since 2026-10-31: open it to change
 the model). Every setting says beside it what it
@@ -877,8 +886,9 @@ field (isolines, surfaces)** while the window is open:
   make one grid, bent at the line angles: the isolines run through the
   structures unbroken.
 - **2D cuts**: at the stations asked in the table (*+ station*), computed
-  by the run; their size under the table. **Results › Open cut** opens a
-  cross-section panel there, on the wires.
+  by the run on the alignment; their size under the table. **Results ›
+  Open cut** opens a cross-section panel at the cut's alignment station:
+  the same plane as the run's cut (one placement for both), on the wires.
 - **Cross-sections**: *also in any cross-section panel I open*
   (**Cross-section…**, C), every step (default 0.5 m) — open a cut at a
   building to see the field around it with the ground, the LiDAR points
@@ -941,7 +951,7 @@ ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     [--profile FROM:TO[@FRACTION]]… [--width 50] [--height 1] [--step 1]
     [--grid FROM:TO]… [--grid-step M] [--points FILE.csv] [--limit µT]
     [--piece-length M] [--modelled-within M]
-    [--cut FROM:TO[@FRACTION][#LABEL]]… [--cut-step 0.5]
+    [--cut ALIGNMENT@STATION[#LABEL]]… [--cut-step 0.5]
     [--volume FROM:TO]… [--volume-step 1] [--above 10] [--level µT]…
     [--obj SURFACES.obj]
     [--terrain FILE | --surface NAME] [--all-points] [--csv OUT.csv]
@@ -967,19 +977,51 @@ rating](../theory/thermal.md)) — the ambient case and the temperature are
 yours to give; `--current` then overrides single circuits. `--profile`
 without `@` takes the span's lowest point; none: every span's.
 `--grid` adds a grid on a horizontal plane over a span (to draw isolines
-elsewhere). `--cut` computes a vertical cut across a span (± `--width`,
-from the ground to `--above` over the highest wire; its points in the
-CSV as `cut` rows), `--volume` the isosurfaces of the `--level` values
-over a span (written by `--obj` as a Wavefront OBJ file, one object per
-span and level); both say how far their drawings lie off the levels, and
-with `--modelled-within` what the wires left out change. A cut may carry
-a **label** after `#` (e.g. `--cut T1:T2@0.5#house 12`): it is printed
-with the cut and written in the CSV's last column (`label`) and the JSON.
+elsewhere). `--cut` computes a vertical cut across the line **at a
+station of an alignment** (2026-10-31; e.g. `--cut main@150`, `m` after
+the station allowed): its plane perpendicular to the alignment, at an
+angle point along the bisector — where OHL-Design's cross-section panel
+at that station lies —, ± `--width`, from the ground to `--above` over
+the highest wire; its points in the CSV as `cut` rows. The span it
+crosses is found by the run and printed. The older `FROM:TO[@FRACTION]`
+(a span's place; without `@` its lowest point) is still taken and
+**converted** to the alignment station of that place — said in the
+output (`given as T2:T3@0.25: converted to main@375.00`); a span on no
+alignment, an alignment not in the line or a station beyond it is an
+error saying so. `--volume` the isosurfaces of the `--level` values over
+a span (written by `--obj` as a Wavefront OBJ file, one object per span
+and level); both say how far their drawings lie off the levels, and with
+`--modelled-within` what the wires left out change. A cut may carry a
+**label** after `#` (e.g. `--cut main@150#house 12`): it is printed with
+the cut and written in the CSV's last column (`label`) and the JSON.
 
-`--json` writes the results as JSON (format `ohl-field-results`: the
-cuts with their values, ground and isolines of the `--level` values, the
-given points, the settings and the case; [data
+`--json` writes the results as JSON (format `ohl-field-results-set`: one
+`ohl-field-results` document per field run — the cuts with their
+alignment station, values, ground and isolines of the `--level` values,
+the given points, the settings and the case; [data
 model](../development/data-model.md#field-results-json)).
+
+<a id="both-fields"></a>**Both fields in one run** (2026-10-31; built,
+in active development, not approved yet; the owner: "Ok for 1 but keep
+it clean"): `ohl electrical fields` takes the options both fields share
+once — the line, the case, the ground, the profiles, `--cut`,
+`--volume`, `--points`, `--width`, `--above` … —, the magnetic field's
+own (`--current`, `--end`, `--thermal`, `--earth-wires`, `--grid`,
+`--modelled-within` …) and the electric field's own (`--voltage`,
+`--plane`, `--tile`, `--steel` …), with the levels and limits per field
+(`--level-ut`, `--level-kv-m`, `--limit-ut`, `--limit-kv-m`) and a CSV
+per field (`--csv-magnetic`, `--csv-electric`). It runs the magnetic
+field, then the electric field, on the same places and the same ground
+(the electric field's reach), prints both, writes one JSON set (both
+documents) and, with `--preset-plugin`, calls the plugin's report once
+with both:
+
+```text
+ohl electrical fields LINE.ohl.json|PROJECT.ohl (--current CIRCUIT=A)…
+    [--voltage CIRCUIT=KV]… [--plane] [--cut ALIGNMENT@STATION[#LABEL]]…
+    [--level-ut µT]… [--level-kv-m KV/M]… [--limit-ut µT] [--limit-kv-m KV/M]
+    [--json OUT.json] [--preset-plugin DIR …] [the other options of both]
+```
 
 **Field presets from a plugin** (2026-10-31; built, in active
 development, not approved yet): `--preset-plugin DIR` names a plugin
@@ -988,10 +1030,11 @@ points its manifest asks for are gathered — the point cloud of
 `--cloud` (default: the project's) and the survey points of `--terrain`
 —, the plugin gives the cuts and points to compute (with its parameters
 from `--params`, else its template; its preset `--preset`, else its
-first), they are added to those you give, the field is run as without
-it, and the plugin's report files are written into `--out` (default:
-the current folder). Every value the plugin gives is checked first
-(spans that exist, fractions 0–1, sizes above 0, names unique, file
+first), they are added to those you give, the field — or both with
+`ohl electrical fields` — is run as without it, and the plugin's report
+files of the run are written into `--out` (default: the current folder).
+Every value the plugin gives is checked first (each cut on an alignment
+of the line at a station within it, sizes above 0, names unique, file
 names without a folder): [Writing
 plugins](../development/plugins.md#field-presets).
 
@@ -1021,15 +1064,22 @@ gives the cuts and points the fields need at each of them:
   **floors** = ceil((eaves − ground) / `floor_height` (3 m)), at least 1.
   A building whose eaves are less than 2 m over its ground (a surveyed
   footprint) is taken `default_height` (6 m) high, said.
-- **Cuts** across the line, perpendicular to the span's chord as the
-  engine computes them: per building the **governing cut** — the station
-  where its box (footprint × ground to roof) comes closest in 3D to a
-  phase conductor as solved in the case run — and the cut at its
-  footprint's **point nearest the axis** (a side parallel to the axis:
-  its middle), optionally its centroid's (`centroid_cut`); cuts of one
-  span within `merge` (2 m) are one, labelled with all of them
-  (`B007-gov+B007-near`). A building beside two spans (across a
-  structure) gets cuts in each, said. Each cut reaches `cut_margin`
+- **Cuts** across the line **on the alignment** (2026-10-31): each at a
+  station of the alignment nearest the building (within
+  `max_distance`), its plane perpendicular to the alignment — at an
+  angle point along the bisector —, as the engine and OHL-Design's
+  cross-section panels place it. The building's stations along the
+  alignment drive them: the **governing cut** at the station of the
+  point of a phase conductor (as solved in the case run) that comes
+  closest in 3D to its box (footprint × ground to roof), and the cut at
+  the station of its footprint's **point nearest the axis** (a side
+  parallel to the axis: its middle), optionally its centroid's
+  (`centroid_cut`), each held within the building's stations; cuts of
+  one alignment within `merge` (2 m) are one, labelled with all of them
+  (`B007-gov+B007-near`). A building across a structure needs nothing
+  more: its stations run through the structure's and the engine finds
+  the span each cut crosses. **A line without an alignment gets no
+  cut** (said; the places are given). Each cut reaches `cut_margin`
   (10 m) beyond the buildings it crosses (at least `min_width`, 20 m),
   `above` (5 m) over the highest wire, points `step` (1 m) apart; when
   the host's limit of 4 000 000 cut points a run would be passed, the
@@ -1049,36 +1099,30 @@ optional, the defaults above). Isolines at `levels_ut` and `levels_kv_m`
 (0.1, 1, 10, 100 µT; 0.1, 1, 5 kV/m); a limit (`limit_ut`, `limit_kv_m`)
 gives each building's margin — **no ordinance's value is built in**.
 
-**One field per run, both into one folder.** The host runs one field and
-hands its results to the plugin's report, so run the magnetic and the
-electric field one after the other with the same `--out`: every file
-with field values carries the quantity in its name and both stay side by
-side; the files without values are the same from either run.
+**One run, one report** (2026-10-31): run both fields at once with
+`ohl electrical fields` (above); the plugin's report then holds both
+fields side by side. A single-field command (`magnetic` or `electric`)
+gives the same files with that field alone.
 
 | File | What |
 |---|---|
-| `buildings-B.csv`, `buildings-E.csv` | a row per building: id, points, area, centroid, ground / eaves / roof elevation, floors, span, station range along it, smallest plan distance to the axis, smallest 3D distance to a phase conductor, its cuts, the largest value in its sections of the cuts, the largest at its places (B: also the cycle's largest), and with a limit the limit and the margin — the margin from the largest of all of them (**conservative**) |
-| `points-B.csv`, `points-E.csv` | every place: building, floor, place, x, y, z, height, the value (B: and the cycle's largest), the margin |
-| `cut-LABEL-B.csv`, `cut-LABEL-E.csv` | a cut's grid: offset, elevation, ground, value, below the ground (1/0) |
-| `cut-LABEL-B.svg`, `cut-LABEL-E.svg` | the cut drawn 1:1: the ground, the isolines with their legend, each building's section (footprint across the cut, ground to roof) with its largest value, the wires crossing the cut, the axis, a 10 m scale |
-| `buildings.geojson` | the footprints (with their summary), the cuts' lines and the places, in the line's coordinate system |
+| `buildings.csv` | a row per building: id, points, area, centroid, ground / eaves / roof elevation, floors, span, alignment, station range along it, smallest plan distance to the axis, smallest 3D distance to a phase conductor, its cuts; then **per field** (B in µT, E in kV/m) the largest value in its sections of the cuts, the largest at its places (B: also the cycle's largest), and with a limit the limit and the margin — the margin from the largest of all of them (**conservative**) |
+| `points.csv` | every place: building, floor, place, x, y, z, height, then per field the value (B: and the cycle's largest) and the margin |
+| `cut-LABEL-B.csv`, `cut-LABEL-E.csv` | a cut's grid per field: offset, elevation, ground, value, below the ground (1/0) |
+| `cut-LABEL-B.svg`, `cut-LABEL-E.svg` | the cut drawn 1:1, one drawing per field: the ground profile along the cut (filled below it), each building's section where the cut crosses its footprint (ground to eaves, the roof above dashed) labelled with its id and its largest value, every phase conductor and earth wire crossing labelled (circuit and phase), the axis, the field's bands between the levels (light) and its isolines with a legend, elevation and offset scales, a scale bar; the title gives the alignment, the station (an angle point said) and the span |
+| `buildings.geojson` | the footprints (with their summary), the cuts' lines (with alignment and station) and the places, in the line's coordinate system |
 | `buildings.dxf` | with `dxf = true`: the same in plan (R12: layers BUILDINGS, CUTS, PLACES) |
-| `notes-B.txt`, `notes-E.txt` | what the plugin assumed and found, the field's notes, warnings |
+| `notes.txt` | what the plugin assumed and found, each field's notes, warnings |
 
 A building's section in a cut takes the grid's points up to half a step
-outside it (**conservative**). The plugin measures a cut's place from
-the span's structures in the direction the sections are drawn; on a line
-with routes the engine may take a span the other way round — then the
-report warns that the cut landed elsewhere.
+outside it (**conservative**); it is drawn from the building's ground
+(one elevation, the 10th percentile around it) even where the cut's
+ground under it slopes. The wires drawn are those the plugin found
+crossing its own cuts (a cut given with `--cut` is drawn without them).
 
 ```text
-ohl electrical magnetic examples/electrical/double-circuit.ohl.json \
+ohl electrical fields examples/electrical/double-circuit.ohl.json \
     --library examples/electrical/wires.ohlw --current '*=1000' \
-    --terrain survey.csv --cloud project.ohl \
-    --preset-plugin plugins/examples/building-cuts \
-    --params plugins/examples/building-cuts/example-parameters.toml --out report
-ohl electrical electric examples/electrical/double-circuit.ohl.json \
-    --library examples/electrical/wires.ohlw \
     --terrain survey.csv --cloud project.ohl \
     --preset-plugin plugins/examples/building-cuts \
     --params plugins/examples/building-cuts/example-parameters.toml --out report
@@ -1201,7 +1245,8 @@ plotted — E against the distance from the axis (right positive), the
 limit dashed, the value under the pointer; a table per profile (station,
 the largest E and where, the margin); a table of the points with E and
 the margin (red when above the limit); under **Views**, per view what was
-computed and how far its drawings lie off their levels. **Export CSV…**
+computed and how far its drawings lie off their levels (the cuts on the
+alignment, as in the magnetic field's window). **Export CSV…**
 writes every profile point, point and cut point. The results are marked
 out of date when the line or the ground changes; the views then draw
 faded. Not modelled: the structures, trees, buildings and people (earthed
@@ -1209,8 +1254,10 @@ objects lower the field beside them and raise it at their tops).
 
 **On the command line:** `ohl electrical electric LINE.ohl.json|PROJECT.ohl`
 with the voltages, profiles, points, cuts and volumes as options
-(`ohl electrical electric --help`); as for the magnetic field, cuts may
-carry a label (`--cut FROM:TO@F#LABEL`), `--csv` writes every point,
-`--json` the results (`ohl-field-results`), and `--preset-plugin DIR
+(`ohl electrical electric --help`); as for the magnetic field, cuts are
+placed at an alignment station and may carry a label (`--cut
+ALIGNMENT@STATION#LABEL`), `--csv` writes every point, `--json` the
+results (`ohl-field-results-set`), both fields in one run with `ohl
+electrical fields` ([above](#both-fields)), and `--preset-plugin DIR
 [--params FILE] [--preset NAME] [--out DIR] [--cloud SPEC]` takes a
 plugin's field presets (above).

@@ -113,9 +113,10 @@ fn a_cut_and_a_volume() {
     let s = Settings {
         stations: vec![mid("T1", "T2")],
         cuts: vec![magnetic::CutSpec {
-            from: "T1".into(),
-            to: "T2".into(),
-            fraction: Some(0.5),
+            at: magnetic::CutAt::Station {
+                alignment: "main".into(),
+                station: 150.0,
+            },
             width: 30.0,
             above: 5.0,
             step: 1.0,
@@ -217,9 +218,10 @@ fn the_tiled_floor_is_the_default() {
             height: None,
         }],
         cuts: vec![magnetic::CutSpec {
-            from: "T1".into(),
-            to: "T2".into(),
-            fraction: Some(0.5),
+            at: magnetic::CutAt::Station {
+                alignment: "main".into(),
+                station: 150.0,
+            },
             width: 20.0,
             above: 5.0,
             step: 2.0,

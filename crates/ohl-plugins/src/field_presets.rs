@@ -173,14 +173,15 @@ fn finite_positive(x: f64) -> bool {
 }
 
 /// Checks the presets a plugin gave before anything is used: unique,
-/// non-empty names; at most [`MAX_CUTS`] cuts, each in one of `spans`
-/// (either way round), its fraction from 0 to 1, width and step above
-/// 0 m, `above` 0 m or more, unique labels, at most [`MAX_CUT_POINTS`]
-/// points over all cuts (estimated); at most [`MAX_PLACES`] points with
-/// unique names, finite coordinates and an elevation or a height of 0 m
-/// or more; levels above 0; outlines of three corners or more with
-/// unique ids, finite, their top not below their ground.
-pub fn check_presets(presets: &[FieldPreset], spans: &[(String, String)]) -> Result<(), String> {
+/// non-empty names; at most [`MAX_CUTS`] cuts, each on one of
+/// `alignments` (id, length in m) at a station within it, width and step
+/// above 0 m, `above` 0 m or more, unique labels, at most
+/// [`MAX_CUT_POINTS`] points over all cuts (estimated); at most
+/// [`MAX_PLACES`] points with unique names, finite coordinates and an
+/// elevation or a height of 0 m or more; levels above 0; outlines of
+/// three corners or more with unique ids, finite, their top not below
+/// their ground.
+pub fn check_presets(presets: &[FieldPreset], alignments: &[(String, f64)]) -> Result<(), String> {
     let mut names = BTreeSet::new();
     for p in presets {
         if p.name.trim().is_empty() {
@@ -189,12 +190,12 @@ pub fn check_presets(presets: &[FieldPreset], spans: &[(String, String)]) -> Res
         if !names.insert(p.name.as_str()) {
             return Err(format!("preset {} twice", p.name));
         }
-        check_preset(p, spans).map_err(|e| format!("preset {}: {e}", p.name))?;
+        check_preset(p, alignments).map_err(|e| format!("preset {}: {e}", p.name))?;
     }
     Ok(())
 }
 
-fn check_preset(p: &FieldPreset, spans: &[(String, String)]) -> Result<(), String> {
+fn check_preset(p: &FieldPreset, alignments: &[(String, f64)]) -> Result<(), String> {
     if p.cuts.len() > MAX_CUTS {
         return Err(format!("{} cuts: at most {MAX_CUTS}", p.cuts.len()));
     }
@@ -202,23 +203,26 @@ fn check_preset(p: &FieldPreset, spans: &[(String, String)]) -> Result<(), Strin
     let mut points = 0usize;
     for (k, c) in p.cuts.iter().enumerate() {
         let what = if c.label.is_empty() {
-            format!("cut {} ({}–{})", k + 1, c.from, c.to)
+            format!("cut {} ({} at {} m)", k + 1, c.alignment, c.station)
         } else {
             format!("cut {}", c.label)
         };
-        if !spans
-            .iter()
-            .any(|(a, b)| (a == &c.from && b == &c.to) || (a == &c.to && b == &c.from))
-        {
+        let Some((_, length)) = alignments.iter().find(|(id, _)| id == &c.alignment) else {
             return Err(format!(
-                "{what}: no span between structures {} and {}",
-                c.from, c.to
+                "{what}: no alignment {} in the line{}",
+                c.alignment,
+                if alignments.is_empty() {
+                    " (it has none: a cut is placed at a station of an alignment)"
+                } else {
+                    ""
+                }
             ));
-        }
-        if let Some(f) = c.fraction
-            && !(f.is_finite() && (0.0..=1.0).contains(&f))
-        {
-            return Err(format!("{what}: a place in the span from 0 to 1, not {f}"));
+        };
+        if !(c.station.is_finite() && (0.0..=*length).contains(&c.station)) {
+            return Err(format!(
+                "{what}: station {} m beyond alignment {} (0–{length:.2} m)",
+                c.station, c.alignment
+            ));
         }
         if !finite_positive(c.width) || !finite_positive(c.step) {
             return Err(format!("{what}: a width and a step above 0 m"));
@@ -377,14 +381,14 @@ impl WasmHost {
     }
 
     /// The presets the plugin in `dir` gives for `input`, checked
-    /// ([`check_presets`]) against the line's `spans` (structure pairs).
+    /// ([`check_presets`]) against the line's `alignments` (id, length).
     /// A plugin without the export, its own error and a preset that does
     /// not pass are errors naming it.
     pub fn field_presets(
         &self,
         dir: &Path,
         input: &FieldInput,
-        spans: &[(String, String)],
+        alignments: &[(String, f64)],
     ) -> Result<Vec<FieldPreset>, PluginError> {
         let (mut p, export) = self.field_presets_required(dir)?;
         let name = p.manifest.plugin.name.clone();
@@ -393,13 +397,13 @@ impl WasmHost {
             .call_field_presets(&mut p.store, input)
             .map_err(|e| classify(e, &p.manifest, "field-presets", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
-        check_presets(&given, spans)
+        check_presets(&given, alignments)
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         Ok(given)
     }
 
     /// The report files the plugin in `dir` makes of `preset` and the
-    /// field's `results` (`ohl-field-results` JSON), checked
+    /// run's `results` (`ohl-field-results-set` JSON), checked
     /// ([`check_files`]).
     pub fn field_report(
         &self,
@@ -503,9 +507,8 @@ mod tests {
             description: String::new(),
             cuts: vec![PresetCut {
                 label: "a".into(),
-                from: "T2".into(),
-                to: "T1".into(),
-                fraction: Some(0.5),
+                alignment: "main".into(),
+                station: 150.0,
                 width: 20.0,
                 above: 5.0,
                 step: 1.0,
@@ -534,18 +537,25 @@ mod tests {
     /// Every value a plugin gives is checked before it is used.
     #[test]
     fn presets_are_checked() {
-        let spans = [("T1".to_owned(), "T2".to_owned())];
-        assert!(check_presets(&[preset()], &spans).is_ok());
+        let alignments = [("main".to_owned(), 600.0)];
+        assert!(check_presets(&[preset()], &alignments).is_ok());
+        // The ends of the alignment are within it.
+        for station in [0.0, 600.0] {
+            let mut p = vec![preset()];
+            p[0].cuts[0].station = station;
+            assert!(check_presets(&p, &alignments).is_ok(), "{station}");
+        }
+        // A line without an alignment: no cut, said.
+        let e = check_presets(&[preset()], &[]).unwrap_err();
+        assert!(e.contains("it has none"), "{e}");
         let cases: Vec<(&str, Change)> = vec![
-            ("no span", Box::new(|p| p[0].cuts[0].to = "T3".into())),
             (
-                "from 0 to 1",
-                Box::new(|p| p[0].cuts[0].fraction = Some(1.5)),
+                "no alignment other",
+                Box::new(|p| p[0].cuts[0].alignment = "other".into()),
             ),
-            (
-                "from 0 to 1",
-                Box::new(|p| p[0].cuts[0].fraction = Some(f64::NAN)),
-            ),
+            ("beyond", Box::new(|p| p[0].cuts[0].station = 600.5)),
+            ("beyond", Box::new(|p| p[0].cuts[0].station = -1.0)),
+            ("beyond", Box::new(|p| p[0].cuts[0].station = f64::NAN)),
             ("step above 0", Box::new(|p| p[0].cuts[0].step = 0.0)),
             ("step above 0", Box::new(|p| p[0].cuts[0].width = -1.0)),
             ("0 m or more", Box::new(|p| p[0].cuts[0].above = -1.0)),
@@ -594,7 +604,7 @@ mod tests {
         for (want, change) in cases {
             let mut p = vec![preset()];
             change(&mut p);
-            let e = check_presets(&p, &spans).unwrap_err();
+            let e = check_presets(&p, &alignments).unwrap_err();
             assert!(e.contains(want), "{want}: {e}");
         }
     }
@@ -668,22 +678,28 @@ mod tests {
                 .unwrap()
                 .contains("Invented")
         );
-        let spans = [
-            ("T1".to_owned(), "T2".to_owned()),
-            ("T2".to_owned(), "T3".to_owned()),
-        ];
-        let presets = host.field_presets(&dir, &input(""), &spans).unwrap();
+        let alignments = [("main".to_owned(), 600.0)];
+        let presets = host.field_presets(&dir, &input(""), &alignments).unwrap();
         let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["default", "points-only"]);
         let p = &presets[0];
         assert_eq!(p.cuts[0].label, "house-A");
+        assert_eq!(
+            (p.cuts[1].alignment.as_str(), p.cuts[1].station),
+            ("main", 450.0)
+        );
         assert_eq!(
             p.notes[0],
             "received 2 points (1 survey, classes 6), 1 ground points"
         );
         assert_eq!(p.notes[1], "model: ohl-export-model");
         let files = host
-            .field_report(&dir, "", p, "{\"format\":\"ohl-field-results\"}")
+            .field_report(
+                &dir,
+                "",
+                p,
+                "{\"format\":\"ohl-field-results-set\",\"fields\":[{\"format\":\"ohl-field-results\"}]}",
+            )
             .unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].name, "summary.txt");
@@ -692,15 +708,18 @@ mod tests {
             text.contains("preset default\ncuts 2\npoints 2\n"),
             "{text}"
         );
-        assert!(text.contains("ohl-field-results true"), "{text}");
+        assert!(
+            text.contains("ohl-field-results-set true\nfields 1\n"),
+            "{text}"
+        );
         for (bad, want) in [
-            ("span", "no span between structures T1 and T3"),
-            ("fraction", "from 0 to 1"),
+            ("alignment", "no alignment other"),
+            ("station", "station 700 m beyond alignment main"),
             ("name", "point house-A twice"),
             ("fail", "asked to fail"),
         ] {
             let e = host
-                .field_presets(&dir, &input(&format!("bad = \"{bad}\"")), &spans)
+                .field_presets(&dir, &input(&format!("bad = \"{bad}\"")), &alignments)
                 .unwrap_err()
                 .to_string();
             assert!(
@@ -723,7 +742,7 @@ mod tests {
         if let Some(old) = built("tests/code-old") {
             assert!(!host.has_field_presets(&old).unwrap());
             assert!(host.load_code(&old).is_ok());
-            assert!(host.field_presets(&old, &input(""), &spans).is_err());
+            assert!(host.field_presets(&old, &input(""), &alignments).is_err());
             assert!(
                 !host
                     .describe_any(&old)

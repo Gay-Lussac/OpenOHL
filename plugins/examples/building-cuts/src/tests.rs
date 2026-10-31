@@ -8,11 +8,12 @@
 //! ground at 400 m, and three invented buildings: a 12 × 8 × 7 m box
 //! 25 m right of T1–T2 at mid-span, an L-shape (20 × 20 m less a
 //! 10 × 10 m corner, 300 m²) 40 m left of T2–T3, a 12 × 10 m building
-//! across T2, and isolated noise points.
+//! across T2, and isolated noise points. The line's alignment `main`
+//! runs through the three structures (600 m).
 
 use crate::analysis::{InPoint, analyse, presets};
 use crate::geom::{convex_hull, signed_area};
-use crate::model::Model;
+use crate::model::{Alignment, Model};
 use crate::params::{OutlineKind, Params, TEMPLATE, matches};
 use crate::report::report;
 
@@ -53,10 +54,26 @@ pub fn model_json() -> String {
     }
     serde_json::json!({
         "format": "ohl-export-model", "version": 1,
-        "line": {"structures": structures, "sections": sections},
+        "line": {"structures": structures, "sections": sections,
+            "routes": [{"id": "main", "name": "main"}],
+            "alignments": [{"id": "main", "route": "main", "points": ["P1", "P2", "P3"]}],
+            "alignment_points": [
+                {"id": "P1", "position": [0.0, 0.0, 400.0], "structure": "T1"},
+                {"id": "P2", "position": [300.0, 0.0, 400.0], "structure": "T2"},
+                {"id": "P3", "position": [600.0, 0.0, 400.0], "structure": "T3"}]},
         "cases": [{"name": "test", "wires": wires}],
     })
     .to_string()
+}
+
+/// The model without its alignments.
+fn model_json_without_alignments() -> String {
+    let mut v: serde_json::Value = serde_json::from_str(&model_json()).unwrap();
+    let line = v["line"].as_object_mut().unwrap();
+    for k in ["routes", "alignments", "alignment_points"] {
+        line.remove(k);
+    }
+    v.to_string()
 }
 
 fn lidar(x: f64, y: f64, z: f64) -> InPoint {
@@ -173,6 +190,36 @@ fn the_model_is_read() {
     assert_eq!(m.wires.iter().filter(|w| !w.phase).count(), 2);
     assert_eq!(m.spans[1].start, 300.0);
     assert_eq!(m.spans[0].right, [0.0, -1.0]);
+    assert_eq!(m.alignments.len(), 1);
+    assert_eq!(m.alignments[0].id, "main");
+    assert!((m.alignments[0].length - 600.0).abs() < 1e-9);
+    assert_eq!(m.alignments[0].project([150.0, -25.0]), (150.0, 25.0));
+}
+
+/// The plane across an alignment as the core places it: perpendicular to
+/// it, at an angle point along the bisector (`ohl_line::route::plane_at`).
+#[test]
+fn the_plane_at_a_station_is_the_cores() {
+    let a = 20f64.to_radians();
+    let al = Alignment {
+        id: "a".into(),
+        points: vec![
+            [0.0, 0.0],
+            [300.0, 0.0],
+            [300.0 + 300.0 * a.cos(), -300.0 * a.sin()],
+        ],
+        length: 600.0,
+    };
+    let p = al.plane_at(150.0);
+    assert!(!p.angle_point);
+    assert_eq!((p.origin, p.ahead), ([150.0, 0.0], [1.0, 0.0]));
+    let p = al.plane_at(300.0);
+    assert!(p.angle_point);
+    let want = (-10f64).to_radians();
+    assert!((p.ahead[0] - want.cos()).abs() < 1e-12 && (p.ahead[1] - want.sin()).abs() < 1e-12);
+    assert!((p.origin[0] - 300.0).abs() < 1e-9 && p.origin[1].abs() < 1e-9);
+    // Beyond the ends: held within.
+    assert_eq!(al.plane_at(-5.0).origin, [0.0, 0.0]);
 }
 
 /// Three buildings found, the noise left out, ids in station order.
@@ -233,33 +280,39 @@ fn footprints() {
     assert!((96.0..=107.0).contains(&area), "{area}");
 }
 
-/// The building across T2: cuts in both spans, said.
+/// The building across T2: beside both spans; its cuts on the alignment
+/// at its stations (the engine finds the span each crosses).
 #[test]
 fn straddling_building() {
     let a = analyse(&Params::default(), &model(), &buildings(false), &ground()).unwrap();
     let b = &a.buildings[1];
     assert_eq!(b.spans.len(), 2);
-    let labels: Vec<&str> = a.cuts.iter().map(|c| c.label.as_str()).collect();
-    assert!(
-        labels.iter().any(|l| l.contains("B002-T1T2-gov"))
-            && labels.iter().any(|l| l.contains("B002-T2T3-gov")),
-        "{labels:?}"
-    );
+    assert_eq!(b.alignment, Some(0));
+    assert!((b.stations.0 - 294.0).abs() < 1e-6 && (b.stations.1 - 306.0).abs() < 1e-6);
+    let mine: Vec<_> = a.cuts.iter().filter(|c| c.label.contains("B002")).collect();
+    assert!(!mine.is_empty());
+    for c in mine {
+        assert_eq!(c.alignment, "main");
+        assert!((294.0..=306.0).contains(&c.station), "{c:?}");
+    }
+}
+
+/// A line without an alignment: no cut, said; the places still given.
+#[test]
+fn no_alignment_no_cut() {
+    let m = Model::parse(&model_json_without_alignments()).unwrap();
+    assert!(m.alignments.is_empty());
+    let a = analyse(&Params::default(), &m, &buildings(false), &ground()).unwrap();
+    assert_eq!(a.buildings.len(), 3);
+    assert!(a.cuts.is_empty());
+    assert!(!a.places.is_empty());
     assert!(
         a.notes
             .iter()
-            .any(|n| n.starts_with("B002: it lies beside 2 spans (T1–T2, T2–T3)")),
+            .any(|n| n.starts_with("the line has no alignment: no cut placed")),
         "{:?}",
         a.notes
     );
-    for c in a.cuts.iter().filter(|c| c.label.contains("B002")) {
-        let near_t2 = if c.from == "T1" {
-            c.fraction > 0.97
-        } else {
-            c.fraction < 0.03
-        };
-        assert!(near_t2, "{c:?}");
-    }
 }
 
 /// The box's governing cut at mid-span, merged with its nearest-point
@@ -273,8 +326,8 @@ fn governing_cut_of_the_box() {
         .find(|c| c.label.starts_with("B001-gov"))
         .unwrap();
     assert_eq!(c.label, "B001-gov+B001-near");
-    assert_eq!((c.from.as_str(), c.to.as_str()), ("T1", "T2"));
-    assert!((c.fraction - 0.5).abs() < 0.02, "{}", c.fraction);
+    assert_eq!(c.alignment, "main");
+    assert!((c.station - 150.0).abs() < 6.0, "{}", c.station);
     assert!(c.width >= 43.0, "{}", c.width);
     let crossing = a
         .crossings
@@ -395,12 +448,39 @@ fn hull_of_a_square() {
     assert!((signed_area(&h) - 1.0).abs() < 1e-12);
 }
 
-/// The report of invented results: the summary's rows, the places, a
-/// cut's CSV and SVG, the GeoJSON; files named by the quantity.
+/// The numbers of an SVG's geometry attributes, and its viewBox's size.
+fn svg_extent(svg: &str) -> ((f64, f64), Vec<(String, f64)>) {
+    let vb = svg.split("viewBox=\"").nth(1).unwrap();
+    let vb: Vec<f64> = vb
+        .split('"')
+        .next()
+        .unwrap()
+        .split(' ')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let mut out = Vec::new();
+    for attr in ["x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "points"] {
+        for part in svg.split(&format!(" {attr}=\"")).skip(1) {
+            let v = part.split('"').next().unwrap();
+            for n in v.split([' ', ',']).filter(|t| !t.is_empty()) {
+                if let Ok(n) = n.parse::<f64>() {
+                    out.push((attr.to_owned(), n));
+                }
+            }
+        }
+    }
+    ((vb[2], vb[3]), out)
+}
+
+/// The report of invented results of both fields (one set): one
+/// buildings.csv with the B and E columns, one points.csv, per cut a CSV
+/// and an SVG per field, the GeoJSON; each drawing inside its viewBox,
+/// with the ground, the building's section, the wires and the levels.
 #[test]
 fn report_of_invented_results() {
     let p = Params {
         limit_ut: Some(1.0),
+        limit_kv_m: Some(5.0),
         ..Params::default()
     };
     let presets = presets(&p, &model(), &buildings(false), &ground()).unwrap();
@@ -408,83 +488,154 @@ fn report_of_invented_results() {
     let cut = &preset.cuts[0];
     let offsets: Vec<f64> = (-40..=40).map(f64::from).collect();
     let elevations: Vec<f64> = (395..=440).map(f64::from).collect();
-    let values: Vec<f64> = elevations
-        .iter()
-        .flat_map(|z| {
-            offsets
-                .iter()
-                .map(move |s| 100.0 / (1.0 + s * s + (z - 420.0).powi(2)))
+    let field = |q: &str, unit: &str, k: f64| {
+        let values: Vec<f64> = elevations
+            .iter()
+            .flat_map(|z| {
+                offsets
+                    .iter()
+                    .map(move |s| k * 100.0 / (1.0 + s * s + (z - 420.0).powi(2)))
+            })
+            .collect();
+        let points: Vec<serde_json::Value> = preset
+            .points
+            .iter()
+            .map(|q| {
+                serde_json::json!({"name": q.name, "x": q.x, "y": q.y, "z": 400.0 + q.height,
+                "offset": 0.0, "height": q.height, "value": 0.5 * k, "major": 0.6 * k,
+                "margin": null})
+            })
+            .collect();
+        serde_json::json!({
+            "format": "ohl-field-results", "version": 2, "quantity": q, "unit": unit,
+            "cuts": [{"label": cut.label, "alignment": "main", "station": cut.station,
+                "angle_point": false, "from": "T1", "to": "T2", "at": cut.station,
+                "plane": {"origin": [cut.station, 0.0], "right": [0.0, -1.0]},
+                "offsets": offsets, "elevations": elevations,
+                "ground": vec![400.0; 81], "values": values,
+                "isolines": [{"level": 1.0, "lines": [[[-5.0, 410.0], [5.0, 410.0]]]}]}],
+            "points": points, "notes": ["invented"],
         })
-        .collect();
-    let points: Vec<serde_json::Value> = preset
-        .points
-        .iter()
-        .map(|q| {
-            serde_json::json!({"name": q.name, "x": q.x, "y": q.y, "z": 400.0 + q.height,
-            "offset": 0.0, "height": q.height, "value": 0.5, "major": 0.6, "margin": null})
-        })
-        .collect();
+    };
     let results = serde_json::json!({
-        "format": "ohl-field-results", "version": 1, "quantity": "B", "unit": "µT",
-        "cuts": [{"label": cut.label, "from": "T1", "to": "T2", "at": cut.fraction * 300.0,
-            "plane": {"origin": [cut.fraction * 300.0, 0.0], "right": [0.0, -1.0]},
-            "offsets": offsets, "elevations": elevations,
-            "ground": vec![400.0; 81], "values": values,
-            "isolines": [{"level": 1.0, "lines": [[[-5.0, 410.0], [5.0, 410.0]]]}]}],
-        "points": points, "notes": ["invented"],
+        "format": "ohl-field-results-set", "version": 1,
+        "case": {"name": "test", "temperature_c": 40.0},
+        "fields": [field("B", "µT", 1.0), field("E", "kV/m", 0.1)],
     })
     .to_string();
     let files = report(&p, preset, &results).unwrap();
     let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
     for want in [
-        "buildings-B.csv",
-        "points-B.csv",
+        "buildings.csv",
+        "points.csv",
         "buildings.geojson",
-        "notes-B.txt",
+        "notes.txt",
     ] {
         assert!(names.contains(&want), "{names:?}");
     }
-    let base = format!("cut-{}-B", cut.label);
-    assert!(names.contains(&format!("{base}.svg").as_str()), "{names:?}");
+    for q in ["B", "E"] {
+        for ext in ["csv", "svg"] {
+            let n = format!("cut-{}-{q}.{ext}", cut.label);
+            assert!(names.contains(&n.as_str()), "{n}: {names:?}");
+        }
+    }
+    // Once each: no file per field but the cut's grids and drawings.
+    assert_eq!(names.len(), 4 + 4, "{names:?}");
     let text = |n: &str| {
         String::from_utf8(files.iter().find(|f| f.name == n).unwrap().bytes.clone()).unwrap()
     };
-    let summary = text("buildings-B.csv");
+    let summary = text("buildings.csv");
     let rows: Vec<&str> = summary.lines().collect();
     assert_eq!(rows.len(), 4, "{summary}");
-    assert!(
-        rows[0].ends_with("max_places_B_major_uT,limit_uT,margin_uT"),
-        "{}",
-        rows[0]
-    );
+    let head: Vec<&str> = rows[0].split(',').collect();
+    let col = |name: &str| {
+        head.iter()
+            .position(|h| *h == name)
+            .unwrap_or_else(|| panic!("{name}: {head:?}"))
+    };
     let b1: Vec<&str> = rows[1].split(',').collect();
-    assert_eq!(b1[0], "B001");
-    assert_eq!(b1[2], "96.0");
-    assert_eq!(b1[9], "T1–T2");
-    assert_eq!(b1[14], "1");
+    assert_eq!(b1[col("id")], "B001");
+    assert_eq!(b1[col("area_m2")], "96.0");
+    assert_eq!(b1[col("span")], "T1–T2");
+    assert_eq!(b1[col("alignment")], "main");
+    assert_eq!(b1[col("cuts")], "1");
     // In the box's section (offsets 25–33, 400–407 m), the invented
     // field's largest value is at offset 24.5 → 25 (half a step widened).
-    let sec: f64 = b1[15].parse().unwrap();
+    let sec: f64 = b1[col("max_section_B_uT")].parse().unwrap();
     let want = 100.0 / (1.0 + 25.0f64.powi(2) + 13.0f64.powi(2));
     assert!((sec - want).abs() < 1e-3, "{sec} {want}");
-    assert_eq!(b1[17], "0.600");
-    assert_eq!(b1[18], "1");
-    assert_eq!(b1[19], "0.400");
-    let svg = text(&format!("{base}.svg"));
-    assert!(svg.starts_with("<svg") && svg.trim_end().ends_with("</svg>"));
-    assert!(svg.contains("B001 (largest"), "{svg}");
-    assert!(svg.contains(">SL1<"), "{svg}");
+    let sec_e: f64 = b1[col("max_section_E_kV_m")].parse().unwrap();
+    assert!((sec_e - 0.1 * want).abs() < 1e-4, "{sec_e}");
+    assert_eq!(b1[col("max_places_B_major_uT")], "0.600");
+    assert_eq!(b1[col("limit_B_uT")], "1");
+    assert_eq!(b1[col("margin_B_uT")], "0.400");
+    assert_eq!(b1[col("limit_E_kV_m")], "5");
+    assert_eq!(b1[col("margin_E_kV_m")], "4.9400");
+    let points = text("points.csv");
+    assert!(
+        points
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with("B_uT,B_major_uT,margin_B_uT,E_kV_m,margin_E_kV_m"),
+        "{points}"
+    );
+    assert_eq!(points.lines().count(), 1 + preset.points.len());
+    for q in ["B", "E"] {
+        let svg = text(&format!("cut-{}-{q}.svg", cut.label));
+        assert!(svg.starts_with("<svg") && svg.trim_end().ends_with("</svg>"));
+        assert!(svg.contains(">B001 max "), "{svg}");
+        assert!(svg.contains(">SL1<") && svg.contains(">EW<"), "{svg}");
+        assert!(
+            svg.contains(">axis<") && svg.contains("#d9c7a7"),
+            "ground and axis"
+        );
+        assert!(svg.contains("alignment main at 150.0 m") || svg.contains("alignment main at"));
+        let ((w, h), numbers) = svg_extent(&svg);
+        for (attr, n) in numbers {
+            let limit = if attr.starts_with('y') || attr == "cy" {
+                h
+            } else {
+                w
+            };
+            if attr == "points" {
+                assert!(
+                    (0.0..=w.max(h)).contains(&n),
+                    "{q}: {attr} {n} outside {w}×{h}"
+                );
+            } else {
+                assert!(
+                    (0.0..=limit).contains(&n),
+                    "{q}: {attr} {n} outside {w}×{h}"
+                );
+            }
+        }
+    }
     let geo: serde_json::Value = serde_json::from_str(&text("buildings.geojson")).unwrap();
     assert_eq!(
         geo["features"].as_array().unwrap().len(),
         3 + 1 + preset.points.len()
     );
-    let grid = text(&format!("{base}.csv"));
+    let grid = text(&format!("cut-{}-B.csv", cut.label));
     assert_eq!(grid.lines().count(), 2 + 81 * 46);
-    // The electric field's files carry its letter.
-    let e = results.replace("\"quantity\":\"B\"", "\"quantity\":\"E\"");
-    let files = report(&p, preset, &e).unwrap();
-    assert!(files.iter().any(|f| f.name == "buildings-E.csv"));
+    // One field (a single-field command): its columns alone.
+    let one = serde_json::json!({
+        "format": "ohl-field-results-set", "version": 1,
+        "fields": [field("E", "kV/m", 0.1)],
+    })
+    .to_string();
+    let files = report(&p, preset, &one).unwrap();
+    let summary = String::from_utf8(
+        files
+            .iter()
+            .find(|f| f.name == "buildings.csv")
+            .unwrap()
+            .bytes
+            .clone(),
+    )
+    .unwrap();
+    assert!(summary.contains("max_section_E_kV_m") && !summary.contains("_B_"));
+    assert!(!files.iter().any(|f| f.name.ends_with("-B.svg")));
 }
 
 /// The time for a large input (run by hand: `cargo test --release
