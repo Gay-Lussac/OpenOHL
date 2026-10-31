@@ -274,7 +274,9 @@ fn safety_volumes_by_system() {
         s.tolerance = 0.3;
     }
     h.run_steps(3);
-    // The groups and their user-guide links.
+    // The groups and their user-guide links (the wire positions and the
+    // mesh in 4 Model, folded).
+    crate::tests::open_model(&mut h);
     for title in [
         "Wire positions",
         "Distance",

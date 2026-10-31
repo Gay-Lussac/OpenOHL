@@ -399,11 +399,15 @@ pub struct RuleTable<'a, R: RuleRow> {
     keep_one: bool,
     editable: bool,
     presets: Option<Presets<'a>>,
+    /// The headers of the distance and wires columns (a window whose
+    /// rules check something else names them: String checks).
+    heads: [&'a str; 2],
 }
 
 /// The longest text of a cell of the table, characters (the whole text
-/// on hover).
-const CELL_CHARS: usize = 34;
+/// on hover): short enough that the six columns fit an 860 px window
+/// (at 34, the Clearances window's distances were cut off at its edge).
+const CELL_CHARS: usize = 20;
 
 /// `text` cut to [`CELL_CHARS`].
 fn cut(text: &str) -> String {
@@ -428,7 +432,15 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
             keep_one: false,
             editable: true,
             presets: None,
+            heads: ["Distance", "Wires"],
         }
+    }
+
+    /// The headers of the distance and wires columns, for this window
+    /// (String checks: *Checks* and *Strings*).
+    pub fn heads(mut self, distance: &'a str, wires: &'a str) -> Self {
+        self.heads = [distance, wires];
+        self
     }
 
     /// A way to add a rule: *Add rule* with one, a menu *Add rule ▾* with
@@ -493,6 +505,7 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
             keep_one,
             editable,
             presets,
+            heads,
         } = self;
         if rules.is_empty() {
             st.selected = None;
@@ -637,6 +650,7 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
                 &mut st,
                 &mut out,
                 editable && !(keep_one && rules.len() <= 1),
+                heads,
             );
         }
         // The rule selected: its editor, below the table.
@@ -665,7 +679,9 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
 }
 
 /// The compact rows: a click on a row selects it (its editor shown below
-/// the table); … duplicates or removes it.
+/// the table); … duplicates or removes it. `heads`: the distance and
+/// wires columns' headers.
+#[allow(clippy::too_many_arguments)]
 fn table<R: RuleRow>(
     ui: &mut egui::Ui,
     id: &str,
@@ -674,6 +690,7 @@ fn table<R: RuleRow>(
     st: &mut State,
     out: &mut RuleTableOut,
     can_remove: bool,
+    heads: [&str; 2],
 ) {
     let mut duplicate = None;
     help::list(
@@ -693,8 +710,8 @@ fn table<R: RuleRow>(
                         "Target",
                         "Voltages",
                         "Weather cases",
-                        "Distance",
-                        "Wires",
+                        heads[0],
+                        heads[1],
                         "",
                     ] {
                         ui.strong(h);

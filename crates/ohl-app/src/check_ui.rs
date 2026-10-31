@@ -13,7 +13,7 @@
 //!   Run" reason.
 //! - The setup in a fixed order: [`section`] *1 What it checks* (one line,
 //!   [`how_computed`] folded), *2 Scope* ([`ScopePicker`]), *3 Rules*,
-//!   *4 Settings*.
+//!   *4 Model* ([`model_section`], folded).
 //! - [`ResultTable`]: the verdict banner ([`verdict`]), a toolbar (*Only
 //!   violations*, on by default; *Search*; *Group by*; *Export CSV…*),
 //!   columns sorted by a click on their header, units in brackets in the
@@ -154,7 +154,7 @@ pub fn results_area<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::
 // ------------------------------------------------------------ the setup
 
 /// A numbered part of the setup ("1 What it checks", "2 Scope",
-/// "3 Rules", "4 Settings"): its heading, with the user guide's button
+/// "3 Rules"; *Model* is [`model_section`]): its heading, with the user guide's button
 /// when `anchor` is given; the anchor when that is clicked.
 pub fn section(
     ui: &mut egui::Ui,
@@ -198,6 +198,29 @@ pub fn how_computed(ui: &mut egui::Ui, id: &str, text: &str, draw: impl FnOnce(&
             );
         });
 }
+
+/// The numbered *Model* part of the setup (check pages' guidelines §1:
+/// the modelling settings, **folded by default** — the defaults are
+/// sound; a user opens it to change them): its heading is the fold's.
+/// `add` draws the settings when it is open.
+pub fn model_section<R>(
+    ui: &mut egui::Ui,
+    id: &str,
+    number: usize,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    ui.add_space(4.0);
+    egui::CollapsingHeader::new(egui::RichText::new(format!("{number}  Model")).strong())
+        .id_salt((id, "model-section"))
+        .default_open(false)
+        .show(ui, add)
+        .body_returned
+}
+
+/// Why a check of the LiDAR points cannot run without them, and where
+/// they are brought in (Vegetation, As-built wires).
+pub const NO_CLOUD: &str =
+    "no point cloud in this model: import one with File › Import › LiDAR points (LAS/LAZ)";
 
 // ---------------------------------------------------------------- scope
 
@@ -899,9 +922,16 @@ pub struct ResultTable<'a> {
     filter: bool,
     groups: Vec<usize>,
     csv: Option<&'a str>,
+    /// *Full report (CSV)…*: the file's name, what it holds (on hover)
+    /// and its text (made when clicked).
+    full_csv: Option<FullCsv<'a>>,
     /// Kept free under the table, px (the folds under it).
     below: f32,
 }
+
+/// A window's full report as CSV beside the table's *Export CSV…*: the
+/// file's name, what it holds, its text made when clicked.
+type FullCsv<'a> = (&'a str, &'a str, Box<dyn Fn() -> String + 'a>);
 
 /// The memory key of a table's view.
 fn view_key(id: &str) -> egui::Id {
@@ -924,6 +954,7 @@ impl<'a> ResultTable<'a> {
             filter: true,
             groups: Vec::new(),
             csv: None,
+            full_csv: None,
             below: 0.0,
         }
     }
@@ -949,6 +980,20 @@ impl<'a> ResultTable<'a> {
     /// *Export CSV…*, the file named `name`.
     pub fn csv(mut self, name: &'a str) -> Self {
         self.csv = Some(name);
+        self
+    }
+
+    /// *Full report (CSV)…* beside *Export CSV…* (one place to export,
+    /// check pages' guidelines §4): every row with every field, as the
+    /// command line writes it — file `name`, `what` on hover, `text`
+    /// made when clicked.
+    pub fn full_csv(
+        mut self,
+        name: &'a str,
+        what: &'a str,
+        text: impl Fn() -> String + 'a,
+    ) -> Self {
+        self.full_csv = Some((name, what, Box::new(text)));
         self
     }
 
@@ -1114,6 +1159,14 @@ impl<'a> ResultTable<'a> {
                     .clicked()
             {
                 crate::job::save_csv(name, &self.csv_text(&idx));
+            }
+            if let Some((name, what, text)) = &self.full_csv
+                && ui
+                    .button("Full report (CSV)…")
+                    .on_hover_text(*what)
+                    .clicked()
+            {
+                crate::job::save_csv(name, &text());
             }
         });
         if self.rows.is_empty() {
@@ -1407,7 +1460,9 @@ pub fn job_footer<T: Send + 'static>(
         why_not,
         hover,
         scope,
-        info: job.took.map(|t| format!("computed in {t:.1?}")),
+        info: job
+            .took
+            .map(|t| format!("computed in {:.1} s", t.as_secs_f64())),
     };
     match run_footer(ui, f, extra) {
         Action::Run => true,

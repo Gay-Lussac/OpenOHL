@@ -14,7 +14,7 @@ use ohl_clearance::{Wire, wires_of};
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -94,7 +94,7 @@ impl WireFitWindow {
 
     fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(spec) = model.cloud.clone() else {
-            self.job.result = Some(Err("no point cloud in this model".into()));
+            self.job.result = Some(Err(check_ui::NO_CLOUD.into()));
             return;
         };
         let mut classes: Vec<u8> = ["conductor", "shield_wire"]
@@ -195,7 +195,7 @@ impl WireFitWindow {
         let why = model
             .cloud
             .is_none()
-            .then(|| "no point cloud in this model".to_owned())
+            .then(|| check_ui::NO_CLOUD.to_owned())
             .or_else(|| self.scope.why_not(&model.line));
         let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
         let findings = match &self.job.result {
@@ -238,29 +238,9 @@ impl WireFitWindow {
                             .wires(&mut self.scope, true)
                             .ui(ui);
                         ui.separator();
-                        check_ui::section(ui, 4, "Settings", None);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label("model at °C");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.temperature).speed(0.5),
-                            );
-                            ui.label("points within m: across");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.params.lateral)
-                                    .speed(0.05)
-                                    .range(0.05..=10.0),
-                            );
-                            ui.label("up/down");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.params.vertical)
-                                    .speed(0.1)
-                                    .range(0.1..=30.0),
-                            );
-                            ui.checkbox(&mut self.estimate, "temperature at the survey");
-                        });
+                        // The modelling settings, folded (check pages'
+                        // guidelines), a labelled row each.
+                        check_ui::model_section(ui, WINDOW, 3, |ui| self.settings_ui(ui));
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
                         let rows = match &self.job.result {
@@ -291,13 +271,6 @@ impl WireFitWindow {
                                     )
                                 }
                             ));
-                            if ui
-                                .button("Export fits CSV…")
-                                .on_hover_text("Every span fitted, every value, as a CSV file")
-                                .clicked()
-                            {
-                                save_csv("as-built-wires.csv", &csv(rows));
-                            }
                         });
                         use check_ui::{Cell, Col};
                         let table: Vec<check_ui::Row> = rows
@@ -370,26 +343,69 @@ impl WireFitWindow {
 /// The id of the window's body, tabs and footer.
 const WINDOW: &str = "wirefit-window";
 
-fn csv(rows: &[Row]) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::from(
-        "section,span,points,rms_m,sag_m,model_sag_m,mid_difference_m,temperature_c\n",
-    );
-    for r in rows {
-        if let Some(Ok(f)) = &r.fit {
-            let _ = writeln!(
-                out,
-                "{},{},{},{:.4},{:.3},{:.3},{:.3},{}",
-                ohl_core::text::csv_field(&r.wire.section),
-                r.wire.span,
-                f.fit.points,
-                f.fit.rms,
-                f.sag,
-                f.model_sag,
-                f.mid_difference,
-                r.temperature.map_or(String::new(), |t| format!("{t:.2}"))
-            );
-        }
+impl WireFitWindow {
+    /// *3 Model*: the model's temperature, which points belong to a wire,
+    /// the temperature at the survey — a labelled row each, what it
+    /// changes under it.
+    fn settings_ui(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("wirefit-settings")
+            .num_columns(2)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                ui.label("Model temperature");
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut self.temperature)
+                        .speed(0.5)
+                        .suffix(" °C"),
+                );
+                ui.end_row();
+                ui.label("Points across");
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut self.params.lateral)
+                        .speed(0.05)
+                        .range(0.05..=10.0)
+                        .suffix(" m"),
+                );
+                ui.end_row();
+                ui.label("Points up or down");
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut self.params.vertical)
+                        .speed(0.1)
+                        .range(0.1..=30.0)
+                        .suffix(" m"),
+                );
+                ui.end_row();
+                ui.label("Survey temperature");
+                ui.checkbox(&mut self.estimate, "estimate it");
+                ui.end_row();
+            });
+        help::explain(
+            ui,
+            "Model temperature: the model is solved in still air at it, for the sags and \
+             heights compared.",
+            "The fitted wires are compared with the model solved in still air at this conductor \
+             temperature: the difference of the sag and of the mid-span height. It does not \
+             change the fit itself.",
+        );
+        help::explain(
+            ui,
+            "Points across, up or down: how far from the modelled wire a LiDAR point of the wire \
+             classes may lie to be fitted to it.",
+            "Across: the largest distance in plan from the span's vertical plane; up or down: the \
+             largest height difference from the modelled wire. Larger takes in points of a \
+             neighbouring wire or of vegetation; smaller leaves out a wire that hangs far from \
+             the model.",
+        );
+        help::explain(
+            ui,
+            "Survey temperature: the conductor temperature at the survey, from the model's sag \
+             at each temperature.",
+            "Per span fitted, the temperature at which the model's sag equals the fitted sag \
+             (searched from -30 to 120 °C, about six section solves a span): longer runs when \
+             ticked.",
+        );
     }
-    out
 }

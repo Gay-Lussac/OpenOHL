@@ -60,7 +60,7 @@ pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
         let mut open = w.open;
         let model = &r.model;
         let out =
-            crate::check_help::window(ctx, panel, kind.title(), [1050.0, 780.0], &mut open, |ui| {
+            crate::check_help::window(ctx, panel, kind.title(), [860.0, 780.0], &mut open, |ui| {
                 w.ui(ui, model)
             });
         w.open = open;
@@ -88,7 +88,7 @@ pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
         ctx,
         Panel::Loads,
         Panel::Loads.name(),
-        [1150.0, 700.0],
+        [860.0, 700.0],
         &mut open,
         |ui| r.loads.ui(ui, &r.model),
     );
@@ -946,7 +946,7 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     crate::check_help::explain(
         ui,
         "The clearances between the wires of this line (and to exclusion zones), by the rules \
-         of a rule file, in every weather case of its rules and the wind positions of 4 Settings.",
+         of a rule file, in every weather case of its rules and the wind positions of 4 Model.",
         "Each rule gives a vertical and/or radial distance by voltage (a wire pair takes the \
          pair's voltage) between the wires of the line, to the ground or to points, in its \
          weather cases. The check solves the line in every case of the rules (those ticked in \
@@ -1095,16 +1095,16 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     }
     crate::rule_editor::ui(ui, r);
     ui.separator();
-    crate::check_ui::section(ui, 4, "Settings", None);
-    crate::check_help::heading(ui, "Wind", "clearances-wind");
+    // The wind positions: the model, folded (check pages' guidelines).
     // The largest pressure of the rules' cases.
     let full = clearance_states(r)
         .iter()
         .map(|s| s.full)
         .fold(0.0, f64::max);
     let mut wind = r.clearances.wind;
-    let changed = ui
-        .horizontal_top(|ui| {
+    let changed = crate::check_ui::model_section(ui, WINDOW, 4, |ui| {
+        crate::check_help::heading(ui, "Wind", "clearances-wind");
+        ui.horizontal_top(|ui| {
             let changed = ui
                 .vertical(|ui| {
                     let changed = crate::check_help::wind_choice(
@@ -1129,7 +1129,9 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
             crate::check_help::wind_positions(ui, wind.arc, n);
             changed
         })
-        .inner;
+        .inner
+    })
+    .unwrap_or(false);
     if changed {
         r.clearances.wind = wind;
         let saved = r
@@ -1215,6 +1217,13 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                             Cell::text(f.measure),
                             required,
                             found.bad(true),
+                            // Found less required, as the vertical and
+                            // radial windows show it.
+                            Cell::sorted(
+                                format!("{:+.2}", f.distance - f.required),
+                                f.distance - f.required,
+                            )
+                            .bad(true),
                             Cell::text(&f.case),
                             Cell::sorted(f.positions.to_string(), f.positions as f64),
                         ],
@@ -1229,6 +1238,9 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                 .chain(rep.notes.iter().cloned())
                 .chain(std::iter::once(SURFACE_NOTE.to_owned()))
                 .collect();
+            // What was assumed and each rule's lowest, folded above the
+            // table.
+            crate::check_ui::notes_fold(ui, "clearances-findings", &notes);
             let clicked = crate::check_ui::ResultTable::new(
                 "clearances-findings",
                 vec![
@@ -1239,6 +1251,7 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                     crate::check_ui::Col::num("Required [m]"),
                     crate::check_ui::Col::num("Found [m]")
                         .tip("The lowest clearance found, to the conductor's surface"),
+                    crate::check_ui::Col::num("Margin [m]").tip("Found less required"),
                     crate::check_ui::Col::text("Case")
                         .tip("The weather case and wind position (or case pair) that governs"),
                     crate::check_ui::Col::num("Count")
@@ -1246,14 +1259,12 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                 ],
             )
             .rows(rows)
-            .group_by(&[2, 0, 3, 6])
+            .group_by(&[2, 0, 3, 7])
             .csv("wire-clearances.csv")
-            .below(crate::check_ui::FOLDS_BELOW)
             .ui(ui);
             if let Some(k) = clicked {
                 go = rep.findings.get(k).cloned();
             }
-            crate::check_ui::notes_fold(ui, "clearances-findings", &notes);
         }
         None if c.running() => {
             ui.label("checking…");

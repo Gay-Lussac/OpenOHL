@@ -15,7 +15,7 @@ use ohl_clearance::galloping::{self, GallopingParams};
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::job::{Job, save_csv};
+use crate::job::Job;
 use crate::model::Model;
 use crate::selection::Selection;
 
@@ -68,6 +68,9 @@ pub struct GallopingWindow {
     pub scope: check_ui::Scope,
     kept: check_ui::Kept,
     pub(crate) job: Job<Report>,
+    /// The parameter file read for its summary (the file, its methods and
+    /// requirement in words, or why not).
+    params: Option<(PathBuf, Result<String, String>)>,
 }
 
 /// The project setting the window's scope is kept in, per project line.
@@ -254,6 +257,11 @@ impl GallopingWindow {
                                 self.file = Some(p);
                             }
                         });
+                        // Its methods and requirement, read from the file
+                        // (again only when another is chosen).
+                        if let Some(text) = self.params_text() {
+                            ui.label(egui::RichText::new(text).small().weak());
+                        }
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
                         let report = match &self.job.result {
@@ -289,15 +297,9 @@ impl GallopingWindow {
                             },
                             false,
                         );
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button("Export all CSV…")
-                                .on_hover_text("Every pair with every value, as a CSV file")
-                                .clicked()
-                            {
-                                save_csv("galloping.csv", &csv(report));
-                            }
-                        });
+                        // What was assumed and left out, folded above the
+                        // table.
+                        check_ui::notes_fold(ui, WINDOW, &report.notes);
                         use check_ui::{Cell, Col};
                         let rows: Vec<check_ui::Row> = report
                             .rows
@@ -340,7 +342,12 @@ impl GallopingWindow {
                         .rows(rows)
                         .group_by(&[0, 1])
                         .csv("galloping-table.csv")
-                        .below(check_ui::FOLDS_BELOW)
+                        .full_csv(
+                            "galloping.csv",
+                            "Every pair with the weather case, the spans' 0-based indices and \
+                             where along the span as a fraction",
+                            || csv(report),
+                        )
                         .ui(ui)
                         {
                             let r = &report.rows[k];
@@ -349,7 +356,6 @@ impl GallopingWindow {
                                 span: r.a.1,
                             });
                         }
-                        check_ui::notes_fold(ui, WINDOW, &report.notes);
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
@@ -373,6 +379,55 @@ impl GallopingWindow {
             self.start(model, ctx);
         }
         go
+    }
+
+    /// The parameter file's methods and requirement in one line ("methods
+    /// A (1 loop), B (2 loops); required by voltage: …"), read with the
+    /// check's own reader once per file chosen; an error said as such.
+    fn params_text(&mut self) -> Option<String> {
+        let path = self.file.clone()?;
+        if self.params.as_ref().is_none_or(|(p, _)| *p != path) {
+            let text = GallopingParams::load(&path).map(|p| {
+                let methods = p
+                    .methods
+                    .iter()
+                    .map(|m| {
+                        format!(
+                            "{} ({} loop{})",
+                            m.name,
+                            m.loops,
+                            if m.loops == 1 { "" } else { "s" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let required = p
+                    .required
+                    .as_ref()
+                    .map_or("no requirement (distances only)".to_owned(), |r| {
+                        format!("required {}", crate::rule_table::distance_words(r))
+                    });
+                let cases = if p.cases.is_empty() {
+                    String::new()
+                } else {
+                    format!("; for the cases {}", p.cases.join(", "))
+                };
+                format!(
+                    "{}: method{} {methods}; {required}{cases}",
+                    if p.name.is_empty() {
+                        "parameters"
+                    } else {
+                        p.name.as_str()
+                    },
+                    if p.methods.len() == 1 { "" } else { "s" }
+                )
+            });
+            self.params = Some((path, text));
+        }
+        self.params.as_ref().map(|(_, t)| match t {
+            Ok(t) => t.clone(),
+            Err(e) => format!("not read: {e}"),
+        })
     }
 
     /// The weather case of the results shown (a row clicked is drawn in

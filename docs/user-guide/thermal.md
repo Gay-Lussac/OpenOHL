@@ -162,6 +162,8 @@ up to about a second per section and limit.
   progress bar (**Stop** stops it), using the rule file chosen under
   Checks › Wire clearances and the ground and LiDAR points of the checks. The
   table gains the limit per section, the governing span and the ampacity at
-  the limit per ambient case.
+  the limit per ambient case; the footer then says how long it took
+  ("computed in 3.7 s"). A row clicked selects its section's spans and
+  brings the views to them (2026-10-31).
 
 Nothing in the model changes.

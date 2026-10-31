@@ -275,18 +275,20 @@ fn terms(b: &ohl_thermal::HeatBalance) -> String {
     )
 }
 
-/// The Thermal rating window.
+/// The Thermal rating window; the spans of the section of a result row
+/// clicked, to select (as the other windows' row clicks select theirs).
 pub fn window(
     ctx: &egui::Context,
     w: &mut ThermalWindow,
     model: &Model,
     rules: Option<&Result<Vec<Rule>, String>>,
-) {
+) -> Option<Vec<crate::selection::Selection>> {
     w.poll();
     if !w.open {
-        return;
+        return None;
     }
     let mut open = true;
+    let mut go = None;
     help::window(
         ctx,
         crate::dockable::Panel::Thermal,
@@ -305,7 +307,7 @@ pub fn window(
                     help::body(ui, "thermal-window", |ui| body(ui, w, model));
                 }
                 crate::check_ui::Tab::Results => {
-                    crate::check_ui::results_area(ui, "thermal-window", |ui| {
+                    go = crate::check_ui::results_area(ui, "thermal-window", |ui| {
                         results(ui, w, model, rules)
                     });
                 }
@@ -314,6 +316,7 @@ pub fn window(
         },
     );
     w.open = open;
+    go
 }
 
 /// The Setup tab: the ambient cases, the method, the clearance-limit
@@ -413,13 +416,14 @@ fn body(ui: &mut egui::Ui, w: &mut ThermalWindow, model: &Model) {
 }
 
 /// The Results tab: the out-of-date banner, the table filling the tab
-/// (the ampacities at once, the clearance limits after Run).
+/// (the ampacities at once, the clearance limits after Run); the spans of
+/// the section of a row clicked.
 fn results(
     ui: &mut egui::Ui,
     w: &mut ThermalWindow,
     model: &Model,
     rules: Option<&Result<Vec<Rule>, String>>,
-) {
+) -> Option<Vec<crate::selection::Selection>> {
     if let Some(Err(e)) = &w.limits {
         ui.colored_label(ui.visuals().error_fg_color, e);
     }
@@ -440,7 +444,16 @@ fn results(
             Vec::new()
         }
     };
-    table(ui, w, model, &cases);
+    let k = table(ui, w, model, &cases)?;
+    let s = model.line.sections.get(k)?;
+    Some(
+        (0..s.points.len().saturating_sub(1))
+            .map(|span| crate::selection::Selection::Span {
+                section: s.id.clone(),
+                span,
+            })
+            .collect(),
+    )
 }
 
 /// The Run footer: the clearance-limited temperature of every section
@@ -478,13 +491,23 @@ fn run_ui(
         w.start(model, r, ui.ctx());
     }
     if let Some(t) = w.took {
-        ui.label(egui::RichText::new(format!("{t:.1?}")).small().weak());
+        ui.label(
+            egui::RichText::new(format!("computed in {:.1} s", t.as_secs_f64()))
+                .small()
+                .weak(),
+        );
     }
 }
 
 /// Per section: cable, ampacity at the maximum temperature per case, the
-/// clearance limit and the ampacity at it per case.
-fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_thermal::Ambient]) {
+/// clearance limit and the ampacity at it per case; the row clicked (the
+/// index of its section).
+fn table(
+    ui: &mut egui::Ui,
+    w: &ThermalWindow,
+    model: &Model,
+    cases: &[ohl_thermal::Ambient],
+) -> Option<usize> {
     let limits: &[SectionLimit] = match &w.limits {
         Some(Ok(v)) => v,
         _ => &[],
@@ -626,5 +649,5 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
         .rows(rows)
         .no_filter()
         .csv("thermal-rating.csv")
-        .ui(ui);
+        .ui(ui)
 }

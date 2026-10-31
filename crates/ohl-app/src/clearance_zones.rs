@@ -683,18 +683,24 @@ impl ZoneWindow {
                     ));
                     self.rules_ui(ui, model, presets, &mut out);
                     ui.separator();
-                    check_ui::section(ui, 4, "Settings", None);
-                    guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
-                    self.wind_ui(ui, model);
-                    guide = guide.or(help::heading(
-                        ui,
-                        match self.zone.measure {
-                            Measure::Vertical => "Zone",
-                            Measure::Radial => "Distance",
-                        },
-                        "clearances-zone",
-                    ));
-                    self.zone_ui(ui);
+                    // The modelling settings, folded (check pages'
+                    // guidelines): the method, the wind, the zone.
+                    let model_guide = check_ui::model_section(ui, footer, 4, |ui| {
+                        self.method_ui(ui);
+                        let mut g = help::heading(ui, "Wind", "clearances-wind");
+                        self.wind_ui(ui, model);
+                        g = g.or(help::heading(
+                            ui,
+                            match self.zone.measure {
+                                Measure::Vertical => "Zone",
+                                Measure::Radial => "Distance",
+                            },
+                            "clearances-zone",
+                        ));
+                        self.zone_ui(ui);
+                        g
+                    });
+                    guide = guide.or(model_guide.flatten());
                 }),
                 check_ui::Tab::Results => check_ui::results_area(ui, footer, |ui| {
                     guide = guide.or(help::heading(ui, "Results", "clearances-results"));
@@ -951,6 +957,20 @@ impl ZoneWindow {
             self.scope.write_check(&mut self.check);
             self.dirty = true;
         }
+        help::explain(
+            ui,
+            "Circuits: those checked. Routes: the routes and alignments checked (none ticked: \
+             the whole line).",
+            "Only the sections of the circuits ticked, on the routes and alignments ticked, are \
+             solved and checked (a section with a structure on one of them, whole). The rules' \
+             weather cases are set per rule (3 Rules); the method each section is solved with is \
+             in 4 Model.",
+        );
+    }
+
+    /// *Solved by* (in 4 Model): each section's own calculation, or one
+    /// method for all (kept in the rule file's `[check]`).
+    fn method_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Solved by");
             let name = |m: Option<Method>| match m {
@@ -973,25 +993,11 @@ impl ZoneWindow {
                      cable condition)",
                 );
         });
-        // The structure and section overrides of the cases (kept in the
-        // rule file's [check]).
-        ui.horizontal_wrapped(|ui| {
-            let mut o = self.overrides();
-            if o.ui(ui) {
-                self.check.structure_override = o.structures;
-                self.check.section_override = o.sections;
-                self.dirty = true;
-            }
-        });
         help::explain(
             ui,
-            "Circuits: those checked. Routes: the routes and alignments checked (none ticked: \
-             the whole line). Solved by: each section's own calculation, or one method for all.",
-            "Only the sections of the circuits ticked, on the routes and alignments ticked, are \
-             solved and checked (a section with a structure on one of them, whole). Finite elements \
-             solve each section with its strings swinging; ruling span is the classic \
-             approximation; each section keeps its cable condition (initial, final). The rules' \
-             weather cases are set per rule (3 Rules).",
+            "Solved by: each section's own calculation, or one method for all.",
+            "Finite elements solve each section with its strings swinging; ruling span is the \
+             classic approximation; each section keeps its cable condition (initial, final).",
         );
     }
 
@@ -1000,7 +1006,7 @@ impl ZoneWindow {
         match self.zone.measure {
             Measure::Vertical => {
                 "Each span is solved in every wind position of its rules' weather cases (the \
-                 steps, the swing arc or the case's own pressure, 4 Settings). Under the wire, \
+                 steps, the swing arc or the case's own pressure, 4 Model). Under the wire, \
                  within the zone's width on each side and in slices of its depth along the line, \
                  the ground and the LiDAR points of the rules' classes are compared with the \
                  wire's lowest point over the slice; the clearance is to the conductor's surface \
@@ -1008,7 +1014,7 @@ impl ZoneWindow {
             }
             Measure::Radial => {
                 "Each span is solved in every wind position of its rules' weather cases (the \
-                 steps, the swing arc or the case's own pressure, 4 Settings). The direct 3D \
+                 steps, the swing arc or the case's own pressure, 4 Model). The direct 3D \
                  distance from every subconductor's surface to the ground and to the LiDAR points \
                  of the rules' classes is compared with the rule's distance at the wire's \
                  voltage; the swing arc covers every angle between the blowouts, widened by the \
@@ -1248,6 +1254,15 @@ impl ZoneWindow {
         }
         if stop_now && let Some(r) = self.running.as_mut() {
             r.stopped = true;
+        }
+        // The structure and section overrides of the cases (kept in the
+        // rule file's [check]), in the footer as every check window has
+        // them.
+        let mut o = self.overrides();
+        if o.ui(ui) {
+            self.check.structure_override = o.structures;
+            self.check.section_override = o.sections;
+            self.dirty = true;
         }
         run
     }

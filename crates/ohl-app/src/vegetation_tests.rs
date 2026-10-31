@@ -43,6 +43,8 @@ fn opened(name: &str) -> (std::path::PathBuf, Harness<'static, App>) {
     r.vegetation.show(0);
     r.vegetation.settings.clearance = ohl_clearance::rules::Requirement::Fixed(80.0);
     h.run_steps(3);
+    // Its settings in 4 Model, folded by default.
+    crate::tests::open_model(&mut h);
     (file, h)
 }
 
@@ -189,7 +191,14 @@ fn the_highlights_are_drawn_while_the_panel_is_open() {
         Some([[1, 2, 3], [4, 5, 6]])
     );
     // The classes: the menu's ticks (by role: 3, 4, 5 of the ASPRS
-    // scheme), one more ticked.
+    // scheme), one more ticked — in 4 Model, folded again in the window
+    // opened anew.
+    if h.query_all_by_label_contains("by role: vegetation")
+        .next()
+        .is_none()
+    {
+        crate::tests::open_model(&mut h);
+    }
     let shown = h
         .query_all_by_label_contains("by role: vegetation")
         .next()

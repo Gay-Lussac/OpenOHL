@@ -792,7 +792,11 @@ pub(super) fn tool_windows(
     }
     crate::project_lines::window(ctx, r);
     crate::working_tree::window(ctx, r);
-    crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
+    if let Some(spans) =
+        crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref())
+    {
+        r.go_to_all(spans);
+    }
     r.bom.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);
     string_builder_window(ctx, r);

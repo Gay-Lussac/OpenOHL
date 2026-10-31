@@ -528,3 +528,86 @@ fn a_check_setup_is_kept_in_the_project() {
     again.keep(&mut model, &ctx);
     assert_eq!(again.scope, w.scope);
 }
+
+/// The small reworks (owner, 2026-10-31: "go ahead with all small
+/// stuff"): the modelling settings folded in *4 Model* (Vertical
+/// clearances' *Solved by*), its overrides in the footer; String checks'
+/// rule table names its own columns; Internal clearances says before Run
+/// how many structures have a body; a Line parameters row selects its
+/// circuit's spans.
+#[test]
+fn the_model_is_folded_and_the_setups_say_what_they_need() {
+    let mut h = window();
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.vertical_clearances.show(&r.model);
+    }
+    h.run();
+    assert!(h.query_by_label("Solved by").is_none(), "folded by default");
+    h.get_by_label("structure override");
+    open_model(&mut h);
+    h.get_by_label("Solved by");
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.vertical_clearances.open = false;
+        r.string_checks.show(&r.model);
+    }
+    h.run();
+    // The header and the editor's field.
+    assert_eq!(h.query_all_by_label("Strings").count(), 2);
+    assert!(
+        h.query_by_label("Distance").is_none() && h.query_by_label("Wires").is_none(),
+        "this window's own column names"
+    );
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.string_checks.open = false;
+        r.internal_clearances.show(&r.model);
+    }
+    h.run();
+    let (with, all) = {
+        let r = h.state_mut().ready().unwrap();
+        crate::internal_clearances::bodies_count(&r.model)
+    };
+    assert!(
+        with < all,
+        "the synthetic line has structures without a body"
+    );
+    h.get_by_label_contains(&format!("{with} of {all} structures have a body"));
+    // Line parameters: a circuit's row selects every span of its sections.
+    {
+        let ctx = h.ctx.clone();
+        let r = h.state_mut().ready().unwrap();
+        r.internal_clearances.open = false;
+        r.line_parameters.show(r.case);
+        r.line_parameters.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    while h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .line_parameters
+        .job
+        .result
+        .is_none()
+    {
+        h.step();
+        assert!(started.elapsed().as_secs() < 60, "no answer in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.run_steps(4);
+    h.get_all_by_label("Example 1").next().unwrap().click();
+    h.run_steps(2);
+    let r = h.state_mut().ready().unwrap();
+    let spans: usize = r
+        .model
+        .line
+        .sections
+        .iter()
+        .filter(|s| s.circuit_name == "Example 1")
+        .map(|s| s.points.len() - 1)
+        .sum();
+    assert!(spans > 1);
+    assert_eq!(1 + r.model.selected_also.len(), spans);
+}

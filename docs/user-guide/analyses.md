@@ -78,9 +78,13 @@ CSV columns: case, method, both spans, distance, required, overlap, where
 In the desktop app: **Checks › Galloping ellipses…** — choose the weather
 case (*2 Scope*) and the parameter file (*3 Rules*; the project's `.ohlg`,
 or one next to a line file, is chosen first), then **Run** (the window's
-footer, bottom left). The Results tab lists every pair and method (spans
-named from 1), *Only violations* on by default; a row clicked selects its
-span and draws it in the weather case of the run.
+footer, bottom left). Under the parameter file's name a line says what it
+holds: its methods (with their loops), its requirement and the cases it
+names (2026-10-31). The Results tab lists every pair and method (spans
+named from 1), *Only violations* on by default, the notes folded above
+the table; a row clicked selects its span and draws it in the weather
+case of the run. **Export CSV…** writes the rows shown, **Full report
+(CSV)…** every pair with the case.
 
 ## Blowout and the right of way
 
@@ -132,9 +136,14 @@ plugin's choices, the weather cases (each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
 (1 m), and nearby spans (conductors not between the same two
 structures, within a distance). On the check windows' layout
-(2026-10-27): *1 What it checks* with *How it is computed* folded, *2
-Scope* (cases, circuits, stations, nearby spans), *3 Rules* (the
-circuits' levels, the values used); the Results tab holds the saved
+(2026-10-27; 2026-10-31): *1 What it checks* with *How it is computed*
+folded, *2 Scope* (the weather cases — **Weather cases: n of m**, a tick
+menu; under unequal wind one case, the weather case list the other
+single-case windows use —, circuits, routes), *3 Rules* (**Choose a
+values file…** and the plugin's choices, the circuits' levels, the
+values used), *4 Model*, folded (the station spacing — under unequal
+wind the wind step and the other conductor's share instead —, nearby
+spans; each with a line saying what it changes); the Results tab holds the saved
 report and *Save*, the verdict and the table (*Only violations* — the
 pairs below z — on by default, sortable, grouped by case, span or rule).
 The setup is kept in the project per project line (`app.phase_distance`,
@@ -157,7 +166,7 @@ as it is), says the case beside it, and draws the worst station's line
 in the 3D view, labelled with d and the required distance; the line goes
 when the window is closed (or a new run starts), the result's case when
 the window is closed or you select something else. **Export CSV…** writes
-every pair with the points. Below the settings, the window explains the
+the rows shown, **Full report (CSV)…** every pair with the points. Below the settings, the window explains the
 computation (the plugin's "How it is computed") and shows the **values
 used** as tables, for transparency, and where they come from (the
 plugin's, a file chosen, a saved report, or the project's copy). They
@@ -501,8 +510,8 @@ what it does (a longer text on hover), and small drawings that follow
 the values typed (the distance around a conductor, the wind positions
 and the swing arc, the volumes grouped, a mesh where two tubes meet). On
 the check windows' layout (2026-10-27): *2 Scope* holds the weather cases
-and *What is included*, *3 Rules* the distance, *4 Settings* the wire
-positions and the mesh; the volumes, *Save* and *Export* are in the
+and *What is included*, *3 Rules* the distance, *4 Model* (folded) the
+wire positions and the mesh (in *What is included* until 2026-10-31); the volumes, *Save* and *Export* are in the
 Results tab. The setup is kept in the project per project line
 (`app.safety_volumes`).
 
@@ -656,7 +665,13 @@ Sections with creep or load conditions need their weather cases:
 `--weather`.
 
 Desktop app: **Checks › As-built wires…** (spans named from 1 in its
-table since 2026-10-27; Run greyed without a point cloud).
+table since 2026-10-27; Run greyed without a point cloud, saying where
+to import one). Its *3 Model*, folded (2026-10-31), has a labelled row
+each: **Model temperature** (the still-air case compared with), **Points
+across** and **Points up or down** (how far from the modelled wire a
+LiDAR point may lie to be fitted) and **Survey temperature** (estimated
+from the model's sag at each temperature: longer runs), each with a line
+saying what it changes.
 
 ## Electrical: line parameters
 
@@ -679,8 +694,8 @@ and the line's **electrical settings**:
 | Height in a span | the solved wire's average | or the attachment height minus 2/3 of the sag |
 
 **In OHL-Design:** Checks › Electrical › **Line parameters…**. The
-settings at the top are the line's (each change one undoable command,
-kept in the project). Choose the weather case in *2 Scope* (the wires as
+settings in *3 Model* (folded) are the line's (each change one undoable
+command, kept in the project). Choose the weather case in *2 Scope* (the wires as
 solved in it; its temperature is the conductors' for the resistances; it
 was in the footer until 2026-10-27) and **Run**; the results open in the
 Results tab. The table gives per circuit the positive and zero sequence
@@ -688,8 +703,12 @@ R, X (Ω/km) and B (µS/km) of the ideally transposed line and the totals;
 the + button shows the circuit's stretches (consecutive spans with the same
 sections). Hover a circuit to see how much its sequences couple as built
 (a line not transposed). The coupling rows give the zero sequence mutual
-impedance between circuits sharing spans. **Export CSV…** writes the
-table with the notes. The results are marked out of date when the line
+impedance between circuits sharing spans. A missing value is "-" (a
+circuit without three phases, the coupling's own sequences); the notes
+are folded above the table; a row clicked selects the spans of its
+circuit's sections (a stretch: its own; a coupling: both circuits').
+**Export CSV…** writes the rows shown, **Full report (CSV)…** the
+table with the notes, as `ohl electrical` does. The results are marked out of date when the line
 changes, like the other checks.
 
 **On the command line:**
