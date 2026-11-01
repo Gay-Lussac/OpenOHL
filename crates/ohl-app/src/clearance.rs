@@ -309,6 +309,7 @@ fn swing_findings(
     voltages: &[Option<ohl_line::electrical::Potential>],
     found: &mut BTreeMap<Key, Finding>,
     results: &mut [Vec<WireResult>],
+    (offset, suffix): (usize, &str),
 ) -> Result<(), String> {
     use ohl_clearance::wire_arc::{WIRE_ARC_COARSE, WIRE_ARC_STEP, swings};
     // The rules between the line's own wires in one case only.
@@ -401,7 +402,7 @@ fn swing_findings(
                 stopped()?;
                 let f = k as f64 / fine.samples as f64;
                 let label = format!(
-                    "{}, swing arc: {:.0} of {:.0} Pa from the {}",
+                    "{}, swing arc: {:.0} of {:.0} Pa from the {}{suffix}",
                     state.name,
                     f * state.full,
                     state.full,
@@ -420,7 +421,7 @@ fn swing_findings(
                             Some(&c.wires[p.b]),
                             &p.result,
                             &label,
-                            swing.state,
+                            swing.state + offset,
                             &mut local,
                         );
                         fold(&mut lowest[c.rule], &p.result);
@@ -459,19 +460,19 @@ pub fn run(input: &Input) -> Result<Report, String> {
     if states.is_empty() {
         return Err("no weather case of the rules is in the model (or in the scope)".into());
     }
-    // Every section by the method chosen.
-    let own;
-    let line = match input.check.method {
-        None => &input.line,
+    // Every section by the method chosen (for the rules without a
+    // calculation of their own).
+    let base: std::borrow::Cow<'_, Line> = match input.check.method {
+        None => std::borrow::Cow::Borrowed(&input.line),
         Some(m) => {
             let mut l = input.line.clone();
             for s in &mut l.sections {
                 s.calculation = ohl_line::condition::Calculation::of(s.calculation.condition(), m);
             }
-            own = l;
-            &own
+            std::borrow::Cow::Owned(l)
         }
     };
+    let line = &*base;
     // Voltages of the sections: every rule must cover them.
     let voltages = ohl_clearance::voltages_of(line)?;
     for rule in rules
@@ -486,46 +487,6 @@ pub fn run(input: &Input) -> Result<Report, String> {
             .time_limit(limit)
             .cancel_token(input.cancel.clone())
     };
-    // Every position solved (here, unless given).
-    let solved: Vec<(Vec<SectionShape>, Vec<JumperShape>)> = match &input.solved {
-        Some(s) => s.clone(),
-        None => {
-            let s = ohl_clearance::zone::solve_states(
-                line,
-                &input.library,
-                states,
-                &input.sections,
-                true,
-                &budget(),
-                &input.done,
-            )?;
-            for f in &s.failed {
-                report.notes.push(format!("not solved: {f}"));
-            }
-            s.shapes.into_iter().zip(s.jumpers).collect()
-        }
-    };
-    // The circuits, routes and alignments chosen only (owner, 2026-10-27).
-    let on = input.check.wires_on(line);
-    let wires: Vec<Vec<Wire>> = solved
-        .iter()
-        .map(|(shapes, jumpers)| {
-            let mut wires = ohl_clearance::wires_of(line, shapes, jumpers);
-            wires.retain(|w| {
-                input.check.takes_circuit(&w.circuit)
-                    && on.as_ref().is_none_or(|(sections, jumpers)| {
-                        match w.section.strip_prefix("jumper:") {
-                            Some(j) => jumpers.contains(j),
-                            None => sections.contains(&w.section),
-                        }
-                    })
-            });
-            wires
-        })
-        .collect();
-    if wires.iter().all(Vec::is_empty) && (!input.check.circuits.is_empty() || on.is_some()) {
-        return Err("no wire of the circuits, routes and alignments chosen".into());
-    }
     let point_classes: Vec<Vec<u8>> = rules
         .iter()
         .map(|r| r.point_classes(|role| input.scheme.codes_with_role(role)))
@@ -583,128 +544,213 @@ pub fn run(input: &Input) -> Result<Report, String> {
     let mut found: BTreeMap<Key, Finding> = BTreeMap::new();
     let mut results: Vec<Vec<WireResult>> = vec![Vec::new(); rules.len()];
     let mut skipped: BTreeSet<(usize, String)> = BTreeSet::new();
-    for (k, state) in states.iter().enumerate() {
-        if input.cancel.is_cancelled() {
-            return Err("stopped".into());
+    // The rules by calculation (owner, 2026-11-01): each group checked on
+    // the wires solved by its calculation (none: the sections' own, or the
+    // method chosen), the others set aside; a case pair's two cases both
+    // by its rule's.
+    let groups = ohl_clearance::calculation::of_rules(rules);
+    let all_rules = rules;
+    let mut paired: BTreeSet<usize> = BTreeSet::new();
+    for (g, calc) in groups.iter().copied().enumerate() {
+        let grouped;
+        let rules: &[Rule] = if groups.len() == 1 {
+            all_rules
+        } else {
+            grouped = ohl_clearance::calculation::only(all_rules, calc);
+            &grouped
+        };
+        let own_line;
+        let line: &Line = match calc {
+            None => line,
+            Some(_) => {
+                own_line = ohl_clearance::calculation::line_for(&input.line, calc).into_owned();
+                &own_line
+            }
+        };
+        // Its findings' positions: the states again, after the others'.
+        let offset = g * states.len();
+        if g > 0 {
+            report.states.extend(states.iter().cloned());
         }
-        let label = state.describe();
-        let checks = ohl_clearance::check_case(
-            rules,
-            &state.name,
-            &wires[k],
-            CaseTargets {
-                voltages: &voltages,
-                other_voltages: &[],
-                ground: input.ground.as_deref(),
-                surfaces: &surfaces,
-                point_classes: &point_classes,
-                points: input.cloud.is_some().then_some(&mut feed as _),
-                other_wires: &[],
-            },
-        )?;
-        for c in &checks {
-            let rule = &rules[c.rule];
-            match &c.outcome {
-                Outcome::Skipped(why) => {
-                    let text = match why {
-                        Skipped::NoGround => format!("{}: no ground", rule.name),
-                        Skipped::NoClasses => format!(
-                            "{}: no class of \"{}\" matches",
-                            rule.name, input.scheme.name
-                        ),
-                        Skipped::NoPoints => {
-                            format!("{}: no point cloud in this model", rule.name)
+        let suffix = calc.map_or(String::new(), |c| format!(", {}", c.label()));
+        // Every position solved (here, unless given).
+        let solved: Vec<(Vec<SectionShape>, Vec<JumperShape>)> = match (&input.solved, calc) {
+            (Some(s), None) => s.clone(),
+            _ => {
+                let s = ohl_clearance::zone::solve_states(
+                    line,
+                    &input.library,
+                    states,
+                    &input.sections,
+                    true,
+                    &budget(),
+                    &input.done,
+                )?;
+                for f in &s.failed {
+                    report.notes.push(format!("not solved{suffix}: {f}"));
+                }
+                s.shapes.into_iter().zip(s.jumpers).collect()
+            }
+        };
+        // The circuits, routes and alignments chosen only (owner, 2026-10-27).
+        let on = input.check.wires_on(line);
+        let wires: Vec<Vec<Wire>> = solved
+            .iter()
+            .map(|(shapes, jumpers)| {
+                let mut wires = ohl_clearance::wires_of(line, shapes, jumpers);
+                wires.retain(|w| {
+                    input.check.takes_circuit(&w.circuit)
+                        && on.as_ref().is_none_or(|(sections, jumpers)| {
+                            match w.section.strip_prefix("jumper:") {
+                                Some(j) => jumpers.contains(j),
+                                None => sections.contains(&w.section),
+                            }
+                        })
+                });
+                wires
+            })
+            .collect();
+        if wires.iter().all(Vec::is_empty) && (!input.check.circuits.is_empty() || on.is_some()) {
+            return Err("no wire of the circuits, routes and alignments chosen".into());
+        }
+        for (k, state) in states.iter().enumerate() {
+            if input.cancel.is_cancelled() {
+                return Err("stopped".into());
+            }
+            let label = format!("{}{suffix}", state.describe());
+            let checks = ohl_clearance::check_case(
+                rules,
+                &state.name,
+                &wires[k],
+                CaseTargets {
+                    voltages: &voltages,
+                    other_voltages: &[],
+                    ground: input.ground.as_deref(),
+                    surfaces: &surfaces,
+                    point_classes: &point_classes,
+                    points: input.cloud.is_some().then_some(&mut feed as _),
+                    other_wires: &[],
+                },
+            )?;
+            for c in &checks {
+                let rule = &rules[c.rule];
+                match &c.outcome {
+                    Outcome::Skipped(why) => {
+                        let text = match why {
+                            Skipped::NoGround => format!("{}: no ground", rule.name),
+                            Skipped::NoClasses => format!(
+                                "{}: no class of \"{}\" matches",
+                                rule.name, input.scheme.name
+                            ),
+                            Skipped::NoPoints => {
+                                format!("{}: no point cloud in this model", rule.name)
+                            }
+                            Skipped::NoOtherLines => format!(
+                                "{}: other lines are checked by `ohl line --other-line`",
+                                rule.name
+                            ),
+                            // Below: across the cases.
+                            Skipped::AcrossCases => continue,
+                        };
+                        skipped.insert((c.rule, text));
+                    }
+                    Outcome::Wires(list) => {
+                        for (w, r) in list.iter().enumerate() {
+                            findings(
+                                c.rule,
+                                rule,
+                                &c.wires[w],
+                                None,
+                                r,
+                                &label,
+                                k + offset,
+                                &mut found,
+                            );
                         }
-                        Skipped::NoOtherLines => format!(
-                            "{}: other lines are checked by `ohl line --other-line`",
-                            rule.name
-                        ),
-                        // Below: across the cases.
-                        Skipped::AcrossCases => continue,
-                    };
-                    skipped.insert((c.rule, text));
-                }
-                Outcome::Wires(list) => {
-                    for (w, r) in list.iter().enumerate() {
-                        findings(c.rule, rule, &c.wires[w], None, r, &label, k, &mut found);
+                        results[c.rule].extend(list.iter().cloned());
                     }
-                    results[c.rule].extend(list.iter().cloned());
-                }
-                // Wires of this line only (no other lines here).
-                Outcome::Pairs(pairs) => {
-                    for p in pairs {
-                        findings(
-                            c.rule,
-                            rule,
-                            &c.wires[p.a],
-                            Some(&c.wires[p.b]),
-                            &p.result,
-                            &label,
-                            k,
-                            &mut found,
-                        );
+                    // Wires of this line only (no other lines here).
+                    Outcome::Pairs(pairs) => {
+                        for p in pairs {
+                            findings(
+                                c.rule,
+                                rule,
+                                &c.wires[p.a],
+                                Some(&c.wires[p.b]),
+                                &p.result,
+                                &label,
+                                k + offset,
+                                &mut found,
+                            );
+                        }
+                        results[c.rule].extend(pairs.iter().map(|p| p.result.clone()));
                     }
-                    results[c.rule].extend(pairs.iter().map(|p| p.result.clone()));
                 }
             }
         }
-    }
-    // The swing arc between the wires: all swung together by one wind.
-    if let Some(margins) = input.arc {
-        let cases = ohl_clearance::zone_arc::arc_cases(states);
-        let (shapes, jumpers): (Vec<Vec<SectionShape>>, Vec<Vec<JumperShape>>) =
-            solved.iter().cloned().unzip();
-        let (mut arcs, notes) =
-            ohl_clearance::zone_arc::zone_arcs(line, &shapes, &jumpers, &cases, margins);
-        arcs.retain(|a| {
-            let w = &a.wire;
-            input.check.takes_circuit(&w.circuit)
-                && on.as_ref().is_none_or(|(sections, jumpers)| {
-                    match w.section.strip_prefix("jumper:") {
-                        Some(j) => jumpers.contains(j),
-                        None => sections.contains(&w.section),
-                    }
-                })
-        });
-        report.notes.extend(notes);
-        swing_findings(
-            input,
-            rules,
-            states,
-            &arcs,
-            &cases,
-            &voltages,
-            &mut found,
-            &mut results,
-        )?;
-    }
-    // The case pairs: each case as it is (its own wind, from each side
-    // checked; not the steps) against the other.
-    let full: Vec<usize> = (0..states.len())
-        .filter(|&k| (states[k].pressure - states[k].full).abs() < 1e-9)
-        .collect();
-    let cases: Vec<(&str, &[Wire])> = full
-        .iter()
-        .map(|&k| (states[k].name.as_str(), wires[k].as_slice()))
-        .collect();
-    let pairs = ohl_clearance::check_case_pairs(rules, &cases, &voltages);
-    for c in &pairs {
-        let rule = &rules[c.rule];
-        let (a, b) = (full[c.first], full[c.second]);
-        let label = format!("{} × {}", states[a].describe(), states[b].describe());
-        for p in &c.pairs {
-            findings(
-                c.rule,
-                rule,
-                &c.wires[p.a],
-                Some(&c.others[p.b]),
-                &p.result,
-                &label,
-                a,
+        // The swing arc between the wires: all swung together by one wind.
+        if let Some(margins) = input.arc {
+            let cases = ohl_clearance::zone_arc::arc_cases(states);
+            let (shapes, jumpers): (Vec<Vec<SectionShape>>, Vec<Vec<JumperShape>>) =
+                solved.iter().cloned().unzip();
+            let (mut arcs, notes) =
+                ohl_clearance::zone_arc::zone_arcs(line, &shapes, &jumpers, &cases, margins);
+            arcs.retain(|a| {
+                let w = &a.wire;
+                input.check.takes_circuit(&w.circuit)
+                    && on.as_ref().is_none_or(|(sections, jumpers)| {
+                        match w.section.strip_prefix("jumper:") {
+                            Some(j) => jumpers.contains(j),
+                            None => sections.contains(&w.section),
+                        }
+                    })
+            });
+            report.notes.extend(notes);
+            swing_findings(
+                input,
+                rules,
+                states,
+                &arcs,
+                &cases,
+                &voltages,
                 &mut found,
-            );
+                &mut results,
+                (offset, &suffix),
+            )?;
         }
-        results[c.rule].extend(c.pairs.iter().map(|p| p.result.clone()));
+        // The case pairs: each case as it is (its own wind, from each side
+        // checked; not the steps) against the other.
+        let full: Vec<usize> = (0..states.len())
+            .filter(|&k| (states[k].pressure - states[k].full).abs() < 1e-9)
+            .collect();
+        let cases: Vec<(&str, &[Wire])> = full
+            .iter()
+            .map(|&k| (states[k].name.as_str(), wires[k].as_slice()))
+            .collect();
+        let pairs = ohl_clearance::check_case_pairs(rules, &cases, &voltages);
+        for c in &pairs {
+            let rule = &rules[c.rule];
+            let (a, b) = (full[c.first], full[c.second]);
+            let label = format!(
+                "{} × {}{suffix}",
+                states[a].describe(),
+                states[b].describe()
+            );
+            for p in &c.pairs {
+                findings(
+                    c.rule,
+                    rule,
+                    &c.wires[p.a],
+                    Some(&c.others[p.b]),
+                    &p.result,
+                    &label,
+                    a + offset,
+                    &mut found,
+                );
+            }
+            results[c.rule].extend(c.pairs.iter().map(|p| p.result.clone()));
+        }
+        paired.extend(pairs.iter().map(|c| c.rule));
     }
     for (k, rule) in rules.iter().enumerate() {
         if rule.case_pairs.is_empty() {
@@ -719,7 +765,7 @@ pub fn run(input: &Input) -> Result<Report, String> {
                     rule.name
                 ),
             ));
-        } else if !pairs.iter().any(|c| c.rule == k) {
+        } else if !paired.contains(&k) {
             skipped.insert((
                 k,
                 format!(
@@ -988,7 +1034,8 @@ impl Clearances {
         self.progress = Some(Running {
             read: input.progress.clone(),
             done: input.done.clone(),
-            total: input.states.len(),
+            // Each calculation the rules ask solves every position.
+            total: input.states.len() * ohl_clearance::calculation::of_rules(&input.rules).len(),
             since: Instant::now(),
             cancel: input.cancel.clone(),
         });

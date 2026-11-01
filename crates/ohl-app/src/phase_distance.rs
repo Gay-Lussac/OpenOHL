@@ -229,6 +229,9 @@ pub struct Params {
     /// Under unequal wind: the other conductor's least share of the wind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub low_share: Option<f64>,
+    /// How the wires were solved (2026-11-01; none: each section's own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calculation: Option<ohl_line::condition::Calculation>,
 }
 
 /// What a saved report keeps as results.
@@ -434,6 +437,9 @@ pub struct PhaseDistanceWindow {
     pub wind_step: f64,
     /// Under unequal wind: the other conductor's least share of the wind.
     pub low_share: f64,
+    /// How the wires are solved (owner, 2026-11-01: e.g. the final sag;
+    /// none: each section's own). Set in OpenOHL, not by the plugin.
+    pub calculation: ohl_clearance::calculation::Calc,
     /// The row clicked.
     pub picked: Option<usize>,
     /// The values of a saved report (file name, text), used instead of
@@ -489,6 +495,7 @@ impl PhaseDistanceWindow {
             choices: Vec::new(),
             wind_step: DEFAULT_WIND_STEP,
             low_share: ohl_clearance::unequal_wind::UnequalWindSettings::default().low_share,
+            calculation: None,
             picked: None,
             values: None,
             loaded: None,
@@ -988,20 +995,23 @@ impl PhaseDistanceWindow {
                 .unwrap_or_default(),
             wind_step_pa: (self.kind == Kind::UnequalWind).then_some(self.wind_step),
             low_share: (self.kind == Kind::UnequalWind).then_some(self.low_share),
+            calculation: self.calculation,
         };
         let state = model
             .editing
             .as_ref()
             .ok()
             .and_then(|e| e.session.check_state().ok());
-        let line = model.line.clone();
+        // By the calculation chosen (2026-11-01): every case solved anew.
+        let line = ohl_clearance::calculation::line_for(&model.line, self.calculation).into_owned();
         let library = model.library.clone();
         let wind = model.wind;
+        let own = self.calculation.is_none();
         let cases: Vec<(crate::model::Solved, bool)> = self
             .cases
             .iter()
             .filter_map(|k| model.cases.get(*k))
-            .map(|c| (c.clone(), c.solved_for(wind)))
+            .map(|c| (c.clone(), own && c.solved_for(wind)))
             .collect();
         let mut settings = self.settings.clone();
         settings.circuits = self.circuits.clone();
@@ -1245,6 +1255,7 @@ impl PhaseDistanceWindow {
         if let Some(share) = params.low_share {
             self.low_share = share;
         }
+        self.calculation = params.calculation;
         self.settings.spacing = params.spacing;
         self.settings.nearby = params.nearby;
         self.settings.max_distance = params.max_distance;
@@ -1491,6 +1502,7 @@ impl PhaseDistanceWindow {
             "choices": self.choices,
             "wind_step": self.wind_step,
             "low_share": self.low_share,
+            "calculation": self.calculation.map(|c| c.name()),
             "overrides": [self.overrides.structures, self.overrides.sections],
         })
         .to_string()
@@ -1537,6 +1549,9 @@ impl PhaseDistanceWindow {
         if let Some(x) = get("low_share").as_f64() {
             self.low_share = x;
         }
+        self.calculation = get("calculation")
+            .as_str()
+            .and_then(ohl_line::condition::Calculation::parse);
         if let Ok([a, b]) = serde_json::from_value::<[bool; 2]>(get("overrides")) {
             self.overrides.structures = a;
             self.overrides.sections = b;
@@ -1943,6 +1958,15 @@ impl PhaseDistanceWindow {
         }
         // The circuits and routes (owner, 2026-10-28: the scope of every
         // check window, the shared picker).
+        // How the wires are solved (owner, 2026-11-01).
+        ui.horizontal(|ui| {
+            ui.label("Wires by");
+            crate::rule_table::calculation_combo(
+                ui,
+                "phase-distance-calculation",
+                &mut self.calculation,
+            );
+        });
         if check_ui::ScopePicker::new(self.kind.page(), &model.line)
             .wires(&mut self.scope, false)
             .ui(ui)

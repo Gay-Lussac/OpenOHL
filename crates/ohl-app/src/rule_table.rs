@@ -969,6 +969,27 @@ fn preset_preview(
     })
 }
 
+/// A calculation to pick (none: each section's own); whether it changed.
+pub fn calculation_combo(
+    ui: &mut egui::Ui,
+    id: &str,
+    calc: &mut Option<ohl_line::condition::Calculation>,
+) -> bool {
+    let words = |c: Option<ohl_line::condition::Calculation>| {
+        c.map_or("each section's own".to_owned(), |k| k.label())
+    };
+    let before = *calc;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(words(*calc))
+        .show_ui(ui, |ui| {
+            ui.selectable_value(calc, None, words(None));
+            for k in ohl_line::condition::Calculation::ALL {
+                ui.selectable_value(calc, Some(k), k.label());
+            }
+        });
+    *calc != before
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -195,6 +195,7 @@ pub fn first_rule() -> ZoneRule {
         wires: ohl_clearance::Wires::Both,
         width: None,
         screen: false,
+        calculation: None,
     }
 }
 
@@ -1103,6 +1104,17 @@ impl ZoneWindow {
                         ui.end_row();
                         ui.label("Weather cases");
                         changed |= cases_ui(ui, (measure, k), r, &cases, &groups);
+                        ui.end_row();
+                        // How the wires are solved (owner, 2026-11-01:
+                        // e.g. the ground at max sag).
+                        ui.label("Calculation").on_hover_text(
+                            "How every wire is solved for this rule; each section's own by default",
+                        );
+                        changed |= crate::rule_table::calculation_combo(
+                            ui,
+                            &format!("zone-calc-{}-{k}", measure.as_str()),
+                            &mut r.calculation,
+                        );
                         ui.end_row();
                         ui.label("Distance");
                         changed |= crate::requirement_ui::requirement_ui(

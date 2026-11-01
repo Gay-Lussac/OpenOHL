@@ -78,6 +78,9 @@ pub struct Settings {
     pub systems: Option<Vec<String>>,
     /// The spans ticked, `SECTION:N` (N from 1; `None`: all).
     pub spans: Option<Vec<String>>,
+    /// How the wires are solved (owner, 2026-11-01: e.g. max sag; none:
+    /// each section's own).
+    pub calculation: ohl_clearance::calculation::Calc,
 }
 
 /// Where the wires are chosen from.
@@ -233,6 +236,7 @@ impl Default for Settings {
             circuits: None,
             systems: None,
             spans: None,
+            calculation: None,
         }
     }
 }
@@ -299,6 +303,7 @@ impl Settings {
             "circuits": self.circuits.clone().unwrap_or_default(),
             "systems": self.systems.clone().unwrap_or_default(),
             "spans": self.spans.clone().unwrap_or_default(),
+            "calculation": self.calculation.map(|c| c.name()),
         })
     }
 
@@ -349,6 +354,8 @@ impl Settings {
                 circuits: Some(list("circuits")).filter(|l| !l.is_empty()),
                 systems: Some(list("systems")).filter(|l| !l.is_empty()),
                 spans: Some(list("spans")).filter(|l| !l.is_empty()),
+                // Runs saved before 2026-11-01: each section's own.
+                calculation: text("calculation").and_then(ohl_line::condition::Calculation::parse),
             },
             list("cases"),
         ))
@@ -618,7 +625,9 @@ impl SafetyVolumeWindow {
             return;
         }
         self.saved_stale = None;
-        let line = model.line.clone();
+        // By the calculation chosen (2026-11-01; none: each section's own).
+        let line = ohl_clearance::calculation::line_for(&model.line, self.settings.calculation)
+            .into_owned();
         let library = model.library.clone();
         let settings = self.settings.clone();
         // The colours are the line's: taken now, kept with the report.
@@ -1086,6 +1095,15 @@ impl SafetyVolumeWindow {
                     ..s.steps
                 };
                 help::wind_choice(ui, "safety-volume", &mut wind, false, full, true, true);
+                // How the wires are solved (owner, 2026-11-01).
+                ui.horizontal(|ui| {
+                    ui.label("Wires by");
+                    crate::rule_table::calculation_combo(
+                        ui,
+                        "safety-volume-calculation",
+                        &mut s.calculation,
+                    );
+                });
                 s.wind = match (wind.arc, wind.stepped) {
                     (false, false) => WindMode::None,
                     (false, true) => WindMode::Steps,

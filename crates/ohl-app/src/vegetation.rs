@@ -157,6 +157,9 @@ pub struct Settings {
     pub keep: usize,
     /// Isoclearance lines asked for, and how.
     pub iso: (bool, IsoParams),
+    /// How the wires are solved (owner, 2026-11-01: e.g. max sag; none:
+    /// each section's own).
+    pub calculation: ohl_clearance::calculation::Calc,
 }
 
 impl Default for Settings {
@@ -182,6 +185,7 @@ impl Default for Settings {
             ice: (Ice::Off, 5.0),
             keep: p.keep,
             iso: (false, IsoParams::default()),
+            calculation: None,
         }
     }
 }
@@ -292,6 +296,7 @@ impl Settings {
             "unbalanced_ice": self.ice.0.key(),
             "unbalanced_ice_value": self.ice.1,
             "keep": self.keep,
+            "calculation": self.calculation.map(|c| c.name()),
             "isoclearance": self.iso.0.then(|| json!({
                 "interval": self.iso.1.interval,
                 "max_level": self.iso.1.max_level,
@@ -389,6 +394,11 @@ impl Settings {
                     .and_then(Value::as_u64)
                     .map_or(d.keep, |k| k as usize),
                 iso: (iso_on, iso),
+                // Runs saved before 2026-11-01: each section's own.
+                calculation: v
+                    .get("calculation")
+                    .and_then(Value::as_str)
+                    .and_then(ohl_line::condition::Calculation::parse),
             },
             cases,
         ))
@@ -804,7 +814,9 @@ impl VegetationWindow {
             }
         }
         self.saved_stale = None;
-        let line = model.line.clone();
+        // By the calculation chosen (2026-11-01; none: each section's own).
+        let line = ohl_clearance::calculation::line_for(&model.line, self.settings.calculation)
+            .into_owned();
         let library = model.library.clone();
         let ground = model.ground_for_checks();
         let settings = self.settings.clone();
@@ -1514,6 +1526,15 @@ impl VegetationWindow {
                 };
                 // The danger-tree check leaves the jumpers out: their margin greyed.
                 help::wind_choice(ui, "vegetation", &mut wind, false, full, false, true);
+                // How the wires are solved (owner, 2026-11-01).
+                ui.horizontal(|ui| {
+                    ui.label("Wires by");
+                    crate::rule_table::calculation_combo(
+                        ui,
+                        "vegetation-calculation",
+                        &mut s.calculation,
+                    );
+                });
                 s.arc = wind.arc;
                 s.steps = WindSteps { arc: false, ..wind };
                 ui.horizontal(|ui| {

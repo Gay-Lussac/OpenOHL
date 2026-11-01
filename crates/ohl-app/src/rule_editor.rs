@@ -82,6 +82,9 @@ pub struct RuleFields {
     /// Wire rules: the first wire in the first case, the second in the
     /// second (empty: both in the same case).
     pub case_pairs: Vec<[String; 2]>,
+    /// How the wires are solved for it (2026-11-01; none: each section's
+    /// own).
+    pub calculation: ohl_clearance::calculation::Calc,
     /// Wire rules: the voltage of a pair.
     pub pair_voltage: ohl_clearance::rules::PairVoltage,
     /// Wires of this line: the pairs checked by their circuits.
@@ -100,6 +103,7 @@ impl RuleFields {
         Self {
             cases: r.cases.clone(),
             case_pairs: r.case_pairs.clone(),
+            calculation: r.calculation,
             pair_voltage: r.pair_voltage,
             circuits: r.circuits,
             include_same_phase: matches!(
@@ -421,6 +425,14 @@ fn write_fields(t: &mut toml_edit::Table, now: &RuleFields, written: &RuleFields
             t["case_pairs"] = toml_edit::value(a);
         }
     }
+    if now.calculation != written.calculation {
+        match now.calculation {
+            None => {
+                t.remove("calculation");
+            }
+            Some(c) => t["calculation"] = toml_edit::value(c.name()),
+        }
+    }
     if now.pair_voltage != written.pair_voltage {
         match now.pair_voltage {
             PairVoltage::Higher => {
@@ -539,6 +551,7 @@ impl RuleEditor {
                         voltages: Vec::new(),
                         cases: Vec::new(),
                         case_pairs: Vec::new(),
+                        calculation: None,
                         pair_voltage: Default::default(),
                         circuits: Default::default(),
                         exclude_near_ends: 0.0,
@@ -1136,6 +1149,17 @@ fn edit_rule(
             ui.end_row();
             ui.label("Weather cases");
             changed |= cases_menu(ui, &mut rule.fields.cases, cases, groups);
+            ui.end_row();
+            // How the wires are solved (owner, 2026-11-01).
+            ui.label("Calculation").on_hover_text(
+                "How every wire is solved for this rule (e.g. max sag for the ground); each \
+                 section's own by default",
+            );
+            changed |= crate::rule_table::calculation_combo(
+                ui,
+                "clearance-rule-calc",
+                &mut rule.fields.calculation,
+            );
             ui.end_row();
             if !rule.between_wires() {
                 return;

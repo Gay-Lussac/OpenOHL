@@ -442,6 +442,10 @@ pub struct Rule {
     /// case, the second wire in the second (e.g. an iced upper wire over a
     /// cold lower one). Empty: both wires in the same case.
     pub case_pairs: Vec<[String; 2]>,
+    /// How the wires are solved for it (owner, 2026-11-01: e.g. ground
+    /// clearances at max sag; none: each section's own calculation, or
+    /// the `[check]` method). A case pair's two cases both by it.
+    pub calculation: crate::calculation::Calc,
     /// Exclusion zone: the wire within this horizontal distance of each of
     /// its ends (the clamps) is not checked, m (0: none).
     pub exclude_near_ends: f64,
@@ -695,6 +699,8 @@ struct RawRule {
     cases: Vec<String>,
     #[serde(default)]
     case_pairs: Vec<[String; 2]>,
+    #[serde(default)]
+    calculation: Option<ohl_line::condition::Calculation>,
     #[serde(default)]
     exclude_near_ends: Option<Length>,
     #[serde(default)]
@@ -1503,6 +1509,7 @@ impl RuleSet {
                     search_margin: r.search_margin.map_or(defaults.search_margin, |l| l.si()),
                     cases: r.cases,
                     case_pairs: r.case_pairs,
+                    calculation: r.calculation,
                     exclude_near_ends: r.exclude_near_ends.map_or(0.0, |l| l.si().max(0.0)),
                     exclude_spans_at: r.exclude_spans_at,
                     circuits,
@@ -1631,6 +1638,7 @@ impl RuleSet {
                 search_margin: DEFAULT_SEARCH_MARGIN,
                 cases: Vec::new(),
                 case_pairs: Vec::new(),
+                calculation: None,
                 exclude_near_ends: 0.0,
                 exclude_spans_at: Vec::new(),
                 circuits: CircuitFilter::Any,
@@ -1886,6 +1894,7 @@ impl Rule {
                 )))
             );
         }
+        t.push_str(&crate::calculation::toml_line(self.calculation));
         if self.exclude_near_ends != 0.0 {
             let _ = writeln!(t, "exclude_near_ends = {}", length(self.exclude_near_ends));
         }

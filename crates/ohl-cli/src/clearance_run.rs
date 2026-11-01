@@ -85,6 +85,13 @@ impl Prepared {
         &self.rules
     }
 
+    /// Checks with `rules` from now on (owner, 2026-11-01: the rules of
+    /// one calculation at a time, [`ohl_clearance::calculation::only`];
+    /// the same rules in the same places).
+    pub fn set_rules(&mut self, rules: Vec<Rule>) {
+        self.rules = rules;
+    }
+
     /// Classes of each rule (empty but for point rules).
     pub fn point_classes(&self) -> &[Vec<u8>] {
         &self.point_classes
@@ -432,8 +439,10 @@ fn rule_header(rule: &Rule, p: &Prepared) -> String {
         r.as_ref().map_or("-".to_owned(), |v| v.to_string())
     };
     format!(
-        "rule \"{}\" ({}): required vertical {}, radial {} (to the conductor's surface)",
+        "rule \"{}\"{} ({}): required vertical {}, radial {} (to the conductor's surface)",
         rule.name,
+        rule.calculation
+            .map_or(String::new(), |c| format!(", wires by {}", c.label())),
         match &rule.target {
             Target::Ground => "ground".to_owned(),
             Target::Points { .. } => format!(

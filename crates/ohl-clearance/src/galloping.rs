@@ -238,6 +238,9 @@ pub struct GallopingParams {
     pub stations: usize,
     /// Weather cases the check applies to (`*` `?` wildcards; empty: all).
     pub cases: Vec<String>,
+    /// How the wires are solved (owner, 2026-11-01: e.g. the final sag
+    /// after load; none: each section's own calculation).
+    pub calculation: crate::calculation::Calc,
 }
 
 #[derive(Deserialize, Default)]
@@ -315,6 +318,8 @@ struct RawParams {
     stations: Option<usize>,
     #[serde(default)]
     cases: Vec<String>,
+    #[serde(default)]
+    calculation: Option<ohl_line::condition::Calculation>,
     #[serde(rename = "method", default)]
     methods: Vec<RawMethod>,
 }
@@ -380,6 +385,7 @@ impl GallopingParams {
                 .map_or(Ok(PairVoltage::Higher), PairVoltage::parse)?,
             stations,
             cases: raw.cases,
+            calculation: raw.calculation,
         })
     }
 

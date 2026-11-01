@@ -60,6 +60,17 @@ development, not approved yet)**
   each lattice point taking its part's floor; a run that fits keeps its
   one floor. The margin a parameter (`volume_margin`, 100 m). Measured:
   as close to the exact field as one floor (see the theory).
+- The wires' calculation in the checks (owner: "on which test the
+  condition of the cable could also be defined in the rules … go with
+  the 3"): per rule in Wire tensions, String checks, the Clearances
+  window, the Vertical and Radial clearances (`ohl line`, `ohl zones`)
+  and the galloping file; per window (*Wires by*) in the fields, Safety
+  volumes, Vegetation and Distance between conductors (not the LeV
+  plugin's to set: no plugin interface change). Each case solved once
+  per calculation asked (a copy of the line, every section by it); the
+  other rules set aside meanwhile, their places kept. A case pair: both
+  cases by its rule's calculation. Line parameters and Thermal left as
+  they are (the analysis: hardly any effect, or the rating none).
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).

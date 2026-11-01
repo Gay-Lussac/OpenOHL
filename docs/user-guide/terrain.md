@@ -104,6 +104,7 @@ radial = "4.5 m"
 | `exclude_near_ends` | Exclusion zone: the wire within this horizontal distance of its ends (clamps) is not checked, e.g. `"10 m"` — where wires converge at supports by design. |
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
+| `calculation` | (2026-11-01) How every wire is solved for this rule, e.g. `"max-sag-fe"` for the ground: a condition (`initial`, `creep`, `load`, `max-sag`) and a method (`rs`, `fe`) as a section's calculation is named; none: each section's own (or the `[check]` method). Each weather case is solved once per calculation the rules ask; a case pair's two cases both by its rule's. Read by the Clearances window, the vertical and radial windows, `ohl line` and `ohl zones`. |
 
 A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) and [`ohl zones`](#vertical-and-radial-clearances-without-the-window-ohl-zones) read it (the windows write it); `ohl line` ignores it and checks each weather case as it is:
 
@@ -230,6 +231,7 @@ targets = { wire_types = ["acsr-*"], systems = ["S1", "none"], circuits = ["Nort
 |---|---|
 | `name` | for the reports |
 | `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `calculation` | (2026-11-01) how every wire is solved for the rule: a condition and a method as a section's calculation is named (`initial-fe`, `creep-rs`, `load-fe`, `max-sag-fe`, …); none: each section's own calculation. Each weather case is solved once per calculation the rules ask; a finding names the calculation beside its case |
 | `factor` | the allowed tension as a factor of the wire type's rated tensile strength; above 0. **No factor is built in**: the example's are invented |
 | `measure` | `max`: the tension at the span's most tensioned support (default); `horizontal`: the horizontal tension |
 | `targets` | `wire_types` (ids, wildcards), `systems` (ids; `none`: the sections without a system), `circuits` (names); a wire counts when it is in every list given; none: every wire |
@@ -351,6 +353,7 @@ max_swing_across_deg = 55.0    # optional: the rule's own swing limits, degrees
 |---|---|
 | `name` | for the reports |
 | `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `calculation` | (2026-11-01) how every wire is solved for the rule: a condition and a method as a section's calculation is named (`initial-fe`, `creep-rs`, `load-fe`, `max-sag-fe`, …); none: each section's own calculation. Each weather case is solved once per calculation the rules ask; a finding names the calculation beside its case |
 | `strings` | which strings: `suspension` (not dead ends), `strain` (dead ends, as the solve treats them: flagged `strain`, or the string holding the clamp at a section's end), `all` |
 | `voltages` | the nominal voltages of their sections, kV; none: every voltage |
 | `load` | the string's axial force against **its own** `max_load` (the string's, else its library entry's) — a plain comparison; a string without one: not checked, counted in a note |

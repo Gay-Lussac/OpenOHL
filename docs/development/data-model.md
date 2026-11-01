@@ -1169,6 +1169,15 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   jumper). The radial ground clearance is the samples' shortest
   distance lowered by `checks::sampled_floor`. Until 2026-10 every
   clearance was to the axis, without these.
+- **A rule's calculation** (2026-11-01, additive): `[[rule]]`,
+  `[[tension_rule]]`, `[[string_rule]]` and the galloping file may hold
+  `calculation` — `ohl_line::condition::Calculation` by its file name
+  (`max-sag-fe`; the list's label reads too); none: each section's own
+  (`ohl_clearance::calculation`: one solve per weather case and
+  calculation, the other rules set aside meanwhile). `ZoneRule` carries
+  it from the `[[rule]]`; the tension and string rows carry it
+  (`calculation`) and their CSV's case column names it ("everyday,
+  Initial RS").
 - **Lightning shielding rules** (2026-10-31, additive): a rule file
   may hold optional `[[lightning_rule]]` tables — `name`, `cases`,
   `shield_cases` (2026-11-01: the shielding wires' weather cases; none:
@@ -2465,11 +2474,11 @@ once, the server logs who changed which key).
 | `app.check_surface` | `ohl-design` (Terrain menu: the surface of the checks) | a surface's name: the ground every user's checks use; read by `ohl zones` and by the engineering impact of `ohl project` diffs and merges |
 | `app.drawings.<project line>` | `ohl-design` (File › Export › Drawings…) | JSON, below |
 | `app.magnetic_field.<project line>` | `ohl-design` (Checks › Electrical › Magnetic field…) | JSON: the window's inputs (2026-10-27) — `case` (name), `currents` (circuit label → `[A, reverse]`), `earth_wires`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: the spans ticked), `spans_off` / `spans_on` (2026-10-30: `[[from, to]]`, the spans on an alignment unticked and those on none ticked, the changes from the default), `limit` (µT), `two_d`, `mean_heights`, `points` (`[file name, CSV text]`); since 2026-10-29 `ends` (circuit label → `[[structure, A or null]]`), `towers`, `jumpers`, `piece_length`, `modelled_within` (m), `levels` (`[{value µT, rgb, on}]`), `fill`, `above` (`[[from, to] or null, step]`; since 2026-10-30 written `[null, step]`, over the spans ticked), `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`; since 2026-10-30 only its step read, the spans the ticked ones), `volume_step` (m, 2026-10-30), `volume_width` (the volumes' half width, m, 2026-11-01; absent: `width`); `beside` (profiles beside the structures, m; 2026-10-31); since 2026-10-31 (the span table) `cuts` (`[[[from, to], [station…]]]`, a station `"mid"`, `"lowest"` or `{"from": m}` from the span's first structure), `volume_spans` and `above_spans` (`[[from, to]]`: the spans with a volume, with isolines from above; `volume` and `above` keep only their steps), `cut_width`, `cut_step`, `cut_above` (m); missing fields take the defaults |
-| `app.electric_field.<project line>` | `ohl-design` (Checks › Electrical › Electric field…) | JSON: the window's inputs (2026-10-29) — `case` (name), `voltages` (circuit label → kV between phases; absent: the system's nominal; 0: voltage-free), `jumpers`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: the spans ticked), `spans_off` / `spans_on` (2026-10-30: `[[from, to]]`, the spans on an alignment unticked and those on none ticked, the changes from the default), `limit` (kV/m), `two_d`, `ground_radius` (m), `tiled` (the tiled floor, default; else the plane), `tile` (its fine tiles, m), `cut_tile`, `volume_tile` (m), `volume_margin` (m, 2026-11-01: how far a volume's floor reaches; absent: 100), `points` (`[file name, CSV text]`), `piece_length` (m), `levels` (`[{value kV/m, rgb, on}]`), `fill`, `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`; since 2026-10-30 only its step read, the spans the ticked ones), `volume_step` (m, 2026-10-30), `volume_width` (m, 2026-11-01; absent: `width`), `steel` (the structures' steel earthed, 2026-10-31), `beside` (profiles beside the structures: the distance into the spans, m; 2026-10-31), `cuts`, `volume_spans`, `cut_width`, `cut_step`, `cut_above` (the span table, 2026-10-31: as the magnetic field's); written when a run starts or the window closes; missing fields take the defaults |
+| `app.electric_field.<project line>` | `ohl-design` (Checks › Electrical › Electric field…) | JSON: the window's inputs (2026-10-29) — `case` (name), `voltages` (circuit label → kV between phases; absent: the system's nominal; 0: voltage-free), `jumpers`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: the spans ticked), `spans_off` / `spans_on` (2026-10-30: `[[from, to]]`, the spans on an alignment unticked and those on none ticked, the changes from the default), `limit` (kV/m), `two_d`, `ground_radius` (m), `tiled` (the tiled floor, default; else the plane), `tile` (its fine tiles, m), `cut_tile`, `volume_tile` (m), `volume_margin` (m, 2026-11-01: how far a volume's floor reaches; absent: 100), `points` (`[file name, CSV text]`), `piece_length` (m), `levels` (`[{value kV/m, rgb, on}]`), `fill`, `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`; since 2026-10-30 only its step read, the spans the ticked ones), `volume_step` (m, 2026-10-30), `volume_width` (m, 2026-11-01; absent: `width`), `calculation` (2026-11-01, as the magnetic field's), `steel` (the structures' steel earthed, 2026-10-31), `beside` (profiles beside the structures: the distance into the spans, m; 2026-10-31), `cuts`, `volume_spans`, `cut_width`, `cut_step`, `cut_above` (the span table, 2026-10-31: as the magnetic field's); written when a run starts or the window closes; missing fields take the defaults |
 | `app.galloping.<project line>`, `app.wirefit.<project line>` | `ohl-design` (Checks › Galloping ellipses…, As-built wires…) | JSON (2026-10-28): the window's scope (`ohl_app::check_ui::Scope`: `circuits`, `routes`, `alignments`, `sections`, as in `app.vegetation`); missing or unreadable: the whole line |
 | `app.vegetation.<project line>` | `ohl-design` (Checks › Vegetation…) | JSON: the panel's setup (2026-10-27) — `settings` (as a saved run's settings: the same keys as the performed check's `settings`, its `cases` the weather cases ticked, by name), `scope` (`circuits`: names, absent or `null` every circuit; `routes`, `alignments`: ids, both empty the whole line; `sections`: ids, `null` every section — `ohl_app::check_ui::Scope`), `overrides` (`[structure override, section override]`); missing or unreadable fields keep the panel's values |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name), `overrides` (`[structure, section]`) (2026-10-27) |
-| `app.phase_distance.<project line>`, `app.unequal_wind.<project line>` | `ohl-design` (a check plugin's Distance between conductors…, and under unequal wind) | JSON (2026-10-27): `cases` (names), `circuits` (names, `null` every circuit), `scope` (2026-10-28, `ohl_app::check_ui::Scope`: the circuits and the routes and alignments; a file without it takes the circuits), `spacing`, `nearby`, `max_distance` (m), `choices` (the plugin's choices, indices), `wind_step` (Pa), `low_share`, `overrides` (`[structure, section]`); missing fields keep the window's values |
+| `app.phase_distance.<project line>`, `app.unequal_wind.<project line>` | `ohl-design` (a check plugin's Distance between conductors…, and under unequal wind) | JSON (2026-10-27): `cases` (names), `circuits` (names, `null` every circuit), `scope` (2026-10-28, `ohl_app::check_ui::Scope`: the circuits and the routes and alignments; a file without it takes the circuits), `spacing`, `nearby`, `max_distance` (m), `choices` (the plugin's choices, indices), `wind_step` (Pa), `low_share`, `calculation` (2026-11-01), `overrides` (`[structure, section]`); missing fields keep the window's values |
 | `app.surfaces`, `app.lidar_percent` | earlier builds only | read when the user has no choice of their own yet (the ground and the surfaces shown; the share of the point cloud near the camera, %) |
 
 `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4; since 2026-10-22 any standard paper size of `ohl_drawing::paper::PAPER_SIZES`, `WIDTHxHEIGHT`, or `"optimised"`), `paper_sizes` (the sizes ticked, names; 2026-10-22), `mixed_sizes`, `same_paper`, `paper_orientation` (`both`, `landscape`, `portrait`), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; since 2026-10-20 `side_offsets` (m), `plan_scale`, `logos` (`[{file, width}]`), `clearance_rule` (the clearance line from the ground rule), `markers`, `page` may be `"template"`, and `sheet` (`ohl_app::sheet_ui::SheetChoice`: `template` (choice key), `portrait`, `fields` (`values`, `per_sheet`, `revisions`), `versions` (`[{line, role, label}]`), `role`, `corridor`, `conductor_clearance`, `bands`, `elevation_scale`, `elevation_labels`, since 2026-10-22 `elevation_stick` (none: the template's) — labels `dimensions` and `arm_heights` too; since 2026-10-23 `circuit_cases`: per circuit key — a system's name, "" for the earth wires — `{drawn, stringing}`, each a case's name or none; `lidar_classes` (codes, comma separated; none: the template's), `background_drawings`, `background_photo` (the drawings and orthophotos under the plan; 2026-10-23), `key_map_drawings`, `key_map_photo` (under the key map; 2026-10-23) — each on, off or none: the template's); missing fields and values out of range take the defaults; absent: the defaults).
@@ -2674,7 +2683,8 @@ counts and the pairs below the required distance or within 1 m of it.
 The distance under unequal wind (`check` `unequal-wind`, 2026-10-24)
 keeps the same, with one weather case, and in the parameters
 `wind_step_pa` and `low_share` (the other conductor's least share of
-the wind); each pair adds `pressure` (the wind on each conductor, Pa)
+the wind) — both checks since 2026-11-01 also `calculation` when the
+window's *Wires by* is set (as the vegetation's); each pair adds `pressure` (the wind on each conductor, Pa)
 and `side` (`left` / `right`) and `wires` (the two conductors' points
 as measured, each at its wind, to draw the pair), its sag, l_k and
 length below 0.
@@ -2692,7 +2702,9 @@ since 2026-10-21, kept from the shared wind choice: the check takes no
 jumpers), `loads_per` (2026-10-21: the line's calculation option the run
 used; absent in older runs), `wind_steps`, `wind_step`
 (Pa), `wind_sides`, `unbalanced_ice` (`off`, `case`, `thickness`,
-`extra`, `load`) and `unbalanced_ice_value`, `keep`, `isoclearance`
+`extra`, `load`) and `unbalanced_ice_value`, `keep`, `calculation`
+(2026-11-01: the wires' calculation by its file name; absent: each
+section's own), `isoclearance`
 (`interval`, `max_level`, `spacing`; null: none) — and what the run read:
 `points_state` (`Session::points_state`: the last log entry that changed
 points and each cloud's name, count and creation time) and `ground` (the
@@ -2719,7 +2731,8 @@ absent in older runs: 0.15 m), `jumper_band_margin` (m, since
 2026-10-21; absent in older runs: their `band_margin`, as their jumpers
 took it), `loads_per` (2026-10-21: the line's calculation option the run
 used; absent in older runs), `wind_step` (Pa), `wind_sides`, `per`
-(`wire`, `circuit`, `system`), `scope` (`systems`, `circuits` or `spans`,
+(`wire`, `circuit`, `system`), `calculation` (2026-11-01, as the
+vegetation's), `scope` (`systems`, `circuits` or `spans`,
 2026-10-21; absent: circuits), `circuits`, `systems` (ids; since
 2026-10-21 `(no system)`, `safety_volume::NO_SYSTEM`, for the wires
 without a system) and `spans`

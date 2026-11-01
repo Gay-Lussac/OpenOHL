@@ -258,6 +258,12 @@ Every check window has **two tabs** under its title (2026-10-27, the owner: "Two
 3. **Rules** — what is required: the rule table or the distances, the presets of the design-code plugins, the rule file.
 4. **Model** — the modelling settings (the method the sections are solved with, the wind positions, the zone, growth, fall-in, the mesh, the stations along a span…), in groups with their user-guide buttons and drawings, each with a line saying what it changes. **Folded by default** (2026-10-31): the defaults are sound; open it to change them. Line parameters and As-built wires, with nothing to choose in a *3*, number it *3 Model*.
 
+**The wires' calculation** (2026-11-01, the owner: "on which test the condition of the cable could also be defined in the rules"). How the wires are solved for a check — Initial, Creep, Load or Max Sag, by RS or FE; *each section's own* by default:
+- **per rule**, in the rule's **Calculation** (the file's `calculation`), in the Vertical and Radial clearances, the Clearances window, Wire tensions, String checks and Lightning shielding (its phases' and shielding wires' each), and in the galloping parameter file;
+- **per window**, as **Wires by**, in the Magnetic and Electric field, Safety volumes, Vegetation and Distance between conductors windows (kept with their setup and saved runs).
+
+Each weather case is then solved once per calculation asked, apart from the case shown in the views; a finding names the calculation beside its case. A rule's calculation takes the place of the `[check]` method for that rule; a case pair's two cases are both solved by its rule's.
+
 The **structure override** and **section override** ticks are in the **footer**, beside **Run**, in every window that has them (the Vertical and Radial clearances windows' were in *2 Scope* until 2026-10-31).
 
 **The Results tab** shows the **verdict** first (also in Wire tensions, String checks and Internal clearances since 2026-10-31; red, too, when nothing was checked) — red with the worst finding ("✖ 7 spans below a rule — worst margin −0.42 m: S1 span 3, case high wind"), green when every rule is met; a click on it brings the views to the worst — then a toolbar and the **table**:

@@ -366,6 +366,44 @@ pub(crate) fn cases(c: &CaseArgs, line: &mut Line) -> Result<Vec<WeatherCase>, S
     Ok(chosen)
 }
 
+/// Solves the line in each weather case of `cases` the rules apply to,
+/// once per calculation they ask (`applies`, `calc`; 2026-11-01): the
+/// case's name, the calculation and the sections solved (failures printed
+/// and left out).
+pub(crate) fn solve_for_rules<R>(
+    line: &Line,
+    library: &ohl_cables::Library,
+    cases: &[WeatherCase],
+    rules: &[R],
+    applies: impl Fn(&R, &str) -> bool,
+    calc: impl Fn(&R) -> ohl_clearance::calculation::Calc,
+) -> Vec<(String, ohl_clearance::calculation::Calc, Vec<SectionShape>)> {
+    let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
+    ohl_clearance::calculation::solves(&names, rules, applies, calc)
+        .into_iter()
+        .map(|(k, c)| {
+            let case = &cases[k];
+            let l = ohl_clearance::calculation::line_for(line, c);
+            let mut shapes = Vec::new();
+            for (section, r) in l
+                .sections
+                .iter()
+                .zip(ohl_line::solve::solve_line(&l, library, case))
+            {
+                match r {
+                    Ok(s) => shapes.push(s),
+                    Err(e) => println!(
+                        "  \"{}\": section {} not solved: {e}",
+                        ohl_clearance::calculation::label(&case.name, c),
+                        section.id
+                    ),
+                }
+            }
+            (case.name.clone(), c, shapes)
+        })
+        .collect()
+}
+
 /// Solves every section; failures are printed and left out.
 fn solve(line: &Line, library: &ohl_cables::Library, case: &WeatherCase) -> Vec<SectionShape> {
     let mut shapes = Vec::new();
@@ -418,7 +456,10 @@ pub fn clearance(command: ClearanceCommand) -> Result<(), String> {
             );
             for case in chosen.iter().filter(|c| params.applies(&c.name)) {
                 let started = Instant::now();
-                let shapes = solve(&line, &library, case);
+                // By the parameters' calculation (2026-11-01; none: each
+                // section's own).
+                let by = ohl_clearance::calculation::line_for(&line, params.calculation);
+                let shapes = solve(&by, &library, case);
                 let wires = galloping::galloping_wires(&line, &shapes, &library);
                 // Exit clause: well under a second for any line; 5 min is
                 // far beyond.

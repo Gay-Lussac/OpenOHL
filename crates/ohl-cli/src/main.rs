@@ -2185,7 +2185,11 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
             Vec<ohl_line::solve::SectionShape>,
             Vec<ohl_line::jumper::JumperShape>,
         )> = Vec::new();
-        let mut case_wires = Vec::new();
+        // The calculations the clearance rules ask, each once (2026-11-01).
+        let all_rules = prepared.rules().to_vec();
+        let groups = ohl_clearance::calculation::of_rules(&all_rules);
+        let mut case_wires: Vec<Vec<clearance_run::CaseWires>> =
+            groups.iter().map(|_| Vec::new()).collect();
         let mut envelope = ohl_clearance::Envelope::default();
         let mut extras = ohl_line::export::ViewerExtras::default();
         let mut failed = 0;
@@ -2301,30 +2305,71 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                     }
                 }
             }
-            case_wires.push(clearance_run::check(
-                &line,
-                &library,
-                case,
-                &shapes,
-                &jumpers,
-                &prepared,
-                &mut clearance_rows,
-                &mut extras,
-                &mut envelope,
-            )?);
+            // The rules by calculation (owner, 2026-11-01): each group on
+            // the wires solved by its own (none: the sections' own, as
+            // printed above).
+            for (g, calc) in groups.iter().copied().enumerate() {
+                if groups.len() > 1 {
+                    prepared.set_rules(ohl_clearance::calculation::only(&all_rules, calc));
+                }
+                let (own_shapes, own_jumpers);
+                let l = ohl_clearance::calculation::line_for(&line, calc);
+                let (gs, gj) = match calc {
+                    None => (&shapes, &jumpers),
+                    Some(c) => {
+                        let mut ss = Vec::new();
+                        for (section, r) in l
+                            .sections
+                            .iter()
+                            .zip(ohl_line::solve::solve_line(&l, &library, case))
+                        {
+                            match r {
+                                Ok(x) => ss.push(x),
+                                Err(e) => {
+                                    println!("  {} by {}: not solved: {e}", section.id, c.label())
+                                }
+                            }
+                        }
+                        let js: Vec<_> = ohl_line::jumper::solve_jumpers(&l, &library, case, &ss)
+                            .into_iter()
+                            .filter_map(Result::ok)
+                            .collect();
+                        (own_shapes, own_jumpers) = (ss, js);
+                        (&own_shapes, &own_jumpers)
+                    }
+                };
+                case_wires[g].push(clearance_run::check(
+                    &l,
+                    &library,
+                    case,
+                    gs,
+                    gj,
+                    &prepared,
+                    &mut clearance_rows,
+                    &mut extras,
+                    &mut envelope,
+                )?);
+            }
+            prepared.set_rules(all_rules.clone());
             solved_cases.push((case.clone(), shapes.clone(), jumpers.clone()));
             if first.is_none() {
                 extras.jumpers = jumpers;
                 first = Some((case.clone(), shapes));
             }
         }
-        clearance_run::cross_cases(
-            &prepared,
-            &case_wires,
-            &mut clearance_rows,
-            &mut extras,
-            &mut envelope,
-        );
+        for (g, calc) in groups.iter().copied().enumerate() {
+            if groups.len() > 1 {
+                prepared.set_rules(ohl_clearance::calculation::only(&all_rules, calc));
+            }
+            clearance_run::cross_cases(
+                &prepared,
+                &case_wires[g],
+                &mut clearance_rows,
+                &mut extras,
+                &mut envelope,
+            );
+        }
+        prepared.set_rules(all_rules.clone());
         clearance_run::envelope_report(&prepared, &envelope, &mut clearance_rows);
         let (first_case, shapes) = first.expect("at least one case");
         if cases.len() > 1 && (html.is_some() || csv.is_some() || spans_csv.is_some()) {

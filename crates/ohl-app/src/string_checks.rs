@@ -204,7 +204,17 @@ impl StringChecksWindow {
         self.job.start_at(ctx, model.revision(), move || {
             let mut solved = Vec::new();
             let mut notes = Vec::new();
-            for case in &cases {
+            // Each case once per calculation its rules ask (2026-11-01).
+            let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
+            let plan = ohl_clearance::calculation::solves(
+                &names,
+                &rules,
+                |r, c| r.applies(c),
+                |r| r.calculation,
+            );
+            for (k, calc) in plan {
+                let case = &cases[k];
+                let line = ohl_clearance::calculation::line_for(&line, calc);
                 let mut shapes = Vec::new();
                 for (section, r) in
                     line.sections
@@ -218,15 +228,20 @@ impl StringChecksWindow {
                         Ok(s) => shapes.push(s),
                         Err(e) => notes.push(format!(
                             "\"{}\": section {} not solved: {e}",
-                            case.name, section.id
+                            ohl_clearance::calculation::label(&case.name, calc),
+                            section.id
                         )),
                     }
                 }
-                solved.push((case.name.clone(), shapes));
+                solved.push((case.name.clone(), calc, shapes));
             }
-            let views: Vec<(&str, &[ohl_line::solve::SectionShape])> = solved
+            let views: Vec<(
+                &str,
+                ohl_clearance::calculation::Calc,
+                &[ohl_line::solve::SectionShape],
+            )> = solved
                 .iter()
-                .map(|(n, s)| (n.as_str(), s.as_slice()))
+                .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
                 .collect();
             let mut report = strings::check(&line, &views, &rules, &filter);
             report.notes.splice(0..0, notes);
@@ -443,6 +458,14 @@ impl StringChecksWindow {
                             },
                         );
                         ui.end_row();
+                        // How the wires are solved (owner, 2026-11-01).
+                        ui.label("Calculation");
+                        changed |= crate::rule_table::calculation_combo(
+                            ui,
+                            "string-rule-calc",
+                            &mut r.calculation,
+                        );
+                        ui.end_row();
                         ui.label("Strings");
                         egui::ComboBox::from_id_salt("string-check-kind")
                             .selected_text(r.strings.describe())
@@ -623,7 +646,7 @@ impl StringChecksWindow {
                         Cell::text(format!("{} {}", r.structure, r.string)),
                         Cell::text(if r.strain { "strain" } else { "suspension" }),
                         Cell::text(&rule.name),
-                        Cell::text(&r.case),
+                        Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
                         Cell::text(r.measure.describe()),
                         value.bad(!r.pass),
                         limit,

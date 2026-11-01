@@ -624,3 +624,16 @@ fn a_circuit_unticked_is_not_checked_and_the_choice_is_kept() {
     );
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }
+
+/// The calculation chosen (owner, 2026-11-01) is kept with the settings
+/// and read back.
+#[test]
+fn the_vegetation_calculation_reads_back() {
+    use crate::vegetation::Settings;
+    let s = Settings {
+        calculation: Some(ohl_line::condition::Calculation::LOAD_RS),
+        ..Settings::default()
+    };
+    let (back, _) = Settings::from_json(&s.to_json(&[])).unwrap();
+    assert_eq!(back.calculation, s.calculation);
+}

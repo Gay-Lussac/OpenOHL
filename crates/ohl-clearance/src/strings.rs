@@ -94,6 +94,9 @@ pub struct StringRule {
     pub name: String,
     /// Weather cases (names, `*` `?` wildcards); empty: every case.
     pub cases: Vec<String>,
+    /// How the wires are solved for it (2026-11-01; none: each section's
+    /// own calculation; [`crate::calculation`]).
+    pub calculation: crate::calculation::Calc,
     /// The strings by kind.
     pub strings: StringKind,
     /// Only the strings of sections of these nominal voltages, kV (0: an
@@ -121,6 +124,7 @@ impl StringRule {
         Self {
             name: name.into(),
             cases: Vec::new(),
+            calculation: None,
             strings: StringKind::All,
             voltages: Vec::new(),
             load: true,
@@ -206,6 +210,7 @@ impl StringRule {
             let list: Vec<String> = self.cases.iter().map(|c| q(c)).collect();
             let _ = writeln!(t, "cases = [{}]", list.join(", "));
         }
+        t.push_str(&crate::calculation::toml_line(self.calculation));
         if self.strings != StringKind::All {
             let _ = writeln!(t, "strings = \"{}\"", self.strings.as_str());
         }
@@ -247,6 +252,8 @@ pub(crate) struct RawStringRule {
     #[serde(default)]
     cases: Vec<String>,
     #[serde(default)]
+    calculation: Option<ohl_line::condition::Calculation>,
+    #[serde(default)]
     strings: Option<String>,
     #[serde(default)]
     voltages: Vec<f64>,
@@ -274,6 +281,7 @@ impl RawStringRule {
                 .map_err(|e| format!("string rule \"{}\": {e}", self.name))?,
             name: self.name,
             cases: self.cases,
+            calculation: self.calculation,
             voltages: self.voltages,
             load: self.load,
             swing: self.swing,
@@ -344,6 +352,9 @@ pub struct StringRow {
     pub rule: usize,
     /// The weather case.
     pub case: String,
+    /// The calculation the wires were solved by (none: each section's
+    /// own).
+    pub calculation: crate::calculation::Calc,
     /// The section, and the index of its point the string holds.
     pub section: String,
     /// Index of the point in the section.
@@ -419,7 +430,7 @@ impl StringReport {
                 out,
                 "{},{},{},{},{},{},{},{},{},{:.2},{:.2},{unit},{:.2},{},{:.3},{:.3},{:.3}",
                 q(&rules[r.rule].name),
-                q(&r.case),
+                q(&crate::calculation::label(&r.case, r.calculation)),
                 q(&r.structure),
                 q(&r.string),
                 if r.strain { "strain" } else { "suspension" },
@@ -448,7 +459,7 @@ impl StringReport {
 /// TAK's) is checked once per case, rule and limit (the larger usage).
 pub fn check(
     line: &Line,
-    solved: &[(&str, &[SectionShape])],
+    solved: &[(&str, crate::calculation::Calc, &[SectionShape])],
     rules: &[StringRule],
     filter: &ohl_weather::CaseFilter,
 ) -> StringReport {
@@ -471,8 +482,8 @@ pub fn check(
         let mut any = false;
         let mut no_load: BTreeSet<(String, String)> = BTreeSet::new();
         let mut no_swing: BTreeSet<(String, String)> = BTreeSet::new();
-        for (case, shapes) in solved {
-            if !rule.applies(case) {
+        for (case, calc, shapes) in solved {
+            if !rule.applies(case) || rule.calculation != *calc {
                 continue;
             }
             any = true;
@@ -504,6 +515,7 @@ pub fn check(
                             |measure, source, value: f64, limit: f64, usage: f64, pass| StringRow {
                                 rule: k,
                                 case: (*case).to_owned(),
+                                calculation: *calc,
                                 section: section.id.clone(),
                                 point: p,
                                 structure: structure.clone(),
@@ -689,7 +701,7 @@ mod tests {
         ];
         let r = check(
             &line,
-            &[("still", &a), ("wind", &b)],
+            &[("still", None, &a), ("wind", None, &b)],
             &rules,
             &Default::default(),
         );
@@ -747,7 +759,7 @@ mod tests {
         let label = st.label.clone();
         let r = check(
             &line,
-            &[("still", &c)],
+            &[("still", None, &c)],
             &[StringRule::blank("u")],
             &Default::default(),
         );
@@ -781,7 +793,7 @@ mod tests {
             voltages: vec![v],
             ..StringRule::blank("one voltage")
         };
-        let r = check(&line, &[("still", &a)], &[rule], &Default::default());
+        let r = check(&line, &[("still", None, &a)], &[rule], &Default::default());
         assert!(!r.rows.is_empty());
         for row in &r.rows {
             let sec = line

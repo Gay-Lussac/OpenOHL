@@ -119,6 +119,9 @@ pub struct TensionRule {
     pub name: String,
     /// Weather cases (names, `*` `?` wildcards); empty: every case.
     pub cases: Vec<String>,
+    /// How the wires are solved for it (2026-11-01; none: each section's
+    /// own calculation; [`crate::calculation`]).
+    pub calculation: crate::calculation::Calc,
     /// The allowed tension as a factor of the wire type's RTS (above 0).
     pub factor: f64,
     /// The tension compared.
@@ -133,6 +136,7 @@ impl TensionRule {
         Self {
             name: name.into(),
             cases: Vec::new(),
+            calculation: None,
             factor: 0.0,
             measure: TensionMeasure::Max,
             targets: TensionTargets::default(),
@@ -168,6 +172,7 @@ impl TensionRule {
         if !self.cases.is_empty() {
             let _ = writeln!(t, "cases = {}", list(&self.cases));
         }
+        t.push_str(&crate::calculation::toml_line(self.calculation));
         let _ = writeln!(t, "factor = {:?}", self.factor);
         if self.measure != TensionMeasure::Max {
             let _ = writeln!(t, "measure = \"{}\"", self.measure.as_str());
@@ -196,6 +201,8 @@ pub(crate) struct RawTensionRule {
     name: String,
     #[serde(default)]
     cases: Vec<String>,
+    #[serde(default)]
+    calculation: Option<ohl_line::condition::Calculation>,
     factor: f64,
     #[serde(default)]
     measure: Option<String>,
@@ -229,6 +236,7 @@ impl RawTensionRule {
                 .map_err(|e| format!("tension rule \"{}\": {e}", self.name))?,
             name: self.name,
             cases: self.cases,
+            calculation: self.calculation,
             factor: self.factor,
             targets: TensionTargets {
                 wire_types: t.wire_types,
@@ -250,6 +258,9 @@ pub struct TensionRow {
     pub rule: usize,
     /// The weather case.
     pub case: String,
+    /// The calculation the wires were solved by (none: each section's
+    /// own).
+    pub calculation: crate::calculation::Calc,
     /// The section.
     pub section: String,
     /// The span, from 0.
@@ -315,7 +326,7 @@ impl TensionReport {
                 out,
                 "{},{},{},{},{},{},{:.1},{:.1},{},{:.1},{:.2},{},{:.3},{:.3},{:.3}",
                 ohl_core::text::csv_field(&rule.name),
-                ohl_core::text::csv_field(&r.case),
+                ohl_core::text::csv_field(&crate::calculation::label(&r.case, r.calculation)),
                 ohl_core::text::csv_field(&r.section),
                 r.span + 1,
                 ohl_core::text::csv_field(&r.wire_type),
@@ -342,7 +353,7 @@ impl TensionReport {
 pub fn check(
     line: &Line,
     library: &ohl_cables::Library,
-    solved: &[(&str, &[SectionShape])],
+    solved: &[(&str, crate::calculation::Calc, &[SectionShape])],
     rules: &[TensionRule],
     filter: &ohl_weather::CaseFilter,
 ) -> TensionReport {
@@ -354,8 +365,8 @@ pub fn check(
             continue;
         }
         let mut any = false;
-        for (case, shapes) in solved {
-            if !rule.applies(case) {
+        for (case, calc, shapes) in solved {
+            if !rule.applies(case) || rule.calculation != *calc {
                 continue;
             }
             any = true;
@@ -396,6 +407,7 @@ pub fn check(
                     report.rows.push(TensionRow {
                         rule: k,
                         case: (*case).to_owned(),
+                        calculation: *calc,
                         section: section.id.clone(),
                         span: j,
                         wire_type: section.cable.clone(),
@@ -463,7 +475,7 @@ mod tests {
         let report = check(
             &line,
             &library,
-            &[("everyday", &shapes)],
+            &[("everyday", None, &shapes)],
             &rules,
             &Default::default(),
         );
@@ -487,7 +499,13 @@ mod tests {
             )),
             structures: None,
         };
-        let r = check(&line, &library, &[("everyday", &shapes)], &rules, &filter);
+        let r = check(
+            &line,
+            &library,
+            &[("everyday", None, &shapes)],
+            &rules,
+            &filter,
+        );
         let first_spans = first.points.len() - 1;
         assert_eq!(r.rows.len(), 2 * (spans - first_spans));
         assert!(r.rows.iter().all(|x| x.section != first.id));
@@ -499,7 +517,13 @@ mod tests {
             )),
             sections: None,
         };
-        let r = check(&line, &library, &[("everyday", &shapes)], &rules, &filter);
+        let r = check(
+            &line,
+            &library,
+            &[("everyday", None, &shapes)],
+            &rules,
+            &filter,
+        );
         assert!(r.rows.len() < 2 * spans);
         assert!(r.rows.iter().all(|x| {
             let s = line.sections.iter().find(|s| s.id == x.section).unwrap();
@@ -549,7 +573,7 @@ mod tests {
         let r = check(
             &line,
             &library,
-            &[("everyday", &shapes)],
+            &[("everyday", None, &shapes)],
             &tight,
             &Default::default(),
         );

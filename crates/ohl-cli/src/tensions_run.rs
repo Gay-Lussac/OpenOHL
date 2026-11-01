@@ -41,30 +41,21 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
     }
     let (mut line, library) = load(&a.model)?;
     let chosen = cases(&a.cases, &mut line)?;
-    let mut solved = Vec::new();
-    for case in &chosen {
-        if !set.tension_rules.iter().any(|r| r.applies(&case.name)) {
-            continue;
-        }
-        let mut shapes = Vec::new();
-        for (section, r) in line
-            .sections
-            .iter()
-            .zip(ohl_line::solve::solve_line(&line, &library, case))
-        {
-            match r {
-                Ok(s) => shapes.push(s),
-                Err(e) => println!(
-                    "  \"{}\": section {} not solved: {e}",
-                    case.name, section.id
-                ),
-            }
-        }
-        solved.push((case.name.clone(), shapes));
-    }
-    let views: Vec<(&str, &[ohl_line::solve::SectionShape])> = solved
+    let solved = crate::analysis_run::solve_for_rules(
+        &line,
+        &library,
+        &chosen,
+        &set.tension_rules,
+        |r, c| r.applies(c),
+        |r| r.calculation,
+    );
+    let views: Vec<(
+        &str,
+        ohl_clearance::calculation::Calc,
+        &[ohl_line::solve::SectionShape],
+    )> = solved
         .iter()
-        .map(|(n, s)| (n.as_str(), s.as_slice()))
+        .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
         .collect();
     let report = tension::check(
         &line,
@@ -84,7 +75,7 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
         println!(
             "{:<24} {:<16} {:<12} {:>4} {:>11.2} {:>11.2} {:>8.1} {}",
             set.tension_rules[r.rule].name,
-            r.case,
+            ohl_clearance::calculation::label(&r.case, r.calculation),
             r.section,
             r.span + 1,
             r.tension / 1000.0,

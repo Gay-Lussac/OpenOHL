@@ -34,6 +34,7 @@
 //! [`Terrain::profile`]: ohl_terrain::Terrain::profile
 
 pub mod blowout;
+pub mod calculation;
 pub mod case;
 pub mod checks;
 pub mod envelope;

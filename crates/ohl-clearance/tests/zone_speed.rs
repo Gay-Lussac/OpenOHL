@@ -174,6 +174,7 @@ fn rules() -> Vec<ZoneRule> {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            calculation: None,
         },
         ZoneRule {
             name: "Vegetation".into(),
@@ -186,6 +187,7 @@ fn rules() -> Vec<ZoneRule> {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            calculation: None,
         },
     ]
 }
@@ -209,6 +211,7 @@ fn screen() -> ZoneRule {
         wires: ohl_clearance::Wires::Sections,
         width: None,
         screen: true,
+        calculation: None,
     }
 }
 

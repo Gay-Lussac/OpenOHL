@@ -122,6 +122,8 @@ impl GallopingWindow {
         let line = model.line.clone();
         let library = model.library.clone();
         let shapes = solved.shapes.clone();
+        let weather = solved.case.clone();
+        let wind = model.wind;
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
         let filter = self.overrides.filter(model);
@@ -136,6 +138,15 @@ impl GallopingWindow {
                     "the parameters name the cases {:?}; checked in \"{case}\"",
                     params.cases
                 ));
+            }
+            // The parameters' calculation (2026-11-01): the case solved
+            // anew by it.
+            let mut shapes = shapes;
+            if params.calculation.is_some() {
+                let l = ohl_clearance::calculation::line_for(&line, params.calculation);
+                let s = crate::model::Solved::with_wind(&l, &library, weather, wind);
+                notes.extend(s.failed.iter().map(|f| format!("not solved: {f}")));
+                shapes = s.shapes;
             }
             let mut wires = galloping::galloping_wires(&line, &shapes, &library);
             // The overrides: the spans that do not take the case left out.

@@ -296,6 +296,9 @@ pub struct MagneticFieldWindow {
     saving: crate::field_saved::Saving,
     /// A report saved: the command the app applies.
     pub apply: Option<(String, ohl_session::Command)>,
+    /// How the wires are solved for a run (owner, 2026-11-01; none: each
+    /// section's own, the case as shown).
+    calculation: ohl_clearance::calculation::Calc,
     /// The outputs of the run unticked in its list (not drawn).
     pub(crate) hidden: field_results::Hidden,
     /// The last run's wires (3D).
@@ -353,6 +356,7 @@ impl Default for MagneticFieldWindow {
             pieces_seen: None,
             drawn: None,
             hidden: Default::default(),
+            calculation: None,
             saving: Default::default(),
             apply: None,
             wires: None,
@@ -409,6 +413,8 @@ struct Stored {
     volume_step: Option<f64>,
     /// The volumes' half width (2026-11-01; before: the profiles').
     volume_width: Option<f64>,
+    /// How the wires are solved (2026-11-01; none: each section's own).
+    calculation: Option<ohl_line::condition::Calculation>,
     /// Per span the stations of its 2D cuts (2026-10-31).
     cuts: Vec<(SpanIds, Vec<CutAt>)>,
     /// The spans with a volume and with isolines from above (2026-10-31).
@@ -481,6 +487,7 @@ impl MagneticFieldWindow {
             volume: None,
             volume_step: self.volume.as_ref().map(|v| v.step),
             volume_width: self.volume.as_ref().map(|v| v.width),
+            calculation: self.calculation,
             cuts: self
                 .span_pick
                 .cuts
@@ -517,6 +524,7 @@ impl MagneticFieldWindow {
     /// Takes inputs kept (in the project or with a saved run).
     fn take(&mut self, model: &Model, st: Stored) {
         let d = Self::default();
+        self.calculation = st.calculation;
         self.case_kept = false;
         if let Some(k) = st
             .case
@@ -875,7 +883,8 @@ impl MagneticFieldWindow {
             self.job.result = Some(Err("no weather case in the model".into()));
             return;
         };
-        let line = model.line.clone();
+        // By the window's calculation: the case solved for the run.
+        let line = ohl_clearance::calculation::line_for(&model.line, self.calculation).into_owned();
         let library = model.library.clone();
         let mut shapes = solved.shapes.clone();
         let mut jumpers = solved.jumpers.clone();
@@ -883,7 +892,7 @@ impl MagneticFieldWindow {
         // A case the app has not solved yet (it solves a case when it is
         // shown): solved for the run, in the background (2026-10-31: the
         // run took no wire and gave 0 kV/m).
-        let unsolved = !solved.solved_for(model.wind);
+        let unsolved = !solved.solved_for(model.wind) || self.calculation.is_some();
         let wind = model.wind;
         let ground = model.ground_for_checks();
         let settings = self.settings(model);
@@ -1136,6 +1145,24 @@ impl MagneticFieldWindow {
                         check_ui::ScopePicker::new(WINDOW, &model.line)
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
+                        // How the wires are solved (owner, 2026-11-01).
+                        ui.horizontal(|ui| {
+                            ui.label("Wires by");
+                            crate::rule_table::calculation_combo(
+                                ui,
+                                "field-calculation",
+                                &mut self.calculation,
+                            );
+                            ui.label(
+                                egui::RichText::new(
+                                    "e.g. Max Sag: the lowest wires, the highest field at the \
+                                     ground; another than each section's own solves the case for \
+                                     the run",
+                                )
+                                .small()
+                                .weak(),
+                            );
+                        });
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);

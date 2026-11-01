@@ -51,6 +51,7 @@ required = "0.3 m"                  # or { by_voltage = [[0, "0.2 m"], [245, "0.
 pair_voltage = "higher"             # higher, sum or difference (as in rule files)
 stations = 20                       # ellipses compared at 19 inner stations
 cases = ["galloping*"]              # weather cases (default: all chosen)
+calculation = "load-fe"             # optional (2026-11-01): how the wires are solved; none: each section's own
 
 [[method]]
 name = "single loop"

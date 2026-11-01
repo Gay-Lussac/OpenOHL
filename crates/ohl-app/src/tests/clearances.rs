@@ -61,6 +61,49 @@ fn clearance_violations_of_the_shown_case() {
     assert!(crate::clearance::run(&input).is_err());
 }
 
+/// A rule's own calculation (owner, 2026-11-01): the same ground rule by
+/// each section's own and by the ruling span, both checked — the second
+/// on the wires solved by its calculation (found anew, the shown case's
+/// shapes being the sections' own), its findings naming it.
+#[test]
+fn a_clearance_rule_takes_its_own_calculation() {
+    let m = synthetic();
+    let own = ohl_clearance::RuleSet::ground(100.0).rules.remove(0);
+    let rs = ohl_clearance::Rule {
+        name: "rs".into(),
+        calculation: Some(ohl_line::condition::Calculation::INITIAL_RS),
+        ..own.clone()
+    };
+    let r = crate::clearance::run(&clearance_input(&m, vec![own, rs])).unwrap();
+    let of = |rule: &str| -> Vec<&crate::clearance::Finding> {
+        r.findings.iter().filter(|f| f.rule == rule).collect()
+    };
+    let (a, b) = (of("ground"), of("rs"));
+    assert!(
+        !a.is_empty() && a.len() == b.len(),
+        "{} against {}",
+        a.len(),
+        b.len()
+    );
+    assert!(
+        b.iter().all(|f| f.case.ends_with(", Initial RS")),
+        "{:?}",
+        b[0].case
+    );
+    assert!(a.iter().all(|f| !f.case.contains("Initial RS")));
+    let low = |v: &[&crate::clearance::Finding]| {
+        v.iter().map(|f| f.distance).fold(f64::INFINITY, f64::min)
+    };
+    // (In the shown case the two differ by millimetres: other wires all
+    // the same.)
+    assert!(
+        (low(&a) - low(&b)).abs() > 1e-4,
+        "{} and {}",
+        low(&a),
+        low(&b)
+    );
+}
+
 /// Wire clearances in every weather case of the rules (owner, 2026-10-28:
 /// on the ground windows' design): each case solved and checked, per rule
 /// and wire pair the lowest with the position that governs and how many
@@ -398,6 +441,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            calculation: None,
         });
     }
     harness.run();
@@ -481,6 +525,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            calculation: None,
         });
     }
     harness.run();

@@ -72,6 +72,17 @@ impl ZoneCheckResult {
     }
 }
 
+/// A zone check's report merged over the rules' calculations: the report,
+/// the sections not solved, the swing arcs, the arc cases, the times.
+type Merged = (
+    ZoneReport,
+    Vec<String>,
+    usize,
+    Vec<crate::zone_arc::ArcCase>,
+    Duration,
+    Duration,
+);
+
 /// Runs a zone check: the sections the rules need ([`sections_needed`];
 /// of `check`'s circuits only, every one by `check`'s method, and of
 /// `sections_scope` only when given) solved in every state of `states`
@@ -143,94 +154,157 @@ pub fn run_zone_check(
             return Err("no section of the rules' voltages on the route worked on".into());
         }
     }
-    let started = Instant::now();
-    let solved = solve_states(
-        line,
-        library,
-        &states,
-        &sections,
-        jumpers_needed(&rules),
-        budget,
-        done,
-    )?;
-    let solving = started.elapsed();
-    let started = Instant::now();
-    let cases = if arc.is_some() {
-        arc_cases(&states)
-    } else {
-        Vec::new()
-    };
-    let margins = arc.unwrap_or_default();
-    if let Some(e) = margins.problem() {
-        return Err(e);
-    }
-    let (arcs, arc_notes) = zone_arcs(line, &solved.shapes, &solved.jumpers, &cases, margins);
-    // Points around the wires at every wind position, within reach.
-    let reach = match zone.search {
-        Some(d) => d,
-        None => {
-            rules
-                .iter()
-                .map(|r| r.distance.largest(&line_voltages(line)))
-                .fold(0.0, f64::max)
-                + line.defaults.clearance_search_margin
-                + rules
-                    .iter()
-                    .filter_map(|r| r.width)
-                    .fold(zone.width, f64::max)
-                + 1.0
-                // The arcs' polylines are up to 1 m apart.
-                + if arcs.is_empty() { 0.0 } else { 0.5 }
-        }
-    };
-    let polylines: Vec<Vec<[f64; 2]>> = solved
-        .shapes
-        .iter()
-        .flatten()
-        .flat_map(|s| &s.spans)
-        .map(|s| s.points.iter().map(|p| [p[0], p[1]]).collect())
-        .chain(
-            solved
-                .jumpers
+    // The rules by calculation (owner, 2026-11-01): each group checked on
+    // the wires solved by its calculation (none: the sections' own, or the
+    // method chosen), the others set aside; the reports merged.
+    let groups = crate::calculation::of_zone_rules(&rules);
+    let base = line;
+    let mut merged: Option<Merged> = None;
+    for calc in groups.iter().copied() {
+        let grouped;
+        let rules: &[ZoneRule] = if groups.len() == 1 {
+            &rules
+        } else {
+            grouped = crate::calculation::only_zone(&rules, calc);
+            &grouped
+        };
+        let own_line;
+        let line: &Line = match calc {
+            None => base,
+            Some(_) => {
+                own_line = crate::calculation::line_for(base, calc).into_owned();
+                &own_line
+            }
+        };
+        let one = (|| -> Result<_, String> {
+            let started = Instant::now();
+            let solved = solve_states(
+                line,
+                library,
+                &states,
+                &sections,
+                jumpers_needed(rules),
+                budget,
+                done,
+            )?;
+            let solving = started.elapsed();
+            let started = Instant::now();
+            let cases = if arc.is_some() {
+                arc_cases(&states)
+            } else {
+                Vec::new()
+            };
+            let margins = arc.unwrap_or_default();
+            if let Some(e) = margins.problem() {
+                return Err(e);
+            }
+            let (arcs, arc_notes) =
+                zone_arcs(line, &solved.shapes, &solved.jumpers, &cases, margins);
+            // Points around the wires at every wind position, within reach.
+            let reach = match zone.search {
+                Some(d) => d,
+                None => {
+                    rules
+                        .iter()
+                        .map(|r| r.distance.largest(&line_voltages(line)))
+                        .fold(0.0, f64::max)
+                        + line.defaults.clearance_search_margin
+                        + rules
+                            .iter()
+                            .filter_map(|r| r.width)
+                            .fold(zone.width, f64::max)
+                        + 1.0
+                        // The arcs' polylines are up to 1 m apart.
+                        + if arcs.is_empty() { 0.0 } else { 0.5 }
+                }
+            };
+            let polylines: Vec<Vec<[f64; 2]>> = solved
+                .shapes
                 .iter()
                 .flatten()
-                .map(|j| j.points.iter().map(|p| [p[0], p[1]]).collect()),
-        )
-        .chain(arc_polylines(&arcs))
-        .collect();
-    let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| match points {
-        Some(read) => read(&polylines, reach, classes, budget, visit),
-        None => Ok(()),
-    };
-    let report = check_zones(
-        line,
-        &zone,
-        &rules,
-        &states,
-        &solved.shapes,
-        &solved.jumpers,
-        &arcs,
-        ZoneTargets {
-            ground,
-            surfaces,
-            points: points.is_some().then_some(&mut feed as _),
-            filter,
-        },
-        budget,
-    )?;
-    let mut report = report;
-    report.notes.extend(arc_notes);
+                .flat_map(|s| &s.spans)
+                .map(|s| s.points.iter().map(|p| [p[0], p[1]]).collect())
+                .chain(
+                    solved
+                        .jumpers
+                        .iter()
+                        .flatten()
+                        .map(|j| j.points.iter().map(|p| [p[0], p[1]]).collect()),
+                )
+                .chain(arc_polylines(&arcs))
+                .collect();
+            let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| match points {
+                Some(read) => read(&polylines, reach, classes, budget, visit),
+                None => Ok(()),
+            };
+            let report = check_zones(
+                line,
+                &zone,
+                rules,
+                &states,
+                &solved.shapes,
+                &solved.jumpers,
+                &arcs,
+                ZoneTargets {
+                    ground,
+                    surfaces,
+                    points: points.is_some().then_some(&mut feed as _),
+                    filter,
+                },
+                budget,
+            )?;
+            let mut report = report;
+            report.notes.extend(arc_notes);
+            Ok((
+                report,
+                solved,
+                arcs.len(),
+                cases,
+                solving,
+                started.elapsed(),
+            ))
+        })()?;
+        let (report, solved, arc_spans, cases, solving, checking) = one;
+        let failed = solved.failed;
+        merged = Some(match merged {
+            None => (report, failed, arc_spans, cases, solving, checking),
+            Some((mut r, mut f, a, c, s0, c0)) => {
+                r.findings.extend(report.findings);
+                r.findings.sort_by(|a, b| {
+                    (a.distance - a.required).total_cmp(&(b.distance - b.required))
+                });
+                for (k, low) in report.lowest.into_iter().enumerate() {
+                    if low.is_some() {
+                        r.lowest[k] = low;
+                    }
+                }
+                r.points += report.points;
+                for n in report.notes {
+                    if !r.notes.contains(&n) {
+                        r.notes.push(n);
+                    }
+                }
+                r.timing.preparing += report.timing.preparing;
+                r.timing.reading += report.timing.reading;
+                r.timing.checking += report.timing.checking;
+                r.timing.parts.extend(report.timing.parts);
+                f.extend(failed);
+                (r, f, a + arc_spans, c, s0 + solving, c0 + checking)
+            }
+        });
+    }
+    let (report, failed, arc_spans, cases, solving, checking) = merged.ok_or("no rule to check")?;
     Ok(ZoneCheckResult {
         rules,
         states,
-        arc_spans: arcs.len(),
+        arc_spans,
         band_margin: arc,
         arcs: cases,
         sections,
         zone: report,
-        failed: solved.failed,
+        failed,
         solving,
-        checking: started.elapsed(),
+        checking,
     })
 }
 

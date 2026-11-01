@@ -811,10 +811,18 @@ fn rule_fields(
             // How each is solved (owner, 2026-11-01: "define the
             // computation type for the wires").
             ui.label("Phases' calculation");
-            changed |= calculation_combo(ui, "lightning-phases-calc", &mut r.calculation);
+            changed |= crate::rule_table::calculation_combo(
+                ui,
+                "lightning-phases-calc",
+                &mut r.calculation,
+            );
             ui.end_row();
             ui.label("Shielding wires' calculation");
-            changed |= calculation_combo(ui, "lightning-shields-calc", &mut r.shield_calculation);
+            changed |= crate::rule_table::calculation_combo(
+                ui,
+                "lightning-shields-calc",
+                &mut r.shield_calculation,
+            );
             ui.end_row();
             ui.label("Method");
             ui.horizontal(|ui| {
@@ -952,27 +960,6 @@ fn phases_words(r: &LightningRule) -> String {
     } else {
         r.targets.describe()
     }
-}
-
-/// A calculation to pick (none: each section's own); whether it changed.
-fn calculation_combo(
-    ui: &mut egui::Ui,
-    id: &str,
-    calc: &mut Option<ohl_line::condition::Calculation>,
-) -> bool {
-    let words = |c: Option<ohl_line::condition::Calculation>| {
-        c.map_or("each section's own".to_owned(), |k| k.label())
-    };
-    let before = *calc;
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(words(*calc))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(calc, None, words(None));
-            for k in ohl_line::condition::Calculation::ALL {
-                ui.selectable_value(calc, Some(k), k.label());
-            }
-        });
-    *calc != before
 }
 
 /// The shielding wires' cases of a rule, in words.

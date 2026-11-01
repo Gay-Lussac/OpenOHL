@@ -432,3 +432,19 @@ fn safety_volumes_by_system() {
     assert_eq!(saved["scope"], "spans");
     assert_eq!(saved["spans"][0], "S1:1");
 }
+
+/// The calculation chosen (owner, 2026-11-01) is kept with the settings
+/// and read back; runs saved before have none (each section's own).
+#[test]
+fn the_safety_volumes_calculation_reads_back() {
+    use crate::safety_volume::Settings;
+    let s = Settings {
+        calculation: Some(ohl_line::condition::Calculation::MAX_SAG_FE),
+        ..Settings::default()
+    };
+    let (back, _) = Settings::from_json(&s.to_json(&[])).unwrap();
+    assert_eq!(back.calculation, s.calculation);
+    let mut old = Settings::default().to_json(&[]);
+    old.as_object_mut().unwrap().remove("calculation");
+    assert_eq!(Settings::from_json(&old).unwrap().0.calculation, None);
+}

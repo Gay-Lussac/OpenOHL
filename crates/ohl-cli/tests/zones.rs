@@ -366,3 +366,55 @@ fn exit_codes() {
     let none = ohl(&["zones", &text(&line), "--rules", &text(&kept)]);
     assert_eq!(none.status.code(), Some(2));
 }
+
+/// A rule's own calculation (owner, 2026-11-01: e.g. the ground at max
+/// sag): the same ground rule by each section's own and by the ruling
+/// span — each checked on the wires solved by its calculation, both
+/// reported.
+#[test]
+fn a_zone_rule_takes_its_own_calculation() {
+    let dir = std::env::temp_dir().join(format!("ohl-zones-calc-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let rules = dir.join("rules.ohlr");
+    std::fs::write(
+        &rules,
+        "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"t\"\n\n\
+         [[rule]]\nname = \"own\"\ntarget = \"ground\"\nvertical = \"100 m\"\ncases = [\"max temperature\"]\n\n\
+         [[rule]]\nname = \"rs\"\ntarget = \"ground\"\nvertical = \"100 m\"\ncases = [\"max temperature\"]\ncalculation = \"initial-rs\"\n\n\
+         [wind]\nsteps = false\n",
+    )
+    .unwrap();
+    let csv = dir.join("out.csv");
+    let out = ohl(&[
+        "zones",
+        &text(&example("synthetic-line.ohl.json")),
+        "--rules",
+        &text(&rules),
+        "--weather",
+        &text(&example("weather-cases.ohlwc")),
+        "--no-cloud",
+        "--terrain",
+        &text(&example("synthetic-survey.csv")),
+        "--csv",
+        &text(&csv),
+    ]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{stdout}");
+    let table = std::fs::read_to_string(&csv).unwrap();
+    let lowest = |rule: &str| -> f64 {
+        table
+            .lines()
+            .skip(1)
+            .map(|l| l.split(',').collect::<Vec<_>>())
+            .filter(|f| f[1].trim_matches('"') == rule)
+            .map(|f| f[9].parse::<f64>().unwrap())
+            .fold(f64::INFINITY, f64::min)
+    };
+    let (a, b) = (lowest("own"), lowest("rs"));
+    assert!(a.is_finite() && b.is_finite(), "{table}");
+    assert!(
+        (a - b).abs() > 1e-3,
+        "the ruling span's wires hang otherwise: {a} and {b}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}

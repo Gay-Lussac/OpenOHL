@@ -151,6 +151,10 @@ pub struct ZoneRule {
     /// band in plan, every point within it reported (kept as the rule
     /// file has it).
     pub screen: bool,
+    /// How the wires are solved for it (owner, 2026-11-01: e.g. the
+    /// ground at max sag; none: each section's own, or the `[check]`
+    /// method) — the rule file's `calculation`.
+    pub calculation: crate::calculation::Calc,
 }
 
 impl ZoneRule {
@@ -181,6 +185,7 @@ impl ZoneRule {
                 search_margin: DEFAULT_SEARCH_MARGIN,
                 cases: self.cases.clone(),
                 case_pairs: Vec::new(),
+                calculation: self.calculation,
                 exclude_near_ends: 0.0,
                 exclude_spans_at: Vec::new(),
                 circuits: CircuitFilter::Any,
@@ -357,6 +362,7 @@ pub fn from_rule_set(
                 wires: rule.wires,
                 width,
                 screen: rule.screen,
+                calculation: rule.calculation,
             };
             // The ground half of a row written as two rules.
             if let Some(last) = out.rules.last_mut()
@@ -1437,6 +1443,7 @@ mod tests {
             wires: Wires::Both,
             width: None,
             screen: false,
+            calculation: None,
         }
     }
 
@@ -2128,6 +2135,7 @@ mod tests {
                 wires: Wires::Both,
                 width: None,
                 screen: false,
+                calculation: None,
             },
             ZoneRule {
                 name: "Ground points".into(),
@@ -2141,6 +2149,7 @@ mod tests {
                 // Its own half width.
                 width: Some(4.0),
                 screen: false,
+                calculation: None,
             },
             ZoneRule {
                 name: "Terrain, earth wires".into(),
@@ -2153,6 +2162,7 @@ mod tests {
                 wires: Wires::Jumpers,
                 width: None,
                 screen: false,
+                calculation: None,
             },
         ];
         let scope = CheckScope {
