@@ -84,7 +84,7 @@ brackets). "Time" is the effect on how long a run takes.
 | 2D cuts at (+ station) / ± / every / up to | none; ± 60 m, every 1 m (0.5 m until 2026-11-01), up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
 | Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
 | **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
-| Modelled: the whole line / wires within (`--modelled-within`) | the whole line (2 000 m when ticked) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
+| Modelled: the whole line / wires within (`--modelled-within`) | wires within 2 000 m in the window (2026-11-01; the whole line before, and in `ohl`) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
 | **5 Views and levels** › levels | 1 and 10 µT on, 100 µT off | drawing only; none is a limit | each level a little |
 | colour the cuts by band; also in any cross-section panel I open | on; off (0.5 m when on) | drawing only; the field in each cross-section view opened after a run | per view opened |
 
@@ -528,7 +528,10 @@ The field of a long straight conductor falls off slowly (as 1/r), and a
 line's phases nearly cancel only far away: a short cut-off leaves out
 much. On a 28 km line, 2 km left the cuts within 0.03 % and made a
 volume ten times quicker — the cut-off is for long lines, at a distance
-of a kilometre or more, and each run says what it changed.
+of a kilometre or more, and each run says what it changed. **2 km is the
+window's default since 2026-11-01** (the defaults reviewed for accuracy
+and speed: 0.03 % for ten times the speed); a line shorter than that is
+modelled whole all the same.
 
 **A cut's step.** The field at every grid point is exact; an isoline is
 drawn straight between the points where it crosses a cell, so it cuts

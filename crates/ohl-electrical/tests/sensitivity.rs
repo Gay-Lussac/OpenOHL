@@ -162,6 +162,94 @@ fn sensitivity() {
             100.0 * worst / top
         );
     }
+    // ---- Electric: the profile's floor (its fine tiles) and a cut's
+    // floor, against the plane (exact on this level ground).
+    println!("ELECTRIC profile floor: fine tiles, the profile's points against the exact field");
+    let exact = electric::run(
+        &src,
+        &electric::Settings {
+            stations: vec![st("T1", "T2", 0.5)],
+            ground_model: GroundModel::Plane,
+            ..electric::Settings::default()
+        },
+        None,
+    )
+    .unwrap();
+    let top = exact.profiles[0].max_kv_m;
+    // (1 m: 11 572 tiles, over the 2 GB a floor may take.)
+    for fine in [4.0, 2.0] {
+        let t = Instant::now();
+        let f = electric::run(
+            &src,
+            &electric::Settings {
+                stations: vec![st("T1", "T2", 0.5)],
+                ground_model: GroundModel::Tiled(electric::TiledFloor {
+                    fine,
+                    ..Default::default()
+                }),
+                ..electric::Settings::default()
+            },
+            None,
+        )
+        .unwrap();
+        let took = t.elapsed().as_secs_f64();
+        let worst = f.profiles[0]
+            .points
+            .iter()
+            .zip(&exact.profiles[0].points)
+            .map(|(a, b)| (a.e_kv_m - b.e_kv_m).abs())
+            .fold(0.0, f64::max);
+        println!(
+            "  {fine} m fine tiles: {:.2} % of the largest — {took:.2} s",
+            100.0 * worst / top
+        );
+    }
+    println!("ELECTRIC cut floor: tiles, the cut's points against the exact field");
+    let cut = |tile: Option<f64>| {
+        let s = electric::Settings {
+            profiles: false,
+            cuts: vec![CutSpec {
+                at: CutAt::InSpan {
+                    from: "T1".into(),
+                    to: "T2".into(),
+                    fraction: None,
+                },
+                width: 60.0,
+                above: 10.0,
+                step: 1.0,
+                label: None,
+            }],
+            ground_model: match tile {
+                None => GroundModel::Plane,
+                Some(_) => GroundModel::Tiled(electric::TiledFloor::default()),
+            },
+            cut_tile: tile.unwrap_or(8.0),
+            ..electric::Settings::default()
+        };
+        let t = Instant::now();
+        let f = electric::run(&src, &s, None).unwrap();
+        (f.cuts[0].values.values.clone(), t.elapsed().as_secs_f64())
+    };
+    let (exact_cut, _) = cut(None);
+    let top = exact_cut
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(0.0, f64::max);
+    for tile in [8.0, 4.0, 2.0] {
+        let (v, took) = cut(Some(tile));
+        // Above the ground only (1 m up): the points the drawing shows.
+        let worst = v
+            .iter()
+            .zip(&exact_cut)
+            .filter(|(a, b)| a.is_finite() && b.is_finite())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        println!(
+            "  {tile} m tiles: {:.2} % of the largest — {took:.2} s",
+            100.0 * worst / top
+        );
+    }
     // ---- Magnetic: a cut's step and its isolines.
     println!("MAGNETIC cut step: isolines off their level (nine in ten / largest), time per cut");
     let currents = vec![

@@ -301,7 +301,15 @@ tiles:
   3 % off, quick on any line.
 - **Its own errors**: the tiles' size and the floor's end at 200 m. On
   evenly sloping ground, where the plane is exact, within 0.2 % of the
-  profile's largest value. Neither conservative nor not.
+  profile's largest value. Neither conservative nor not. Measured again
+  2026-11-01 (the example, level ground, every point of a profile and of
+  a cut against the exact field, over the largest value): a **profile**'s
+  fine tiles 4 m 1.1 % (0.16 s), **2 m (default) 0.19 %** (0.40 s) — 1 m
+  would take 11 572 tiles, over the 2 GB a floor may take; a **cut**'s
+  tiles 8 m (default) 0.78 % (0.13 s), 4 m 0.79 %, 2 m 0.79 % (0.47 s): a
+  cut's floor has converged at 8 m (its largest values are near the
+  wires, where the floor counts least), finer tiles only take longer.
+  The defaults kept on that ground (2026-11-01).
 - **The ground's elevation** — *Ground from* (2 Scope; owner, 2026-11-01:
   "choose which TIN layer it uses and if none exist which survey data to
   use to make it"): the **surface of the checks** (Line › Terrain; the

@@ -928,9 +928,10 @@ for it).
   kink: a spacer, a clamp). The field changes by about the wire's offset
   over the distance to it: a few hundredths of a per cent at 10 m.
   Shorter pieces take longer in proportion.
-- **Modelled**: *the whole line* (the default, the most exact) or the
-  *wires within* a distance of each cut and volume (profiles, grids and
-  points always take the whole line). Each run then computes the whole
+- **Modelled**: the *wires within* a distance of each cut and volume —
+  **2 km by default since 2026-11-01** (the defaults reviewed for accuracy
+  and speed) — or *the whole line* (the most exact; a project kept before
+  keeps its choice). Profiles and points always take the whole line. Each run then computes the whole
   line's field at some 200 points of the cut or volume and says how much
   the wires left out change it (on a real line of 28 km, 2 km changed it
   by at most 0.03 % and made a volume ten times quicker).

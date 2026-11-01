@@ -349,7 +349,10 @@ impl Default for MagneticFieldWindow {
             spans: None,
             commit: false,
             piece_length: None,
-            modelled_within: None,
+            // 2 km (owner, 2026-11-01, the defaults reviewed: measured on
+            // a 28 km line 0.03 % off the whole line, ten times quicker;
+            // each run says what was left out).
+            modelled_within: Some(CUTOFF),
             levels: crate::field_overlay::default_levels(),
             fill: true,
             above: Some(Above { step: 2.0 }),
@@ -388,6 +391,10 @@ pub const SETTING: &str = "app.magnetic_field";
 /// The id of the window's body, tabs and footer.
 const WINDOW: &str = "magnetic-field-window";
 
+/// The wires modelled within this distance of a cut or volume by default,
+/// m (owner, 2026-11-01).
+pub const CUTOFF: f64 = 2000.0;
+
 /// The window's inputs as kept in the project (JSON).
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -421,6 +428,9 @@ struct Stored {
     points: Option<(String, String)>,
     piece_length: Option<f64>,
     modelled_within: Option<f64>,
+    /// The cut-off as kept since 2026-11-01: 0 the whole line, else the
+    /// distance, m (absent: `modelled_within` as before).
+    modelled: Option<f64>,
     levels: Option<Vec<Level>>,
     fill: Option<bool>,
     /// Isolines from above: (formerly one span; none: the spans ticked)
@@ -508,6 +518,7 @@ impl MagneticFieldWindow {
             },
             piece_length: self.piece_length,
             modelled_within: self.modelled_within,
+            modelled: Some(self.modelled_within.unwrap_or(0.0)),
             levels: Some(self.levels.clone()),
             fill: Some(self.fill),
             above: self.above.as_ref().map(|a| (None, a.step)),
@@ -541,10 +552,14 @@ impl MagneticFieldWindow {
         };
         let key = format!("{SETTING}.{}", session.current_line());
         let text = session.setting(&key).ok().flatten();
+        // Nothing kept yet: the defaults (the cut-off at 2 km).
         let st: Stored = text
             .as_deref()
             .and_then(|t| serde_json::from_str(t).ok())
-            .unwrap_or_default();
+            .unwrap_or_else(|| Stored {
+                modelled: Some(CUTOFF),
+                ..Stored::default()
+            });
         self.take(model, st);
         self.saved = serde_json::to_string(&self.stored(model))
             .ok()
@@ -589,7 +604,12 @@ impl MagneticFieldWindow {
             .unwrap_or_default();
         self.limit = st.limit;
         self.piece_length = st.piece_length;
-        self.modelled_within = st.modelled_within;
+        // Kept since 2026-11-01 (0: the whole line); before, as it was.
+        self.modelled_within = match st.modelled {
+            Some(d) if d > 0.0 => Some(d),
+            Some(_) => None,
+            None => st.modelled_within,
+        };
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
         self.above = Some(Above {

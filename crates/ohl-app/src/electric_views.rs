@@ -304,7 +304,7 @@ impl ElectricFieldWindow {
                     if !on {
                         self.in_cuts = None;
                     } else {
-                        let s = self.in_cuts.get_or_insert(0.5);
+                        let s = self.in_cuts.get_or_insert(1.0);
                         crate::style::field(
                             ui,
                             egui::DragValue::new(s).range(0.05..=10.0).speed(0.05).suffix(" m"),

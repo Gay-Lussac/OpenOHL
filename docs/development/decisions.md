@@ -111,6 +111,13 @@ development, not approved yet)**
   (8 m stays: some 3 %). *Ground from* in the field windows: the checks'
   surface, a TIN layer, or the survey's ground points made into a
   surface.
+- The field defaults reviewed (owner: "review the default values knowing
+  we want accuracy and speed so minimal compromise"; "Go ahead"): the
+  magnetic cut-off 2 km by default (0.03 % off on a 28 km line, ten times
+  quicker; projects kept before keep their choice, stored as `modelled`,
+  0 the whole line); the cross-section panels' cuts every 1 m; the
+  electric profile tiles (2 m: 0.19 %) and cut tiles (8 m: 0.78 %, finer
+  no better) kept, measured.
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).
