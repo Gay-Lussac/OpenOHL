@@ -1845,7 +1845,8 @@ fn the_magnetic_field_views_are_drawn() {
         let r = harness.state_mut().ready().unwrap();
         if let Some(res) = &r.magnetic_field.job.result {
             let a = res.as_ref().expect("a field");
-            assert!(!a.field.grids.is_empty());
+            // 3D (a volume asked): the volume only (owner, 2026-11-01).
+            assert!(a.field.grids.is_empty() && a.field.profiles.is_empty());
             assert_eq!(a.field.volumes.len(), 1);
             assert!(a.wires.is_some());
             break;
@@ -1857,9 +1858,8 @@ fn the_magnetic_field_views_are_drawn() {
     {
         let r = harness.state_mut().ready().unwrap();
         let o = &r.view3d.magnetic_field;
-        assert!(!o.plan.is_empty(), "isolines from above");
+        assert!(o.plan.is_empty(), "no isolines from above (dropped)");
         assert!(!o.surfaces.is_empty(), "surfaces");
-        assert!(!r.plan.magnetic_field.plan.is_empty());
         // A cross-section panel in the first span.
         r.open_cut(crate::xsection::CutSpec {
             alignment: "main".into(),
@@ -2093,28 +2093,6 @@ fn the_electric_field_views_are_drawn() {
         let o = &r.view3d.electric_field;
         assert!(!o.surfaces.is_empty(), "surfaces");
         assert!(o.plan.is_empty(), "no isolines from above yet");
-        // The kept charges on the run's ground give the profiles' values.
-        let Some(Ok(a)) = &r.electric_field.job.result else {
-            panic!("a field")
-        };
-        let charges = a.charges.clone().unwrap();
-        let terrain = r.model.ground_for_checks();
-        let feet = ohl_electrical::electric::feet_ground(&r.model.line);
-        let ground = |x: f64, y: f64| {
-            terrain
-                .as_ref()
-                .and_then(|t| t.height(x, y))
-                .unwrap_or_else(|| feet(x, y))
-        };
-        for p in a.field.profiles[0].points.iter().step_by(10) {
-            let plane = ohl_electrical::electric::GroundPlane::fitted(&ground, p.x, p.y, a.radius);
-            let e = charges.field([p.x, p.y, p.z], &plane) / 1e3;
-            assert!(
-                (e - p.e_kv_m).abs() <= 1e-6 * p.e_kv_m.max(1e-3),
-                "{e} {}",
-                p.e_kv_m
-            );
-        }
         // A cross-section panel in the first span.
         r.open_cut(crate::xsection::CutSpec {
             alignment: "main".into(),
@@ -2156,6 +2134,75 @@ fn the_electric_field_views_are_drawn() {
         r.electric_field.open = false;
         let o = r.electric_field.overlay_change(&r.model).expect("changed");
         assert!(o.surfaces.is_empty() && o.cuts.is_empty());
+    }
+    // 2D (owner, 2026-11-01: the profiles a run of their own): the kept
+    // charges on the run's ground give the profiles' values.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.electric_field.open = true;
+        r.electric_field.set_views(None, None);
+        r.electric_field.start(&r.model, &ctx);
+    }
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        if harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .electric_field
+            .job
+            .result
+            .is_some()
+            && !harness
+                .state_mut()
+                .ready()
+                .unwrap()
+                .electric_field
+                .job
+                .running()
+        {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no field in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(
+            r.electric_field
+                .job
+                .result
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .field
+                .volumes
+                .is_empty()
+        );
+        // The kept charges on the run's ground give the profiles' values.
+        let Some(Ok(a)) = &r.electric_field.job.result else {
+            panic!("a field")
+        };
+        let charges = a.charges.clone().unwrap();
+        let terrain = r.model.ground_for_checks();
+        let feet = ohl_electrical::electric::feet_ground(&r.model.line);
+        let ground = |x: f64, y: f64| {
+            terrain
+                .as_ref()
+                .and_then(|t| t.height(x, y))
+                .unwrap_or_else(|| feet(x, y))
+        };
+        for p in a.field.profiles[0].points.iter().step_by(10) {
+            let plane = ohl_electrical::electric::GroundPlane::fitted(&ground, p.x, p.y, a.radius);
+            let e = charges.field([p.x, p.y, p.z], &plane) / 1e3;
+            assert!(
+                (e - p.e_kv_m).abs() <= 1e-6 * p.e_kv_m.max(1e-3),
+                "{e} {}",
+                p.e_kv_m
+            );
+        }
     }
 }
 

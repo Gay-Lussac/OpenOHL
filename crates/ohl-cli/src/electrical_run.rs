@@ -1047,6 +1047,7 @@ fn magnetic_settings(
         height: c.height,
         width: c.width,
         step: c.step,
+        profiles: true,
         stations: p.stations.clone(),
         grids,
         grid_step: o.grid_step,

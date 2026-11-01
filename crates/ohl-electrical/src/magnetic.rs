@@ -348,6 +348,9 @@ pub struct Settings {
     pub step: f64,
     /// The profiles; empty: every span at its lowest point.
     pub stations: Vec<StationSpec>,
+    /// Profiles computed at all (owner, 2026-11-01: asked for apart from
+    /// the cuts and volumes; off: no profile, `stations` aside).
+    pub profiles: bool,
     /// Grids on a horizontal plane at `height` over these spans (3D),
     /// `grid_step` apart both ways, `width` to either side.
     pub grids: Vec<(String, String)>,
@@ -650,6 +653,7 @@ impl Default for Settings {
             width: 50.0,
             step: 1.0,
             stations: Vec::new(),
+            profiles: true,
             grids: Vec::new(),
             grid_step: None,
             points: Vec::new(),
@@ -2500,7 +2504,9 @@ pub fn run_keeping(
     let angles = line_angles(&spans, &axes);
     // The stations.
     let mut stations: Vec<(usize, f64)> = Vec::new();
-    if settings.stations.is_empty() {
+    if !settings.profiles {
+        // No profile asked.
+    } else if settings.stations.is_empty() {
         for (i, s) in spans.iter().enumerate() {
             if let Some(a) = &axes[i] {
                 stations.push((i, lowest_station(src, s, a)));

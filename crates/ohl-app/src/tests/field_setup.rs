@@ -315,9 +315,10 @@ fn a_field_run_is_hidden_saved_and_opened_again() {
     assert_eq!(r.electric_field.out_of_date(&r.model), None);
 }
 
-/// The magnetic field's table too: a cut asked at its lowest point and
-/// 100 m from the first structure, a volume and isolines from above in
-/// the span ticked alone — each computed by the run, listed in Results.
+/// The magnetic field's table too (owner, 2026-11-01: 2D the cuts, 3D the
+/// volumes, no isolines from above): a cut asked at its lowest point and
+/// 100 m from the first structure in the span ticked alone — the 2D run's,
+/// listed in Results; then its volume — the 3D run's, alone.
 #[test]
 fn the_magnetic_table_asks_cuts_volumes_and_grids() {
     let model = synthetic();
@@ -326,12 +327,24 @@ fn the_magnetic_table_asks_cuts_volumes_and_grids() {
         .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     harness.run();
     let ctx = harness.ctx.clone();
+    let run = |h: &mut Harness<'_, App>| {
+        let started = std::time::Instant::now();
+        loop {
+            h.step();
+            let r = h.state_mut().ready().unwrap();
+            if r.magnetic_field.job.result.is_some() && !r.magnetic_field.job.running() {
+                break;
+            }
+            assert!(started.elapsed().as_secs() < 120, "no field in 120 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        h.run();
+    };
     {
         let r = harness.state_mut().ready().unwrap();
         let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
         r.magnetic_field.set_current(&circuits[0].label(), 800.0);
-        r.magnetic_field.set_views(Some(5.0), None, Some(4.0));
-        // Span 0 alone: its volume and its isolines from above ticked.
+        r.magnetic_field.set_views(None, None, None);
         r.magnetic_field.tick_only(&r.model, 0);
         assert_eq!(r.magnetic_field.ticked_spans(&r.model), vec![0]);
         r.magnetic_field.add_cut(&r.model, 0, CutAt::Lowest);
@@ -339,31 +352,96 @@ fn the_magnetic_table_asks_cuts_volumes_and_grids() {
         r.magnetic_field.show(r.case);
         r.magnetic_field.start(&r.model, &ctx);
     }
-    let started = std::time::Instant::now();
-    loop {
-        harness.step();
+    run(&mut harness);
+    {
         let r = harness.state_mut().ready().unwrap();
-        if let Some(res) = &r.magnetic_field.job.result {
-            let a = res.as_ref().expect("a field");
-            assert_eq!(a.field.cuts.len(), 2, "the two cuts asked");
-            // 100 m from the first structure: at that place's alignment
-            // station (the alignment runs through the structures).
-            assert!(
-                (a.field.cuts[1].at - 100.0).abs() < 1e-3,
-                "{}",
-                a.field.cuts[1].at
-            );
-            assert!(!a.field.cuts[0].alignment.is_empty());
-            assert_eq!(a.field.volumes.len(), 1);
-            assert_eq!(a.field.grids.len(), 1);
-            break;
-        }
-        assert!(started.elapsed().as_secs() < 120, "no field in 120 s");
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        let Some(Ok(a)) = &r.magnetic_field.job.result else {
+            panic!("a field")
+        };
+        assert_eq!(a.field.cuts.len(), 2, "the two cuts asked");
+        // 100 m from the first structure: at that place's alignment
+        // station (the alignment runs through the structures).
+        assert!(
+            (a.field.cuts[1].at - 100.0).abs() < 1e-3,
+            "{}",
+            a.field.cuts[1].at
+        );
+        assert!(!a.field.cuts[0].alignment.is_empty());
+        assert!(a.field.volumes.is_empty() && a.field.grids.is_empty());
+        assert!(!a.field.profiles.is_empty(), "the profiles too");
     }
-    harness.run();
     assert_eq!(harness.query_all_by_label("Open cut").count(), 2);
-    assert_eq!(harness.query_all_by_label("Show in 3D").count(), 2);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.magnetic_field.set_views(None, None, Some(4.0));
+        r.magnetic_field.start(&r.model, &ctx);
+    }
+    run(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Ok(a)) = &r.magnetic_field.job.result else {
+            panic!("a field")
+        };
+        assert_eq!(a.field.volumes.len(), 1);
+        assert!(a.field.cuts.is_empty() && a.field.profiles.is_empty());
+    }
+    assert_eq!(harness.query_all_by_label("Show in 3D").count(), 1);
+}
+
+/// A weather case per system (owner, 2026-11-01: "earth wire at 10 °C
+/// and conductors at 40 °C … best would be per system"): the line's
+/// system in another case than the window's moves its wires, so the
+/// profiles change; the run says so in its notes.
+#[test]
+fn a_system_takes_its_own_weather_case() {
+    let mut harness = electric();
+    let ctx = harness.ctx.clone();
+    let largest = |h: &mut Harness<'_, App>| -> (f64, Vec<String>) {
+        wait(h);
+        let r = h.state_mut().ready().unwrap();
+        let Some(Ok(a)) = &r.electric_field.job.result else {
+            panic!("a field")
+        };
+        (
+            a.field
+                .profiles
+                .iter()
+                .map(|p| p.max_kv_m)
+                .fold(0.0, f64::max),
+            a.field.notes.clone(),
+        )
+    };
+    let other = {
+        let r = harness.state_mut().ready().unwrap();
+        r.electric_field.set_views(None, None);
+        r.electric_field.start(&r.model, &ctx);
+        let shown = r.model.cases[r.electric_field.case].case.name.clone();
+        r.model
+            .cases
+            .iter()
+            .map(|c| c.case.name.clone())
+            .find(|n| *n != shown && n.contains("max"))
+            .expect("another case")
+    };
+    let (before, _) = largest(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let system = r.model.line.systems[0].id.clone();
+        r.electric_field.job.result = None;
+        r.electric_field.set_system_case(&system, &other);
+        r.electric_field.start(&r.model, &ctx);
+    }
+    let (after, notes) = largest(&mut harness);
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("per system:") && n.contains(&other)),
+        "{notes:?}"
+    );
+    assert!(
+        (after - before).abs() > 1e-3 * before,
+        "{before} and {after}"
+    );
 }
 
 /// A weather case the app has not solved yet (it solves a case when it is

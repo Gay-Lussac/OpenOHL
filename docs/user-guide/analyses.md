@@ -804,8 +804,33 @@ longer in the line falls back to the default.
 - **Jumpers** (3D, on by default, 2026-10-29): a jumper between two
   section ends of one phase carries that phase's current; jumpers on taps
   or between different phases are left out and listed in the notes.
+**Per electrical system** (2026-11-01, in *2 Scope* under *Wires by*;
+the owner: "a weather case per system (e.g. earth wire at 10 °C and
+conductors at 40 °C due to being in use) … best would be per system"):
+each system of the line, and the earthed wires without one, may take
+its own weather case and calculation (*as above*: the window's); each
+case and calculation is solved once for the run and every section taken
+from its system's, the jumpers from the window's case; the notes say
+which ("per system: system ex220: in max temperature").
+
+**Long volumes in parts** (2026-11-01, the owner: "modelled in parts to
+keep the amount of memory used low in long lines"): a volume's lattice
+is computed along its run in parts of at most some 20 million points
+(160 MB) each, the plane where two meet shared — the same surfaces as
+in one piece (tested), far less memory on a long run.
+
 **3 Spans and what to compute in each** (2026-10-31, the owner's
-validated rework; the same in both field windows). **The span table**:
+validated rework; the same in both field windows). **Make** (2026-11-01,
+the owner: "the 3D method to only make the volumes … 2D where you can
+setup cuts … and also ask if we want the profiles"): **2D: cuts and
+profiles** — the cuts at the stations asked in the table and, with
+**profiles too** ticked, the profiles (and the points from CSV) — or
+**3D: volumes** — only the volumes of the spans with *Volume* ticked. A
+run computes each kind as a step of its own, one after another (its
+progress says which: "2 cut(s)", "the profiles", "1 volume(s)"): the
+cuts and the volumes from the wires in 3D, the profiles by their model
+(*Profiles by* 3D or 2D, 4 Model). The isolines *from above* are no
+longer offered (2026-11-01). **The span table**:
 every span a row — per alignment its spans in station order, ticked
 (the spans of the line's run along it, and those out of its first or
 last structure); then the other spans, unticked: on no alignment, of
@@ -814,7 +839,7 @@ in the middle of the line (owner, 2026-10-31: the main line's spans not
 interrupted by crossing spans) — with its length, its profile, its **2D cuts at** (the
 stations asked: *+ station* at mid-span, at its lowest point or a
 distance from its first structure; a click on a station's chip removes
-it), its **Volume** and (magnetic) its **From above**. **A cut is made
+it; 2D) and its **Volume** (3D). **A cut is made
 on the alignment** (owner, 2026-10-31: "cuts are made on the alignment
 not the circuits or span"): each chip is placed at the alignment station
 of that place in the span (between its structures' stations; the lowest
@@ -837,8 +862,7 @@ kept in the project; with no span ticked, Run says so. Under the table:
   height above the ground (default ±50 m every 1 m at 1 m). The ground is
   the project's surface for the checks when there is one, else straight
   between the structures' feet.
-- **From above**, **2D cuts**, **Volumes** (3D): their sizes — the
-  grids' step; the cuts' half width, step and reach over the highest wire
+- **2D cuts** (2D) or **Volumes** (3D): their sizes — the cuts' half width, step and reach over the highest wire
   (default ±60 m every 0.5 m to 10 m over it); the volumes' width each
   side of the axis (2026-11-01: their own, so a low level's surface
   reaching farther than the profiles is inside the box; it starts at the
@@ -901,12 +925,6 @@ the cuts by band* fills a cut's cells with the colour of the highest
 level at or below their value. The views, drawn on the layer **Magnetic
 field (isolines, surfaces)** while the window is open:
 
-- **From above**: isolines at the profiles' height above the ground over
-  the spans with *From above* ticked in the table, ± the width, a grid
-  every step (default 2 m; its step under the table); in
-  the plan and the 3D view. Spans following each other along the line
-  make one grid, bent at the line angles: the isolines run through the
-  structures unbroken.
 - **2D cuts**: at the stations asked in the table (*+ station*), computed
   by the run on the alignment; their size under the table. **Results ›
   Open cut** opens a cross-section panel at the cut's alignment station:

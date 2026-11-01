@@ -77,10 +77,10 @@ brackets). "Time" is the effect on how long a run takes.
 | Jumpers: carry their phase's current | on | near the structures; off: **not conservative** there (`--no-jumpers`) | a few more pieces |
 | Limit: given | none (1 µT when ticked) | the margin and the limit line's width | none |
 | Points from CSV… | none | the field at each point | in proportion to the points |
-| **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts, volumes and grids are computed | in proportion to the spans |
+| **3 Spans** › Make | 2D: cuts and profiles | 2D: the cuts asked and (*profiles too*) the profiles; 3D: the volumes only (2026-11-01) | each kind a step of its own |
+| **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts and volumes are computed | in proportion to the spans |
 | Profiles | at each ticked span's lowest point | or *beside its structures* (10 m into the span), or *one span* (its lowest point or a place 0–1 along it) | per profile |
 | Across: ± / every / at | ± 50 m, every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
-| From above: every (From above ticked) | 2 m | isolines on a plane at the profiles' height over the spans; drawing only between points | in proportion to the points |
 | 2D cuts at (+ station) / ± / every / up to | none; ± 60 m, every 0.5 m, up to 10 m over the highest wire | a vertical cut on the alignment with isolines | in proportion to the points |
 | Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
 | **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
@@ -378,8 +378,8 @@ nor not in general (the images oppose their sources' near fields).
   there is one, else straight between the structures' feet and level
   across (**Simplification**).
 - **Grids** on a horizontal plane at that height over a span, their own
-  step (`grid_step`): the levels' isolines **from above** (plan and 3D
-  view).
+  step (`grid_step`): the levels' isolines from above — in the engine and
+  `ohl`; the window no longer offers them (2026-11-01).
 - **Vertical cuts across the line** (2026-10-29): a grid in a vertical
   plane, ± the width, from the lowest ground under it to some metres over
   the highest wire, every step; every point computed (also under the
@@ -443,6 +443,15 @@ measured):
   between coarse points), and, again and again, in every cell beyond a
   face of a fine cell that a level crosses (the surface is followed until
   it closes or leaves the box; tested: no holes but at the box's sides).
+  **In parts** (2026-11-01): a long volume's lattice is walked along its
+  run in parts of whole coarse cells, at most some 20 million points
+  (160 MB) held at once; two parts share the plane where they meet, the
+  next starting from the values the one before computed there and
+  following every surface that crosses it — the same points computed and
+  the same surfaces as in one piece (tested). A surface that would come
+  back across a shared plane into the part before after leaving it is
+  only followed forward (**Simplification**: a fold of a surface back
+  along the run, which the closed tubes around the wires do not make).
   **Simplification**: a surface lying wholly between coarse points, away
   from every wire and more than 10 % off the values around it, is not
   found — it would be smaller than a coarse cell. On a real span about

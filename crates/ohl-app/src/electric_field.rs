@@ -142,7 +142,13 @@ pub struct ElectricFieldWindow {
     /// The spans ticked for the profiles (every span's).
     span_pick: SpanPick,
     limit: Option<f64>,
+    /// The profiles' model: 2D (infinite line charges), else 3D.
     two_d: bool,
+    /// What a run makes (owner, 2026-11-01): 2D — the cuts and, with
+    /// `profiles`, the profiles; else 3D — the volumes only.
+    planes: bool,
+    /// 2D: the profiles (and the points) too.
+    profiles: bool,
     /// The ground plane under a point is fitted over this distance, m.
     ground_radius: f64,
     /// The ground a tiled conducting floor (the default; owner,
@@ -223,6 +229,9 @@ pub struct ElectricFieldWindow {
     /// How the wires are solved for a run (owner, 2026-11-01; none: each
     /// section's own, the case as shown).
     calculation: ohl_clearance::calculation::Calc,
+    /// Per electrical system its own weather case and calculation
+    /// (owner, 2026-11-01).
+    per_system: crate::field_systems::PerSystem,
     /// The outputs of the run unticked in its list (not drawn).
     pub(crate) hidden: field_results::Hidden,
     /// The last run's charges (3D) and its ground plane's radius.
@@ -244,6 +253,8 @@ impl Default for ElectricFieldWindow {
             span_pick: SpanPick::default(),
             limit: None,
             two_d: false,
+            planes: true,
+            profiles: true,
             ground_radius: d.ground_radius,
             tiled: true,
             steel: false,
@@ -283,6 +294,7 @@ impl Default for ElectricFieldWindow {
             drawn: None,
             hidden: Default::default(),
             calculation: None,
+            per_system: Default::default(),
             saving: Default::default(),
             apply: None,
             charges: None,
@@ -319,6 +331,10 @@ struct Stored {
     spans_on: Vec<(String, String)>,
     limit: Option<f64>,
     two_d: bool,
+    /// 2D (cuts, profiles) or 3D (volumes) (2026-11-01; absent: 2D).
+    planes: Option<bool>,
+    /// 2D: the profiles too (absent: yes).
+    profiles: Option<bool>,
     ground_radius: Option<f64>,
     tiled: Option<bool>,
     /// The structures' steel earthed (2026-10-31).
@@ -343,6 +359,9 @@ struct Stored {
     volume_width: Option<f64>,
     /// How the wires are solved (2026-11-01; none: each section's own).
     calculation: Option<ohl_line::condition::Calculation>,
+    /// Per system (id; "": the earthed wires) its weather case by name
+    /// and calculation (2026-11-01; absent: the window's).
+    per_system: crate::field_systems::PerSystem,
     /// Per span the stations of its 2D cuts (2026-10-31).
     cuts: Vec<(SpanIds, Vec<CutAt>)>,
     /// The spans with a volume (2026-10-31).
@@ -397,6 +416,8 @@ impl ElectricFieldWindow {
             spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
             two_d: self.two_d,
+            planes: Some(self.planes),
+            profiles: Some(self.profiles),
             ground_radius: Some(self.ground_radius),
             tiled: Some(self.tiled),
             steel: self.steel,
@@ -416,6 +437,7 @@ impl ElectricFieldWindow {
             volume_step: self.volume.as_ref().map(|v| v.step),
             volume_width: self.volume.as_ref().map(|v| v.width),
             calculation: self.calculation,
+            per_system: self.per_system.clone(),
             cuts: self
                 .span_pick
                 .cuts
@@ -451,6 +473,7 @@ impl ElectricFieldWindow {
     fn take(&mut self, model: &Model, st: Stored) {
         let d = Self::default();
         self.calculation = st.calculation;
+        self.per_system = st.per_system.clone();
         self.case_kept = false;
         if let Some(k) = st
             .case
@@ -480,6 +503,8 @@ impl ElectricFieldWindow {
             .unwrap_or_default();
         self.limit = st.limit;
         self.two_d = st.two_d;
+        self.planes = st.planes.unwrap_or(true);
+        self.profiles = st.profiles.unwrap_or(true);
         self.ground_radius = st.ground_radius.unwrap_or(d.ground_radius);
         self.tiled = st.tiled.unwrap_or(d.tiled);
         self.steel = st.steel;
@@ -642,22 +667,32 @@ impl ElectricFieldWindow {
     /// sizes of the cuts and volumes.
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let spans = self.spans(model);
+        crate::magnetic_field::method_ui(ui, &mut self.planes, &mut self.profiles);
         self.span_pick.table(
             ui,
             "electric-field",
             model,
             &spans,
             Columns {
-                above: false,
-                three_d: !self.two_d,
+                profile: self.planes && self.profiles,
+                cuts: self.planes,
+                volume: !self.planes,
             },
         );
+        if self.planes && self.profiles {
+            self.profiles_setup_ui(ui, &spans);
+        }
+        self.sizes_ui(ui, model, &spans);
+    }
+
+    /// The profiles: where and how wide (2D, profiles asked).
+    fn profiles_setup_ui(&mut self, ui: &mut egui::Ui, spans: &Spans) {
         egui::Grid::new("electric-field-profiles-setup")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Profiles");
-                profiles_ui(ui, "electric-field", &mut self.stations, &spans);
+                profiles_ui(ui, "electric-field", &mut self.stations, spans);
                 ui.end_row();
                 ui.label("Across");
                 ui.horizontal(|ui| {
@@ -689,9 +724,6 @@ impl ElectricFieldWindow {
                 });
                 ui.end_row();
             });
-        if !self.two_d {
-            self.sizes_ui(ui, model, &spans);
-        }
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile, cut
@@ -779,6 +811,8 @@ impl ElectricFieldWindow {
             step,
             width: self.width,
         });
+        // A volume asked: 3D (2026-11-01: 3D makes the volumes only).
+        self.planes = volume.is_none();
     }
 
     /// The views (tests): the panels' and the volume's step.
@@ -842,7 +876,7 @@ impl ElectricFieldWindow {
     /// The settings as the engine takes them.
     fn settings(&mut self, model: &Model) -> Settings {
         let spans = self.spans(model);
-        let steel = if self.steel && !self.two_d {
+        let steel = if self.steel {
             steel_of(model)
         } else {
             (Vec::new(), Vec::new())
@@ -892,11 +926,15 @@ impl ElectricFieldWindow {
             width: self.width,
             step: self.step,
             stations,
-            points: self
-                .points
-                .as_ref()
-                .map(|p| p.1.clone())
-                .unwrap_or_default(),
+            profiles: self.planes && self.profiles,
+            points: if self.planes && self.profiles {
+                self.points
+                    .as_ref()
+                    .map(|p| p.1.clone())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            },
             limit_kv_m: self.limit,
             ground_radius: self.ground_radius,
             ground_model: if self.tiled {
@@ -914,7 +952,7 @@ impl ElectricFieldWindow {
             piece_length: self.piece_length,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
             // cuts it should be asked at which stations we want one").
-            cuts: if self.two_d {
+            cuts: if !self.planes {
                 Vec::new()
             } else {
                 self.span_pick
@@ -932,7 +970,7 @@ impl ElectricFieldWindow {
             },
             // A volume: one along each run of spans following each other
             // with Volume ticked (continuous across the line angles).
-            volumes: match (&self.volume, self.two_d) {
+            volumes: match (&self.volume, self.planes) {
                 (Some(v), false) => self
                     .span_pick
                     .volume_runs(model, &spans)
@@ -974,9 +1012,15 @@ impl ElectricFieldWindow {
         // shown): solved for the run, in the background (2026-10-31: the
         // run took no wire and gave 0 kV/m).
         let unsolved = !solved.solved_for(model.wind) || self.calculation.is_some();
+        // The systems in cases or calculations of their own (2026-11-01).
+        let plan =
+            crate::field_systems::plan(model, &self.per_system, &solved.case, self.calculation);
         let wind = model.wind;
         let ground = model.ground_for_checks();
         let settings = self.settings(model);
+        // Each kind of output its own step, one after another (owner,
+        // 2026-11-01: "not all at once and clearly separated").
+        let steps = steps_of(&settings);
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
         // A new run's outputs all drawn.
@@ -990,6 +1034,8 @@ impl ElectricFieldWindow {
                 jumpers = s.jumpers;
                 progress.set_stage(String::new());
             }
+            let (shapes, per_notes) =
+                crate::field_systems::compose(&line, &library, wind, shapes, &plan);
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
             let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = ground
                 .as_ref()
@@ -1002,7 +1048,35 @@ impl ElectricFieldWindow {
                 ground: g,
                 jumpers: &jumpers,
             };
-            let (mut field, charges) = electric::run_keeping(&src, &settings, Some(&progress))?;
+            let mut field: Option<ElectricField> = None;
+            let mut charges = None;
+            for (what, s) in &steps {
+                progress.set_stage(what.clone());
+                let (f, c) = electric::run_keeping(&src, s, Some(&progress))?;
+                if c.is_some() {
+                    charges = c;
+                }
+                field = Some(match field {
+                    None => f,
+                    Some(mut all) => {
+                        all.profiles.extend(f.profiles);
+                        all.points.extend(f.points);
+                        all.cuts.extend(f.cuts);
+                        all.volumes.extend(f.volumes);
+                        if s.profiles {
+                            all.model = f.model;
+                        }
+                        for n in f.notes {
+                            if !all.notes.contains(&n) {
+                                all.notes.push(n);
+                            }
+                        }
+                        all
+                    }
+                });
+            }
+            progress.set_stage(String::new());
+            let mut field = field.ok_or("nothing asked: tick a span, a cut or a volume")?;
             // Each point sums every piece twice: the charges and their
             // images.
             let work = progress.total.load(Ordering::Relaxed) as f64
@@ -1031,6 +1105,9 @@ impl ElectricFieldWindow {
                     ),
                 );
             }
+            for n in per_notes.into_iter().rev() {
+                field.notes.insert(0, n);
+            }
             if g.is_none() {
                 field.notes.push(
                     "ground: straight between the structures' feet and level across (no terrain surface)"
@@ -1048,6 +1125,13 @@ impl ElectricFieldWindow {
                 work,
             })
         });
+    }
+
+    /// Gives system `key` its own weather case (tests).
+    #[cfg(test)]
+    pub fn set_system_case(&mut self, key: &str, case: &str) {
+        self.per_system
+            .insert(key.to_owned(), (Some(case.to_owned()), None));
     }
 
     /// Sets the name a run is saved as (tests).
@@ -1269,14 +1353,13 @@ impl ElectricFieldWindow {
                                 .weak(),
                             );
                         });
+                        crate::field_systems::ui(ui, WINDOW, model, &mut self.per_system);
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);
                         self.spans_ui(ui, model);
-                        if !self.two_d {
-                            let spans = self.spans(model);
-                            self.views_ui(ui, model, &spans);
-                        }
+                        let spans = self.spans(model);
+                        self.views_ui(ui, model, &spans);
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
                         egui::ScrollArea::both()
@@ -1421,20 +1504,22 @@ impl ElectricFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Model");
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.two_d, false, "3D")
-                        .on_hover_text(
-                            "The wires as solved (sag, line angles, the line's length) and the \
+                ui.label("Profiles by");
+                ui.add_enabled_ui(self.planes && self.profiles, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.two_d, false, "3D")
+                            .on_hover_text(
+                                "The wires as solved (sag, line angles, the line's length) and the \
                          jumpers as pieces of uniform charge over the ground (a tiled \
                          conducting floor by default, 4 Model)",
-                        );
-                    ui.selectable_value(&mut self.two_d, true, "2D")
+                            );
+                        ui.selectable_value(&mut self.two_d, true, "2D")
                         .on_hover_text(
                             "Infinite line charges where the wires cross the profile, over level \
                          ground at the cross-section: not valid near a line angle, a structure \
                          or on sloping ground",
                         );
+                    })
                 });
                 ui.end_row();
                 ui.label("");
@@ -1454,7 +1539,7 @@ impl ElectricFieldWindow {
                      and straight, its ground level.",
                 );
                 ui.end_row();
-                if !self.two_d {
+                {
                     ui.label("Jumpers");
                     ui.checkbox(&mut self.jumpers, "carry their phase's charge")
                         .on_hover_text(
@@ -2012,4 +2097,51 @@ fn plot(ui: &mut egui::Ui, p: &electric::Profile, limit: Option<f64>) -> egui::R
         }
     }
     r
+}
+
+/// A run's steps (owner, 2026-11-01): 2D — the cuts (the charges in 3D),
+/// then the profiles and points (by their model); 3D — the volumes. Each
+/// with what it computes in words; none empty.
+fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
+    let none = Settings {
+        profiles: false,
+        stations: Vec::new(),
+        points: Vec::new(),
+        cuts: Vec::new(),
+        volumes: Vec::new(),
+        ..all.clone()
+    };
+    let mut out = Vec::new();
+    if !all.cuts.is_empty() {
+        out.push((
+            format!("{} cut(s)", all.cuts.len()),
+            Settings {
+                model: FieldModel::ThreeD,
+                cuts: all.cuts.clone(),
+                ..none.clone()
+            },
+        ));
+    }
+    if all.profiles {
+        out.push((
+            "the profiles".to_owned(),
+            Settings {
+                profiles: true,
+                stations: all.stations.clone(),
+                points: all.points.clone(),
+                ..none.clone()
+            },
+        ));
+    }
+    if !all.volumes.is_empty() {
+        out.push((
+            format!("{} volume(s)", all.volumes.len()),
+            Settings {
+                model: FieldModel::ThreeD,
+                volumes: all.volumes.clone(),
+                ..none
+            },
+        ));
+    }
+    out
 }

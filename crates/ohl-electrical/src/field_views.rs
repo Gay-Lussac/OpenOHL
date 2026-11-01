@@ -878,6 +878,18 @@ pub fn volume(
     pieces: &[[[f64; 3]; 2]],
     progress: Option<&Progress>,
 ) -> Result<VolumeValues, String> {
+    volume_in_parts(bounds, levels, field, pieces, progress, PART_POINTS)
+}
+
+/// [`volume`] with parts of at most `part_points` lattice points.
+fn volume_in_parts(
+    bounds: &VolumeBox,
+    levels: &[f64],
+    field: Field<'_, f64>,
+    pieces: &[[[f64; 3]; 2]],
+    progress: Option<&Progress>,
+    part_points: usize,
+) -> Result<VolumeValues, String> {
     if !(bounds.step > 0.0
         && bounds.path.length() > 0.0
         && bounds.width > 0.0
@@ -893,20 +905,126 @@ pub fn volume(
     }
     let d = bounds.dims();
     let full = d[0] * d[1] * d[2];
-    if full > 400_000_000 {
+    if full > MAX_POINTS {
         return Err(format!(
             "{full} lattice points: too many (a coarser step or a smaller box)"
         ));
     }
+    // In parts along the run (owner, 2026-11-01: "modelled in parts to
+    // keep the amount of memory used low in long lines"): each part's
+    // lattice alone in memory, whole coarse cells, the plane where two
+    // meet shared.
+    let cells = (d[0] - 1) / COARSE;
+    let per = (part_points / (COARSE * d[1] * d[2]).max(1)).clamp(1, cells.max(1));
+    let mut out = VolumeValues {
+        bounds: bounds.clone(),
+        surfaces: levels.iter().map(|&l| (l, Mesh::default())).collect(),
+        deviation: Vec::new(),
+        computed: 0,
+        full,
+        above: vec![0.0; levels.len()],
+        left_out: vec![0; levels.len()],
+    };
+    let mut coarse_points = 0usize;
+    let mut carry: Option<Vec<f64>> = None;
+    let mut c0 = 0;
+    while c0 < cells.max(1) {
+        let c1 = (c0 + per).min(cells.max(1));
+        let part = volume_part(
+            bounds,
+            levels,
+            field,
+            pieces,
+            progress,
+            (c0 * COARSE, c1 * COARSE),
+            carry.take(),
+        )?;
+        out.computed += part.computed;
+        coarse_points += part.coarse_points;
+        for (k, n) in part.above.iter().enumerate() {
+            out.above[k] += *n as f64;
+        }
+        for (k, n) in part.left_out.iter().enumerate() {
+            out.left_out[k] += n;
+        }
+        for ((_, m), part_mesh) in out.surfaces.iter_mut().zip(part.surfaces) {
+            let base = m.vertices.len() as u32;
+            m.vertices.extend(part_mesh.vertices);
+            m.triangles
+                .extend(part_mesh.triangles.iter().map(|t| t.map(|x| x + base)));
+        }
+        carry = Some(part.last_plane);
+        c0 = c1;
+    }
+    for a in &mut out.above {
+        *a /= coarse_points.max(1) as f64;
+    }
+    out.deviation = out
+        .surfaces
+        .iter()
+        .map(|(l, m)| deviation(&m.vertices, *l, field))
+        .collect();
+    Ok(out)
+}
+
+/// The most points a volume's lattice may have.
+pub const MAX_POINTS: usize = 2_000_000_000;
+
+/// The most points of a part of a volume's lattice held at once (owner,
+/// 2026-11-01): some 160 MB of values; a volume larger than this is
+/// computed in parts along its run ([`volume`]).
+pub const PART_POINTS: usize = 20_000_000;
+
+/// A part of a volume as computed: its surfaces (world places), the points
+/// it computed, the coarse points at or above each level and how many,
+/// the thin pieces left out, and its last plane's values (the next part's
+/// first).
+struct VolumePart {
+    surfaces: Vec<Mesh>,
+    computed: usize,
+    above: Vec<usize>,
+    coarse_points: usize,
+    left_out: Vec<usize>,
+    last_plane: Vec<f64>,
+}
+
+/// The part of `bounds`'s lattice from fine station index `i0` to `i1`
+/// (both whole coarse cells; `first`: the values of its first plane as
+/// the part before computed them — a surface crossing that plane goes on
+/// here).
+#[allow(clippy::too_many_arguments)]
+fn volume_part(
+    bounds: &VolumeBox,
+    levels: &[f64],
+    field: Field<'_, f64>,
+    pieces: &[[[f64; 3]; 2]],
+    progress: Option<&Progress>,
+    (i0, i1): (usize, usize),
+    first: Option<Vec<f64>>,
+) -> Result<VolumePart, String> {
+    let dd = bounds.dims();
+    let d = [i1 - i0 + 1, dd[1], dd[2]];
+    let full = d[0] * d[1] * d[2];
     let id = |i: usize, j: usize, k: usize| (k * d[1] + j) * d[0] + i;
     let mut values = vec![f64::NAN; full];
+    if let Some(plane) = &first {
+        for k in 0..d[2] {
+            for j in 0..d[1] {
+                values[id(0, j, k)] = plane[k * d[1] + j];
+            }
+        }
+    }
+    let place = |p: [f64; 3]| bounds.place([p[0] + i0 as f64, p[1], p[2]]);
     // The coarse lattice.
     let c = d.map(|n| (n - 1) / COARSE + 1);
     let mut todo: Vec<usize> = Vec::new();
     for k in 0..c[2] {
         for j in 0..c[1] {
             for i in 0..c[0] {
-                todo.push(id(i * COARSE, j * COARSE, k * COARSE));
+                let n = id(i * COARSE, j * COARSE, k * COARSE);
+                if values[n].is_nan() {
+                    todo.push(n);
+                }
             }
         }
     }
@@ -924,7 +1042,7 @@ pub fn volume(
         [i as f64, j as f64, k as f64]
     };
     let compute = |todo: &[usize], values: &mut Vec<f64>| -> Result<(), String> {
-        let pts: Vec<[f64; 3]> = todo.iter().map(|&n| bounds.place(coords(n))).collect();
+        let pts: Vec<[f64; 3]> = todo.iter().map(|&n| place(coords(n))).collect();
         let v = compute_all(&pts, field, progress)?;
         for (&n, x) in todo.iter().zip(v) {
             values[n] = x;
@@ -932,6 +1050,15 @@ pub fn volume(
         Ok(())
     };
     compute(&todo, &mut values)?;
+    // A coarse point of the first plane the part before left uncomputed
+    // (between its fine points): computed here.
+    let missing: Vec<usize> = (0..c[2])
+        .flat_map(|k| (0..c[1]).map(move |j| (j, k)))
+        .map(|(j, k)| id(0, j * COARSE, k * COARSE))
+        .filter(|&n| values[n].is_nan())
+        .collect();
+    add_total(missing.len());
+    compute(&missing, &mut values)?;
     // The coarse cells to refine.
     let cells = [c[0] - 1, c[1] - 1, c[2] - 1];
     let cid = |i: usize, j: usize, k: usize| (k * cells[1] + j) * cells[0] + i;
@@ -951,6 +1078,27 @@ pub fn volume(
                 }
                 if levels.iter().any(|&l| lo / MARGIN <= l && l <= hi * MARGIN) {
                     flag[cid(i, j, k)] = true;
+                }
+            }
+        }
+    }
+    // A surface coming across the first plane from the part before: the
+    // cells it enters (its fine values there straddle a level).
+    if first.is_some() {
+        for k in 0..cells[2] {
+            for j in 0..cells[1] {
+                let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+                for fk in k * COARSE..=(k + 1) * COARSE {
+                    for fj in j * COARSE..=(j + 1) * COARSE {
+                        let v = values[id(0, fj, fk)];
+                        if !v.is_nan() {
+                            lo = lo.min(v);
+                            hi = hi.max(v);
+                        }
+                    }
+                }
+                if levels.iter().any(|&l| lo < l && l <= hi) {
+                    flag[cid(0, j, k)] = true;
                 }
             }
         }
@@ -985,7 +1133,7 @@ pub fn volume(
                 if flag[cid(i, j, k)] {
                     continue;
                 }
-                let c = bounds.place([
+                let c = place([
                     (i * COARSE) as f64 + 0.5 * COARSE as f64,
                     (j * COARSE) as f64 + 0.5 * COARSE as f64,
                     (k * COARSE) as f64 + 0.5 * COARSE as f64,
@@ -1081,46 +1229,48 @@ pub fn volume(
         }
         new_cells = next;
     }
-    let computed = values.iter().filter(|v| !v.is_nan()).count();
+    // Counted once: the first plane is the part before's.
+    let skip = usize::from(first.is_some());
+    let computed = (0..d[2])
+        .flat_map(|k| (0..d[1]).flat_map(move |j| (skip..d[0]).map(move |i| (i, j, k))))
+        .filter(|&(i, j, k)| !values[id(i, j, k)].is_nan())
+        .count();
     let coarse_values: Vec<f64> = (0..c[2])
-        .flat_map(|k| (0..c[1]).flat_map(move |j| (0..c[0]).map(move |i| (i, j, k))))
+        .flat_map(|k| (0..c[1]).flat_map(move |j| (skip..c[0]).map(move |i| (i, j, k))))
         .map(|(i, j, k)| values[id(i * COARSE, j * COARSE, k * COARSE)])
         .collect();
     let above = levels
         .iter()
-        .map(|&l| {
-            coarse_values.iter().filter(|&&v| v >= l).count() as f64
-                / coarse_values.len().max(1) as f64
-        })
+        .map(|&l| coarse_values.iter().filter(|&&v| v >= l).count())
         .collect();
     // The surfaces: in the cells computed fine (a fine cell with a corner
     // not computed is skipped by the contouring).
     let value = |i: usize, j: usize, k: usize| values[id(i, j, k)];
     let mut left_out = Vec::new();
-    let surfaces: Vec<(f64, Mesh)> = levels
+    let surfaces: Vec<Mesh> = levels
         .iter()
         .map(|&l| {
             let (mut m, dropped) =
                 contour::isosurface(d, &value, l).without_thin_pieces(THIN_PIECE, SHORT_PIECE);
             left_out.push(dropped);
             for v in &mut m.vertices {
-                *v = bounds.place(*v);
+                *v = place(*v);
             }
-            (l, m)
+            m
         })
         .collect();
-    let deviation = surfaces
-        .iter()
-        .map(|(l, m)| deviation(&m.vertices, *l, field))
+    let last = d[0] - 1;
+    let last_plane = (0..d[2])
+        .flat_map(|k| (0..d[1]).map(move |j| (j, k)))
+        .map(|(j, k)| values[id(last, j, k)])
         .collect();
-    Ok(VolumeValues {
-        bounds: bounds.clone(),
+    Ok(VolumePart {
         surfaces,
-        deviation,
         computed,
-        full,
         above,
+        coarse_points: coarse_values.len(),
         left_out,
+        last_plane,
     })
 }
 
@@ -1227,6 +1377,60 @@ mod tests {
                 let r = (p[1].powi(2) + (p[2] - 30.0).powi(2)).sqrt();
                 assert!((r - r0).abs() < 0.05 * r0 + 0.05, "{r} vs {r0}");
             }
+        }
+    }
+
+    /// A volume in parts (owner, 2026-11-01: less memory on long lines):
+    /// along the bent tube, parts of a few coarse cells give the same
+    /// surface as one part — the same triangles, the same points
+    /// computed, every vertex on the tube.
+    #[test]
+    fn a_volume_in_parts_is_the_volume_in_one() {
+        let path = Path::new(vec![[0.0, 0.0, 0.0], [60.0, 0.0, 0.0], [110.0, 40.0, 0.0]]).unwrap();
+        let wire: Vec<[f64; 3]> = vec![[0.0, 0.0, 30.0], [60.0, 0.0, 30.0], [110.0, 40.0, 30.0]];
+        let pieces: Vec<[[f64; 3]; 2]> = wire.windows(2).map(|w| [w[0], w[1]]).collect();
+        let f = |p: [f64; 3]| {
+            let d = pieces
+                .iter()
+                .map(|s| segment_distance(*s, p))
+                .fold(f64::INFINITY, f64::min);
+            1.0 / d.max(1e-6)
+        };
+        let b = VolumeBox {
+            path,
+            width: 20.0,
+            bottom: 10.0,
+            top: 50.0,
+            step: 1.0,
+        };
+        let levels = [1.0 / 5.0, 1.0 / 12.0];
+        let one = volume(&b, &levels, &each(f), &pieces, None).unwrap();
+        let d = b.dims();
+        // Parts of 3 coarse cells along the run.
+        let parts = volume_in_parts(
+            &b,
+            &levels,
+            &each(f),
+            &pieces,
+            None,
+            3 * COARSE * d[1] * d[2],
+        )
+        .unwrap();
+        assert!((d[0] - 1) / COARSE > 6, "several parts");
+        assert_eq!(parts.computed, one.computed);
+        assert_eq!(parts.full, one.full);
+        for ((l, a), (_, p)) in one.surfaces.iter().zip(&parts.surfaces) {
+            assert_eq!(a.triangles.len(), p.triangles.len(), "level {l}");
+            for v in &p.vertices {
+                let r = pieces
+                    .iter()
+                    .map(|s| segment_distance(*s, *v))
+                    .fold(f64::INFINITY, f64::min);
+                assert!((r - 1.0 / l).abs() < 0.1 / l, "{r} against {}", 1.0 / l);
+            }
+        }
+        for (a, p) in one.above.iter().zip(&parts.above) {
+            assert!((a - p).abs() < 1e-12);
         }
     }
 

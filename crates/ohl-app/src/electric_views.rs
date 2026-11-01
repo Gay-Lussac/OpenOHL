@@ -357,179 +357,183 @@ impl ElectricFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("2D cuts");
-                ui.horizontal(|ui| {
-                    ui.label("±");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.cut_width)
-                            .range(5.0..=500.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.cut_step)
-                            .range(0.05..=10.0)
-                            .speed(0.05)
-                            .suffix(" m"),
-                    );
-                    ui.label("up to");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.cut_above)
-                            .range(0.0..=100.0)
-                            .speed(0.5)
-                            .suffix(" m"),
-                    );
-                    ui.label("over the highest wire");
-                });
-                ui.end_row();
-                let points =
-                    (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
-                ui.label("");
-                crate::check_help::explain(
-                    ui,
-                    &format!(
-                        "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
-                         each, {} per cut ({rate_from}). Each a vertical plane across its span, \
-                         its isolines at the levels (5); Results › Open cut shows it on the wires.",
-                        duration(points * pieces * rate)
-                    ),
-                    "The cut is a vertical plane at the alignment station of its place in the \
-                     span (between its structures' stations), perpendicular to the alignment — \
-                     at an angle point along the bisector — as a cross-section panel opened \
-                     there; from the lowest ground to this far over the highest wire; on the tiled floor \
-                     its own floor of the cut tiles (Ground).",
-                );
-                ui.end_row();
-                for why in &unplaced {
-                    ui.label("");
-                    ui.colored_label(
-                        ui.visuals().warn_fg_color,
-                        format!("No cut placed: {why}."),
-                    );
-                    ui.end_row();
-                }
-                // The volumes: their spans ticked in the table.
-                ui.label("Volumes");
-                ui.horizontal(|ui| {
-                    let v = self.volume.get_or_insert(VolumeSetup {
-                        step: 2.0,
-                        width: self.width,
+                // 2D: the cuts; 3D: the volumes (owner, 2026-11-01).
+                if self.planes {
+                    ui.label("2D cuts");
+                    ui.horizontal(|ui| {
+                        ui.label("±");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.cut_width)
+                                .range(5.0..=500.0)
+                                .speed(1.0)
+                                .suffix(" m"),
+                        );
+                        ui.label("every");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.cut_step)
+                                .range(0.05..=10.0)
+                                .speed(0.05)
+                                .suffix(" m"),
+                        );
+                        ui.label("up to");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.cut_above)
+                                .range(0.0..=100.0)
+                                .speed(0.5)
+                                .suffix(" m"),
+                        );
+                        ui.label("over the highest wire");
                     });
-                    ui.label(format!(
-                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
-                        runs.len(),
-                    ));
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut v.width)
-                            .range(1.0..=2000.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut v.step)
-                            .range(0.25..=20.0)
-                            .speed(0.05)
-                            .suffix(" m"),
-                    );
-                });
-                ui.end_row();
-                if let (Some(v), true) = (&self.volume, ticked > 0) {
-                    let n = ticked as f64;
-                    let full =
-                        n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
-                    let share = self.volume_share.unwrap_or(0.5);
-                    let t = full * share * pieces * rate;
+                    ui.end_row();
+                    let points =
+                        (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
                     ui.label("");
                     crate::check_help::explain(
                         ui,
                         &format!(
-                            "{n:.0} span(s) of ≈ {:.0} m: a lattice of ≈ {:.1} M points, of which \
-                             ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
-                             step takes about 4 to 8 times as long and places the surfaces closer \
-                             to their levels; thin surfaces around the conductors need a fine \
-                             step. Results › Show in 3D turns the 3D view to it.",
-                            st.span(),
-                            full / 1e6,
-                            share * 100.0,
-                            if self.volume_share.is_some() {
-                                "as in the last run"
-                            } else {
-                                "a guess until a run"
-                            },
-                            duration(t),
-                            n_levels
+                            "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
+                             each, {} per cut ({rate_from}). Each a vertical plane across its span, \
+                             its isolines at the levels (5); Results › Open cut shows it on the wires.",
+                            duration(points * pieces * rate)
                         ),
-                        "A coarse lattice first (4 steps apart), then the fine one only where a \
-                         level passes, near the wires, and wherever a surface goes on; every \
-                         lattice point is computed in full, only the surface between the points \
-                         is interpolated. Drawn translucent in the 3D view, each level in its \
-                         colour. Spans with Volume ticked that follow each other make one \
-                         volume (no seam at the structures).",
+                        "The cut is a vertical plane at the alignment station of its place in the \
+                         span (between its structures' stations), perpendicular to the alignment — \
+                         at an angle point along the bisector — as a cross-section panel opened \
+                         there; from the lowest ground to this far over the highest wire; on the tiled floor \
+                         its own floor of the cut tiles (Ground).",
                     );
                     ui.end_row();
-                    // The floor under the longest run (owner, 2026-10-31:
-                    // laptops of 16 to 32 GB): its memory said before Run.
-                    if self.tiled {
-                        let longest = runs.iter().map(|r| r.1).max().unwrap_or(1);
-                        let width = self.volume.as_ref().map_or(self.width, |v| v.width);
-                        let (parts, tiles) = electric::volume_parts(
-                            st.span() * longest as f64,
-                            width,
-                            self.volume_tile,
-                            self.volume_margin,
-                        );
-                        let bytes = electric::floor_bytes(tiles);
-                        let text = if parts == 1 {
-                            format!(
-                                "Its floor: the longest volume ({longest} span(s)) ≈ {tiles} tiles \
-                                 of {} m, ≈ {:.2} GB of memory while solved, {}.",
-                                self.volume_tile,
-                                bytes / 1e9,
-                                duration(self.floor_seconds(tiles))
-                            )
-                        } else {
-                            format!(
-                                "The longest volume ({longest} span(s)) is too large for one floor: \
-                                 {parts} floors, one per part of it, each ≈ {tiles} tiles of {} m \
-                                 or fewer, ≈ {:.2} GB while solved, {} in all.",
-                                self.volume_tile,
-                                bytes / 1e9,
-                                duration(parts as f64 * self.floor_seconds(tiles))
-                            )
-                        };
+                    for why in &unplaced {
                         ui.label("");
-                        if bytes > electric::FLOOR_MEMORY {
-                            crate::menu::error_label(
-                                ui,
-                                format!(
-                                    "{text} Over the {:.0} GB a floor may take: coarser tiles \
-                                     under the volumes or a smaller margin (Ground), a smaller \
-                                     width, or the plane under each point.",
-                                    electric::FLOOR_MEMORY / 1e9
-                                ),
-                            );
-                        } else {
-                            crate::check_help::explain(
-                                ui,
-                                &text,
-                                "A volume's floor runs along its whole run of spans and the margin \
-                                 beyond (Ground) while it fits in 2 GB: its memory grows with the \
-                                 run's length squared, its time faster still. A longer run is \
-                                 floored in parts as long as the margin, each part's floor over \
-                                 the ground within the margin of it (a line angle's other leg \
-                                 too), each point of the volume taking its part's floor: measured \
-                                 on level ground as close to the exact field as one floor (8 m \
-                                 tiles: 2.8 % against 3.1 %).",
-                            );
-                        }
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            format!("No cut placed: {why}."),
+                        );
                         ui.end_row();
+                    }
+                    // The volumes: their spans ticked in the table.
+                } else {
+                    ui.label("Volumes");
+                    ui.horizontal(|ui| {
+                        let v = self.volume.get_or_insert(VolumeSetup {
+                            step: 2.0,
+                            width: self.width,
+                        });
+                        ui.label(format!(
+                            "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
+                            runs.len(),
+                        ));
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut v.width)
+                                .range(1.0..=2000.0)
+                                .speed(1.0)
+                                .suffix(" m"),
+                        );
+                        ui.label("every");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut v.step)
+                                .range(0.25..=20.0)
+                                .speed(0.05)
+                                .suffix(" m"),
+                        );
+                    });
+                    ui.end_row();
+                    if let (Some(v), true) = (&self.volume, ticked > 0) {
+                        let n = ticked as f64;
+                        let full =
+                            n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
+                        let share = self.volume_share.unwrap_or(0.5);
+                        let t = full * share * pieces * rate;
+                        ui.label("");
+                        crate::check_help::explain(
+                            ui,
+                            &format!(
+                                "{n:.0} span(s) of ≈ {:.0} m: a lattice of ≈ {:.1} M points, of which \
+                                 ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
+                                 step takes about 4 to 8 times as long and places the surfaces closer \
+                                 to their levels; thin surfaces around the conductors need a fine \
+                                 step. Results › Show in 3D turns the 3D view to it.",
+                                st.span(),
+                                full / 1e6,
+                                share * 100.0,
+                                if self.volume_share.is_some() {
+                                    "as in the last run"
+                                } else {
+                                    "a guess until a run"
+                                },
+                                duration(t),
+                                n_levels
+                            ),
+                            "A coarse lattice first (4 steps apart), then the fine one only where a \
+                             level passes, near the wires, and wherever a surface goes on; every \
+                             lattice point is computed in full, only the surface between the points \
+                             is interpolated. Drawn translucent in the 3D view, each level in its \
+                             colour. Spans with Volume ticked that follow each other make one \
+                             volume (no seam at the structures).",
+                        );
+                        ui.end_row();
+                        // The floor under the longest run (owner, 2026-10-31:
+                        // laptops of 16 to 32 GB): its memory said before Run.
+                        if self.tiled {
+                            let longest = runs.iter().map(|r| r.1).max().unwrap_or(1);
+                            let width = self.volume.as_ref().map_or(self.width, |v| v.width);
+                            let (parts, tiles) = electric::volume_parts(
+                                st.span() * longest as f64,
+                                width,
+                                self.volume_tile,
+                                self.volume_margin,
+                            );
+                            let bytes = electric::floor_bytes(tiles);
+                            let text = if parts == 1 {
+                                format!(
+                                    "Its floor: the longest volume ({longest} span(s)) ≈ {tiles} tiles \
+                                     of {} m, ≈ {:.2} GB of memory while solved, {}.",
+                                    self.volume_tile,
+                                    bytes / 1e9,
+                                    duration(self.floor_seconds(tiles))
+                                )
+                            } else {
+                                format!(
+                                    "The longest volume ({longest} span(s)) is too large for one floor: \
+                                     {parts} floors, one per part of it, each ≈ {tiles} tiles of {} m \
+                                     or fewer, ≈ {:.2} GB while solved, {} in all.",
+                                    self.volume_tile,
+                                    bytes / 1e9,
+                                    duration(parts as f64 * self.floor_seconds(tiles))
+                                )
+                            };
+                            ui.label("");
+                            if bytes > electric::FLOOR_MEMORY {
+                                crate::menu::error_label(
+                                    ui,
+                                    format!(
+                                        "{text} Over the {:.0} GB a floor may take: coarser tiles \
+                                         under the volumes or a smaller margin (Ground), a smaller \
+                                         width, or the plane under each point.",
+                                        electric::FLOOR_MEMORY / 1e9
+                                    ),
+                                );
+                            } else {
+                                crate::check_help::explain(
+                                    ui,
+                                    &text,
+                                    "A volume's floor runs along its whole run of spans and the margin \
+                                     beyond (Ground) while it fits in 2 GB: its memory grows with the \
+                                     run's length squared, its time faster still. A longer run is \
+                                     floored in parts as long as the margin, each part's floor over \
+                                     the ground within the margin of it (a line angle's other leg \
+                                     too), each point of the volume taking its part's floor: measured \
+                                     on level ground as close to the exact field as one floor (8 m \
+                                     tiles: 2.8 % against 3.1 %).",
+                                );
+                            }
+                            ui.end_row();
+                        }
                     }
                 }
             });
@@ -541,18 +545,16 @@ impl ElectricFieldWindow {
     pub(super) fn summary(&mut self, model: &Model) -> String {
         let spans = self.spans(model);
         let n = self.span_pick.chosen(model, &spans).0.len();
-        let profiles = match self.stations {
-            Stations::EverySpan => n,
-            Stations::Beside { .. } => 2 * n,
-            Stations::One { .. } => 1,
+        let profiles = match (self.planes && self.profiles, &self.stations) {
+            (false, _) => 0,
+            (true, Stations::EverySpan) => n,
+            (true, Stations::Beside { .. }) => 2 * n,
+            (true, Stations::One { .. }) => 1,
         };
-        let (cuts, volumes) = if self.two_d {
-            (0, 0)
+        let (cuts, volumes) = if self.planes {
+            (self.span_pick.cuts_asked(model, &spans).len(), 0)
         } else {
-            (
-                self.span_pick.cuts_asked(model, &spans).len(),
-                self.span_pick.volume_runs(model, &spans).len(),
-            )
+            (0, self.span_pick.volume_runs(model, &spans).len())
         };
         let st = self.piece_stats(model);
         let (rate, _) = self.rate();
@@ -564,7 +566,7 @@ impl ElectricFieldWindow {
         let cut_points =
             (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
         let mut seconds = (profiles as f64 * across + cuts as f64 * cut_points) * pieces * rate;
-        if self.tiled && !self.two_d {
+        if self.tiled {
             let floor = electric::TiledFloor {
                 fine: self.tile,
                 ..Default::default()
@@ -593,10 +595,14 @@ impl ElectricFieldWindow {
                 ticked as f64 * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
             seconds += full * self.volume_share.unwrap_or(0.5) * pieces * rate;
         }
-        format!(
-            "{n} span(s) · {profiles} profile(s) · {cuts} cut(s) · {volumes} volume(s) — {}",
-            duration(seconds)
-        )
+        if self.planes {
+            format!(
+                "2D · {n} span(s) · {cuts} cut(s) · {profiles} profile(s) — {}",
+                duration(seconds)
+            )
+        } else {
+            format!("3D · {volumes} volume(s) — {}", duration(seconds))
+        }
     }
 
     /// The results of the views: what each measured.

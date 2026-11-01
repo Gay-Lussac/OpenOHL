@@ -77,6 +77,19 @@ development, not approved yet)**
   tool is held (it stays held for the 3D view), a right-click opens the
   object's menu; the measuring tools draw in the 3D view only. A
   cross-section, a 3D view of its slab, keeps the tools.
+- The field windows by method (owner: "the 3D method to only make the
+  volumes … 2D where you can setup cuts … and also ask if we want the
+  profiles … not all at once and clearly separated"): *Make* 2D (the cuts,
+  with *profiles too* the profiles and points) or 3D (the volumes only);
+  a run is one step per kind, the cuts and volumes from the wires in 3D,
+  the profiles by their model. The isolines from above dropped ("drop
+  them"). A weather case and calculation per electrical system ("best
+  would be per system"; the field windows only for now). The volume
+  lattice in parts of some 20 M points along the run ("modelled in parts
+  to keep the amount of memory used low"), the same surfaces as one
+  piece. The engine's settings take `profiles` (off: none).
+- View › Clearances removed ("a doubled thing with the clearances in
+  checks"): Checks › Wire clearances opens the window.
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).

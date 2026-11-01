@@ -323,10 +323,6 @@ pub(super) fn menus(
         for tab in Tab::VIEWS.into_iter().filter(|t| !t.advanced()) {
             page(ui, tab);
         }
-        // A window like the check windows since 2026-10-27 (owner: "yes
-        // standardise"), ticked here as when it was a page.
-        ui.checkbox(&mut r.clearances.open, "Clearances")
-            .on_hover_text("The Clearances window: the wire clearance check's results and rules");
         crate::menu::options_menu(ui, "Advanced", |ui| {
             for tab in Tab::VIEWS.into_iter().filter(|t| t.advanced()) {
                 page(ui, tab);

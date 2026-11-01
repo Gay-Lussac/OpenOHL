@@ -528,198 +528,152 @@ impl MagneticFieldWindow {
         // others cannot be.
         let (placed, unplaced) = self.span_pick.cut_places(model, spans);
         let cuts = placed.len();
-        let above: usize = self
-            .span_pick
-            .above_runs(model, spans)
-            .iter()
-            .map(|r| r.1)
-            .sum();
         let runs = self.span_pick.volume_runs(model, spans);
         let ticked: usize = runs.iter().map(|r| r.1).sum();
         egui::Grid::new("magnetic-field-sizes")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("From above");
-                ui.horizontal(|ui| {
-                    let a = self.above.get_or_insert(Above { step: 2.0 });
-                    ui.label(format!(
-                        "isolines in {above} span(s) with From above ticked, at {} m above the \
-                         ground, ±{} m, every",
-                        self.height, self.width
-                    ));
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut a.step)
-                            .range(0.1..=50.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                });
-                ui.end_row();
-                if let (Some(a), true) = (&self.above, above > 0) {
-                    let length = st.span() * above as f64;
-                    let points = (length / a.step + 1.0) * (2.0 * self.width / a.step + 1.0);
-                    ui.label("");
-                    crate::check_help::explain(
-                        ui,
-                        &format!(
-                            "≈ {points:.0} points, {} ({rate_from}). The values at the points are \
-                             exact; an isoline is drawn straight between points {} m apart, so \
-                             where it bends it may lie off by up to about half a step (each run \
-                             says how far, per level).",
-                            duration(points * pieces * rate),
-                            a.step
-                        ),
-                        "The grids follow the ground at the profiles' height; their isolines are \
-                         drawn on the plan and in the 3D view. Spans with From above ticked that \
-                         follow each other make one grid.",
-                    );
-                    ui.end_row();
-                }
-                ui.label("2D cuts");
-                ui.horizontal(|ui| {
-                    ui.label("±");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.cut_width)
-                            .range(5.0..=500.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.cut_step)
-                            .range(0.05..=10.0)
-                            .speed(0.05)
-                            .suffix(" m"),
-                    );
-                    ui.label("up to");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.cut_above)
-                            .range(0.0..=100.0)
-                            .speed(0.5)
-                            .suffix(" m"),
-                    );
-                    ui.label("over the highest wire");
-                });
-                ui.end_row();
-                let points =
-                    (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
-                ui.label("");
-                crate::check_help::explain(
-                    ui,
-                    &format!(
-                        "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
-                         each, {} per cut ({rate_from}). Each a vertical plane across its span, \
-                         its isolines at the levels (5); Results › Open cut shows it on the wires.",
-                        duration(points * taken(self.modelled_within, 0.0) * rate)
-                    ),
-                    "The cut is a vertical plane at the alignment station of its place in the \
-                     span (between its structures' stations), perpendicular to the alignment — \
-                     at an angle point along the bisector — as a cross-section panel opened \
-                     there; from the lowest ground to this far over the highest wire.",
-                );
-                ui.end_row();
-                for why in &unplaced {
-                    ui.label("");
-                    ui.colored_label(ui.visuals().warn_fg_color, format!("No cut placed: {why}."));
-                    ui.end_row();
-                }
-                ui.label("Volumes");
-                ui.horizontal(|ui| {
-                    let v = self.volume.get_or_insert(VolumeSetup {
-                        step: 2.0,
-                        width: self.width,
+                // 2D: the cuts; 3D: the volumes (owner, 2026-11-01).
+                if self.planes {
+                    ui.label("2D cuts");
+                    ui.horizontal(|ui| {
+                        ui.label("±");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.cut_width)
+                                .range(5.0..=500.0)
+                                .speed(1.0)
+                                .suffix(" m"),
+                        );
+                        ui.label("every");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.cut_step)
+                                .range(0.05..=10.0)
+                                .speed(0.05)
+                                .suffix(" m"),
+                        );
+                        ui.label("up to");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.cut_above)
+                                .range(0.0..=100.0)
+                                .speed(0.5)
+                                .suffix(" m"),
+                        );
+                        ui.label("over the highest wire");
                     });
-                    ui.label(format!(
-                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
-                        runs.len(),
-                    ));
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut v.width)
-                            .range(1.0..=2000.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut v.step)
-                            .range(0.25..=20.0)
-                            .speed(0.05)
-                            .suffix(" m"),
-                    );
-                });
-                ui.end_row();
-                if let (Some(v), true) = (&self.volume, ticked > 0) {
-                    let n = ticked as f64;
-                    let full =
-                        n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
-                    let share = self.volume_share.unwrap_or(0.5);
-                    let t = full * share * taken(self.modelled_within, st.span() * n) * rate;
+                    ui.end_row();
+                    let points =
+                        (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
                     ui.label("");
                     crate::check_help::explain(
                         ui,
                         &format!(
-                            "{n:.0} span(s) of ≈ {:.0} m: a lattice of ≈ {:.1} M points, of which \
-                             ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
-                             step takes about 4 to 8 times as long and places the surfaces closer \
-                             to their levels: on a real line 2 m put the 1 µT surface within \
-                             0.05 % for nine points in ten, the 10 µT one within 1 %, the 100 µT \
-                             one (a thin tube around each conductor) within 15 % — 1 m within \
-                             0.01 %, 0.3 % and 4 %. Results › Show in 3D turns the 3D view to it.",
-                            st.span(),
-                            full / 1e6,
-                            share * 100.0,
-                            if self.volume_share.is_some() {
-                                "as in the last run"
-                            } else {
-                                "a guess until a run"
-                            },
-                            duration(t),
-                            n_levels
+                            "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
+                             each, {} per cut ({rate_from}). Each a vertical plane across its span, \
+                             its isolines at the levels (5); Results › Open cut shows it on the wires.",
+                            duration(points * taken(self.modelled_within, 0.0) * rate)
                         ),
-                        "A coarse lattice first (4 steps apart), then the fine one only where a \
-                         level passes, near the wires, and wherever a surface goes on; every \
-                         lattice point is computed in full, only the surface between the points \
-                         is interpolated. Drawn translucent in the 3D view, each level in its \
-                         colour. Spans with Volume ticked that follow each other make one \
-                         volume (no seam at the structures).",
+                        "The cut is a vertical plane at the alignment station of its place in the \
+                         span (between its structures' stations), perpendicular to the alignment — \
+                         at an angle point along the bisector — as a cross-section panel opened \
+                         there; from the lowest ground to this far over the highest wire.",
                     );
                     ui.end_row();
+                    for why in &unplaced {
+                        ui.label("");
+                        ui.colored_label(ui.visuals().warn_fg_color, format!("No cut placed: {why}."));
+                        ui.end_row();
+                    }
+                } else {
+                    ui.label("Volumes");
+                    ui.horizontal(|ui| {
+                        let v = self.volume.get_or_insert(VolumeSetup {
+                            step: 2.0,
+                            width: self.width,
+                        });
+                        ui.label(format!(
+                            "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
+                            runs.len(),
+                        ));
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut v.width)
+                                .range(1.0..=2000.0)
+                                .speed(1.0)
+                                .suffix(" m"),
+                        );
+                        ui.label("every");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut v.step)
+                                .range(0.25..=20.0)
+                                .speed(0.05)
+                                .suffix(" m"),
+                        );
+                    });
+                    ui.end_row();
+                    if let (Some(v), true) = (&self.volume, ticked > 0) {
+                        let n = ticked as f64;
+                        let full =
+                            n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
+                        let share = self.volume_share.unwrap_or(0.5);
+                        let t = full * share * taken(self.modelled_within, st.span() * n) * rate;
+                        ui.label("");
+                        crate::check_help::explain(
+                            ui,
+                            &format!(
+                                "{n:.0} span(s) of ≈ {:.0} m: a lattice of ≈ {:.1} M points, of which \
+                                 ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
+                                 step takes about 4 to 8 times as long and places the surfaces closer \
+                                 to their levels: on a real line 2 m put the 1 µT surface within \
+                                 0.05 % for nine points in ten, the 10 µT one within 1 %, the 100 µT \
+                                 one (a thin tube around each conductor) within 15 % — 1 m within \
+                                 0.01 %, 0.3 % and 4 %. Results › Show in 3D turns the 3D view to it.",
+                                st.span(),
+                                full / 1e6,
+                                share * 100.0,
+                                if self.volume_share.is_some() {
+                                    "as in the last run"
+                                } else {
+                                    "a guess until a run"
+                                },
+                                duration(t),
+                                n_levels
+                            ),
+                            "A coarse lattice first (4 steps apart), then the fine one only where a \
+                             level passes, near the wires, and wherever a surface goes on; every \
+                             lattice point is computed in full, only the surface between the points \
+                             is interpolated. Drawn translucent in the 3D view, each level in its \
+                             colour. Spans with Volume ticked that follow each other make one \
+                             volume (no seam at the structures).",
+                        );
+                        ui.end_row();
+                    }
                 }
             });
     }
 
     /// What the run will compute and about how long it takes (owner,
     /// 2026-10-31: a summary beside Run): the spans ticked, the profiles,
-    /// the cuts, the volumes, the grids from above.
+    /// the cuts, the volumes — 2D: the cuts and the profiles asked; 3D:
+    /// the volumes (owner, 2026-11-01).
     pub(super) fn summary(&mut self, model: &Model) -> String {
         let spans = self.spans(model);
         let n = self.span_pick.chosen(model, &spans).0.len();
-        let profiles = match self.stations {
-            Stations::EverySpan => n,
-            Stations::Beside { .. } => 2 * n,
-            Stations::One { .. } => 1,
+        let profiles = match (self.planes && self.profiles, &self.stations) {
+            (false, _) => 0,
+            (true, Stations::EverySpan) => n,
+            (true, Stations::Beside { .. }) => 2 * n,
+            (true, Stations::One { .. }) => 1,
         };
-        let (cuts, volume_spans, volumes, above) = if self.two_d {
-            (0, 0, 0, 0)
+        let (cuts, volume_spans, volumes) = if self.planes {
+            (self.span_pick.cuts_asked(model, &spans).len(), 0, 0)
         } else {
             let runs = self.span_pick.volume_runs(model, &spans);
-            (
-                self.span_pick.cuts_asked(model, &spans).len(),
-                runs.iter().map(|r| r.1).sum::<usize>(),
-                runs.len(),
-                self.span_pick
-                    .above_runs(model, &spans)
-                    .iter()
-                    .map(|r| r.1)
-                    .sum::<usize>(),
-            )
+            (0, runs.iter().map(|r| r.1).sum::<usize>(), runs.len())
         };
         let st = self.piece_stats(model);
         let (rate, _) = self.rate();
@@ -728,11 +682,6 @@ impl MagneticFieldWindow {
         let cut_points =
             (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
         let mut points = profiles as f64 * across + cuts as f64 * cut_points;
-        if let Some(a) = &self.above {
-            points += (st.span() * above as f64 / a.step + 1.0)
-                * (2.0 * self.width / a.step + 1.0)
-                * (above > 0) as u8 as f64;
-        }
         if let Some(v) = &self.volume {
             points += volume_spans as f64
                 * (st.span() / v.step)
@@ -740,15 +689,17 @@ impl MagneticFieldWindow {
                 * (70.0 / v.step)
                 * self.volume_share.unwrap_or(0.5);
         }
-        let grids = if above > 0 {
-            format!(" · {above} span(s) from above")
+        if self.planes {
+            format!(
+                "2D · {n} span(s) · {cuts} cut(s) · {profiles} profile(s) — {}",
+                duration(points * pieces * rate)
+            )
         } else {
-            String::new()
-        };
-        format!(
-            "{n} span(s) · {profiles} profile(s) · {cuts} cut(s) · {volumes} volume(s){grids} — {}",
-            duration(points * pieces * rate)
-        )
+            format!(
+                "3D · {volumes} volume(s) over {volume_spans} span(s) — {}",
+                duration(points * pieces * rate)
+            )
+        }
     }
 
     /// The results of the views: what each measured.

@@ -162,17 +162,19 @@ enum Col {
     Span,
     /// Its volume.
     Volume,
-    /// Its isolines from above.
-    Above,
 }
 
-/// Which columns the table offers besides the spans' ticks.
+/// Which columns the table offers besides the spans' ticks (owner,
+/// 2026-11-01: 3D makes the volumes only, 2D the cuts and, if asked, the
+/// profiles; the isolines from above dropped).
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Columns {
-    /// Isolines from above (the magnetic field).
-    pub above: bool,
-    /// Cuts and volumes (3D only).
-    pub three_d: bool,
+    /// The spans' profiles (2D, profiles asked).
+    pub profile: bool,
+    /// The 2D cuts (2D).
+    pub cuts: bool,
+    /// The volumes (3D).
+    pub volume: bool,
 }
 
 /// Which spans are ticked — the changes from the default (on an
@@ -245,7 +247,6 @@ impl SpanPick {
         match col {
             Col::Span => self.ticked(ids, aligned),
             Col::Volume => self.volume.contains(ids),
-            Col::Above => self.above.contains(ids),
         }
     }
 
@@ -253,7 +254,6 @@ impl SpanPick {
         let set = match col {
             Col::Span => return self.set(ids, aligned, v),
             Col::Volume => &mut self.volume,
-            Col::Above => &mut self.above,
         };
         if v {
             set.insert(ids.clone());
@@ -314,17 +314,6 @@ impl SpanPick {
         spans: &Spans,
     ) -> Vec<(SpanIds, usize)> {
         let set = self.volume.clone();
-        self.runs_of(model, spans, &set)
-    }
-
-    /// The grids from above: the runs of ticked spans with isolines from
-    /// above, as [`SpanPick::volume_runs`].
-    pub fn above_runs(
-        &mut self,
-        model: &crate::model::Model,
-        spans: &Spans,
-    ) -> Vec<(SpanIds, usize)> {
-        let set = self.above.clone();
         self.runs_of(model, spans, &set)
     }
 
@@ -477,18 +466,25 @@ impl SpanPick {
                 )),
             |ui| {
                 egui::Grid::new((id, "span-grid"))
-                    .num_columns(if cols.above { 7 } else { 6 })
+                    .num_columns(
+                        3 + usize::from(cols.profile)
+                            + usize::from(cols.cuts)
+                            + usize::from(cols.volume),
+                    )
                     .striped(true)
                     .spacing([12.0, 3.0])
                     .show(ui, |ui| {
                         ui.label("");
                         ui.strong("Span");
                         ui.strong("Length");
-                        ui.strong("Profile");
-                        ui.strong("2D cuts at");
-                        ui.strong("Volume");
-                        if cols.above {
-                            ui.strong("From above");
+                        if cols.profile {
+                            ui.strong("Profile");
+                        }
+                        if cols.cuts {
+                            ui.strong("2D cuts at");
+                        }
+                        if cols.volume {
+                            ui.strong("Volume");
                         }
                         ui.end_row();
                         let mut group: Option<Option<String>> = None;
@@ -532,25 +528,20 @@ impl SpanPick {
                             ui.label(text(name(k)));
                             let len = span_length(model, &ids);
                             ui.label(text(format!("{len:.0} m")));
-                            ui.label(text(if on { "yes".into() } else { String::new() }));
-                            ui.horizontal(|ui| {
-                                ui.add_enabled_ui(on && cols.three_d, |ui| {
-                                    self.cuts_cell(ui, &ids, len);
+                            if cols.profile {
+                                ui.label(text(if on { "yes".into() } else { String::new() }));
+                            }
+                            if cols.cuts {
+                                ui.horizontal(|ui| {
+                                    ui.add_enabled_ui(on, |ui| {
+                                        self.cuts_cell(ui, &ids, len);
+                                    });
                                 });
-                            });
-                            self.tick_cell(
-                                ui,
-                                Col::Volume,
-                                &rows,
-                                row,
-                                spans,
-                                (pressed, shift),
-                                on && cols.three_d,
-                            );
-                            if cols.above {
+                            }
+                            if cols.volume {
                                 self.tick_cell(
                                     ui,
-                                    Col::Above,
+                                    Col::Volume,
                                     &rows,
                                     row,
                                     spans,
@@ -647,7 +638,6 @@ impl SpanPick {
         let what = match col {
             Col::Span => "span",
             Col::Volume => "volume",
-            Col::Above => "from above",
         };
         let label = format!("{what} {}–{}", ids.0, ids.1);
         resp.widget_info(|| {

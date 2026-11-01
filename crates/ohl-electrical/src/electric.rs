@@ -457,6 +457,9 @@ pub struct Settings {
     pub step: f64,
     /// The profiles; empty: every span at its lowest point.
     pub stations: Vec<StationSpec>,
+    /// Profiles computed at all (owner, 2026-11-01: asked for apart from
+    /// the cuts and volumes; off: no profile, `stations` aside).
+    pub profiles: bool,
     /// Given points.
     pub points: Vec<GivenPoint>,
     /// A limit, kV/m (optional; none built in).
@@ -508,6 +511,7 @@ impl Default for Settings {
             width: 50.0,
             step: 1.0,
             stations: Vec::new(),
+            profiles: true,
             points: Vec::new(),
             limit_kv_m: None,
             ground_radius: 10.0,
@@ -1089,7 +1093,9 @@ pub fn run_keeping(
     let limit = settings.limit_kv_m;
     // Stations.
     let mut stations: Vec<(usize, f64)> = Vec::new();
-    if settings.stations.is_empty() {
+    if !settings.profiles {
+        // No profile asked.
+    } else if settings.stations.is_empty() {
         for (i, s) in spans.iter().enumerate() {
             if let Some(a) = &axes[i] {
                 stations.push((i, magnetic::lowest_station(src, s, a)));

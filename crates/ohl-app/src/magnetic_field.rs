@@ -229,8 +229,14 @@ pub struct MagneticFieldWindow {
     /// The spans ticked for the profiles (every span's).
     span_pick: SpanPick,
     limit: Option<f64>,
+    /// The profiles' model: 2D (infinite straight conductors), else 3D.
     two_d: bool,
     mean_heights: bool,
+    /// What a run makes (owner, 2026-11-01): 2D — the cuts and, with
+    /// `profiles`, the profiles; else 3D — the volumes only.
+    planes: bool,
+    /// 2D: the profiles (and the points) too.
+    profiles: bool,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
     /// The points file's text (kept in the project).
@@ -299,6 +305,9 @@ pub struct MagneticFieldWindow {
     /// How the wires are solved for a run (owner, 2026-11-01; none: each
     /// section's own, the case as shown).
     calculation: ohl_clearance::calculation::Calc,
+    /// Per electrical system its own weather case and calculation
+    /// (owner, 2026-11-01).
+    per_system: crate::field_systems::PerSystem,
     /// The outputs of the run unticked in its list (not drawn).
     pub(crate) hidden: field_results::Hidden,
     /// The last run's wires (3D).
@@ -323,6 +332,8 @@ impl Default for MagneticFieldWindow {
             span_pick: SpanPick::default(),
             limit: None,
             two_d: false,
+            planes: true,
+            profiles: true,
             mean_heights: false,
             points: None,
             points_text: None,
@@ -357,6 +368,7 @@ impl Default for MagneticFieldWindow {
             drawn: None,
             hidden: Default::default(),
             calculation: None,
+            per_system: Default::default(),
             saving: Default::default(),
             apply: None,
             wires: None,
@@ -396,6 +408,10 @@ struct Stored {
     limit: Option<f64>,
     two_d: bool,
     mean_heights: bool,
+    /// 2D (cuts, profiles) or 3D (volumes) (2026-11-01; absent: 2D).
+    planes: Option<bool>,
+    /// 2D: the profiles too (absent: yes).
+    profiles: Option<bool>,
     /// The points file's name and text.
     points: Option<(String, String)>,
     piece_length: Option<f64>,
@@ -415,6 +431,9 @@ struct Stored {
     volume_width: Option<f64>,
     /// How the wires are solved (2026-11-01; none: each section's own).
     calculation: Option<ohl_line::condition::Calculation>,
+    /// Per system (id; "": the earthed wires) its weather case by name
+    /// and calculation (2026-11-01; absent: the window's).
+    per_system: crate::field_systems::PerSystem,
     /// Per span the stations of its 2D cuts (2026-10-31).
     cuts: Vec<(SpanIds, Vec<CutAt>)>,
     /// The spans with a volume and with isolines from above (2026-10-31).
@@ -473,6 +492,8 @@ impl MagneticFieldWindow {
             spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
             two_d: self.two_d,
+            planes: Some(self.planes),
+            profiles: Some(self.profiles),
             mean_heights: self.mean_heights,
             points: match (&self.points, &self.points_text) {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
@@ -488,6 +509,7 @@ impl MagneticFieldWindow {
             volume_step: self.volume.as_ref().map(|v| v.step),
             volume_width: self.volume.as_ref().map(|v| v.width),
             calculation: self.calculation,
+            per_system: self.per_system.clone(),
             cuts: self
                 .span_pick
                 .cuts
@@ -525,6 +547,7 @@ impl MagneticFieldWindow {
     fn take(&mut self, model: &Model, st: Stored) {
         let d = Self::default();
         self.calculation = st.calculation;
+        self.per_system = st.per_system.clone();
         self.case_kept = false;
         if let Some(k) = st
             .case
@@ -575,6 +598,8 @@ impl MagneticFieldWindow {
         self.cut_step = st.cut_step.unwrap_or(d.cut_step);
         self.cut_above = st.cut_above.unwrap_or(d.cut_above);
         self.two_d = st.two_d;
+        self.planes = st.planes.unwrap_or(true);
+        self.profiles = st.profiles.unwrap_or(true);
         self.mean_heights = st.mean_heights;
         (self.points, self.points_text, self.points_error) = match st.points {
             Some((name, text)) => match magnetic::parse_points(&text) {
@@ -687,6 +712,8 @@ impl MagneticFieldWindow {
             step,
             width: self.width,
         });
+        // A volume asked: 3D (2026-11-01: 3D makes the volumes only).
+        self.planes = volume.is_none();
     }
 
     /// The views (tests): from above, the panels, the volume's step.
@@ -812,24 +839,15 @@ impl MagneticFieldWindow {
             width: self.width,
             step: self.step,
             stations,
-            // From above: every run of spans with From above ticked that
-            // follow each other along the line as one grid (continuous
-            // across the line angles).
-            grids: match &self.above {
-                None => Vec::new(),
-                Some(_) => self
-                    .span_pick
-                    .above_runs(model, &spans)
-                    .into_iter()
-                    .map(|r| r.0)
-                    .collect(),
-            },
-            grid_step: self.above.as_ref().map(|a| a.step),
+            profiles: self.planes && self.profiles,
+            // No isolines from above (owner, 2026-11-01: dropped).
+            grids: Vec::new(),
+            grid_step: None,
             piece_length: self.piece_length,
             modelled_within: self.modelled_within,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
             // cuts it should be asked at which stations we want one").
-            cuts: if self.two_d {
+            cuts: if !self.planes {
                 Vec::new()
             } else {
                 self.span_pick
@@ -847,7 +865,7 @@ impl MagneticFieldWindow {
             },
             // A volume: one along each run of spans following each other
             // with Volume ticked (continuous across the line angles).
-            volumes: match (&self.volume, self.two_d) {
+            volumes: match (&self.volume, self.planes) {
                 (Some(v), false) => self
                     .span_pick
                     .volume_runs(model, &spans)
@@ -866,11 +884,14 @@ impl MagneticFieldWindow {
                 .iter()
                 .map(|l| l.value)
                 .collect(),
-            points: self
-                .points
-                .as_ref()
-                .map(|p| p.1.clone())
-                .unwrap_or_default(),
+            points: if self.planes && self.profiles {
+                self.points
+                    .as_ref()
+                    .map(|p| p.1.clone())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            },
             limit_ut: self.limit,
         }
     }
@@ -893,9 +914,17 @@ impl MagneticFieldWindow {
         // shown): solved for the run, in the background (2026-10-31: the
         // run took no wire and gave 0 kV/m).
         let unsolved = !solved.solved_for(model.wind) || self.calculation.is_some();
+        // The systems in cases or calculations of their own (2026-11-01).
+        let plan =
+            crate::field_systems::plan(model, &self.per_system, &solved.case, self.calculation);
         let wind = model.wind;
         let ground = model.ground_for_checks();
         let settings = self.settings(model);
+        // Each kind of output its own step, one after another (owner,
+        // 2026-11-01: "not all at once and clearly separated"): the cuts
+        // and the volumes from the wires in 3D, the profiles and points by
+        // their model.
+        let steps = steps_of(&settings);
         self.run_levels = settings.levels.clone();
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
@@ -910,6 +939,8 @@ impl MagneticFieldWindow {
                 jumpers = s.jumpers;
                 progress.set_stage(String::new());
             }
+            let (shapes, per_notes) =
+                crate::field_systems::compose(&line, &library, wind, shapes, &plan);
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
             let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = ground
                 .as_ref()
@@ -922,7 +953,35 @@ impl MagneticFieldWindow {
                 ground: g,
                 jumpers: &jumpers,
             };
-            let (mut field, wires) = magnetic::run_keeping(&src, &settings, Some(&progress))?;
+            let mut field: Option<MagneticField> = None;
+            let mut wires = None;
+            for (what, s) in &steps {
+                progress.set_stage(what.clone());
+                let (f, w) = magnetic::run_keeping(&src, s, Some(&progress))?;
+                if w.is_some() {
+                    wires = w;
+                }
+                field = Some(match field {
+                    None => f,
+                    Some(mut all) => {
+                        all.profiles.extend(f.profiles);
+                        all.points.extend(f.points);
+                        all.cuts.extend(f.cuts);
+                        all.volumes.extend(f.volumes);
+                        if s.profiles {
+                            all.model = f.model;
+                        }
+                        for n in f.notes {
+                            if !all.notes.contains(&n) {
+                                all.notes.push(n);
+                            }
+                        }
+                        all
+                    }
+                });
+            }
+            progress.set_stage(String::new());
+            let mut field = field.ok_or("nothing asked: tick a span, a cut or a volume")?;
             let work = progress.total.load(Ordering::Relaxed) as f64
                 * wires.as_ref().map_or(0, |w| w.count()) as f64;
             // One warning for the sections the case does not hold (owner,
@@ -948,6 +1007,9 @@ impl MagneticFieldWindow {
                         if missing.len() > 5 { ", …" } else { "" }
                     ),
                 );
+            }
+            for n in per_notes.into_iter().rev() {
+                field.notes.insert(0, n);
             }
             if g.is_none() {
                 field.notes.push(
@@ -1163,13 +1225,12 @@ impl MagneticFieldWindow {
                                 .weak(),
                             );
                         });
+                        crate::field_systems::ui(ui, WINDOW, model, &mut self.per_system);
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);
                         self.spans_ui(ui, model);
-                        if !self.two_d {
-                            self.views_ui(ui, model);
-                        }
+                        self.views_ui(ui, model);
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
                         egui::ScrollArea::both()
@@ -1391,24 +1452,26 @@ impl MagneticFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Model");
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.two_d, false, "3D")
-                        .on_hover_text(FieldModel::ThreeD.describe());
-                    ui.selectable_value(&mut self.two_d, true, "2D")
+                ui.label("Profiles by");
+                ui.add_enabled_ui(self.planes && self.profiles, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.two_d, false, "3D")
+                            .on_hover_text(FieldModel::ThreeD.describe());
+                        ui.selectable_value(&mut self.two_d, true, "2D")
                         .on_hover_text(
                             "Infinite straight parallel conductors: not valid near a line angle \
                              over 5°, near crossings, or on spans between differently arranged \
                              structures (warned)",
                         );
-                    if self.two_d {
-                        ui.checkbox(&mut self.mean_heights, "wires at the span's mean height")
+                        if self.two_d {
+                            ui.checkbox(&mut self.mean_heights, "wires at the span's mean height")
                             .on_hover_text(
                                 "Off: the wires where they cross the profile (at the lowest point \
                                  by default, the larger field). On: the span's mean height, as \
                                  the line parameters take it — less than under the lowest point",
                             );
-                    }
+                        }
+                    })
                 });
                 ui.end_row();
                 ui.label("Earth wires");
@@ -1431,7 +1494,7 @@ impl MagneticFieldWindow {
                     }
                 });
                 ui.end_row();
-                if !self.two_d {
+                {
                     ui.label("Jumpers");
                     ui.checkbox(&mut self.jumpers, "carry their phase's current")
                         .on_hover_text(
@@ -1513,22 +1576,32 @@ impl MagneticFieldWindow {
     /// and how wide, and (3D) the sizes of the cuts, volumes and grids.
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let spans = self.spans(model);
+        method_ui(ui, &mut self.planes, &mut self.profiles);
         self.span_pick.table(
             ui,
             "magnetic-field",
             model,
             &spans,
             Columns {
-                above: !self.two_d,
-                three_d: !self.two_d,
+                profile: self.planes && self.profiles,
+                cuts: self.planes,
+                volume: !self.planes,
             },
         );
+        if self.planes && self.profiles {
+            self.profiles_setup_ui(ui, &spans);
+        }
+        self.sizes_ui(ui, model, &spans);
+    }
+
+    /// The profiles: where and how wide (2D, profiles asked).
+    fn profiles_setup_ui(&mut self, ui: &mut egui::Ui, spans: &Spans) {
         egui::Grid::new("magnetic-field-profiles-setup")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Profiles");
-                profiles_ui(ui, "magnetic-field", &mut self.stations, &spans);
+                profiles_ui(ui, "magnetic-field", &mut self.stations, spans);
                 ui.end_row();
                 ui.label("Across");
                 ui.horizontal(|ui| {
@@ -1560,9 +1633,6 @@ impl MagneticFieldWindow {
                 });
                 ui.end_row();
             });
-        if !self.two_d {
-            self.sizes_ui(ui, model, &spans);
-        }
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile,
@@ -2047,4 +2117,69 @@ fn plot(ui: &mut egui::Ui, p: &magnetic::Profile, limit: Option<f64>) -> egui::R
         }
     }
     r
+}
+
+/// A run's steps (owner, 2026-11-01): 2D — the cuts (the wires in 3D),
+/// then the profiles and points (by their model); 3D — the volumes. Each
+/// with what it computes in words; none empty.
+fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
+    let none = Settings {
+        profiles: false,
+        stations: Vec::new(),
+        points: Vec::new(),
+        cuts: Vec::new(),
+        volumes: Vec::new(),
+        grids: Vec::new(),
+        ..all.clone()
+    };
+    let mut out = Vec::new();
+    if !all.cuts.is_empty() {
+        out.push((
+            format!("{} cut(s)", all.cuts.len()),
+            Settings {
+                model: FieldModel::ThreeD,
+                cuts: all.cuts.clone(),
+                ..none.clone()
+            },
+        ));
+    }
+    if all.profiles {
+        out.push((
+            "the profiles".to_owned(),
+            Settings {
+                profiles: true,
+                stations: all.stations.clone(),
+                points: all.points.clone(),
+                ..none.clone()
+            },
+        ));
+    }
+    if !all.volumes.is_empty() {
+        out.push((
+            format!("{} volume(s)", all.volumes.len()),
+            Settings {
+                model: FieldModel::ThreeD,
+                volumes: all.volumes.clone(),
+                ..none
+            },
+        ));
+    }
+    out
+}
+
+/// What a run makes (owner, 2026-11-01): **2D** — the cuts at the
+/// stations asked in the span table and, ticked, the profiles; **3D** —
+/// the volumes only. Shared by the Magnetic and the Electric field.
+pub(crate) fn method_ui(ui: &mut egui::Ui, planes: &mut bool, profiles: &mut bool) {
+    ui.horizontal(|ui| {
+        ui.label("Make");
+        ui.selectable_value(planes, true, "2D: cuts and profiles")
+            .on_hover_text("Isolines in vertical cuts at the stations asked (+ station in the table), and the profiles across the spans if ticked");
+        ui.selectable_value(planes, false, "3D: volumes")
+            .on_hover_text("The surfaces of the levels around the wires over the spans with Volume ticked");
+        if *planes {
+            ui.checkbox(profiles, "profiles too")
+                .on_hover_text("The field across each span ticked, at a height above the ground (and the points from CSV)");
+        }
+    });
 }
