@@ -1021,7 +1021,7 @@ The speed (m/s) and, for the first-person scheme, the look sensitivity are set t
 
 (Owner: OHL-Design UI review, 2026-10-26, as in OHL-Structure.) In the 3D, plan and profile views and a cross-section:
 
-- With **Select** held, a **left-click selects** (a double-click flies to the object). With another tool held, a **left-click uses the tool** on what is under the pointer.
+- With **Select** held, a **left-click selects** (a double-click flies to the object). With another tool held, a **left-click uses the tool** on what is under the pointer — **in the 3D view and a cross-section only** (2026-11-01, the owner: "the tools are only ever active in the 3D view … the only place with the toolbar"): in the **plan** and the **profile** a left-click always selects (shown in Properties) and the measuring tools draw nothing new; the tool held stays held for the 3D view. A tool can still be used there on the object through its right-click menu.
 - A **right-click** selects the object under the pointer and opens its **menu**: **Properties**, **Zoom to**, the tools that apply to it — **Edit…**, **Move…**, **Replace structure…**, **Add string…**, **Add jumper**, **Point or load on the span…**, **Measure the clearance**, **Link to a joint…**, **Add structure here…**, **Add alignment point here…**, as fits the object —, **Use *tool* on it** for another tool held, **Cross-section here** (a structure; in the profile also at the station under the pointer) and **Delete…**. A tool chosen there acts once and the tool held before stays held (a tool of several clicks, Add jumper, Link, Measure, stays held for them). A click elsewhere or **Escape** closes the menu. In first person (the mouse captured) a right-click selects at the crosshair, without the menu.
 - **Escape**, with nothing else to give up (a window, a step of a tool, a drag, a menu), holds **Select** again.
 - Nothing moves on a click or a drag with Select: a structure moves with the **Move structure** tool (its window), and the drag handles of a structure being edited are dragged with **Move structure** held.
@@ -1029,7 +1029,7 @@ The speed (m/s) and, for the first-person scheme, the look sensitivity are set t
 
 | Gesture | Orbit | Minecraft creative |
 |---|---|---|
-| left-click | Select held: select; another tool: use it | mouse free: capture the mouse; captured: use the tool at the crosshair (Select held: select) |
+| left-click | Select held: select; another tool: use it (3D view and cross-sections; the plan and profile: select) | mouse free: capture the mouse; captured: use the tool at the crosshair (Select held: select) |
 | right-click | select and open the object's menu | select (captured: at the crosshair) |
 | double-click (Select held) | fly to the object | fly to the object (captured: at the crosshair) |
 | left drag | turn around the target | mouse free: — (the press captures); captured: the mouse looks |

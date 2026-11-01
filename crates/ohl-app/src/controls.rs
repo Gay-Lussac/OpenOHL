@@ -146,7 +146,8 @@ pub fn click_rows() -> Vec<(String, String)> {
     vec![
         (
             "left-click".into(),
-            "use the tool held (Select held: select)".into(),
+            "use the tool held in the 3D view (Select held, or the plan and profile: select)"
+                .into(),
         ),
         (
             "right-click".into(),

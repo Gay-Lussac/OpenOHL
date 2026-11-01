@@ -526,8 +526,9 @@ pub(super) fn click_at(h: &mut Harness<'_, App>, at: egui::Pos2, button: egui::P
     h.run();
 }
 
-/// In the plan (owner: OHL-Design UI review, 2026-10-26): a tool held, a
-/// left-click uses it; Select held, a left-click selects; a right-click
+/// In the plan (owner: OHL-Design UI review, 2026-10-26; 2026-11-01: the
+/// tools act in the 3D view only): a tool held, a left-click still only
+/// selects; Select held, a left-click selects; a right-click
 /// selects and opens the object's menu (Properties, Edit…, Delete…, Zoom
 /// to, its tools), closed by Escape; Escape again holds Select. A drag
 /// still pans.
@@ -557,22 +558,19 @@ fn a_left_click_acts_a_right_click_opens_the_menu() {
         r.selection = Selection::None;
         h.run();
     };
-    // Move held: a left-click moves.
+    // Move held: a left-click in the plan selects, moves nothing; Move
+    // stays held (for the 3D view).
     assert_eq!(
         harness.state_mut().ready().unwrap().hotbar.tool(),
         Tool::Move
     );
     click_at(&mut harness, at, Primary);
-    assert_eq!(
-        harness
-            .state_mut()
-            .ready()
-            .unwrap()
-            .move_dialog
-            .as_ref()
-            .map(|d| d.id.as_str()),
-        Some("T3")
-    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.move_dialog.is_none(), "no tool in the plan");
+        assert_eq!(r.selection, Selection::Structure("T3".into()));
+        assert_eq!(r.hotbar.tool(), Tool::Move);
+    }
     reset(&mut harness);
     // A right-click selects and opens the menu; no tool used.
     click_at(&mut harness, at, Secondary);

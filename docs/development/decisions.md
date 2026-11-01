@@ -71,6 +71,12 @@ development, not approved yet)**
   other rules set aside meanwhile, their places kept. A case pair: both
   cases by its rule's calculation. Line parameters and Thermal left as
   they are (the analysis: hardly any effect, or the rating none).
+- The plan and the profile only select (owner: "the tools are active
+  on left or right click once I leave the 3D view … only have the click
+  that selects things in the properties"): a left-click selects whatever
+  tool is held (it stays held for the 3D view), a right-click opens the
+  object's menu; the measuring tools draw in the 3D view only. A
+  cross-section, a 3D view of its slab, keeps the tools.
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).

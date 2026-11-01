@@ -117,7 +117,12 @@ impl TabViewer for Viewer<'_> {
         // Which click selects and which uses the held tool (by the tool
         // held, [`crate::controls::click_buttons`]).
         let select_held = r.hotbar.tool() == crate::tools::Tool::Select;
-        let buttons = crate::controls::click_buttons(select_held);
+        // The plan and the profile only select (owner, 2026-11-01: "the
+        // tools are only ever active in the 3D view … the only place with
+        // the toolbar"): a left-click selects, a right-click opens the
+        // object's menu, whatever tool is held.
+        let buttons = crate::controls::click_buttons(true);
+        let tools_here = !matches!(tab, Tab::Plan | Tab::Profile);
         let _timed = crate::perf::span(match tab {
             Tab::View3d => "tab 3d",
             Tab::Plan => "tab plan",
@@ -170,7 +175,7 @@ impl TabViewer for Viewer<'_> {
                 used
             }
             Tab::Plan => {
-                r.plan.measuring = measuring;
+                r.plan.measuring = false;
                 r.plan.measure = overlay;
                 r.plan.ui(
                     ui,
@@ -191,7 +196,7 @@ impl TabViewer for Viewer<'_> {
                     r.visible.contains(&Layer::GrowIn),
                     r.visible.contains(&Layer::FallIn),
                 ];
-                r.profile.measuring = measuring;
+                r.profile.measuring = false;
                 r.profile.measure = overlay;
                 r.profile.ui(
                     ui,
@@ -450,7 +455,15 @@ impl TabViewer for Viewer<'_> {
             r.clicked_annotation = hit;
         }
         if let Some(target) = used {
-            r.use_tool(target);
+            if tools_here {
+                r.use_tool(target);
+            } else {
+                // Select, the tool held kept.
+                let held = r.hotbar.clone();
+                r.hotbar.hold(crate::tools::Tool::Select);
+                r.use_tool(target);
+                r.hotbar = held;
+            }
         }
         // A right-click in a view: it selected what is there (with Select
         // held, as its tool use above); its menu opens on it (owner:
