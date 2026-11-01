@@ -2139,13 +2139,107 @@ def field_blocks():
     return f
 
 
+def field_cutoff():
+    f = Fig("field-cutoff", 760, 346, "The wires modelled within a distance",
+            "In plan: a line of five spans and a cut across its middle span. With Modelled "
+            "within d, only the wire pieces within d of the cut (the band) are summed; the "
+            "pieces beyond are left out, and the run says how much that changes the cut, "
+            "measured against the whole line at some 200 of its points.")
+    f.text(20, 26, "A cut-off: only the wires within d of the cut or volume are summed", "t")
+    y = 170
+    xs = [40, 170, 300, 430, 560, 690]
+    cx = 365
+    d = 150
+    f.add(f'<rect x="{cx - d}" y="70" width="{2 * d}" height="200" class="band"/>')
+    for a, b in zip(xs, xs[1:]):
+        f.path(f"M{a},{y - 12} L{b},{y - 12} M{a},{y} L{b},{y} M{a},{y + 12} L{b},{y + 12}", "wire")
+    for k, x in enumerate(xs):
+        f.add(f'<rect x="{x - 4}" y="{y - 4}" width="8" height="8" class="ap"/>')
+    f.path(f"M{cx},60 L{cx},280", "acc")
+    f.text(cx + 6, 58, "the cut", "sm")
+    f.hdim2(cx - d, cx, 290, "d", above=True)
+    f.hdim2(cx, cx + d, 290, "d", above=True)
+    for a, b in [(xs[0], cx - d), (cx + d, xs[-1])]:
+        f.path(f"M{a},{y - 12} L{b},{y - 12} M{a},{y} L{b},{y} M{a},{y + 12} L{b},{y + 12}",
+               "thin", "opacity:.35")
+    f.text(60, 110, "left out", "lab")
+    f.text(620, 110, "left out", "lab")
+    f.text(cx, 96, "summed (within d)", "c sm")
+    f.text(20, 318, "Measured (magnetic, a cut at the lowest point of a 2-span example): within 100 m "
+           "9 % off, within 200 m 1.6 %;", "lab")
+    f.text(20, 334, "on a 28 km line, within 2 km 0.03 % off and ten times quicker.", "lab")
+    return f
+
+
+def field_grid_step():
+    f = Fig("field-grid-step", 760, 356, "A cut's grid and its isolines",
+            "Left: a coarse grid around a wire; the field is computed exactly at every point, "
+            "the isoline is drawn straight between the points where it crosses the cells, so "
+            "near the wire, where the level's circle is small, it cuts the corners. Right: a "
+            "finer grid follows the circle closely; far from the wire the isoline is gentle and "
+            "a coarse grid already follows it.")
+    f.text(20, 26, "Every point exact; an isoline drawn straight between points", "t")
+    def panel(ox, step, title):
+        f.text(ox, 56, title, "")
+        cx, cy, r = ox + 150, 190, 70
+        n = int(300 / step)
+        for i in range(n + 1):
+            f.path(f"M{ox + i * step},{70} L{ox + i * step},{310}", "thin", "opacity:.25")
+        for j in range(int(240 / step) + 1):
+            f.path(f"M{ox},{70 + j * step} L{ox + 300},{70 + j * step}", "thin", "opacity:.25")
+        f.arc(cx, cy, r, 0, 360, "acc")
+        pts = []
+        for k in range(int(2 * math.pi * r / step) + 1):
+            a = 2 * math.pi * k / max(1, int(2 * math.pi * r / step))
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        f.poly(pts, "wire", close=True)
+        f.dot(cx, cy, 4, "ink")
+        f.text(cx + 8, cy + 4, "wire", "sm")
+        f.arc(cx, cy, 30, 0, 360, "acc", "opacity:.5")
+    panel(40, 40, "coarse grid (2 m): corners cut near the wire")
+    panel(420, 12, "fine grid (0.5 m): the circle followed")
+    f.text(20, 330, "Measured (a magnetic cut on the example line): a 1 m grid keeps the 1 and 3 µT "
+           "isolines within 0.03 %,", "lab")
+    f.text(20, 346, "those of 10 µT near the wires within 7 % (0.5 m: 1.5 %, four times the points).",
+           "lab")
+    return f
+
+
+def field_parts():
+    f = Fig("field-parts", 760, 330, "A long volume in parts",
+            "Along a long run: the volume's lattice computed part after part, two parts "
+            "sharing the plane where they meet; in the electric field, a run too large for one "
+            "floor has a floor per part, each over the ground within the margin m of its part "
+            "(an angle's other leg included); each point takes its part's floor.")
+    f.text(20, 26, "A long volume: computed in parts, each with its own floor (electric)", "t")
+    y0, y1 = 120, 220
+    xs = [60, 230, 400, 570, 720]
+    for k, (a, b) in enumerate(zip(xs, xs[1:])):
+        f.add(f'<rect x="{a}" y="{y0}" width="{b - a}" height="{y1 - y0}" class="band"/>')
+        f.text((a + b) / 2, y0 + 18, f"part {k + 1}", "c sm")
+    for x in xs[1:-1]:
+        f.path(f"M{x},{y0 - 10} L{x},{y1 + 10}", "acc")
+    f.text(xs[1] + 4, y1 + 24, "shared plane", "sm")
+    f.path(f"M40,{(y0 + y1) / 2} L740,{(y0 + y1) / 2}", "wire")
+    m = 50
+    a, b = xs[1], xs[2]
+    f.add(f'<rect x="{a - m}" y="{y0 - m}" width="{b - a + 2 * m}" height="{y1 - y0 + 2 * m}" rx="40" class="fa"/>')
+    f.text(a - m + 6, y0 - m + 14, "part 2's floor: the ground within m", "sm")
+    f.hdim2(b, b + m, y0 - 20, "m", above=True)
+    f.text(20, 300, "Memory: a part's lattice at most some 20 M points (160 MB); a part's floor a few "
+           "thousand tiles (tens of MB) instead of one floor's gigabytes.", "lab")
+    f.text(20, 318, "The same surfaces as one piece (tested); the floors as close to the exact field "
+           "as one floor (measured).", "lab")
+    return f
+
+
 FIGURES = [catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
            shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, lidar_classes,
            swing_band, fall_in, safety_section, jumper_gap, sheet_ranges, lowest_line,
            vertical_radial, vertical_arc, max_tension, bs_segment, field_pieces, field_cut,
-           field_volume, field_blocks]
+           field_volume, field_blocks, field_cutoff, field_grid_step, field_parts]
 
 
 def main(argv):

@@ -91,8 +91,8 @@ cloud even when a surface of the checks exists).
    \\( \underline q = P^{-1}\underline V \\) ([The
    charges](#the-charges)).
 3. **The 3D model.** Every wire becomes straight pieces of uniform
-   charge, each span in 16 stretches at their own charges ([The 3D
-   model](#the-3d-model)).
+   charge, each span in stretches (24 by default) at their own charges
+   ([The 3D model](#the-3d-model)).
 4. **The ground.** For each profile, group of points, cut and volume, a
    tiled floor on the terrain is solved so that it is at zero potential
    under the line's charges; with the structures' steel if asked ([The
@@ -132,10 +132,11 @@ each bundle as its equivalent wire):
   charges that keep them there.
 
 **Where along the span.** In 2D the profile's or point's own
-cross-section. In 3D each span is cut into **16 stretches** along its
-length, each at the charges of the cross-section at its middle: a wire
-hanging lower in the middle of a span carries more charge than near its
-ends.
+cross-section. In 3D each span is cut into **stretches** along its
+length — **24 by default**, a setting (*Stretches per span*, 4 Model;
+2026-11-01, 16 until then) — each at the charges of the cross-section at
+its middle: a wire hanging lower in the middle of a span carries more
+charge than near its ends.
 
 ![A span between two structures in 16 stretches; each stretch at the charge per metre of the cross-section at its middle; the bars below larger in the middle of the span, where the wire hangs lower](../images/theory/e-stretches.svg)
 
@@ -143,8 +144,27 @@ ends.
   their heights over level ground (as the line parameters take them).
   Neither conservative nor not.
 - **Simplification**: in 3D the charge is constant within each of a
-  span's 16 stretches. The charge changes by a few per cent over a span,
+  span's stretches. The charge changes by a few per cent over a span,
   well under 1 % within a stretch. Neither conservative nor not.
+
+**How many stretches** (measured 2026-11-01 on the example double
+circuit, `crates/ohl-electrical/tests/sensitivity.rs`: the largest value
+of a 3D profile against 64 stretches; the time of a run unchanged to the
+millisecond):
+
+| Stretches | At mid-span | 5 % into the span (near a structure) | A quarter into it |
+|---|---|---|---|
+| 1 (the span's mean) | +0.31 % | +7.0 % | +3.0 % |
+| 4 | −0.56 % | +1.2 % | −0.22 % |
+| 8 | −0.10 % | +0.16 % | −0.03 % |
+| 16 (until 2026-11-01) | −0.013 % | +0.034 % | −0.003 % |
+| **24 (default)** | −0.002 % | +0.004 % | −0.002 % |
+| 32 | 0.000 % | +0.009 % | +0.001 % |
+
+Near a structure, where the wire rises steeply, the charge changes
+fastest: that is where too few stretches show. From 16 on the result no
+longer moves by more than a few hundredths of a per cent; 24 leaves room
+for longer spans and steeper wires than the example's.
 - **Corrected 2026-10-31**: until then the charges came from the span's
   mean cross-section (the wires at their mean height). Against hvlbuzz
   that read the field 3.6 % low under the line at mid-span — **not
@@ -258,16 +278,41 @@ tiles:
   tiles' size makes the difference, not the parts. A run that fits in
   one floor keeps it, as before.
 - **Why coarser tiles for cuts and volumes** (owner, 2026-10-29, each a
-  parameter). Measured against the exact field on even ground, from 1 m
-  above it up: 16 m tiles 8.3 % of the largest value, **8 m 2.8 %**,
-  4 m 0.16 % (a 300 m span: 0.5 s, 1 s and 39 s).
+  parameter). A volume's tiles, measured again 2026-11-01 (the example's
+  first span, level ground where the plane is exact, from 1 m above the
+  ground up, the largest difference over the largest value;
+  `crates/ohl-electrical/tests/sensitivity.rs`):
+
+  ![A long volume along its run in four parts, two parts sharing the plane where they meet; part 2's floor over the ground within the margin m of it](../images/theory/field-parts.svg)
+
+  | Tiles | The span, 100 m beyond | One part of 60 m, 50 m beyond |
+  |---|---|---|
+  | 16 m | 9.8 % (460 tiles, 0.01 s) | 9.7 % (94 tiles) |
+  | **8 m (default)** | 2.9 % (1 832 tiles, 0.06 s) | 2.7 % (374 tiles) |
+  | 4 m | 0.47 % (7 328 tiles, 1.2 s) | 1.2 % (1 498 tiles, 0.04 s) |
+  | 2 m | — (14 352 tiles: 3.3 GB, over the 2 GB a floor may take) | 1.1 % (5 952 tiles, 0.7 s) |
+
+  Read: halving the tiles takes the error down by three or four while
+  the margin is wide; with a narrow margin the floor's end becomes the
+  larger error (the 50 m column stops near 1 % from 4 m on). Finer tiles
+  are worth their time only with the margin (*reaching*, 4 Model) wide
+  enough: 4 m tiles and 100 m for some 0.5 %; 2 m tiles are possible
+  only in parts and gain little over 4 m. The default 8 m is about
+  3 % off, quick on any line.
 - **Its own errors**: the tiles' size and the floor's end at 200 m. On
   evenly sloping ground, where the plane is exact, within 0.2 % of the
   profile's largest value. Neither conservative nor not.
-- **The ground's elevation**: the terrain surface (the project's surface
-  of the checks, else its point cloud's ground classes, the lowest point
-  per metre); without one, straight between the structures' feet and
-  level across (**Simplification**).
+- **The ground's elevation** — *Ground from* (2 Scope; owner, 2026-11-01:
+  "choose which TIN layer it uses and if none exist which survey data to
+  use to make it"): the **surface of the checks** (Line › Terrain; the
+  default), any **terrain surface** (TIN layer) of the project, or the
+  **survey's ground points** — the point cloud's classes with the role
+  *ground* within a distance of the spans (250 m by default), the lowest
+  per metre, made into a surface for the run (said in the notes). The
+  tiles take their corners' elevations from it; the profiles their
+  height above the ground; the cuts and volumes their bottom. Without
+  any, straight between the structures' feet and level across
+  (**Simplification**).
 
 ### The structures' steel (optional)
 
@@ -386,7 +431,14 @@ turned with it.
 
 ## Where: profiles, cuts and volumes
 
-As for the [magnetic field](magnetic-field.md#where):
+As for the [magnetic field](magnetic-field.md#where) (2026-11-01): a run
+makes **2D** — the cuts asked and, asked, the profiles and points — or
+**3D** — the volumes only, each kind a step of its own (the cuts and
+volumes from the charges in 3D, the profiles by their model). The wires
+come from the window's weather case and calculation, or a system's own
+(*Per electrical system*: e.g. the conductors at their load's
+temperature, the earth wires at the air's); each case and calculation
+solved once.
 
 - **Profiles** are square to the span's axis, at the span's lowest point
   by default.
@@ -406,7 +458,7 @@ As for the [magnetic field](magnetic-field.md#where):
 
 | Choice | Why | Effect on the result |
 |---|---|---|
-| Charges from the cross-section where they are (16 stretches per span in 3D) | the charge follows the sag; the span's mean read 3.6 % low at mid-span | neither; replaced a **not conservative** choice |
+| Charges from the cross-section where they are (24 stretches per span in 3D, a setting) | the charge follows the sag; the span's mean read 3.6 % low at mid-span | neither; replaced a **not conservative** choice |
 | The tiled floor by default | it follows hollows and ridges; the plane read up to 8 % low on bumps | neither (its error: the tiles, under 3 % at 8 m) |
 | Fine tiles 2 m at profiles, 8 m under cuts and volumes | profiles are where limits are checked; cuts and volumes cover far more ground | cuts and volumes within some 3 % of the largest value on even ground |
 | A floor over 2 GB refused | laptops of 16 to 32 GB; swapping would stall the computer | none (a run is refused, said) |

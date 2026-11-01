@@ -483,6 +483,10 @@ pub struct Settings {
     /// [`VOLUME_MARGIN`] by default); also each part's floor of a volume
     /// too large for one ([`volume_parts`]).
     pub volume_margin: f64,
+    /// 3D: the stretches each span is cut into, each at the charge of its
+    /// own cross-section (owner, 2026-11-01: a parameter; [`STRETCHES`]
+    /// by default).
+    pub stretches: usize,
     /// The jumpers carry their phase's charge (3D).
     pub jumpers: bool,
     /// The longest straight piece, m (3D; `None`: the solver's).
@@ -519,6 +523,7 @@ impl Default for Settings {
             cut_tile: 8.0,
             volume_tile: 8.0,
             volume_margin: VOLUME_MARGIN,
+            stretches: STRETCHES,
             jumpers: true,
             piece_length: None,
             cuts: Vec::new(),
@@ -732,10 +737,11 @@ type ChargeMap = BTreeMap<(String, usize), Vec<(f64, C)>>;
 /// each at the charge of the cross-section at its middle (owner,
 /// 2026-10-31): the charge follows the sag (from the span's mean
 /// cross-section it read the field 3–4 % low at midspan against hvlbuzz).
-/// 16: the charge changes by a few per cent over a span, by well under
-/// 1 % within a stretch; each stretch one polyline (some 25 % more
-/// vertices than one per span).
-pub const STRETCHES: usize = 16;
+/// 24 by default (owner, 2026-11-01: "increase a bit the default";
+/// [`Settings::stretches`]): measured on the example double circuit
+/// against 64, a profile's largest value 1: 7 % off near a structure,
+/// 4: 1.2 %, 8: 0.16 %, 16: 0.03 %, 24: 0.005 %, the time unchanged.
+pub const STRETCHES: usize = 24;
 
 /// Per (section id, span index): its line span (index) and per stretch,
 /// per frequency, the charge per metre (empty: the span's mean taken).
@@ -751,14 +757,15 @@ fn stretch_charges(
     src: &Sources<'_>,
     spans: &[cross_section::LineSpan],
     voltages: &[CircuitVoltage],
+    n: usize,
 ) -> StretchCharges {
     // Each span's stretches on all cores (some 0.1 s a span of a long
     // line: its wires placed at each stretch's middle).
     let one = |i: usize| {
         let span = &spans[i];
         let mut out: Vec<StretchCharge> = Vec::new();
-        for k in 0..STRETCHES {
-            let fraction = (k as f64 + 0.5) / STRETCHES as f64;
+        for k in 0..n {
+            let fraction = (k as f64 + 0.5) / n as f64;
             let Ok(cs) = cross_section::cross_section(src, span, StationAt::Fraction(fraction))
             else {
                 continue;
@@ -799,9 +806,7 @@ fn stretch_charges(
     let mut out = StretchCharges::new();
     for (i, list) in parts {
         for (key, k, q) in list {
-            let e = out
-                .entry(key)
-                .or_insert_with(|| (i, vec![Vec::new(); STRETCHES]));
+            let e = out.entry(key).or_insert_with(|| (i, vec![Vec::new(); n]));
             e.1[k] = q;
         }
     }
@@ -811,7 +816,7 @@ fn stretch_charges(
 /// A polyline cut into its runs of pieces in one stretch of the span
 /// along `axis` (each piece by its middle): (stretch, points), the runs
 /// sharing their end points.
-fn stretch_runs(poly: &[[f64; 3]], axis: &Axis) -> Vec<(usize, Vec<[f64; 3]>)> {
+fn stretch_runs(poly: &[[f64; 3]], axis: &Axis, n: usize) -> Vec<(usize, Vec<[f64; 3]>)> {
     let mut out: Vec<(usize, Vec<[f64; 3]>)> = Vec::new();
     for w in poly.windows(2) {
         let mid = [
@@ -820,10 +825,7 @@ fn stretch_runs(poly: &[[f64; 3]], axis: &Axis) -> Vec<(usize, Vec<[f64; 3]>)> {
             0.5 * (w[0][2] + w[1][2]),
         ];
         let (t, _) = axis.local(&mid);
-        let k = ((t / axis.length.max(1e-9) * STRETCHES as f64)
-            .floor()
-            .max(0.0) as usize)
-            .min(STRETCHES - 1);
+        let k = ((t / axis.length.max(1e-9) * n as f64).floor().max(0.0) as usize).min(n - 1);
         match out.last_mut() {
             Some(run) if run.0 == k => run.1.push(w[1]),
             _ => out.push((k, vec![w[0], w[1]])),
@@ -901,7 +903,7 @@ fn build_3d(
             for poly in &subs {
                 match along {
                     Some((axis, bins)) => {
-                        for (k, run) in stretch_runs(poly, axis) {
+                        for (k, run) in stretch_runs(poly, axis, settings.stretches.max(1)) {
                             let list = match bins.get(k) {
                                 Some(b) if !b.is_empty() => b,
                                 _ => list,
@@ -1048,7 +1050,7 @@ pub fn run_keeping(
         );
     }
     let model3d = (settings.model == Model::ThreeD).then(|| {
-        let stretches = stretch_charges(src, &spans, &settings.voltages);
+        let stretches = stretch_charges(src, &spans, &settings.voltages, settings.stretches.max(1));
         build_3d(src, &charges, &stretches, &axes, settings, &mut notes)
     });
     if let Some(m) = &model3d {
@@ -1062,8 +1064,9 @@ pub fn run_keeping(
             }
         };
         notes.push(format!(
-            "3D: {} straight pieces of charge, each span in {STRETCHES} stretches at the charge of its own cross-section; {ground}",
-            m.count()
+            "3D: {} straight pieces of charge, each span in {} stretches at the charge of its own cross-section; {ground}",
+            m.count(),
+            settings.stretches.max(1)
         ));
     }
     // The ground: the terrain's, else straight between the structures'

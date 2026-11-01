@@ -168,6 +168,8 @@ pub struct ElectricFieldWindow {
     volume_tile: f64,
     /// The volumes' floor margin, m (2026-11-01).
     volume_margin: f64,
+    /// 3D: the stretches each span is cut into (2026-11-01).
+    stretches: usize,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
     /// The points file's text (kept in the project).
@@ -232,6 +234,8 @@ pub struct ElectricFieldWindow {
     /// Per electrical system its own weather case and calculation
     /// (owner, 2026-11-01).
     per_system: crate::field_systems::PerSystem,
+    /// Where the ground comes from (owner, 2026-11-01).
+    ground_from: crate::field_ground::FieldGround,
     /// The outputs of the run unticked in its list (not drawn).
     pub(crate) hidden: field_results::Hidden,
     /// The last run's charges (3D) and its ground plane's radius.
@@ -263,6 +267,7 @@ impl Default for ElectricFieldWindow {
             cut_tile: 8.0,
             volume_tile: 8.0,
             volume_margin: electric::VOLUME_MARGIN,
+            stretches: electric::STRETCHES,
             points: None,
             points_text: None,
             saved: None,
@@ -283,7 +288,9 @@ impl Default for ElectricFieldWindow {
                 width: 50.0,
             }),
             cut_width: 60.0,
-            cut_step: 0.5,
+            // 1 m (owner, 2026-11-01: quicker at the same accuracy where it
+            // matters: the low levels' isolines within 0.03 %, measured).
+            cut_step: 1.0,
             cut_above: crate::magnetic_field::views::ABOVE,
             requests: Vec::new(),
             panel: PanelCuts::default(),
@@ -295,6 +302,7 @@ impl Default for ElectricFieldWindow {
             hidden: Default::default(),
             calculation: None,
             per_system: Default::default(),
+            ground_from: Default::default(),
             saving: Default::default(),
             apply: None,
             charges: None,
@@ -344,6 +352,8 @@ struct Stored {
     volume_tile: Option<f64>,
     /// The volumes' floor margin, m (2026-11-01).
     volume_margin: Option<f64>,
+    /// 3D: the stretches per span (2026-11-01; absent: the default).
+    stretches: Option<usize>,
     /// The points file's name and text.
     points: Option<(String, String)>,
     piece_length: Option<f64>,
@@ -362,6 +372,8 @@ struct Stored {
     /// Per system (id; "": the earthed wires) its weather case by name
     /// and calculation (2026-11-01; absent: the window's).
     per_system: crate::field_systems::PerSystem,
+    /// Where the ground comes from (2026-11-01; absent: the checks').
+    ground_from: crate::field_ground::FieldGround,
     /// Per span the stations of its 2D cuts (2026-10-31).
     cuts: Vec<(SpanIds, Vec<CutAt>)>,
     /// The spans with a volume (2026-10-31).
@@ -425,6 +437,7 @@ impl ElectricFieldWindow {
             cut_tile: Some(self.cut_tile),
             volume_tile: Some(self.volume_tile),
             volume_margin: Some(self.volume_margin),
+            stretches: Some(self.stretches),
             points: match (&self.points, &self.points_text) {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
@@ -438,6 +451,7 @@ impl ElectricFieldWindow {
             volume_width: self.volume.as_ref().map(|v| v.width),
             calculation: self.calculation,
             per_system: self.per_system.clone(),
+            ground_from: self.ground_from.clone(),
             cuts: self
                 .span_pick
                 .cuts
@@ -474,6 +488,7 @@ impl ElectricFieldWindow {
         let d = Self::default();
         self.calculation = st.calculation;
         self.per_system = st.per_system.clone();
+        self.ground_from = st.ground_from.clone();
         self.case_kept = false;
         if let Some(k) = st
             .case
@@ -512,6 +527,7 @@ impl ElectricFieldWindow {
         self.cut_tile = st.cut_tile.unwrap_or(d.cut_tile);
         self.volume_tile = st.volume_tile.unwrap_or(d.volume_tile);
         self.volume_margin = st.volume_margin.unwrap_or(d.volume_margin);
+        self.stretches = st.stretches.unwrap_or(d.stretches);
         self.piece_length = st.piece_length;
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
@@ -948,6 +964,7 @@ impl ElectricFieldWindow {
             cut_tile: self.cut_tile,
             volume_tile: self.volume_tile,
             volume_margin: self.volume_margin,
+            stretches: self.stretches,
             jumpers: self.jumpers,
             piece_length: self.piece_length,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
@@ -1016,7 +1033,8 @@ impl ElectricFieldWindow {
         let plan =
             crate::field_systems::plan(model, &self.per_system, &solved.case, self.calculation);
         let wind = model.wind;
-        let ground = model.ground_for_checks();
+        // The ground chosen (2026-11-01), read in the background.
+        let ground_source = crate::field_ground::source(model, &self.ground_from);
         let settings = self.settings(model);
         // Each kind of output its own step, one after another (owner,
         // 2026-11-01: "not all at once and clearly separated").
@@ -1034,6 +1052,7 @@ impl ElectricFieldWindow {
                 jumpers = s.jumpers;
                 progress.set_stage(String::new());
             }
+            let (ground, ground_note) = ground_source.read()?;
             let (shapes, per_notes) =
                 crate::field_systems::compose(&line, &library, wind, shapes, &plan);
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
@@ -1105,7 +1124,7 @@ impl ElectricFieldWindow {
                     ),
                 );
             }
-            for n in per_notes.into_iter().rev() {
+            for n in per_notes.into_iter().rev().chain(ground_note) {
                 field.notes.insert(0, n);
             }
             if g.is_none() {
@@ -1355,6 +1374,7 @@ impl ElectricFieldWindow {
                             );
                         });
                         crate::field_systems::ui(ui, WINDOW, model, &mut self.per_system);
+                        crate::field_ground::ui(ui, WINDOW, model, &mut self.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);
@@ -1550,6 +1570,23 @@ impl ElectricFieldWindow {
                              said",
                         );
                     ui.end_row();
+                    // Each span's charge along it (owner, 2026-11-01: a
+                    // parameter, its sensitivity in the theory).
+                    ui.label("Stretches per span");
+                    ui.horizontal(|ui| {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.stretches)
+                                .range(1..=128)
+                                .speed(0.2),
+                        )
+                        .on_hover_text(
+                            "3D: each span cut into this many stretches along it, each at the \
+                             charge of its own cross-section (the charge follows the sag)",
+                        );
+                        ui.label(egui::RichText::new(STRETCHES_EFFECT).small().weak());
+                    });
+                    ui.end_row();
                     ui.label("Ground");
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut self.tiled, true, "tiled floor");
@@ -1636,8 +1673,11 @@ impl ElectricFieldWindow {
                                 " Cuts across the line and volumes on coarser tiles by default \
                                  (owner, 2026-10-29): a cut ≈ {} tiles, {}; a volume over one \
                                  span ≈ {} tiles, {}. Measured against the exact field on even \
-                                 ground, a volume's floor of 16 m tiles is 8.3 % off the largest \
-                                 value, of 8 m 2.8 %, of 4 m 0.16 % (some 40 times as long).",
+                                 ground, a volume's floor of 16 m tiles is 9.8 % off the largest \
+                                 value, of 8 m 2.9 %, of 4 m 0.5 % (some 20 times as long); 2 m \
+                                 tiles need the floor in parts and gain only with the full \
+                                 margin (with 50 m beyond: 4 m 1.2 %, 2 m 1.1 % — the margin then \
+                                 the limit; see the theory).",
                                 electric::TiledFloor {
                                     fine: self.cut_tile,
                                     coarse: self.cut_tile.max(8.0),
@@ -2146,3 +2186,7 @@ fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
     }
     out
 }
+
+/// What the stretches per span change, measured (the theory's
+/// sensitivity table; filled from it).
+const STRETCHES_EFFECT: &str = "measured against 64, a profile's largest value near a structure: 4: 1.2 % off, 8: 0.16 %, 16: 0.03 %, 24 (default): 0.005 %; the time hardly changes";

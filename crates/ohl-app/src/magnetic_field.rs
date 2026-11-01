@@ -308,6 +308,8 @@ pub struct MagneticFieldWindow {
     /// Per electrical system its own weather case and calculation
     /// (owner, 2026-11-01).
     per_system: crate::field_systems::PerSystem,
+    /// Where the ground comes from (owner, 2026-11-01).
+    ground_from: crate::field_ground::FieldGround,
     /// The outputs of the run unticked in its list (not drawn).
     pub(crate) hidden: field_results::Hidden,
     /// The last run's wires (3D).
@@ -357,7 +359,9 @@ impl Default for MagneticFieldWindow {
                 width: 50.0,
             }),
             cut_width: 60.0,
-            cut_step: 0.5,
+            // 1 m (owner, 2026-11-01: quicker at the same accuracy where it
+            // matters: the low levels' isolines within 0.03 %, measured).
+            cut_step: 1.0,
             cut_above: views::ABOVE,
             requests: Vec::new(),
             panel: PanelCuts::default(),
@@ -369,6 +373,7 @@ impl Default for MagneticFieldWindow {
             hidden: Default::default(),
             calculation: None,
             per_system: Default::default(),
+            ground_from: Default::default(),
             saving: Default::default(),
             apply: None,
             wires: None,
@@ -434,6 +439,8 @@ struct Stored {
     /// Per system (id; "": the earthed wires) its weather case by name
     /// and calculation (2026-11-01; absent: the window's).
     per_system: crate::field_systems::PerSystem,
+    /// Where the ground comes from (2026-11-01; absent: the checks').
+    ground_from: crate::field_ground::FieldGround,
     /// Per span the stations of its 2D cuts (2026-10-31).
     cuts: Vec<(SpanIds, Vec<CutAt>)>,
     /// The spans with a volume and with isolines from above (2026-10-31).
@@ -510,6 +517,7 @@ impl MagneticFieldWindow {
             volume_width: self.volume.as_ref().map(|v| v.width),
             calculation: self.calculation,
             per_system: self.per_system.clone(),
+            ground_from: self.ground_from.clone(),
             cuts: self
                 .span_pick
                 .cuts
@@ -548,6 +556,7 @@ impl MagneticFieldWindow {
         let d = Self::default();
         self.calculation = st.calculation;
         self.per_system = st.per_system.clone();
+        self.ground_from = st.ground_from.clone();
         self.case_kept = false;
         if let Some(k) = st
             .case
@@ -918,7 +927,8 @@ impl MagneticFieldWindow {
         let plan =
             crate::field_systems::plan(model, &self.per_system, &solved.case, self.calculation);
         let wind = model.wind;
-        let ground = model.ground_for_checks();
+        // The ground chosen (2026-11-01), read in the background.
+        let ground_source = crate::field_ground::source(model, &self.ground_from);
         let settings = self.settings(model);
         // Each kind of output its own step, one after another (owner,
         // 2026-11-01: "not all at once and clearly separated"): the cuts
@@ -939,6 +949,7 @@ impl MagneticFieldWindow {
                 jumpers = s.jumpers;
                 progress.set_stage(String::new());
             }
+            let (ground, ground_note) = ground_source.read()?;
             let (shapes, per_notes) =
                 crate::field_systems::compose(&line, &library, wind, shapes, &plan);
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
@@ -1008,7 +1019,7 @@ impl MagneticFieldWindow {
                     ),
                 );
             }
-            for n in per_notes.into_iter().rev() {
+            for n in per_notes.into_iter().rev().chain(ground_note) {
                 field.notes.insert(0, n);
             }
             if g.is_none() {
@@ -1227,6 +1238,7 @@ impl MagneticFieldWindow {
                             );
                         });
                         crate::field_systems::ui(ui, WINDOW, model, &mut self.per_system);
+                        crate::field_ground::ui(ui, WINDOW, model, &mut self.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);

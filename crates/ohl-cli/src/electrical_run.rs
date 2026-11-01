@@ -106,8 +106,10 @@ pub struct FieldCommonArgs {
     /// Repeatable.
     #[arg(long, value_name = "ALIGNMENT@STATION[#LABEL]")]
     pub cut: Vec<String>,
-    /// Between a cut's points, m.
-    #[arg(long, default_value_t = 0.5)]
+    /// Between a cut's points, m (1 m: the low levels' isolines within
+    /// 0.03 % of their level; near the wires a finer step for the high
+    /// levels — see the theory's measurements).
+    #[arg(long, default_value_t = 1.0)]
     pub cut_step: f64,
     /// A volume over the spans from FROM to TO along the line (3D): the
     /// isosurfaces of the levels, --width to either side, from the ground
@@ -232,6 +234,11 @@ pub struct ElectricOptions {
     /// this, each over the ground within this of its part).
     #[arg(long, default_value_t = ohl_electrical::electric::VOLUME_MARGIN)]
     pub volume_margin: f64,
+    /// 3D: the stretches each span is cut into, each at the charge of its
+    /// own cross-section (24 by default; 16: 0.03 % off 64 near a
+    /// structure, 24: 0.005 %).
+    #[arg(long, default_value_t = ohl_electrical::electric::STRETCHES)]
+    pub stretches: usize,
     /// The ground from the project's point cloud even when the project has
     /// a surface of the checks: its ground classes within the floor's
     /// reach of the spans computed, the lowest point per metre
@@ -1109,6 +1116,7 @@ fn electric_settings(
         cut_tile: o.cut_tile,
         volume_tile: o.volume_tile,
         volume_margin: o.volume_margin,
+        stretches: o.stretches,
         jumpers: !c.no_jumpers,
         piece_length: c.piece_length,
         cuts: p.cuts.clone(),

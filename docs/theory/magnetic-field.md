@@ -81,10 +81,10 @@ brackets). "Time" is the effect on how long a run takes.
 | **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts and volumes are computed | in proportion to the spans |
 | Profiles | at each ticked span's lowest point | or *beside its structures* (10 m into the span), or *one span* (its lowest point or a place 0–1 along it) | per profile |
 | Across: ± / every / at | ± 50 m, every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
-| 2D cuts at (+ station) / ± / every / up to | none; ± 60 m, every 0.5 m, up to 10 m over the highest wire | a vertical cut on the alignment with isolines | in proportion to the points |
+| 2D cuts at (+ station) / ± / every / up to | none; ± 60 m, every 1 m (0.5 m until 2026-11-01), up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
 | Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
 | **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
-| Modelled: the whole line / wires within (`--modelled-within`) | the whole line (2 000 m when ticked) | cuts and volumes only; the difference to the whole line is measured at each run | far quicker on a long line |
+| Modelled: the whole line / wires within (`--modelled-within`) | the whole line (2 000 m when ticked) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
 | **5 Views and levels** › levels | 1 and 10 µT on, 100 µT off | drawing only; none is a limit | each level a little |
 | colour the cuts by band; also in any cross-section panel I open | on; off (0.5 m when on) | drawing only; the field in each cross-section view opened after a run | per view opened |
 
@@ -374,9 +374,21 @@ nor not in general (the images oppose their sources' near fields).
 - **Profiles** across the line at stations (every span's lowest point by
   default — the lowest point of its lowest phase conductor — or a place
   in a span), square to the span's axis, ±50 m every 1 m, at a height
-  above the ground (1 m by default). The ground: the terrain surface when
-  there is one, else straight between the structures' feet and level
-  across (**Simplification**).
+  above the ground (1 m by default). The ground — *Ground from*
+  (2026-11-01): the surface of the checks, a terrain surface (TIN layer)
+  of the project, or the survey's ground points along the spans made into
+  a surface for the run; without any, straight between the structures'
+  feet and level across (**Simplification**).
+- **What a run makes** (2026-11-01, owner: "the 3D method to only make
+  the volumes … 2D where you can setup cuts … and also ask if we want the
+  profiles"): **2D** — the cuts asked and, asked, the profiles and
+  points; **3D** — the volumes only. Each kind is a step of its own, one
+  after another: the cuts and the volumes from the wires in 3D, the
+  profiles by their model (3D or 2D). The wires from the window's weather
+  case and calculation, or a system's own (*Per electrical system*: e.g.
+  the conductors at their load's temperature, the earth wires at the
+  air's); each case and calculation solved once, every section taken from
+  its system's.
 - **Grids** on a horizontal plane at that height over a span, their own
   step (`grid_step`): the levels' isolines from above — in the engine and
   `ohl`; the window no longer offers them (2026-11-01).
@@ -486,6 +498,74 @@ measured):
 - **Time.** The cost is the points times the pieces (some ns each per
   core). The estimates in the window take the last run's speed on the
   computer, else a short measurement halved (see *Performance* below).
+
+## Cut-offs and grids (measured)
+
+(Owner, 2026-11-01: "give indications on the cutoffs and the improvement
+with better grids … keep it quick enough".) Every value at a point is
+computed in full, from every piece of every wire summed; what a setting
+changes is **which wires are summed** (the cut-off) or **where the
+points are** (the grids), and from that how a drawing follows the
+field. Measured on the example double circuit
+(`examples/electrical`, two spans, 800 A per circuit;
+`crates/ohl-electrical/tests/sensitivity.rs`, a release build).
+
+**The cut-off: the wires modelled within a distance.** Only the pieces
+within *d* of a cut or volume are summed; each run measures, at some 200
+of the cut's points, how much the pieces left out change it.
+
+![In plan, five spans and a cut across the middle one; the wires within d of the cut summed, those beyond left out](../images/theory/field-cutoff.svg)
+
+| Modelled within | Pieces summed | The cut against the whole line (nine in ten / largest) | Time of the cut |
+|---|---|---|---|
+| 25 m | 72 | 50 % / 55 % | 2 ms |
+| 50 m | 144 | 23 % / 28 % | 3 ms |
+| 100 m | 264 | 7.3 % / 9.2 % | 5 ms |
+| 200 m | 444 | 1.2 % / 1.6 % | 8 ms |
+| the whole line (default) | 768 | — | 12 ms |
+
+The field of a long straight conductor falls off slowly (as 1/r), and a
+line's phases nearly cancel only far away: a short cut-off leaves out
+much. On a 28 km line, 2 km left the cuts within 0.03 % and made a
+volume ten times quicker — the cut-off is for long lines, at a distance
+of a kilometre or more, and each run says what it changed.
+
+**A cut's step.** The field at every grid point is exact; an isoline is
+drawn straight between the points where it crosses a cell, so it cuts
+the corners where it bends tightly — near the wires, where the higher
+levels' isolines are small circles.
+
+![Left: a coarse grid around a wire, the isoline drawn straight between its crossings, cutting the circle's corners; right: a fine grid following the circle](../images/theory/field-grid-step.svg)
+
+| Step | Points (±60 m) | 1 µT | 3 µT | 10 µT | 30 µT | Time |
+|---|---|---|---|---|---|---|
+| 0.25 m | 96 681 | 0.00 % | 0.00 % | 0.01 / 0.40 % | 0.09 / 0.16 % | 49 ms |
+| 0.5 m | 24 341 | 0.00 % | 0.01 % | 0.46 / 1.5 % | 0.33 / 0.61 % | 12 ms |
+| **1 m (default since 2026-11-01)** | 6 171 | 0.01 % | 0.03 % | 1.0 / 6.8 % | 1.3 / 2.9 % | 3 ms |
+| 2 m | 1 586 | 0.03 % | 0.12 % | 5.0 / 32 % | 2.9 / 10 % | 1 ms |
+
+(The isolines' points off their level: nine in ten / the largest.) The
+low levels — those of the limits at the ground and at houses, 1 µT for
+the NISV's installation limit — are wide and gentle: a 1 m grid draws
+them within 0.03 %, at a quarter of the points of 0.5 m. Close to the
+wires a finer step is needed for the higher levels; set it where those
+matter. **Quicker at the same accuracy where it matters**: more cuts at
+1 m instead of fewer at 0.5 m.
+
+**A volume's step.** The surfaces' points off their level (nine in ten
+/ largest), the lattice points computed of the whole, over one span ±40 m:
+
+| Step | Points computed | 1 µT | 3 µT | 10 µT | 30 µT | Time |
+|---|---|---|---|---|---|---|
+| 4 m | 27.5 k of 27.5 k | 0.26 / 0.52 % | 0.59 / 1.2 % | 4.0 / 38 % | 19 / 49 % | 0.03 s |
+| **2 m (default)** | 160 k of 182 k | 0.08 / 0.19 % | 0.17 / 0.28 % | 1.0 / 30 % | 5.2 / 11 % | 0.15 s |
+| 1 m | 804 k of 1 292 k | 0.03 / 0.04 % | 0.04 / 0.08 % | 0.22 / 10 % | 1.3 / 2.6 % | 0.73 s |
+
+As for the cuts, the wide low levels are drawn closely at 2 m; the
+tubes of the high levels around each conductor want 1 m or less.
+
+**Long volumes in parts** keep the memory low without changing a value:
+see [Cuts, volumes and what they are drawn with](#cuts-volumes-and-what-they-are-drawn-with).
 
 ## Performance
 

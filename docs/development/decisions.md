@@ -98,6 +98,19 @@ development, not approved yet)**
   and conductor paths by their sections on the route), the scope menus
   by the route's sections; the libraries, routes and weather cases
   whole. The rows' cache keyed by the route.
+- The field settings measured and explained (owner: "give indications
+  on the cutoffs and the improvement with better grids … keep it quick
+  enough … make sure the theory is up to date and with explanation
+  schemas"): `tests/sensitivity.rs` in ohl-electrical (run by hand);
+  tables in both theory pages, three new drawings (the cut-off, a grid's
+  step, a volume in parts). The magnetic and electric cuts' step 1 m by
+  default (0.5 m before: the low levels' isolines within 0.03 % at a
+  quarter of the points; near the wires coarser, said). The electric
+  stretches per span a setting, 24 by default (16: 0.03 % from 64 near a
+  structure, 24: 0.005 %). The volume tiles 16, 8, 4 and 2 m measured
+  (8 m stays: some 3 %). *Ground from* in the field windows: the checks'
+  surface, a TIN layer, or the survey's ground points made into a
+  surface.
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).

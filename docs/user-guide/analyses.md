@@ -813,6 +813,23 @@ case and calculation is solved once for the run and every section taken
 from its system's, the jumpers from the window's case; the notes say
 which ("per system: system ex220: in max temperature").
 
+**Ground from** (2026-11-01, in *2 Scope*; the owner: "choose which
+TIN layer it uses and if none exist which survey data to use to make
+it"): the surface of the checks (default), a terrain surface (TIN layer)
+of the project, or the survey's ground points (the point cloud's ground
+classes within a distance of the spans, 250 m by default, the lowest per
+metre) made into a surface for the run — the electric field's tiles, the
+profiles' height and the cuts' and volumes' bottom stand on it.
+
+**Stretches per span** (Electric field, 4 Model, 2026-11-01): each span's
+charge in this many stretches along it, 24 by default (16 before); its
+effect measured beside it and in [the
+theory](../theory/electric-field.md#the-charges). **The settings'
+effects, measured** — the cut-off distance, the cuts' and volumes'
+steps, the tiles — are tabled in the theory pages ([magnetic
+field](../theory/magnetic-field.md#cut-offs-and-grids-measured), [electric
+field](../theory/electric-field.md#the-tiled-floor-default)).
+
 **Long volumes in parts** (2026-11-01, the owner: "modelled in parts to
 keep the amount of memory used low in long lines"): a volume's lattice
 is computed along its run in parts of at most some 20 million points
@@ -863,7 +880,7 @@ kept in the project; with no span ticked, Run says so. Under the table:
   the project's surface for the checks when there is one, else straight
   between the structures' feet.
 - **2D cuts** (2D) or **Volumes** (3D): their sizes — the cuts' half width, step and reach over the highest wire
-  (default ±60 m every 0.5 m to 10 m over it); the volumes' width each
+  (default ±60 m every 1 m — 0.5 m until 2026-11-01: the low levels' isolines as close, at a quarter of the points; see [Cut-offs and grids](../theory/magnetic-field.md#cut-offs-and-grids-measured) — to 10 m over it); the volumes' width each
   side of the axis (2026-11-01: their own, so a low level's surface
   reaching farther than the profiles is inside the box; it starts at the
   profiles' width) and step — each with how many the table asks and how
@@ -991,7 +1008,7 @@ ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     [--profile FROM:TO[@FRACTION]]… [--width 50] [--height 1] [--step 1]
     [--grid FROM:TO]… [--grid-step M] [--points FILE.csv] [--limit µT]
     [--piece-length M] [--modelled-within M]
-    [--cut ALIGNMENT@STATION[#LABEL]]… [--cut-step 0.5]
+    [--cut ALIGNMENT@STATION[#LABEL]]… [--cut-step 1]
     [--volume FROM:TO]… [--volume-step 1] [--above 10] [--level µT]…
     [--obj SURFACES.obj]
     [--terrain FILE | --surface NAME] [--all-points] [--csv OUT.csv]
