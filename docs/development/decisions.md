@@ -90,6 +90,14 @@ development, not approved yet)**
   piece. The engine's settings take `profiles` (off: none).
 - View › Clearances removed ("a doubled thing with the clearances in
   checks"): Checks › Wire clearances opens the window.
+- Work on route filters the tables and the checks' lists (owner: "the
+  work on route should also filter what's available in the tables …
+  and the available circuits and systems … to the one being worked
+  on"; a structure on two routes in both — "Yes"; ticks outside it
+  "kept but not run"): rows by what they select (the systems, circuits
+  and conductor paths by their sections on the route), the scope menus
+  by the route's sections; the libraries, routes and weather cases
+  whole. The rows' cache keyed by the route.
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).

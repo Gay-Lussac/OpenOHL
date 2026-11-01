@@ -27,11 +27,20 @@ pub type PerSystem = BTreeMap<String, (Option<String>, Calc)>;
 /// The key of the earthed wires (sections without a system).
 pub const EARTHED: &str = "";
 
-/// The rows of a line: each system (id, its name) and the earthed wires.
-fn rows(line: &Line) -> Vec<(String, String)> {
+/// The rows of a line: each system (id, its name) and the earthed wires —
+/// with a route worked on, those with a section on it (2026-11-01).
+fn rows(model: &Model) -> Vec<(String, String)> {
+    let line = &model.line;
+    let on = model.scope();
+    let has = |system: Option<&str>| {
+        line.sections.iter().any(|s| {
+            s.system.as_deref() == system && on.as_ref().is_none_or(|o| o.sections.contains(&s.id))
+        })
+    };
     let mut out: Vec<(String, String)> = line
         .systems
         .iter()
+        .filter(|s| has(Some(s.id.as_str())))
         .map(|s| {
             let name = if s.name.is_empty() {
                 s.id.clone()
@@ -41,7 +50,7 @@ fn rows(line: &Line) -> Vec<(String, String)> {
             (s.id.clone(), name)
         })
         .collect();
-    if line.sections.iter().any(|s| s.system.is_none()) {
+    if has(None) {
         out.push((EARTHED.to_owned(), "earthed wires (no system)".to_owned()));
     }
     out
@@ -73,7 +82,7 @@ pub fn ui(ui: &mut egui::Ui, id: &str, model: &Model, per: &mut PerSystem) {
             .num_columns(3)
             .spacing([10.0, 3.0])
             .show(ui, |ui| {
-                for (key, name) in rows(&model.line) {
+                for (key, name) in rows(model) {
                     let entry = per.entry(key.clone()).or_default();
                     ui.label(name);
                     egui::ComboBox::from_id_salt((id, "case", &key))

@@ -1017,6 +1017,7 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         .collect();
     let before = ticked.clone();
     if crate::check_ui::ScopePicker::new("clearances-scope", &r.model.line)
+        .route_of(&r.model)
         .wires(&mut scope, false)
         .cases(crate::check_ui::Cases::Many(&names, &mut ticked))
         .ui(ui)

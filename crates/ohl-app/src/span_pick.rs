@@ -193,8 +193,8 @@ pub(crate) struct SpanPick {
     pub volume: BTreeSet<SpanIds>,
     /// The spans with isolines from above.
     pub above: BTreeSet<SpanIds>,
-    /// The groups, by line version.
-    cache: Option<(u64, Arc<Vec<Group>>)>,
+    /// The groups, by line version and route worked on.
+    cache: Option<(u64, Option<String>, Arc<Vec<Group>>)>,
     /// A press on a tick dragged across rows: its column and the state it
     /// gives every row it passes (owner: "you drag the mouse across while
     /// holding the click to flip the choices").
@@ -208,15 +208,27 @@ pub(crate) struct SpanPick {
 }
 
 impl SpanPick {
-    /// The groups of the line's spans (listed once per version).
+    /// The groups of the line's spans (listed once per version) — with a
+    /// route worked on, its spans only (owner, 2026-11-01: listed and run;
+    /// the ticks of the others kept).
     pub fn groups(&mut self, model: &crate::model::Model, spans: &Spans) -> Arc<Vec<Group>> {
-        if let Some((v, g)) = &self.cache
+        if let Some((v, r, g)) = &self.cache
             && *v == model.line_version
+            && *r == model.work_route
         {
             return g.clone();
         }
-        let g = Arc::new(groups(&model.line, spans));
-        self.cache = Some((model.line_version, g.clone()));
+        let mut all = groups(&model.line, spans);
+        if let Some(on) = model.scope() {
+            for g in &mut all {
+                g.spans.retain(|&k| {
+                    on.structures.contains(&spans[k].0) && on.structures.contains(&spans[k].1)
+                });
+            }
+            all.retain(|g| !g.spans.is_empty());
+        }
+        let g = Arc::new(all);
+        self.cache = Some((model.line_version, model.work_route.clone(), g.clone()));
         g
     }
 

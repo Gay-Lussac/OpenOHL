@@ -1205,6 +1205,7 @@ impl MagneticFieldWindow {
                         // under it.
                         check_ui::section(ui, 2, "Scope", None);
                         check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .route_of(model)
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
                         // How the wires are solved (owner, 2026-11-01).

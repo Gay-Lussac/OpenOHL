@@ -126,6 +126,36 @@ impl Scope {
     }
 }
 
+/// [`scope_items`] of `model`'s line kept to the route worked on (owner,
+/// 2026-11-01): the systems, circuits and spans with a section on it.
+pub fn scope_items_on(model: &Model, scope: Scope) -> Vec<crate::tick_list::Item> {
+    let items = scope_items(&model.line, scope);
+    let Some(on) = model.scope() else {
+        return items;
+    };
+    let line = &model.line;
+    let sections: Vec<&ohl_line::Section> = line
+        .sections
+        .iter()
+        .filter(|s| on.sections.contains(&s.id))
+        .collect();
+    let map = ohl_clearance::safety_volume::system_map(line);
+    items
+        .into_iter()
+        .filter(|x| match scope {
+            Scope::Systems => sections.iter().any(|s| match map.get(&s.id) {
+                Some(m) => m.id == x.key,
+                None => x.key == NO_SYSTEM,
+            }),
+            Scope::Circuits => sections.iter().any(|s| s.circuit_name == x.key),
+            Scope::Spans => x
+                .key
+                .rsplit_once(':')
+                .is_some_and(|(sec, _)| on.sections.contains(sec)),
+        })
+        .collect()
+}
+
 /// The rows of the scope's list on `line`: (key, label). Systems: name
 /// and voltage; circuits: name, system and voltage; spans: section, span
 /// number, the two structures and the length in plan.
@@ -880,6 +910,7 @@ impl SafetyVolumeWindow {
                         let names: Vec<String> =
                             model.cases.iter().map(|c| c.case.name.clone()).collect();
                         check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .route_of(model)
                             .cases(check_ui::Cases::Many(&names, &mut self.cases))
                             .ui(ui);
                         self.settings_ui(ui, model, presets, &mut out, Part::Included);
@@ -934,7 +965,7 @@ impl SafetyVolumeWindow {
                 // The volumes of what is ticked, in each case ticked.
                 let plan = {
                     let s = &self.settings;
-                    let items = scope_items(&model.line, s.scope);
+                    let items = scope_items_on(model, s.scope);
                     let chosen = match s.scope {
                         Scope::Systems => &s.systems,
                         Scope::Circuits => &s.circuits,
@@ -1275,19 +1306,27 @@ impl SafetyVolumeWindow {
                         }
                     }
                 });
-                let items = scope_items(&model.line, s.scope);
+                let all = scope_items(&model.line, s.scope);
+                let items = scope_items_on(model, s.scope);
                 let chosen = match s.scope {
                     Scope::Systems => &mut s.systems,
                     Scope::Circuits => &mut s.circuits,
                     Scope::Spans => &mut s.spans,
                 };
-                crate::tick_list::tick_list(
+                let before = chosen.clone();
+                if crate::tick_list::tick_list(
                     ui,
                     ("safety-volume-scope", s.scope.as_str()),
                     &items,
                     chosen,
                     130.0,
-                );
+                ) {
+                    // Ticked outside the route worked on: kept.
+                    let keys = |v: &[crate::tick_list::Item]| -> Vec<String> {
+                        v.iter().map(|x| x.key.clone()).collect()
+                    };
+                    check_ui::keep_hidden(&before, chosen, &keys(&all), &keys(&items));
+                }
                 if let Some(p) = s.scope_problem() {
                     ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(p).small());
                 }

@@ -1173,6 +1173,7 @@ impl VegetationWindow {
                         // 2026-10-27: "some of them we will model but we
                         // don't need them checked").
                         check_ui::ScopePicker::new(PANEL, &model.line)
+                            .route_of(model)
                             .wires(&mut self.scope, true)
                             .cases(check_ui::Cases::Many(&names, &mut self.cases))
                             .ui(ui);

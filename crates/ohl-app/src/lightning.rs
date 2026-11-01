@@ -498,17 +498,36 @@ impl LightningWindow {
         let part = crate::preset_cases::Part::Check(PresetCheck::Lightning);
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
         let groups = crate::case_groups::groups(model);
-        let mut types: Vec<String> = model
+        // With a route worked on: what has a section on it (2026-11-01).
+        let on = model.scope();
+        let sections: Vec<&ohl_line::Section> = model
             .line
             .sections
             .iter()
-            .map(|s| s.cable.clone())
+            .filter(|s| on.as_ref().is_none_or(|o| o.sections.contains(&s.id)))
             .collect();
+        let mut types: Vec<String> = sections.iter().map(|s| s.cable.clone()).collect();
         types.sort();
         types.dedup();
-        let mut systems: Vec<String> = model.line.systems.iter().map(|s| s.id.clone()).collect();
+        let mut systems: Vec<String> = model
+            .line
+            .systems
+            .iter()
+            .filter(|y| {
+                sections
+                    .iter()
+                    .any(|s| s.system.as_deref() == Some(y.id.as_str()))
+            })
+            .map(|s| s.id.clone())
+            .collect();
         systems.sort();
-        let circuits: Vec<String> = model.line.circuits.iter().map(|c| c.name.clone()).collect();
+        let circuits: Vec<String> = model
+            .line
+            .circuits
+            .iter()
+            .filter(|c| sections.iter().any(|s| s.circuit_name == c.name))
+            .map(|c| c.name.clone())
+            .collect();
         let t = crate::rule_table::RuleTable::new("lightning-rules", &mut self.rules, &[])
             .heads("Method", "Phases")
             .add(

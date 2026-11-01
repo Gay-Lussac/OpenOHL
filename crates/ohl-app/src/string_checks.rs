@@ -354,6 +354,7 @@ impl StringChecksWindow {
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
                         if check_ui::ScopePicker::new("string-checks-scope", &model.line)
+                            .route_of(model)
                             .wires(&mut self.scope, true)
                             .ui(ui)
                         {

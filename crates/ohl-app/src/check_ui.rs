@@ -394,6 +394,57 @@ pub struct ScopePicker<'a> {
     scope: Option<&'a mut Scope>,
     sections: bool,
     cases: Option<Cases<'a>>,
+    on: Option<RouteOn>,
+}
+
+/// The route worked on as the scope menus offer it (owner, 2026-11-01:
+/// "filter … the available circuits and systems … to the one being
+/// worked on"): the circuits with a section on it, the route itself, its
+/// sections. What is ticked outside it is kept, not run (the checks keep
+/// to the route).
+#[derive(Debug, Clone, Default)]
+pub struct RouteOn {
+    /// The route's id.
+    pub route: String,
+    /// The circuits (names) with a section on it.
+    pub circuits: BTreeSet<String>,
+    /// Its sections.
+    pub sections: BTreeSet<String>,
+}
+
+impl RouteOn {
+    /// The route `model` works on (none: all routes).
+    pub fn of(model: &crate::model::Model) -> Option<Self> {
+        let scope = model.scope()?;
+        Some(Self {
+            route: model.work_route.clone()?,
+            circuits: model
+                .line
+                .sections
+                .iter()
+                .filter(|s| scope.sections.contains(&s.id))
+                .map(|s| s.circuit_name.clone())
+                .collect(),
+            sections: scope.sections,
+        })
+    }
+}
+
+/// `chosen` after a tick list over `shown` of `all` changed it: what was
+/// ticked among the items not shown kept ticked.
+pub(crate) fn keep_hidden(
+    before: &Option<Vec<String>>,
+    chosen: &mut Option<Vec<String>>,
+    all: &[String],
+    shown: &[String],
+) {
+    if let Some(list) = chosen {
+        for x in all.iter().filter(|x| !shown.contains(x)) {
+            if before.as_ref().is_none_or(|b| b.contains(x)) && !list.contains(x) {
+                list.push(x.clone());
+            }
+        }
+    }
 }
 
 /// The height of a scope menu's list, px.
@@ -408,7 +459,14 @@ impl<'a> ScopePicker<'a> {
             scope: None,
             sections: false,
             cases: None,
+            on: None,
         }
+    }
+
+    /// Its lists kept to the route `model` works on ([`RouteOn`]).
+    pub fn route_of(mut self, model: &crate::model::Model) -> Self {
+        self.on = RouteOn::of(model);
+        self
     }
 
     /// The circuits and the routes (and with `sections`, the sections).
@@ -433,15 +491,16 @@ impl<'a> ScopePicker<'a> {
             scope,
             sections,
             cases,
+            on,
         } = self;
         let mut changed = false;
         let mut summary: Vec<String> = Vec::new();
         ui.horizontal_wrapped(|ui| {
             if let Some(scope) = scope {
-                changed |= circuits_menu(ui, id, line, scope);
-                changed |= routes_menu(ui, id, line, scope);
+                changed |= circuits_menu(ui, id, line, scope, on.as_ref());
+                changed |= routes_menu(ui, id, line, scope, on.as_ref());
                 if sections {
-                    changed |= sections_menu(ui, id, line, scope);
+                    changed |= sections_menu(ui, id, line, scope, on.as_ref());
                 }
                 summary.push(scope_words(line, scope, sections));
             }
@@ -451,6 +510,12 @@ impl<'a> ScopePicker<'a> {
                 summary.push(words);
             }
         });
+        if let Some(on) = &on {
+            summary.push(format!(
+                "kept to route {} (View › Work on route; what is ticked outside it is kept, not run)",
+                on.route
+            ));
+        }
         if !summary.is_empty() {
             ui.label(egui::RichText::new(summary.join(", ")).small().weak());
         }
@@ -494,8 +559,20 @@ fn tick_menu(ui: &mut egui::Ui, id: (&str, &str), title: &str, add: impl FnOnce(
     });
 }
 
-fn circuits_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut Scope) -> bool {
-    let names = circuits_of(line);
+fn circuits_menu(
+    ui: &mut egui::Ui,
+    id: &str,
+    line: &ohl_line::Line,
+    scope: &mut Scope,
+    on: Option<&RouteOn>,
+) -> bool {
+    let all = circuits_of(line);
+    let names: Vec<String> = all
+        .iter()
+        .filter(|n| on.is_none_or(|o| o.circuits.contains(*n)))
+        .cloned()
+        .collect();
+    let before = scope.circuits.clone();
     let items: Vec<Item> = names
         .iter()
         .map(|n| Item::new(n.clone(), circuit_label(n)))
@@ -522,13 +599,23 @@ fn circuits_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut
             SCOPE_LIST,
         );
     });
+    if changed {
+        keep_hidden(&before, &mut scope.circuits, &all, &names);
+    }
     changed
 }
 
-fn routes_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut Scope) -> bool {
+fn routes_menu(
+    ui: &mut egui::Ui,
+    id: &str,
+    line: &ohl_line::Line,
+    scope: &mut Scope,
+    on: Option<&RouteOn>,
+) -> bool {
     if line.routes.is_empty() && line.alignments.is_empty() {
         return false;
     }
+    let shown = |route: &str| on.is_none_or(|o| o.route == route);
     let name = |id: &str, name: &str| {
         if name.is_empty() || name == id {
             id.to_owned()
@@ -537,7 +624,7 @@ fn routes_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut S
         }
     };
     let mut items: Vec<Item> = Vec::new();
-    for r in &line.routes {
+    for r in line.routes.iter().filter(|r| shown(&r.id)) {
         items.push(Item::new(
             format!("r:{}", r.id),
             format!("route {}", name(&r.id, &r.name)),
@@ -550,7 +637,7 @@ fn routes_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut S
         }
     }
     for a in &line.alignments {
-        if !line.routes.iter().any(|r| r.id == a.route) {
+        if on.is_none() && !line.routes.iter().any(|r| r.id == a.route) {
             items.push(Item::new(
                 format!("a:{}", a.id),
                 format!("alignment {}", name(&a.id, &a.name)),
@@ -610,10 +697,17 @@ fn routes_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut S
     changed
 }
 
-fn sections_menu(ui: &mut egui::Ui, id: &str, line: &ohl_line::Line, scope: &mut Scope) -> bool {
+fn sections_menu(
+    ui: &mut egui::Ui,
+    id: &str,
+    line: &ohl_line::Line,
+    scope: &mut Scope,
+    on: Option<&RouteOn>,
+) -> bool {
     let items: Vec<Item> = line
         .sections
         .iter()
+        .filter(|s| on.is_none_or(|o| o.sections.contains(&s.id)))
         .map(|s| {
             let label = if s.circuit_name.is_empty() {
                 s.id.clone()

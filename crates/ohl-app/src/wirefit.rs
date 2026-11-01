@@ -251,6 +251,7 @@ impl WireFitWindow {
                         ui.separator();
                         check_ui::section(ui, 2, "Scope", None);
                         check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .route_of(model)
                             .wires(&mut self.scope, true)
                             .ui(ui);
                         ui.separator();

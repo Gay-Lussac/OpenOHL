@@ -423,6 +423,11 @@ impl TableKind {
 
     pub fn rows(self, model: &Model, case: usize) -> Vec<Row> {
         let mut rows = self.own_rows(model, case);
+        // The route worked on (owner, 2026-11-01): its rows only; a
+        // structure on two routes listed in both.
+        if let Some(scope) = model.scope() {
+            rows.retain(|r| self.on_route(model, &scope, r));
+        }
         let columns = self.plugin_columns(model);
         if columns.is_empty() {
             return rows;
@@ -454,6 +459,74 @@ impl TableKind {
             }
         }
         rows
+    }
+
+    /// Whether `row` belongs to the route worked on (`scope`): what it
+    /// selects, else (systems, circuits, conductor paths, alignments) the
+    /// sections and alignments it stands for. The project's libraries,
+    /// routes and weather cases are whole.
+    fn on_route(self, model: &Model, scope: &crate::model::Scope, row: &Row) -> bool {
+        let line = &model.line;
+        let section = |id: &str| scope.sections.contains(id);
+        match self {
+            TableKind::Insulators
+            | TableKind::StringShapes
+            | TableKind::Routes
+            | TableKind::WeatherCases
+            | TableKind::LoadTypes => return true,
+            TableKind::Systems => {
+                return line
+                    .sections
+                    .iter()
+                    .any(|s| s.system.as_deref() == Some(row.key.as_str()) && section(&s.id));
+            }
+            TableKind::Circuits => {
+                return line
+                    .circuits
+                    .iter()
+                    .find(|c| c.id == row.key)
+                    .is_some_and(|c| {
+                        line.circuit_members(&c.name)
+                            .iter()
+                            .any(|m| m.sections.iter().any(|s| section(s)))
+                    });
+            }
+            TableKind::ConductorPaths => {
+                return ohl_line::electrical::circuits(line)
+                    .iter()
+                    .find(|c| points_circuits::circuit_key(c) == row.key)
+                    .is_some_and(|c| c.sections.iter().any(|s| section(s)));
+            }
+            TableKind::Alignments => {
+                return line
+                    .alignments
+                    .iter()
+                    .find(|a| a.id == row.key)
+                    .is_some_and(|a| Some(&a.route) == model.work_route.as_ref());
+            }
+            _ => {}
+        }
+        match &row.select {
+            Selection::Structure(id)
+            | Selection::Attachment { structure: id, .. }
+            | Selection::String { structure: id, .. }
+            | Selection::Point { structure: id, .. } => scope.structures.contains(id),
+            Selection::Span { section: id, .. }
+            | Selection::SpanPoint { section: id, .. }
+            | Selection::Spread { section: id, .. } => section(id),
+            Selection::Jumper(id) | Selection::JumperPoint { jumper: id, .. } => {
+                scope.jumpers.contains(id)
+            }
+            Selection::Spacer(id) => line
+                .spacers
+                .iter()
+                .find(|x| &x.id == id)
+                .is_some_and(|x| section(&x.a.section) || section(&x.b.section)),
+            Selection::AlignmentPoint { id } => line.alignments.iter().any(|a| {
+                Some(&a.route) == model.work_route.as_ref() && a.points.iter().any(|p| p == id)
+            }),
+            Selection::None | Selection::LidarPoint(_) | Selection::SurveyPoint(_) => true,
+        }
     }
 
     /// The table's name for plugin columns ([`ohl_plugins::COLUMN_TABLES`]);

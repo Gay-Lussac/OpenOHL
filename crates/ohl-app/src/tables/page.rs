@@ -290,6 +290,8 @@ struct RowsKey {
     /// structure types, insulators.
     files: (PathBuf, [Option<PathBuf>; 3]),
     plugin_columns: Vec<PluginColumn>,
+    /// The route worked on (2026-11-01: its rows only).
+    route: Option<String>,
 }
 
 /// The ground's revision and surface (its address).
@@ -320,6 +322,7 @@ impl RowsKey {
                 ],
             ),
             plugin_columns: model.plugin_columns.clone(),
+            route: model.work_route.clone(),
         }
     }
 
@@ -338,6 +341,7 @@ impl RowsKey {
                 .zip(&model.cases)
                 .all(|(s, c)| *s == c.serial)
             && self.display_cases == model.display_cases
+            && self.route == model.work_route
             && self.files.0 == model.sources.file
             && self.files.1[0] == model.sources.weather
             && self.files.1[1] == model.sources.structures
@@ -618,6 +622,26 @@ impl TablePage {
             cells.resize(columns.len(), String::new());
         }
         let rows = self.cached_rows(kind, model, case);
+        // The route worked on: its rows only (owner, 2026-11-01), said.
+        if let Some(route) = &model.work_route
+            && !matches!(
+                kind,
+                TableKind::Insulators
+                    | TableKind::StringShapes
+                    | TableKind::Routes
+                    | TableKind::WeatherCases
+                    | TableKind::LoadTypes
+            )
+        {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Route {route} worked on: its rows only (View › Work on route › All routes \
+                     shows every row)"
+                ))
+                .small()
+                .color(ui.visuals().warn_fg_color),
+            );
+        }
         let mut action = None;
         let mut apply = false;
         let mut confirmed = false;

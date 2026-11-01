@@ -166,6 +166,7 @@ impl LineParametersWindow {
                         // footer until 2026-10-27).
                         check_ui::section(ui, 2, "Scope", None);
                         check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .route_of(model)
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
                         ui.separator();

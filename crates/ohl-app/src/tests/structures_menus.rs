@@ -1395,3 +1395,55 @@ fn work_on_one_route() {
     }
     assert!(!scope.jumpers.is_empty());
 }
+
+/// The route worked on keeps the tables and the checks' lists to it
+/// (owner, 2026-11-01: "the work on route should also filter what's
+/// available in the tables … and the available circuits and systems"):
+/// on the example's branch, the Structures table lists the branch's
+/// structures only (the Y pylon T3, on both routes, in it), the Sections
+/// table its sections, the circuits offered those with a section on it;
+/// all routes again, every row.
+#[test]
+fn the_route_worked_on_keeps_the_tables_and_lists_to_it() {
+    use crate::tables::TableKind;
+    let mut model = synthetic();
+    let all = TableKind::Structures.rows(&model, 0).len();
+    model.work_route = Some("branch".into());
+    let scope = model.scope().expect("a route");
+    let structures: Vec<String> = TableKind::Structures
+        .rows(&model, 0)
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
+    assert!(
+        !structures.is_empty() && structures.len() < all,
+        "{structures:?}"
+    );
+    assert!(structures.iter().all(|s| scope.structures.contains(s)));
+    assert!(
+        structures.iter().any(|s| s == "T3"),
+        "the junction on both routes"
+    );
+    let sections: Vec<String> = TableKind::Sections
+        .rows(&model, 0)
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
+    assert!(!sections.is_empty() && sections.iter().all(|s| scope.sections.contains(s)));
+    // The circuits offered: those of the route's sections (on this
+    // example every section reaches the junction T3, so both routes hold
+    // them all).
+    let on = crate::check_ui::RouteOn::of(&model).unwrap();
+    let expected: std::collections::BTreeSet<String> = model
+        .line
+        .sections
+        .iter()
+        .filter(|s| scope.sections.contains(&s.id))
+        .map(|s| s.circuit_name.clone())
+        .collect();
+    assert_eq!(on.circuits, expected);
+    assert_eq!(on.route, "branch");
+    // Weather cases and libraries stay whole.
+    model.work_route = None;
+    assert_eq!(TableKind::Structures.rows(&model, 0).len(), all);
+}

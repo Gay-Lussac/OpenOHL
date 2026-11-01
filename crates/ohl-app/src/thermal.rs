@@ -367,6 +367,7 @@ fn body(ui: &mut egui::Ui, w: &mut ThermalWindow, model: &Model) {
     let running = w.running();
     ui.add_enabled_ui(!running, |ui| {
         check_ui::ScopePicker::new("thermal-window", &model.line)
+            .route_of(model)
             .wires(&mut w.scope, true)
             .ui(ui);
     });

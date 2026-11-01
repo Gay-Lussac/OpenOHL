@@ -262,6 +262,7 @@ impl GallopingWindow {
                         let names: Vec<String> =
                             model.cases.iter().map(|c| c.case.name.clone()).collect();
                         check_ui::ScopePicker::new(WINDOW, &model.line)
+                            .route_of(model)
                             .wires(&mut self.scope, true)
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
