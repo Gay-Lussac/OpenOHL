@@ -473,8 +473,13 @@ pub struct Settings {
     /// line, m (owner, 2026-10-29: coarser by default, a parameter).
     pub cut_tile: f64,
     /// With the tiled floor: the tiles' side under the volumes, m (the
-    /// floor along the volume's whole run and [`VOLUME_MARGIN`] beyond).
+    /// floor along the volume's whole run and `volume_margin` beyond).
     pub volume_tile: f64,
+    /// With the tiled floor: how far the floor under a volume reaches
+    /// beyond it every way, m (owner, 2026-11-01: a setting;
+    /// [`VOLUME_MARGIN`] by default); also each part's floor of a volume
+    /// too large for one ([`volume_parts`]).
+    pub volume_margin: f64,
     /// The jumpers carry their phase's charge (3D).
     pub jumpers: bool,
     /// The longest straight piece, m (3D; `None`: the solver's).
@@ -509,6 +514,7 @@ impl Default for Settings {
             ground_model: GroundModel::Tiled(TiledFloor::default()),
             cut_tile: 8.0,
             volume_tile: 8.0,
+            volume_margin: VOLUME_MARGIN,
             jumpers: true,
             piece_length: None,
             cuts: Vec::new(),
@@ -1137,11 +1143,15 @@ pub fn run_keeping(
                 if let Ok(run) = magnetic::run_spans(&spans, &v.from, &v.to)
                     && let Ok(path) = magnetic::run_path(src, &spans, &run)
                 {
-                    p.plan_floor(Floor::tiles_under(
+                    let (parts, tiles) = volume_parts(
                         path.length(),
                         v.width,
                         settings.volume_tile,
-                    ));
+                        settings.volume_margin,
+                    );
+                    for _ in 0..parts {
+                        p.plan_floor(tiles);
+                    }
                 }
             }
         }
@@ -1515,25 +1525,70 @@ pub fn run_keeping(
             };
             let values: VolumeValues = match (&model3d, settings.ground_model) {
                 (Some(m), GroundModel::Tiled(_)) => {
-                    let tiles = Floor::tiles_under(
-                        bounds.path.length(),
-                        bounds.width,
-                        settings.volume_tile,
-                    );
-                    let fl = with_floor(progress, "volume", tiles, || {
-                        Floor::under(m, &bounds.path, bounds.width, settings.volume_tile, &ground)
-                    })?;
-                    notes.push(format!(
-                        "volume {}–{}: a tiled floor of {} tiles of {} m along it and {VOLUME_MARGIN} m beyond",
+                    let (tile, margin) = (settings.volume_tile, settings.volume_margin);
+                    let len = bounds.path.length();
+                    let (parts, tiles) = volume_parts(len, bounds.width, tile, margin);
+                    let name = format!(
+                        "volume {}–{}",
                         spans[run[0]].from,
-                        spans[run[run.len() - 1]].to,
-                        fl.tiles(),
-                        settings.volume_tile
-                    ));
-                    let f = |ps: &[[f64; 3]]| -> Vec<f64> {
-                        ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
-                    };
-                    field_views::volume(&bounds, &settings.levels, &f, &pieces, progress)?
+                        spans[run[run.len() - 1]].to
+                    );
+                    if parts == 1 {
+                        let fl = with_floor(progress, "volume", tiles, || {
+                            Floor::under(m, &bounds.path, bounds.width, tile, margin, &ground)
+                        })?;
+                        notes.push(format!(
+                            "{name}: a tiled floor of {} tiles of {tile} m along it and {margin} m beyond",
+                            fl.tiles(),
+                        ));
+                        let f = |ps: &[[f64; 3]]| -> Vec<f64> {
+                            ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
+                        };
+                        field_views::volume(&bounds, &settings.levels, &f, &pieces, progress)?
+                    } else {
+                        // Too large for one floor (owner, 2026-11-01):
+                        // a floor per part, each lattice point taking
+                        // its part's.
+                        let mut floors = Vec::with_capacity(parts);
+                        for k in 0..parts {
+                            let (t0, t1) = (
+                                len * k as f64 / parts as f64,
+                                len * (k + 1) as f64 / parts as f64,
+                            );
+                            let what = format!("volume, part {} of {parts}", k + 1);
+                            floors.push(with_floor(progress, &what, tiles, || {
+                                Floor::around(
+                                    m,
+                                    &bounds.path.plan_between(t0, t1),
+                                    bounds.width + margin,
+                                    tile,
+                                    &ground,
+                                )
+                            })?);
+                        }
+                        let most = floors.iter().map(Floor::tiles).max().unwrap_or(0);
+                        notes.push(format!(
+                            "{name}: one tiled floor would take {} tiles ({:.1} GB): {parts} floors, \
+                             one per part of {:.0} m, each of at most {most} tiles of {tile} m \
+                             over the ground within {margin} m of its part of the volume; each \
+                             point of the volume takes its part's floor (an approximation, see \
+                             the theory)",
+                            Floor::tiles_under(len, bounds.width, tile, margin),
+                            floor_bytes(Floor::tiles_under(len, bounds.width, tile, margin)) / 1e9,
+                            len / parts as f64,
+                        ));
+                        let path = &bounds.path;
+                        let f = |ps: &[[f64; 3]]| -> Vec<f64> {
+                            ps.iter()
+                                .map(|&p| {
+                                    let t = path.station([p[0], p[1]]);
+                                    let k = ((t / len * parts as f64) as usize).min(parts - 1);
+                                    floors[k].field(p, m) / 1e3
+                                })
+                                .collect()
+                        };
+                        field_views::volume(&bounds, &settings.levels, &f, &pieces, progress)?
+                    }
                 }
                 _ => field_views::volume(&bounds, &settings.levels, &kv, &pieces, progress)?,
             };
@@ -1687,12 +1742,13 @@ impl Floor {
 
     /// The floor under a volume: square tiles of side `tile` along `path`
     /// (its stations beyond its ends too), `width` and
-    /// [`VOLUME_MARGIN`] either side, and as far beyond its ends.
+    /// `margin` either side, and as far beyond its ends.
     pub fn under(
         charges: &Charges3d,
         path: &field_views::Path,
         width: f64,
         tile: f64,
+        margin: f64,
         ground: &dyn Fn(f64, f64) -> f64,
     ) -> Result<Self, String> {
         if !(tile.is_finite() && tile > 0.0) {
@@ -1702,8 +1758,8 @@ impl Floor {
             let p = path.place_beyond(t, s);
             [p[0], p[1], ground(p[0], p[1])]
         };
-        let (t0, t1) = (-VOLUME_MARGIN, path.length() + VOLUME_MARGIN);
-        let half = width + VOLUME_MARGIN;
+        let (t0, t1) = (-margin, path.length() + margin);
+        let half = width + margin;
         let (nt, ns) = (
             ((t1 - t0) / tile).ceil() as usize,
             (2.0 * half / tile).ceil() as usize,
@@ -1726,10 +1782,48 @@ impl Floor {
     }
 
     /// The tiles of the floor [`Floor::under`] lays under a volume.
-    pub fn tiles_under(length: f64, width: f64, tile: f64) -> usize {
-        let nt = ((length + 2.0 * VOLUME_MARGIN) / tile).ceil() as usize;
-        let ns = (2.0 * (width + VOLUME_MARGIN) / tile).ceil() as usize;
+    pub fn tiles_under(length: f64, width: f64, tile: f64, margin: f64) -> usize {
+        let nt = ((length + 2.0 * margin) / tile).ceil() as usize;
+        let ns = (2.0 * (width + margin) / tile).ceil() as usize;
         nt * ns
+    }
+
+    /// A floor of square tiles of side `tile` on a plan grid (along the
+    /// line from the first to the last of `core`), every tile whose centre
+    /// lies within `reach` of the line `core` (plan points) in plan,
+    /// solved under `charges`; the ground's elevation from `ground`
+    /// (owner, 2026-11-01: the floor of a part of a volume, the ground
+    /// within the margin by distance — a line angle's other leg, a line
+    /// nearby — and no tiles folding over each other at an angle).
+    pub fn around(
+        charges: &Charges3d,
+        core: &[[f64; 2]],
+        reach: f64,
+        tile: f64,
+        ground: &dyn Fn(f64, f64) -> f64,
+    ) -> Result<Self, String> {
+        if !(tile.is_finite() && tile > 0.0) {
+            return Err(format!("a tile above 0 m, not {tile}"));
+        }
+        let cells = plan_cells(core, reach, tile);
+        let (o, u, v) = plan_frame(core);
+        let place = |a: f64, b: f64| {
+            let x = o[0] + a * u[0] + b * v[0];
+            let y = o[1] + a * u[1] + b * v[1];
+            [x, y, ground(x, y)]
+        };
+        let panels: Vec<Panel> = cells
+            .iter()
+            .map(|&(a, b)| panel(&place, a, b, tile))
+            .collect();
+        let steel = steel_on(&panels, &charges.steel);
+        let (sigma, steel_q) = solve_floor(&panels, &steel, charges)?;
+        Ok(Self {
+            panels,
+            sigma,
+            steel,
+            steel_q,
+        })
     }
 
     /// E (rms) at `p`, V/m: the line's charges, the floor's and its
@@ -1772,6 +1866,89 @@ impl TiledFloor {
     }
 }
 
+/// A plan frame along `core`: its first point, the unit direction to its
+/// last (else along its first straight, else east) and the left normal.
+fn plan_frame(core: &[[f64; 2]]) -> ([f64; 2], [f64; 2], [f64; 2]) {
+    let o = core[0];
+    let dir = |a: [f64; 2], b: [f64; 2]| {
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let l = dx.hypot(dy);
+        (l > 1e-9).then(|| [dx / l, dy / l])
+    };
+    let u = dir(o, core[core.len() - 1])
+        .or_else(|| core.get(1).and_then(|&b| dir(o, b)))
+        .unwrap_or([1.0, 0.0]);
+    (o, u, [-u[1], u[0]])
+}
+
+/// The plan distance from `p` to the line through `core`.
+fn plan_distance(core: &[[f64; 2]], p: [f64; 2]) -> f64 {
+    if core.len() == 1 {
+        return (p[0] - core[0][0]).hypot(p[1] - core[0][1]);
+    }
+    core.windows(2)
+        .map(|w| {
+            let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+            let l2 = (dx * dx + dy * dy).max(1e-18);
+            let u = (((p[0] - w[0][0]) * dx + (p[1] - w[0][1]) * dy) / l2).clamp(0.0, 1.0);
+            (p[0] - w[0][0] - u * dx).hypot(p[1] - w[0][1] - u * dy)
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The cells ([`plan_frame`] coordinates of their corner) of a floor
+/// around `core`: every square of side `tile` whose centre lies within
+/// `reach` of it.
+fn plan_cells(core: &[[f64; 2]], reach: f64, tile: f64) -> Vec<(f64, f64)> {
+    let (o, u, v) = plan_frame(core);
+    let local = |p: [f64; 2]| {
+        let d = [p[0] - o[0], p[1] - o[1]];
+        (d[0] * u[0] + d[1] * u[1], d[0] * v[0] + d[1] * v[1])
+    };
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for &p in core {
+        let (a, b) = local(p);
+        lo = [lo[0].min(a), lo[1].min(b)];
+        hi = [hi[0].max(a), hi[1].max(b)];
+    }
+    let (a0, b0) = (lo[0] - reach, lo[1] - reach);
+    let na = ((hi[0] + reach - a0) / tile).ceil() as usize;
+    let nb = ((hi[1] + reach - b0) / tile).ceil() as usize;
+    let mut out = Vec::new();
+    for i in 0..na {
+        for j in 0..nb {
+            let (a, b) = (a0 + i as f64 * tile, b0 + j as f64 * tile);
+            let (ca, cb) = (a + 0.5 * tile, b + 0.5 * tile);
+            let c = [o[0] + ca * u[0] + cb * v[0], o[1] + ca * u[1] + cb * v[1]];
+            if plan_distance(core, c) <= reach {
+                out.push((a, b));
+            }
+        }
+    }
+    out
+}
+
+/// How a volume of `length` along its run and `width` either side is
+/// floored (owner, 2026-11-01: "split only when it doesn't fit"): one
+/// floor along the whole run and `margin` beyond when it fits
+/// [`FLOOR_MEMORY`] — `(1, its tiles)` —, else `parts` equal parts of the
+/// run each with its own floor over the ground within `width + margin`
+/// of its part ([`Floor::around`]), each part as long as `margin` (the
+/// time of the floors, growing with the cube of their tiles, is least
+/// there): `(parts, the tiles of a straight part's floor)`, an upper
+/// bound of each part's.
+pub fn volume_parts(length: f64, width: f64, tile: f64, margin: f64) -> (usize, usize) {
+    let one = Floor::tiles_under(length, width, tile, margin);
+    if floor_bytes(one) <= FLOOR_MEMORY {
+        return (1, one);
+    }
+    let parts = (length / margin.max(tile)).ceil().max(2.0) as usize;
+    let core = length / parts as f64;
+    let side = 2.0 * (width + margin);
+    let tiles = ((core + side) / tile).ceil() as usize * (side / tile).ceil() as usize;
+    (parts, tiles)
+}
+
 /// The memory a floor of `tiles` takes while it is solved, bytes: its
 /// table of coefficients and faer's factors of it (8 bytes each, two
 /// copies of tiles² coefficients).
@@ -1804,7 +1981,7 @@ fn with_floor<T>(
     if floor_bytes(tiles) > FLOOR_MEMORY {
         return Err(format!(
             "{what}: a tiled floor of {tiles} tiles would take {:.1} GB of memory (at most {:.0} GB): \
-             fewer spans, coarser tiles or the plane under each point",
+             coarser tiles, a smaller width or floor margin, or the plane under each point",
             floor_bytes(tiles) / 1e9,
             FLOOR_MEMORY / 1e9
         ));

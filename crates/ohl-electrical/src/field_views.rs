@@ -661,6 +661,39 @@ impl Path {
         self.points[k][2] + f * (self.points[k + 1][2] - self.points[k][2])
     }
 
+    /// The station of the place on the path's line nearest to plan point
+    /// `p`, m (owner, 2026-11-01: a volume's lattice point to its part's
+    /// floor).
+    pub fn station(&self, p: [f64; 2]) -> f64 {
+        let mut best = (f64::INFINITY, 0.0);
+        for (k, w) in self.points.windows(2).enumerate() {
+            let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+            let l2 = dx * dx + dy * dy;
+            let u = (((p[0] - w[0][0]) * dx + (p[1] - w[0][1]) * dy) / l2).clamp(0.0, 1.0);
+            let d = (p[0] - w[0][0] - u * dx).hypot(p[1] - w[0][1] - u * dy);
+            if d < best.0 {
+                best = (
+                    d,
+                    self.stations[k] + u * (self.stations[k + 1] - self.stations[k]),
+                );
+            }
+        }
+        best.1
+    }
+
+    /// The path's line from station `t0` to `t1` in plan: its ends and the
+    /// points between.
+    pub fn plan_between(&self, t0: f64, t1: f64) -> Vec<[f64; 2]> {
+        let mut out = vec![self.place(t0, 0.0)];
+        for (k, p) in self.points.iter().enumerate() {
+            if self.stations[k] > t0 && self.stations[k] < t1 {
+                out.push([p[0], p[1]]);
+            }
+        }
+        out.push(self.place(t1, 0.0));
+        out
+    }
+
     /// The plan distance from `p` to the path's line (its straights).
     pub fn distance(&self, p: [f64; 2]) -> f64 {
         self.points

@@ -160,6 +160,8 @@ pub struct ElectricFieldWindow {
     cut_tile: f64,
     /// The tiles under the volumes, m.
     volume_tile: f64,
+    /// The volumes' floor margin, m (2026-11-01).
+    volume_margin: f64,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
     /// The points file's text (kept in the project).
@@ -246,6 +248,7 @@ impl Default for ElectricFieldWindow {
             tile: 2.0,
             cut_tile: 8.0,
             volume_tile: 8.0,
+            volume_margin: electric::VOLUME_MARGIN,
             points: None,
             points_text: None,
             saved: None,
@@ -319,6 +322,8 @@ struct Stored {
     tile: Option<f64>,
     cut_tile: Option<f64>,
     volume_tile: Option<f64>,
+    /// The volumes' floor margin, m (2026-11-01).
+    volume_margin: Option<f64>,
     /// The points file's name and text.
     points: Option<(String, String)>,
     piece_length: Option<f64>,
@@ -392,6 +397,7 @@ impl ElectricFieldWindow {
             tile: Some(self.tile),
             cut_tile: Some(self.cut_tile),
             volume_tile: Some(self.volume_tile),
+            volume_margin: Some(self.volume_margin),
             points: match (&self.points, &self.points_text) {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
@@ -472,6 +478,7 @@ impl ElectricFieldWindow {
         self.tile = st.tile.unwrap_or(d.tile);
         self.cut_tile = st.cut_tile.unwrap_or(d.cut_tile);
         self.volume_tile = st.volume_tile.unwrap_or(d.volume_tile);
+        self.volume_margin = st.volume_margin.unwrap_or(d.volume_margin);
         self.piece_length = st.piece_length;
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
@@ -894,6 +901,7 @@ impl ElectricFieldWindow {
             },
             cut_tile: self.cut_tile,
             volume_tile: self.volume_tile,
+            volume_margin: self.volume_margin,
             jumpers: self.jumpers,
             piece_length: self.piece_length,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
@@ -1458,6 +1466,17 @@ impl ElectricFieldWindow {
                                     .speed(0.1)
                                     .suffix(" m"),
                             );
+                            ui.label("reaching");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.volume_margin)
+                                    .range(20.0..=1000.0)
+                                    .speed(1.0)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text(
+                                "How far the floor under a volume reaches beyond it every way",
+                            );
                         } else {
                             ui.label("fitted over ±");
                             crate::style::field(
@@ -1522,12 +1541,18 @@ impl ElectricFieldWindow {
                                         .tiles(self.width)
                                     )
                                 ),
-                                electric::Floor::tiles_under(400.0, volume_width, self.volume_tile),
+                                electric::Floor::tiles_under(
+                                    400.0,
+                                    volume_width,
+                                    self.volume_tile,
+                                    self.volume_margin
+                                ),
                                 magnetic_duration(self.floor_seconds(
                                     electric::Floor::tiles_under(
                                         400.0,
                                         volume_width,
-                                        self.volume_tile
+                                        self.volume_tile,
+                                        self.volume_margin
                                     )
                                 )),
                             )),

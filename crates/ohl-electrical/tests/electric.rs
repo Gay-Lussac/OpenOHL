@@ -300,7 +300,15 @@ fn a_volume_on_the_tiled_floor() {
         [p[0], p[1], p[2]]
     };
     let path = ohl_electrical::field_views::Path::new(vec![at("T1"), at("T2")]).unwrap();
-    let floor = electric::Floor::under(&charges, &path, 20.0, 16.0, &ground).unwrap();
+    let floor = electric::Floor::under(
+        &charges,
+        &path,
+        20.0,
+        16.0,
+        electric::VOLUME_MARGIN,
+        &ground,
+    )
+    .unwrap();
     let mid = path.place(0.5 * path.length(), 0.0);
     let mut worst: f64 = 0.0;
     let mut top: f64 = 0.0;
@@ -368,4 +376,138 @@ fn the_2d_profile_matches_hvlbuzz_on_its_cross_section() {
         (m - largest).abs() <= 0.02 * largest,
         "3D {m} against {largest}"
     );
+}
+
+/// A volume's floor in parts (owner, 2026-11-01: "split only when it
+/// doesn't fit, margin by distance"): along the example's two spans
+/// T1–T3, a floor per part of 100 m over the ground within the width and
+/// 100 m of it against one floor under the whole run and 100 m beyond,
+/// at points from 1 m above the ground up, across the run every 10 m,
+/// each point taking its part's floor — as the volumes do: as close to
+/// the exact field (level ground) as the one floor.
+#[test]
+fn a_floor_in_parts_matches_one_floor() {
+    let (line, library) = example();
+    let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+    let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let src = Sources {
+        line: &line,
+        library: &library,
+        shapes: &shapes,
+        temperature: Temperature::from_celsius(40.0),
+        ground: None,
+        jumpers: &[],
+    };
+    let s = Settings {
+        stations: vec![mid("T1", "T2")],
+        ground_model: electric::GroundModel::Plane,
+        ..Settings::default()
+    };
+    let (_, charges) = electric::run_keeping(&src, &s, None).unwrap();
+    let charges = charges.unwrap();
+    let ground = electric::feet_ground(&line);
+    let at = |id: &str| {
+        let p = line.structure(id).unwrap().position;
+        [p[0], p[1], p[2]]
+    };
+    let path = ohl_electrical::field_views::Path::new(vec![at("T1"), at("T2"), at("T3")]).unwrap();
+    // (16 m tiles: the test stays quick.)
+    let (width, tile) = (20.0, 16.0);
+    let len = path.length();
+    let one = electric::Floor::under(&charges, &path, width, tile, 100.0, &ground).unwrap();
+    let parts_of = |margin: f64| {
+        let parts = (len / margin).ceil() as usize;
+        let floors: Vec<electric::Floor> = (0..parts)
+            .map(|k| {
+                let (t0, t1) = (
+                    len * k as f64 / parts as f64,
+                    len * (k + 1) as f64 / parts as f64,
+                );
+                electric::Floor::around(
+                    &charges,
+                    &path.plan_between(t0, t1),
+                    width + margin,
+                    tile,
+                    &ground,
+                )
+                .unwrap()
+            })
+            .collect();
+        (parts, floors)
+    };
+    // Against the exact field (level ground here: the plane under each
+    // point is exact), each floor's largest difference over the largest
+    // value.
+    let exact = |p: [f64; 3]| {
+        charges.field(
+            p,
+            &electric::GroundPlane::fitted(&ground, p[0], p[1], s.ground_radius),
+        )
+    };
+    let error = |field: &dyn Fn([f64; 2], [f64; 3]) -> f64| {
+        let (mut worst, mut top): (f64, f64) = (0.0, 0.0);
+        let mut t = 5.0;
+        while t < len {
+            for k in -2..=2 {
+                for h in [1.0, 3.0, 8.0] {
+                    let xy = path.place(t, 10.0 * k as f64);
+                    let p = [xy[0], xy[1], ground(xy[0], xy[1]) + h];
+                    let e = exact(p);
+                    top = top.max(e);
+                    worst = worst.max((field(xy, p) - e).abs());
+                }
+            }
+            t += 10.0;
+        }
+        worst / top
+    };
+    let compare = |margin: f64| {
+        let (parts, floors) = parts_of(margin);
+        let d = error(&|xy, p| {
+            let part = ((path.station(xy) / len * parts as f64) as usize).min(parts - 1);
+            floors[part].field(p, &charges)
+        });
+        (parts, d)
+    };
+    let d_one = error(&|_, p| one.field(p, &charges));
+    let (n100, d100) = compare(100.0);
+    let (n200, d200) = compare(200.0);
+    // Measured 2026-11-01 against the exact field, the largest difference
+    // over the largest value: 16 m tiles one floor 9.9 %, 6 parts with
+    // 100 m 9.5 %, 3 parts with 200 m 8.9 %; 8 m tiles 3.1 %, 2.8 %,
+    // 3.4 % — the tiles' size, not the parts, makes the difference.
+    assert_eq!((n100, n200), (6, 3));
+    assert!(
+        d100 <= d_one + 0.005,
+        "parts {d100} against one floor {d_one}"
+    );
+    assert!(
+        d200 <= d_one + 0.005,
+        "parts {d200} against one floor {d_one}"
+    );
+}
+
+/// One floor while it fits in 2 GB (as before), parts as long as the
+/// margin beyond: the owner's refused case (17 936 tiles, 5.1 GB) in
+/// parts of a few thousand tiles.
+#[test]
+fn a_volume_is_floored_in_parts_only_when_one_floor_does_not_fit() {
+    let one = electric::volume_parts(600.0, 50.0, 8.0, 100.0);
+    assert_eq!(
+        one,
+        (1, electric::Floor::tiles_under(600.0, 50.0, 8.0, 100.0))
+    );
+    let long = 3600.0;
+    let tiles = electric::Floor::tiles_under(long, 50.0, 8.0, 100.0);
+    assert!(
+        electric::floor_bytes(tiles) > electric::FLOOR_MEMORY,
+        "{tiles}"
+    );
+    let (parts, each) = electric::volume_parts(long, 50.0, 8.0, 100.0);
+    assert_eq!(parts, 36);
+    assert!(each < 2500, "{each}");
+    assert!(electric::floor_bytes(each) < 0.1e9);
 }

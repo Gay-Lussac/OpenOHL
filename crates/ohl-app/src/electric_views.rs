@@ -478,27 +478,40 @@ impl ElectricFieldWindow {
                     // laptops of 16 to 32 GB): its memory said before Run.
                     if self.tiled {
                         let longest = runs.iter().map(|r| r.1).max().unwrap_or(1);
-                        let tiles = electric::Floor::tiles_under(
+                        let width = self.volume.as_ref().map_or(self.width, |v| v.width);
+                        let (parts, tiles) = electric::volume_parts(
                             st.span() * longest as f64,
-                            self.width,
+                            width,
                             self.volume_tile,
+                            self.volume_margin,
                         );
                         let bytes = electric::floor_bytes(tiles);
-                        let text = format!(
-                            "Its floor: the longest volume ({longest} span(s)) ≈ {tiles} tiles of \
-                             {} m, ≈ {:.2} GB of memory while solved, {}.",
-                            self.volume_tile,
-                            bytes / 1e9,
-                            duration(self.floor_seconds(tiles))
-                        );
+                        let text = if parts == 1 {
+                            format!(
+                                "Its floor: the longest volume ({longest} span(s)) ≈ {tiles} tiles \
+                                 of {} m, ≈ {:.2} GB of memory while solved, {}.",
+                                self.volume_tile,
+                                bytes / 1e9,
+                                duration(self.floor_seconds(tiles))
+                            )
+                        } else {
+                            format!(
+                                "The longest volume ({longest} span(s)) is too large for one floor: \
+                                 {parts} floors, one per part of it, each ≈ {tiles} tiles of {} m \
+                                 or fewer, ≈ {:.2} GB while solved, {} in all.",
+                                self.volume_tile,
+                                bytes / 1e9,
+                                duration(parts as f64 * self.floor_seconds(tiles))
+                            )
+                        };
                         ui.label("");
                         if bytes > electric::FLOOR_MEMORY {
                             crate::menu::error_label(
                                 ui,
                                 format!(
-                                    "{text} Over the {:.0} GB a floor may take: tick Volume in \
-                                     fewer spans following each other, or coarser tiles under \
-                                     the volumes (Ground), or the plane under each point.",
+                                    "{text} Over the {:.0} GB a floor may take: coarser tiles \
+                                     under the volumes or a smaller margin (Ground), a smaller \
+                                     width, or the plane under each point.",
                                     electric::FLOOR_MEMORY / 1e9
                                 ),
                             );
@@ -506,9 +519,14 @@ impl ElectricFieldWindow {
                             crate::check_help::explain(
                                 ui,
                                 &text,
-                                "A volume's floor runs along its whole run of spans and 100 m \
-                                 beyond: its memory grows with the run's length squared, its \
-                                 time faster still.",
+                                "A volume's floor runs along its whole run of spans and the margin \
+                                 beyond (Ground) while it fits in 2 GB: its memory grows with the \
+                                 run's length squared, its time faster still. A longer run is \
+                                 floored in parts as long as the margin, each part's floor over \
+                                 the ground within the margin of it (a line angle's other leg \
+                                 too), each point of the volume taking its part's floor: measured \
+                                 on level ground as close to the exact field as one floor (8 m \
+                                 tiles: 2.8 % against 3.1 %).",
                             );
                         }
                         ui.end_row();

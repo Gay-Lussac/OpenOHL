@@ -1224,9 +1224,14 @@ default.
   hollow. Cuts across the line (the cross-section panels too) and volumes
   on coarser 8 m tiles by default, each a parameter (*tiles: profiles and
   points / cuts / volumes*; a volume's floor of 8 m tiles is some 3 % off
-  on even ground, of 4 m 0.2 % and some 40 times as long). On the command
+  on even ground, of 4 m 0.2 % and some 40 times as long), and how far a
+  volume's floor **reaches** beyond it (100 m; 2026-11-01). A volume too
+  large for one floor (over 2 GB) is floored in parts as long as that
+  reach, each over the ground within it (as close to the exact field as
+  one floor on level ground; see [the theory](../theory/electric-field.md));
+  the window says so before Run, the results in their notes. On the command
   line `--plane`; the tiles `--tile`, `--coarse-tile`, `--floor-reach`,
-  `--cut-tile`, `--volume-tile`. Progress bars: the run's in the footer
+  `--cut-tile`, `--volume-tile`, `--volume-margin`. Progress bars: the run's in the footer
   (saying which floor is being solved), the cross-section panels' under
   *Cross-sections* and in the results.
 - **Points from CSV…**: as for the [magnetic

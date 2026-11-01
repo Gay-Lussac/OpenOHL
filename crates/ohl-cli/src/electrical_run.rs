@@ -227,6 +227,11 @@ pub struct ElectricOptions {
     /// on even ground; 4 m: 0.2 %, some 40 times as long).
     #[arg(long, default_value_t = 8.0)]
     pub volume_tile: f64,
+    /// How far the floor under a volume reaches beyond it every way, m
+    /// (a volume too large for one floor is floored in parts as long as
+    /// this, each over the ground within this of its part).
+    #[arg(long, default_value_t = ohl_electrical::electric::VOLUME_MARGIN)]
+    pub volume_margin: f64,
     /// The ground from the project's point cloud even when the project has
     /// a surface of the checks: its ground classes within the floor's
     /// reach of the spans computed, the lowest point per metre
@@ -1102,6 +1107,7 @@ fn electric_settings(
         },
         cut_tile: o.cut_tile,
         volume_tile: o.volume_tile,
+        volume_margin: o.volume_margin,
         jumpers: !c.no_jumpers,
         piece_length: c.piece_length,
         cuts: p.cuts.clone(),

@@ -210,7 +210,8 @@ tiles:
   reaching the farthest point. A cut's floor lies in the cut's own frame
   (centred on its plane, its tiles along and across it) with the cut
   tiles (8 m). A volume's floor runs under its whole run of spans and
-  100 m beyond every way, square tiles of the volume tile size (8 m).
+  its margin beyond every way (100 m by default, a parameter since
+  2026-11-01), square tiles of the volume tile size (8 m).
 - **The solution.** The tiles' charges are such that the floor is at
   zero potential at every tile's centre under the line's charges:
   \\( A\,\sigma = -\varphi_{line} \\), a dense system solved by LU on all
@@ -234,6 +235,28 @@ tiles:
   A volume's floor grows with its run: 2 850 tiles for one 300 m span,
   5 360 for three (0.45 GB); the window says the longest run's before
   Run.
+- **A volume in parts** (owner, 2026-11-01: "split only when it doesn't
+  fit, margin by distance"). A volume whose one floor would take more
+  than 2 GB is no longer refused: its run is cut into equal parts about
+  as long as the margin, and each part gets a floor of its own — square
+  tiles on a plan grid along the part, every tile whose centre lies
+  within the volume's width plus the margin of the part's line in plan
+  (so a line angle's other leg and a line close by are under it, and no
+  tiles fold over each other on the inner side of an angle). Each point
+  of the volume takes the floor of the part it lies in (its nearest
+  place on the run's line). Parts as long as the margin take the least
+  time (the floors' time grows with the cube of their tiles): the
+  owner's 3.5 km run of 17 936 tiles (5.1 GB, refused before) becomes
+  some 36 floors of under 2 500 tiles (under 0.1 GB each).
+  **An approximation, neither conservative nor not**: a part's floor
+  leaves out the ground's charges beyond its margin, as one floor
+  leaves out those beyond the run's ends; where two parts meet, the
+  surface may step slightly. Measured on level ground against the exact
+  field (the example's two spans, 600 m, from 1 m above the ground up,
+  the largest difference over the largest value): one floor 3.1 %, six
+  parts with 100 m 2.8 %, three with 200 m 3.4 % (8 m tiles) — the
+  tiles' size makes the difference, not the parts. A run that fits in
+  one floor keeps it, as before.
 - **Why coarser tiles for cuts and volumes** (owner, 2026-10-29, each a
   parameter). Measured against the exact field on even ground, from 1 m
   above it up: 16 m tiles 8.3 % of the largest value, **8 m 2.8 %**,

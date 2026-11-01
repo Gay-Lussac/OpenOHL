@@ -53,6 +53,13 @@ development, not approved yet)**
   Properties, per subconductor, total strain, up to the rated tensile
   strength; the span marked from its horizontal to its largest tension
   (the wire's tension varies along the span) on its calculation's line.
+- An electric field volume too large for one tiled floor (over 2 GB;
+  owner: "split only when it doesn't fit, margin by distance") is
+  floored in parts as long as the margin, each part's floor over the
+  ground within the volume's width plus the margin of it on a plan grid,
+  each lattice point taking its part's floor; a run that fits keeps its
+  one floor. The margin a parameter (`volume_margin`, 100 m). Measured:
+  as close to the exact field as one floor (see the theory).
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).
