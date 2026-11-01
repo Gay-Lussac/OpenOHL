@@ -96,6 +96,16 @@ Any number of coefficients (at least two) is accepted; published curves are usua
 | `max_strain` | no | number > 0 | none | Strain up to which the curves are valid, in strain units. The curves must rise up to it (up to 1 % when not given). A state beyond it (a component's strain at a span's most tensioned support) is warned about in the results — `ohl sagtension`, the app's warnings by weather case, the Sagging panel; the polynomial is still used there. Not given: no range, **no warning** (2026-10-22, the owner's decision; there was a 1 % default before). |
 | `reference_temperature` | no | temperature: `°C`, `degC`, `K`, `°F`, `degF` | `"20 °C"` | Temperature of the curve tests. Both components must use the same. |
 
+### The graph
+
+The wire library page (Line › Wires) draws the wire type selected
+(2026-11-01): its tension per subconductor against its total strain,
+from zero to the rated tensile strength, at a temperature you type (the
+curves' reference temperature by default; **reference** goes back to
+it) — the initial curve, and the creep curve where the wire has one —,
+from the fields as edited. A span's Properties draw the same with the
+final lines after creep and after load and the span's state marked.
+
 ### How the curves are used
 
 - Both components stretch by the same amount; each one's thermal strain \\( \alpha_k (t - t_0) \\) is removed before its curve is applied; the wire tension is the sum of the component loads.

@@ -775,6 +775,9 @@ pub struct LibraryPage {
     pub workspace: crate::type_workspace::Workspace,
     /// A file opened on its own (no model: nothing to use it for).
     pub standalone: bool,
+    /// Wires: the temperature of the tension–strain graph, °C (none: the
+    /// curves' reference temperature).
+    curve_temperature: Option<f64>,
 }
 
 /// What the pylon workspace of the structure types page needs from the
@@ -825,6 +828,7 @@ impl LibraryPage {
             buffers: HashMap::new(),
             workspace: Default::default(),
             standalone: false,
+            curve_temperature: None,
         };
         let first = match kind {
             LibraryKind::WeatherCases => sources.weather.clone(),
@@ -1434,6 +1438,7 @@ impl LibraryPage {
                 egui::CentralPanel::default().show(ui, |ui| {
                     egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
                         let doc = self.doc.as_mut().expect("checked");
+                        let mut wire = None;
                         if let Some(t) = doc
                             .get_mut(key)
                             .and_then(Item::as_array_of_tables_mut)
@@ -1449,6 +1454,15 @@ impl LibraryPage {
                                 false,
                                 None,
                             );
+                            if kind == LibraryKind::Cables {
+                                wire = Some(label_of(t));
+                            }
+                        }
+                        // A wire's tension against its strain (owner,
+                        // 2026-11-01), from the file as edited.
+                        if let Some(id) = wire {
+                            ui.separator();
+                            curves_ui(ui, &doc.to_string(), &id, &mut self.curve_temperature);
                         }
                     });
                 });
@@ -1475,6 +1489,82 @@ impl LibraryPage {
         }
         action
     }
+}
+
+/// Wire type `id`'s tension–strain graph from the library file `text` as
+/// edited, at a temperature (none: its curves' reference); why not when
+/// it does not read.
+fn curves_ui(ui: &mut egui::Ui, text: &str, id: &str, temperature: &mut Option<f64>) {
+    ui.label(egui::RichText::new("Tension against strain").strong());
+    let mut lib = ohl_cables::Library::default();
+    let read = lib
+        .add_toml(std::path::Path::new("edited"), text)
+        .map_err(|e| e.to_string())
+        .and_then(|()| {
+            lib.get(id).cloned().ok_or_else(|| {
+                lib.skipped()
+                    .iter()
+                    .find(|s| s.contains(id))
+                    .cloned()
+                    .unwrap_or_else(|| format!("wire type {id} does not read"))
+            })
+        });
+    let cable = match read {
+        Ok(c) => c,
+        Err(e) => {
+            ui.label(
+                egui::RichText::new(format!("not drawn: {e}"))
+                    .small()
+                    .weak(),
+            );
+            return;
+        }
+    };
+    let reference = ohl_cables::mechanics::Mechanics::from_cable(&cable)
+        .map(|m| m.reference_temperature().celsius())
+        .unwrap_or(20.0);
+    let mut t = temperature.unwrap_or(reference);
+    ui.horizontal(|ui| {
+        ui.label("at");
+        if crate::style::field(
+            ui,
+            egui::DragValue::new(&mut t)
+                .range(-60.0..=250.0)
+                .speed(1.0)
+                .suffix(" °C"),
+        )
+        .changed()
+        {
+            *temperature = Some(t);
+        }
+        if temperature.is_some() && ui.small_button("reference").clicked() {
+            *temperature = None;
+        }
+    });
+    match crate::wire_curves::curves(
+        &cable,
+        ohl_core::units::Temperature::from_celsius(temperature.unwrap_or(reference)),
+        &[],
+    ) {
+        Ok(c) => crate::wire_curves::plot(ui, &c),
+        Err(e) => {
+            ui.label(
+                egui::RichText::new(format!("not drawn: {e}"))
+                    .small()
+                    .weak(),
+            );
+        }
+    }
+    ui.label(
+        egui::RichText::new(
+            "The initial curve (as strung), the creep curve where the wire has one; the final \
+             lines after creep and after load depend on the line (a span's properties show \
+             them). Total strain: the thermal expansion from the curves' reference temperature \
+             included.",
+        )
+        .small()
+        .weak(),
+    );
 }
 
 /// An item's label: its id or name.

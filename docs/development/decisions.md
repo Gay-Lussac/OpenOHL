@@ -47,6 +47,12 @@ development, not approved yet)**
   ("the list is pushed right at every click … until it's out of the
   window": the button showed the whole choice; on a real line's many
   systems it ran past the window's edge and its list with it).
+- A wire's tension against its strain (owner: "a graph of tension vs
+  deformation of the wire based on its parameters … a point put on the
+  graph at its current condition"): in the wire library and in a span's
+  Properties, per subconductor, total strain, up to the rated tensile
+  strength; the span marked from its horizontal to its largest tension
+  (the wire's tension varies along the span) on its calculation's line.
 - The glossary's route drawing shows the alignment rule of 2026-10-31
   (tied, within 5 m of a free point, reached by a span; a crossing
   line's structures not on it).

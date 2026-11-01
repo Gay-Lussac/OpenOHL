@@ -1370,6 +1370,40 @@ pub fn ui(
                     cells
                 },
             );
+            // Its wire's tension against its strain, the span marked
+            // (owner, 2026-11-01); computed when opened, kept until the
+            // line or the case changes.
+            egui::CollapsingHeader::new("Tension against strain")
+                .id_salt("span-curves")
+                .show(ui, |ui| {
+                    let key = egui::Id::new((
+                        "span-curves",
+                        &section,
+                        span,
+                        shown,
+                        model.line_version,
+                        model.cases.get(shown).map(|c| c.case.name.clone()),
+                    ));
+                    let got = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<Result<crate::wire_curves::Curves, String>>(key));
+                    let got = got.unwrap_or_else(|| {
+                        let c = crate::wire_curves::of_span(model, &section, span, shown);
+                        ui.ctx().data_mut(|d| d.insert_temp(key, c.clone()));
+                        c
+                    });
+                    match got {
+                        Ok(c) => {
+                            crate::wire_curves::plot(ui, &c);
+                            for n in &c.notes {
+                                ui.label(egui::RichText::new(n).small().weak());
+                            }
+                        }
+                        Err(e) => {
+                            crate::menu::error_label(ui, e);
+                        }
+                    }
+                });
             // Not solved in the case of the copy clicked (else the one
             // shown): why, and where its dashed red copy comes from.
             let shown = model

@@ -117,6 +117,7 @@ mod type_workspace;
 mod vegetation;
 mod versions;
 mod view3d;
+mod wire_curves;
 mod wire_style;
 mod wire_tensions;
 mod wirefit;
