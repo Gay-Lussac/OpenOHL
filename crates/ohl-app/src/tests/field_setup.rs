@@ -248,6 +248,73 @@ fn show_in_3d_turns_the_view_to_the_volume() {
     assert!(r.visible.contains(&crate::scene::Layer::ElectricField));
 }
 
+/// A volume unticked in Results leaves the 3D view (owner, 2026-11-01:
+/// "a toggle for the views in 3D, not just Show, a tick box"); the run
+/// saved in Performed checks and opened again gives the same field and
+/// surfaces (owner, 2026-11-01: "the results need to be saveable in the
+/// results library for the checks").
+#[test]
+fn a_field_run_is_hidden_saved_and_opened_again() {
+    let model = crate::tests::synthetic_project("electric-field-saved");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    harness.run();
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        r.electric_field.set_voltage(&circuits[0].label(), 400.0);
+        r.electric_field.set_tiled(false);
+        r.electric_field.show(r.case);
+        r.electric_field.set_views(None, Some(4.0));
+        r.electric_field.tick_only(&r.model, 0);
+        r.electric_field.start(&r.model, &ctx);
+    }
+    wait(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.electric_field.hidden.insert(("Volume", 0));
+        let o = r.electric_field.overlay_change(&r.model).expect("redrawn");
+        assert!(o.surfaces.is_empty(), "the volume unticked is not drawn");
+        r.electric_field.hidden.clear();
+        let o = r.electric_field.overlay_change(&r.model).expect("redrawn");
+        assert!(!o.surfaces.is_empty(), "ticked again: drawn");
+        r.electric_field.set_save_name("field 1");
+    }
+    harness.run();
+    harness.get_by_label("Save in Performed checks").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let saved = r.model.session().unwrap().report("field 1").expect("saved");
+    assert_eq!(saved.check, crate::field_saved::ELECTRIC_CHECK_ID);
+    let Some(Ok(before)) = &r.electric_field.job.result else {
+        panic!("a field")
+    };
+    let (profiles, cuts, meshes) = (
+        before.field.profiles.clone(),
+        before.field.cuts.len(),
+        before.meshes.clone(),
+    );
+    r.electric_field = Default::default();
+    r.check_library_out(crate::check_library::Out {
+        open: Some(saved),
+        ..Default::default()
+    });
+    let Some(Ok(back)) = &r.electric_field.job.result else {
+        panic!("read back")
+    };
+    assert_eq!(back.field.profiles, profiles);
+    assert_eq!(back.field.cuts.len(), cuts);
+    assert_eq!(back.meshes.len(), meshes.len());
+    for (a, b) in back.meshes.iter().zip(&meshes) {
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1.triangles, b.1.triangles);
+    }
+    assert!(r.electric_field.open);
+    assert_eq!(r.electric_field.out_of_date(&r.model), None);
+}
+
 /// The magnetic field's table too: a cut asked at its lowest point and
 /// 100 m from the first structure, a volume and isolines from above in
 /// the span ticked alone — each computed by the run, listed in Results.

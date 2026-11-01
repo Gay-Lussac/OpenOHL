@@ -48,7 +48,7 @@ use std::sync::atomic::Ordering;
 
 use nalgebra::{Complex, DVector};
 use ohl_line::electrical::SystemKind;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cross_section::{self, Axis, CrossSection, PhaseData, Sources, StationAt};
 use crate::earth::EPS0;
@@ -268,7 +268,7 @@ pub struct Charges3d {
 /// An earthed steel member of a structure (owner, 2026-10-31: the steel
 /// near the pylons, off by default): its axis (structure's members as
 /// placed, m) and its radius (half its section's width, m).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SteelMember {
     /// The structure.
     pub structure: String,
@@ -432,7 +432,7 @@ impl Charges3d {
 // Inputs.
 
 /// The voltage of a circuit.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CircuitVoltage {
     /// The circuit: its name, or its system's id (`*`: every circuit).
     pub circuit: String,
@@ -442,7 +442,7 @@ pub struct CircuitVoltage {
 }
 
 /// What to compute.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     /// 3D or 2D.
     pub model: Model,
@@ -524,7 +524,7 @@ impl Default for Settings {
 // Results.
 
 /// The field at one point.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldPoint {
     /// Its name (given points), else empty.
     pub name: String,
@@ -545,7 +545,7 @@ pub struct FieldPoint {
 }
 
 /// A profile across the line.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
     /// The span's first structure.
     pub from: String,
@@ -569,7 +569,7 @@ pub struct Profile {
 }
 
 /// The charge per metre of a wire in a span.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WireCharge {
     /// The section.
     pub section: String,
@@ -586,7 +586,7 @@ pub struct WireCharge {
 }
 
 /// The electric field of a line.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ElectricField {
     /// 3D or 2D.
     pub model: Model,
@@ -1581,7 +1581,7 @@ pub fn run_keeping(
 /// under each point: it follows hollows and ridges; its own errors are the
 /// tiles' size and the floor's end at `reach` (measured on level ground,
 /// where the plane is exact).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct TiledFloor {
     /// Fine tiles' side, m.
     pub fine: f64,
@@ -1608,7 +1608,7 @@ impl Default for TiledFloor {
 }
 
 /// The ground model.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum GroundModel {
     /// A plane fitted under each point, the charges' images in it.
     Plane,

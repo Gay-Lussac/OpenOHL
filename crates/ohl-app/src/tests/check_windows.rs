@@ -611,3 +611,65 @@ fn the_model_is_folded_and_the_setups_say_what_they_need() {
     assert!(spans > 1);
     assert_eq!(1 + r.model.selected_also.len(), spans);
 }
+
+/// A tick menu stays where it opened while its items are ticked (owner,
+/// 2026-11-01: the lightning rule's systems list was "pushed right at
+/// every click … until it's out of the window": the button showed the
+/// whole choice and widened at every tick).
+#[test]
+fn a_tick_menu_stays_put_while_ticking() {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1500.0, 1000.0))
+        .build_eframe(|_| App::with_model(crate::tests::shielded(), None));
+    h.run();
+    let (types, circuits) = {
+        let r = h.state_mut().ready().unwrap();
+        r.lightning.show(&r.model);
+        let mut rule = ohl_clearance::lightning::LightningRule::blank("r");
+        // A real line's many systems (names not in this model).
+        rule.targets.systems = (0..12)
+            .map(|k| format!("system of the line number {k}"))
+            .collect();
+        r.lightning.rules = vec![rule];
+        // Its rules kept out of the example's rule file.
+        r.lightning.file =
+            Some(std::env::temp_dir().join(format!("ohl-tick-menu-{}.ohlr", std::process::id())));
+        let mut types: Vec<String> = r
+            .model
+            .line
+            .sections
+            .iter()
+            .map(|s| s.cable.clone())
+            .collect();
+        types.sort();
+        types.dedup();
+        let circuits: Vec<String> = ohl_electrical::magnetic::circuits(&r.model.line)
+            .iter()
+            .map(|c| c.label())
+            .collect();
+        let systems: Vec<String> = r.model.line.systems.iter().map(|s| s.id.clone()).collect();
+        (types, [systems, circuits].concat())
+    };
+    h.run_steps(4);
+    h.query_all_by_label_contains("system of the line number 0")
+        .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+        .expect("the phases' menu button")
+        .click();
+    h.run_steps(3);
+    let mut lefts = Vec::new();
+    for item in types.iter().chain(&circuits) {
+        let tick = egui::accesskit::Role::CheckBox;
+        lefts.push(h.get_by_role_and_label(tick, item).rect().left());
+        h.get_by_role_and_label(tick, item).click();
+        h.run_steps(3);
+    }
+    lefts.push(
+        h.get_by_role_and_label(egui::accesskit::Role::CheckBox, &types[0])
+            .rect()
+            .left(),
+    );
+    assert!(lefts.len() >= 4, "{types:?} {circuits:?}");
+    for x in &lefts {
+        assert!((x - lefts[0]).abs() < 1.0, "the menu moved: {lefts:?}");
+    }
+}

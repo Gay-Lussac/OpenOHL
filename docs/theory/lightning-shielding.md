@@ -23,7 +23,13 @@ each of n equal steps**, n = ⌈span length / step⌉, the step being the
 rule's (5 m by default). In each cut:
 
 - the **wires** where they cross it, as solved in the rule's weather
-  case (a bundle by its centre and its outer radius: the spacing's
+  case and each section's calculation — since 2026-11-01 the shielding
+  wires may hang in weather cases of their own (`shield_cases`: e.g. the
+  phases hot from their load current, the earth wires at the air
+  temperature), and the phases and the shielding wires may each be
+  solved by a calculation of the rule's (`calculation`,
+  `shield_calculation`: e.g. the phases at their largest sag, the earth
+  wires as strung) — (a bundle by its centre and its outer radius: the spacing's
   circle plus a subconductor's radius);
 - the **ground** across it, sampled every 1 m from the terrain of the
   checks (no terrain: straight between the structures' feet and level

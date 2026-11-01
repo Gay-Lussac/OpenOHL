@@ -103,6 +103,11 @@ pub struct Scene {
     lines: Vec<Segment>,
     points: Vec<Dot>,
     triangles: Vec<Vertex>,
+    /// Translucent triangles (a corner's alpha under 255): drawn after
+    /// everything else without hiding what lies behind them (owner,
+    /// 2026-11-01: the structures and the lidar vanished under a field's
+    /// surfaces).
+    glass: Vec<Vertex>,
     bounds: Option<Bounds>,
 }
 
@@ -114,6 +119,7 @@ impl Scene {
             lines: Vec::new(),
             points: Vec::new(),
             triangles: Vec::new(),
+            glass: Vec::new(),
             bounds: None,
         }
     }
@@ -152,11 +158,17 @@ impl Scene {
         });
     }
 
-    /// A triangle (one colour per corner).
+    /// A triangle (one colour per corner); translucent when a corner's
+    /// alpha is under 255.
     pub fn triangle(&mut self, corners: [[f64; 3]; 3], colors: [[u8; 4]; 3]) {
+        let glass = colors.iter().any(|c| c[3] < 255);
         for (p, c) in corners.into_iter().zip(colors) {
             let v = self.vertex(p, c);
-            self.triangles.push(v);
+            if glass {
+                self.glass.push(v);
+            } else {
+                self.triangles.push(v);
+            }
         }
     }
 
@@ -175,7 +187,7 @@ impl Scene {
         (
             self.lines.len(),
             self.points.len(),
-            self.triangles.len() / 3,
+            (self.triangles.len() + self.glass.len()) / 3,
         )
     }
 }
@@ -529,13 +541,18 @@ pub struct GpuScene {
     lines: Vec<(wgpu::Buffer, u32)>,
     points: Vec<(wgpu::Buffer, u32)>,
     triangles: Vec<(wgpu::Buffer, u32)>,
+    glass: Vec<(wgpu::Buffer, u32)>,
 }
 
 impl GpuScene {
     /// Segments, points and triangles on the GPU.
     pub fn counts(&self) -> (u32, u32, u32) {
         let n = |b: &Vec<(wgpu::Buffer, u32)>| b.iter().map(|b| b.1).sum::<u32>();
-        (n(&self.lines), n(&self.points), n(&self.triangles) / 3)
+        (
+            n(&self.lines),
+            n(&self.points),
+            (n(&self.triangles) + n(&self.glass)) / 3,
+        )
     }
 
     /// Uploads a scene, each part split into buffers the device accepts
@@ -547,6 +564,7 @@ impl GpuScene {
             lines: buffer_pieces(device, &scene.lines, "lines", 1, max),
             points: buffer_pieces(device, &scene.points, "points", 1, max),
             triangles: buffer_pieces(device, &scene.triangles, "triangles", 3, max),
+            glass: buffer_pieces(device, &scene.glass, "glass", 3, max),
         }
     }
 }
@@ -585,7 +603,7 @@ fn buffer_pieces<T: bytemuck::Pod>(
 
 /// Draws scenes into an offscreen colour texture.
 pub struct Renderer {
-    pipelines: [wgpu::RenderPipeline; 3],
+    pipelines: [wgpu::RenderPipeline; 4],
     uniform: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     targets: Option<Targets>,
@@ -644,47 +662,48 @@ impl Renderer {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let pipeline = |entry: &str, layout: wgpu::VertexBufferLayout<'_>, bias: i32| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ohl-render"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    buffers: &[Some(layout)],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: COLOR_FORMAT,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                    stencil: Default::default(),
-                    // Surfaces pushed back a little: lines on them stay visible.
-                    bias: wgpu::DepthBiasState {
-                        constant: bias,
-                        slope_scale: if bias != 0 { 1.0 } else { 0.0 },
-                        clamp: 0.0,
+        let pipeline =
+            |entry: &str, layout: wgpu::VertexBufferLayout<'_>, bias: i32, write: bool| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("ohl-render"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some(entry),
+                        compilation_options: Default::default(),
+                        buffers: &[Some(layout)],
                     },
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: SAMPLES,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
-            })
-        };
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: COLOR_FORMAT,
+                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: DEPTH_FORMAT,
+                        depth_write_enabled: Some(write),
+                        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                        stencil: Default::default(),
+                        // Surfaces pushed back a little: lines on them stay visible.
+                        bias: wgpu::DepthBiasState {
+                            constant: bias,
+                            slope_scale: if bias != 0 { 1.0 } else { 0.0 },
+                            clamp: 0.0,
+                        },
+                    }),
+                    multisample: wgpu::MultisampleState {
+                        count: SAMPLES,
+                        ..Default::default()
+                    },
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
         let surface = pipeline(
             "vs_surface",
             wgpu::VertexBufferLayout {
@@ -693,6 +712,18 @@ impl Renderer {
                 attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Unorm8x4],
             },
             2,
+            true,
+        );
+        // Translucent triangles: tested against the depth, never writing it.
+        let glass = pipeline(
+            "vs_surface",
+            wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Unorm8x4],
+            },
+            2,
+            false,
         );
         let points = pipeline(
             "vs_point",
@@ -702,6 +733,7 @@ impl Renderer {
                 attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Unorm8x4, 2 => Float32],
             },
             0,
+            true,
         );
         let lines = pipeline(
             "vs_line",
@@ -713,9 +745,10 @@ impl Renderer {
                 ],
             },
             0,
+            true,
         );
         Self {
-            pipelines: [surface, points, lines],
+            pipelines: [surface, points, lines, glass],
             uniform,
             bind_group,
             targets: None,
@@ -782,7 +815,8 @@ impl Renderer {
         self.targets.as_ref().expect("made above")
     }
 
-    /// Draws `layers` (surfaces first, then points, then lines) seen by
+    /// Draws `layers` (surfaces first, then points, then lines, then the
+    /// translucent triangles) seen by
     /// `camera` into a `size` texture and returns it.
     pub fn render(
         &mut self,
@@ -865,11 +899,12 @@ impl Renderer {
                     let part = match k {
                         0 => &layer.triangles,
                         1 => &layer.points,
-                        _ => &layer.lines,
+                        2 => &layer.lines,
+                        _ => &layer.glass,
                     };
                     for (buffer, n) in part {
                         pass.set_vertex_buffer(0, buffer.slice(..));
-                        if k == 0 {
+                        if k == 0 || k == 3 {
                             pass.draw(0..*n, 0..1);
                         } else {
                             // A quad per point or segment instance.

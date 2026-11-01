@@ -296,7 +296,9 @@ distance, lightning strike distance. *German:* Einschlagdistanz
 ## The line and its route
 
 ![A route in plan: two alignments through alignment points meeting at a
-junction, structures along them](../images/glossary/route-plan.svg)
+junction; structures on them (tied to a point, within 5 m of a free
+point, or reached along an alignment by a span) and a crossing line's
+structures beside one, not on it](../images/glossary/route-plan.svg)
 
 **Line** — the overhead line being designed. *German:* Leitung.
 
@@ -312,7 +314,12 @@ usually one project line each. *Replaces:* phase (of a project).
 confirm).
 
 **Alignment** — a polyline through alignment points along which the
-structures are stationed. *German:* Trassenachse (to confirm).
+structures are stationed. A structure is **on** an alignment when it is
+tied to one of its points, stands within 5 m of a point no structure is
+tied to, or stands on it between two points and a span of the line runs
+along it to a structure already on it; a crossing line's structure beside
+it is not on it (see [The line file](line-file.md)). *German:*
+Trassenachse (to confirm).
 
 **Alignment point** — a vertex of an alignment; a structure may be tied
 to it, and one point may be on several alignments (a junction).

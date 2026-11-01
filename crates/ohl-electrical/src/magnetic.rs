@@ -39,7 +39,7 @@ use std::sync::atomic::Ordering;
 
 use nalgebra::{Complex, DMatrix, DVector};
 use ohl_line::electrical::SystemKind;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cross_section::{
     self, Axis, CrossSection, LineSpan, PhaseData, Sources, StationAt, line_spans,
@@ -234,7 +234,7 @@ pub fn field_2d(groups: &[Group2d], y: f64, z: f64) -> (f64, f64) {
 // Inputs.
 
 /// 3D (the solved wires) or 2D (infinite straight conductors).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Model {
     /// The wires as solved, finite straight pieces.
@@ -255,7 +255,7 @@ impl Model {
 }
 
 /// Where the 2D model takes the wires' heights.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Heights2d {
     /// At the station (the lowest point by default): the wires where they
@@ -269,7 +269,7 @@ pub enum Heights2d {
 
 /// The current into a circuit at one of its end points (owner,
 /// 2026-10-29: "inputs and outputs for each end point of the circuit").
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EndCurrent {
     /// The circuit: its name, or its system's id.
     pub circuit: String,
@@ -281,7 +281,7 @@ pub struct EndCurrent {
 }
 
 /// The current of a circuit.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CircuitCurrent {
     /// The circuit: its name, or its system's id (`*`: every circuit).
     pub circuit: String,
@@ -293,7 +293,7 @@ pub struct CircuitCurrent {
 }
 
 /// Where a profile is taken.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StationSpec {
     /// A structure of the span.
     pub from: String,
@@ -305,7 +305,7 @@ pub struct StationSpec {
 }
 
 /// A point the field is asked at.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GivenPoint {
     /// Its name (e.g. the place of sensitive use).
     pub name: String,
@@ -320,7 +320,7 @@ pub struct GivenPoint {
 }
 
 /// What to compute.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     /// 3D or 2D.
     pub model: Model,
@@ -387,7 +387,7 @@ pub struct Settings {
 /// axis, from the lowest ground under it to `above` over its highest
 /// wire. The default is a placeholder to fill (struct update syntax; no
 /// alignment, zero sizes).
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CutSpec {
     /// Where.
     pub at: CutAt,
@@ -404,7 +404,7 @@ pub struct CutSpec {
 }
 
 /// Where a cut is.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CutAt {
     /// At a station of an alignment.
@@ -623,7 +623,7 @@ fn span_at_station(
 /// A volume over a span: `width` to either side of its axis, from the
 /// lowest ground under it to `above` over its highest wire, the fine
 /// lattice `step` apart.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VolumeSpec {
     /// A structure of the span.
     pub from: String,
@@ -670,7 +670,7 @@ pub use crate::field_views::Progress;
 // Results.
 
 /// The field at one point.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldPoint {
     /// Its name (given points), else empty.
     pub name: String,
@@ -694,7 +694,7 @@ pub struct FieldPoint {
 }
 
 /// Where the field is at or above the limit along a profile.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LimitExtent {
     /// The leftmost offset at or above the limit, m (negative: left).
     pub left: f64,
@@ -706,7 +706,7 @@ pub struct LimitExtent {
 }
 
 /// A profile across the line.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
     /// The span's first structure along the line.
     pub from: String,
@@ -736,7 +736,7 @@ pub struct Profile {
 }
 
 /// A grid on a horizontal plane over a span.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldGrid {
     /// The span's first structure.
     pub from: String,
@@ -795,7 +795,7 @@ impl FieldGrid {
 }
 
 /// A circuit's current as used.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CurrentUsed {
     /// The circuit (name, else `system <id>`).
     pub circuit: String,
@@ -812,7 +812,7 @@ pub struct CurrentUsed {
 }
 
 /// An earth wire's induced current in one span.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EarthWireCurrent {
     /// Its section.
     pub section: String,
@@ -829,7 +829,7 @@ pub struct EarthWireCurrent {
 }
 
 /// The magnetic field of a line.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MagneticField {
     /// 3D or 2D.
     pub model: Model,
@@ -860,7 +860,7 @@ pub struct MagneticField {
 }
 
 /// A vertical cut's values and its span.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldCut {
     /// The cut's label ([`CutSpec::label`]), when given.
     pub label: Option<String>,
@@ -889,7 +889,7 @@ pub struct FieldCut {
 }
 
 /// A volume's surfaces and its span.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldVolume {
     /// The span's first structure.
     pub from: String,
@@ -906,7 +906,7 @@ pub struct FieldVolume {
 
 /// The wires' straight pieces in a 3D model, and how far they may lie off
 /// the wires.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Pieces {
     /// Straight pieces (every subconductor's).
     pub count: usize,
@@ -1435,7 +1435,7 @@ fn earth_wire_currents(
 
 /// A structure's current from the earth wires into the ground (the earth
 /// wire network over the line, `Settings::towers`).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TowerCurrent {
     /// The structure.
     pub structure: String,

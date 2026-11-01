@@ -14,13 +14,13 @@ ohl-cables.workspace = true
 ohl-clearance.workspace = true
 ohl-line.workspace = true
 ohl-thermal.workspace = true
+ohl-weather.workspace = true
 nalgebra.workspace = true
 faer.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ohl-weather.workspace = true
 
 [lints]
 workspace = true

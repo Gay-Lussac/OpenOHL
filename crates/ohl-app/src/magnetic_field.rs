@@ -41,6 +41,7 @@ use crate::field_results::{self, FieldRequest, ResultRow, RowAction};
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::span_pick::{Columns, CutAt, SpanPick};
+use ohl_session::reports::CheckReport;
 use views::{Above, PanelCuts, PieceStats, VolumeSetup};
 
 /// What its results are computed from ([`crate::revision`]).
@@ -243,6 +244,8 @@ pub struct MagneticFieldWindow {
     points_error: Option<String>,
     /// The profile shown in the plot.
     shown: usize,
+    /// Scroll the results to the plot (its row's button clicked).
+    reveal: bool,
     /// The run's progress and Stop.
     progress: Option<Arc<Progress>>,
     /// The run.
@@ -288,7 +291,13 @@ pub struct MagneticFieldWindow {
     /// The wires' pieces, by line version and case.
     pieces_seen: Option<((u64, usize), PieceStats)>,
     /// The overlay as last handed out.
-    drawn: Option<(bool, u64, u64, String, bool, bool)>,
+    drawn: Option<(bool, u64, u64, String, bool, bool, String)>,
+    /// Save in Performed checks.
+    saving: crate::field_saved::Saving,
+    /// A report saved: the command the app applies.
+    pub apply: Option<(String, ohl_session::Command)>,
+    /// The outputs of the run unticked in its list (not drawn).
+    pub(crate) hidden: field_results::Hidden,
     /// The last run's wires (3D).
     wires: Option<Arc<magnetic::Wires3d>>,
 }
@@ -318,6 +327,7 @@ impl Default for MagneticFieldWindow {
             case_kept: false,
             points_error: None,
             shown: 0,
+            reveal: false,
             progress: None,
             job: Job::default(),
             spans: None,
@@ -328,7 +338,10 @@ impl Default for MagneticFieldWindow {
             fill: true,
             above: Some(Above { step: 2.0 }),
             in_cuts: None,
-            volume: Some(VolumeSetup { step: 2.0 }),
+            volume: Some(VolumeSetup {
+                step: 2.0,
+                width: 50.0,
+            }),
             cut_width: 60.0,
             cut_step: 0.5,
             cut_above: views::ABOVE,
@@ -339,6 +352,9 @@ impl Default for MagneticFieldWindow {
             run_levels: Vec::new(),
             pieces_seen: None,
             drawn: None,
+            hidden: Default::default(),
+            saving: Default::default(),
+            apply: None,
             wires: None,
         }
     }
@@ -391,6 +407,8 @@ struct Stored {
     /// A volume over the spans ticked: its step (2026-10-30; `volume`
     /// before: its spans now the ticked ones, its step read).
     volume_step: Option<f64>,
+    /// The volumes' half width (2026-11-01; before: the profiles').
+    volume_width: Option<f64>,
     /// Per span the stations of its 2D cuts (2026-10-31).
     cuts: Vec<(SpanIds, Vec<CutAt>)>,
     /// The spans with a volume and with isolines from above (2026-10-31).
@@ -462,6 +480,7 @@ impl MagneticFieldWindow {
             in_cuts: self.in_cuts,
             volume: None,
             volume_step: self.volume.as_ref().map(|v| v.step),
+            volume_width: self.volume.as_ref().map(|v| v.width),
             cuts: self
                 .span_pick
                 .cuts
@@ -489,6 +508,14 @@ impl MagneticFieldWindow {
             .as_deref()
             .and_then(|t| serde_json::from_str(t).ok())
             .unwrap_or_default();
+        self.take(model, st);
+        self.saved = serde_json::to_string(&self.stored(model))
+            .ok()
+            .map(|json| (key, json));
+    }
+
+    /// Takes inputs kept (in the project or with a saved run).
+    fn take(&mut self, model: &Model, st: Stored) {
         let d = Self::default();
         self.case_kept = false;
         if let Some(k) = st
@@ -531,6 +558,7 @@ impl MagneticFieldWindow {
         self.in_cuts = st.in_cuts;
         self.volume = Some(VolumeSetup {
             step: st.volume_step.or(st.volume.map(|v| v.2)).unwrap_or(2.0),
+            width: st.volume_width.unwrap_or(self.width),
         });
         self.span_pick.cuts = st.cuts.into_iter().collect();
         self.span_pick.volume = st.volume_spans.into_iter().collect();
@@ -551,9 +579,6 @@ impl MagneticFieldWindow {
             },
             None => (None, None, None),
         };
-        self.saved = serde_json::to_string(&self.stored(model))
-            .ok()
-            .map(|json| (key, json));
     }
 
     /// Reads the inputs from the project when not read yet for the line
@@ -650,7 +675,10 @@ impl MagneticFieldWindow {
     pub fn set_views(&mut self, above: Option<f64>, cuts: Option<f64>, volume: Option<f64>) {
         self.above = above.map(|step| Above { step });
         self.in_cuts = cuts;
-        self.volume = volume.map(|step| VolumeSetup { step });
+        self.volume = volume.map(|step| VolumeSetup {
+            step,
+            width: self.width,
+        });
     }
 
     /// The views (tests): from above, the panels, the volume's step.
@@ -697,9 +725,14 @@ impl MagneticFieldWindow {
     /// What the last run was computed from that changed since, in words
     /// (`None`: nothing, or no answer).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        if !matches!(self.job.result, Some(Ok(_))) {
+            return None;
+        }
+        // A saved run: compared with the line by its own state.
+        match &self.saving.stale {
+            Some(s) => Some(s.clone()),
+            None => self.job.stamp.out_of_date(model, USES),
+        }
     }
 
     /// The settings as the engine takes them.
@@ -814,7 +847,7 @@ impl MagneticFieldWindow {
                     .map(|((from, to), _)| magnetic::VolumeSpec {
                         from,
                         to,
-                        width: self.width,
+                        width: v.width,
                         above: views::ABOVE,
                         step: v.step,
                     })
@@ -857,6 +890,9 @@ impl MagneticFieldWindow {
         self.run_levels = settings.levels.clone();
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
+        // A new run's outputs all drawn.
+        self.hidden.clear();
+        self.saving.stale = None;
         self.job.start_at(ctx, model.revision(), move || {
             if unsolved {
                 progress.set_stage(format!("solving the weather case {}", case.name));
@@ -919,6 +955,79 @@ impl MagneticFieldWindow {
                 work,
             })
         });
+    }
+
+    /// The saved run `r` shown: its inputs set, its field and surfaces,
+    /// with what changed on the line since it was saved.
+    pub fn load_saved(&mut self, r: &CheckReport, model: &Model) -> Result<(), String> {
+        let (case, mut field, meshes, with) =
+            crate::field_saved::read::<MagneticField>(&r.results)?;
+        if let Some(st) = crate::field_saved::inputs::<Stored>(&r.parameters) {
+            self.take(model, st);
+        }
+        if !with && !field.volumes.is_empty() {
+            field.notes.push(
+                "Saved without its volumes' surfaces (too large): run it again to see them.".into(),
+            );
+        }
+        self.job.stop();
+        self.job
+            .stamp
+            .set(crate::revision::saved_revision(&r.parameters, model));
+        self.job.result = Some(Ok(Answer {
+            field,
+            case,
+            wires: None,
+            meshes,
+            work: 0.0,
+        }));
+        self.job.generation += 1;
+        self.hidden.clear();
+        self.wires = None;
+        self.saving.stale = crate::field_saved::changed_since(r, model);
+        self.saving.name = r.id.clone();
+        self.open = true;
+        Ok(())
+    }
+
+    /// The run shown as report `name` of the performed checks.
+    fn check_report(&mut self, model: &Model, name: &str) -> Result<CheckReport, String> {
+        let inputs = self.stored(model);
+        let Some(Ok(a)) = &self.job.result else {
+            return Err("run it first".into());
+        };
+        let (results, triangles) = crate::field_saved::results(&a.case, &a.field, &a.meshes)?;
+        let largest = a
+            .field
+            .profiles
+            .iter()
+            .map(|p| p.max_ut)
+            .fold(0.0, f64::max);
+        let summary = format!(
+            "\"{}\": {} profile(s), largest {largest:.2} µT{}; {} cut(s), {} volume(s){}, {} \
+             from above",
+            a.case,
+            a.field.profiles.len(),
+            a.field
+                .limit_ut
+                .map_or(String::new(), |l| format!(" (limit {l} µT)")),
+            a.field.cuts.len(),
+            a.field.volumes.len(),
+            if triangles > crate::field_saved::MAX_SAVED_TRIANGLES {
+                " (surfaces not saved)"
+            } else {
+                ""
+            },
+            a.field.grids.len(),
+        );
+        crate::field_saved::report(
+            model,
+            (crate::field_saved::MAGNETIC_CHECK_ID, "Magnetic field"),
+            name,
+            summary,
+            crate::field_saved::parameters(&inputs, self.job.stamp.loads_per(model)),
+            results,
+        )
     }
 
     /// The window.
@@ -1440,11 +1549,12 @@ impl MagneticFieldWindow {
                 place: format!("{}–{} at {:.0} m", p.from, p.to, p.at),
                 max: format!("{:.3} µT", p.max_ut),
                 note: format!("at {:.0} m from the axis", p.max_offset),
-                button: "Plot",
+                button: "Show plot",
                 action: RowAction::Plot(k),
+                drawn: None,
             });
         }
-        for c in &a.field.cuts {
+        for (k, c) in a.field.cuts.iter().enumerate() {
             let largest = c.values.values.iter().copied().fold(0.0, f64::max);
             rows.push(ResultRow {
                 kind: "Cut",
@@ -1460,6 +1570,7 @@ impl MagneticFieldWindow {
                 note: "at the wires; isolines at the levels".into(),
                 button: "Open cut",
                 action: field_results::open_cut(c, self.cut_width),
+                drawn: Some(k),
             });
         }
         let per = a
@@ -1497,9 +1608,10 @@ impl MagneticFieldWindow {
                     }
                     None => RowAction::None,
                 },
+                drawn: Some(k),
             });
         }
-        for g in &a.field.grids {
+        for (k, g) in a.field.grids.iter().enumerate() {
             let largest = g.points.iter().map(|p| p.b_ut).fold(0.0, f64::max);
             let at = |id: &str| model.line.structure(id).map(|s| s.position);
             let action = match (at(&g.from), at(&g.to)) {
@@ -1517,6 +1629,7 @@ impl MagneticFieldWindow {
                 note: format!("{} × {} points", g.rows, g.columns),
                 button: "Show in 3D",
                 action,
+                drawn: Some(k),
             });
         }
         rows
@@ -1532,12 +1645,24 @@ impl MagneticFieldWindow {
         // The outputs listed first (owner, 2026-10-31): a click shows one.
         if let Some(Ok(a)) = &self.job.result {
             let rows = self.output_rows(model, a);
-            match field_results::list(ui, "magnetic-field", &rows) {
-                Some(RowAction::Plot(k)) => self.shown = k,
+            match field_results::list(ui, "magnetic-field", &rows, &mut self.hidden) {
+                Some(RowAction::Plot(k)) => {
+                    self.shown = k;
+                    self.reveal = true;
+                }
                 Some(RowAction::Ask(r)) => self.requests.push(r),
                 _ => {}
             }
             ui.separator();
+        }
+        // Save in Performed checks (owner, 2026-11-01).
+        if matches!(self.job.result, Some(Ok(_)))
+            && let Some(name) = self.saving.ui(ui, model)
+        {
+            let r = self.check_report(model, &name).map(|report| {
+                self.apply = Some((format!("saved the magnetic field {name}"), report.put()));
+            });
+            self.saving.outcome(&name, &r);
         }
         let answer = match &self.job.result {
             None => {
@@ -1612,18 +1737,27 @@ impl MagneticFieldWindow {
         if !m.profiles.is_empty() {
             ui.separator();
             self.shown = self.shown.min(m.profiles.len() - 1);
-            ui.horizontal(|ui| {
-                ui.strong("Profile");
-                let name = |p: &magnetic::Profile| format!("{}–{} at {:.1} m", p.from, p.to, p.at);
-                egui::ComboBox::from_id_salt("magnetic-field-profile")
-                    .selected_text(name(&m.profiles[self.shown]))
-                    .show_ui(ui, |ui| {
-                        for (k, p) in m.profiles.iter().enumerate() {
-                            ui.selectable_value(&mut self.shown, k, name(p));
-                        }
-                    });
-            });
-            plot(ui, &m.profiles[self.shown], m.limit_ut);
+            let header = ui
+                .horizontal(|ui| {
+                    ui.strong("Profile");
+                    let name =
+                        |p: &magnetic::Profile| format!("{}–{} at {:.1} m", p.from, p.to, p.at);
+                    egui::ComboBox::from_id_salt("magnetic-field-profile")
+                        .selected_text(name(&m.profiles[self.shown]))
+                        .show_ui(ui, |ui| {
+                            for (k, p) in m.profiles.iter().enumerate() {
+                                ui.selectable_value(&mut self.shown, k, name(p));
+                            }
+                        });
+                })
+                .response
+                .rect;
+            let drawn = plot(ui, &m.profiles[self.shown], m.limit_ut);
+            // The list's Show plot (2026-11-01: the plot sat below the
+            // notes and views, out of sight): the results scroll to it.
+            if std::mem::take(&mut self.reveal) {
+                ui.scroll_to_rect(header.union(drawn), Some(egui::Align::TOP));
+            }
             help::list(
                 ui,
                 "magnetic-field-profiles",
@@ -1752,7 +1886,7 @@ impl MagneticFieldWindow {
 /// A profile's plot: B (and the cycle's largest value, fainter) against
 /// the distance from the axis, the limit as a dashed line, the value under
 /// the pointer.
-fn plot(ui: &mut egui::Ui, p: &magnetic::Profile, limit: Option<f64>) {
+fn plot(ui: &mut egui::Ui, p: &magnetic::Profile, limit: Option<f64>) -> egui::Rect {
     let width = ui.available_width().clamp(300.0, 900.0);
     let (response, painter) = ui.allocate_painter(egui::vec2(width, 240.0), egui::Sense::hover());
     let r = response.rect;
@@ -1772,7 +1906,7 @@ fn plot(ui: &mut egui::Ui, p: &magnetic::Profile, limit: Option<f64>) {
         egui::StrokeKind::Inside,
     );
     let (Some(first), Some(last)) = (p.points.first(), p.points.last()) else {
-        return;
+        return r;
     };
     let (x0, x1) = (first.offset, last.offset.max(first.offset + 1e-9));
     let top = p
@@ -1885,4 +2019,5 @@ fn plot(ui: &mut egui::Ui, p: &magnetic::Profile, limit: Option<f64>) {
             );
         }
     }
+    r
 }

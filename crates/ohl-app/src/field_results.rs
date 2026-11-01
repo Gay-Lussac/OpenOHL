@@ -10,6 +10,8 @@
 //! 3D view. The windows ask the application through [`FieldRequest`]s.
 //! Shared by the Magnetic and the Electric field windows.
 
+use std::collections::BTreeSet;
+
 use eframe::egui;
 
 use crate::model::Model;
@@ -35,7 +37,7 @@ pub enum FieldRequest {
 /// What a click on a row does.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RowAction {
-    /// The profile (its index) plotted.
+    /// The profile (its index) plotted and scrolled to.
     Plot(usize),
     /// The request made.
     Ask(FieldRequest),
@@ -57,11 +59,23 @@ pub struct ResultRow {
     /// Its button's text and what it does.
     pub button: &'static str,
     pub action: RowAction,
+    /// Drawn in the 3D view and the panels: its index among the outputs of
+    /// its kind, its tick in the list (none: a profile, plotted only).
+    pub drawn: Option<usize>,
 }
 
-/// The list: a row per output; the action of the row whose button was
-/// clicked.
-pub fn list(ui: &mut egui::Ui, id: &str, rows: &[ResultRow]) -> Option<RowAction> {
+/// The outputs not drawn (owner, 2026-11-01: "a toggle for the views in
+/// 3D, not just Show, a tick box"): their kind and index among the run's.
+pub type Hidden = BTreeSet<(&'static str, usize)>;
+
+/// The list: a row per output, its tick drawing it or not (`hidden`);
+/// the action of the row whose button was clicked.
+pub fn list(
+    ui: &mut egui::Ui,
+    id: &str,
+    rows: &[ResultRow],
+    hidden: &mut Hidden,
+) -> Option<RowAction> {
     let mut out = None;
     if rows.is_empty() {
         return out;
@@ -79,15 +93,36 @@ pub fn list(ui: &mut egui::Ui, id: &str, rows: &[ResultRow]) -> Option<RowAction
             )),
         |ui| {
             egui::Grid::new((id, "outputs-grid"))
-                .num_columns(5)
+                .num_columns(6)
                 .striped(true)
                 .spacing([14.0, 3.0])
                 .show(ui, |ui| {
-                    for h in ["Kind", "Where", "Largest", "Note", ""] {
+                    for h in ["3D", "Kind", "Where", "Largest", "Note", ""] {
                         ui.strong(h);
                     }
                     ui.end_row();
                     for r in rows {
+                        match r.drawn {
+                            Some(k) => {
+                                let mut on = !hidden.contains(&(r.kind, k));
+                                if ui
+                                    .checkbox(&mut on, "")
+                                    .on_hover_text(
+                                        "Drawn in the 3D view and the cross-section panels",
+                                    )
+                                    .changed()
+                                {
+                                    if on {
+                                        hidden.remove(&(r.kind, k));
+                                    } else {
+                                        hidden.insert((r.kind, k));
+                                    }
+                                }
+                            }
+                            None => {
+                                ui.label("");
+                            }
+                        }
                         ui.label(r.kind);
                         ui.label(&r.place);
                         ui.label(&r.max);

@@ -2397,6 +2397,17 @@ impl eframe::App for App {
                 ready.unequal_wind.keep(&mut ready.model, &ctx);
                 ready.magnetic_field.ui(&ctx, &ready.model);
                 ready.electric_field.ui(&ctx, &ready.model);
+                // A run saved in Performed checks (2026-11-01).
+                for apply in [
+                    ready.magnetic_field.apply.take(),
+                    ready.electric_field.apply.take(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    let (what, command) = apply;
+                    ready.perform(crate::edit::Action::Command { what, command });
+                }
                 // What their Results ask (owner, 2026-10-31): a cut opened
                 // in a cross-section panel, the 3D view turned to a volume.
                 for (requests, layer) in [

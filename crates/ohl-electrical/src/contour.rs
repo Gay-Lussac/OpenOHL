@@ -158,7 +158,7 @@ fn join(segments: &[[usize; 2]], at: &HashMap<usize, [f64; 2]>) -> Vec<Vec<[f64;
 }
 
 /// A triangle mesh: vertices and corner indices.
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
     /// Vertices.
     pub vertices: Vec<[f64; 3]>,

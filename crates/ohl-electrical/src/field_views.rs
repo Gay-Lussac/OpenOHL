@@ -283,7 +283,7 @@ pub fn compute_all<T: Copy + Default + Send>(
 /// A vertical plane across the line: through `origin` (plan), offsets
 /// along `right` (a unit vector in plan, to the right looking ahead),
 /// heights as elevations.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct VerticalCut {
     /// The plane's point at offset 0 (on the axis), plan, m.
     pub origin: [f64; 2],
@@ -331,7 +331,7 @@ impl VerticalCut {
 }
 
 /// A vertical cut's values.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CutValues {
     /// The plane.
     pub cut: VerticalCut,
@@ -559,7 +559,7 @@ pub const MARGIN: f64 = 1.1;
 /// along a straight the direction turns evenly from one end's to the
 /// other's — so a lattice laid on it bends with the line without gaps or
 /// overlaps at its angles (owner, 2026-10-29: continuity between tiles).
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Path {
     /// The points (x, y, ground elevation).
     pub points: Vec<[f64; 3]>,
@@ -697,7 +697,7 @@ impl Path {
 /// A volume along a path: `width` to either side of it, elevations
 /// `bottom` to `top`, the fine lattice `step` apart (stations, offsets,
 /// heights).
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct VolumeBox {
     /// Along what.
     pub path: Path,
@@ -749,7 +749,7 @@ pub const CHECKED: usize = 200;
 
 /// How far a drawing lies off its level: the field computed at points of
 /// it, the relative difference to the level.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Deviation {
     /// The points checked.
     pub points: usize,
@@ -785,7 +785,7 @@ pub fn deviation(points: &[[f64; 3]], level: f64, field: Field<'_, f64>) -> Opti
 }
 
 /// A volume's surfaces and what was computed.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct VolumeValues {
     /// The box.
     pub bounds: VolumeBox,

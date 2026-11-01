@@ -838,8 +838,11 @@ kept in the project; with no span ticked, Run says so. Under the table:
   between the structures' feet.
 - **From above**, **2D cuts**, **Volumes** (3D): their sizes — the
   grids' step; the cuts' half width, step and reach over the highest wire
-  (default ±60 m every 0.5 m to 10 m over it); the volumes' step — each
-  with how many the table asks and how long they take (5 Views below).
+  (default ±60 m every 0.5 m to 10 m over it); the volumes' width each
+  side of the axis (2026-11-01: their own, so a low level's surface
+  reaching farther than the profiles is inside the box; it starts at the
+  profiles' width) and step — each with how many the table asks and how
+  long they take (5 Views below).
 
 Beside **Run**, a summary: the spans, profiles, cuts and volumes the run
 will compute and about how long. In **2 Scope**:
@@ -852,11 +855,22 @@ will compute and about how long. In **2 Scope**:
 
 **Results** (2026-10-31): first a list of everything computed — every
 profile, cut, volume and grid with its largest value and a note — and a
-button on each: **Plot** shows the profile below, **Open cut** opens a
+button on each: **Show plot** picks the profile in the plot below and
+scrolls to it, **Open cut** opens a
 cross-section panel at the cut's alignment station on the wires — on the
 very plane the run computed, the cut drawn in it —, **Show in 3D** turns
 the 3D view to the volume or grid and shows the field's layer. A cut's
-row names its alignment and station (and the span it crosses).
+row names its alignment and station (and the span it crosses). The
+**3D** tick of a cut, volume or grid (2026-11-01) draws it in the 3D view
+and the cross-section panels or not; a new run draws all. The volumes'
+surfaces are translucent: the structures, wires and points behind them
+stay visible.
+
+**Save in Performed checks** (2026-11-01; under the list) keeps the run —
+its inputs, the profiles, cuts, grids, points and the volumes' surfaces
+(up to two million triangles; a larger run is kept without them) — in
+Checks › Performed checks; opened from there, the window shows it with
+what changed on the line since.
 
 **4 Model** (3D; 2026-10-29; folded since 2026-10-31: open it to change
 the model). Every setting says beside it what it

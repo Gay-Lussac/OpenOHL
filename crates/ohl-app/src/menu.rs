@@ -42,12 +42,39 @@ pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egu
         ui.ctx().data_mut(|d| d.insert_temp(key, height));
         r
     };
+    // The button's text kept short, the whole on hover (owner, 2026-11-01:
+    // a choice listed in full widened the button at every tick and pushed
+    // its list out of the window).
+    let short = shortened(title);
     if is_in_menu(ui) {
-        SubMenuButton::new(title).config(config).ui(ui, body);
+        SubMenuButton::new(short.as_str())
+            .config(config)
+            .ui(ui, body);
     } else {
-        MenuButton::new(title).config(config).ui(ui, body);
+        let response = MenuButton::new(short.as_str())
+            .config(config)
+            .ui(ui, body)
+            .0;
+        if short != title {
+            response.on_hover_text(title);
+        }
     }
 }
+
+/// A tick menu button's text: at most [`MENU_TITLE`] characters, cut with
+/// "…".
+fn shortened(title: &str) -> String {
+    if title.chars().count() <= MENU_TITLE {
+        title.to_owned()
+    } else {
+        let mut s: String = title.chars().take(MENU_TITLE - 1).collect();
+        s.push('…');
+        s
+    }
+}
+
+/// The longest text a tick menu's button shows, characters.
+const MENU_TITLE: usize = 40;
 
 /// The most of the screen's height a tick menu takes (it scrolls beyond).
 const MENU_HEIGHT: f32 = 0.8;

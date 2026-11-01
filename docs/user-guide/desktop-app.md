@@ -677,7 +677,12 @@ of the electrogeometric model. The theory: [Lightning shielding](../theory/light
   shielding wires and its weather cases. Without a terrain for the
   checks, a warning: the sphere's verdict depends on the ground.
 - **3 Rules**, in the shared [rule table](#the-rule-table): a **name**,
-  its **weather cases**, the **method** — *Shielding angle* (**outer**
+  its **weather cases**, the **shielding wires' cases** (2026-11-01;
+  none: the phases' case; else each weather case checked with the
+  shielding wires in each case ticked — a row then names both), the
+  **phases' calculation** and the **shielding wires' calculation**
+  (2026-11-01: Initial, Creep, Load or Max Sag, by RS or FE; *each
+  section's own* by default), the **method** — *Shielding angle* (**outer**
   and **inner** angle) or *Rolling sphere* (the **striking distance**
   typed in m, or **from a current** in kA with **A** and **b** of r =
   A·I^b, 10 and 0.65 by default; the **ground factor β**) — the **step

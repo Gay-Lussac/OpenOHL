@@ -265,6 +265,9 @@ rules). Built, in active development (not approved yet). The theory:
 [[lightning_rule]]
 name = "shielding angle (invented 30°/45°)"
 cases = ["max temperature"]   # optional; none: every case
+shield_cases = ["everyday"]   # optional: the shielding wires in these cases; none: the phases' case
+calculation = "max-sag-fe"    # optional: how the phases are solved; none: each section's own
+shield_calculation = "initial-fe"  # optional: how the shielding wires are solved; none: each section's own
 method = "angle"
 outer_angle = 30.0            # degrees from the vertical, away from another shielding wire
 inner_angle = 45.0            # towards another shielding wire (default: the outer one)
@@ -284,6 +287,8 @@ targets = { circuits = ["North"] }  # optional: the phases protected; none: ever
 |---|---|
 | `name` | for the reports |
 | `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `shield_cases` | (2026-11-01) the shielding wires' own weather cases (wildcards): each case of `cases` is checked with the shielding wires solved in each of these (e.g. the phases at their highest temperature, the earth wires carrying no load current at an everyday temperature); none: the shielding wires in the phases' case. `ohl lightning` reads them from the same weather file as the cases checked |
+| `calculation`, `shield_calculation` | (2026-11-01) how the phases and the shielding wires are solved: a condition and a method as a section's calculation is named (`initial-fe`, `creep-rs`, `load-fe`, `max-sag-fe`, …; or as listed, `Max Sag FE`); none: each section's own calculation. A row names the calculation when one is given |
 | `method` | `angle` (a fixed shielding angle) or `sphere` (the rolling sphere of the electrogeometric model) |
 | `outer_angle`, `inner_angle` | (angle) degrees from the vertical through a shielding wire: towards another shielding wire the inner angle, elsewhere the outer; above 0 and below 90 |
 | `striking_distance` | (sphere) the striking distance to the wires, m |

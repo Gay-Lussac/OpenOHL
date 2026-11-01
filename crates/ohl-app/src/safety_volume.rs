@@ -1665,20 +1665,35 @@ pub mod saved {
     use super::*;
 
     fn pack_mesh(m: &Mesh) -> Result<String, String> {
+        pack(&m.vertices, &m.triangles)
+    }
+
+    fn unpack_mesh(text: &str) -> Result<Mesh, String> {
+        let (vertices, triangles) = unpack(text)?;
+        Ok(Mesh {
+            vertices,
+            triangles,
+        })
+    }
+
+    /// A triangle mesh packed (also the field windows' surfaces).
+    pub(crate) fn pack(vertices: &[[f64; 3]], triangles: &[[u32; 3]]) -> Result<String, String> {
         let mm = |v: f64| (v * 1000.0).round() as i64;
         let mut w = Writer::default();
-        w.u(m.vertices.len() as u64);
+        w.u(vertices.len() as u64);
         for k in 0..3 {
-            w.deltas(m.vertices.iter().map(|p| mm(p[k])));
+            w.deltas(vertices.iter().map(|p| mm(p[k])));
         }
-        w.u(m.triangles.len() as u64);
+        w.u(triangles.len() as u64);
         for k in 0..3 {
-            w.deltas(m.triangles.iter().map(|t| i64::from(t[k])));
+            w.deltas(triangles.iter().map(|t| i64::from(t[k])));
         }
         ohl_session::packing::pack(&w.0)
     }
 
-    fn unpack_mesh(text: &str) -> Result<Mesh, String> {
+    /// The vertices and triangles of a mesh [`pack`]ed.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn unpack(text: &str) -> Result<(Vec<[f64; 3]>, Vec<[u32; 3]>), String> {
         let raw = ohl_session::packing::unpack(text, 1 << 31)?;
         let mut r = Reader(&raw);
         let n = usize::try_from(r.u()?).map_err(|e| e.to_string())?;
@@ -1705,10 +1720,7 @@ pub mod saved {
         if !r.done() {
             return Err("bytes left over".into());
         }
-        Ok(Mesh {
-            vertices,
-            triangles,
-        })
+        Ok((vertices, triangles))
     }
 
     /// The results of a run (`meshes`: with them).

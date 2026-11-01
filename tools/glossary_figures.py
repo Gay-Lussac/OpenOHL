@@ -332,39 +332,58 @@ def circuits():
 
 # 5. Route, alignments, alignment points (plan) ------------------------------------------
 def route_plan():
-    f = Fig("route-plan", 760, 360, "Route, alignment and alignment points, in plan",
+    f = Fig("route-plan", 760, 400, "Route, alignment and alignment points, in plan",
             "Plan view: a route made of two alignments meeting at a junction; each alignment "
-            "runs through alignment points, and structures stand along it, some tied to an "
-            "alignment point.")
+            "runs through alignment points. A structure is on an alignment when it is tied to "
+            "one of its points, stands within 5 m of a point no structure is tied to, or is "
+            "reached along it by a span of the line from a structure already on it; a crossing "
+            "line's structures beside it are not on it.")
     f.text(20, 26, "A route in plan: alignments through alignment points", "t")
     a1 = [(40, 260), (230, 210), (430, 230), (620, 120)]
     a2 = [(430, 230), (560, 310), (730, 320)]
-    for pts, cls in ((a1, "st"), (a2, "st")):
+    for pts in (a1, a2):
         d = "M" + " L".join(f"{x},{y}" for x, y in pts)
-        f.add(f'<path class="{cls}" d="{d}" style="stroke-width:2"/>')
+        f.add(f'<path class="st" d="{d}" style="stroke-width:2"/>')
     for x, y in a1 + a2[1:]:
         f.add(f'<rect class="ap" x="{x-5}" y="{y-5}" width="10" height="10"/>')
-    # structures along the alignments (dots), some on the alignment points
-    def along(pts, step):
-        out = []
-        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-            n = max(1, int(math.hypot(x1 - x0, y1 - y0) // step))
-            for i in range(1, n):
-                out.append((x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n))
-        return out
-    for x, y in along(a1, 70) + along(a2, 70) + [a1[1], a1[2]]:
+
+    def at(p, q, t):
+        return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+    # the line's structures in order along each alignment: tied to the
+    # points, on the straights between them, and one beside a free point
+    free = (626, 129)                     # within 5 m of the free point a1[3]
+    line1 = [a1[0], at(a1[0], a1[1], 0.5), a1[1], at(a1[1], a1[2], 0.5), a1[2],
+             at(a1[2], a1[3], 0.35), at(a1[2], a1[3], 0.7), free]
+    line2 = [a1[2], at(a2[0], a2[1], 0.5), a2[1], at(a2[1], a2[2], 0.5), a2[2]]
+    for pts in (line1, line2):
+        d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        f.add(f'<path class="wire" d="{d}" style="stroke-width:1.4"/>')
+    for x, y in line1 + line2[1:]:
         f.add(f'<circle class="dot" cx="{x:.1f}" cy="{y:.1f}" r="4"/>')
-    f.label(230, 210, 240, 150, "alignment point (a structure tied to it)")
-    f.label(620, 120, 600, 70, "alignment point")
-    f.label(330, 220, 330, 290, "structure on the alignment")
-    f.label(430, 230, 570, 250, "junction (on both alignments)")
-    f.text(90, 280, "alignment 1", "lab")
-    f.text(640, 296, "alignment 2", "lab")
+    # a crossing line: its span crosses alignment 1, its structures beside it
+    x1, x2 = (318, 172), (346, 266)
+    f.add(f'<path class="wire3" d="M{x1[0]-30},{x1[1]-60} L{x1[0]},{x1[1]} '
+          f'L{x2[0]},{x2[1]} L{x2[0]+28},{x2[1]+62}" style="stroke-width:1.4"/>')
+    for x, y in (x1, x2):
+        f.add(f'<circle class="ap" cx="{x}" cy="{y}" r="4.5"/>')
+    f.add(f'<circle class="dash" cx="{a1[3][0]}" cy="{a1[3][1]}" r="16"/>')
+    f.label(230, 210, 40, 170, "point with a structure tied to it", end=False)
+    f.label(free[0], free[1], 600, 70, "within 5 m of a free alignment point: on it")
+    s1 = line1[3]
+    f.label(s1[0], s1[1], 300, 330, "reached along it by a span: on it", end=True)
+    f.label(x1[0], x1[1], 360, 120, "crossing line beside it: not on it")
+    f.label(430, 230, 580, 250, "junction (on both alignments)")
+    f.text(70, 285, "alignment 1", "lab")
+    f.text(640, 300, "alignment 2", "lab")
     f.text(20, 50, "route: both alignments together (the path of the line)", "lab")
-    f.add('<rect class="ap" x="20" y="331" width="10" height="10"/>')
-    f.text(36, 340, "alignment point", "lab")
-    f.add('<circle class="dot" cx="160" cy="336" r="4"/>')
-    f.text(170, 340, "structure", "lab")
+    f.add('<rect class="ap" x="20" y="371" width="10" height="10"/>')
+    f.text(36, 380, "alignment point", "lab")
+    f.add('<circle class="dot" cx="160" cy="376" r="4"/>')
+    f.text(170, 380, "structure on the alignment", "lab")
+    f.add('<circle class="ap" cx="356" cy="376" r="4.5"/>')
+    f.text(366, 380, "structure not on it", "lab")
+    f.add('<path class="wire" d="M500,376 L530,376" style="stroke-width:1.4"/>')
+    f.text(536, 380, "span", "lab")
     return f
 
 

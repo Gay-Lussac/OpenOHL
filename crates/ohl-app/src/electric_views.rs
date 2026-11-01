@@ -415,12 +415,22 @@ impl ElectricFieldWindow {
                 // The volumes: their spans ticked in the table.
                 ui.label("Volumes");
                 ui.horizontal(|ui| {
-                    let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
+                    let v = self.volume.get_or_insert(VolumeSetup {
+                        step: 2.0,
+                        width: self.width,
+                    });
                     ui.label(format!(
-                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±{} m, every",
+                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
                         runs.len(),
-                        self.width
                     ));
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut v.width)
+                            .range(1.0..=2000.0)
+                            .speed(1.0)
+                            .suffix(" m"),
+                    );
+                    ui.label("every");
                     crate::style::field(
                         ui,
                         egui::DragValue::new(&mut v.step)
@@ -433,7 +443,7 @@ impl ElectricFieldWindow {
                 if let (Some(v), true) = (&self.volume, ticked > 0) {
                     let n = ticked as f64;
                     let full =
-                        n * (st.span() / v.step) * (2.0 * self.width / v.step) * (70.0 / v.step);
+                        n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
                     let share = self.volume_share.unwrap_or(0.5);
                     let t = full * share * pieces * rate;
                     ui.label("");
@@ -561,10 +571,8 @@ impl ElectricFieldWindow {
                 .iter()
                 .map(|r| r.1)
                 .sum();
-            let full = ticked as f64
-                * (st.span() / v.step)
-                * (2.0 * self.width / v.step)
-                * (70.0 / v.step);
+            let full =
+                ticked as f64 * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
             seconds += full * self.volume_share.unwrap_or(0.5) * pieces * rate;
         }
         format!(
@@ -813,6 +821,7 @@ impl ElectricFieldWindow {
             serde_json::to_string(&levels).unwrap_or_default(),
             self.fill,
             stale,
+            format!("{:?}", self.hidden),
         );
         if self.drawn.as_ref() == Some(&key) {
             return None;
@@ -826,14 +835,26 @@ impl ElectricFieldWindow {
             return Some(o);
         }
         if let Some(Ok(a)) = &self.job.result {
-            for (level, mesh) in &a.meshes {
+            // The meshes in order, each volume's levels one after another.
+            let per = a
+                .field
+                .volumes
+                .first()
+                .map_or(1, |v| v.values.surfaces.len().max(1));
+            for (i, (level, mesh)) in a.meshes.iter().enumerate() {
+                if self.hidden.contains(&("Volume", i / per)) {
+                    continue;
+                }
                 if let Some(l) = levels.iter().find(|l| l.value == *level) {
                     o.surfaces.push((l.rgb, mesh.clone()));
                 }
             }
             // The cuts asked in the table (owner, 2026-10-31): drawn in
             // their planes, so a panel opened there (Open cut) shows them.
-            for c in &a.field.cuts {
+            for (k, c) in a.field.cuts.iter().enumerate() {
+                if self.hidden.contains(&("Cut", k)) {
+                    continue;
+                }
                 o.cuts
                     .push(field_overlay::cut_drawing(&c.values, &levels, self.fill));
             }

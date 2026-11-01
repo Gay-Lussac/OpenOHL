@@ -182,6 +182,17 @@ impl LightningWindow {
         {
             return Some("none of the rules' weather cases is in the model (3 Rules)".into());
         }
+        let names: Vec<&str> = model.cases.iter().map(|c| c.case.name.as_str()).collect();
+        if let Some(r) = self
+            .rules
+            .iter()
+            .find(|r| !r.shield_cases.is_empty() && r.shield_cases_for("", &names).is_empty())
+        {
+            return Some(format!(
+                "\"{}\": none of its shielding wires' cases is in the model (3 Rules)",
+                r.name
+            ));
+        }
         None
     }
 
@@ -216,16 +227,8 @@ impl LightningWindow {
 
     /// (rules × cases to run, spans of the line).
     fn work(&mut self, model: &Model) -> (usize, usize) {
-        let pairs = model
-            .cases
-            .iter()
-            .map(|c| {
-                self.rules
-                    .iter()
-                    .filter(|r| r.applies(&c.case.name))
-                    .count()
-            })
-            .sum();
+        let names: Vec<&str> = model.cases.iter().map(|c| c.case.name.as_str()).collect();
+        let pairs = engine::runs(&self.rules, &names, names.len()).len();
         let spans = match self.spans {
             Some((v, n)) if v == model.line_version => n,
             _ => {
@@ -244,12 +247,8 @@ impl LightningWindow {
             self.job.result = Some(Err(format!("not run: {why}")));
             return;
         }
-        let cases: Vec<ohl_weather::WeatherCase> = model
-            .cases
-            .iter()
-            .map(|c| c.case.clone())
-            .filter(|c| self.rules.iter().any(|r| r.applies(&c.name)))
-            .collect();
+        let cases: Vec<ohl_weather::WeatherCase> =
+            model.cases.iter().map(|c| c.case.clone()).collect();
         let line = model.line.clone();
         let library = model.library.clone();
         let rules = self.rules.clone();
@@ -263,54 +262,24 @@ impl LightningWindow {
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
             let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> =
                 ground.as_ref().map(|_| &height as _);
-            let mut report = EngineReport::default();
-            for case in &cases {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err("stopped".into());
-                }
-                let mut shapes = Vec::new();
-                for (section, r) in
-                    line.sections
-                        .iter()
-                        .zip(ohl_line::solve::solve_line_memo_default(
-                            &line, &library, case,
-                        ))
-                {
-                    match r {
-                        Ok(s) => shapes.push(s),
-                        Err(e) => report.notes.push(format!(
-                            "\"{}\": section {} not solved: {e}",
-                            case.name, section.id
-                        )),
-                    }
-                }
-                let src = ohl_electrical::cross_section::Sources {
-                    line: &line,
-                    library: &library,
-                    shapes: &shapes,
-                    temperature: case.temperature,
-                    ground: g,
-                    jumpers: &[],
+            let solve =
+                |line: &ohl_line::Line, case: &ohl_weather::WeatherCase| -> engine::Solved {
+                    ohl_line::solve::solve_line_memo_default(line, &library, case)
+                        .into_iter()
+                        .map(|r| r.map_err(|e| e.to_string()))
+                        .collect()
                 };
-                for (k, rule) in rules
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, r)| r.applies(&case.name))
-                {
-                    let r = engine::check(&src, rule, k, &case.name, &done, &cancel);
-                    report.rows.extend(r.rows);
-                    // The drawings: the last rule's cross-sections.
-                    report.cuts = r.cuts;
-                    for n in r.notes {
-                        if !report.notes.contains(&n) {
-                            report.notes.push(n);
-                        }
-                    }
-                }
-            }
-            if cancel.load(Ordering::Relaxed) {
-                return Err("stopped".into());
-            }
+            let mut report = engine::run(
+                &line,
+                &library,
+                &cases,
+                cases.len(),
+                &rules,
+                g,
+                &solve,
+                &done,
+                &cancel,
+            )?;
             if ground.is_none() {
                 report.notes.insert(
                     0,
@@ -319,7 +288,6 @@ impl LightningWindow {
                         .into(),
                 );
             }
-            engine::sort_rows(&mut report.rows);
             Ok(Arc::new(Report { report, rules }))
         });
     }
@@ -825,6 +793,29 @@ fn rule_fields(
                 changed |= ticks(ui, cases, &mut r.cases);
             });
             ui.end_row();
+            // The shielding wires in their own cases (owner, 2026-11-01).
+            ui.label("Shielding wires' cases");
+            crate::menu::options_menu(ui, &shield_cases_words(r), |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "None ticked: the shielding wires hang in the phases' case; else each \
+                         case above is checked with the shielding wires in each case ticked here",
+                    )
+                    .small()
+                    .weak(),
+                );
+                changed |= crate::case_groups::pick_names(ui, groups, &mut r.shield_cases);
+                changed |= ticks(ui, cases, &mut r.shield_cases);
+            });
+            ui.end_row();
+            // How each is solved (owner, 2026-11-01: "define the
+            // computation type for the wires").
+            ui.label("Phases' calculation");
+            changed |= calculation_combo(ui, "lightning-phases-calc", &mut r.calculation);
+            ui.end_row();
+            ui.label("Shielding wires' calculation");
+            changed |= calculation_combo(ui, "lightning-shields-calc", &mut r.shield_calculation);
+            ui.end_row();
             ui.label("Method");
             ui.horizontal(|ui| {
                 let angle = matches!(r.method, Method::Angle { .. });
@@ -963,6 +954,40 @@ fn phases_words(r: &LightningRule) -> String {
     }
 }
 
+/// A calculation to pick (none: each section's own); whether it changed.
+fn calculation_combo(
+    ui: &mut egui::Ui,
+    id: &str,
+    calc: &mut Option<ohl_line::condition::Calculation>,
+) -> bool {
+    let words = |c: Option<ohl_line::condition::Calculation>| {
+        c.map_or("each section's own".to_owned(), |k| k.label())
+    };
+    let before = *calc;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(words(*calc))
+        .show_ui(ui, |ui| {
+            ui.selectable_value(calc, None, words(None));
+            for k in ohl_line::condition::Calculation::ALL {
+                ui.selectable_value(calc, Some(k), k.label());
+            }
+        });
+    *calc != before
+}
+
+/// The shielding wires' cases of a rule, in words.
+fn shield_cases_words(r: &LightningRule) -> String {
+    let cases = if r.shield_cases.is_empty() {
+        "the phases' case".into()
+    } else {
+        crate::rule_table::cases_words(&r.shield_cases)
+    };
+    match r.shield_calculation {
+        Some(k) => format!("{cases}, {}", k.label()),
+        None => cases,
+    }
+}
+
 /// The shielding wires of a rule, in words.
 fn shields_words(r: &LightningRule) -> String {
     if r.shields.is_empty() {
@@ -975,13 +1000,21 @@ fn shields_words(r: &LightningRule) -> String {
 /// A rule in words.
 pub fn rule_text(r: &LightningRule) -> String {
     format!(
-        "{}: {}, every {} m, {}; {}; shielding {}",
+        "{}: {}, every {} m, {}; {}; shielding {} in {}",
         r.name,
         r.method.describe(),
         r.step,
-        crate::rule_table::cases_words(&r.cases),
+        match r.calculation {
+            Some(k) => format!(
+                "{}, {}",
+                crate::rule_table::cases_words(&r.cases),
+                k.label()
+            ),
+            None => crate::rule_table::cases_words(&r.cases),
+        },
         phases_words(r),
-        shields_words(r)
+        shields_words(r),
+        shield_cases_words(r)
     )
 }
 
@@ -999,7 +1032,15 @@ impl crate::rule_table::RuleRow for LightningRule {
         crate::rule_table::Summary {
             target: shields_words(self),
             voltages: "-".into(),
-            cases: crate::rule_table::cases_words(&self.cases),
+            cases: if self.shield_cases.is_empty() {
+                crate::rule_table::cases_words(&self.cases)
+            } else {
+                format!(
+                    "{}; shielding wires {}",
+                    crate::rule_table::cases_words(&self.cases),
+                    crate::rule_table::cases_words(&self.shield_cases)
+                )
+            },
             distance: if self.problem().is_some() {
                 "not set".into()
             } else {

@@ -49,6 +49,9 @@ pub struct Above {
 pub struct VolumeSetup {
     /// The fine lattice's step, m.
     pub step: f64,
+    /// How far each side of the axis, m (owner, 2026-11-01: a limit's
+    /// surface may reach farther than the profiles' width).
+    pub width: f64,
 }
 
 /// A cross-section panel's cut as computed: where, and the run it was
@@ -627,12 +630,22 @@ impl MagneticFieldWindow {
                 }
                 ui.label("Volumes");
                 ui.horizontal(|ui| {
-                    let v = self.volume.get_or_insert(VolumeSetup { step: 2.0 });
+                    let v = self.volume.get_or_insert(VolumeSetup {
+                        step: 2.0,
+                        width: self.width,
+                    });
                     ui.label(format!(
-                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±{} m, every",
+                        "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
                         runs.len(),
-                        self.width
                     ));
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut v.width)
+                            .range(1.0..=2000.0)
+                            .speed(1.0)
+                            .suffix(" m"),
+                    );
+                    ui.label("every");
                     crate::style::field(
                         ui,
                         egui::DragValue::new(&mut v.step)
@@ -645,7 +658,7 @@ impl MagneticFieldWindow {
                 if let (Some(v), true) = (&self.volume, ticked > 0) {
                     let n = ticked as f64;
                     let full =
-                        n * (st.span() / v.step) * (2.0 * self.width / v.step) * (70.0 / v.step);
+                        n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
                     let share = self.volume_share.unwrap_or(0.5);
                     let t = full * share * taken(self.modelled_within, st.span() * n) * rate;
                     ui.label("");
@@ -723,7 +736,7 @@ impl MagneticFieldWindow {
         if let Some(v) = &self.volume {
             points += volume_spans as f64
                 * (st.span() / v.step)
-                * (2.0 * self.width / v.step)
+                * (2.0 * v.width / v.step)
                 * (70.0 / v.step)
                 * self.volume_share.unwrap_or(0.5);
         }
@@ -998,6 +1011,7 @@ impl MagneticFieldWindow {
             serde_json::to_string(&levels).unwrap_or_default(),
             self.fill,
             stale,
+            format!("{:?}", self.hidden),
         );
         if self.drawn.as_ref() == Some(&key) {
             return None;
@@ -1011,21 +1025,36 @@ impl MagneticFieldWindow {
             return Some(o);
         }
         if let Some(Ok(a)) = &self.job.result {
-            for g in &a.field.grids {
+            for (k, g) in a.field.grids.iter().enumerate() {
+                if self.hidden.contains(&("From above", k)) {
+                    continue;
+                }
                 for l in &levels {
                     for line in g.isolines(l.value) {
                         o.plan.push((l.rgb, line));
                     }
                 }
             }
-            for (level, mesh) in &a.meshes {
+            // The meshes in order, each volume's levels one after another.
+            let per = a
+                .field
+                .volumes
+                .first()
+                .map_or(1, |v| v.values.surfaces.len().max(1));
+            for (i, (level, mesh)) in a.meshes.iter().enumerate() {
+                if self.hidden.contains(&("Volume", i / per)) {
+                    continue;
+                }
                 if let Some(l) = levels.iter().find(|l| l.value == *level) {
                     o.surfaces.push((l.rgb, mesh.clone()));
                 }
             }
             // The cuts asked in the table (owner, 2026-10-31): drawn in
             // their planes, so a panel opened there (Open cut) shows them.
-            for c in &a.field.cuts {
+            for (k, c) in a.field.cuts.iter().enumerate() {
+                if self.hidden.contains(&("Cut", k)) {
+                    continue;
+                }
                 o.cuts
                     .push(field_overlay::cut_drawing(&c.values, &levels, self.fill));
             }

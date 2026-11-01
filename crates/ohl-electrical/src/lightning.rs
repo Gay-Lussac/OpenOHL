@@ -53,6 +53,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use ohl_clearance::lightning::{LightningRule, Method};
+use ohl_line::condition::Calculation;
 use serde::Serialize;
 
 use crate::cross_section::{self, Axis, LineSpan, Sources, StationAt};
@@ -611,6 +612,144 @@ pub fn check_place(
             )
         }
     }
+}
+
+/// What a run checks: per rule (its index), the phases' weather case and
+/// the shielding wires' (indices into the cases' `names`), in their order;
+/// the phases in the first `checked` cases only (the others are there for
+/// the shielding wires).
+pub fn runs(rules: &[LightningRule], names: &[&str], checked: usize) -> Vec<(usize, usize, usize)> {
+    let mut out = Vec::new();
+    for (c, case) in names.iter().enumerate().take(checked) {
+        for (k, rule) in rules.iter().enumerate() {
+            if !rule.applies(case) {
+                continue;
+            }
+            for s in rule.shield_cases_for(case, names) {
+                if let Some(si) = names.iter().position(|n| *n == s) {
+                    out.push((k, c, si));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The wires of a line solved in one weather case, per section in the
+/// line's order (an error: the section left out, said).
+pub type Solved = Vec<Result<ohl_line::solve::SectionShape, String>>;
+
+/// Runs `rules` over weather `cases` (owner, 2026-11-01: the shielding
+/// wires may hang in other weather cases and calculations than the
+/// phases): each rule in each of its cases among the first `checked`
+/// ([`runs`]), the sections it shields taken from the shielding wires'
+/// case and calculation ([`LightningRule::shield_calculation`]), the
+/// others from the phases' ([`LightningRule::calculation`]; none: each
+/// section's own). `solve` solves a line in a case; each case and
+/// calculation is solved once. A row's case names both when they differ.
+/// `done` counts the spans finished; `cancel` stops it (`Err("stopped")`).
+#[allow(clippy::too_many_arguments)]
+pub fn run(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    cases: &[ohl_weather::WeatherCase],
+    checked: usize,
+    rules: &[LightningRule],
+    ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
+    solve: &dyn Fn(&ohl_line::Line, &ohl_weather::WeatherCase) -> Solved,
+    done: &AtomicUsize,
+    cancel: &AtomicBool,
+) -> Result<Report, String> {
+    type Key = (usize, Option<Calculation>);
+    let mut solved: std::collections::HashMap<Key, Solved> = Default::default();
+    let mut report = Report::default();
+    let solve_once =
+        |key: Key, solved: &mut std::collections::HashMap<Key, Solved>, report: &mut Report| {
+            if solved.contains_key(&key) {
+                return;
+            }
+            let (c, calc) = key;
+            let s = match calc {
+                None => solve(line, &cases[c]),
+                Some(k) => {
+                    let mut l = line.clone();
+                    for section in &mut l.sections {
+                        section.calculation = k;
+                    }
+                    solve(&l, &cases[c])
+                }
+            };
+            for (section, r) in line.sections.iter().zip(&s) {
+                if let Err(e) = r {
+                    report.notes.push(format!(
+                        "\"{}\"{}: section {} not solved: {e}",
+                        cases[c].name,
+                        calc.map_or(String::new(), |k| format!(" ({})", k.label())),
+                        section.id
+                    ));
+                }
+            }
+            solved.insert(key, s);
+        };
+    let label = |c: usize, calc: Option<Calculation>| match calc {
+        None => cases[c].name.clone(),
+        Some(k) => format!("{}, {}", cases[c].name, k.label()),
+    };
+    let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
+    for (k, c, sc) in runs(rules, &names, checked) {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("stopped".into());
+        }
+        let rule = &rules[k];
+        let (pk, sk) = ((c, rule.calculation), (sc, rule.shield_calculation));
+        solve_once(pk, &mut solved, &mut report);
+        solve_once(sk, &mut solved, &mut report);
+        let (phases, shielding) = (&solved[&pk], &solved[&sk]);
+        let shapes: Vec<ohl_line::solve::SectionShape> = line
+            .sections
+            .iter()
+            .enumerate()
+            .filter_map(|(i, section)| {
+                let from = if rule.shields(section) {
+                    shielding
+                } else {
+                    phases
+                };
+                from.get(i).and_then(|r| r.as_ref().ok()).cloned()
+            })
+            .collect();
+        let src = Sources {
+            line,
+            library,
+            shapes: &shapes,
+            temperature: cases[c].temperature,
+            ground,
+            jumpers: &[],
+        };
+        let name = if pk == sk {
+            label(c, rule.calculation)
+        } else {
+            format!(
+                "{} (shielding wires: {})",
+                label(c, rule.calculation),
+                label(sc, rule.shield_calculation)
+            )
+        };
+        let r = check(&src, rule, k, &name, done, cancel);
+        report.rows.extend(r.rows);
+        // The drawings: the last run's cross-sections.
+        report.cuts = r.cuts;
+        for n in r.notes {
+            if !report.notes.contains(&n) {
+                report.notes.push(n);
+            }
+        }
+    }
+    if cancel.load(Ordering::Relaxed) {
+        return Err("stopped".into());
+    }
+    sort_rows(&mut report.rows);
+    Ok(report)
 }
 
 /// Checks the spans of `src` under `rule` (index `index`) in weather

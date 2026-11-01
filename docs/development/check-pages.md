@@ -74,7 +74,7 @@ not approved yet.
   the worst first or in the line's order, the value against the limit
   with its margin, the limit's colour when it fails.
 - **Every row leads to what it is about**: a click selects and frames the
-  object; **Open cut**, **Show in 3D**, **Plot** where it applies. What the
+  object; **Open cut**, **Show in 3D**, **Show plot** where it applies, and a **3D** tick per drawn output. What the
   screenshots of a report need is two clicks away from the results.
 - **Notes** (what was assumed, what was left out) above the table; an
   **out-of-date banner** when the line changed since the run; **Export

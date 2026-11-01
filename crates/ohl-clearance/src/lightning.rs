@@ -19,6 +19,8 @@
 //! the defaults of that form (A = 10, b = 0.65, β = 1): the rule's values
 //! are the user's or a design-code plugin's preset.
 
+use ohl_line::condition::Calculation;
+
 use crate::tension::TensionTargets;
 
 /// The default step of the cross-sections along a span, m.
@@ -137,6 +139,17 @@ pub struct LightningRule {
     pub name: String,
     /// Weather cases (names, `*` `?` wildcards); empty: every case.
     pub cases: Vec<String>,
+    /// The shielding wires' own weather cases (owner, 2026-11-01: "pick
+    /// different weather cases for the earth wires and the conductors"):
+    /// each case of `cases` checked with the shielding wires in each of
+    /// these; empty: the shielding wires in the phases' case.
+    pub shield_cases: Vec<String>,
+    /// How the phases are solved (owner, 2026-11-01: "define the
+    /// computation type for the wires"); none: each section's own
+    /// calculation.
+    pub calculation: Option<Calculation>,
+    /// How the shielding wires are solved; none: each section's own.
+    pub shield_calculation: Option<Calculation>,
     /// The method and its values.
     pub method: Method,
     /// The phase conductors it protects (empty lists: every phase; only
@@ -155,6 +168,9 @@ impl LightningRule {
         Self {
             name: name.into(),
             cases: Vec::new(),
+            shield_cases: Vec::new(),
+            calculation: None,
+            shield_calculation: None,
             method: Method::Angle {
                 outer: 0.0,
                 inner: 0.0,
@@ -172,6 +188,24 @@ impl LightningRule {
                 .cases
                 .iter()
                 .any(|c| ohl_core::pattern::matches(c, case))
+    }
+
+    /// The shielding wires' weather cases among `names` for the phases'
+    /// case `case`: [`Self::shield_cases`] matched, or `case` itself.
+    pub fn shield_cases_for<'a>(&'a self, case: &'a str, names: &'a [&'a str]) -> Vec<&'a str> {
+        if self.shield_cases.is_empty() {
+            vec![case]
+        } else {
+            names
+                .iter()
+                .copied()
+                .filter(|n| {
+                    self.shield_cases
+                        .iter()
+                        .any(|p| ohl_core::pattern::matches(p, n))
+                })
+                .collect()
+        }
     }
 
     /// Whether section `s` is a phase it protects.
@@ -246,6 +280,15 @@ impl LightningRule {
         if !self.cases.is_empty() {
             let _ = writeln!(t, "cases = {}", list(&self.cases));
         }
+        if !self.shield_cases.is_empty() {
+            let _ = writeln!(t, "shield_cases = {}", list(&self.shield_cases));
+        }
+        if let Some(c) = self.calculation {
+            let _ = writeln!(t, "calculation = {}", q(&c.name()));
+        }
+        if let Some(c) = self.shield_calculation {
+            let _ = writeln!(t, "shield_calculation = {}", q(&c.name()));
+        }
         let _ = writeln!(t, "method = \"{}\"", self.method.as_str());
         match self.method {
             Method::Angle { outer, inner } => {
@@ -301,6 +344,12 @@ pub(crate) struct RawLightningRule {
     name: String,
     #[serde(default)]
     cases: Vec<String>,
+    #[serde(default)]
+    shield_cases: Vec<String>,
+    #[serde(default)]
+    calculation: Option<Calculation>,
+    #[serde(default)]
+    shield_calculation: Option<Calculation>,
     method: String,
     #[serde(default)]
     outer_angle: Option<f64>,
@@ -391,6 +440,9 @@ impl RawLightningRule {
         let rule = LightningRule {
             name: self.name,
             cases: self.cases,
+            shield_cases: self.shield_cases,
+            calculation: self.calculation,
+            shield_calculation: self.shield_calculation,
             method,
             targets: TensionTargets {
                 wire_types: t.wire_types,
@@ -424,6 +476,9 @@ name = "invented"
 [[lightning_rule]]
 name = "angle 30"
 cases = ["max sag"]
+shield_cases = ["hot*"]
+calculation = "max-sag-fe"
+shield_calculation = "Initial FE"
 method = "angle"
 outer_angle = 30.0
 
@@ -446,6 +501,12 @@ targets = { circuits = ["North"] }
             }
         );
         assert!(a.applies("max sag") && !a.applies("ice"));
+        let names = ["max sag", "hot 40", "hot 60", "ice"];
+        assert_eq!(a.shield_cases_for("max sag", &names), ["hot 40", "hot 60"]);
+        assert_eq!(b.shield_cases_for("ice", &names), ["ice"]);
+        assert_eq!(a.calculation, Some(Calculation::MAX_SAG_FE));
+        assert_eq!(a.shield_calculation, Some(Calculation::INITIAL_FE));
+        assert_eq!(b.calculation, None);
         let Method::Sphere {
             distance,
             ground_factor,

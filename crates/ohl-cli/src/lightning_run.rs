@@ -67,58 +67,37 @@ pub fn run(a: &LightningArgs) -> Result<bool, String> {
     let height = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> =
         terrain.as_ref().map(|_| &height as _);
-    let mut report = lightning::Report::default();
-    for case in &chosen {
-        let rules: Vec<(usize, &ohl_clearance::lightning::LightningRule)> = set
-            .lightning_rules
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.applies(&case.name))
-            .collect();
-        if rules.is_empty() {
-            continue;
-        }
-        let mut shapes = Vec::new();
-        for (section, r) in line
-            .sections
-            .iter()
-            .zip(ohl_line::solve::solve_line(&line, &library, case))
-        {
-            match r {
-                Ok(s) => shapes.push(s),
-                Err(e) => println!(
-                    "  \"{}\": section {} not solved: {e}",
-                    case.name, section.id
-                ),
-            }
-        }
-        let src = ohl_electrical::cross_section::Sources {
-            line: &line,
-            library: &library,
-            shapes: &shapes,
-            temperature: case.temperature,
-            ground,
-            jumpers: &[],
-        };
-        for (k, rule) in rules {
-            let r = lightning::check(
-                &src,
-                rule,
-                k,
-                &case.name,
-                &AtomicUsize::new(0),
-                &AtomicBool::new(false),
-            );
-            report.rows.extend(r.rows);
-            report.cuts = r.cuts;
-            for n in r.notes {
-                if !report.notes.contains(&n) {
-                    report.notes.push(n);
-                }
-            }
+    // The shielding wires' own cases (2026-11-01) from the same file, after
+    // the cases checked.
+    let checked = chosen.len();
+    let mut cases = chosen;
+    for c in ohl_weather::WeatherCases::load(&a.cases.weather)?.cases {
+        let wanted = set.lightning_rules.iter().any(|r| {
+            r.shield_cases
+                .iter()
+                .any(|p| ohl_core::pattern::matches(p, &c.name))
+        });
+        if wanted && !cases.iter().any(|x| x.name == c.name) {
+            cases.push(c);
         }
     }
-    lightning::sort_rows(&mut report.rows);
+    let solve = |line: &ohl_line::Line, case: &ohl_weather::WeatherCase| -> lightning::Solved {
+        ohl_line::solve::solve_line(line, &library, case)
+            .into_iter()
+            .map(|r| r.map_err(|e| e.to_string()))
+            .collect()
+    };
+    let report = lightning::run(
+        &line,
+        &library,
+        &cases,
+        checked,
+        &set.lightning_rules,
+        ground,
+        &solve,
+        &AtomicUsize::new(0),
+        &AtomicBool::new(false),
+    )?;
     for n in &report.notes {
         println!("  note: {n}");
     }

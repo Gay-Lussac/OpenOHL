@@ -376,6 +376,16 @@ impl Ready {
                         self.status = Some((e, true));
                     }
                 }
+                crate::field_saved::MAGNETIC_CHECK_ID => {
+                    if let Err(e) = self.magnetic_field.load_saved(&r, &self.model) {
+                        self.status = Some((e, true));
+                    }
+                }
+                crate::field_saved::ELECTRIC_CHECK_ID => {
+                    if let Err(e) = self.electric_field.load_saved(&r, &self.model) {
+                        self.status = Some((e, true));
+                    }
+                }
                 other => self
                     .model
                     .log

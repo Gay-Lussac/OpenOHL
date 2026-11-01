@@ -8,6 +8,49 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-01
+
+**The field windows' results (owner, 2026-11-01; built, in active
+development, not approved yet)**
+
+- **Show plot** (was Plot) picks the profile and scrolls the results to
+  the plot ("I don't understand what the plot button does … nothing
+  seems to appear": it only picked the profile in a plot below, out of
+  sight).
+- The volumes have their own width each side of the axis ("sometimes
+  the limit is bigger than that … a parameter to cover the whole
+  space"), starting at the profiles' width; stored as `volume_width`.
+- Translucent triangles (any corner's alpha under 255) are drawn after
+  every surface, point and line and no longer write the depth ("the
+  pylons and lidar disappear under the volume surface"): the volumes'
+  surfaces, cut bands and every other translucent fill now show what lies
+  behind them.
+- A **3D** tick per cut, volume and grid in the results list ("a toggle
+  for the views in 3D, not just Show, a tick box"); a new run draws all.
+- **Save in Performed checks** for both fields ("the results need to be
+  saveable in the results library"): `ohl.magnetic-field`,
+  `ohl.electric-field`, the surfaces packed as the safety volumes' (see
+  the [data model](data-model.md)). The field result types in
+  `ohl-electrical` read back as well as write (serde `Deserialize`).
+- Lightning rules take the shielding wires' own weather cases
+  (`shield_cases`; owner: "pick different weather cases for the earth
+  wires and the conductors"): each phases' case with each of them, the
+  sections the rule shields from the second, the others from the first;
+  a row names both. Likewise the calculation of each (`calculation`,
+  `shield_calculation`; owner: "define the computation type for the
+  wires … to pick the right condition for the earth wire"): none, each
+  section's own; a case and calculation is solved once per run. One
+  driver for the app and `ohl lightning`
+  (`ohl_electrical::lightning::run`); the command line reads them from
+  the same weather file as the cases it checks.
+- A tick menu's button shows at most 40 characters, the whole on hover
+  ("the list is pushed right at every click … until it's out of the
+  window": the button showed the whole choice; on a real line's many
+  systems it ran past the window's edge and its list with it).
+- The glossary's route drawing shows the alignment rule of 2026-10-31
+  (tied, within 5 m of a free point, reached by a span; a crossing
+  line's structures not on it).
+
 ## 2026-10-31
 
 **The lightning shielding check (owner, 2026-10-31: "work on this next
@@ -316,7 +359,8 @@ validated)**
   Views and levels** with *also in any cross-section panel I open*. A
   summary beside Run (spans, profiles, cuts, volumes, time).
 - **Results** first list every profile, cut, volume and grid with its
-  largest value: **Plot**, **Open cut** (a cross-section panel at the
+  largest value: **Show plot** (2026-11-01: the plot scrolled to),
+  **Open cut** (a cross-section panel at the
   cut's station on the wires, the run's cut drawn in it: the field
   layer's cuts), **Show in 3D** (the 3D view turned to the volume's
   surfaces, the field's layer shown) — the windows' `requests`, carried
