@@ -8,6 +8,26 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-02
+
+**The magnetic field reaches ±100 m by default (owner, 2026-11-02:
+"Set 100m as default"; built, in active development, not approved
+yet)**
+
+- Tried on a real line of 27 km, five 220 kV circuits at 1000 A each
+  (owner: "try the new field defaults … check if cuts are needed after
+  some distance"), 34 cuts against the whole line: the 2 km cut-off
+  holds (0.16 % where the field is 1 µT or more, a third of the time);
+  but the 1 µT isoline lay beyond ±50 m in 30 of the 34 cuts. Measured
+  in the [theory](../theory/magnetic-field.md#cut-offs-and-grids-measured).
+- The profiles', cuts' and volumes' half width is 100 m by default
+  (`ohl_electrical::magnetic::WIDTH`; before: profiles and volumes 50 m,
+  cuts 60 m); a project that stored its widths keeps them, as the
+  cut-off. The electric field keeps 50 m (`electric::WIDTH`).
+- `ohl electrical … --width` has no fixed default any more: `magnetic`
+  100 m, `electric` 50 m, `fields` each field its own, the ground
+  reaching as far as either needs.
+
 ## 2026-11-01
 
 **The field windows' results (owner, 2026-11-01; built, in active

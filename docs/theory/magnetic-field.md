@@ -80,8 +80,8 @@ brackets). "Time" is the effect on how long a run takes.
 | **3 Spans** › Make | 2D: cuts and profiles | 2D: the cuts asked and (*profiles too*) the profiles; 3D: the volumes only (2026-11-01) | each kind a step of its own |
 | **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts and volumes are computed | in proportion to the spans |
 | Profiles | at each ticked span's lowest point | or *beside its structures* (10 m into the span), or *one span* (its lowest point or a place 0–1 along it) | per profile |
-| Across: ± / every / at | ± 50 m, every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
-| 2D cuts at (+ station) / ± / every / up to | none; ± 60 m, every 1 m (0.5 m until 2026-11-01), up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
+| Across: ± / every / at | ± 100 m (50 m until 2026-11-02), every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
+| 2D cuts at (+ station) / ± / every / up to | none; ± 100 m (60 m until 2026-11-02), every 1 m (0.5 m until 2026-11-01), up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
 | Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
 | **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
 | Modelled: the whole line / wires within (`--modelled-within`) | wires within 2 000 m in the window (2026-11-01; the whole line before, and in `ohl`) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
@@ -373,7 +373,7 @@ nor not in general (the images oppose their sources' near fields).
 
 - **Profiles** across the line at stations (every span's lowest point by
   default — the lowest point of its lowest phase conductor — or a place
-  in a span), square to the span's axis, ±50 m every 1 m, at a height
+  in a span), square to the span's axis, ±100 m every 1 m, at a height
   above the ground (1 m by default). The ground — *Ground from*
   (2026-11-01): the surface of the checks, a terrain surface (TIN layer)
   of the project, or the survey's ground points along the spans made into
@@ -532,6 +532,37 @@ of a kilometre or more, and each run says what it changed. **2 km is the
 window's default since 2026-11-01** (the defaults reviewed for accuracy
 and speed: 0.03 % for ten times the speed); a line shorter than that is
 modelled whole all the same.
+
+**On a real line** (2026-11-02): a 27 km 220 kV line of five circuits
+(1000 A in each, assumed), 34 cuts along it — every kilometre and one
+at each line angle over 25°, ±150 m every 1 m — against the whole line.
+The points of 1 µT or more:
+
+| Modelled within | Largest difference (B ≥ 1 µT) | Largest (B ≥ 0.1 µT) | The 1 µT isoline 1 m above the ground | Time (34 cuts) |
+|---|---|---|---|---|
+| 500 m | 1.4 % | 9.0 % | one grid step (1 m) off at 9 cuts | 6.6 s |
+| 1 km | 1.0 % | 7.8 % | 1 m off at 4 cuts | 7.4 s |
+| **2 km (default)** | **0.16 %** | **1.4 %** | **1 m off at 3 cuts** | **9.0 s** |
+| 5 km | 0.02 % | 0.15 % | 1 m off at 1 cut | 13.4 s |
+| the whole line | — | — | — | 27 s |
+
+The shorter cut-offs fail where the line bends or another line comes
+near (the largest differences at an angle and near a substation the line
+shares with another); at 2 km the 1 µT isoline moves only where it sits
+on its level within a grid step, and the 1.4 % lies in the faint field
+below 1 µT (some 0.002 µT). So the 2 km default holds, for a third of
+the time.
+
+**The width.** On the same line the 1 µT isoline, 1 m above the ground,
+lay 52 to 76 m from the axis on one side in most cuts and 90 m in the
+cut along the bisector of a 49° angle: at the former ±50 m it reached
+the edge of 30 of the 34 cuts, cut short. **Profiles, cuts and volumes
+reach ±100 m by default since 2026-11-02**: the 34 cuts took 7.9 s
+against 6.1 s at ±50 m (the project's reading and the wires' solving
+included). Volumes twice as wide take about twice as long. Where a higher current or a lower level reaches farther, widen
+it: a level that touches the edge of a cut is cut short there. The
+electric field keeps ±50 m (its limits lie near the wires; its floors
+grow with the width).
 
 **A cut's step.** The field at every grid point is exact; an isoline is
 drawn straight between the points where it crosses a cell, so it cuts

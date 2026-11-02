@@ -876,14 +876,16 @@ kept in the project; with no span ticked, Run says so. Under the table:
   (2026-10-31: a profile this far into each ticked span from both its
   structures, 10 m by default), or one span at its
   lowest point or at a place 0–1 along it; **Across** ± the width every step at a
-  height above the ground (default ±50 m every 1 m at 1 m). The ground is
+  height above the ground (default ±100 m every 1 m at 1 m; ±50 m until
+  2026-11-02: on a real line the 1 µT isoline lay beyond it in most
+  cuts, see [Cut-offs and grids](../theory/magnetic-field.md#cut-offs-and-grids-measured)). The ground is
   the project's surface for the checks when there is one, else straight
   between the structures' feet.
 - **2D cuts** (2D) or **Volumes** (3D): their sizes — the cuts' half width, step and reach over the highest wire
-  (default ±60 m every 1 m — 0.5 m until 2026-11-01: the low levels' isolines as close, at a quarter of the points; see [Cut-offs and grids](../theory/magnetic-field.md#cut-offs-and-grids-measured) — to 10 m over it); the volumes' width each
+  (default ±100 m — ±60 m until 2026-11-02 — every 1 m — 0.5 m until 2026-11-01: the low levels' isolines as close, at a quarter of the points; see [Cut-offs and grids](../theory/magnetic-field.md#cut-offs-and-grids-measured) — to 10 m over it); the volumes' width each
   side of the axis (2026-11-01: their own, so a low level's surface
-  reaching farther than the profiles is inside the box; it starts at the
-  profiles' width) and step — each with how many the table asks and how
+  reaching farther than the profiles is inside the box; 100 m by default
+  since 2026-11-02) and step — each with how many the table asks and how
   long they take (5 Views below).
 
 Beside **Run**, a summary: the spans, profiles, cuts and volumes the run

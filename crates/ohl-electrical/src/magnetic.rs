@@ -67,6 +67,12 @@ pub const ARRANGEMENT_TOLERANCE_M: f64 = 0.5;
 /// before and after a station (BAFU 2007, 8.1.4.1: five times).
 pub const MODELLED_LENGTH_FACTOR: f64 = 5.0;
 
+/// The profiles', cuts' and volumes' reach to either side by default, m
+/// (owner, 2026-11-02; before: 50 m). Measured on a 220 kV line of five
+/// circuits at 1000 A each: the 1 µT isoline 1 m above the ground lay 52 to
+/// 90 m from the axis in 30 of 34 cuts, cut short at ±50 m.
+pub const WIDTH: f64 = 100.0;
+
 // ---------------------------------------------------------------------------
 // The closed forms.
 
@@ -650,7 +656,7 @@ impl Default for Settings {
             earth_wires: false,
             towers: false,
             height: 1.0,
-            width: 50.0,
+            width: WIDTH,
             step: 1.0,
             stations: Vec::new(),
             profiles: true,

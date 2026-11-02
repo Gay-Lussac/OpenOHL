@@ -87,8 +87,9 @@ fn symmetric_profile_and_default_stations() {
     let m = field(&line, &library, &s);
     assert_eq!(m.profiles.len(), 2);
     let p = &m.profiles[0];
-    assert_eq!(p.points.len(), 101);
-    for x in [3.0, 10.0, 25.0, 50.0] {
+    // ±100 m every 1 m (`magnetic::WIDTH`, 2026-11-02).
+    assert_eq!(p.points.len(), 201);
+    for x in [3.0, 10.0, 25.0, 50.0, 100.0] {
         let (l, r) = (at(p, -x), at(p, x));
         assert!((l - r).abs() < 1e-6 * l.max(1e-3), "{x}: {l} {r}");
     }
@@ -265,7 +266,7 @@ fn given_points() {
     s.step = 5.0;
     let m3 = field(&line, &library, &s);
     let g = &m3.grids[0];
-    assert_eq!(g.columns, 21);
+    assert_eq!(g.columns, 41);
     assert_eq!(g.rows, 61);
     let csv = magnetic::csv(&m3);
     assert!(csv.lines().count() > g.points.len());

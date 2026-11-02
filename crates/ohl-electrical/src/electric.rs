@@ -506,13 +506,19 @@ pub struct Settings {
     pub steel_left_out: Vec<String>,
 }
 
+/// The profiles', cuts' and volumes' reach to either side by default, m
+/// (the magnetic field's is wider, [`crate::magnetic::WIDTH`]: its low
+/// levels reach farther; the electric field's limits lie near the wires
+/// and its tiled floors grow with the width).
+pub const WIDTH: f64 = 50.0;
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             model: Model::ThreeD,
             voltages: Vec::new(),
             height: 1.0,
-            width: 50.0,
+            width: WIDTH,
             step: 1.0,
             stations: Vec::new(),
             profiles: true,

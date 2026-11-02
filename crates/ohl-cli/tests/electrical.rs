@@ -129,7 +129,7 @@ fn magnetic_field_of_the_example() {
     let table = std::fs::read_to_string(&csv).unwrap();
     assert_eq!(
         table.lines().filter(|l| l.starts_with("profile")).count(),
-        2 * 101
+        2 * 201
     );
     assert!(table.lines().any(|l| l.starts_with("point,,,,house")));
     // The thermal rating of the example's wire as the currents, 2D.

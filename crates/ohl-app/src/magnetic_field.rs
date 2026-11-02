@@ -328,7 +328,7 @@ impl Default for MagneticFieldWindow {
             towers: true,
             jumpers: true,
             height: 1.0,
-            width: 50.0,
+            width: magnetic::WIDTH,
             step: 1.0,
             stations: Stations::EverySpan,
             span_pick: SpanPick::default(),
@@ -359,9 +359,9 @@ impl Default for MagneticFieldWindow {
             in_cuts: None,
             volume: Some(VolumeSetup {
                 step: 2.0,
-                width: 50.0,
+                width: magnetic::WIDTH,
             }),
-            cut_width: 60.0,
+            cut_width: magnetic::WIDTH,
             // 1 m (owner, 2026-11-01: quicker at the same accuracy where it
             // matters: the low levels' isolines within 0.03 %, measured).
             cut_step: 1.0,

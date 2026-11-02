@@ -26,8 +26,8 @@ pub enum ElectricalCommand {
     /// cross-sections they come from.
     Parameters(Box<ParametersArgs>),
     /// Magnetic flux density (µT) of the line's currents: profiles across
-    /// the line (every span's lowest point by default, ±50 m, 1 m above the
-    /// ground), grids, given points; 3D from the wires as solved
+    /// the line (every span's lowest point by default, ±100 m, 1 m above
+    /// the ground), grids, given points; 3D from the wires as solved
     /// (Biot–Savart, finite segments) or 2D; an optional limit with the
     /// margin and the limit line's width.
     Magnetic(Box<MagneticArgs>),
@@ -76,9 +76,10 @@ pub struct FieldCommonArgs {
     #[arg(long, value_name = "FROM:TO[@FRACTION]")]
     pub profile: Vec<String>,
     /// The profiles (and cuts, volumes, grids) reach this far to either
-    /// side, m.
-    #[arg(long, default_value_t = 50.0)]
-    pub width: f64,
+    /// side, m (default: the magnetic field's 100 m, the electric field's
+    /// 50 m; `fields` each its own).
+    #[arg(long)]
+    pub width: Option<f64>,
     /// Height above the ground of the profiles, the grids and the points
     /// without one, m.
     #[arg(long, default_value_t = 1.0)]
@@ -880,9 +881,13 @@ struct Places {
     cuts: Vec<ohl_electrical::magnetic::CutSpec>,
     volumes: Vec<ohl_electrical::magnetic::VolumeSpec>,
     points: Vec<ohl_electrical::magnetic::GivenPoint>,
+    /// To either side, m.
+    width: f64,
 }
 
-fn places(c: &FieldCommonArgs) -> Result<Places, String> {
+/// The places asked, `width` to either side unless --width says.
+fn places(c: &FieldCommonArgs, width: f64) -> Result<Places, String> {
+    let width = c.width.unwrap_or(width);
     use ohl_electrical::magnetic::{self, StationSpec};
     let mut stations = Vec::new();
     for p in &c.profile {
@@ -894,7 +899,7 @@ fn places(c: &FieldCommonArgs) -> Result<Places, String> {
         let (at, label) = cut_arg(text)?;
         cuts.push(magnetic::CutSpec {
             at,
-            width: c.width,
+            width,
             above: c.above,
             step: c.cut_step,
             label,
@@ -906,7 +911,7 @@ fn places(c: &FieldCommonArgs) -> Result<Places, String> {
         volumes.push(magnetic::VolumeSpec {
             from,
             to,
-            width: c.width,
+            width,
             above: c.above,
             step: c.volume_step,
         });
@@ -923,6 +928,7 @@ fn places(c: &FieldCommonArgs) -> Result<Places, String> {
         cuts,
         volumes,
         points,
+        width,
     })
 }
 
@@ -1052,7 +1058,7 @@ fn magnetic_settings(
         earth_wires: o.earth_wires,
         towers: o.towers,
         height: c.height,
-        width: c.width,
+        width: p.width,
         step: c.step,
         profiles: true,
         stations: p.stations.clone(),
@@ -1097,7 +1103,7 @@ fn electric_settings(
         model: if c.two_d { Model::TwoD } else { Model::ThreeD },
         voltages,
         height: c.height,
-        width: c.width,
+        width: p.width,
         step: c.step,
         stations: p.stations.clone(),
         points: p.points.clone(),
@@ -1131,11 +1137,11 @@ fn electric_settings(
 }
 
 /// How far around the spans the electric field needs the ground, m.
-fn electric_reach(c: &FieldCommonArgs, o: &ElectricOptions) -> f64 {
+fn electric_reach(width: f64, o: &ElectricOptions) -> f64 {
     if o.plane {
-        o.ground_radius + c.width + 20.0
+        o.ground_radius + width + 20.0
     } else {
-        o.floor_reach + c.width + 20.0
+        o.floor_reach + width + 20.0
     }
 }
 
@@ -1152,12 +1158,12 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
     let Some((currents, sources, ends)) = currents(&a.magnetic, &line, &library)? else {
         return Ok(());
     };
-    let p = places(&a.common)?;
+    let p = places(&a.common, ohl_electrical::magnetic::WIDTH)?;
     let levels = levels(&a.level, !p.volumes.is_empty(), "--level µT")?;
     let mut settings =
         magnetic_settings(&a.common, &a.magnetic, &p, currents, ends, levels, a.limit)?;
     let s = solve(line, library, case);
-    let terrain = terrain(&a.common, &s.line, a.common.width + 20.0, false)?;
+    let terrain = terrain(&a.common, &s.line, p.width + 20.0, false)?;
     let height = ground_of(&terrain);
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
         .as_ref()
@@ -1200,14 +1206,14 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
 fn electric(a: &ElectricArgs) -> Result<(), String> {
     use ohl_electrical::electric;
     let (line, library, case) = load_case(&a.common)?;
-    let p = places(&a.common)?;
+    let p = places(&a.common, ohl_electrical::electric::WIDTH)?;
     let levels = levels(&a.level, !p.volumes.is_empty(), "--level kV/m")?;
     let mut settings = electric_settings(&a.common, &a.electric, &p, &line, levels, a.limit)?;
     let s = solve(line, library, case);
     let terrain = terrain(
         &a.common,
         &s.line,
-        electric_reach(&a.common, &a.electric),
+        electric_reach(p.width, &a.electric),
         a.electric.lidar_ground,
     )?;
     let height = ground_of(&terrain);
@@ -1253,7 +1259,10 @@ fn fields(a: &FieldsArgs) -> Result<(), String> {
     let Some((currents, sources, ends)) = currents(&a.magnetic, &line, &library)? else {
         return Ok(());
     };
-    let p = places(&a.common)?;
+    // Each field its own reach to either side (the magnetic field's
+    // wider), unless --width says.
+    let p = places(&a.common, magnetic::WIDTH)?;
+    let pe = places(&a.common, electric::WIDTH)?;
     let volumes = !p.volumes.is_empty();
     let mut ms = magnetic_settings(
         &a.common,
@@ -1267,17 +1276,17 @@ fn fields(a: &FieldsArgs) -> Result<(), String> {
     let mut es = electric_settings(
         &a.common,
         &a.electric,
-        &p,
+        &pe,
         &line,
         levels(&a.level_kv_m, volumes, "--level-kv-m kV/m")?,
         a.limit_kv_m,
     )?;
     let s = solve(line, library, case);
-    // The electric field's reach: it holds the magnetic field's.
+    // The ground reaches as far as either field needs.
     let terrain = terrain(
         &a.common,
         &s.line,
-        electric_reach(&a.common, &a.electric),
+        electric_reach(pe.width, &a.electric).max(p.width + 20.0),
         a.electric.lidar_ground,
     )?;
     let height = ground_of(&terrain);
