@@ -931,7 +931,10 @@ fn plate(
     // clamp it), as the exports lay it (owner 2026-11-02: "make the joint
     // view follow the export for plates"); without bolts, in the plane of
     // the members onto it.
-    let outline = match onto.iter().find_map(|a| a.bolt_points.first().map(|q| (*q, a))) {
+    let outline = match onto
+        .iter()
+        .find_map(|a| a.bolt_points.first().map(|q| (*q, a)))
+    {
         Some((at, a)) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.03),
         None => hull_around(&pts, joint, &onto, 0.03),
     };
