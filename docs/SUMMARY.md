@@ -107,6 +107,7 @@
 - [Structure application crates](development/structure-app.md)
 - [A shared UI crate (plan)](development/ui-shared.md)
 - [Structure exports: IFC, SAF, CSV](development/structure-exports.md)
+- [Joint details of towers (roadmap, proposal)](development/joint-details.md)
 
 # Validation
 

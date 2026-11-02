@@ -33,7 +33,7 @@ Guiding principles:
 
 **Contents**
 - [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18; U7, U8, U10, U11; Phases 1–5 for the line
-- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
+- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): O2, O9, O11, O17; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
 The phases below record what is built. Phases map to GitHub milestones;
@@ -813,6 +813,30 @@ forces, buckling lengths, sections, joint details), what comes back
 > **Owner:** (2026-10-19) Can be done in parallel with other work. First
 > code: SIA 263 for steel. Members first, then joints. The theory of the
 > checks goes in a theory page of the book.
+
+### O19. Joint details of towers: show and define them
+A tool in OHL-Structure to see and define, at each joint of a tower:
+- the members that arrive and from where;
+- each member end's condition (onto the leg or a gusset plate, the leg
+  bolted, eccentric, restrained);
+- the bolts (how many, where).
+
+Also: the structure's kind (pole or tower) editable as a toggle.
+
+The checks would then take their conditions from the joints instead of
+flags typed per member: ASCE 10-97's slenderness curves and connection
+capacity per end, buckling lengths from what braces a member, optional
+eccentricities, releases and bolt slip in the FE model, the joints'
+own checks (with O4), the bolts' and plates' weight.
+
+Six stages, the questions per stage and per detail level:
+[Joint details of towers](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md). Not
+built.
+> **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
+> define the joints in the OHL structure in details for a pylon that
+> isn't a pole … where the bars are coming from, what's their condition
+> on the joint and where are the bolts, how many. And then how this is
+> expected to impact the conditions on the calculations later on."
 
 ### O5. Tension-only parts that stay nearly free
 Today: kept active and flagged *approximate* (see U1). Options when this is
