@@ -69,6 +69,8 @@ pub enum Act {
     RemovePlate(String),
     /// A member selected.
     Select(String),
+    /// A joint selected.
+    SelectJoint(String),
 }
 
 /// The bolt layout window's values, millimetres.
@@ -398,6 +400,10 @@ impl StructureApp {
             }
             Act::Select(member) => {
                 self.selected = vec![Handle::Member(member)];
+                None
+            }
+            Act::SelectJoint(joint) => {
+                self.selected = vec![Handle::Joint(joint)];
                 None
             }
         };
@@ -861,17 +867,37 @@ pub fn table(
     buffers: &mut std::collections::HashMap<String, String>,
     presets: &[Preset],
 ) -> Vec<Act> {
+    let rows: Vec<(&JointDetail, &Arrival)> = j.arrivals.iter().map(|a| (j, a)).collect();
+    rows_table(ui, t, details, &rows, false, buffers, presets)
+}
+
+/// A connections table of `rows` (a joint and one of its member ends):
+/// the first column the member (`by_joint` false: a joint's table) or the
+/// joint (a member's table, [`crate::member_panel`]).
+pub fn rows_table(
+    ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
+    details: &JointDetails,
+    rows: &[(&JointDetail, &Arrival)],
+    by_joint: bool,
+    buffers: &mut std::collections::HashMap<String, String>,
+    presets: &[Preset],
+) -> Vec<Act> {
     let mut acts = Vec::new();
     egui::ScrollArea::horizontal()
-        .id_salt("joint-connections")
+        .id_salt(("joint-connections", by_joint))
         .auto_shrink([false, true])
         .show(ui, |ui| {
-            egui::Grid::new("joint-connections-grid")
+            egui::Grid::new(("joint-connections-grid", by_joint))
                 .striped(true)
                 .spacing([8.0, 3.0])
                 .show(ui, |ui| {
                     for (h, tip) in [
-                        ("Member", "The member (click: select it)"),
+                        if by_joint {
+                            ("Joint", "The joint at this end (click: select it)")
+                        } else {
+                            ("Member", "The member (click: select it)")
+                        },
                         ("End", "Its first (i) or second (j) joint is this one"),
                         ("Class", "Its class (design data) or group"),
                         ("From", "The face it lies in"),
@@ -905,8 +931,8 @@ pub fn table(
                         ui.strong(h).on_hover_text(tip);
                     }
                     ui.end_row();
-                    for a in &j.arrivals {
-                        row(ui, t, details, j, a, buffers, presets, &mut acts);
+                    for (j, a) in rows {
+                        row(ui, t, details, j, a, by_joint, buffers, presets, &mut acts);
                         ui.end_row();
                     }
                 });
@@ -921,6 +947,7 @@ fn row(
     details: &JointDetails,
     j: &JointDetail,
     a: &Arrival,
+    by_joint: bool,
     buffers: &mut std::collections::HashMap<String, String>,
     presets: &[Preset],
     acts: &mut Vec<Act>,
@@ -932,18 +959,22 @@ fn row(
         field,
         value,
     };
+    if by_joint && ui.link(jid).on_hover_text("click: select it").clicked() {
+        acts.push(Act::SelectJoint(jid.to_owned()));
+    }
     let mut name = egui::RichText::new(m);
     if a.modelling {
         name = name.weak();
     }
-    if ui
-        .link(name)
-        .on_hover_text(if a.modelling {
-            "a modelling member (not design-checked); click: select it"
-        } else {
-            "click: select it"
-        })
-        .clicked()
+    if !by_joint
+        && ui
+            .link(name)
+            .on_hover_text(if a.modelling {
+                "a modelling member (not design-checked); click: select it"
+            } else {
+                "click: select it"
+            })
+            .clicked()
     {
         acts.push(Act::Select(m.to_owned()));
     }

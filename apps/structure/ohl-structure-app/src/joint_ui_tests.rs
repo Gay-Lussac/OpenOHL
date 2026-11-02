@@ -397,15 +397,124 @@ fn the_edit_tool_opens_where_it_is_edited() {
     h.run();
     assert_eq!(h.state().selected, vec![Handle::Member("m155".into())]);
     assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
-    h.get_by_label_contains("Member m155");
-    assert!(!h.state().is_open(Panel::JointView));
+    // A tower's member: also Member details and the Detail view.
+    assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
+    assert!(h.get_all_by_label_contains("Member m155").count() >= 2);
     h.state_mut()
         .tool_click(Some(Handle::Joint("L9A".into())), None);
     h.run();
     assert!(h.state().is_open(Panel::JointDetails) && h.state().is_open(Panel::JointView));
     assert_eq!(h.state().joints.joint.as_deref(), Some("L9A"));
     assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
-    // The Inspector's heading and the Joint view's.
+    // The Inspector's heading and the Detail view's.
     assert_eq!(h.get_all_by_label("Joint L9A").count(), 2);
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
+
+/// Member details (owner 2026-11-02: "the same view of the members as for
+/// the joints … see live the impacts on the bar's resistance"): the Edit
+/// tool on a member opens it and the Detail view on the member laid flat;
+/// its two ends are the joints' rows; its capacities follow a change of
+/// its bolts at once.
+#[test]
+fn member_details_follow_the_bolts_live() {
+    use crate::member_panel::Subject;
+    use crate::tools::Tool;
+    let path = copy_of("type-02.ohls", "member-details");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
+    let mut h = harness(&tower);
+    h.state_mut().hold_tool(Tool::Edit);
+    h.state_mut()
+        .tool_click(Some(Handle::Member("D1".into())), None);
+    h.run();
+    h.run();
+    assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
+    assert_eq!(h.state().joints.subject, Subject::Member);
+    assert_eq!(h.state().joints.member.as_deref(), Some("D1"));
+    menu(&mut h, "Design", "Member details…");
+    h.run();
+    h.get_by_label_contains("Resistance (ASCE 10-97");
+    h.get_by_label("Tension");
+    // The Inspector's heading and the Detail view's.
+    assert_eq!(h.get_all_by_label("Member D1").count(), 2);
+    let tension = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state_mut()
+            .member_capacity("D1")
+            .as_ref()
+            .as_ref()
+            .unwrap()
+            .tension
+            .clone()
+            .unwrap()
+            .0
+    };
+    if let Some(dir) = &shots {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(dir.join("member-details.png"))
+            .unwrap();
+    }
+    // D1's end at N4 given one library bolt, then three: each one undo
+    // step, the capacity worked out again at once (the bolt's shear
+    // governing with one).
+    let bolts_at_n4 = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>, n: u32| {
+        h.state_mut()
+            .file
+            .as_mut()
+            .unwrap()
+            .edit("bolts", |doc, _| {
+                ohl_structure_edit::connection_edits::set_bolt_layout(
+                    doc,
+                    "D1",
+                    "N4",
+                    &ohl_structure_edit::connection_edits::BoltLayout {
+                        count: n,
+                        bolt: Some("X17-example".into()),
+                        diameter: 0.017,
+                        hole: None,
+                        grade: None,
+                        gauges: vec![0.03],
+                        pitch: 0.055,
+                        end: 0.03,
+                        edge: None,
+                    },
+                )
+            });
+        h.run();
+    };
+    bolts_at_n4(&mut h, 1);
+    let one = tension(&mut h);
+    bolts_at_n4(&mut h, 3);
+    let three = tension(&mut h);
+    assert!(three > one, "{one} {three}");
+    if let Some(dir) = &shots {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(dir.join("member-details-3-bolts.png"))
+            .unwrap();
+    }
+    // A joint selected: the Detail view shows the joint again.
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Joint);
+    std::fs::remove_dir_all(dir).ok();
 }

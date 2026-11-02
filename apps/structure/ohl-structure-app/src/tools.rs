@@ -56,8 +56,8 @@ pub enum Tool {
     /// What is clicked is deleted (asked first).
     Delete,
     /// What is clicked opens where it is edited (owner 2026-11-02): the
-    /// Inspector with its fields, its table's row, a tower's joint in
-    /// Joint details and the Joint view.
+    /// Inspector with its fields, its table's row, a tower's joint or
+    /// member in Joint or Member details and the Detail view.
     Edit,
 }
 
@@ -147,7 +147,8 @@ impl Tool {
             Tool::Delete => "Click something: delete it with what goes with it (asked first)",
             Tool::Edit => {
                 "Click a joint, member or point: its fields in the Inspector, its row in its \
-                 table; a tower's joint also in Joint details and the Joint view"
+                 table; a tower's joint or member also in Joint or Member details and the \
+                 Detail view"
             }
         }
     }
@@ -653,13 +654,21 @@ impl StructureApp {
             .as_ref()
             .is_some_and(|f| ohl_structure_edit::is_tower(f.structure().kind));
         let mut also = "";
-        if let Handle::Joint(id) = &h
-            && tower
-        {
-            self.joints.joint = Some(id.clone());
-            self.joints.face = None;
-            self.focus(crate::layout::Panel::JointDetails);
-            also = ", Joint details and the Joint view";
+        match &h {
+            Handle::Joint(id) if tower => {
+                self.joints.joint = Some(id.clone());
+                self.joints.face = None;
+                self.joints.subject = crate::member_panel::Subject::Joint;
+                self.focus(crate::layout::Panel::JointDetails);
+                also = ", Joint details and the Detail view";
+            }
+            Handle::Member(id) if tower => {
+                self.joints.member = Some(id.clone());
+                self.joints.subject = crate::member_panel::Subject::Member;
+                self.focus(crate::layout::Panel::MemberDetails);
+                also = ", Member details and the Detail view";
+            }
+            _ => {}
         }
         self.focus(crate::layout::Panel::Inspector);
         self.message = Some((format!("Edit {}: the Inspector{also}", h.describe()), false));

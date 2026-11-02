@@ -855,6 +855,8 @@ Six stages, the questions per stage and per detail level:
 - [x] Stage 3 — defining joints in the application: every value edited
   in the table, the bolt layout window, copies to the joints like it and
   to a group or class, presets (`Connections/*.ohlcp`), plates (2026-11-02)
+- [x] Member details: a member's two ends edited from the member, its
+  capacities live, its leg laid flat in the Detail view (2026-11-02)
 - [x] A bolt library (`.ohlb`, `Bolts/` beside the structure), imported
   and exported; bolts drawn with head and nut, the members seated leg on
   leg in the drawings (2026-11-02)

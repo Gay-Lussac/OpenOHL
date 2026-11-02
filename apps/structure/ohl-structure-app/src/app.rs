@@ -804,7 +804,9 @@ impl StructureApp {
     /// its menu becomes the one worked in.
     pub fn focus(&mut self, panel: Panel) {
         // Joint details brings its drawing beside the 3D view.
-        if panel == Panel::JointDetails && !self.is_open(Panel::JointView) {
+        if matches!(panel, Panel::JointDetails | Panel::MemberDetails)
+            && !self.is_open(Panel::JointView)
+        {
             crate::layout::open_panel(&mut self.dock, Panel::JointView);
         }
         crate::layout::open_panel(&mut self.dock, panel);
@@ -1047,6 +1049,7 @@ impl StructureApp {
             Panel::Inspector => self.inspector_ui(ui),
             Panel::JointDetails => self.joint_panel_ui(ui),
             Panel::JointView => self.joint_view_ui(ui),
+            Panel::MemberDetails => self.member_panel_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }
     }

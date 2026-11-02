@@ -134,13 +134,17 @@ pub enum Panel {
     /// the bolts ([`crate::joint_panel`]).
     JointDetails,
     /// The joint of Joint details drawn: a close-up or a face view, a
-    /// pane beside the 3D view ([`crate::joint_panel`]).
+    /// pane beside the 3D view ([`crate::joint_panel`]); or the member of
+    /// Member details laid flat ([`crate::member_panel`]).
     JointView,
+    /// A tower's member in detail: its two ends, its capacities live
+    /// ([`crate::member_panel`]).
+    MemberDetails,
 }
 
 impl Panel {
     /// Every panel, in the order of the View menu.
-    pub const ALL: [Panel; 23] = [
+    pub const ALL: [Panel; 24] = [
         Panel::Level,
         Panel::View3d,
         Panel::JointView,
@@ -160,6 +164,7 @@ impl Panel {
         Panel::SectionsMaterials,
         Panel::PoleDesign,
         Panel::JointDetails,
+        Panel::MemberDetails,
         Panel::LoadRecipes,
         Panel::LoadTable,
         Panel::Results,
@@ -191,7 +196,8 @@ impl Panel {
             Panel::Libraries => "Libraries",
             Panel::Inspector => "Inspector",
             Panel::JointDetails => "Joint details",
-            Panel::JointView => "Joint view",
+            Panel::JointView => "Detail view",
+            Panel::MemberDetails => "Member details",
         }
     }
 
@@ -240,8 +246,12 @@ impl Panel {
             }
             Panel::Results => "The cases of the load table solved by the finite-element model",
             Panel::JointView => {
-                "The joint of Joint details drawn beside the 3D view: a close-up or a face view \
-                 (saved as SVG or PDF)"
+                "Beside the 3D view: the joint of Joint details (a close-up or a face view, saved \
+                 as SVG or PDF) or the member of Member details laid flat"
+            }
+            Panel::MemberDetails => {
+                "A tower's member in detail: its two ends' bolts and holes (the joints' own), its \
+                 capacities worked out live, the usage under the last run's forces"
             }
             Panel::JointDetails => {
                 "A tower's joint in detail: the members arriving and from where, how each end \
@@ -275,7 +285,8 @@ impl Panel {
             | Panel::Groups
             | Panel::SectionsMaterials
             | Panel::PoleDesign
-            | Panel::JointDetails => Area::Design,
+            | Panel::JointDetails
+            | Panel::MemberDetails => Area::Design,
             Panel::LoadRecipes | Panel::LoadTable => Area::LoadCases,
             Panel::Results => Area::Results,
             Panel::InTheLine => Area::InTheLine,

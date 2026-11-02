@@ -222,6 +222,14 @@ validation and the theory page below.
 
 > **Owner:**
 
+### Member details — built 2026-11-02
+
+(Owner: "the same view of the members as for the joints … see live the
+impacts on the bar's resistance".) A member's two ends edited from the
+member (the joints' own data), its ASCE 10-97 capacities worked out live,
+the usage under the last run's forces, its leg bolted laid flat with the
+holes of both ends: [OHL-Structure](../user-guide/structure-app.md#joint-details-towers).
+
 ### Bolt library — built 2026-11-02
 
 "A bolt library could be nice to have too so that it can be easily

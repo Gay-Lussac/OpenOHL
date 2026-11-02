@@ -47,6 +47,7 @@ mod layout;
 mod libraries;
 mod link_tool;
 mod load_cases_tab;
+mod member_panel;
 mod menus;
 mod notices;
 mod plugins_ui;

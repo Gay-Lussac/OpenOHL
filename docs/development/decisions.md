@@ -80,6 +80,18 @@ active development, not approved yet)**
 - Member-capacity plugins still receive the member's design data only
   (the plugin interface is unchanged).
 
+**Member details (owner, 2026-11-02: "the same view of the members as
+for the joints where we could define where the holes and bolts are and
+that it would directly be shown on the joint side … see live the impacts
+on the bar's resistance")**: a member's two ends are rows of the same
+connections table (the joints' own data: nothing kept twice); its ASCE
+10-97 capacities worked out on every change by the core check
+(`ohl_structure_link::member_capacity`, a crossing diagonal's partner not
+known: as the check without a load case); its usage under the last FE
+run's forces (connections do not change the model's stiffness, so the
+forces stay valid); its leg bolted laid flat in the pane beside the 3D
+view, now the **Detail view** (the joint or member selected last).
+
 **OHL-Structure's Edit tool (owner, 2026-11-02: "an edit tool … that
 allows for a click on members or joints and open the necessary window to
 edit them")**: a click selects what is clicked and opens where it is

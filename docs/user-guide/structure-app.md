@@ -257,7 +257,7 @@ column scrolls with the others).
 | — | **To do** (the Level panel), **3D view**, **Inspector**, **Libraries** (closed by default; View or File › Libraries) |
 | **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
-| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details** (with the **Joint view** pane beside the 3D view) |
+| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details** (with the **Detail view** pane beside the 3D view) |
 | **Load cases** | **Load case editor**, **Load table** |
 | **Results** | **FE results** |
 | **Line loads** | **Line loads** |
@@ -322,7 +322,7 @@ their menu or from View.
   default), **Edit** (2026-11-02: a joint, member or point clicked
   opens where it is edited — its fields in the Inspector, brought to the
   front, and its row in its table; a tower's joint also in Joint details
-  and the Joint view), **Move** (drag a joint or point to move it, snapped to the
+  and the Detail view), **Move** (drag a joint or point to move it, snapped to the
   grid — **snap** in the strip — or onto a joint; one undo step per
   drag), **Add point** (on a joint clicked, else at the top of the stick
   figure), **One string** (below the point clicked; **string length** in
@@ -530,11 +530,11 @@ plates stay in the file, not shown.
 
 **Design › Joint details…** shows the joint selected last (in the 3D
 view — the Edit tool opens it on the joint clicked —, the Joints table,
-or picked in its list; the Joint view follows the selection even when
+or picked in its list; the Detail view follows the selection even when
 the panel is behind another tab; each joint with how complete
 its details are, in its colour): its tables in the panel, its drawing in
-the **Joint view**, a pane of its own opened on the right of the 3D view
-(View › Joint view shows or hides it; no window over the view):
+the **Detail view**, a pane of its own opened on the right of the 3D view
+(View › Detail view shows or hides it; no window over the view):
 
 - **Close-up**: the members meeting there as their cross-sections (angles
   with their roll, so the leg bolted shows), cut a little beyond the
@@ -608,6 +608,29 @@ out. Each change is one undo step.
   per name with the fields of a connection but `onto` and `bolt_points`),
   for every structure in the folder; a file that cannot be read is said
   above the table.
+
+**Design › Member details…** (2026-11-02) shows a tower's member — the
+one selected (the Edit tool opens it on the member clicked) or picked in
+its list — from its own side:
+
+- its **two ends as rows of the connections table** (the joint at each
+  end first): the same `[[connection]]` data the joints show and edit, so
+  bolts, gauges, pitch, holes set here are the joint's, and the reverse;
+  the bolt layout form and presets as in Joint details;
+- its **resistance worked out live** (ASCE 10-97, as the check works it
+  out): the tension and compression capacities and what governs each
+  (the net section, the bolts' shear or bearing at an end, KL/r), KL/r,
+  a slenderness beyond its class's limit, where each end's conditions
+  come from and what was assumed — recomputed on every change; and the
+  **usage** under the last FE run's largest tension and compression
+  (Results › Run first: the bolts and holes do not change the forces,
+  so the usage follows each change too);
+- in the **Detail view**, its **leg bolted laid flat**: both ends (the
+  middle broken out when long), the heel's edge below, the holes and
+  their bolts (orange where their place is partly assumed), each end's
+  end distance, pitch and gauge.
+
+The Detail view shows the joint or the member selected last.
 
 **How the joint is drawn.** The model's member axes meet at the joint;
 a real joint's legs lie back to back. The drawings shift each bolted
@@ -1042,7 +1065,7 @@ Under the entries:
   `Sections` folder beside the file — the one the load panels use);
   **Choose library…** takes another file.
 - **Bolt library**: by default the window's (the `Bolts` folder beside the
-  file, as the Joint view); **Choose bolt library…** takes another
+  file, as the Detail view); **Choose bolt library…** takes another
   `.ohlb` file. A connection naming a bolt takes its diameter and its
   head's and nut's sizes from it (else the drawing proportions).
 - **Loads**: by default the **Load table panel's table**: for a placed

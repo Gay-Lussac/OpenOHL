@@ -387,3 +387,49 @@ fn a_plate_lies_in_its_bolts_face_as_exported() {
         assert!((0..3).all(|k| (p[k] - q[k]).abs() < 1e-9), "{p:?} {q:?}");
     }
 }
+
+/// The member view (owner 2026-11-02: "see live the impacts on the bar's
+/// resistance"): the member's two ends as the joints see them, its leg
+/// laid flat with the holes of both ends, its tension capacity rising
+/// when an end's bolts go from one to three (the bolts' shear governing).
+#[test]
+fn a_member_shows_both_ends_and_its_capacity_follows_the_bolts() {
+    let bolts = ohl_structures::bolts::BoltLibrary::load(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../libraries/bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let ends = |n2: u32, n4: u32| {
+        format!(
+            "{TOWER}[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nleg = \"long\"\n\
+             bolts = {{ count = {n2}, bolt = \"X17-example\" }}\ngauges = [\"30 mm\"]\n\
+             gauge_lines = 1\npitch = \"55 mm\"\nend_distance = \"30 mm\"\n\
+             [[connection]]\nmember = \"D1\"\njoint = \"N4\"\nleg = \"long\"\n\
+             bolts = {{ count = {n4}, bolt = \"X17-example\" }}\ngauges = [\"30 mm\"]\n\
+             gauge_lines = 1\npitch = \"55 mm\"\nend_distance = \"30 mm\"\n"
+        )
+    };
+    let text = ends(3, 1);
+    let d = joint_details(&text, &library(), &bolts).unwrap();
+    let m = crate::member_ends(&d, "D1").unwrap();
+    assert_eq!(m.ends[0].as_ref().unwrap().0, "N4");
+    assert_eq!(m.ends[1].as_ref().unwrap().0, "N2");
+    let flat = crate::flat_leg(&m).unwrap();
+    assert_eq!(flat.holes.len(), 4);
+    // The first end's hole 30 mm from N4, the second's 30, 85, 140 mm
+    // back from N2.
+    let mut along: Vec<f64> = flat.holes.iter().map(|h| h.along).collect();
+    along.sort_by(f64::total_cmp);
+    let l = m.length;
+    for (a, b) in along.iter().zip([0.03, l - 0.14, l - 0.085, l - 0.03]) {
+        assert!((a - b).abs() < 1e-9, "{a} {b}");
+    }
+    assert!((flat.width - 0.083).abs() < 1e-9);
+    let one = crate::member_capacity(&text, &library(), &bolts, "D1").unwrap();
+    let three = crate::member_capacity(&ends(3, 3), &library(), &bolts, "D1").unwrap();
+    let (t1, g1) = one.tension.clone().unwrap();
+    let (t3, _) = three.tension.clone().unwrap();
+    assert!(t3 > t1, "{t1} {t3}");
+    assert!(g1.contains("bolt") || g1.contains("N4"), "{g1}");
+    assert!(!one.joints.is_empty());
+    assert!(crate::member_capacity(&text, &library(), &bolts, "nope").is_err());
+}

@@ -64,6 +64,13 @@ pub struct JointPanel {
     pub pitch: f32,
     /// Its zoom.
     pub zoom: f32,
+    /// What the Detail view shows: the joint or the member
+    /// ([`crate::member_panel`]).
+    pub subject: crate::member_panel::Subject,
+    /// The member of Member details.
+    pub member: Option<String>,
+    /// Its capacities worked out.
+    pub capacity: crate::member_panel::CapacityCache,
 }
 
 /// A colour per completeness, for the 3D view (View › Joints by their
@@ -118,22 +125,6 @@ impl StructureApp {
         }
     }
 
-    /// The joint shown follows the joint selected last (in the 3D view, the
-    /// Joints table or the panel's list); else the one shown before, else
-    /// the first.
-    fn follow_selected_joint(&mut self) {
-        if let Some(Handle::Joint(id)) = self
-            .selected
-            .iter()
-            .rev()
-            .find(|h| matches!(h, Handle::Joint(_)))
-            && self.joints.joint.as_ref() != Some(id)
-        {
-            self.joints.joint = Some(id.clone());
-            self.joints.face = None;
-        }
-    }
-
     /// The Joint details panel.
     pub(crate) fn joint_panel_ui(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
@@ -156,7 +147,7 @@ impl StructureApp {
             ));
             return;
         }
-        self.follow_selected_joint();
+        self.follow_selection();
         let Some(details) = self.joint_details() else {
             return;
         };
@@ -290,7 +281,7 @@ impl StructureApp {
     /// Joint details panel as a close-up or a face view.
     pub(crate) fn joint_view_ui(&mut self, ui: &mut egui::Ui) {
         // Also when the Joint details panel is not the tab in front.
-        self.follow_selected_joint();
+        self.follow_selection();
         let Some(f) = &self.file else {
             return;
         };
@@ -305,6 +296,35 @@ impl StructureApp {
             ui.label("The joints could not be read (Design › Joint details says why).");
             return;
         };
+        if self.joints.subject == crate::member_panel::Subject::Member
+            && let Some(m) = self
+                .joints
+                .member
+                .as_deref()
+                .and_then(|id| ohl_structure_link::member_ends(details, id))
+        {
+            ui.horizontal_wrapped(|ui| {
+                ui.strong(format!("Member {}", m.member));
+                ui.label(
+                    egui::RichText::new("(click a joint to see it here)")
+                        .small()
+                        .weak(),
+                );
+            });
+            let leg = ohl_structure_link::flat_leg(&m);
+            let size = ui.available_size().max(egui::vec2(120.0, 120.0));
+            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
+            crate::member_panel::paint_member(
+                &painter,
+                rect,
+                &m,
+                leg.as_ref(),
+                ui.visuals().dark_mode,
+            );
+            return;
+        }
         let id = self
             .joints
             .joint
