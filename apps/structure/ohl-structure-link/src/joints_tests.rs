@@ -1,0 +1,247 @@
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
+
+//! The joints in detail: each value with where it comes from, the bolts
+//! where the layout puts them, a plate around its bolts.
+
+use std::path::Path;
+
+use crate::joints::{Completeness, Source, joint_details};
+use crate::{BoltedLeg, ConnectionKind, SectionLibrary};
+
+fn library() -> SectionLibrary {
+    SectionLibrary::load(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+    )
+    .unwrap()
+}
+
+/// A leg in two members in the face y = 1 m and a diagonal to its middle.
+const TOWER: &str = r#"id = "T"
+name = "t"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "1 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "1 m", "5 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "1 m", "10 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["4 m", "1 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-61x7"
+design = { class = "leg" }
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-61x7"
+design = { class = "leg" }
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "UA-83x52x6"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 1 } }
+"#;
+
+const AT_N2: &str = r#"
+[[connection]]
+member = "D1"
+joint = "N2"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm", grade = "8.8" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+"#;
+
+#[test]
+fn each_value_says_where_it_comes_from() {
+    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library()).unwrap();
+    assert!(d.level3, "{:?}", d.notes);
+    let n2 = d.joint("N2").unwrap();
+    assert_eq!(n2.arrivals.len(), 3);
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert_eq!(a.end, 1);
+    assert_eq!(a.face, "y+");
+    // Onto the leg: worked out, the larger section of the two legs (equal:
+    // either), at 51.3° (atan 4/5 from the vertical).
+    assert_eq!(a.onto.source, Source::WorkedOut);
+    let (onto, angle) = a.angle.clone().unwrap();
+    assert!(onto.starts_with('L'));
+    assert!(
+        (angle - (4f64 / 5.0).atan().to_degrees()).abs() < 1e-6,
+        "{angle}"
+    );
+    assert_eq!(a.kind.value, Some(ConnectionKind::Bolted));
+    assert_eq!(a.kind.source, Source::WorkedOut);
+    assert_eq!(a.leg.value, Some(BoltedLeg::Long));
+    assert_eq!(a.leg.source, Source::Given);
+    assert_eq!(a.bolts.value.as_ref().unwrap().count, 2);
+    assert_eq!(a.bolts.source, Source::Given);
+    // One leg bolted: eccentric, worked out; two bolts into a stiffer
+    // member (the leg, 805 mm² against the diagonal's 774): restrained,
+    // worked out.
+    assert_eq!(a.eccentric.value, Some(true));
+    assert_eq!(a.eccentric.source, Source::WorkedOut);
+    assert_eq!(a.restrained.value, Some(true));
+    assert_eq!(a.restrained.source, Source::WorkedOut);
+    assert_eq!(a.eccentricity.source, Source::WorkedOut);
+    assert!(a.eccentricity.value.unwrap() > 0.0);
+    // The two bolts 30 and 80 mm from the joint along the member, on the
+    // long leg's outer face (the heel's plane).
+    assert_eq!(a.bolt_points.len(), 2);
+    for (p, along) in a.bolt_points.iter().zip([0.03, 0.08]) {
+        let d = [0, 1, 2].map(|k| p[k] - n2.position[k]);
+        let s: f64 = (0..3).map(|k| d[k] * a.direction[k]).sum();
+        assert!((s - along).abs() < 1e-9, "{s}");
+    }
+    // The diagonal's other end: the member's one bolt, the leg assumed.
+    let n4 = d.joint("N4").unwrap();
+    let b = &n4.arrivals[0];
+    assert_eq!(b.bolts.source, Source::Member);
+    assert_eq!(b.leg.source, Source::Assumed);
+    assert_eq!(b.restrained.value, Some(false));
+    assert_eq!(b.restrained.source, Source::WorkedOut);
+    assert_eq!(b.pitch.source, Source::Assumed);
+    // The legs at N2 have nothing of their own: partly assumed.
+    assert_eq!(n2.completeness, Completeness::PartlyAssumed);
+    // N3 (a leg's end, no data at all): nothing.
+    assert_eq!(d.joint("N3").unwrap().completeness, Completeness::Nothing);
+}
+
+/// Everything given at N4: complete.
+#[test]
+fn a_joint_given_in_full_is_complete() {
+    let text = format!(
+        "{TOWER}[[connection]]\nmember = \"D1\"\njoint = \"N4\"\nkind = \"pinned\"\n\
+         eccentric = false\nrestrained = false\n"
+    );
+    let d = joint_details(&text, &library()).unwrap();
+    let n4 = d.joint("N4").unwrap();
+    assert_eq!(n4.arrivals[0].kind.value, Some(ConnectionKind::Pinned));
+    assert_eq!(n4.completeness, Completeness::Complete);
+}
+
+/// A plate: its outline around the bolts onto it, in their plane.
+#[test]
+fn a_plate_lies_around_its_bolts() {
+    let text = format!(
+        "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n",
+        AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G1\"")
+    );
+    let d = joint_details(&text, &library()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert_eq!(a.onto.source, Source::Given);
+    // Onto a plate: the angle to the joint's leg all the same.
+    assert!(a.angle.is_some());
+    let p = &n2.plates[0];
+    assert_eq!(p.members, vec!["D1".to_owned()]);
+    assert!(!p.outline_given && p.outline.len() >= 3);
+    // Every bolt inside the outline's reach (30 mm around).
+    for b in &a.bolt_points {
+        let near = p
+            .outline
+            .iter()
+            .map(|q| ((q[0] - b[0]).powi(2) + (q[1] - b[1]).powi(2) + (q[2] - b[2]).powi(2)).sqrt())
+            .fold(f64::INFINITY, f64::min);
+        assert!(near <= 0.031 + 1e-9, "{near}");
+    }
+}
+
+/// Below level 3 (no cross-sections): the arrivals, nothing more.
+#[test]
+fn below_level_3_the_arrivals_only() {
+    let text = TOWER
+        .lines()
+        .filter(|l| !l.starts_with("section") && !l.starts_with("design"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let d = joint_details(&text, &library()).unwrap();
+    assert!(!d.level3);
+    let n2 = d.joint("N2").unwrap();
+    assert_eq!(n2.arrivals.len(), 3);
+    assert!(
+        n2.arrivals
+            .iter()
+            .all(|a| a.profile.is_none() && a.bolt_points.is_empty())
+    );
+    assert_eq!(n2.completeness, Completeness::Nothing);
+}
+
+/// The face view of N2: seen from the face its members lie in, the two
+/// bolts, the end distance and pitch dimensioned (30, 50), the labels;
+/// as SVG and PDF.
+#[test]
+fn the_face_view_shows_the_bolts_and_their_distances() {
+    use crate::{Mark, face_pdf, face_svg, face_view, faces_of};
+    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    assert_eq!(faces_of(n2)[0], "y+");
+    let v = face_view(n2, "y+");
+    let bolts = v
+        .marks
+        .iter()
+        .filter(|m| matches!(m, Mark::Bolt { .. }))
+        .count();
+    assert_eq!(bolts, 2);
+    let texts: Vec<&str> = v
+        .marks
+        .iter()
+        .filter_map(|m| match m {
+            Mark::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(texts.contains(&"30") && texts.contains(&"50"), "{texts:?}");
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.starts_with("D1 UA-83x52x6") && t.contains("2 × M16 8.8")),
+        "{texts:?}"
+    );
+    assert!(texts.contains(&"g 30"), "{texts:?}");
+    assert!(v.bounds.iter().all(|b| b.is_finite()) && v.bounds[2] > v.bounds[0]);
+    assert!(v.title.contains("Joint N2") && v.title.contains("face y+"));
+    let svg = face_svg(&v);
+    assert!(svg.starts_with("<svg") || svg.contains("<svg"));
+    assert!(svg.contains("Joint N2"));
+    assert!(face_pdf(&v).starts_with(b"%PDF"));
+    // The sheet, when asked for (OHL_JOINT_SCREENSHOTS=folder).
+    if let Some(dir) = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS") {
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::write(dir.join("face.svg"), svg).unwrap();
+        std::fs::write(dir.join("face.pdf"), face_pdf(&v)).unwrap();
+    }
+}
+
+/// The example tower (its own `[[section]]` tables, no library): read in
+/// detail without a fault.
+#[test]
+fn the_example_tower_is_read_in_detail() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../examples/synthetic-line/Structures/type-02.ohls");
+    let text = std::fs::read_to_string(path).unwrap();
+    let d = joint_details(&text, &SectionLibrary::default()).unwrap();
+    assert!(!d.joints.is_empty());
+    assert!(d.joints.iter().any(|j| j.arrivals.len() >= 3));
+}

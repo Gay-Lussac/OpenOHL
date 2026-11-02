@@ -130,11 +130,14 @@ pub enum Panel {
     Libraries,
     /// What is selected, with its fields ([`crate::inspector`]).
     Inspector,
+    /// A tower's joint in detail: the members arriving, their condition,
+    /// the bolts ([`crate::joint_panel`]).
+    JointDetails,
 }
 
 impl Panel {
     /// Every panel, in the order of the View menu.
-    pub const ALL: [Panel; 21] = [
+    pub const ALL: [Panel; 22] = [
         Panel::Level,
         Panel::View3d,
         Panel::Inspector,
@@ -152,6 +155,7 @@ impl Panel {
         Panel::Groups,
         Panel::SectionsMaterials,
         Panel::PoleDesign,
+        Panel::JointDetails,
         Panel::LoadRecipes,
         Panel::LoadTable,
         Panel::Results,
@@ -182,6 +186,7 @@ impl Panel {
             Panel::InTheLine => "Line loads",
             Panel::Libraries => "Libraries",
             Panel::Inspector => "Inspector",
+            Panel::JointDetails => "Joint details",
         }
     }
 
@@ -229,6 +234,10 @@ impl Panel {
                 "The recipes evaluated: per case, the loads at each point or member"
             }
             Panel::Results => "The cases of the load table solved by the finite-element model",
+            Panel::JointDetails => {
+                "A tower's joint in detail: the members arriving and from where, how each end \
+                 is held, the leg bolted, the bolts; a close-up and a face view"
+            }
             Panel::InTheLine => "The line's values at the placed structure, per point and case",
             Panel::Libraries => {
                 "The libraries the structure reads (cross-sections, insulator assemblies, poles, models, \
@@ -252,7 +261,8 @@ impl Panel {
             | Panel::MemberSections
             | Panel::Groups
             | Panel::SectionsMaterials
-            | Panel::PoleDesign => Area::Design,
+            | Panel::PoleDesign
+            | Panel::JointDetails => Area::Design,
             Panel::LoadRecipes | Panel::LoadTable => Area::LoadCases,
             Panel::Results => Area::Results,
             Panel::InTheLine => Area::InTheLine,

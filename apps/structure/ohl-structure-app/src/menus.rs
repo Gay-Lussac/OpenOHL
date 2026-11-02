@@ -275,6 +275,11 @@ impl StructureApp {
                     .on_hover_text("The size of the whole window's text and controls (kept)");
             }
         });
+        ui.checkbox(&mut self.joint_colors, "Joints by their details")
+            .on_hover_text(
+                "A tower's joints coloured by how complete their details are (Design › Joint \
+                 details): green complete, orange partly assumed, red no connection data",
+            );
         ui.checkbox(&mut self.string_volumes, "Volumes on the strings")
             .on_hover_text(
                 "The shapes of the strings' insulator assemblies (fittings, horns, rings) on \
@@ -373,7 +378,60 @@ impl StructureApp {
         }
     }
 
+    /// Geometry › Structure kind (owner 2026-11-02, stage 0 of the joint
+    /// details): a tower (lattice, portal) has joint details; a pole its
+    /// Pole panels. Nothing is deleted: what the new kind does not show
+    /// stays in the file, and the message says so.
+    fn kind_menu(&mut self, ui: &mut egui::Ui) {
+        use ohl_structures::structures::StructureKind as K;
+        let Some(kind) = self.file.as_ref().map(|f| f.structure().kind) else {
+            return;
+        };
+        let mut chosen = kind;
+        options_menu(ui, "Structure kind", |ui| {
+            for (k, word, tip) in [
+                (
+                    K::Lattice,
+                    "lattice tower",
+                    "Joint details (Design › Joint details)",
+                ),
+                (K::Portal, "portal", "Joint details, as a lattice tower"),
+                (K::Pole, "pole", "The Pole panels; no joint details"),
+                (K::Other, "other", "Neither"),
+            ] {
+                ui.radio_value(&mut chosen, k, word).on_hover_text(tip);
+            }
+        });
+        if chosen == kind {
+            return;
+        }
+        let Some(f) = self.file.as_mut() else {
+            return;
+        };
+        let note = ohl_structure_edit::kind_change_note(f.structure(), chosen);
+        let word = match chosen {
+            K::Lattice => "lattice",
+            K::Portal => "portal",
+            K::Pole => "pole",
+            K::Other => "other",
+        };
+        let r = f.edit("Structure kind", |doc, _| {
+            ohl_structure_edit::set_structure_kind(doc, word)
+        });
+        self.message = Some(match r {
+            Ok(()) => (
+                match note {
+                    Some(n) => format!("structure kind: {word}; {n}"),
+                    None => format!("structure kind: {word}"),
+                },
+                false,
+            ),
+            Err(e) => (e, true),
+        });
+    }
+
     fn geometry_actions(&mut self, ui: &mut egui::Ui) {
+        self.kind_menu(ui);
         let tops = self.picked_tops().len();
         if item(
             ui,

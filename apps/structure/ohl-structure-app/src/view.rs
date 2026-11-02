@@ -181,6 +181,9 @@ pub struct ViewInput<'a> {
     pub moments: &'a [(String, String)],
     /// The volumes on the strings to draw (none: not shown).
     pub volumes: &'a [ohl_structure_link::VolumeMesh],
+    /// The joints' colours by their details (View › Joints by their
+    /// details; empty: as usual).
+    pub joint_colors: &'a [(String, [u8; 4])],
     /// What the view asks of the application.
     pub action: &'a mut Option<ViewAction>,
     /// The members are coloured by usage (the results): the legend shown.
@@ -483,7 +486,15 @@ impl View {
         if self.dirty || self.gpu.is_none() {
             self.gpu = Some(GpuScene::new(
                 device,
-                &scene(g, v.foot, v.selected, v.ahead, v.preview, v.volumes),
+                &scene(
+                    g,
+                    v.foot,
+                    v.selected,
+                    v.ahead,
+                    v.preview,
+                    v.volumes,
+                    v.joint_colors,
+                ),
             ));
             self.dirty = false;
         }
@@ -786,6 +797,7 @@ fn scene(
     ahead: f64,
     preview: &[[[f64; 3]; 2]],
     volumes: &[ohl_structure_link::VolumeMesh],
+    joint_colors: &[(String, [u8; 4])],
 ) -> Scene {
     let mut s = Scene::new([0.0; 3]);
     let extent = g
@@ -855,8 +867,11 @@ fn scene(
         s.polyline(l, PREVIEW, 2.2);
     }
     for (id, p, support) in &g.joints {
+        let by_details = joint_colors.iter().find(|(j, _)| j == id).map(|(_, c)| *c);
         let (c, size) = match (picked(Handle::Joint(id.clone())), support) {
             (true, _) => (PICKED, 11.0),
+            // Coloured by how complete their details are, larger.
+            _ if by_details.is_some() => (by_details.expect("matched"), 9.0),
             _ if g.attach.contains(id) => (ATTACH, 8.0),
             (false, true) => (SUPPORT, 9.0),
             (false, false) => (STEEL, 6.0),
@@ -1008,8 +1023,8 @@ mod tests {
             state: ohl_structures::ElectricalState::Electrified,
             triangles: vec![tri; 5],
         }];
-        let without = scene(&g, 0.0, &[], 0.0, &[], &[]).counts().2;
-        let with = scene(&g, 0.0, &[], 0.0, &[], &v).counts().2;
+        let without = scene(&g, 0.0, &[], 0.0, &[], &[], &[]).counts().2;
+        let with = scene(&g, 0.0, &[], 0.0, &[], &v, &[]).counts().2;
         assert_eq!(with - without, 5);
     }
 }

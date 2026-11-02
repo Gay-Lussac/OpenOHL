@@ -801,3 +801,98 @@ fn picked_on_the_screen() {
     );
     assert!(compass_radius(&g) >= 0.35 * 30.0);
 }
+
+/// Connections and a plate at N2 (version 9, 2026-11-02).
+const AT_N2: &str = r#"
+[[plate]]
+id = "G1"
+joint = "N2"
+thickness = "10 mm"
+
+[[connection]]
+member = "M2"
+joint = "N2"
+onto = "G1"
+
+[[connection]]
+member = "M1"
+joint = "N2"
+onto = "M2"
+
+[[connection]]
+member = "M2"
+joint = "N3"
+"#;
+
+/// A member deleted takes its connections; one onto it loses its onto.
+/// A joint deleted takes the connections and plates there.
+#[test]
+fn deletions_take_the_connections_along() {
+    let text = format!("{PYLON}{AT_N2}");
+    let mut doc: DocumentMut = text.parse().unwrap();
+    let t = read(&doc);
+    let r = removal(&t, &crate::Handle::Member("M2".into()));
+    assert!(
+        r.lines()
+            .iter()
+            .any(|l| l.contains("M2 at N2") && l.contains("M2 at N3"))
+    );
+    remove(&mut doc, &r);
+    let t = read(&doc);
+    assert_eq!(t.connections.len(), 1);
+    assert_eq!(t.connections[0].member, "M1");
+    assert_eq!(t.connections[0].onto, None);
+    assert_eq!(t.plates.len(), 1);
+    let mut doc: DocumentMut = text.parse().unwrap();
+    let t = read(&doc);
+    let r = removal(&t, &crate::Handle::Joint("N2".into()));
+    assert!(r.connections.contains(&"plate G1".to_owned()));
+    remove(&mut doc, &r);
+    let t = read(&doc);
+    assert!(t.connections.is_empty() && t.plates.is_empty());
+    assert!(!doc.to_string().contains("[[connection]]"));
+}
+
+/// A joint put on a member: the member's far end is the second piece's,
+/// its connection there follows.
+#[test]
+fn a_split_member_keeps_its_far_connection() {
+    let mut doc: DocumentMut = format!("{PYLON}{AT_N2}").parse().unwrap();
+    let t = read(&doc);
+    crate::links::insert_joint(&mut doc, &t, "M2", 0.5).unwrap();
+    let t = read(&doc);
+    assert!(t.connection("M2", "N2").is_some());
+    let far = t.connections.iter().find(|c| c.joint == "N3").unwrap();
+    assert_ne!(far.member, "M2");
+    assert!(
+        t.members
+            .iter()
+            .any(|m| m.id == far.member && m.nodes.contains(&"N3".into()))
+    );
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+}
+
+/// The kind toggled: written, nothing else changed, what is left unshown
+/// said.
+#[test]
+fn the_kind_is_toggled_and_the_rest_kept() {
+    use ohl_structures::structures::StructureKind;
+    let mut doc: DocumentMut = format!("{PYLON}{AT_N2}").parse().unwrap();
+    let t = read(&doc);
+    let note = kind_change_note(&t, StructureKind::Pole).unwrap();
+    assert!(
+        note.contains("3 connection(s) and 1 plate(s) kept"),
+        "{note}"
+    );
+    assert!(kind_change_note(&t, StructureKind::Portal).is_none());
+    set_structure_kind(&mut doc, "pole").unwrap();
+    let t = read(&doc);
+    assert_eq!(t.kind, StructureKind::Pole);
+    assert_eq!(t.connections.len(), 3);
+    assert!(!is_tower(t.kind));
+    assert!(set_structure_kind(&mut doc, "mast").is_err());
+}

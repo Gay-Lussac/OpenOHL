@@ -830,13 +830,23 @@ eccentricities, releases and bolt slip in the FE model, the joints'
 own checks (with O4), the bolts' and plates' weight.
 
 Six stages, the questions per stage and per detail level:
-[Joint details of towers](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md). Not
-built.
+[Joint details of towers](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md).
+- [x] Stage 0 — Geometry › Structure kind (2026-11-02)
+- [x] Stage 1 — `[[connection]]` and `[[plate]]`, structure file version
+  9; the CSV export (2026-11-02)
+- [x] Stage 2 — Design › Joint details: close-up, face view (SVG, PDF),
+  the connections table with where each value comes from; View › Joints
+  by their details (2026-11-02)
+- [ ] Stage 3 — defining joints in the application
+- [ ] Stage 4 — the checks take their conditions from the joints
+- [ ] Stage 5 — exports with bolts and plates, validation
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition
 > on the joint and where are the bolts, how many. And then how this is
 > expected to impact the conditions on the calculations later on."
+> (2026-11-02) "Go ahead with 0-2, yes and yes" (both questions of the
+> detail levels: yes).
 
 ### O5. Tension-only parts that stay nearly free
 Today: kept active and flagged *approximate* (see U1). Options when this is

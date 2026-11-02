@@ -41,6 +41,7 @@ mod help;
 mod icons;
 mod in_line_tab;
 mod inspector;
+mod joint_panel;
 mod layout;
 mod libraries;
 mod link_tool;
@@ -77,6 +78,8 @@ mod body_ui_tests;
 mod case_editor_tests;
 #[cfg(test)]
 mod glyph_tests;
+#[cfg(test)]
+mod joint_ui_tests;
 #[cfg(test)]
 mod layout_tests;
 #[cfg(test)]

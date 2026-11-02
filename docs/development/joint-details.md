@@ -1,6 +1,8 @@
 # Joint details of towers (roadmap, proposal)
 
-*Proposal, 2026-11-02 — not built, not approved. Asked by the owner:
+*Proposal, 2026-11-02 — stages 0 to 2 built the same day (in active
+development, not approved yet: owner, "Go ahead with 0-2, yes and
+yes"); stages 3 to 5 not built. Asked by the owner:
 "a roadmap for a tool to show and allow to define the joints in the OHL
 structure in details for a pylon that isn't a pole … where the bars are
 coming from, what's their condition on the joint and where are the
@@ -46,21 +48,21 @@ assumed.
 Each stage is usable on its own and ends with the full checks. Sizes:
 S a few days, M one to two weeks, L more.
 
-### Stage 0 — Pole or tower, a toggle (S)
+### Stage 0 — Pole or tower, a toggle (S) — built 2026-11-02
 
 - The structure's kind becomes editable after the structure is made:
   **Geometry › Structure kind** in OHL-Structure (lattice tower, pole,
   portal, other), and shown in OHL-Design's structure picker as today.
-- **Tower** (lattice, portal): the Joints and Members tables, the joint
-  details below, ASCE 10-97 by default. **Pole**: the pole panel; no
-  joint details (a pole's flanges and slip joints are a later, separate
-  item).
+- **Tower** (lattice, portal): the joint details below, ASCE 10-97 by
+  default. **Pole**: the pole panel; no joint details (a pole's flanges
+  and slip joints are a later, separate item). The Joints and Members
+  tables stay for every kind: a pole may have members (its crossarms).
 - Changing the kind never deletes data: what the new kind does not use
   is kept, hidden, and the switch says so.
 
 > **Owner:**
 
-### Stage 1 — The data: connections at the member ends (M)
+### Stage 1 — The data: connections at the member ends (M) — built 2026-11-02
 
 A **connection** is one member end at one joint. Each member has two;
 a joint lists those that arrive there.
@@ -88,7 +90,10 @@ a joint lists those that arrive there.
 
 > **Owner:**
 
-### Stage 2 — Showing a joint (M)
+### Stage 2 — Showing a joint (M) — built 2026-11-02
+
+How it works now: [OHL-Structure › Joint details](../user-guide/structure-app.md#joint-details-towers);
+the file format: [connections and plates](../user-guide/structure-library.md).
 
 In OHL-Structure, selecting a joint (in the 3D view or the Joints table)
 opens the **Joint panel**:
@@ -196,13 +201,12 @@ Joint details exist at **level 3** only (full design). At levels 1 and 2
 the Joint panel shows the members that meet and says that connections
 belong to level 3. A pole has none.
 
-Questions for each level, to agree before Stage 4:
+Questions for each level, answered by the owner on 2026-11-02 ("yes and
+yes"):
 
-- Should a level 3 tower **without** connection data keep today's
-  per-member flags and conservative assumptions? The proposal: yes, said
-  per member.
-- Should a joint partly defined count as defined for the weight (Stage
-  4.6)? The proposal: the factor stays until every joint is defined.
+- A level 3 tower **without** connection data keeps today's per-member
+  flags and conservative assumptions, said per member.
+- The self-weight factor stays until every joint is defined (Stage 4.6).
 
 ## Order and dependencies
 

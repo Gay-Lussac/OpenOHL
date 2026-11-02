@@ -1076,3 +1076,33 @@ fn a_tension_member_keeps_its_bending() {
     assert!(members.contains("\nm-EA,N0,P1,EA-61x7,frame,0,1,"));
     assert!(members.contains("\nm-EA-2,P1,N1,EA-61x7,frame,0,1,"));
 }
+
+/// The connections and plates (version 9) as two more tables, the values
+/// as the file gives them; none in the file: no table.
+#[test]
+fn connections_and_plates_as_csv() {
+    let text = format!(
+        "{SHAPES}\n[[plate]]\nid = \"G1\"\njoint = \"N1\"\nthickness = \"10 mm\"\n\
+         [[connection]]\nmember = \"m-EA\"\njoint = \"N1\"\nonto = \"G1\"\nleg = \"long\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\", grade = \"8.8\" }}\n\
+         gauges = [\"30 mm\"]\npitch = \"50 mm\"\n"
+    );
+    let library = example_library();
+    let s = structure(&text, &library, None).unwrap();
+    let t = csv::tables(&s);
+    let get = |n: &str| t.iter().find(|(x, _)| *x == n).map(|x| x.1.clone());
+    let c = get("connections.csv").unwrap();
+    assert!(c.starts_with("member,joint,kind,onto,leg,bolts,bolt_diameter_m,"));
+    assert!(
+        c.contains("m-EA,N1,,G1,long,2,0.016,,8.8,,,0.03,0.05,"),
+        "{c}"
+    );
+    assert!(get("plates.csv").unwrap().contains("G1,N1,0.01,,"));
+    assert!(get("connections.csv").is_some());
+    let none = structure(SHAPES, &library, None).unwrap();
+    assert!(
+        csv::tables(&none)
+            .iter()
+            .all(|(n, _)| *n != "connections.csv")
+    );
+}

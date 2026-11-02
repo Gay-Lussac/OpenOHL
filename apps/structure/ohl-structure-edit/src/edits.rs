@@ -103,6 +103,10 @@ pub struct Removal {
     pub wires: Vec<String>,
     /// Strings.
     pub strings: Vec<String>,
+    /// The connections and plates that go with the members and joints
+    /// (version 9; "D1 at N2", "plate G1"), for the confirmation:
+    /// [`remove`] takes them from the members and joints.
+    pub connections: Vec<String>,
 }
 
 impl Removal {
@@ -114,6 +118,7 @@ impl Removal {
             (&mut self.points, more.points),
             (&mut self.wires, more.wires),
             (&mut self.strings, more.strings),
+            (&mut self.connections, more.connections),
         ] {
             for x in add {
                 if !all.contains(&x) {
@@ -131,6 +136,7 @@ impl Removal {
             ("point", &self.points),
             ("wire point", &self.wires),
             ("string", &self.strings),
+            ("connection or plate", &self.connections),
         ]
         .into_iter()
         .filter(|(_, v)| !v.is_empty())
@@ -171,11 +177,35 @@ pub fn removal(t: &StructureType, h: &Handle) -> Removal {
             r.strings.push(s.label.clone());
         }
     }
+    r.connections = connections_going(t, &r.members, &r.joints);
     r
 }
 
-/// Removes everything in `r` from the file.
+/// The connections of the members going or at the joints going, and the
+/// plates at those joints, in words.
+pub(crate) fn connections_going(
+    t: &StructureType,
+    members: &[String],
+    joints: &[String],
+) -> Vec<String> {
+    t.connections
+        .iter()
+        .filter(|c| members.contains(&c.member) || joints.contains(&c.joint))
+        .map(|c| format!("{} at {}", c.member, c.joint))
+        .chain(
+            t.plates
+                .iter()
+                .filter(|p| joints.contains(&p.joint))
+                .map(|p| format!("plate {}", p.id)),
+        )
+        .collect()
+}
+
+/// Removes everything in `r` from the file: with the members and joints
+/// their connections and the plates at the joints; a connection onto a
+/// member or plate gone loses its `onto`.
 pub fn remove(doc: &mut DocumentMut, r: &Removal) {
+    remove_connections(doc, &r.members, &r.joints);
     for (key, field, gone) in [
         ("node", "id", &r.joints),
         ("member", "id", &r.members),
@@ -191,6 +221,84 @@ pub fn remove(doc: &mut DocumentMut, r: &Removal) {
             });
         }
     }
+}
+
+/// The connections of `members` and at `joints` and the plates at
+/// `joints` removed; `onto` a member or plate removed dropped.
+pub(crate) fn remove_connections(doc: &mut DocumentMut, members: &[String], joints: &[String]) {
+    let s = |t: &Table, f: &str| t.get(f).and_then(Item::as_str).map(str::to_owned);
+    let mut plates_gone = Vec::new();
+    if let Some(a) = doc.get_mut("plate").and_then(Item::as_array_of_tables_mut) {
+        a.retain(|t| {
+            let gone = s(t, "joint").is_some_and(|j| joints.contains(&j));
+            if gone {
+                plates_gone.extend(s(t, "id"));
+            }
+            !gone
+        });
+        if a.is_empty() {
+            doc.remove("plate");
+        }
+    }
+    if let Some(a) = doc
+        .get_mut("connection")
+        .and_then(Item::as_array_of_tables_mut)
+    {
+        a.retain(|t| {
+            !(s(t, "member").is_some_and(|m| members.contains(&m))
+                || s(t, "joint").is_some_and(|j| joints.contains(&j)))
+        });
+        for t in a.iter_mut() {
+            if s(t, "onto").is_some_and(|o| members.contains(&o) || plates_gone.contains(&o)) {
+                t.remove("onto");
+            }
+        }
+        if a.is_empty() {
+            doc.remove("connection");
+        }
+    }
+}
+
+/// The structure's kind (`lattice`, `pole`, `portal`, `other`; owner
+/// 2026-11-02, the toggle of stage 0 of the joint details). Nothing else
+/// changes: what the new kind does not show stays in the file
+/// ([`kind_change_note`]).
+pub fn set_structure_kind(doc: &mut DocumentMut, kind: &str) -> Result<(), String> {
+    if !["lattice", "pole", "portal", "other"].contains(&kind) {
+        return Err(format!("kind {kind}: lattice, pole, portal or other"));
+    }
+    doc.insert("kind", toml_edit::value(kind));
+    Ok(())
+}
+
+/// Whether a structure of `kind` is a tower: its joints have details
+/// (connections, plates) — lattice towers and portals.
+pub fn is_tower(kind: ohl_structures::structures::StructureKind) -> bool {
+    use ohl_structures::structures::StructureKind as K;
+    matches!(kind, K::Lattice | K::Portal)
+}
+
+/// What a change of `t`'s kind to `kind` leaves in the file unshown, in
+/// words (none: nothing).
+pub fn kind_change_note(
+    t: &StructureType,
+    kind: ohl_structures::structures::StructureKind,
+) -> Option<String> {
+    let (c, p) = (t.connections.len(), t.plates.len());
+    if is_tower(t.kind) && !is_tower(kind) && c + p > 0 {
+        return Some(format!(
+            "{c} connection(s) and {p} plate(s) kept in the file, not shown: joint \
+             details are a tower's (back to a lattice tower or portal shows them)"
+        ));
+    }
+    if t.kind == ohl_structures::structures::StructureKind::Pole && t.pole.is_some() {
+        return Some(
+            "the pole's outline and design kept in the file and still shown (the Pole \
+             panels), as the file has them"
+                .into(),
+        );
+    }
+    None
 }
 
 /// Adds a joint at `at` (local axes); its id.

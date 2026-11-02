@@ -10,6 +10,39 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Joint details of towers, stages 0 to 2 (owner, 2026-11-02: "Go ahead
+with 0-2, yes and yes"; built, in active development, not approved yet)**
+
+- The roadmap's two questions answered yes: a level 3 tower without
+  connection data keeps today's per-member flags and conservative
+  assumptions, said per member; the self-weight factor stays until every
+  joint is defined (both for stage 4).
+- **Stage 0**: Geometry › Structure kind (lattice tower, portal, pole,
+  other), one undo step; a tower has joint details, a pole its Pole
+  panels. A pole may have joints and members (its crossarms): only the
+  joint details are a tower's, the Joints and Members tables stay for
+  every kind. Nothing is deleted; the message says what stays unshown.
+- **Stage 1**: `[[connection]]` (a member end) and `[[plate]]`, structure
+  file version 9 ([structure library](../user-guide/structure-library.md));
+  what a connection does not give comes from the member's design data.
+  References that lead nowhere are kept and said, not refused (a
+  generator's rebuild may drop a member); OHL-Structure's deletions take
+  them along. The CSV export writes them as given. No check reads them
+  (stage 4): results do not change.
+- **Stage 2**: Design › Joint details in OHL-Structure (close-up, face
+  view saved as SVG or PDF, the connections table with each value given,
+  the member's, worked out, assumed or not given), View › Joints by their
+  details. The rules that work values out are for showing only until
+  stage 4 adopts them: onto the joint's leg (class leg, else within 30° of
+  vertical; the largest section, or the one in line for a leg);
+  eccentric from one leg bolted; restrained from two bolts or more into
+  a stiffer member (larger area) or a plate, not from one bolt; drawing
+  values assumed where none are given (gauges evenly across the leg, a
+  pitch of 3 d, an end distance of 1.5 d), marked assumed. The face of a
+  member is told from its direction and side (under 0.35 of its length
+  across a face's axis; level members `plan`; else `inside`).
+
+
 **The magnetic field reaches ±100 m by default (owner, 2026-11-02:
 "Set 100m as default"; built, in active development, not approved
 yet)**

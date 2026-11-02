@@ -157,6 +157,42 @@ spacing = "50 mm"
 
 A file with design data is version 8 (an older program says it is newer); the structure application keeps them as written, and its member properties show them (one line; editing them there: not yet — edit the file, or import them).
 
+**Connections and plates** (version 9, 2026-11-02; built, in active development, not approved yet; [Joint details of towers](../development/joint-details.md), stage 1). Where a member's end says more than its design data — the two ends differ, or the end bolts onto a plate — a `[[connection]]` gives that end, and a `[[plate]]` a gusset plate at a joint. All optional; what a connection does not give comes from the member's `[member.design]` (the same at both ends). OHL-Structure shows each value as given, the member's, worked out, assumed or not given ([Joint details](structure-app.md#joint-details-towers)). **The checks do not read connections yet**: a file with them computes as one without.
+
+```toml
+[[connection]]
+member = "D12"            # the member …
+joint = "N7"              # … at its end at this joint
+kind = "bolted"           # bolted (default) | welded | pinned | fixed
+onto = "L3"               # a member meeting at the joint, or a plate's id
+leg = "long"              # the angle's leg bolted: both | long | short | none
+bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm", grade = "8.8",
+          shear_planes = 1, threads_in_shear = false }
+gauge_lines = 1           # 1 or 2
+gauges = ["30 mm"]        # from the heel along the leg bolted, one per line
+pitch = "50 mm"           # between bolts along a line
+end_distance = "30 mm"    # from the member's end to the first bolt
+edge_distance = "25 mm"
+# bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]   # instead of the
+#   layout: along the member from the joint, across the leg from the heel
+# eccentric = true        # given instead of worked out (one leg bolted)
+# restrained = false      # given instead of worked out (two bolts or more
+#                         #   into a stiffer member or a plate)
+# eccentricity = "20 mm"  # given instead of worked out (gauge and section)
+
+[[plate]]
+id = "G1"                 # unique among the plates, not a member's id
+joint = "N7"
+thickness = "10 mm"
+material = "S355"         # optional
+# outline = [["0 m", "1 m", "10 m"], …]   # local axes; none: drawn around
+#                                         #   the bolts of the connections onto it
+```
+
+A member end is given once; the gauges are one per gauge line; a hole is no smaller than its bolt; sizes are not below 0. A connection whose member or joint is gone (deleted, or not rebuilt by a generator) is kept and said, not used; deleting a member or joint in OHL-Structure removes its connections and the plates there, and a connection onto them loses its `onto`. A file with connections or plates is version 9 (an older program says it is newer).
+
+**Kind.** `kind` (`lattice`, `pole`, `portal`, `other`) says what the structure is; OHL-Structure changes it with **Geometry › Structure kind**. A lattice tower or a portal has joint details; a pole has the Pole panels. Changing it deletes nothing.
+
 Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, string swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
 
 ### Body generators, groups and symmetry

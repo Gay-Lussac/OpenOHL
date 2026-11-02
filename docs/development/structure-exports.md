@@ -36,7 +36,7 @@ program with SAF **1.0.5**) [S1].
 | **IFC4**, members only, `ViewDefinition [ReferenceView_V1.2]` | BIM viewers, coordination | the members with profile solids, materials |
 | **IFC2x3** (TC1), `ViewDefinition [CoordinationView_V2.0]` | **steel-detailing programs** that convert IFC2x3 only (IFC object conversion into native parts) | the members with parametric profiles and materials, in a site, building and storey (the analysis model of IFC2x3 is not written) |
 | **SAF** 2.2.0 (xlsx) | analysis programs that read SAF | materials, cross-sections, nodes, members, supports, load group, load cases, point and line loads |
-| **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv` |
+| **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv`; with connections or plates in the file (version 9) `connections.csv` and `plates.csv`, the values as the file gives them |
 
 All are written from plain data (`ohl_structure_link::ExportStructure`,
 made by `ohl_structure_link::export_structure` from the structure file,

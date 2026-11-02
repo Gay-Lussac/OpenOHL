@@ -143,7 +143,7 @@ pub struct StructureApp {
     drawn: Option<(u64, Vec<Handle>, u64, usize)>,
     /// Changes when the libraries are read again (what is kept from them
     /// is worked out again).
-    libs_stamp: u64,
+    pub(crate) libs_stamp: u64,
     /// The geometry of the file's revision, the libraries' stamp and the
     /// extension shown (worked out again when one changes, not every
     /// frame: a large lattice took tens of ms).
@@ -194,6 +194,11 @@ pub struct StructureApp {
     pub held: crate::tools::Tool,
     /// The inventory (E) is open.
     pub inventory: bool,
+    /// The Joint details panel ([`crate::joint_panel`]).
+    pub joints: crate::joint_panel::JointPanel,
+    /// The joints coloured by how complete their details are (View ›
+    /// Joints by their details; off by default).
+    pub joint_colors: bool,
 }
 
 impl StructureApp {
@@ -253,6 +258,8 @@ impl StructureApp {
             hotbar: Default::default(),
             held: crate::tools::Tool::Select,
             inventory: false,
+            joints: Default::default(),
+            joint_colors: false,
         }
     }
 
@@ -1031,6 +1038,7 @@ impl StructureApp {
             Panel::InTheLine => self.in_the_line_ui(ui),
             Panel::Libraries => self.libraries_ui(ui),
             Panel::Inspector => self.inspector_ui(ui),
+            Panel::JointDetails => self.joint_panel_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }
     }
@@ -1075,7 +1083,9 @@ impl StructureApp {
             self.selected.clone(),
             self.ahead.to_bits()
                 ^ u64::from(self.rigid_links)
-                ^ (u64::from(self.string_volumes) << 1),
+                ^ (u64::from(self.string_volumes) << 1)
+                ^ (u64::from(self.joint_colors) << 2)
+                ^ (self.libs_stamp << 3),
             self.body.preview_stamp() ^ shown.as_ref().map_or(0, |n| n.len() + 1),
         );
         if self.drawn.as_ref() != Some(&key) {
@@ -1131,6 +1141,7 @@ impl StructureApp {
                     .collect()
             })
             .unwrap_or_default();
+        let joint_colors = self.joint_color_list();
         let mut action = None;
         let tool = self.tool();
         self.tool_strip(ui);
@@ -1154,6 +1165,7 @@ impl StructureApp {
                 linkable: &linkable,
                 moments: &moments,
                 volumes: &volumes,
+                joint_colors: &joint_colors,
                 action: &mut action,
                 usage_legend: self.area == Area::Results && self.results.shown().is_some(),
                 tool,

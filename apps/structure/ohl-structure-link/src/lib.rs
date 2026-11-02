@@ -39,6 +39,10 @@
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
 mod export;
+mod joint_sheet;
+mod joints;
+#[cfg(test)]
+mod joints_tests;
 mod run;
 mod volumes;
 
@@ -46,6 +50,14 @@ pub use export::{
     ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
     ExportSection, ExportStructure, LoadPlace, export_structure, member_axes,
 };
+pub use joint_sheet::{
+    FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
+};
+pub use joints::{
+    Angle, Arrival, BoltSet, Completeness, JointDetail, JointDetails, PlateDetail, Profile, Source,
+    Valued, joint_details,
+};
+pub use ohl_structures::connections::{BoltedLeg, ConnectionKind};
 pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,

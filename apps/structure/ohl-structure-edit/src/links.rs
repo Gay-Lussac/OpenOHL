@@ -223,6 +223,26 @@ pub fn insert_joint(
     for p in pieces {
         array(doc, "member").push(p);
     }
+    // The member's end at its second joint is now the last piece's: its
+    // connection and those onto it there follow (version 9).
+    if let Some(last) = split.pieces.last().filter(|p| p.id != member) {
+        let far = m.nodes[1].as_str();
+        if let Some(a) = doc
+            .get_mut("connection")
+            .and_then(Item::as_array_of_tables_mut)
+        {
+            for c in a.iter_mut() {
+                if c.get("joint").and_then(Item::as_str) != Some(far) {
+                    continue;
+                }
+                for f in ["member", "onto"] {
+                    if c.get(f).and_then(Item::as_str) == Some(member) {
+                        c.insert(f, toml_edit::value(last.id.clone()));
+                    }
+                }
+            }
+        }
+    }
     raise_version(doc, LINKS_VERSION);
     Ok(id)
 }

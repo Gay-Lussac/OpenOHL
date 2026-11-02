@@ -186,7 +186,10 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "ohls";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
-/// Newest format version read. Version 8 (2026-10-27) adds a member's
+/// Newest format version read. Version 9 (2026-11-02) adds the
+/// connections of the members at the joints and the gusset plates
+/// (`[[connection]]`, `[[plate]]`, [`crate::connections`]); a file is written
+/// at 9 only when it has them. Version 8 (2026-10-27) adds a member's
 /// design data (`[member.design]`, [`TypeMember::design`]); a file is
 /// written at 8 only when a member has them. Version 7 adds a load case's two parts
 /// (2026-10-25): line forces (`[[load_case.line]]`) and loads on the
@@ -214,7 +217,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 8;
+pub const STRUCTURE_FILE_VERSION: u32 = 9;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -1064,6 +1067,13 @@ pub struct StructureType {
     /// Members of the pylon (levels 2 and 3).
     #[serde(rename = "member", default)]
     pub members: Vec<TypeMember>,
+    /// Version 9: the members' ends at the joints, where they say more
+    /// than the members' design data ([`crate::connections`]).
+    #[serde(rename = "connection", default)]
+    pub connections: Vec<crate::connections::TypeConnection>,
+    /// Version 9: gusset plates at the joints.
+    #[serde(rename = "plate", default)]
+    pub plates: Vec<crate::connections::TypePlate>,
     /// Finite-element check: analysis options (read by
     /// `ohl_structures_fe`).
     #[serde(default)]
@@ -1221,6 +1231,7 @@ impl LibraryItem for StructureType {
             "structure",
         )?;
         self.check_members()?;
+        self.check_connections()?;
         let mut seen = std::collections::BTreeSet::new();
         for a in &self.attachments {
             if !seen.insert((a.set, a.phase)) {

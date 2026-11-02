@@ -218,7 +218,9 @@ them, close one with its ×. **View** ticks each panel to show or hide it
 (the menu stays open while ticking), **UI scale ›** sizes the whole
 window's text and controls (90 % to 150 %; the menu stays open; kept
 for the next start), **Rigid links** shows or hides the
-rigid links in the 3D view, **Volumes on the strings** (off by default)
+rigid links in the 3D view, **Joints by their details** (off by default; a
+tower's joints coloured green complete, orange partly assumed, red no
+connection data — see [Joint details](#joint-details-towers)), **Volumes on the strings** (off by default)
 draws the shapes of the strings' insulator assemblies — fittings, horns,
 rings — on the strings as they hang in still air, grounded grey,
 electrified orange, insulated pale (placed as OHL-Design places them on
@@ -255,7 +257,7 @@ column scrolls with the others).
 | — | **To do** (the Level panel), **3D view**, **Inspector**, **Libraries** (closed by default; View or File › Libraries) |
 | **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
-| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design** |
+| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details** |
 | **Load cases** | **Load case editor**, **Load table** |
 | **Results** | **FE results** |
 | **Line loads** | **Line loads** |
@@ -509,6 +511,59 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   extension member without a cross-section or a piece without a support, and
   as advice an extension without members (*the FE model leaves it
   out*).
+
+## Joint details (towers)
+
+*2026-11-02, stages 0 to 2 of the [joint details](../development/joint-details.md);
+built, in active development, not approved yet.*
+
+**Geometry › Structure kind ›** lattice tower, portal, pole or other (the
+menu stays open). A lattice tower or a portal has joint details; a pole
+its Pole panels. One undo step; nothing is deleted: when a tower with
+connections becomes a pole, the message says how many connections and
+plates stay in the file, not shown.
+
+**Design › Joint details…** shows the joint selected (in the 3D view or
+the Joints table, or picked in its list, each joint with how complete
+its details are, in its colour):
+
+- **Close-up**: the members meeting there as their cross-sections (angles
+  with their roll, so the leg bolted shows), cut a little beyond the
+  joint, the bolts through the leg bolted (red; grey where their layout is
+  partly assumed), the plates (blue); drag to turn it, scroll to zoom,
+  **Reset view**. Bolts are drawn on angles only.
+- **Face view**: the joint square to a face (x+, x−, y+, y−, or the plan
+  from above; the face most of its members lie in first), as a shop
+  drawing: the members' outlines, the gauge lines, the bolts, the end
+  distance and pitch dimensioned along each gauge line (mm), the gauge,
+  a label per member (its id, cross-section, bolts). **Save as SVG…** /
+  **Save as PDF…** put it on an A4 sheet at the largest of 1:2, 1:5,
+  1:10, 1:20, 1:50 that fits.
+- **The connections table**, one row per member end: the member (click:
+  select it), its end (i or j), class, the face it lies in, its angle to
+  the member it bolts onto (or the joint's leg), how it is held, onto
+  what, the leg bolted, the bolts, gauge lines, gauges, pitch, end and
+  edge distance, eccentric, restrained, the eccentricity. Each value's
+  colour says where it comes from (its hover too):
+  - **given** at the member end (`[[connection]]`);
+  - **the member's** design data, in italics (both ends alike);
+  - **worked out** (blue): onto the joint's leg (the members of class
+    leg, else those within 30° of vertical; the largest, or the one in
+    line for a leg); eccentric from one leg bolted; restrained from two
+    bolts or more into a stiffer member or a plate (one bolt: not); the
+    eccentricity from the gauge and the section;
+  - **assumed** (orange): as the checks assume when nothing is given
+    (one leg bolted, the ends eccentric, not restrained), or for the
+    drawing only (gauges evenly across the leg, a pitch of three and an
+    end distance of one and a half bolt diameters);
+  - **not given** (—).
+
+A joint is **complete** when every member end's condition is given, the
+member's or worked out; **partly assumed** when some of it is assumed;
+**no connection data** when no end has any. Below level 3 the panel
+lists the members meeting at the joint only. **The checks do not take
+these values yet** (stage 4 of the roadmap): what is shown changes no
+result.
 
 ## Load cases
 

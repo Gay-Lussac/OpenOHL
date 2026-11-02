@@ -6,7 +6,8 @@
 //! in the headers, the structure's axes: x right, y ahead, z up), for any
 //! program that reads tables: `materials.csv`, `sections.csv`,
 //! `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`,
-//! `loads.csv`.
+//! `loads.csv`; and when the file has them (version 9) `connections.csv`
+//! and `plates.csv`, the values as the file gives them.
 
 use ohl_core::text::csv_field;
 use ohl_sections::Shape;
@@ -260,7 +261,7 @@ pub fn tables(s: &ExportStructure) -> Vec<(&'static str, String)> {
             })
             .collect(),
     );
-    vec![
+    let mut out = vec![
         ("materials.csv", materials),
         ("sections.csv", sections),
         ("nodes.csv", nodes),
@@ -268,5 +269,98 @@ pub fn tables(s: &ExportStructure) -> Vec<(&'static str, String)> {
         ("members.csv", members),
         ("load_cases.csv", cases),
         ("loads.csv", loads),
-    ]
+    ];
+    if !s.connections.is_empty() {
+        out.push(("connections.csv", connections(s)));
+    }
+    if !s.plates.is_empty() {
+        out.push(("plates.csv", plates(s)));
+    }
+    out
+}
+
+/// The connections as the file gives them (empty: not given).
+fn connections(s: &ExportStructure) -> String {
+    let len = |l: &ohl_core::units::Length| num(l.si());
+    let ol = |l: &Option<ohl_core::units::Length>| l.as_ref().map(len).unwrap_or_default();
+    let ob = |b: Option<bool>| b.map(|b| b.to_string()).unwrap_or_default();
+    table(
+        &[
+            "member",
+            "joint",
+            "kind",
+            "onto",
+            "leg",
+            "bolts",
+            "bolt_diameter_m",
+            "hole_m",
+            "grade",
+            "shear_planes",
+            "gauge_lines",
+            "gauges_m",
+            "pitch_m",
+            "end_distance_m",
+            "edge_distance_m",
+            "bolt_points_m",
+            "eccentric",
+            "restrained",
+            "eccentricity_m",
+        ],
+        s.connections
+            .iter()
+            .map(|c| {
+                let b = c.bolts.as_ref();
+                vec![
+                    c.member.clone(),
+                    c.joint.clone(),
+                    c.kind.map(|k| k.as_str().to_owned()).unwrap_or_default(),
+                    c.onto.clone().unwrap_or_default(),
+                    c.leg.map(|l| l.as_str().to_owned()).unwrap_or_default(),
+                    b.map(|b| b.count.to_string()).unwrap_or_default(),
+                    b.map(|b| len(&b.diameter)).unwrap_or_default(),
+                    b.map(|b| ol(&b.hole)).unwrap_or_default(),
+                    b.and_then(|b| b.grade.clone()).unwrap_or_default(),
+                    b.and_then(|b| b.shear_planes)
+                        .map(|n| n.to_string())
+                        .unwrap_or_default(),
+                    c.gauge_lines.map(|n| n.to_string()).unwrap_or_default(),
+                    c.gauges.iter().map(len).collect::<Vec<_>>().join(";"),
+                    ol(&c.pitch),
+                    ol(&c.end_distance),
+                    ol(&c.edge_distance),
+                    c.bolt_points
+                        .iter()
+                        .map(|p| format!("{} {}", len(&p[0]), len(&p[1])))
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                    ob(c.eccentric),
+                    ob(c.restrained),
+                    ol(&c.eccentricity),
+                ]
+            })
+            .collect(),
+    )
+}
+
+/// The plates as the file gives them.
+fn plates(s: &ExportStructure) -> String {
+    table(
+        &["id", "joint", "thickness_m", "material", "outline_m"],
+        s.plates
+            .iter()
+            .map(|p| {
+                vec![
+                    p.id.clone(),
+                    p.joint.clone(),
+                    num(p.thickness.si()),
+                    p.material.clone().unwrap_or_default(),
+                    p.outline
+                        .iter()
+                        .map(|q| q.iter().map(|v| num(v.si())).collect::<Vec<_>>().join(" "))
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                ]
+            })
+            .collect(),
+    )
 }

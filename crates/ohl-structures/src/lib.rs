@@ -20,6 +20,7 @@
 //! - [`string_volumes`]: the volumes on an assembly's strings, their
 //!   freedoms, several strings in one assembly (roadmap O6).
 
+pub mod connections;
 pub mod derive;
 pub mod extensions;
 pub mod insulators;
@@ -29,6 +30,8 @@ pub mod string_volumes;
 pub mod structures;
 pub mod templates;
 
+#[cfg(test)]
+mod connection_tests;
 #[cfg(test)]
 mod joint_tests;
 #[cfg(test)]

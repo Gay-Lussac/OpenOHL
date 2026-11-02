@@ -219,6 +219,11 @@ pub struct ExportStructure {
     /// What was left out on the way (rows without a value, loads at
     /// points no joint or member carries…).
     pub notes: Vec<String>,
+    /// The members' connections at the joints as the file gives them
+    /// (version 9; what a connection does not give is not filled in).
+    pub connections: Vec<ohl_structures::connections::TypeConnection>,
+    /// The gusset plates as the file gives them.
+    pub plates: Vec<ohl_structures::connections::TypePlate>,
 }
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -293,6 +298,8 @@ pub fn export_structure(
             structure.name.clone()
         },
         description: structure.description.clone(),
+        connections: structure.connections.clone(),
+        plates: structure.plates.clone(),
         ..Default::default()
     };
     out.nodes = model
