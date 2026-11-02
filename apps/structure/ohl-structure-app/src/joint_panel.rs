@@ -71,6 +71,10 @@ pub struct JointPanel {
     pub member: Option<String>,
     /// Its capacities worked out.
     pub capacity: crate::member_panel::CapacityCache,
+    /// The Detail view's tool held ([`crate::detail_tools`]).
+    pub tool: crate::detail_tools::DetailTool,
+    /// A member end being dragged with Member end.
+    pub drag: Option<crate::detail_tools::EndDrag>,
 }
 
 /// A colour per completeness, for the 3D view (View › Joints by their
@@ -312,8 +316,9 @@ impl StructureApp {
                 );
             });
             let leg = ohl_structure_link::flat_leg(&m);
+            crate::detail_tools::strip(ui, &mut self.joints.tool, leg.is_some());
             let size = ui.available_size().max(egui::vec2(120.0, 120.0));
-            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
             painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
             crate::member_panel::paint_member(
@@ -323,6 +328,19 @@ impl StructureApp {
                 leg.as_ref(),
                 ui.visuals().dark_mode,
             );
+            if let Some(leg) = &leg {
+                let fit = crate::detail_tools::MemberFit::new(rect, leg);
+                let acts = crate::detail_tools::member_act(
+                    &m,
+                    leg,
+                    &fit,
+                    &response,
+                    self.joints.tool,
+                    &mut self.joints.drag,
+                    &painter,
+                );
+                self.apply_joint_acts(acts, details);
+            }
             return;
         }
         let id = self
@@ -386,6 +404,30 @@ impl StructureApp {
                 self.joints.zoom = 0.0;
             }
         });
+        ui.horizontal_wrapped(|ui| {
+            crate::detail_tools::strip(ui, &mut self.joints.tool, self.joints.drawn == Drawn::Face);
+        });
+        let plates: Vec<(String, Vec<[f64; 3]>)> = j
+            .plates
+            .iter()
+            .filter(|p| !p.outline_given && p.outline.len() >= 3)
+            .map(|p| (p.id.clone(), p.outline.clone()))
+            .collect();
+        if !plates.is_empty()
+            && ui
+                .button("Plate around the bolts")
+                .on_hover_text(
+                    "Write the outline each plate without one is drawn with (around its bolts, \
+                     30 mm beyond) into the file, to be edited",
+                )
+                .clicked()
+        {
+            let acts = plates
+                .into_iter()
+                .map(|(id, o)| crate::joint_tools::Act::PlateOutline(id, o))
+                .collect();
+            self.apply_joint_acts(acts, details);
+        }
         let size = ui.available_size().max(egui::vec2(120.0, 120.0));
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -406,6 +448,17 @@ impl StructureApp {
             Drawn::Face => {
                 let view = ohl_structure_link::face_view(j, &face);
                 paint_face(&painter, rect, &view, ui.visuals().dark_mode);
+                let fit = crate::detail_tools::FaceFit::new(rect, view.bounds);
+                let acts = crate::detail_tools::face_act(
+                    j,
+                    &face,
+                    &fit,
+                    &response,
+                    self.joints.tool,
+                    &mut self.joints.drag,
+                    &painter,
+                );
+                self.apply_joint_acts(acts, details);
             }
         }
     }
@@ -582,7 +635,8 @@ fn close_up(
             });
             view(x)
         };
-        let near: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(0.0, *q)).collect();
+        let start = a.cut.value.unwrap_or(0.0).min(length);
+        let near: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(start, *q)).collect();
         let far: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(length, *q)).collect();
         let n = near.len();
         let cap = if p.angle.is_some() {
@@ -728,15 +782,11 @@ fn close_up(
 
 /// The face view painted into `rect`, fitted.
 fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: bool) {
-    let [x0, y0, x1, y1] = v.bounds;
-    let margin = 24.0;
-    let k = ((f64::from(rect.width()) - 2.0 * margin) / (x1 - x0).max(1e-6))
-        .min((f64::from(rect.height()) - 2.0 * margin) / (y1 - y0).max(1e-6));
-    let cx = (x0 + x1) / 2.0;
-    let cy = (y0 + y1) / 2.0;
-    let at = |p: [f64; 2]| {
-        rect.center() + egui::vec2(((p[0] - cx) * k) as f32, (-(p[1] - cy) * k) as f32)
-    };
+    // The same fit as the tools ([`crate::detail_tools::FaceFit`]).
+    let fit = crate::detail_tools::FaceFit::new(rect, v.bounds);
+    let k = fit.scale();
+    let at = |p: [f64; 2]| fit.at(p);
+    let _ = k;
     let ink = if dark {
         egui::Color32::from_gray(225)
     } else {
@@ -754,12 +804,13 @@ fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: boo
                     LineKind::Member => egui::Stroke::new(1.6, ink),
                     LineKind::Edge => egui::Stroke::new(0.8, ink),
                     LineKind::Gauge | LineKind::Dimension => egui::Stroke::new(0.7, grey),
+                    LineKind::Axis => egui::Stroke::new(0.9, egui::Color32::from_rgb(90, 150, 230)),
                     LineKind::Plate => {
                         egui::Stroke::new(1.4, egui::Color32::from_rgb(70, 140, 210))
                     }
                 };
                 let pts: Vec<egui::Pos2> = points.iter().map(|p| at(*p)).collect();
-                if *kind == LineKind::Gauge && pts.len() == 2 {
+                if matches!(kind, LineKind::Gauge | LineKind::Axis) && pts.len() == 2 {
                     painter.add(egui::Shape::dashed_line(&pts, stroke, 6.0, 3.0));
                 } else if *closed {
                     painter.add(egui::Shape::closed_line(pts, stroke));

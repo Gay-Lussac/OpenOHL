@@ -80,6 +80,27 @@ active development, not approved yet)**
 - Member-capacity plugins still receive the member's design data only
   (the plugin interface is unchanged).
 
+**Where a member lands, the Detail view's tools (owner, 2026-11-02: "the
+toolbar should also be active on the joint and member view … edit, add
+and remove bolts, if necessary move the member"; "by default the forces
+should all align at one point in the joint even if the member has to
+stop before to fit it in place … modifiable … to allow for a practical
+design"; "a sideways move is needed to fit the members on the gusset
+plate … the construction feasibility is essential"; "eccentricities
+need to be taken into account")**:
+
+- Per member end `cut` (where the steel stops, from the work point;
+  worked out by default so it clears the outstanding leg of the angle it
+  bolts onto, in their face) and `shift` (sideways, towards what it bolts
+  onto: an eccentricity, taken by the analysis — rigid end offsets, built
+  as a separate step). By default the axes meet at the work point.
+- A layout's end distance is measured from where the steel stops;
+  bolt points stay measured from the joint.
+- The Detail view's tools act in the face view and the member view (the
+  close-up has none): Edit, Add bolt, Remove bolt, Member end (drag:
+  along the cut, across the shift), Plate around the bolts. A bolt
+  added or removed turns the end's layout into its bolt points.
+
 **Member details (owner, 2026-11-02: "the same view of the members as
 for the joints where we could define where the holes and bolts are and
 that it would directly be shown on the joint side … see live the impacts

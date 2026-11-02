@@ -344,56 +344,38 @@ pub fn paint_member(
         ));
         return;
     };
-    // Each end shown over this length, m: past its farthest hole.
-    let reach = |k: usize| -> f64 {
-        let far = leg
-            .holes
-            .iter()
-            .map(|h| {
-                if k == 0 {
-                    h.along
-                } else {
-                    leg.length - h.along
-                }
-            })
-            .filter(|d| *d < leg.length / 2.0)
-            .fold(0.0, f64::max);
-        (far + 0.1).max(0.25).min(leg.length / 2.0)
-    };
-    let (r0, r1) = (reach(0), reach(1));
-    let broken = r0 + r1 < leg.length * 0.999;
-    let shown = r0 + r1 + if broken { 0.08 } else { 0.0 };
-    let shown = if broken { shown } else { leg.length };
-    let margin = 30.0;
-    let k = ((f64::from(rect.width()) - 2.0 * margin) / shown)
-        .min((f64::from(rect.height()) - 2.0 * margin - 30.0) / leg.width.max(1e-3));
-    let x0 = f64::from(rect.center().x) - shown * k / 2.0;
-    let y0 = f64::from(rect.center().y) + leg.width * k / 2.0;
-    // Along the member to the drawing's x (the break closes the middle).
-    let x_of = |along: f64| -> f32 {
-        let s = if !broken || along <= r0 {
-            along
-        } else if along >= leg.length - r1 {
-            along - (leg.length - r1) + r0 + 0.08
-        } else {
-            r0 + 0.04
-        };
-        (x0 + s * k) as f32
-    };
-    let y_of = |across: f64| -> f32 { (y0 - across * k) as f32 };
+    // The same fit as the tools ([`crate::detail_tools::MemberFit`]).
+    let fit = crate::detail_tools::MemberFit::new(rect, leg);
+    let k = fit.scale();
+    let broken = fit.broken();
+    let _ = k;
+    let x_of = |along: f64| fit.x_of(along);
+    let y_of = |across: f64| fit.y_of(across);
     let outline = egui::Stroke::new(1.6, ink);
     let pos = |x: f32, y: f32| egui::pos2(x, y);
+    // The steel from where it stops at each end (its cut from the work
+    // point), the work points as dashed lines.
+    let (c0, c1) = (leg.cuts[0], leg.length - leg.cuts[1]);
+    let xb = x_of(leg.length / 2.0);
+    let pieces: Vec<(f32, f32)> = if broken {
+        vec![(x_of(c0), xb - 6.0), (xb + 6.0, x_of(c1))]
+    } else {
+        vec![(x_of(c0), x_of(c1))]
+    };
+    for (xa, xz) in &pieces {
+        painter.rect_stroke(
+            egui::Rect::from_two_pos(pos(*xa, y_of(0.0)), pos(*xz, y_of(leg.width))),
+            0.0,
+            outline,
+            egui::StrokeKind::Middle,
+        );
+        // The heel's edge (across 0) heavier: the corner of the angle.
+        painter.line_segment(
+            [pos(*xa, y_of(0.0)), pos(*xz, y_of(0.0))],
+            egui::Stroke::new(2.4, ink),
+        );
+    }
     if broken {
-        for (a, b) in [(0.0, r0), (leg.length - r1, leg.length)] {
-            painter.rect_stroke(
-                egui::Rect::from_two_pos(pos(x_of(a), y_of(0.0)), pos(x_of(b), y_of(leg.width))),
-                0.0,
-                outline,
-                egui::StrokeKind::Middle,
-            );
-        }
-        // The break.
-        let xb = x_of(leg.length / 2.0);
         for dx in [-6.0, 6.0] {
             painter.line_segment(
                 [
@@ -410,22 +392,30 @@ pub fn paint_member(
             egui::FontId::proportional(11.0),
             grey,
         );
-    } else {
-        painter.rect_stroke(
-            egui::Rect::from_two_pos(
-                pos(x_of(0.0), y_of(0.0)),
-                pos(x_of(leg.length), y_of(leg.width)),
-            ),
-            0.0,
-            outline,
-            egui::StrokeKind::Middle,
-        );
     }
-    // The heel's edge (across 0) drawn heavier: the corner of the angle.
-    painter.line_segment(
-        [pos(x_of(0.0), y_of(0.0)), pos(x_of(leg.length), y_of(0.0))],
-        egui::Stroke::new(2.4, ink),
-    );
+    let blue = egui::Color32::from_rgb(90, 150, 230);
+    for (end, along) in [(0, 0.0), (1, leg.length)] {
+        let x = x_of(along);
+        painter.add(egui::Shape::dashed_line(
+            &[pos(x, y_of(-0.02)), pos(x, y_of(leg.width + 0.02))],
+            egui::Stroke::new(1.0, blue),
+            5.0,
+            3.0,
+        ));
+        if leg.cuts[end] > 0.0 {
+            painter.text(
+                pos(x, y_of(leg.width + 0.02) - 2.0),
+                if end == 0 {
+                    egui::Align2::LEFT_BOTTOM
+                } else {
+                    egui::Align2::RIGHT_BOTTOM
+                },
+                format!("stops {:.0} mm", leg.cuts[end] * 1000.0),
+                egui::FontId::proportional(10.5),
+                blue,
+            );
+        }
+    }
     for h in &leg.holes {
         let c = pos(x_of(h.along), y_of(h.across));
         let color = if h.assumed {

@@ -26,6 +26,9 @@ pub enum LineKind {
     Plate,
     /// A dimension line and its ticks.
     Dimension,
+    /// A member's axis, where its force runs (to the work point, or beside
+    /// it by its end's shift).
+    Axis,
 }
 
 /// One mark of the face view, metres in the view's plane (x right, y up).
@@ -147,7 +150,10 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
                         add(scale(p.axes[1], q[0]), scale(p.axes[2], q[1])),
                     )
                 };
-                let pts: Vec<[f64; 2]> = [0.0, length]
+                // The steel from where it stops (its cut) to the drawing's
+                // reach.
+                let start = a.cut.value.unwrap_or(0.0).min(length);
+                let pts: Vec<[f64; 2]> = [start, length]
                     .iter()
                     .flat_map(|s| p.outline.iter().map(move |q| to(corner(*s, *q))))
                     .collect();
@@ -158,18 +164,29 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
                 });
                 if let Some(g) = p.angle {
                     marks.push(Mark::Line {
-                        points: vec![to(corner(0.0, g.heel)), to(corner(length, g.heel))],
+                        points: vec![to(corner(start, g.heel)), to(corner(length, g.heel))],
                         closed: false,
                         kind: LineKind::Edge,
                     });
                 }
             }
             None => marks.push(Mark::Line {
-                points: vec![to(o), to(along(length))],
+                points: vec![
+                    to(add(along(a.cut.value.unwrap_or(0.0).min(length)), a.offset)),
+                    to(add(along(length), a.offset)),
+                ],
                 closed: false,
                 kind: LineKind::Member,
             }),
         }
+        // Its axis (where its force runs): to the work point, beside it by
+        // its end's shift (an eccentricity).
+        let shift = scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0);
+        marks.push(Mark::Line {
+            points: vec![to(add(o, shift)), to(add(along(length), shift))],
+            closed: false,
+            kind: LineKind::Axis,
+        });
         bolts_and_dimensions(a, &to, face_axes(face)[2], o, length, &mut marks);
         // The label beyond the member's cut end.
         let at = to(along(length + 0.04));
@@ -392,6 +409,7 @@ pub fn face_sheet(v: &FaceView) -> Drawing {
                     LineKind::Gauge => Pen::new(grey, 0.18).dashed("4 1 1 1"),
                     LineKind::Plate => Pen::new(Color(0, 90, 160), 0.3),
                     LineKind::Dimension => Pen::new(grey, 0.13),
+                    LineKind::Axis => Pen::new(Color(60, 120, 200), 0.18).dashed("6 1.5 1 1.5"),
                 };
                 let layer = match kind {
                     LineKind::Dimension => Layer::Labels,

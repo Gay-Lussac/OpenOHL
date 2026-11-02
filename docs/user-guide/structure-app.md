@@ -632,6 +632,35 @@ its list — from its own side:
 
 The Detail view shows the joint or the member selected last.
 
+**Where a member lands on the joint** (2026-11-02). By default every
+member's axis runs to the joint's work point — the forces meet there —
+and its **steel stops** where it fits: before the outstanding leg of the
+angle it bolts onto, in the face they bolt in (worked out; **Stops mm**
+in the table gives another). A member end can be **shifted sideways**
+(**Shift mm**, + towards what it bolts onto) so it fits on a gusset plate
+or beside another member: its force then passes beside the work point,
+an **eccentricity** the analysis takes into account (the face view draws
+each member's axis dashed, to the work point or beside it). A layout's
+end distance is measured from where the steel stops.
+
+**The Detail view's tools** (a strip above the face view and the member
+view; the close-up has none):
+
+- **Edit**: a bolt or member clicked — the member selected, its bolt
+  layout form opened for that end;
+- **Add bolt**: a click on a member's leg bolted — a bolt there, on its
+  nearest gauge line, along it to 5 mm;
+- **Remove bolt**: a bolt clicked goes;
+- **Member end**: drag a member — along it, where its steel stops; across
+  it (in the face view), its end's shift;
+- **Plate around the bolts** (the face view, when a plate has no outline
+  in the file): the outline it is drawn with written into the file, to
+  be edited.
+
+A bolt added or taken away turns that end's layout into its bolts'
+places (`bolt_points`); the bolt layout form makes a regular layout
+again. Every action is one undo step.
+
 **How the joint is drawn.** The model's member axes meet at the joint;
 a real joint's legs lie back to back. The drawings shift each bolted
 member across (along its bolts) so the leg bolted lies flat on the face

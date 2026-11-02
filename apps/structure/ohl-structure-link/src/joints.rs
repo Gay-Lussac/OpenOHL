@@ -210,8 +210,21 @@ pub struct Arrival {
     /// Where the member is drawn from its axis, m: shifted across so its
     /// leg bolted lies flat on the leg of the member it bolts onto (the
     /// model's axes meet at the joint; a real joint's legs lie back to
-    /// back). For the drawings only: the analysis keeps the axes.
+    /// back), and by its end's sideways `shift` (which the analysis takes
+    /// as an eccentricity; the seat along the bolts is for the drawings
+    /// only).
     pub offset: [f64; 3],
+    /// Where its steel stops from the work point along it, m: given, else
+    /// worked out so it fits (before the outstanding leg of the angle it
+    /// bolts onto), else 0 (assumed). Its axis still runs to the work
+    /// point (owner 2026-11-02).
+    pub cut: Valued<f64>,
+    /// Its end moved sideways to fit, m (given; none: 0), and the
+    /// direction it is measured in ([`ohl_structures::connections::shift_direction`]).
+    pub shift: (f64, Option<[f64; 3]>),
+    /// Its bolts flat: along it from the joint and across its leg bolted
+    /// from the heel, m (the same order as `bolt_points`).
+    pub bolt_flat: Vec<[f64; 2]>,
     /// A modelling member (`check = false`).
     pub modelling: bool,
     /// Notes on it ("one end eccentric, which not said"…).
@@ -408,6 +421,9 @@ pub fn joint_details(
                 grip: [0.0, 0.0],
                 leg_y: true,
                 offset: [0.0; 3],
+                cut: Valued::none(),
+                shift: (0.0, None),
+                bolt_flat: Vec::new(),
                 modelling: design.is_some_and(|(_, _, check)| !check),
                 notes: Vec::new(),
             });
@@ -839,14 +855,46 @@ fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival]) -> [f64; 3] {
 /// The bolts of `a` where they are: given points, else the layout (the
 /// bolts shared among the gauge lines, from the end distance at the pitch).
 fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, all: &[Arrival]) {
+    a.cut = match c.and_then(|c| c.cut) {
+        Some(x) => Valued::of(x.si(), Source::Given),
+        None => match fit_cut(a, all) {
+            Some(x) => Valued::of(x, Source::WorkedOut),
+            None => Valued::of(0.0, Source::Assumed),
+        },
+    };
+    // The sideways shift, towards what it bolts onto (else the joint's
+    // leg), as the analysis takes it.
+    let towards = a
+        .onto
+        .value
+        .as_ref()
+        .and_then(|o| all.iter().find(|b| &b.member == o))
+        .or_else(|| {
+            leg_of(a, all, &Default::default()).and_then(|l| all.iter().find(|b| b.member == l))
+        })
+        .map(|b| b.direction);
+    a.shift = (
+        c.and_then(|c| c.shift).map_or(0.0, |s| s.si()),
+        towards.and_then(|t| ohl_structures::connections::shift_direction(a.direction, t)),
+    );
+    if a.shift.0 != 0.0 && a.shift.1.is_none() {
+        a.notes
+            .push("shift: no direction (it runs in line with what it bolts onto)".into());
+    }
+    let cut = a.cut.value.unwrap_or(0.0);
     let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
+        // No bolts: still drawn shifted.
+        a.offset = scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0);
         return;
     };
     let Some(g) = p.angle else {
         return;
     };
     let along_y = a.leg_y;
-    a.offset = seat(a, joint, all);
+    a.offset = add(
+        seat(a, joint, all),
+        scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0),
+    );
     let joint = add(joint, a.offset);
     let (ey, ez) = (p.axes[1], p.axes[2]);
     // The bolts go through the leg bolted: across it, along the other axis.
@@ -871,8 +919,8 @@ fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, all
                 .collect()
         })
         .unwrap_or_default();
-    a.bolt_points = if !given.is_empty() {
-        given.iter().map(|q| at(q[0], q[1])).collect()
+    let flat: Vec<[f64; 2]> = if !given.is_empty() {
+        given
     } else {
         let gauges = a.gauges.value.clone().unwrap_or_default();
         let (Some(pitch), Some(end)) = (a.pitch.value, a.end_distance.value) else {
@@ -892,10 +940,60 @@ fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, all
                 } else {
                     0.0
                 };
-                at(end + row * pitch + stagger, gauges[line])
+                // From the steel's end, where the member stops.
+                [cut + end + row * pitch + stagger, gauges[line]]
             })
             .collect()
     };
+    a.bolt_points = flat.iter().map(|q| at(q[0], q[1])).collect();
+    a.bolt_flat = flat;
+}
+
+/// Where `a`'s steel must stop so it fits, m from the work point: its leg
+/// bolted lies on the flange of the angle it bolts onto, so its end stays
+/// on that flange's side of the other angle's heel (where its outstanding
+/// leg stands) — in the face they bolt in. None: it bolts onto no angle,
+/// runs in line with it, or is no angle.
+fn fit_cut(a: &Arrival, all: &[Arrival]) -> Option<f64> {
+    let p = a.profile.as_ref()?;
+    let g = p.angle?;
+    let o = a
+        .onto
+        .value
+        .as_ref()
+        .and_then(|o| all.iter().find(|b| &b.member == o))?;
+    let q = o.profile.as_ref()?;
+    let h = q.angle?;
+    // A splice (in line): no cut.
+    if angle_between(a.direction, o.direction) < 20.0 {
+        return None;
+    }
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let across = if a.leg_y { p.axes[1] } else { p.axes[2] };
+    let w = if a.leg_y { g.b } else { g.h };
+    // The onto angle's leg flat against ours (its normal most nearly
+    // ours) and the direction across it, from its heel to its toe.
+    let flange = if dot(q.axes[2], nb).abs() >= dot(q.axes[1], nb).abs() {
+        q.axes[1]
+    } else {
+        q.axes[2]
+    };
+    let heel_o = add(scale(q.axes[1], h.heel[0]), scale(q.axes[2], h.heel[1]));
+    let heel = add(
+        add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
+        scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0),
+    );
+    let rate = dot(a.direction, flange);
+    if rate <= 1e-6 {
+        return None;
+    }
+    // Each edge of our leg bolted (heel, toe): how far along it before it
+    // is on the flange's side of the other's heel.
+    let need = [heel, add(heel, scale(across, w))]
+        .iter()
+        .map(|e| -dot(sub(*e, heel_o), flange) / rate)
+        .fold(0.0, f64::max);
+    Some(need.min(a.length / 2.0))
 }
 
 /// A plate's detail: its outline given, else the bolts onto it and the

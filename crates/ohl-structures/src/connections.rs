@@ -337,7 +337,13 @@ impl StructureType {
                     return Err(format!("{at}: one gauge per gauge line"));
                 }
             }
-            let sizes = [c.pitch, c.end_distance, c.edge_distance, c.eccentricity, c.cut];
+            let sizes = [
+                c.pitch,
+                c.end_distance,
+                c.edge_distance,
+                c.eccentricity,
+                c.cut,
+            ];
             if sizes
                 .iter()
                 .flatten()

@@ -59,6 +59,8 @@ pub struct Hole {
     pub hole: f64,
     /// The bolt's diameter, m.
     pub bolt: f64,
+    /// The end it belongs to (0: the first joint's, 1: the second's).
+    pub end: usize,
     /// Its place partly assumed (for the drawing).
     pub assumed: bool,
 }
@@ -76,57 +78,54 @@ pub struct FlatLeg {
     /// Per end (first, second): the end distance, the pitch and the gauge
     /// drawn, m, where it has bolts.
     pub layout: [Option<[f64; 3]>; 2],
+    /// Per end: where its steel stops from the work point, m.
+    pub cuts: [f64; 2],
 }
 
-/// The leg bolted of `m` laid flat (an angle's; none: no angle or no
-/// bolts at either end).
+/// The leg bolted of `m` laid flat (an angle's; none: no angle at
+/// either end): its holes where the joints put them (`Arrival::bolt_flat`,
+/// measured from each joint), where its steel stops at each end.
 pub fn flat_leg(m: &MemberEnds) -> Option<FlatLeg> {
     let mut width = None;
     let mut holes = Vec::new();
     let mut layout = [None, None];
+    let mut cuts = [0.0; 2];
     for (k, e) in m.ends.iter().enumerate() {
         let Some((_, a)) = e else { continue };
         let Some(g) = a.profile.as_ref().and_then(|p| p.angle) else {
             continue;
         };
         width = width.or(Some(if a.leg_y { g.b } else { g.h }));
+        cuts[k] = a.cut.value.unwrap_or(0.0);
         let Some(b) = &a.bolts.value else { continue };
-        let (Some(pitch), Some(end)) = (a.pitch.value, a.end_distance.value) else {
-            continue;
-        };
-        let gauges = a.gauges.value.clone().unwrap_or_default();
-        if gauges.is_empty() {
-            continue;
-        }
         let assumed =
             [a.gauges.source, a.pitch.source, a.end_distance.source].contains(&Source::Assumed);
-        let lines = gauges.len() as u32;
-        for n in 0..b.count {
-            let line = (n % lines) as usize;
-            let row = f64::from(n / lines);
-            let stagger = if lines == 2 && line == 1 {
-                pitch / 2.0
-            } else {
-                0.0
-            };
-            let s = end + row * pitch + stagger;
+        for q in &a.bolt_flat {
             holes.push(Hole {
                 // From the member's first joint: the second end's measured
                 // back from its far end.
-                along: if k == 0 { s } else { m.length - s },
-                across: gauges[line],
+                along: if k == 0 { q[0] } else { m.length - q[0] },
+                across: q[1],
                 hole: b.hole.unwrap_or(b.diameter),
                 bolt: b.diameter,
+                end: k,
                 assumed,
             });
         }
-        layout[k] = Some([end, pitch, gauges[0]]);
+        if let (Some(e), Some(p), Some(g0)) = (
+            a.end_distance.value,
+            a.pitch.value,
+            a.gauges.value.as_ref().and_then(|g| g.first().copied()),
+        ) {
+            layout[k] = Some([e, p, g0]);
+        }
     }
     Some(FlatLeg {
         length: m.length,
         width: width?,
         holes,
         layout,
+        cuts,
     })
 }
 

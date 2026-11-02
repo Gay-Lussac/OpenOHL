@@ -73,6 +73,8 @@ pub enum FieldValue {
     Length(f64),
     /// Lengths, m (`gauges`).
     Lengths(Vec<f64>),
+    /// A length that may be negative, m (`shift`).
+    SignedLength(f64),
     /// Yes or no (`eccentric`, `restrained`).
     Flag(bool),
     /// The bolts: count, a library bolt, diameter (m), hole (m), grade.
@@ -95,7 +97,7 @@ impl FieldValue {
         match self {
             FieldValue::Word(w) => Value::from(w.as_str()),
             FieldValue::Count(n) => Value::from(i64::from(*n)),
-            FieldValue::Length(v) => mm(*v),
+            FieldValue::Length(v) | FieldValue::SignedLength(v) => mm(*v),
             FieldValue::Lengths(v) => {
                 let mut a = toml_edit::Array::new();
                 for x in v {
@@ -642,4 +644,76 @@ pub fn presets_text(presets: &[Preset]) -> String {
         array(&mut doc, "preset").push(t);
     }
     format!("# Connection presets of OpenOHL (OHL-Structure › Joint details).\n{doc}")
+}
+
+/// Writes `member`'s bolts at `joint` as their places (`bolt_points`:
+/// along the member from the joint, across its leg bolted from the heel,
+/// m) — a bolt added or taken away by hand; the layout's gauge lines,
+/// pitch and end distance go (the places are the bolts now), the bolts'
+/// count follows. `bolts`: the bolts' kind to write when the end gives
+/// none yet (its diameter: the member's or assumed; none: keep the
+/// end's). No places left: the end's bolts go.
+pub fn set_bolt_points(
+    doc: &mut DocumentMut,
+    member: &str,
+    joint: &str,
+    points: &[[f64; 2]],
+    bolts: Option<&FieldValue>,
+) {
+    let t = find_or_make(doc, member, joint);
+    for k in ["gauge_lines", "gauges", "pitch", "end_distance"] {
+        t.remove(k);
+    }
+    if points.is_empty() {
+        t.remove("bolt_points");
+        t.remove("bolts");
+        tidy(doc);
+        return;
+    }
+    let mut a = toml_edit::Array::new();
+    for p in points {
+        let mut q = toml_edit::Array::new();
+        q.push(mm(p[0]));
+        q.push(mm(p[1]));
+        a.push(Value::Array(q));
+    }
+    t.insert("bolt_points", Item::Value(Value::Array(a)));
+    if let Some(b) = bolts.filter(|_| t.get("bolts").is_none()) {
+        t.insert("bolts", Item::Value(b.value()));
+    }
+    if let Some(b) = t.get_mut("bolts").and_then(Item::as_inline_table_mut) {
+        b.insert("count", Value::from(points.len() as i64));
+    } else if let Some(b) = t.get_mut("bolts").and_then(Item::as_table_mut) {
+        b.insert("count", toml_edit::value(points.len() as i64));
+    }
+}
+
+/// Plate `id`'s outline written (structure's axes, m): fixed where it is
+/// drawn now (around its bolts), to be edited.
+pub fn set_plate_outline(
+    doc: &mut DocumentMut,
+    id: &str,
+    outline: &[[f64; 3]],
+) -> Result<(), String> {
+    if outline.len() < 3 {
+        return Err(format!("plate {id}: an outline of three points or more"));
+    }
+    let t = doc
+        .get_mut("plate")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+        })
+        .ok_or_else(|| format!("no plate {id}"))?;
+    let mut a = toml_edit::Array::new();
+    for p in outline {
+        let mut q = toml_edit::Array::new();
+        for v in p {
+            q.push(format!("{:.4} m", v));
+        }
+        a.push(Value::Array(q));
+    }
+    t.insert("outline", Item::Value(Value::Array(a)));
+    Ok(())
 }

@@ -71,6 +71,18 @@ pub enum Act {
     Select(String),
     /// A joint selected.
     SelectJoint(String),
+    /// A member end's bolts as their places (a bolt added or taken away:
+    /// the Detail view's tools), the bolts' kind when it gives none yet.
+    BoltPoints(
+        String,
+        String,
+        Vec<[f64; 2]>,
+        Option<ohl_structure_edit::connection_edits::FieldValue>,
+    ),
+    /// A member end's cut and shift, m (the Member end tool).
+    CutShift(String, String, f64, f64),
+    /// A plate's outline written as drawn.
+    PlateOutline(String, Vec<[f64; 3]>),
 }
 
 /// The bolt layout window's values, millimetres.
@@ -405,6 +417,64 @@ impl StructureApp {
             Act::SelectJoint(joint) => {
                 self.selected = vec![Handle::Joint(joint)];
                 None
+            }
+            Act::BoltPoints(member, joint, points, bolts) => {
+                let n = points.len();
+                f.edit(&format!("Bolts of {member} at {joint}"), |doc, _| {
+                    connection_edits::set_bolt_points(doc, &member, &joint, &points, bolts.as_ref())
+                });
+                Some((
+                    format!(
+                        "{member} at {joint}: {n} bolt(s) where placed (its layout now their \
+                         places; the bolt layout form makes a regular one again)"
+                    ),
+                    false,
+                ))
+            }
+            Act::CutShift(member, joint, cut, shift) => {
+                f.edit(&format!("End of {member} at {joint}"), |doc, _| {
+                    let _ = connection_edits::set_connection_field(
+                        doc,
+                        &member,
+                        &joint,
+                        "cut",
+                        Some(&FieldValue::Length(cut)),
+                    );
+                    let value = (shift != 0.0).then_some(FieldValue::SignedLength(shift));
+                    let _ = connection_edits::set_connection_field(
+                        doc,
+                        &member,
+                        &joint,
+                        "shift",
+                        value.as_ref(),
+                    );
+                });
+                Some((
+                    format!(
+                        "{member} at {joint}: steel stops {:.0} mm from the work point, shift \
+                         {:+.0} mm{}",
+                        cut * 1000.0,
+                        shift * 1000.0,
+                        if shift != 0.0 {
+                            " — its force passes beside the work point (an eccentricity)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    false,
+                ))
+            }
+            Act::PlateOutline(id, outline) => {
+                let r = f.edit(&format!("Outline of plate {id}"), |doc, _| {
+                    connection_edits::set_plate_outline(doc, &id, &outline)
+                });
+                Some(match r {
+                    Ok(()) => (
+                        format!("plate {id}: its outline written around its bolts"),
+                        false,
+                    ),
+                    Err(e) => (e, true),
+                })
             }
         };
         if message.is_some() {
@@ -766,14 +836,19 @@ fn mm(x: &f64) -> String {
 
 /// A length typed in mm ("30", "30 mm", "0.03 m"); none: not a length.
 fn typed_mm(s: &str) -> Option<f64> {
+    typed_mm_signed(s).filter(|v| *v >= 0.0)
+}
+
+/// A length typed in mm that may be negative (a shift).
+fn typed_mm_signed(s: &str) -> Option<f64> {
     let s = s.trim();
     if let Ok(v) = s.parse::<f64>() {
-        return (v.is_finite() && v >= 0.0).then_some(v / 1000.0);
+        return v.is_finite().then_some(v / 1000.0);
     }
     s.parse::<ohl_core::units::Length>()
         .ok()
         .map(|l| l.si())
-        .filter(|v| v.is_finite() && *v >= 0.0)
+        .filter(|v| v.is_finite())
 }
 
 /// A choice cell: the value shown (in its colour), its options, "not
@@ -817,6 +892,18 @@ fn length_cell(
     v: &Valued<f64>,
     tip: &str,
 ) -> Option<Option<f64>> {
+    length_cell_signed(ui, buffers, key, v, tip, false)
+}
+
+/// A length cell that may take a negative value (`signed`: a shift).
+fn length_cell_signed(
+    ui: &mut egui::Ui,
+    buffers: &mut std::collections::HashMap<String, String>,
+    key: String,
+    v: &Valued<f64>,
+    tip: &str,
+    signed: bool,
+) -> Option<Option<f64>> {
     let current = v.value.as_ref().map(mm).unwrap_or_default();
     let mut text = buffers
         .get(&key)
@@ -840,6 +927,8 @@ fn length_cell(
         if text.trim() != current.trim() {
             out = if text.trim().is_empty() {
                 Some(None)
+            } else if signed {
+                typed_mm_signed(&text).map(Some)
             } else {
                 typed_mm(&text).map(Some)
             };
@@ -926,6 +1015,17 @@ pub fn rows_table(
                             "Held against turning (two bolts or more into a stiffer member)",
                         ),
                         ("e mm", "The eccentricity: the gauge line from the centroid"),
+                        (
+                            "Stops mm",
+                            "Where the member's steel stops, from the work point (worked out so \
+                             it fits; its axis still runs to the work point)",
+                        ),
+                        (
+                            "Shift mm",
+                            "The end moved sideways to fit (towards what it bolts onto: +): its \
+                             force passes beside the work point — an eccentricity the analysis \
+                             takes",
+                        ),
                         ("", ""),
                     ] {
                         ui.strong(h).on_hover_text(tip);
@@ -1136,6 +1236,36 @@ fn row(
         "Eccentricity",
     ) {
         acts.push(field("eccentricity", x.map(FieldValue::Length)));
+    }
+    if let Some(x) = length_cell(
+        ui,
+        buffers,
+        format!("jc-{m}-{jid}"),
+        &a.cut,
+        "Where the steel stops",
+    ) {
+        acts.push(field("cut", x.map(FieldValue::Length)));
+    }
+    let shift = Valued {
+        value: (a.shift.0 != 0.0).then_some(a.shift.0),
+        source: if a.shift.0 != 0.0 {
+            Source::Given
+        } else {
+            Source::Missing
+        },
+    };
+    if let Some(x) = length_cell_signed(
+        ui,
+        buffers,
+        format!("js-{m}-{jid}"),
+        &shift,
+        "Sideways shift",
+        true,
+    ) {
+        acts.push(field(
+            "shift",
+            x.filter(|v| *v != 0.0).map(FieldValue::SignedLength),
+        ));
     }
     // The end's menu.
     ui.menu_button("…", |ui| {

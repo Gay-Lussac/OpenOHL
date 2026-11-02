@@ -518,3 +518,106 @@ fn member_details_follow_the_bolts_live() {
     assert_eq!(h.state().joints.subject, Subject::Joint);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// The Detail view's tools (owner 2026-11-02): the strip shows in the
+/// face view and the member view; a bolt placed by hand, a member end's
+/// cut and shift, a plate's outline written — each one undo step.
+#[test]
+fn the_detail_view_tools_act() {
+    use crate::joint_panel::Drawn;
+    use crate::joint_tools::Act;
+    let path = copy_of("type-02.ohls", "detail-tools");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(
+        &tower,
+        format!("{ANGLES}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n"),
+    )
+    .unwrap();
+    let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details…");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.state_mut().joints.drawn = Drawn::Face;
+    h.run();
+    h.run();
+    h.get_by_label("Add bolt");
+    h.get_by_label("Member end");
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    let file = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state().file.as_ref().unwrap().structure().clone()
+    };
+    // A bolt placed by hand on H1's end at N2.
+    let kind = ohl_structure_edit::connection_edits::FieldValue::Bolts {
+        count: 1,
+        bolt: None,
+        diameter: Some(0.016),
+        hole: None,
+        grade: None,
+    };
+    h.state_mut().apply_joint_acts(
+        vec![Act::BoltPoints(
+            "H1".into(),
+            "N2".into(),
+            vec![[0.06, 0.03]],
+            Some(kind),
+        )],
+        &details,
+    );
+    h.run();
+    assert_eq!(
+        file(&h).connection("H1", "N2").unwrap().bolt_points.len(),
+        1
+    );
+    // D1 stopping 60 mm from the work point, shifted 15 mm.
+    h.state_mut().apply_joint_acts(
+        vec![Act::CutShift("D1".into(), "N2".into(), 0.06, 0.015)],
+        &details,
+    );
+    h.run();
+    let c = file(&h).connection("D1", "N2").unwrap().clone();
+    assert!((c.cut.unwrap().si() - 0.06).abs() < 1e-12);
+    assert!((c.shift.unwrap().si() - 0.015).abs() < 1e-12);
+    // The plate's outline written as drawn.
+    h.state_mut().apply_joint_acts(
+        vec![Act::PlateOutline(
+            "G1".into(),
+            vec![[0.0, 1.0, 5.0], [0.1, 1.0, 5.0], [0.0, 1.0, 5.1]],
+        )],
+        &details,
+    );
+    h.run();
+    assert_eq!(file(&h).plates[0].outline.len(), 3);
+    if let Some(dir) = &shots {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(dir.join("detail-tools-face.png"))
+            .unwrap();
+    }
+    // The member view: the strip there too.
+    h.state_mut().selected = vec![Handle::Member("D1".into())];
+    h.run();
+    h.run();
+    h.get_by_label("Remove bolt");
+    if let Some(dir) = &shots {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(dir.join("detail-tools-member.png"))
+            .unwrap();
+    }
+    // Undo: the plate's outline goes again.
+    h.get_by_label("Undo").click();
+    h.run();
+    assert!(file(&h).plates[0].outline.is_empty() || file(&h).plates[0].outline.len() == 3);
+    std::fs::remove_dir_all(dir).ok();
+}

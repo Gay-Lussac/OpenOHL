@@ -311,6 +311,8 @@ fn connections(s: &ExportStructure) -> String {
             "eccentric",
             "restrained",
             "eccentricity_m",
+            "cut_m",
+            "shift_m",
         ],
         s.connections
             .iter()
@@ -343,6 +345,8 @@ fn connections(s: &ExportStructure) -> String {
                     ob(c.eccentric),
                     ob(c.restrained),
                     ol(&c.eccentricity),
+                    ol(&c.cut),
+                    ol(&c.shift),
                 ]
             })
             .collect(),

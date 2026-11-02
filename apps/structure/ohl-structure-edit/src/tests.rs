@@ -1065,3 +1065,82 @@ fn connection_presets_round_trip() {
         assert!(e.contains(says), "{says}: {e}");
     }
 }
+
+/// The Detail view's edits: a member end's bolts written as their places
+/// (the layout goes, the count follows), all taken away; a plate's
+/// outline written.
+#[test]
+fn bolt_points_and_plate_outlines_are_written() {
+    use crate::connection_edits::{self as ce, FieldValue};
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "pitch",
+        Some(&FieldValue::Length(0.05)),
+    )
+    .unwrap();
+    let kind = FieldValue::Bolts {
+        count: 2,
+        bolt: None,
+        diameter: Some(0.016),
+        hole: None,
+        grade: None,
+    };
+    ce::set_bolt_points(
+        &mut doc,
+        "M2",
+        "N2",
+        &[[0.03, 0.025], [0.08, 0.025]],
+        Some(&kind),
+    );
+    let t = read(&doc);
+    let c = t.connection("M2", "N2").unwrap();
+    assert_eq!(c.bolt_points.len(), 2);
+    assert!(c.pitch.is_none());
+    assert_eq!(c.bolts.as_ref().unwrap().count, 2);
+    ce::set_bolt_points(&mut doc, "M2", "N2", &[[0.03, 0.025]], Some(&kind));
+    assert_eq!(
+        read(&doc)
+            .connection("M2", "N2")
+            .unwrap()
+            .bolts
+            .as_ref()
+            .unwrap()
+            .count,
+        1
+    );
+    ce::set_bolt_points(&mut doc, "M2", "N2", &[], None);
+    assert!(read(&doc).connection("M2", "N2").is_none());
+    let t = read(&doc);
+    let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    assert!(ce::set_plate_outline(&mut doc, &g, &[[0.0, 0.0, 30.0]]).is_err());
+    ce::set_plate_outline(
+        &mut doc,
+        &g,
+        &[[0.0, 0.0, 30.0], [0.1, 0.0, 30.0], [0.0, 0.0, 30.1]],
+    )
+    .unwrap();
+    assert_eq!(read(&doc).plates[0].outline.len(), 3);
+    // A shift may be negative.
+    ce::set_connection_field(
+        &mut doc,
+        "M1",
+        "N2",
+        "shift",
+        Some(&FieldValue::SignedLength(-0.015)),
+    )
+    .unwrap();
+    assert!(
+        (read(&doc)
+            .connection("M1", "N2")
+            .unwrap()
+            .shift
+            .unwrap()
+            .si()
+            + 0.015)
+            .abs()
+            < 1e-12
+    );
+}

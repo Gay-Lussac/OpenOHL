@@ -433,3 +433,69 @@ fn a_member_shows_both_ends_and_its_capacity_follows_the_bolts() {
     assert!(!one.joints.is_empty());
     assert!(crate::member_capacity(&text, &library(), &bolts, "nope").is_err());
 }
+
+/// Where a member's steel stops (owner 2026-11-02: "the forces should all
+/// align at one point in the joint even if the member has to stop before
+/// to fit it in place"): worked out so the diagonal clears the leg's heel,
+/// its bolts measured from there; given, it is the given; a shift moves
+/// the member and its bolts sideways (towards what it bolts onto).
+#[test]
+fn the_steel_stops_where_it_fits_and_a_shift_moves_the_end() {
+    let bolts = ohl_structures::bolts::BoltLibrary::default();
+    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library(), &bolts).unwrap();
+    let a = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap()
+        .clone();
+    let cut = a.cut.value.unwrap();
+    assert!(cut >= 0.0);
+    assert!(matches!(a.cut.source, Source::WorkedOut | Source::Assumed));
+    // The first bolt: the cut plus the end distance (30 mm) from the joint.
+    assert!(
+        (a.bolt_flat[0][0] - (cut + 0.03)).abs() < 1e-9,
+        "{:?}",
+        a.bolt_flat
+    );
+    // Given: 50 mm, and a shift of 20 mm.
+    let text = format!(
+        "{TOWER}{}",
+        AT_N2.replace(
+            "leg = \"long\"",
+            "leg = \"long\"\ncut = \"50 mm\"\nshift = \"20 mm\""
+        )
+    );
+    let d = joint_details(&text, &library(), &bolts).unwrap();
+    let b = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap();
+    assert_eq!(b.cut.value, Some(0.05));
+    assert_eq!(b.cut.source, Source::Given);
+    assert!((b.bolt_flat[0][0] - 0.08).abs() < 1e-9);
+    let (s, u) = b.shift;
+    assert!((s - 0.02).abs() < 1e-12);
+    let u = u.unwrap();
+    // Across the member (square to it), towards the leg it bolts onto.
+    let along: f64 = (0..3).map(|k| u[k] * b.direction[k]).sum();
+    assert!(along.abs() < 1e-9);
+    let onto = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|x| Some(&x.member) == b.onto.value.as_ref())
+        .unwrap();
+    let towards: f64 = (0..3).map(|k| u[k] * onto.direction[k]).sum();
+    assert!(towards > 0.0);
+    // The member and its bolts moved by the shift (beside the seat along
+    // the bolts, which is square to it).
+    let moved: f64 = (0..3).map(|k| (b.offset[k] - a.offset[k]) * u[k]).sum();
+    assert!((moved - 0.02).abs() < 1e-9, "{moved}");
+}

@@ -181,6 +181,11 @@ edge_distance = "25 mm"
 # restrained = false      # given instead of worked out (two bolts or more
 #                         #   into a stiffer member or a plate)
 # eccentricity = "20 mm"  # given instead of worked out (gauge and section)
+# cut = "40 mm"           # where the steel stops from the work point (none:
+#                         #   worked out so it fits); the axis still runs to it
+# shift = "15 mm"         # the end moved sideways to fit (+ towards what it
+#                         #   bolts onto): its force passes beside the work
+#                         #   point, an eccentricity the analysis takes
 
 [[plate]]
 id = "G1"                 # unique among the plates, not a member's id
