@@ -812,6 +812,13 @@ fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: boo
                 let pts: Vec<egui::Pos2> = points.iter().map(|p| at(*p)).collect();
                 if matches!(kind, LineKind::Gauge | LineKind::Axis) && pts.len() == 2 {
                     painter.add(egui::Shape::dashed_line(&pts, stroke, 6.0, 3.0));
+                } else if *kind == LineKind::Plate && pts.len() >= 3 {
+                    // A plate filled (translucent) under the members.
+                    painter.add(egui::Shape::convex_polygon(
+                        pts,
+                        egui::Color32::from_rgba_unmultiplied(70, 140, 210, 70),
+                        stroke,
+                    ));
                 } else if *closed {
                     painter.add(egui::Shape::closed_line(pts, stroke));
                 } else {

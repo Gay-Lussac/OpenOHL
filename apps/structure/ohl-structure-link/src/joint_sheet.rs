@@ -130,11 +130,27 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
     };
     let cut = reach(d);
     let mut marks = Vec::new();
+    // The plates first (under the members), each with its id and
+    // thickness at its middle.
     for p in &d.plates {
+        let pts: Vec<[f64; 2]> = p.outline.iter().map(|q| to(*q)).collect();
+        if pts.is_empty() {
+            continue;
+        }
+        let n = pts.len() as f64;
+        let mid = [
+            pts.iter().map(|q| q[0]).sum::<f64>() / n,
+            pts.iter().map(|q| q[1]).sum::<f64>() / n,
+        ];
         marks.push(Mark::Line {
-            points: p.outline.iter().map(|q| to(*q)).collect(),
+            points: pts,
             closed: true,
             kind: LineKind::Plate,
+        });
+        marks.push(Mark::Text {
+            at: mid,
+            text: format!("{} · {:.0} mm", p.id, p.thickness * 1000.0),
+            label: false,
         });
     }
     for a in &d.arrivals {

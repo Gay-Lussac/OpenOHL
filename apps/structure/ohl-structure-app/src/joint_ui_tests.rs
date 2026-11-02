@@ -538,7 +538,15 @@ fn the_detail_view_tools_act() {
     let tower = dir.join("angles.ohls");
     std::fs::write(
         &tower,
-        format!("{ANGLES}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n"),
+        // D1 and H1 bolted onto a gusset plate at N2 (its outline drawn
+        // around their bolts).
+        format!(
+            "{}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+             [[connection]]\nmember = \"H1\"\njoint = \"N2\"\nonto = \"G1\"\n\
+             bolts = {{ count = 2, diameter = \"16 mm\" }}\ngauges = [\"30 mm\"]\n\
+             gauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n",
+            ANGLES.replace("onto = \"L1\"", "onto = \"G1\"")
+        ),
     )
     .unwrap();
     let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
@@ -586,16 +594,14 @@ fn the_detail_view_tools_act() {
     let c = file(&h).connection("D1", "N2").unwrap().clone();
     assert!((c.cut.unwrap().si() - 0.06).abs() < 1e-12);
     assert!((c.shift.unwrap().si() - 0.015).abs() < 1e-12);
-    // The plate's outline written as drawn.
-    h.state_mut().apply_joint_acts(
-        vec![Act::PlateOutline(
-            "G1".into(),
-            vec![[0.0, 1.0, 5.0], [0.1, 1.0, 5.0], [0.0, 1.0, 5.1]],
-        )],
-        &details,
-    );
-    h.run();
-    assert_eq!(file(&h).plates[0].outline.len(), 3);
+    // The plate drawn around D1's and H1's bolts (no outline in the file):
+    // every bolt onto it inside it.
+    let now = h.state_mut().joint_details().unwrap();
+    let now = now.as_ref().as_ref().unwrap().clone();
+    let n2 = now.joint("N2").unwrap();
+    let g1 = &n2.plates[0];
+    assert!(!g1.outline_given && g1.outline.len() >= 3);
+    assert_eq!(g1.members, ["D1", "H1"]);
     if let Some(dir) = &shots {
         h.run_steps(4);
         h.render()
@@ -603,6 +609,13 @@ fn the_detail_view_tools_act() {
             .save(dir.join("detail-tools-face.png"))
             .unwrap();
     }
+    // Plate around the bolts: that outline written into the file.
+    h.state_mut().apply_joint_acts(
+        vec![Act::PlateOutline("G1".into(), g1.outline.clone())],
+        &now,
+    );
+    h.run();
+    assert_eq!(file(&h).plates[0].outline.len(), g1.outline.len());
     // The member view: the strip there too.
     h.state_mut().selected = vec![Handle::Member("D1".into())];
     h.run();
