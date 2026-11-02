@@ -10,6 +10,39 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Built-up members, stage B1: built-up cross-sections calculated from
+their angles (owner, 2026-11-02: "plan the double star and 4 corners to
+be shown or at least calculable", "Go with A"; built, in active
+development, not approved yet)**
+
+- Three shapes in the cross-section library: `double_angle` (two angles
+  back to back, `back = "long"` or `"short"` for unequal legs),
+  `star_angle` (two angles heel to heel in a star, unequal legs allowed:
+  legs `h` along z, `b` along y) and `cross_angle` (four equal angles).
+  Each is drawn from its angles (root radii included) and its area,
+  second moments, principal axes (a star's at 45°), elastic and plastic
+  moduli, wind width and weight follow as for the other shapes; the
+  torsion constant is the sum of the angles' (joined only at the stitch
+  bolts: no closed cell); each angle's own properties are kept
+  (`Section::part_properties`, its minor radius of gyration for stage
+  B4).
+- The gap between the angles' backs is **required** (no default: the
+  plan's question 1 left open); 0 when they touch.
+- Drawn for now as the outer edge with the gap filled (each angle drawn:
+  stage B3); IFC writes them by name with their values (no parametric
+  profile), SAF as a general section with that edge.
+- Validated: hand calculations by the parallel-axis theorem (unit tests,
+  validation cases `sections-001…003`, calculation
+  `sections.properties`); locally against a real line's tower library
+  (70 built-up sections from a tower program): with the gap fitted per
+  section, the second moments within 0.3 % for the crosses and mostly
+  within 1–3 % for the stars and back to back (the same offset as its
+  single angles against OpenOHL's: toe radii not drawn); the gaps differ
+  per section (0 to about 17 mm); the torsion constants 3–6 % lower (the
+  program counts the corner twice); its elastic moduli are one angle's,
+  not comparable; five sections' data inconsistent (labelled back to
+  back with a star's values).
+
 **Joint details of towers, stages 4.1 and 4.2: the check takes its
 conditions from the joints (owner, 2026-11-02: "Go with … B"; built, in
 active development, not approved yet)**

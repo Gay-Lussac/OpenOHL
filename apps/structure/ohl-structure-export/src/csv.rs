@@ -59,6 +59,11 @@ fn dimensions(shape: &Shape) -> String {
             d(&[("sides", f64::from(sides)), ("d", dd), ("t", t)])
         }
         Shape::General { h, b } => d(&[("h", h), ("b", b)]),
+        // h: the legs back to back (along z), b: the outstanding ones.
+        Shape::DoubleAngle { h, b, t, r, gap } | Shape::StarAngle { h, b, t, r, gap } => {
+            d(&[("h", h), ("b", b), ("t", t), ("r", r), ("gap", gap)])
+        }
+        Shape::CrossAngle { h, t, r, gap } => d(&[("h", h), ("t", t), ("r", r), ("gap", gap)]),
     }
 }
 

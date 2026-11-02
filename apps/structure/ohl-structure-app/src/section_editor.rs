@@ -154,12 +154,20 @@ fn rows(s: &Section, density: Option<f64>) -> Vec<(&'static str, String, &'stati
             mm(p.gyration_v),
             "radius of gyration about v (the smallest)",
         ),
-        (
-            "centroid",
-            format!("{} / {}", mm(p.centroid[0]), mm(p.centroid[1])),
-            "y / z from the lower left of the outline",
-        ),
     ];
+    if let Some(part) = s.part_properties() {
+        out.push((
+            "iv, one angle",
+            mm(part.gyration_v),
+            "each angle's own smallest radius of gyration (it buckles on its own between the \
+             stitch bolts)",
+        ));
+    }
+    out.push((
+        "centroid",
+        format!("{} / {}", mm(p.centroid[0]), mm(p.centroid[1])),
+        "y / z from the lower left of the outline",
+    ));
     out.push((
         "weight",
         density.map_or("— (no material density)".to_owned(), |rho| {
@@ -664,7 +672,11 @@ impl StructureApp {
                 if let Some(kind) = edit::shape_kind(&ed.draft.shape) {
                     for (k, what) in kind.dims {
                         let v = ed.draft.dims.entry((*k).to_owned()).or_default();
-                        let hint = if *k == "sides" { "e.g. 8" } else { "e.g. 6 mm" };
+                        let hint = match *k {
+                            "sides" => "e.g. 8",
+                            "back" => "long or short",
+                            _ => "e.g. 6 mm",
+                        };
                         text(ui, k, what, v, hint);
                     }
                     for (k, what) in kind.given {

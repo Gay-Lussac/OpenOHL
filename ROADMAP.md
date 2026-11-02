@@ -871,9 +871,16 @@ Members made of several profiles: shown as their parts and calculated
 with the rules for built-up members. Today they are `general`
 cross-sections of typed values, drawn as boxes. Five stages and the
 questions: [Built-up members](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/built-up-members.md).
-Not built.
+- [x] B1 — built-up cross-sections in the library, calculated from their
+  angles: `double_angle`, `star_angle`, `cross_angle`, the gap required;
+  each angle's own properties kept; validation cases `sections-001…003`
+  (2026-11-02, built, in active development, not approved yet)
+- [ ] B2 — importing them
+- [ ] B3 — shown: each angle drawn, the joints see the plies
+- [ ] B4 — the rules for built-up members
+- [ ] B5 — joints of built-up members
 > **Owner:** (2026-11-02) "plan the double star and 4 corners to be
-> shown or at least calculable".
+> shown or at least calculable". "Go with A" (B1 first).
 
 ### O5. Tension-only parts that stay nearly free
 Today: kept active and flagged *approximate* (see U1). Options when this is

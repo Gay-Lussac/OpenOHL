@@ -31,10 +31,11 @@ pub struct ShapeKind {
 }
 
 /// Every key a dimension may have (removed when the shape changes).
-pub const DIMENSION_KEYS: [&str; 8] = ["h", "b", "t", "tw", "tf", "r", "d", "sides"];
+pub const DIMENSION_KEYS: [&str; 10] =
+    ["h", "b", "t", "tw", "tf", "r", "d", "sides", "gap", "back"];
 
 /// The shapes the section library computes, in the order of the editor.
-pub const SHAPES: [ShapeKind; 9] = [
+pub const SHAPES: [ShapeKind; 12] = [
     ShapeKind {
         name: "equal_angle",
         title: "Equal angle",
@@ -105,6 +106,45 @@ pub const SHAPES: [ShapeKind; 9] = [
             ("sides", "number of sides"),
             ("d", "width across flats"),
             ("t", "wall"),
+        ],
+        given: &[],
+    },
+    ShapeKind {
+        name: "double_angle",
+        title: "Two angles back to back",
+        dims: &[
+            ("h", "leg of each angle"),
+            ("b", "other leg (empty: equal legs)"),
+            ("t", "thickness"),
+            ("r", "root radius (empty: 0)"),
+            (
+                "gap",
+                "between the backs, e.g. the filler plate (0 mm: touching)",
+            ),
+            ("back", "legs back to back: long or short (unequal legs)"),
+        ],
+        given: &[],
+    },
+    ShapeKind {
+        name: "star_angle",
+        title: "Two angles in a star",
+        dims: &[
+            ("h", "leg along z"),
+            ("b", "leg along y (empty: equal legs)"),
+            ("t", "thickness"),
+            ("r", "root radius (empty: 0)"),
+            ("gap", "between the backs, e.g. the gusset (0 mm: touching)"),
+        ],
+        given: &[],
+    },
+    ShapeKind {
+        name: "cross_angle",
+        title: "Four angles in a cross",
+        dims: &[
+            ("h", "leg length"),
+            ("t", "thickness"),
+            ("r", "root radius (empty: 0)"),
+            ("gap", "between the backs, e.g. the gusset (0 mm: touching)"),
         ],
         given: &[],
     },
@@ -767,6 +807,23 @@ mod tests {
         );
         assert!(p.section(None).is_ok());
         assert!(p.table(None).to_string().contains("sides = 8"));
+        // Built up: the gap required, `back` written as text.
+        let mut d = draft(
+            "D",
+            "double_angle",
+            &[("h", "80 mm"), ("b", "60 mm"), ("t", "6 mm")],
+        );
+        assert!(d.section(None).unwrap_err().contains("needs gap"));
+        d.dims.insert("gap".into(), "10 mm".into());
+        assert!(d.section(None).unwrap_err().contains("needs back"));
+        d.dims.insert("back".into(), "short".into());
+        let s = d.section(None).unwrap();
+        assert!(matches!(s.shape, ohl_sections::Shape::DoubleAngle { h, .. } if h == 0.06));
+        assert!(d.table(None).to_string().contains("back = \"short\""));
+        // Changed to a star, `back` is removed.
+        d.shape = "star_angle".into();
+        assert!(!d.table(None).to_string().contains("back"));
+        assert!(d.section(None).is_ok());
         // A second "A" is refused; a copy gets a free id.
         let e =
             put_section(&mut doc, None, &draft("A", "round_bar", &[("d", "1 mm")])).unwrap_err();

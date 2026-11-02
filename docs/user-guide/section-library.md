@@ -65,10 +65,63 @@ the heel of an angle, the back of a channel's web at its bottom flange.
 | `round_bar` | `d` | solid |
 | `polygonal_hollow` | `sides`, `d` (across flats), `t` | a pole's shaft, a side at the bottom |
 | `general` | `h`, `b` (outline box) | nothing computed: give `area`, `iy`, `iz` (and what else is needed) |
+| `double_angle` | `h`, `b`, `t`, `r`, `gap`, `back` | two angles back to back: the legs back to back along z, `gap` apart, the other legs along y pointing away from each other at the bottom |
+| `star_angle` | `h`, `b`, `t`, `r`, `gap` | two angles heel to heel in a star, the second turned 180°: legs `h` along ±z, `b` along ±y, the backs `gap` apart both ways |
+| `cross_angle` | `h`, `t`, `r`, `gap` | four equal angles heel to heel round a point: a cross of double legs, the backs `gap` apart both ways |
 
 `r` (root radius, the fillets between the plates) may be left out (0). A
 dimension a shape does not take is an error ("b is not a dimension of
 equal_angle").
+
+### Built-up members
+
+*2026-11-02, built, in active development, not approved yet.* A member
+made of several angles bolted together (by stitch bolts along it, with a
+filler or gusset plate between them) is one of the three built-up
+shapes, each made of one angle of legs `h` and `b` and thickness `t`:
+
+- `b` may be left out: equal legs. A `cross_angle` takes equal legs only.
+- **`gap` is required**: the space between the angles' backs — the filler
+  or gusset plate's thickness, `"0 mm"` when they touch. There is no
+  default: a missing or negative gap is an error. A star's and a cross's
+  gap is the same both ways.
+- `back` (`"long"` or `"short"`, a `double_angle` with unequal legs only):
+  which legs lie back to back. With equal legs it may be left out.
+
+```toml
+[[section]]
+id = "2L-80x60x6"
+name = "Two angles 80 × 60 × 6, short legs back to back (invented)"
+shape = "double_angle"
+h = "80 mm"
+b = "60 mm"
+t = "6 mm"
+r = "7 mm"
+gap = "10 mm"                    # the filler plate
+back = "short"
+
+[[section]]
+id = "4X-90x8"
+name = "Four angles 90 × 8 in a cross (invented)"
+shape = "cross_angle"
+h = "90 mm"
+t = "8 mm"
+r = "9 mm"
+gap = "12 mm"                    # the gusset
+```
+
+Their properties are those of the angles **acting together** (the
+parallel-axis theorem over the drawn angles, root radii included): the
+area, the second moments about y, z and the principal axes — a star's lie
+at 45°, about the diagonal through both angles the smallest —, the
+elastic and plastic moduli, the wind width (the whole outline, the gap
+included) and the weight. The **torsion constant** is the sum of the
+angles' (they are joined only at the stitch bolts, so they do not form a
+closed cell). Each angle's own properties are kept too: OHL-Structure's
+form shows **iv, one angle**, its smallest radius of gyration, with which
+it buckles on its own between the stitch bolts. The checks do not use it
+yet (the rules for built-up members are a later stage), and the member
+is drawn as the outline with the gap filled.
 
 ## Properties
 
@@ -104,6 +157,11 @@ What is exact and what is approximate:
   I-sections (web between the flanges; both flanges) and rectangular
   tubes (in proportion to the sides); half the area for round and
   polygonal tubes; 0.9 A for a round bar.
+- **Built-up shapes**: as their angles above; the torsion constant is
+  the sum of the angles' (b·t³/3 each, fillets left out); the shear
+  areas the sum of the angles'. The angles act together as one section:
+  how far that holds depends on the stitch bolts (checked later, not
+  yet).
 - A `general` cross-section has only what you give; its elastic and plastic
   moduli and torsion constant stay unknown unless given.
 
@@ -177,7 +235,8 @@ library has.
 - **+ New cross-section** opens the form: id, name, description, **shape** (the
   shapes above), **material** (the library's materials, or the file's
   `default_material`) and the shape's dimensions typed with their units
-  (`61 mm`; `sides` a number); a `general` cross-section takes its area and
+  (`61 mm`; `sides` a number, `back` long or short); a `general`
+  cross-section takes its area and
   second moments. The **properties** are computed as you type — area,
   second moments about y, z and the principal axes, torsion constant,
   elastic and plastic moduli, radii of gyration, centroid, and the weight

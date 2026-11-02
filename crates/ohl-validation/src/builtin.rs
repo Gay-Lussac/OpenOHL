@@ -6,7 +6,8 @@
 
 use nalgebra::Vector3;
 use ohl_core::units::{
-    Area, Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress, Temperature,
+    Angle, Area, Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress,
+    Temperature,
 };
 use ohl_sagtension::LoadedSpan;
 use ohl_sagtension::catenary::{SpanGeometry, default_solver_budget, tension_for_sag};
@@ -47,6 +48,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(StructurePole));
     registry.register(Box::new(StructureMemberWind));
     registry.register(Box::new(StructureWindRule));
+    registry.register(Box::new(SectionProperties));
     registry.register(Box::new(GallopingEllipses));
     registry.register(Box::new(CatenaryFit));
     registry.register(Box::new(ClearanceSurface));
@@ -1455,6 +1457,60 @@ impl Calculation for StructureMemberWind {
                 w.members.iter().map(|r| r.shielding).fold(1.0, f64::min),
             ),
         ]))
+    }
+}
+
+/// `sections.properties`: a cross-section's properties computed from its
+/// shape by the section library (no values given in the file).
+struct SectionProperties;
+
+impl Calculation for SectionProperties {
+    fn id(&self) -> &'static str {
+        "sections.properties"
+    }
+
+    fn description(&self) -> &'static str {
+        "Cross-section properties (inputs: sections = .ohlsec text, section = its id); outputs \
+         area_m2, centroid_y_m, centroid_z_m (from the outline box's lower left), iy_m4, iz_m4, \
+         iyz_m4, iu_m4, iv_m4, it_m4, wel_y_m3, wel_z_m3, wpl_y_m3, wpl_z_m3, wind_width_m (wind \
+         along y), and for a built-up section part_area_m2, part_gyration_v_m (one angle's)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let library = ohl_sections::SectionLibrary::parse(string_input(inputs, "sections")?)?;
+        let id = string_input(inputs, "section")?;
+        let s = library
+            .section(id)
+            .ok_or_else(|| format!("no section \"{id}\""))?;
+        let p = s.properties();
+        let mut out = outputs([
+            ("area_m2", p.area),
+            ("centroid_y_m", p.centroid[0]),
+            ("centroid_z_m", p.centroid[1]),
+            ("iy_m4", p.iy),
+            ("iz_m4", p.iz),
+            ("iyz_m4", p.iyz),
+            ("iu_m4", p.iu),
+            ("iv_m4", p.iv),
+            ("wind_width_m", s.wind_width(Angle::from_degrees(0.0))),
+        ]);
+        let part = s.part_properties();
+        // What a shape leaves unknown (a general section's moduli) is left
+        // out.
+        for (k, v) in [
+            ("it_m4", p.it),
+            ("wel_y_m3", p.wel_y),
+            ("wel_z_m3", p.wel_z),
+            ("wpl_y_m3", p.wpl_y),
+            ("wpl_z_m3", p.wpl_z),
+            ("part_area_m2", part.as_ref().map(|q| q.area)),
+            ("part_gyration_v_m", part.as_ref().map(|q| q.gyration_v)),
+        ] {
+            if let Some(v) = v {
+                out.insert(k.to_owned(), v);
+            }
+        }
+        Ok(out)
     }
 }
 

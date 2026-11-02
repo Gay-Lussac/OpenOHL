@@ -1078,6 +1078,11 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
                 .collect(),
             None,
         ),
+        // Built-up: the outer edge, the space between the angles filled
+        // (each angle drawn: stage B3 of the built-up members).
+        Some(ref sh) if sh.is_built_up() => {
+            (shift(sh.built_up_outline().unwrap_or_default()), None)
+        }
         _ if w > 0.0 && h > 0.0 => (shift(vec![[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]), None),
         // Only values (a `[[section]]` table): a square of its area.
         _ => {

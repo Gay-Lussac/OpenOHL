@@ -242,7 +242,11 @@ pub fn parametric(shape: &Shape) -> Option<(&'static str, String)> {
         Shape::RectangularHollow { h, b, t } => ("Tube", [h, b, t, 0.0, 0.0].map(mm).join("; ")),
         Shape::CircularHollow { d, t } => ("Pipe", [d, t].map(mm).join("; ")),
         Shape::RoundBar { d } => ("Circle", mm(d)),
-        Shape::PolygonalHollow { .. } | Shape::General { .. } => return None,
+        Shape::PolygonalHollow { .. }
+        | Shape::General { .. }
+        | Shape::DoubleAngle { .. }
+        | Shape::StarAngle { .. }
+        | Shape::CrossAngle { .. } => return None,
     })
 }
 
@@ -276,6 +280,19 @@ fn contours(s: &ExportSection) -> (Vec<[f64; 2]>, Option<Vec<[f64; 2]>>) {
             (poly(sides, d / 2.0), Some(inner))
         }
         Some(Shape::General { h, b }) => (rect(b, h), None),
+        // Built-up: the outer edge, the space between the angles filled.
+        Some(ref sh) if sh.is_built_up() => {
+            let edge = sh.built_up_outline().unwrap_or_default();
+            // The centroid from the lower left of the outline box.
+            let c = [
+                s.size[0] / 2.0 + s.centroid[0],
+                s.size[1] / 2.0 + s.centroid[1],
+            ];
+            (
+                edge.iter().map(|p| [p[0] - c[0], p[1] - c[1]]).collect(),
+                None,
+            )
+        }
         // No profile: a square of the same area.
         _ => {
             let a = s.area.max(0.0).sqrt();

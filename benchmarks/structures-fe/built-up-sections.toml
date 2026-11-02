@@ -1,0 +1,115 @@
+# Built-up cross-sections of the section library: two angles back to back,
+# two in a star, four in a cross, each worked out from its angles.
+# The angle is INVENTED (no supplier's table): legs 71 mm, thickness 6.3
+# mm, no root radius; the angles' backs 9.5 mm apart (gap).
+#
+# Hand derivation (reference_built_up.py prints the numbers):
+# - one angle as its two plates [0, h] × [0, t] and [0, t] × [t, h]: area
+#   A1 = t (2h − t) = 854.91 mm²; centroid e from the heel along y and z,
+#   e = (h t · h/2 + t (h − t) · t/2) / A1 = 20.0759 mm; own second moment
+#   about a leg-parallel axis I1 = Σ (w d³/12 + a (zc − e)²) = 41.2440 cm⁴;
+#   own product I1yz = Σ a (yc − e)(zc − e) = −24.4459 cm⁴; its minor
+#   radius of gyration √((I1 + I1yz) / A1) = 13.9982 mm;
+# - the angles' centroids d = g/2 + e = 24.8259 mm off the section's
+#   axes (back to back: along y only);
+# - back to back: Iy = 2 I1, Iz = 2 (I1 + A1 d²); Wel,y = Iy / (h − e),
+#   Wel,z = Iz / (h + g/2); Wpl,z = 2 A1 d (the symmetry axis halves the
+#   area), Wpl,y = 2 × the single angle's (axis in the outstanding legs at
+#   A1 / 2h);
+# - star: Iy = Iz = 2 (I1 + A1 d²), iyz = 2 (I1yz + A1 d²) (a point
+#   reflection keeps an angle's own product), principal axes at 45°:
+#   iv = Iy − iyz; Wel = Iy / (h + g/2); Wpl = 2 A1 d;
+# - cross: Iy = Iz = 4 (I1 + A1 d²), iyz = 0; Wel = Iy / (h + g/2);
+#   Wpl = 4 A1 d;
+# - torsion: the angles' sum, n (2h − t) t³/3 (joined only at the stitch
+#   bolts: no closed cell);
+# - wind along y: the outline's extent along z.
+
+[[case]]
+id = "sections-001"
+title = "Two angles back to back (invented 71 × 6.3 mm, 9.5 mm apart)"
+calculation = "sections.properties"
+reference = "Hand derivation above: the angles' plates by the parallel-axis theorem (reference_built_up.py)"
+notes = "No root radius; the legs h back to back along z"
+max_seconds = 1.0
+inputs.section = "2L"
+inputs.sections = '''
+[[section]]
+id = "2L"
+shape = "double_angle"
+h = "71 mm"
+t = "6.3 mm"
+gap = "9.5 mm"
+'''
+expected.area_m2 = { value = 1.70982e-3, rel_tol = 1e-9 }
+expected.centroid_y_m = { value = 0.07575, rel_tol = 1e-9 }
+expected.centroid_z_m = { value = 0.0200759396, rel_tol = 1e-8 }
+expected.iy_m4 = { value = 8.2487998e-7, rel_tol = 1e-7 }
+expected.iz_m4 = { value = 1.87868868e-6, rel_tol = 1e-7 }
+expected.iyz_m4 = { value = 0.0, abs_tol = 1e-14 }
+expected.it_m4 = { value = 2.26209186e-8, rel_tol = 1e-8 }
+expected.wel_y_m3 = { value = 1.61982366e-5, rel_tol = 1e-7 }
+expected.wel_z_m3 = { value = 2.48011707e-5, rel_tol = 1e-7 }
+expected.wpl_y_m3 = { value = 2.91792634e-5, rel_tol = 1e-6 }
+expected.wpl_z_m3 = { value = 4.2447888e-5, rel_tol = 1e-6 }
+expected.wind_width_m = { value = 0.071, rel_tol = 1e-9 }
+expected.part_area_m2 = { value = 8.5491e-4, rel_tol = 1e-9 }
+expected.part_gyration_v_m = { value = 0.0139981894, rel_tol = 1e-8 }
+
+[[case]]
+id = "sections-002"
+title = "Two angles in a star (invented 71 × 6.3 mm, 9.5 mm apart): principal axes at 45°"
+calculation = "sections.properties"
+reference = "Hand derivation above: the angles' plates by the parallel-axis theorem (reference_built_up.py)"
+notes = "No root radius"
+max_seconds = 1.0
+inputs.section = "2S"
+inputs.sections = '''
+[[section]]
+id = "2S"
+shape = "star_angle"
+h = "71 mm"
+t = "6.3 mm"
+gap = "9.5 mm"
+'''
+expected.area_m2 = { value = 1.70982e-3, rel_tol = 1e-9 }
+expected.centroid_y_m = { value = 0.07575, rel_tol = 1e-9 }
+expected.centroid_z_m = { value = 0.07575, rel_tol = 1e-9 }
+expected.iy_m4 = { value = 1.87868868e-6, rel_tol = 1e-7 }
+expected.iz_m4 = { value = 1.87868868e-6, rel_tol = 1e-7 }
+expected.iyz_m4 = { value = 5.63966764e-7, rel_tol = 1e-7 }
+expected.iu_m4 = { value = 2.44265545e-6, rel_tol = 1e-7 }
+expected.iv_m4 = { value = 1.31472192e-6, rel_tol = 1e-7 }
+expected.it_m4 = { value = 2.26209186e-8, rel_tol = 1e-8 }
+expected.wel_y_m3 = { value = 2.48011707e-5, rel_tol = 1e-7 }
+expected.wpl_y_m3 = { value = 4.2447888e-5, rel_tol = 1e-6 }
+expected.wind_width_m = { value = 0.1515, rel_tol = 1e-9 }
+expected.part_gyration_v_m = { value = 0.0139981894, rel_tol = 1e-8 }
+
+[[case]]
+id = "sections-003"
+title = "Four angles in a cross (invented 71 × 6.3 mm, 9.5 mm apart)"
+calculation = "sections.properties"
+reference = "Hand derivation above: the angles' plates by the parallel-axis theorem (reference_built_up.py)"
+notes = "No root radius"
+max_seconds = 1.0
+inputs.section = "4X"
+inputs.sections = '''
+[[section]]
+id = "4X"
+shape = "cross_angle"
+h = "71 mm"
+t = "6.3 mm"
+gap = "9.5 mm"
+'''
+expected.area_m2 = { value = 3.41964e-3, rel_tol = 1e-9 }
+expected.centroid_y_m = { value = 0.07575, rel_tol = 1e-9 }
+expected.iy_m4 = { value = 3.75737737e-6, rel_tol = 1e-7 }
+expected.iz_m4 = { value = 3.75737737e-6, rel_tol = 1e-7 }
+expected.iyz_m4 = { value = 0.0, abs_tol = 1e-14 }
+expected.iv_m4 = { value = 3.75737737e-6, rel_tol = 1e-7 }
+expected.it_m4 = { value = 4.52418372e-8, rel_tol = 1e-8 }
+expected.wel_y_m3 = { value = 4.96023415e-5, rel_tol = 1e-7 }
+expected.wpl_y_m3 = { value = 8.4895776e-5, rel_tol = 1e-6 }
+expected.wind_width_m = { value = 0.1515, rel_tol = 1e-9 }
+expected.part_gyration_v_m = { value = 0.0139981894, rel_tol = 1e-8 }

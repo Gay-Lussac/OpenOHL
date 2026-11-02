@@ -1,9 +1,10 @@
 # Built-up members (plan)
 
-*Plan, 2026-11-02 — not built, not approved. Asked by the owner: "plan
-the double star and 4 corners to be shown or at least calculable".
-Open point O20 in the [roadmap](../roadmap.md); comment there or under
-each stage.*
+*Plan, 2026-11-02 — not approved. Asked by the owner: "plan
+the double star and 4 corners to be shown or at least calculable"; "Go
+with A". Stage B1 built (in active development, not approved yet); the
+others not built. Open point O20 in the [roadmap](../roadmap.md);
+comment there or under each stage.*
 
 ## What there is today
 
@@ -57,6 +58,36 @@ Sizes as for the joint details: S a few days, M one to two weeks.
   and locally against the tower program's values of the real line's 70
   built-up sections (the differences said; a root radius or a gap
   missing explains some).
+
+**Built (2026-11-02, in active development, not approved yet).** What
+was done:
+
+- `double_angle` (`h`, `b` — left out: equal legs —, `t`, `r`, `gap`,
+  `back = "long"` or `"short"` for unequal legs), `star_angle` (`h`, `b`,
+  `t`, `r`, `gap`; unequal legs allowed: the legs `h` along ±z, `b` along
+  ±y) and `cross_angle` (`h`, `t`, `r`, `gap`; equal legs) in
+  `ohl-sections`. Each is drawn from its angles, root radii included, so
+  the area, centroid, second moments, principal axes, elastic and plastic
+  moduli and wind width come out of the same integrals as for every other
+  shape. Torsion: the sum of the angles' Σ b t³/3; shear areas: the sum of
+  the angles'.
+- **The gap is required** (question 1 below still open): a missing or
+  negative gap is refused, naming it.
+- Each angle's own properties: `Section::part_properties()` (its minor
+  radius of gyration, shown in OHL-Structure's cross-section form as
+  "iv, one angle").
+- Typed in OHL-Structure (Cross-section library form); drawn for now as
+  the outer edge with the gap filled (3D view, joint close-up); IFC: by
+  name with the values (no parametric profile); SAF: a general section of
+  that edge; CSV and the plugins' member data: the dimensions with `gap`.
+- Validation: unit tests by the parallel-axis theorem (equal and unequal
+  legs, root radii), cases `sections-001…003` (calculation
+  `sections.properties`, `benchmarks/structures-fe/built-up-sections.toml`
+  with `reference_built_up.py`); locally, the real line's 70 sections: see
+  [the decision log](decisions.md#2026-11-02) — with each section's gap
+  fitted, the second moments within 0.3 % (crosses) and mostly 1–3 %
+  (stars, back to back: its single angles differ as much); the gaps vary
+  from 0 to about 17 mm, so no default would fit.
 
 ### B2 — Importing them (S)
 

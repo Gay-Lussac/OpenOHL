@@ -48,8 +48,16 @@
 //! | `round_bar` | `d` |
 //! | `polygonal_hollow` (pole) | `sides`, `d` (across flats), `t` |
 //! | `general` | `h`, `b` (outline box); `area`, `iy`, `iz` given |
+//! | `double_angle` (two back to back) | `h`, `b`, `t`, `r`, `gap`, `back` |
+//! | `star_angle` (two in a star) | `h`, `b`, `t`, `r`, `gap` |
+//! | `cross_angle` (four in a cross) | `h`, `t`, `r`, `gap` |
 //!
-//! `r` (root radius) is optional, default 0.
+//! `r` (root radius) is optional, default 0. The built-up shapes are made
+//! of angles of legs `h` and `b` (`b` left out: equal legs) and thickness
+//! `t`; `gap` (required, 0 or above) is the space between the angles'
+//! backs — a filler or gusset plate's thickness, 0 when they touch; `back`
+//! (`"long"` or `"short"`, required for unequal legs) says which legs of a
+//! `double_angle` lie back to back.
 //!
 //! An optional `[wind]` table holds wind factors for structures given as
 //! data — a drag factor per shape, a lattice face's drag and shielding
@@ -168,6 +176,48 @@ pub enum Shape {
         /// Width.
         b: f64,
     },
+    /// Two angles back to back: the legs `h` side by side along z, `gap`
+    /// apart along y, the legs `b` along y pointing away from each other
+    /// at the bottom (an upside-down T).
+    DoubleAngle {
+        /// The legs back to back, along z.
+        h: f64,
+        /// The outstanding legs, along y.
+        b: f64,
+        /// Thickness.
+        t: f64,
+        /// Root radius.
+        r: f64,
+        /// Between the two backs.
+        gap: f64,
+    },
+    /// Two angles heel to heel in a star, the second turned 180° about the
+    /// first: legs `h` along +z and −z, legs `b` along +y and −y, the backs
+    /// `gap` apart in both directions (a gusset plate between them).
+    StarAngle {
+        /// Legs along z.
+        h: f64,
+        /// Legs along y.
+        b: f64,
+        /// Thickness.
+        t: f64,
+        /// Root radius.
+        r: f64,
+        /// Between the backs.
+        gap: f64,
+    },
+    /// Four equal angles heel to heel round a point: a cross of four
+    /// double legs, the backs `gap` apart in both directions.
+    CrossAngle {
+        /// Leg length.
+        h: f64,
+        /// Thickness.
+        t: f64,
+        /// Root radius.
+        r: f64,
+        /// Between the backs.
+        gap: f64,
+    },
 }
 
 impl Shape {
@@ -183,7 +233,104 @@ impl Shape {
             Shape::RoundBar { .. } => "round_bar",
             Shape::PolygonalHollow { .. } => "polygonal_hollow",
             Shape::General { .. } => "general",
+            Shape::DoubleAngle { .. } => "double_angle",
+            Shape::StarAngle { .. } => "star_angle",
+            Shape::CrossAngle { .. } => "cross_angle",
         }
+    }
+
+    /// The angle a built-up shape is made of, turned as its parts lie in
+    /// the section (a `double_angle`'s leg `h` along z), and how many;
+    /// none for the other shapes. Its properties (each angle's own minor
+    /// radius of gyration, for its buckling between the stitch bolts):
+    /// [`Section::part_properties`].
+    pub fn part(&self) -> Option<(Shape, u32)> {
+        let angle = |h: f64, b: f64, t: f64, r: f64| {
+            if h == b {
+                Shape::EqualAngle { h, t, r }
+            } else {
+                Shape::UnequalAngle { h, b, t, r }
+            }
+        };
+        match *self {
+            Shape::DoubleAngle { h, b, t, r, .. } | Shape::StarAngle { h, b, t, r, .. } => {
+                Some((angle(h, b, t, r), 2))
+            }
+            Shape::CrossAngle { h, t, r, .. } => Some((Shape::EqualAngle { h, t, r }, 4)),
+            _ => None,
+        }
+    }
+
+    /// Whether the shape is made of several angles.
+    pub fn is_built_up(&self) -> bool {
+        self.part().is_some()
+    }
+
+    /// The outer edge of a built-up shape, counter-clockwise, the lower
+    /// left of its outline box at the origin, for drawings: the space
+    /// between the angles filled (as by a filler plate), the fillets left
+    /// out. None for the other shapes.
+    pub fn built_up_outline(&self) -> Option<Vec<[f64; 2]>> {
+        Some(match *self {
+            Shape::DoubleAngle { h, b, t, gap, .. } => {
+                let w = 2.0 * b + gap;
+                vec![
+                    [0.0, 0.0],
+                    [w, 0.0],
+                    [w, t],
+                    [b + gap + t, t],
+                    [b + gap + t, h],
+                    [b - t, h],
+                    [b - t, t],
+                    [0.0, t],
+                ]
+            }
+            Shape::StarAngle { h, b, t, gap, .. } => {
+                // The second angle's heel at (b, h), the first's at
+                // (b + gap, h + gap); the square round the heels filled.
+                let (y1, z1) = (b + gap, h + gap);
+                vec![
+                    [b - t, 0.0],
+                    [b, 0.0],
+                    [b, h - t],
+                    [y1 + t, h - t],
+                    [y1 + t, z1],
+                    [y1 + b, z1],
+                    [y1 + b, z1 + t],
+                    [y1 + t, z1 + t],
+                    [y1 + t, z1 + h],
+                    [y1, z1 + h],
+                    [y1, z1 + t],
+                    [b - t, z1 + t],
+                    [b - t, h],
+                    [0.0, h],
+                    [0.0, h - t],
+                    [b - t, h - t],
+                ]
+            }
+            Shape::CrossAngle { h, t, gap, .. } => {
+                // A plus of arms 2 t + gap wide about the centre (c, c).
+                let (a, c) = (t + gap / 2.0, h + gap / 2.0);
+                [
+                    [-a, -c],
+                    [a, -c],
+                    [a, -a],
+                    [c, -a],
+                    [c, a],
+                    [a, a],
+                    [a, c],
+                    [-a, c],
+                    [-a, a],
+                    [-c, a],
+                    [-c, -a],
+                    [-a, -a],
+                ]
+                .iter()
+                .map(|p| [p[0] + c, p[1] + c])
+                .collect()
+            }
+            _ => return None,
+        })
     }
 
     /// The section as parts, the lower left of its outline box at the origin.
@@ -239,6 +386,24 @@ impl Shape {
                 )));
             }
             Shape::General { h, b } => o.rect(0.0, 0.0, b, h),
+            Shape::DoubleAngle { h, b, t, r, gap } => {
+                turned_angle(&mut o, [b, 0.0], [-1.0, 1.0], h, b, t, r);
+                turned_angle(&mut o, [b + gap, 0.0], [1.0, 1.0], h, b, t, r);
+            }
+            Shape::StarAngle { h, b, t, r, gap } => {
+                turned_angle(&mut o, [b + gap, h + gap], [1.0, 1.0], h, b, t, r);
+                turned_angle(&mut o, [b, h], [-1.0, -1.0], h, b, t, r);
+            }
+            Shape::CrossAngle { h, t, r, gap } => {
+                for (heel, s) in [
+                    ([h + gap, h + gap], [1.0, 1.0]),
+                    ([h, h + gap], [-1.0, 1.0]),
+                    ([h, h], [-1.0, -1.0]),
+                    ([h + gap, h], [1.0, -1.0]),
+                ] {
+                    turned_angle(&mut o, heel, s, h, h, t, r);
+                }
+            }
         }
         o
     }
@@ -269,6 +434,12 @@ impl Shape {
                 4.0 * am * am * t / p
             }
             Shape::General { .. } => return None,
+            Shape::DoubleAngle { .. } | Shape::StarAngle { .. } | Shape::CrossAngle { .. } => {
+                // The angles joined only at points (the stitch bolts): the
+                // sum of theirs.
+                let (part, n) = self.part()?;
+                f64::from(n) * part.torsion()?
+            }
         })
     }
 
@@ -288,8 +459,31 @@ impl Shape {
             }
             Shape::RoundBar { .. } => [ROUND_BAR_SHEAR * area; 2],
             Shape::General { .. } => return None,
+            Shape::DoubleAngle { .. } | Shape::StarAngle { .. } | Shape::CrossAngle { .. } => {
+                // The parts' legs along y and z stay along y and z.
+                let (part, n) = self.part()?;
+                let [y, z] = part.shear_areas(area / f64::from(n))?;
+                [f64::from(n) * y, f64::from(n) * z]
+            }
         })
     }
+}
+
+/// An angle with its heel at `heel`, leg `b` along y towards `s[0]` (±1),
+/// leg `h` along z towards `s[1]`.
+fn turned_angle(o: &mut Outline, heel: [f64; 2], s: [f64; 2], h: f64, b: f64, t: f64, r: f64) {
+    let at = |y: f64, z: f64| [heel[0] + s[0] * y, heel[1] + s[1] * z];
+    let rect = |o: &mut Outline, p: [f64; 2], q: [f64; 2]| {
+        o.rect(
+            p[0].min(q[0]),
+            p[1].min(q[1]),
+            p[0].max(q[0]),
+            p[1].max(q[1]),
+        );
+    };
+    rect(o, at(0.0, 0.0), at(b, t));
+    rect(o, at(0.0, t), at(t, h));
+    o.fillet(at(t, t), r, s);
 }
 
 /// An angle: the heel at the origin, leg `b` along y, leg `h` along z.
@@ -500,6 +694,20 @@ impl Section {
     pub fn wind_area_per_length(&self, direction: Angle) -> Area {
         Area::from_square_meters(self.wind_width(direction))
     }
+
+    /// The properties of one angle of a built-up section, computed from
+    /// its dimensions (the values given in the file are the whole
+    /// section's): its own minor radius of gyration `gyration_v` is what
+    /// buckles between the stitch bolts. None for the other shapes.
+    pub fn part_properties(&self) -> Option<Properties> {
+        let (shape, _) = self.shape.part()?;
+        let part = Section {
+            shape,
+            given: Given::default(),
+            ..self.clone()
+        };
+        Some(part.properties())
+    }
 }
 
 /// A material of the library, SI.
@@ -573,6 +781,10 @@ struct SectionFile {
     d: Option<Length>,
     #[serde(default)]
     sides: Option<u32>,
+    #[serde(default)]
+    gap: Option<Length>,
+    #[serde(default)]
+    back: Option<String>,
     #[serde(default)]
     area: Option<Area>,
     #[serde(default)]
@@ -682,7 +894,7 @@ impl MaterialFile {
 impl SectionFile {
     fn resolve(self, default_material: Option<&str>) -> Result<Section, String> {
         check_id(&self.id)?;
-        let dims: [(&str, Option<f64>); 7] = [
+        let dims: [(&str, Option<f64>); 8] = [
             ("h", self.h.map(|l| l.si())),
             ("b", self.b.map(|l| l.si())),
             ("t", self.t.map(|l| l.si())),
@@ -690,6 +902,7 @@ impl SectionFile {
             ("tf", self.tf.map(|l| l.si())),
             ("r", self.r.map(|l| l.si())),
             ("d", self.d.map(|l| l.si())),
+            ("gap", self.gap.map(|l| l.si())),
         ];
         let takes: &[&str] = match self.shape.as_str() {
             "equal_angle" => &["h", "t", "r"],
@@ -700,16 +913,21 @@ impl SectionFile {
             "round_bar" => &["d"],
             "polygonal_hollow" => &["sides", "d", "t"],
             "general" => &["h", "b"],
+            "double_angle" => &["h", "b", "t", "r", "gap", "back"],
+            "star_angle" => &["h", "b", "t", "r", "gap"],
+            "cross_angle" => &["h", "t", "r", "gap"],
             other => {
                 return Err(format!(
                     "shape \"{other}\" unknown (equal_angle, unequal_angle, channel, i_section, \
-                     rectangular_hollow, circular_hollow, round_bar, polygonal_hollow, general)"
+                     rectangular_hollow, circular_hollow, round_bar, polygonal_hollow, general, \
+                     double_angle, star_angle, cross_angle)"
                 ));
             }
         };
         let shape_name = self.shape.as_str();
         let sides_given = self.sides.map(|_| ("sides", Some(1.0)));
-        for (k, v) in dims.iter().copied().chain(sides_given) {
+        let back_given = self.back.as_ref().map(|_| ("back", Some(1.0)));
+        for (k, v) in dims.iter().copied().chain(sides_given).chain(back_given) {
             if v.is_some() && !takes.contains(&k) {
                 return Err(format!(
                     "{k} is not a dimension of {shape_name} (it takes {})",
@@ -725,6 +943,19 @@ impl SectionFile {
                     return Err("r must be 0 or above".into());
                 }
                 return Ok(r);
+            }
+            if k == "gap" {
+                // No default: how far apart the angles are is the data's.
+                let g = v.ok_or_else(|| {
+                    format!(
+                        "{shape_name} needs gap (the space between the angles' backs, e.g. the \
+                         filler or gusset plate's thickness; \"0 mm\" when they touch)"
+                    )
+                })?;
+                if !(g >= 0.0 && g.is_finite()) {
+                    return Err("gap must be 0 or above".into());
+                }
+                return Ok(g);
             }
             let v = v.ok_or_else(|| format!("{shape_name} needs {k}"))?;
             positive(k, Some(v))?;
@@ -777,6 +1008,36 @@ impl SectionFile {
                 let (d, t) = (get("d")?, get("t")?);
                 fits(2.0 * t < d, "2 t must be below d")?;
                 Shape::PolygonalHollow { sides, d, t }
+            }
+            "double_angle" | "star_angle" | "cross_angle" => {
+                let (h, t, r, gap) = (get("h")?, get("t")?, get("r")?, get("gap")?);
+                let b = if self.b.is_some() { get("b")? } else { h };
+                fits(t + r <= h.min(b), "t + r must not exceed a leg")?;
+                match shape_name {
+                    "double_angle" => {
+                        // h along z: the legs back to back.
+                        let (long, short) = (h.max(b), h.min(b));
+                        let (h, b) = match self.back.as_deref() {
+                            Some("long") => (long, short),
+                            Some("short") => (short, long),
+                            Some(other) => {
+                                return Err(format!(
+                                    "back \"{other}\" must be \"long\" or \"short\" (the legs \
+                                     back to back)"
+                                ));
+                            }
+                            None if h == b => (h, b),
+                            None => {
+                                return Err("double_angle with unequal legs needs back = \
+                                            \"long\" or \"short\" (the legs back to back)"
+                                    .into());
+                            }
+                        };
+                        Shape::DoubleAngle { h, b, t, r, gap }
+                    }
+                    "star_angle" => Shape::StarAngle { h, b, t, r, gap },
+                    _ => Shape::CrossAngle { h, t, r, gap },
+                }
             }
             _ => Shape::General {
                 h: get("h")?,
@@ -996,5 +1257,7 @@ impl SectionLibrary {
     }
 }
 
+#[cfg(test)]
+mod built_up_tests;
 #[cfg(test)]
 mod tests;

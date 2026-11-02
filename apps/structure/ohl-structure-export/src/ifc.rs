@@ -218,7 +218,12 @@ fn profile_kind(shape: &Shape, schema: Schema) -> Option<Profile> {
         ),
         Shape::RoundBar { d } => Profile::Parameterized("IFCCIRCLEPROFILEDEF", real(d / 2.0)),
         Shape::PolygonalHollow { sides, d, t } => Profile::Polygonal(sides, d, t),
-        Shape::General { .. } => return None,
+        // Built-up: no parametric profile of IFC; written by name with
+        // the section's values, as a general one.
+        Shape::General { .. }
+        | Shape::DoubleAngle { .. }
+        | Shape::StarAngle { .. }
+        | Shape::CrossAngle { .. } => return None,
     })
 }
 

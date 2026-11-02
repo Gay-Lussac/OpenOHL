@@ -1735,13 +1735,22 @@ Format `ohl-sections`, version 1 (constants `SECTION_FILE_FORMAT`,
 | `format`, `version`, `name`, `description` | optional | — | header |
 | `default_material` | id? | — | material of the sections naming none |
 | `[[material]]` | `id`, `name`, `description`, `elasticity`, `shear_modulus?` (default E / 2.6), `density?` (0), `yield?`, `ultimate?`, `partial_factors?` (name → number) | Pa, kg/m³ | `ohl_sections::Material` |
-| `[[section]]` | `id`, `name`, `description`, `shape`, `material?`, dimensions of the shape (`h`, `b`, `t`, `tw`, `tf`, `r`, `d`, `sides`) | m | `ohl_sections::Section` (`Shape`) |
+| `[[section]]` | `id`, `name`, `description`, `shape`, `material?`, dimensions of the shape (`h`, `b`, `t`, `tw`, `tf`, `r`, `d`, `sides`; built up: `gap`, required, ≥ 0, and `back` = `"long"`/`"short"`, a `double_angle`'s legs back to back) | m | `ohl_sections::Section` (`Shape`) |
 | section, given | `area`, `iy`, `iz`, `iu`, `iv`, `it`, `wel_y`, `wel_z`, `wpl_y`, `wpl_z`, `gyration_y/z/u/v`, `shear_area_y/z` | m², m⁴ (`SecondMoment`), m³ (`SectionModulus`), m | replace the computed values (`Given`) |
 | `[wind]` (optional, one per library) | `source?`, `drag?` (shape name → factor > 0), `face_drag?` { `solidity` (rising, 0–1, ≥ 2 values), `factor` (> 0, one per solidity) }, `shielding?` { `solidity`, `spacing?` (rising, ≥ 0), `factor` (0–1: a flat row, or a row per spacing) } | — (factors, ratios) | `ohl_sections::StructureWind` (`Curve`, `Shielding`; `SectionLibrary::wind`): wind factors for structures as **data** (from a design-code plugin's `structure-wind` or typed; none shipped), linear / bilinear, nothing outside the table's range; a second `[wind]` in a folder is an error (`merge` reports `WIND_TABLE`) |
 
 Shapes: `equal_angle`, `unequal_angle`, `channel`, `i_section`,
 `rectangular_hollow`, `circular_hollow`, `round_bar`, `polygonal_hollow`,
-`general` (properties given only). `Section::properties()` computes area,
+`general` (properties given only), and since 2026-11-02 the built-up
+`double_angle` (two angles back to back), `star_angle` (two in a star) and
+`cross_angle` (four in a cross): `Shape::DoubleAngle { h, b, t, r, gap }`
+holds `h` = the legs back to back (along z, picked by `back`), `b` the
+outstanding ones; `Shape::part()` the angle and how many,
+`Section::part_properties()` one angle's own properties (its minor radius
+of gyration, for buckling between the stitch bolts),
+`Shape::built_up_outline()` the outer edge for drawings (the gap filled).
+The format stays version 1 (a program built before refuses the new
+shapes, naming them). `Section::properties()` computes area,
 centroid, second moments about the geometric and principal axes, torsion
 constant, elastic and plastic moduli, radii of gyration and shear areas;
 `Section::wind_width(direction)` the outline's width normal to a wind in

@@ -77,6 +77,11 @@ fn dimensions(shape: &ohl_sections::Shape) -> Vec<(String, f64)> {
             named(&[("sides", f64::from(sides)), ("d", d), ("t", t)])
         }
         S::General { h, b } => named(&[("h", h), ("b", b)]),
+        // h: the legs back to back (along z), b: the outstanding ones.
+        S::DoubleAngle { h, b, t, r, gap } | S::StarAngle { h, b, t, r, gap } => {
+            named(&[("h", h), ("b", b), ("t", t), ("r", r), ("gap", gap)])
+        }
+        S::CrossAngle { h, t, r, gap } => named(&[("h", h), ("t", t), ("r", r), ("gap", gap)]),
     }
 }
 
