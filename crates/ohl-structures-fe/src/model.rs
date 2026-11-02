@@ -538,7 +538,7 @@ pub struct Member {
     /// Rigid end offsets (2026-11-02): from its first joint and from its
     /// second to where its axis ends, structure axes, m; zero: the axis
     /// runs to the joint (the default). A structure file's connection
-    /// `shift` gives them ([`crate::member_ends::read_connections`]): the
+    /// `shift` gives them (`member_ends::read_connections`): the
     /// end moved sideways so it fits, its force passing beside the joint
     /// — an eccentricity the solve takes as a rigid link to the joint
     /// ([`crate::solve()`], [`Model::eccentric_ends`]).

@@ -8,7 +8,7 @@
 //! member (a connection's `shift`) has its axis beside the joint's work
 //! point, its force passing at the eccentricity e = shift.
 //!
-//! - **The offset** ([`from_shifts`]): r = shift · u, u the shift's
+//! - **The offset** (`from_shifts`): r = shift · u, u the shift's
 //!   direction ([`ohl_structures::connections::shift_direction`]) — across
 //!   the member, towards the member it bolts onto (given), else towards
 //!   the joint's leg ([`crate::member_ends::joint_leg`], a plate's too).
