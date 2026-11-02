@@ -75,7 +75,7 @@ end_distance = "30 mm"
 
 #[test]
 fn each_value_says_where_it_comes_from() {
-    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library()).unwrap();
+    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library(), &Default::default()).unwrap();
     assert!(d.level3, "{:?}", d.notes);
     let n2 = d.joint("N2").unwrap();
     assert_eq!(n2.arrivals.len(), 3);
@@ -135,7 +135,7 @@ fn a_joint_given_in_full_is_complete() {
         "{TOWER}[[connection]]\nmember = \"D1\"\njoint = \"N4\"\nkind = \"pinned\"\n\
          eccentric = false\nrestrained = false\n"
     );
-    let d = joint_details(&text, &library()).unwrap();
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
     let n4 = d.joint("N4").unwrap();
     assert_eq!(n4.arrivals[0].kind.value, Some(ConnectionKind::Pinned));
     assert_eq!(n4.completeness, Completeness::Complete);
@@ -148,7 +148,7 @@ fn a_plate_lies_around_its_bolts() {
         "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n",
         AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G1\"")
     );
-    let d = joint_details(&text, &library()).unwrap();
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
     let n2 = d.joint("N2").unwrap();
     let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
     assert_eq!(a.onto.source, Source::Given);
@@ -176,7 +176,7 @@ fn below_level_3_the_arrivals_only() {
         .filter(|l| !l.starts_with("section") && !l.starts_with("design"))
         .collect::<Vec<_>>()
         .join("\n");
-    let d = joint_details(&text, &library()).unwrap();
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
     assert!(!d.level3);
     let n2 = d.joint("N2").unwrap();
     assert_eq!(n2.arrivals.len(), 3);
@@ -194,7 +194,7 @@ fn below_level_3_the_arrivals_only() {
 #[test]
 fn the_face_view_shows_the_bolts_and_their_distances() {
     use crate::{Mark, face_pdf, face_svg, face_view, faces_of};
-    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library()).unwrap();
+    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library(), &Default::default()).unwrap();
     let n2 = d.joint("N2").unwrap();
     assert_eq!(faces_of(n2)[0], "y+");
     let v = face_view(n2, "y+");
@@ -241,7 +241,116 @@ fn the_example_tower_is_read_in_detail() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../examples/synthetic-line/Structures/type-02.ohls");
     let text = std::fs::read_to_string(path).unwrap();
-    let d = joint_details(&text, &SectionLibrary::default()).unwrap();
+    let d = joint_details(&text, &SectionLibrary::default(), &Default::default()).unwrap();
     assert!(!d.joints.is_empty());
     assert!(d.joints.iter().any(|j| j.arrivals.len() >= 3));
+}
+
+/// The joints like N2: its mirror in the face y = −1 m (the same
+/// members, cross-sections, classes and angles), the diagonal matched to
+/// the diagonal; the joints with other members not.
+#[test]
+fn a_mirror_joint_is_like_it() {
+    let mirror = r#"
+[[node]]
+id = "M1"
+point = ["0 m", "-1 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "M2"
+point = ["0 m", "-1 m", "5 m"]
+
+[[node]]
+id = "M3"
+point = ["0 m", "-1 m", "10 m"]
+support = "fixed"
+
+[[node]]
+id = "M4"
+point = ["-4 m", "-1 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "L3"
+nodes = ["M1", "M2"]
+section = "EA-61x7"
+design = { class = "leg" }
+
+[[member]]
+id = "L4"
+nodes = ["M2", "M3"]
+section = "EA-61x7"
+design = { class = "leg" }
+
+[[member]]
+id = "D2"
+nodes = ["M4", "M2"]
+section = "UA-83x52x6"
+design = { class = "bracing" }
+"#;
+    let d = joint_details(&format!("{TOWER}{mirror}"), &library(), &Default::default()).unwrap();
+    let s = crate::similar_joints(&d, "N2");
+    assert_eq!(s.len(), 1, "{s:?}");
+    assert_eq!(s[0].joint, "M2");
+    assert!(s[0].pairs.contains(&("D1".to_owned(), "D2".to_owned())));
+    assert_eq!(s[0].pairs.len(), 3);
+    assert!(
+        crate::similar_joints(&d, "N1")
+            .iter()
+            .all(|x| x.joint != "N2")
+    );
+}
+
+/// A bolt of a library: its diameter, hole, grade and drawn sizes from
+/// the library, what the connection types overriding them; an id no
+/// library has: said, no diameter.
+#[test]
+fn a_library_bolt_is_taken_from_the_library() {
+    let bolts = ohl_structures::bolts::BoltLibrary::load(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../libraries/bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let text = format!(
+        "{TOWER}{}",
+        AT_N2.replace(
+            "bolts = { count = 2, diameter = \"16 mm\", grade = \"8.8\" }",
+            "bolts = { count = 2, bolt = \"X17-example\", grade = \"own\" }"
+        )
+    );
+    let d = joint_details(&text, &library(), &bolts).unwrap();
+    let a = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap();
+    let b = a.bolts.value.as_ref().unwrap();
+    assert!((b.diameter - 0.017).abs() < 1e-12);
+    assert!((b.hole.unwrap() - 0.0185).abs() < 1e-12);
+    assert_eq!(b.grade.as_deref(), Some("own"));
+    assert_eq!(b.bolt.as_deref(), Some("X17-example"));
+    assert!((b.drawn[0].unwrap() - 0.025).abs() < 1e-12);
+    // The head drawn 25 mm across the flats: its corners 25/√3 from the axis.
+    let faces = crate::bolt_faces(a.bolt_points[0], a.bolt_axis, b.diameter, a.grip, b.drawn);
+    let head = faces.iter().find(|f| f.1 == crate::BoltPart::Head).unwrap();
+    let c = head.0[0];
+    let p = a.bolt_points[0];
+    let along: f64 = (0..3).map(|k| (c[k] - p[k]) * a.bolt_axis[k]).sum();
+    let r2: f64 = (0..3)
+        .map(|k| (c[k] - p[k] - along * a.bolt_axis[k]).powi(2))
+        .sum();
+    assert!((r2.sqrt() - 0.025 / 3f64.sqrt()).abs() < 1e-9);
+    // Not in the library: said, the bolts unknown.
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let a = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap();
+    assert!(a.bolts.value.is_none());
+    assert!(a.notes.iter().any(|n| n.contains("in no bolt library")));
 }

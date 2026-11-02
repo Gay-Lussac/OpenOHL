@@ -10,6 +10,51 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Joint details of towers, stage 3: defining joints (owner, 2026-11-02:
+"Go ahead with the next stage"; built, in active development, not
+approved yet)**
+
+- Every value of the connections table edited in place, given at that
+  end; cleared from its list ("not given here") or by right-click; each
+  change one undo step (`ohl_structure_edit::connection_edits`).
+- The bolt layout window: the bolts and their layout in one go, how far
+  they reach, what does not fit the leg; no design code's minimums built
+  in (the owner gives the standard's text; until then they are typed).
+- Copies: the whole joint to the joints like it (the same members by
+  cross-section, class and angle within 1°, mirrors included —
+  `ohl_structure_link::similar_joints`), what they bolt onto matched and
+  plates copied; one end to both ends of every member of its group or
+  class (what they bolt onto and their bolt points kept).
+- Presets in a file next to the structure (`Connections/*.ohlcp`), not
+  in the structure file: shared by the structures of a folder, as the
+  cross-section library.
+- Plates added (10 mm to start, said), changed, removed.
+- The joint's drawing is a pane of its own beside the 3D view (Joint
+  view), opened with Joint details; the bolt layout and the preset's name
+  are forms in the panel, not windows (owner: "make it so that the joint
+  view opens on the tower window as a new pane … it's easier to not fill
+  the view with screens").
+- Owner, the same day: "a bolt library could be nice to have too so that
+  it can be easily added and imported/exported … already make a library
+  for the bolts … it'll help storing the right data" — built: `.ohlb`
+  files in `Bolts/` beside the structure, imported and exported as the
+  cross-sections, a connection naming a bolt by id (what it types
+  overriding the library's); no standard's values built in, an example
+  library of invented ones. Grip and mass: one per bolt (as sold), a
+  question left in the plan.
+- "Can you model the bolts a bit better": drawn as a hexagonal head,
+  a shank through both legs and a nut, with the library bolt's sizes or
+  drawing proportions (1.5 d across the flats, 0.65 d head, 0.8 d nut).
+- "The bolts don't look to be on the right place on the corners": the
+  drawings now seat each bolted member's leg on the face of the leg it
+  bolts onto (a shift along its bolts, the drawings only: the analysis
+  keeps the axes), the leg bolted the one that can lie flat when not
+  given; the example's angles oriented as on a tower.
+- Built-up members
+  (two angles back to back, two in a star, four in a cross: "the double
+  star and 4 corners to be shown or at least calculable") planned in
+  [built-up members](built-up-members.md).
+
 **Joint details of towers, stages 0 to 2 (owner, 2026-11-02: "Go ahead
 with 0-2, yes and yes"; built, in active development, not approved yet)**
 

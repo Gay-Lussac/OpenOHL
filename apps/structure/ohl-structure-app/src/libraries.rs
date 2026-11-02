@@ -4,8 +4,9 @@
 
 //! The libraries of a structure (File › Libraries, the Libraries panel):
 //! section libraries (`.ohlsec`), insulator assemblies (`.ohli`), poles
-//! (`.ohlp`), structure models (`.ohlfe`), load-case recipes (`.ohlslc`)
-//! and pylon templates (`.ohlpt`) — where the window reads them, what the
+//! (`.ohlp`), structure models (`.ohlfe`), load-case recipes (`.ohlslc`),
+//! pylon templates (`.ohlpt`) and bolt libraries (`.ohlb`, `Bolts/` beside
+//! the structure, 2026-11-02) — where the window reads them, what the
 //! structure names that none has, **Import** (a file or a folder copied
 //! into the folder the window reads, after each file is read and checked)
 //! and **Export** (the libraries the structure uses, or every one, written
@@ -49,12 +50,15 @@ pub enum LibKind {
     Recipes,
     /// Structure templates (a new structure built from one).
     Templates,
+    /// Bolt libraries: the bolts the connections name (2026-11-02).
+    Bolts,
 }
 
 impl LibKind {
     /// Every kind, in the order of the menus.
-    pub const ALL: [LibKind; 6] = [
+    pub const ALL: [LibKind; 7] = [
         LibKind::Sections,
+        LibKind::Bolts,
         LibKind::Insulators,
         LibKind::Poles,
         LibKind::Models,
@@ -71,6 +75,7 @@ impl LibKind {
             LibKind::Models => "Structure models",
             LibKind::Recipes => "Load-case recipes",
             LibKind::Templates => "Structure templates",
+            LibKind::Bolts => "Bolt libraries",
         }
     }
 
@@ -83,6 +88,7 @@ impl LibKind {
             LibKind::Models => "ohlfe",
             LibKind::Recipes => STRUCTURE_LOAD_CASE_FILE_EXTENSION,
             LibKind::Templates => TEMPLATE_FILE_EXTENSION,
+            LibKind::Bolts => ohl_structures::bolts::BOLT_FILE_EXTENSION,
         }
     }
 
@@ -94,6 +100,7 @@ impl LibKind {
             LibKind::Insulators => "insulators",
             LibKind::Poles | LibKind::Models | LibKind::Recipes => "structures",
             LibKind::Templates => ohl_structures::templates::SHIPPED_FOLDERS[0],
+            LibKind::Bolts => "bolts",
         }
     }
 }
@@ -137,6 +144,7 @@ impl Folders {
             LibKind::Sections => vec![self.sections.clone()],
             LibKind::Insulators => self.insulators.clone(),
             LibKind::Poles | LibKind::Models | LibKind::Recipes => vec![self.structure.clone()],
+            LibKind::Bolts => vec![self.structure.join("Bolts")],
             LibKind::Templates => ohl_structures::templates::BESIDE_FOLDERS
                 .iter()
                 .map(|f| self.structure.join(f))
@@ -172,6 +180,8 @@ pub struct References {
     pub model: Option<String>,
     /// The pylon template it was built from (`[template] id`).
     pub template: Option<String>,
+    /// The bolts its connections name (`bolts = { bolt = "…" }`).
+    pub bolts: BTreeSet<String>,
 }
 
 /// What `t` names from the libraries.
@@ -203,6 +213,11 @@ pub fn references(t: &StructureType) -> References {
     let strings = t.strings.iter().filter_map(|s| s.insulator.clone());
     let attachments = t.attachments.iter().filter_map(|a| a.insulator.clone());
     r.insulators = strings.chain(attachments).collect();
+    r.bolts = t
+        .connections
+        .iter()
+        .filter_map(|c| c.bolts.as_ref().and_then(|b| b.bolt.clone()))
+        .collect();
     r.model = t.model.clone();
     r.template = t
         .template
@@ -276,6 +291,9 @@ pub fn check_file(
         LibKind::Recipes => StructureLoadCases::parse(text)
             .map(|s| s.cases.into_iter().map(|c| c.name).collect())
             .map_err(|e| format!("{}: {e}", path.display())),
+        LibKind::Bolts => ohl_structures::bolts::BoltLibrary::parse(text)
+            .map(|l| l.bolts.into_iter().map(|b| b.id).collect())
+            .map_err(|e| format!("{}: {e}", path.display())),
         LibKind::Templates => PylonTemplate::parse(path, text)
             .map(|t| vec![t.id])
             .map_err(|e| e.to_string()),
@@ -341,6 +359,18 @@ pub fn scan(folders: &Folders, t: Option<&StructureType>) -> Listing {
             listing.missing.push(format!(
                 "insulator assembly(ies) in no library: {}",
                 join(&missing_insulators)
+            ));
+        }
+        let missing_bolts: Vec<&String> = r
+            .bolts
+            .iter()
+            .filter(|b| !listing.has(LibKind::Bolts, b))
+            .collect();
+        if !missing_bolts.is_empty() {
+            listing.missing.push(format!(
+                "bolt(s) in no bolt library: {} (looked in {})",
+                join(&missing_bolts),
+                folders.structure.join("Bolts").display()
             ));
         }
         if let Some(name) = &r.pole {
@@ -597,6 +627,12 @@ pub fn export(
                 .transpose()?,
             // The structure's recipes are in its file.
             (Which::Used, LibKind::Recipes) => None,
+            (Which::Used, LibKind::Bolts) => e
+                .ids
+                .iter()
+                .any(|i| r.bolts.contains(i))
+                .then(read)
+                .transpose()?,
         };
         if let Some(body) = body {
             write(e.kind.export_folder(), &file, &body)?;
@@ -1017,6 +1053,45 @@ section = "NOT-THERE"
         )
         .unwrap();
         (dir, path)
+    }
+
+    /// A bolt library imported (2026-11-02) is listed in `Bolts/` and
+    /// resolves the bolts the connections name; one no library has is
+    /// said; export writes the library of the bolts used.
+    #[test]
+    fn bolt_libraries_are_imported_and_used() {
+        let (dir, path) = structure("bolts");
+        let text = std::fs::read_to_string(&path).unwrap()
+            + "\n[[connection]]\nmember = \"M1\"\njoint = \"T\"\n\
+               bolts = { count = 2, bolt = \"X17-example\" }\n\
+               [[connection]]\nmember = \"M2\"\njoint = \"T\"\n\
+               bolts = { count = 1, bolt = \"NO-BOLT\" }\n";
+        std::fs::write(&path, &text).unwrap();
+        let t = ohl_structures::structures::StructureType::parse(&path, &text).unwrap();
+        let folders = Folders::new(&path, None, None);
+        let before = scan(&folders, Some(&t));
+        assert!(
+            before
+                .missing
+                .iter()
+                .any(|m| m.starts_with("bolt(s)") && m.contains("X17-example"))
+        );
+        let lib = root().join("libraries/bolts/example-bolts.ohlb");
+        let done = import(LibKind::Bolts, &lib, &folders).unwrap();
+        assert_eq!(done.written, vec![dir.join("Bolts/example-bolts.ohlb")]);
+        let after = scan(&folders, Some(&t));
+        assert!(after.has(LibKind::Bolts, "X17-example"));
+        let bolts: Vec<&String> = after
+            .missing
+            .iter()
+            .filter(|m| m.starts_with("bolt(s)"))
+            .collect();
+        assert_eq!(bolts.len(), 1, "{bolts:?}");
+        assert!(bolts[0].contains("NO-BOLT") && !bolts[0].contains("X17"));
+        let out = dir.join("export");
+        let written = export(&after, "s.ohls", &text, Which::Used, &out).unwrap();
+        assert!(written.contains(&out.join("bolts/example-bolts.ohlb")));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     /// A section library imported is listed and resolves the structure's

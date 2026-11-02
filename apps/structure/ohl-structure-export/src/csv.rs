@@ -292,6 +292,7 @@ fn connections(s: &ExportStructure) -> String {
             "onto",
             "leg",
             "bolts",
+            "bolt",
             "bolt_diameter_m",
             "hole_m",
             "grade",
@@ -317,7 +318,8 @@ fn connections(s: &ExportStructure) -> String {
                     c.onto.clone().unwrap_or_default(),
                     c.leg.map(|l| l.as_str().to_owned()).unwrap_or_default(),
                     b.map(|b| b.count.to_string()).unwrap_or_default(),
-                    b.map(|b| len(&b.diameter)).unwrap_or_default(),
+                    b.and_then(|b| b.bolt.clone()).unwrap_or_default(),
+                    b.map(|b| ol(&b.diameter)).unwrap_or_default(),
                     b.map(|b| ol(&b.hole)).unwrap_or_default(),
                     b.and_then(|b| b.grade.clone()).unwrap_or_default(),
                     b.and_then(|b| b.shear_planes)

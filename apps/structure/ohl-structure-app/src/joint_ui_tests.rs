@@ -66,6 +66,8 @@ fn the_kind_is_toggled_and_a_joint_shown_in_detail() {
     assert_eq!(kind(&h), StructureKind::Other);
     menu(&mut h, "Design", "Joint details…");
     assert_eq!(h.state_mut().focused(), Some(Panel::JointDetails));
+    // Its drawing in a pane of its own beside the 3D view.
+    assert!(h.state().is_open(Panel::JointView));
     h.get_by_label_contains("Joint details are a tower's");
     // Geometry › Structure kind › lattice tower: one undo step.
     open_kind_menu(&mut h);
@@ -221,7 +223,49 @@ fn an_angle_tower_shows_its_bolts() {
             .unwrap()
             .save(dir.join("angles-face.png"))
             .unwrap();
+        h.get_by_label("Close-up").click();
+        h.run();
     }
+    // Stage 3: H1's bolts (the member's) clicked: the bolt layout, its
+    // bolts applied at this end — one undo step.
+    h.get_by_label("2 × M16").click();
+    h.run();
+    h.get_by_label_contains("Bolt layout — H1 at N2");
+    if let Some(dir) = &shots {
+        h.render()
+            .unwrap()
+            .save(dir.join("angles-layout.png"))
+            .unwrap();
+    }
+    h.get_by_label("Apply").click();
+    h.run();
+    let c = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state()
+            .file
+            .as_ref()
+            .unwrap()
+            .structure()
+            .connection("H1", "N2")
+            .cloned()
+    };
+    let given = c(&h).expect("written");
+    assert_eq!(given.bolts.as_ref().unwrap().count, 2);
+    assert_eq!(given.gauge_lines, Some(1));
+    if let Some(dir) = &shots {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(dir.join("angles-defined.png"))
+            .unwrap();
+    }
+    h.get_by_label("Undo").click();
+    h.run();
+    assert!(c(&h).is_none());
+    // A plate at the joint: one undo step, listed.
+    h.get_by_label("+ Plate").click();
+    h.run();
+    assert_eq!(h.state().file.as_ref().unwrap().structure().plates.len(), 1);
+    h.get_by_label("Members onto it");
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -257,30 +301,35 @@ point = ["4 m", "1 m", "5 m"]
 id = "L1"
 nodes = ["N1", "N2"]
 section = "EA-61x7"
+orientation = "y-x+"
 design = { class = "leg" }
 
 [[member]]
 id = "L2"
 nodes = ["N2", "N3"]
 section = "EA-61x7"
+orientation = "y-x+"
 design = { class = "leg" }
 
 [[member]]
 id = "D1"
 nodes = ["N4", "N2"]
 section = "UA-83x52x6"
+orientation = "y-z+"
 design = { class = "bracing" }
 
 [[member]]
 id = "H1"
 nodes = ["N2", "N5"]
 section = "UA-83x52x6"
+orientation = "z+y-"
 design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
 
 [[member]]
 id = "R1"
 nodes = ["N4", "N5"]
 section = "UA-83x52x6"
+orientation = "x-y-"
 
 [[connection]]
 member = "D1"

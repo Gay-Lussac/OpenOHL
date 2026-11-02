@@ -196,6 +196,8 @@ pub struct StructureApp {
     pub inventory: bool,
     /// The Joint details panel ([`crate::joint_panel`]).
     pub joints: crate::joint_panel::JointPanel,
+    /// Its tools' windows and the presets ([`crate::joint_tools`]).
+    pub joint_tools: crate::joint_tools::JointTools,
     /// The joints coloured by how complete their details are (View ›
     /// Joints by their details; off by default).
     pub joint_colors: bool,
@@ -259,6 +261,7 @@ impl StructureApp {
             held: crate::tools::Tool::Select,
             inventory: false,
             joints: Default::default(),
+            joint_tools: Default::default(),
             joint_colors: false,
         }
     }
@@ -800,6 +803,10 @@ impl StructureApp {
     /// Brings `panel` to the front (opened where it belongs if closed);
     /// its menu becomes the one worked in.
     pub fn focus(&mut self, panel: Panel) {
+        // Joint details brings its drawing beside the 3D view.
+        if panel == Panel::JointDetails && !self.is_open(Panel::JointView) {
+            crate::layout::open_panel(&mut self.dock, Panel::JointView);
+        }
         crate::layout::open_panel(&mut self.dock, panel);
         if let Some(a) = panel.area() {
             self.area = a;
@@ -1039,6 +1046,7 @@ impl StructureApp {
             Panel::Libraries => self.libraries_ui(ui),
             Panel::Inspector => self.inspector_ui(ui),
             Panel::JointDetails => self.joint_panel_ui(ui),
+            Panel::JointView => self.joint_view_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }
     }

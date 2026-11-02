@@ -304,6 +304,7 @@ impl StructureApp {
         };
         tick(ui, self, Panel::Level);
         tick(ui, self, Panel::View3d);
+        tick(ui, self, Panel::JointView);
         tick(ui, self, Panel::Inspector);
         tick(ui, self, Panel::Libraries);
         for area in Area::ALL {

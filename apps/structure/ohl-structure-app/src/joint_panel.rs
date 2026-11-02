@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The Joint details panel (owner 2026-11-02, stage 2 of the joint
-//! details): a tower's joint — the one selected — with
+//! The Joint details panel and the Joint view pane (owner 2026-11-02,
+//! stage 2 of the joint details; the view a pane of its own beside the 3D
+//! view: "make it so that the joint view opens on the tower window as a
+//! new pane … it's easier to not fill the view with screens"): a tower's
+//! joint — the one selected — with
 //!
 //! - a **close-up**: the members as their profiles, cut a little beyond
 //!   the joint, the bolts on the legs bolted, the plates; turned by
@@ -24,7 +27,7 @@ use std::sync::Arc;
 
 use eframe::egui;
 use ohl_structure_link::{
-    Arrival, Completeness, FaceView, JointDetail, JointDetails, LineKind, Mark, Source, Valued,
+    Completeness, FaceView, JointDetail, JointDetails, LineKind, Mark, Source,
 };
 
 use crate::app::StructureApp;
@@ -83,9 +86,12 @@ impl StructureApp {
         {
             return Some(d.clone());
         }
+        let bolts = self.bolt_library();
+        let f = self.file.as_ref()?;
         let d = Arc::new(ohl_structure_link::joint_details(
             f.text_ref(),
             &self.loads.sections,
+            &bolts.0,
         ));
         self.joints.details = Some((key, d.clone()));
         Some(d)
@@ -223,6 +229,87 @@ impl StructureApp {
             arrivals_only(ui, j);
             return;
         }
+        ui.add_space(4.0);
+        if j.arrivals.iter().any(|a| {
+            a.bolts.value.is_some() && a.profile.as_ref().is_some_and(|p| p.angle.is_none())
+        }) {
+            ui.label(
+                egui::RichText::new(
+                    "Bolts are drawn on angles only: a member of another cross-section (or a \
+                     [[section]] table of values) shows its bolts in the table.",
+                )
+                .small()
+                .weak(),
+            );
+        }
+        self.joint_forms(ui);
+        legend(ui);
+        let t = self.file.as_ref().map(|f| f.structure_arc());
+        let Some(t) = t else {
+            return;
+        };
+        let mut acts = crate::joint_tools::joint_bar(ui, details, j, &mut self.buffers);
+        let presets = self.presets();
+        acts.extend(crate::joint_tools::table(
+            ui,
+            &t,
+            details,
+            j,
+            &mut self.buffers,
+            &presets,
+        ));
+        if let Some(e) = self.presets_error() {
+            crate::app::error_label(ui, format!("Connection presets: {e}"));
+        }
+        ui.label(
+            egui::RichText::new(
+                "Type or pick a value to give it at this member end; right-click a value (or \
+                 pick \"not given here\") to go back to the member's or what is worked out. \
+                 Each change is one undo step.",
+            )
+            .small()
+            .weak(),
+        );
+        self.apply_joint_acts(acts, details);
+        for n in &details.notes {
+            ui.label(egui::RichText::new(n).small().weak());
+        }
+    }
+
+    /// The Joint view pane (beside the 3D view): the joint shown in the
+    /// Joint details panel as a close-up or a face view.
+    pub(crate) fn joint_view_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(f) = &self.file else {
+            return;
+        };
+        if !ohl_structure_edit::is_tower(f.structure().kind) {
+            ui.label("A tower's joints are drawn here (Geometry › Structure kind).");
+            return;
+        }
+        let Some(details) = self.joint_details() else {
+            return;
+        };
+        let Ok(details) = details.as_ref() else {
+            ui.label("The joints could not be read (Design › Joint details says why).");
+            return;
+        };
+        let id = self
+            .joints
+            .joint
+            .clone()
+            .filter(|j| details.joint(j).is_some())
+            .or_else(|| details.joints.first().map(|j| j.id.clone()));
+        let Some(j) = id.as_deref().and_then(|id| details.joint(id)) else {
+            ui.label("No joints yet: build the body first (Body › Generators).");
+            return;
+        };
+        if !details.level3 {
+            ui.label(format!(
+                "Joint {}: drawn at level 3 (every member with a cross-section, supports).",
+                j.id
+            ));
+            return;
+        }
         let faces = ohl_structure_link::faces_of(j);
         let face = self
             .joints
@@ -231,6 +318,7 @@ impl StructureApp {
             .filter(|f| faces.contains(f))
             .unwrap_or_else(|| faces[0].clone());
         ui.horizontal_wrapped(|ui| {
+            ui.strong(format!("Joint {}", j.id));
             ui.selectable_value(&mut self.joints.drawn, Drawn::CloseUp, "Close-up")
                 .on_hover_text("The joint in 3D: drag to turn it, scroll to zoom");
             ui.selectable_value(&mut self.joints.drawn, Drawn::Face, "Face view")
@@ -266,11 +354,8 @@ impl StructureApp {
                 self.joints.zoom = 0.0;
             }
         });
-        let height = 300.0;
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width(), height),
-            egui::Sense::click_and_drag(),
-        );
+        let size = ui.available_size().max(egui::vec2(120.0, 120.0));
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
         match self.joints.drawn {
@@ -290,24 +375,6 @@ impl StructureApp {
                 let view = ohl_structure_link::face_view(j, &face);
                 paint_face(&painter, rect, &view, ui.visuals().dark_mode);
             }
-        }
-        ui.add_space(4.0);
-        if j.arrivals.iter().any(|a| {
-            a.bolts.value.is_some() && a.profile.as_ref().is_some_and(|p| p.angle.is_none())
-        }) {
-            ui.label(
-                egui::RichText::new(
-                    "Bolts are drawn on angles only: a member of another cross-section (or a \
-                     [[section]] table of values) shows its bolts in the table.",
-                )
-                .small()
-                .weak(),
-            );
-        }
-        legend(ui);
-        connections_table(ui, j, &mut self.selected);
-        for n in &details.notes {
-            ui.label(egui::RichText::new(n).small().weak());
         }
     }
 
@@ -368,28 +435,7 @@ fn face_words(f: &str) -> String {
     }
 }
 
-/// The colour a value is written in, by where it comes from.
-fn source_color(ui: &egui::Ui, s: Source) -> egui::Color32 {
-    let dark = ui.visuals().dark_mode;
-    match s {
-        Source::Given | Source::Member => ui.visuals().text_color(),
-        Source::WorkedOut => {
-            if dark {
-                egui::Color32::from_rgb(120, 180, 255)
-            } else {
-                egui::Color32::from_rgb(20, 90, 180)
-            }
-        }
-        Source::Assumed => {
-            if dark {
-                egui::Color32::from_rgb(235, 170, 60)
-            } else {
-                egui::Color32::from_rgb(170, 100, 0)
-            }
-        }
-        Source::Missing => ui.visuals().weak_text_color(),
-    }
-}
+use crate::joint_tools::source_color;
 
 fn legend(ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
@@ -420,20 +466,6 @@ fn legend(ui: &mut egui::Ui) {
     });
 }
 
-/// A value in its colour, its source on hover.
-fn cell<T>(ui: &mut egui::Ui, v: &Valued<T>, text: impl Fn(&T) -> String) {
-    let s = v.value.as_ref().map_or("—".to_owned(), text);
-    let mut t = egui::RichText::new(s).color(source_color(ui, v.source));
-    if v.source == Source::Member {
-        t = t.italics();
-    }
-    ui.label(t).on_hover_text(v.source.words());
-}
-
-fn mm(x: &f64) -> String {
-    format!("{:.0}", x * 1000.0)
-}
-
 /// The members meeting at `j` (below level 3).
 fn arrivals_only(ui: &mut egui::Ui, j: &JointDetail) {
     egui::Grid::new("joint-arrivals")
@@ -453,107 +485,15 @@ fn arrivals_only(ui: &mut egui::Ui, j: &JointDetail) {
         });
 }
 
-/// The connections table: one row per member end.
-fn connections_table(ui: &mut egui::Ui, j: &JointDetail, selected: &mut Vec<Handle>) {
-    egui::ScrollArea::both()
-        .id_salt("joint-connections")
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            egui::Grid::new("joint-connections-grid")
-                .striped(true)
-                .spacing([10.0, 3.0])
-                .show(ui, |ui| {
-                    for (h, tip) in [
-                        ("Member", "The member (click: select it)"),
-                        ("End", "Its first (i) or second (j) joint is this one"),
-                        ("Class", "Its class (design data) or group"),
-                        ("From", "The face it lies in"),
-                        (
-                            "Angle",
-                            "To the member it bolts onto (or the joint's leg), degrees",
-                        ),
-                        ("Held", "Bolted, welded, pinned or fixed"),
-                        ("Onto", "What it bolts onto: a member or a plate"),
-                        ("Leg", "The angle's leg bolted"),
-                        ("Bolts", "Count × diameter, grade"),
-                        ("Lines", "Gauge lines"),
-                        ("Gauge mm", "From the heel along the leg bolted"),
-                        ("Pitch mm", "Between bolts along a line"),
-                        ("End mm", "From the member's end to the first bolt"),
-                        ("Edge mm", "From the bolts to the leg's edge"),
-                        ("Eccentric", "Loaded off its axis (one leg bolted)"),
-                        (
-                            "Restrained",
-                            "Held against turning (two bolts or more into a stiffer member)",
-                        ),
-                        ("e mm", "The eccentricity: the gauge line from the centroid"),
-                    ] {
-                        ui.strong(h).on_hover_text(tip);
-                    }
-                    ui.end_row();
-                    for a in &j.arrivals {
-                        row(ui, a, selected);
-                        ui.end_row();
-                    }
-                });
-        });
-}
-
-fn row(ui: &mut egui::Ui, a: &Arrival, selected: &mut Vec<Handle>) {
-    let mut name = egui::RichText::new(&a.member);
-    if a.modelling {
-        name = name.weak();
-    }
-    let r = ui.link(name).on_hover_text(if a.modelling {
-        "a modelling member (not design-checked); click: select it"
-    } else {
-        "click: select it"
-    });
-    if r.clicked() {
-        *selected = vec![Handle::Member(a.member.clone())];
-    }
-    ui.label(if a.end == 0 { "i" } else { "j" });
-    ui.label(
-        a.class
-            .clone()
-            .or_else(|| a.group.clone())
-            .unwrap_or_else(|| "—".into()),
-    );
-    ui.label(&a.face);
-    match &a.angle {
-        Some((to, deg)) => ui
-            .label(format!("{deg:.1}°"))
-            .on_hover_text(format!("to {to}")),
-        None => ui.label("—"),
-    };
-    cell(ui, &a.kind, |k| k.as_str().to_owned());
-    cell(ui, &a.onto, |o| o.clone());
-    cell(ui, &a.leg, |l| l.as_str().to_owned());
-    cell(ui, &a.bolts, |b| {
-        let mut s = format!("{} × M{:.0}", b.count, b.diameter * 1000.0);
-        if let Some(g) = &b.grade {
-            s += &format!(" {g}");
-        }
-        s
-    });
-    cell(ui, &a.gauge_lines, |n| n.to_string());
-    cell(ui, &a.gauges, |g| {
-        g.iter().map(mm).collect::<Vec<_>>().join(", ")
-    });
-    cell(ui, &a.pitch, mm);
-    cell(ui, &a.end_distance, mm);
-    cell(ui, &a.edge_distance, mm);
-    cell(ui, &a.eccentric, |b| {
-        if *b { "yes" } else { "no" }.to_owned()
-    });
-    cell(ui, &a.restrained, |b| {
-        if *b { "yes" } else { "no" }.to_owned()
-    });
-    cell(ui, &a.eccentricity, mm);
-    if !a.notes.is_empty() {
-        ui.label(egui::RichText::new("note").weak())
-            .on_hover_text(a.notes.join("\n"));
-    }
+/// How a face of the close-up is filled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fill {
+    /// Convex: filled as it is.
+    Convex,
+    /// An angle's end: an L, filled as two rectangles.
+    Angle,
+    /// Another concave end: outlined.
+    Outline,
 }
 
 /// The close-up: the members as prisms of their profile, the bolts, the
@@ -587,7 +527,9 @@ fn close_up(
     let k = f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(s.zoom).exp();
     let at = |q: [f64; 3]| rect.center() + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32);
     let light = [0.35, 0.55, 0.75];
-    let mut faces: Vec<(f64, Vec<egui::Pos2>, egui::Color32)> = Vec::new();
+    // Depth, corners, colour, and whether the face is convex (an angle's
+    // or a channel's end is not: drawn by its parts or outlined).
+    let mut faces: Vec<(f64, Vec<egui::Pos2>, egui::Color32, Fill)> = Vec::new();
     let steel = if dark {
         [150.0, 165.0, 185.0]
     } else {
@@ -600,14 +542,25 @@ fn close_up(
         };
         let corner = |sd: f64, q: [f64; 2]| {
             let x: [f64; 3] = std::array::from_fn(|i| {
-                j.position[i] + a.direction[i] * sd + p.axes[1][i] * q[0] + p.axes[2][i] * q[1]
+                j.position[i]
+                    + a.offset[i]
+                    + a.direction[i] * sd
+                    + p.axes[1][i] * q[0]
+                    + p.axes[2][i] * q[1]
             });
             view(x)
         };
         let near: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(0.0, *q)).collect();
         let far: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(length, *q)).collect();
         let n = near.len();
-        let mut add = |poly: Vec<[f64; 3]>| {
+        let cap = if p.angle.is_some() {
+            Fill::Angle
+        } else if p.outline.len() == 8 {
+            Fill::Outline
+        } else {
+            Fill::Convex
+        };
+        let mut add = |poly: Vec<[f64; 3]>, fill: Fill| {
             let e1 = sub(poly[1], poly[0]);
             let e2 = sub(poly[poly.len() - 1], poly[0]);
             let mut nrm = cross(e1, e2);
@@ -623,14 +576,14 @@ fn close_up(
                 (steel[2] * shade) as u8,
             );
             let depth = poly.iter().map(|q| q[2]).sum::<f64>() / poly.len() as f64;
-            faces.push((depth, poly.iter().map(|q| at(*q)).collect(), c));
+            faces.push((depth, poly.iter().map(|q| at(*q)).collect(), c, fill));
         };
         for i in 0..n {
             let i2 = (i + 1) % n;
-            add(vec![near[i], near[i2], far[i2], far[i]]);
+            add(vec![near[i], near[i2], far[i2], far[i]], Fill::Convex);
         }
-        add(near.clone());
-        add(far.clone());
+        add(near.clone(), cap);
+        add(far.clone(), cap);
     }
     for pl in &j.plates {
         if pl.outline.len() < 3 {
@@ -642,28 +595,69 @@ fn close_up(
             depth,
             poly.iter().map(|q| at(*q)).collect(),
             egui::Color32::from_rgba_unmultiplied(70, 140, 210, 150),
+            Fill::Convex,
         ));
+    }
+    // The bolts: head, shank and nut, shaded as the members (zinc; orange
+    // where their layout is partly assumed).
+    for a in &j.arrivals {
+        let Some(b) = &a.bolts.value else { continue };
+        let assumed = a.gauges.source == Source::Assumed || a.pitch.source == Source::Assumed;
+        let base = if assumed {
+            [235.0, 170.0, 60.0]
+        } else {
+            [200.0, 202.0, 196.0]
+        };
+        for p in &a.bolt_points {
+            for (poly, _) in
+                ohl_structure_link::bolt_faces(*p, a.bolt_axis, b.diameter, a.grip, b.drawn)
+            {
+                let poly: Vec<[f64; 3]> = poly.iter().map(|q| view(*q)).collect();
+                let e1 = sub(poly[1], poly[0]);
+                let e2 = sub(poly[poly.len() - 1], poly[0]);
+                let n = cross(e1, e2);
+                let l = dot(n, n).sqrt();
+                if l < 1e-15 {
+                    continue;
+                }
+                let shade = 0.45 + 0.55 * (dot(n, light) / l).abs();
+                let c = egui::Color32::from_rgb(
+                    (base[0] * shade) as u8,
+                    (base[1] * shade) as u8,
+                    (base[2] * shade) as u8,
+                );
+                let depth = poly.iter().map(|q| q[2]).sum::<f64>() / poly.len() as f64;
+                faces.push((
+                    depth,
+                    poly.iter().map(|q| at(*q)).collect(),
+                    c,
+                    Fill::Convex,
+                ));
+            }
+        }
     }
     // Far first (the larger depth is nearer the viewer: drawn last).
     faces.sort_by(|a, b| a.0.total_cmp(&b.0));
     let edge = egui::Stroke::new(0.6, egui::Color32::from_black_alpha(140));
-    for (_, pts, c) in faces {
-        // Concave faces (an angle's ends) as a mesh fan from the first
-        // corner is wrong; draw them as outlines filled by triangles of
-        // the convex parts: an L of six corners splits into two rectangles.
-        if pts.len() == 6 {
-            for quad in [[0, 1, 2, 3], [0, 3, 4, 5]] {
-                painter.add(egui::Shape::convex_polygon(
-                    quad.iter().map(|i| pts[*i]).collect(),
-                    c,
-                    egui::Stroke::NONE,
-                ));
+    for (_, pts, c, fill) in faces {
+        match fill {
+            // An angle's end: an L of six corners, two rectangles.
+            Fill::Angle if pts.len() == 6 => {
+                for quad in [[0, 1, 2, 3], [0, 3, 4, 5]] {
+                    painter.add(egui::Shape::convex_polygon(
+                        quad.iter().map(|i| pts[*i]).collect(),
+                        c,
+                        egui::Stroke::NONE,
+                    ));
+                }
+                painter.add(egui::Shape::closed_line(pts, edge));
             }
-            painter.add(egui::Shape::closed_line(pts, edge));
-        } else if pts.len() > 6 {
-            painter.add(egui::Shape::closed_line(pts, egui::Stroke::new(1.2, c)));
-        } else {
-            painter.add(egui::Shape::convex_polygon(pts, c, edge));
+            Fill::Angle | Fill::Outline => {
+                painter.add(egui::Shape::closed_line(pts, egui::Stroke::new(1.2, c)));
+            }
+            Fill::Convex => {
+                painter.add(egui::Shape::convex_polygon(pts, c, edge));
+            }
         }
     }
     // Members without a profile: lines.
@@ -673,23 +667,6 @@ fn close_up(
             [at(view(j.position)), at(view(far))],
             egui::Stroke::new(2.0, egui::Color32::GRAY),
         );
-    }
-    // The bolts: their shanks through the leg, their heads.
-    for a in &j.arrivals {
-        let Some(b) = &a.bolts.value else { continue };
-        let assumed = a.gauges.source == Source::Assumed || a.pitch.source == Source::Assumed;
-        let c = if assumed {
-            egui::Color32::from_rgb(160, 160, 160)
-        } else {
-            egui::Color32::from_rgb(210, 50, 50)
-        };
-        for p in &a.bolt_points {
-            let top = add3(*p, scale3(a.bolt_axis, 0.02));
-            let bottom = add3(*p, scale3(a.bolt_axis, -0.02));
-            let w = ((b.diameter * k) as f32).max(2.0);
-            painter.line_segment([at(view(bottom)), at(view(top))], egui::Stroke::new(w, c));
-            painter.circle_filled(at(view(top)), w * 0.8, c);
-        }
     }
     // The labels at the members' cut ends.
     let text = if dark {
@@ -758,24 +735,25 @@ fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: boo
                     painter.add(egui::Shape::line(pts, stroke));
                 }
             }
-            Mark::Bolt {
-                at: c,
-                radius,
-                side,
-                assumed,
-            } => {
+            Mark::Bolt { parts, assumed, .. } => {
                 let color = if *assumed {
-                    grey
+                    egui::Color32::from_rgb(235, 170, 60)
                 } else {
-                    egui::Color32::from_rgb(210, 50, 50)
+                    egui::Color32::from_rgb(210, 60, 60)
                 };
-                let r = ((radius * k) as f32).max(2.0);
-                match side {
-                    None => {
-                        painter.circle_stroke(at(*c), r, egui::Stroke::new(1.4, color));
-                    }
-                    Some(e) => {
-                        painter.line_segment([at(*c), at(*e)], egui::Stroke::new(2.0 * r, color));
+                let fill = if dark {
+                    egui::Color32::from_gray(45)
+                } else {
+                    egui::Color32::from_gray(225)
+                };
+                for part in parts {
+                    let pts: Vec<egui::Pos2> = part.iter().map(|p| at(*p)).collect();
+                    if pts.len() >= 3 {
+                        painter.add(egui::Shape::convex_polygon(
+                            pts,
+                            fill,
+                            egui::Stroke::new(1.0, color),
+                        ));
                     }
                 }
             }

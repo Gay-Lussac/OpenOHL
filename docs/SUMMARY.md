@@ -108,6 +108,7 @@
 - [A shared UI crate (plan)](development/ui-shared.md)
 - [Structure exports: IFC, SAF, CSV](development/structure-exports.md)
 - [Joint details of towers (roadmap, proposal)](development/joint-details.md)
+- [Built-up members (plan)](development/built-up-members.md)
 
 # Validation
 

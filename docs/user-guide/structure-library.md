@@ -168,6 +168,8 @@ onto = "L3"               # a member meeting at the joint, or a plate's id
 leg = "long"              # the angle's leg bolted: both | long | short | none
 bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm", grade = "8.8",
           shear_planes = 1, threads_in_shear = false }
+# or a bolt of a bolt library (its diameter, hole and grade; what is typed
+# here overrides it): bolts = { count = 2, bolt = "M16-8.8" }
 gauge_lines = 1           # 1 or 2
 gauges = ["30 mm"]        # from the heel along the leg bolted, one per line
 pitch = "50 mm"           # between bolts along a line
@@ -190,6 +192,43 @@ material = "S355"         # optional
 ```
 
 A member end is given once; the gauges are one per gauge line; a hole is no smaller than its bolt; sizes are not below 0. A connection whose member or joint is gone (deleted, or not rebuilt by a generator) is kept and said, not used; deleting a member or joint in OHL-Structure removes its connections and the plates there, and a connection onto them loses its `onto`. A file with connections or plates is version 9 (an older program says it is newer).
+
+**Bolt libraries** (`.ohlb`, format `ohl-bolts`, 2026-11-02; built, in
+active development, not approved yet). The bolts the connections name,
+kept like the cross-sections: `Bolts/` beside the structure files,
+imported and exported in OHL-Structure (File › Libraries). None of a
+standard's values is built in; `libraries/bolts/example-bolts.ohlb`
+holds invented ones.
+
+```toml
+format = "ohl-bolts"
+version = 1
+
+[[bolt]]
+id = "M16-8.8"             # unique; a connection names it
+name = "M16 grade 8.8"     # optional
+diameter = "16 mm"
+hole = "17.5 mm"           # optional
+grade = "8.8"              # optional
+ultimate = "800 MPa"       # optional: tensile strength
+yield = "640 MPa"          # optional
+shear_capacity = "60 kN"   # optional: per shear plane, threads in it
+shear_capacity_shank = "75 kN"  # optional: threads out of the plane
+tension_capacity = "90 kN" # optional
+head_across_flats = "24 mm"     # optional: the drawings
+head_height = "10 mm"      # optional
+nut_height = "13 mm"       # optional
+grip = "20 mm"             # optional: what it clamps, as sold
+mass_kg = 0.12             # optional: with its nut and washer
+description = ""           # optional
+```
+
+Refused: an id empty or given twice, a diameter not above 0, a hole
+smaller than the bolt, a size or mass not above 0, an unknown field. A
+bolt two libraries give: the first kept, said. A connection naming a
+bolt no library has: said (File › Libraries and the joint's notes), its
+bolts unknown unless a diameter is typed. The checks do not read the
+libraries yet (stage 4).
 
 **Kind.** `kind` (`lattice`, `pole`, `portal`, `other`) says what the structure is; OHL-Structure changes it with **Geometry › Structure kind**. A lattice tower or a portal has joint details; a pole has the Pole panels. Changing it deletes nothing.
 

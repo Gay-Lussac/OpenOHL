@@ -896,3 +896,172 @@ fn the_kind_is_toggled_and_the_rest_kept() {
     assert!(!is_tower(t.kind));
     assert!(set_structure_kind(&mut doc, "mast").is_err());
 }
+
+/// Stage 3: a field given makes the connection, cleared drops it; a
+/// layout in one go; carried fields copied; a copy onto a plate copies the
+/// plate; plates added, changed, removed.
+#[test]
+fn connections_are_defined_field_by_field() {
+    use crate::connection_edits::{self as ce, BoltLayout, CopyEnd, FieldValue};
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "leg",
+        Some(&FieldValue::Word("long".into())),
+    )
+    .unwrap();
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "pitch",
+        Some(&FieldValue::Length(0.055)),
+    )
+    .unwrap();
+    let t = read(&doc);
+    let c = t.connection("M2", "N2").unwrap();
+    assert!((c.pitch.unwrap().si() - 0.055).abs() < 1e-12);
+    assert!(doc.to_string().contains("pitch = \"55 mm\""));
+    assert!(ce::set_connection_field(&mut doc, "M2", "N2", "member", None).is_err());
+    ce::set_connection_field(&mut doc, "M2", "N2", "pitch", None).unwrap();
+    ce::set_connection_field(&mut doc, "M2", "N2", "leg", None).unwrap();
+    assert!(!doc.to_string().contains("[[connection]]"));
+    // A layout in one go.
+    let l = BoltLayout {
+        count: 3,
+        bolt: None,
+        diameter: 0.016,
+        hole: Some(0.0175),
+        grade: Some("8.8".into()),
+        gauges: vec![0.03],
+        pitch: 0.05,
+        end: 0.03,
+        edge: Some(0.025),
+    };
+    assert!((l.reach() - 0.13).abs() < 1e-12);
+    assert!(l.misfits(Some(0.06)).is_empty());
+    assert!(l.misfits(Some(0.05))[0].contains("beyond the leg"));
+    ce::set_bolt_layout(&mut doc, "M2", "N2", &l);
+    let t = read(&doc);
+    let c = t.connection("M2", "N2").unwrap();
+    assert_eq!(c.bolts.as_ref().unwrap().count, 3);
+    assert_eq!(c.gauge_lines, Some(1));
+    // On a plate; copied to the other end (N3) with the plate.
+    let t = read(&doc);
+    let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "onto",
+        Some(&FieldValue::Word(g.clone())),
+    )
+    .unwrap();
+    let t = read(&doc);
+    let n = ce::copy_ends(
+        &mut doc,
+        &t,
+        &[CopyEnd {
+            from_member: "M2".into(),
+            from_joint: "N2".into(),
+            to_member: "M2".into(),
+            to_joint: "N3".into(),
+            onto: None,
+        }],
+    );
+    assert_eq!(n, 1);
+    let t = read(&doc);
+    assert_eq!(t.plates.len(), 2);
+    let far = t.connection("M2", "N3").unwrap();
+    assert_eq!(far.bolts.as_ref().unwrap().count, 3);
+    let copy = far.onto.clone().unwrap();
+    assert_ne!(copy, g);
+    assert_eq!(t.plates.iter().find(|p| p.id == copy).unwrap().joint, "N3");
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    // The carried fields onto another member (onto kept out).
+    let fields = ce::carried(&doc, "M2", "N2");
+    assert!(fields.contains_key("bolts") && !fields.contains_key("onto"));
+    ce::put_carried(&mut doc, "M1", "N2", &fields);
+    let t = read(&doc);
+    assert_eq!(
+        t.connection("M1", "N2")
+            .unwrap()
+            .bolts
+            .as_ref()
+            .unwrap()
+            .count,
+        3
+    );
+    // Plates: thickness, material, removed (onto dropped).
+    ce::set_plate(&mut doc, &g, Some(0.012), Some("S355")).unwrap();
+    assert!(ce::set_plate(&mut doc, &g, Some(0.0), None).is_err());
+    let t = read(&doc);
+    let p = t.plates.iter().find(|p| p.id == g).unwrap();
+    assert!((p.thickness.si() - 0.012).abs() < 1e-12);
+    assert_eq!(p.material.as_deref(), Some("S355"));
+    ce::remove_plate(&mut doc, &g);
+    let t = read(&doc);
+    assert!(t.connection("M2", "N2").unwrap().onto.is_none());
+    ce::clear_connection(&mut doc, "M2", "N2");
+    assert!(read(&doc).connection("M2", "N2").is_none());
+}
+
+/// Presets written and read back; refused when wrong.
+#[test]
+fn connection_presets_round_trip() {
+    use crate::connection_edits::{self as ce, FieldValue};
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "bolts",
+        Some(&FieldValue::Bolts {
+            count: 2,
+            bolt: Some("X17-example".into()),
+            diameter: Some(0.016),
+            hole: None,
+            grade: Some("8.8".into()),
+        }),
+    )
+    .unwrap();
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "onto",
+        Some(&FieldValue::Word("M1".into())),
+    )
+    .unwrap();
+    let p = ce::Preset {
+        name: "bracing 2 × M16".into(),
+        fields: ce::carried(&doc, "M2", "N2"),
+    };
+    let text = ce::presets_text(&[p]);
+    let back = ce::parse_presets(&text).unwrap();
+    assert_eq!(back.len(), 1);
+    assert_eq!(back[0].name, "bracing 2 × M16");
+    assert!(back[0].fields.contains_key("bolts") && !back[0].fields.contains_key("onto"));
+    for (bad, says) in [
+        (
+            "[[preset]]\nname = \"a\"\nonto = \"L1\"\n",
+            "not a preset's",
+        ),
+        (
+            "[[preset]]\nname = \"a\"\n[[preset]]\nname = \"a\"\n",
+            "named twice",
+        ),
+        ("[[preset]]\nleg = \"long\"\n", "without a name"),
+        ("[[preset]]\nname = \"a\"\nleg = \"longer\"\n", "preset a"),
+        ("format = \"ohl-wire\"\n", "not ohl-connection-presets"),
+    ] {
+        let e = ce::parse_presets(bad).unwrap_err();
+        assert!(e.contains(says), "{says}: {e}");
+    }
+}

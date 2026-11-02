@@ -20,6 +20,7 @@
 //! 0;0 at the centre.
 
 pub mod body;
+pub mod connection_edits;
 pub mod edits;
 pub mod extension_edits;
 pub mod file;

@@ -54,8 +54,8 @@ pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
 };
 pub use joints::{
-    Angle, Arrival, BoltSet, Completeness, JointDetail, JointDetails, PlateDetail, Profile, Source,
-    Valued, joint_details,
+    Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, JointDetail, JointDetails,
+    PlateDetail, Profile, Similar, Source, Valued, bolt_faces, joint_details, similar_joints,
 };
 pub use ohl_structures::connections::{BoltedLeg, ConnectionKind};
 pub use run::{

@@ -40,14 +40,17 @@ pub enum Mark {
         /// What it is.
         kind: LineKind,
     },
-    /// A bolt seen along its axis (a circle) or from its side (a line).
+    /// A bolt as seen: the outlines of its nut, shank and head (seen along
+    /// its axis: the head's hexagon over the shank's circle; from its
+    /// side: three rectangles), its hole's centre.
     Bolt {
-        /// Centre.
+        /// Its centre (where the axis meets the face bolted).
         at: [f64; 2],
-        /// Radius, m.
-        radius: f64,
-        /// Seen from its side: the other end of its shank.
-        side: Option<[f64; 2]>,
+        /// The outlines, the far part first (nut, shank, head, or the
+        /// reverse when the nut is nearer).
+        parts: Vec<Vec<[f64; 2]>>,
+        /// Seen along its axis.
+        end_on: bool,
         /// Its values assumed (drawn paler).
         assumed: bool,
     },
@@ -140,7 +143,7 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
                 // hull of them.
                 let corner = |s: f64, q: [f64; 2]| {
                     add(
-                        along(s),
+                        add(along(s), a.offset),
                         add(scale(p.axes[1], q[0]), scale(p.axes[2], q[1])),
                     )
                 };
@@ -231,17 +234,33 @@ fn bolts_and_dimensions(
     if a.bolt_points.is_empty() {
         return;
     }
-    let radius = b.diameter / 2.0;
     let assumed = a.gauges.source == Source::Assumed
         || a.pitch.source == Source::Assumed
         || a.end_distance.source == Source::Assumed;
     let end_on = dot(a.bolt_axis, towards).abs() > 0.5;
+    // The head towards the viewer is drawn last (over the shank).
+    let head_near = dot(a.bolt_axis, towards) >= 0.0;
     for p in &a.bolt_points {
-        let side = (!end_on).then(|| to(add(*p, scale(a.bolt_axis, 0.03))));
+        let faces = crate::joints::bolt_faces(*p, a.bolt_axis, b.diameter, a.grip, b.drawn);
+        let outline = |part: crate::joints::BoltPart| {
+            hull(
+                faces
+                    .iter()
+                    .filter(|f| f.1 == part)
+                    .flat_map(|f| f.0.iter().map(|q| to(*q)))
+                    .collect(),
+            )
+        };
+        use crate::joints::BoltPart::{Head, Nut, Shank};
+        let order = if head_near {
+            [Nut, Shank, Head]
+        } else {
+            [Head, Shank, Nut]
+        };
         marks.push(Mark::Bolt {
             at: to(*p),
-            radius,
-            side,
+            parts: order.iter().map(|x| outline(*x)).collect(),
+            end_on,
             assumed,
         });
     }
@@ -332,7 +351,7 @@ fn bounds(marks: &[Mark]) -> [f64; 4] {
     for m in marks {
         match m {
             Mark::Line { points, .. } => points.iter().for_each(|p| take(*p, 0.0)),
-            Mark::Bolt { at, radius, .. } => take(*at, *radius),
+            Mark::Bolt { parts, .. } => parts.iter().flatten().for_each(|p| take(*p, 0.0)),
             // Texts sit beside what they name: not counted.
             Mark::Text { .. } => {}
         }
@@ -383,25 +402,28 @@ pub fn face_sheet(v: &FaceView) -> Drawing {
             }
             Mark::Bolt {
                 at: c,
-                radius,
-                side,
+                parts,
+                end_on,
                 assumed,
             } => {
                 let color = if *assumed { grey } else { Color(180, 30, 30) };
-                match side {
-                    None => d.items.push(Item::Circle(ohl_drawing::model::Circle {
-                        layer: Layer::Markers,
-                        centre: at(*c),
-                        radius: (radius * k).max(0.4),
-                        stroke: Some(Pen::new(color, 0.25)),
-                        fill: None,
-                        title: Some("bolt".into()),
-                    })),
-                    Some(e) => {
+                for part in parts {
+                    let path = d.path(
+                        Layer::Markers,
+                        part.iter().map(|p| at(*p)).collect(),
+                        Pen::new(color, 0.2),
+                    );
+                    path.closed = true;
+                    path.title = Some("bolt".into());
+                }
+                if *end_on {
+                    // The axis' cross.
+                    let q = at(*c);
+                    for (dx, dy) in [(1.2, 0.0), (0.0, 1.2)] {
                         d.path(
                             Layer::Markers,
-                            vec![at(*c), at(*e)],
-                            Pen::new(color, radius * 2.0 * k),
+                            vec![[q[0] - dx, q[1] - dy], [q[0] + dx, q[1] + dy]],
+                            Pen::new(color, 0.1),
                         );
                     }
                 }

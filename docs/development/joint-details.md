@@ -2,7 +2,8 @@
 
 *Proposal, 2026-11-02 — stages 0 to 2 built the same day (in active
 development, not approved yet: owner, "Go ahead with 0-2, yes and
-yes"); stages 3 to 5 not built. Asked by the owner:
+yes"), stage 3 too ("Go ahead with the next stage"); stages 4 and 5
+not built; the bolt library built (below). Asked by the owner:
 "a roadmap for a tool to show and allow to define the joints in the OHL
 structure in details for a pylon that isn't a pole … where the bars are
 coming from, what's their condition on the joint and where are the
@@ -115,7 +116,13 @@ opens the **Joint panel**:
 
 > **Owner:**
 
-### Stage 3 — Defining joints (M)
+### Stage 3 — Defining joints (M) — built 2026-11-02
+
+Built as below, but: what the members bolt onto and the bolt points are
+not carried by a copy to a group or class (they are the joint's own); a
+preset is kept next to the structure (`Connections/*.ohlcp`); reading a
+tower program's connection data is not built. How it works: [OHL-Structure
+› Joint details](../user-guide/structure-app.md#joint-details-towers).
 
 - Edit any connection in the table; the close-up and the face view follow.
 - **Bolt layout helper:** n bolts in one or two gauge lines; pitch and
@@ -192,6 +199,36 @@ values were worked out from the joints and which assumed.
 - Theory page: how each condition is worked out from a joint, with
   drawings (an angle bolted by one leg and its eccentricity; a redundant
   bracing a leg about one axis).
+
+> **Owner:**
+
+### Bolt library — built 2026-11-02
+
+"A bolt library could be nice to have too so that it can be easily
+added and imported/exported."
+
+- A **bolt library** file (`.ohlb`, format `ohl-bolts`), kept like the
+  cross-section library (`Bolts/` next to the structure, the project's
+  libraries): per bolt an `id`, `name`, diameter, hole, grade, ultimate
+  and yield strength, shear capacity per plane (threads in or out of the
+  plane), tension capacity, the head's and nut's sizes and a mass per
+  grip length (for the drawing, the weight and the bill of materials).
+  None of a standard's numbers built in: an example library of invented
+  values ships, as for the cross-sections.
+- A connection names a bolt: `bolts = { count = 2, bolt = "M16-8.8" }`;
+  values typed in the connection still override the library's.
+- OHL-Structure: File › Libraries and the Libraries panel list the bolt
+  libraries, **Import** and **Export** as for cross-sections; the bolt
+  layout window picks a bolt from them; a bolt the structure names but no
+  library has is listed (as a cross-section).
+- The checks (stage 4) then take the bolt's strengths from it; the bill
+  of materials counts the bolts per kind (stage 4.6).
+
+Built as above, but: the head's and nut's sizes and one mass and grip per
+bolt (as sold); the checks and the bill of materials do not read it yet.
+[Format](../user-guide/structure-library.md). Questions left: masses per
+grip length; one library per project or per folder (today: per folder,
+as the cross-sections)?
 
 > **Owner:**
 

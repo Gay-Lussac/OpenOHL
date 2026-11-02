@@ -20,6 +20,7 @@
 //! - [`string_volumes`]: the volumes on an assembly's strings, their
 //!   freedoms, several strings in one assembly (roadmap O6).
 
+pub mod bolts;
 pub mod connections;
 pub mod derive;
 pub mod extensions;

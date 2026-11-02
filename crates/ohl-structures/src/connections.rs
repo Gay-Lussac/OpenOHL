@@ -15,6 +15,7 @@
 //! onto = "L3"             # a member meeting at the joint, or a plate
 //! leg = "long"            # the angle's leg bolted: long, short, both, none
 //! bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm", grade = "8.8" }
+//! # or a bolt of a library: bolts = { count = 2, bolt = "M16-8.8" }
 //! gauge_lines = 1
 //! gauges = ["30 mm"]      # from the heel along the bolted leg, per line
 //! pitch = "50 mm"
@@ -114,14 +115,19 @@ impl BoltedLeg {
     }
 }
 
-/// The bolts of a member end.
+/// The bolts of a member end: a bolt of a library (`bolt`) and what is
+/// typed here (overriding the library's).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectionBolts {
     /// How many.
     pub count: u32,
-    /// Diameter.
-    pub diameter: Length,
+    /// A bolt of the bolt libraries, by id ([`crate::bolts`]).
+    #[serde(default)]
+    pub bolt: Option<String>,
+    /// Diameter (none: the library bolt's; one of them needed).
+    #[serde(default)]
+    pub diameter: Option<Length>,
     /// Hole diameter (none: not given).
     #[serde(default)]
     pub hole: Option<Length>,
@@ -271,7 +277,13 @@ impl StructureType {
                 return Err(format!("{at}: given twice"));
             }
             if let Some(b) = &c.bolts {
-                if b.diameter.si() <= 0.0 || b.hole.is_some_and(|h| h.si() < b.diameter.si()) {
+                if b.diameter.is_none() && b.bolt.is_none() {
+                    return Err(format!(
+                        "{at}: bolts need a bolt of a library or a diameter"
+                    ));
+                }
+                let d = b.diameter.map_or(0.0, |d| d.si());
+                if b.diameter.is_some_and(|d| d.si() <= 0.0) || b.hole.is_some_and(|h| h.si() < d) {
                     return Err(format!(
                         "{at}: a bolt diameter above 0 and a hole no smaller"
                     ));

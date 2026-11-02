@@ -42,6 +42,7 @@ mod icons;
 mod in_line_tab;
 mod inspector;
 mod joint_panel;
+mod joint_tools;
 mod layout;
 mod libraries;
 mod link_tool;

@@ -1092,9 +1092,9 @@ fn connections_and_plates_as_csv() {
     let t = csv::tables(&s);
     let get = |n: &str| t.iter().find(|(x, _)| *x == n).map(|x| x.1.clone());
     let c = get("connections.csv").unwrap();
-    assert!(c.starts_with("member,joint,kind,onto,leg,bolts,bolt_diameter_m,"));
+    assert!(c.starts_with("member,joint,kind,onto,leg,bolts,bolt,bolt_diameter_m,"));
     assert!(
-        c.contains("m-EA,N1,,G1,long,2,0.016,,8.8,,,0.03,0.05,"),
+        c.contains("m-EA,N1,,G1,long,2,,0.016,,8.8,,,0.03,0.05,"),
         "{c}"
     );
     assert!(get("plates.csv").unwrap().contains("G1,N1,0.01,,"));

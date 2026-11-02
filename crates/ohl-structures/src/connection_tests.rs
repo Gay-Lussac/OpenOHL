@@ -43,7 +43,7 @@ fn a_connection_and_a_plate_are_read() {
     assert_eq!(c.leg, Some(BoltedLeg::Long));
     let b = c.bolts.as_ref().unwrap();
     assert_eq!(b.count, 2);
-    assert!((b.diameter.si() - 0.016).abs() < 1e-12);
+    assert!((b.diameter.unwrap().si() - 0.016).abs() < 1e-12);
     assert!((c.gauges[0].si() - 0.03).abs() < 1e-12);
     assert_eq!(
         t.connection("L2", "N2").unwrap().kind(),

@@ -33,7 +33,7 @@ Guiding principles:
 
 **Contents**
 - [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18; U7, U8, U10, U11; Phases 1–5 for the line
-- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
+- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19, O20; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): O2, O9, O11, O17; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
 The phases below record what is built. Phases map to GitHub milestones;
@@ -837,7 +837,12 @@ Six stages, the questions per stage and per detail level:
 - [x] Stage 2 — Design › Joint details: close-up, face view (SVG, PDF),
   the connections table with where each value comes from; View › Joints
   by their details (2026-11-02)
-- [ ] Stage 3 — defining joints in the application
+- [x] Stage 3 — defining joints in the application: every value edited
+  in the table, the bolt layout window, copies to the joints like it and
+  to a group or class, presets (`Connections/*.ohlcp`), plates (2026-11-02)
+- [x] A bolt library (`.ohlb`, `Bolts/` beside the structure), imported
+  and exported; bolts drawn with head and nut, the members seated leg on
+  leg in the drawings (2026-11-02)
 - [ ] Stage 4 — the checks take their conditions from the joints
 - [ ] Stage 5 — exports with bolts and plates, validation
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
@@ -846,7 +851,18 @@ Six stages, the questions per stage and per detail level:
 > on the joint and where are the bolts, how many. And then how this is
 > expected to impact the conditions on the calculations later on."
 > (2026-11-02) "Go ahead with 0-2, yes and yes" (both questions of the
-> detail levels: yes).
+> detail levels: yes). "Go ahead with the next stage" (3). "A bolt
+> library could be nice to have too so that it can be easily added and
+> imported/exported."
+
+### O20. Built-up members: two angles back to back, in a star, four in a cross
+Members made of several profiles: shown as their parts and calculated
+with the rules for built-up members. Today they are `general`
+cross-sections of typed values, drawn as boxes. Five stages and the
+questions: [Built-up members](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/built-up-members.md).
+Not built.
+> **Owner:** (2026-11-02) "plan the double star and 4 corners to be
+> shown or at least calculable".
 
 ### O5. Tension-only parts that stay nearly free
 Today: kept active and flagged *approximate* (see U1). Options when this is

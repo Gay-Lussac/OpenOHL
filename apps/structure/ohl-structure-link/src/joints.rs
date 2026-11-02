@@ -102,6 +102,12 @@ pub struct BoltSet {
     pub hole: Option<f64>,
     /// Grade (none: not given).
     pub grade: Option<String>,
+    /// The bolt of a library it is (none: typed only).
+    pub bolt: Option<String>,
+    /// Drawn with: across the flats, the head's and the nut's heights, m
+    /// (each the library bolt's when it gives them; else the
+    /// [`BOLT_DRAWN`] proportions).
+    pub drawn: [Option<f64>; 3],
 }
 
 /// A member's profile for the drawings: its axes and its outline.
@@ -188,8 +194,21 @@ pub struct Arrival {
     /// The bolts where they are (structure's axes, m) and the bolts' axis
     /// (normal to the leg bolted): level 3 with bolts.
     pub bolt_points: Vec<[f64; 3]>,
-    /// The bolts' axis.
+    /// The bolts' axis: from the face the leg bolted lies on towards its
+    /// own side (where the heads are).
     pub bolt_axis: [f64; 3],
+    /// What the bolts clamp, m: the leg bolted's thickness and what it
+    /// bolts onto's (a member's leg, a plate; unknown: the same again).
+    pub grip: [f64; 2],
+    /// The leg bolted lies along the section's y (else z): the long or
+    /// short leg as given, else the one that lies flat against what it
+    /// bolts onto.
+    pub leg_y: bool,
+    /// Where the member is drawn from its axis, m: shifted across so its
+    /// leg bolted lies flat on the leg of the member it bolts onto (the
+    /// model's axes meet at the joint; a real joint's legs lie back to
+    /// back). For the drawings only: the analysis keeps the axes.
+    pub offset: [f64; 3],
     /// A modelling member (`check = false`).
     pub modelling: bool,
     /// Notes on it ("one end eccentric, which not said"…).
@@ -274,7 +293,11 @@ impl JointDetails {
 
 /// Every joint of the structure file `text` in detail; the profiles from
 /// `library` (the structure's cross-section library).
-pub fn joint_details(text: &str, library: &SectionLibrary) -> Result<JointDetails, String> {
+pub fn joint_details(
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &ohl_structures::bolts::BoltLibrary,
+) -> Result<JointDetails, String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let mut notes = t.connection_notes();
@@ -370,6 +393,9 @@ pub fn joint_details(text: &str, library: &SectionLibrary) -> Result<JointDetail
                 profile: profiles.get(m.id.as_str()).cloned(),
                 bolt_points: Vec::new(),
                 bolt_axis: [0.0, 0.0, 1.0],
+                grip: [0.0, 0.0],
+                leg_y: true,
+                offset: [0.0; 3],
                 modelling: design.is_some_and(|(_, _, check)| !check),
                 notes: Vec::new(),
             });
@@ -389,9 +415,10 @@ pub fn joint_details(text: &str, library: &SectionLibrary) -> Result<JointDetail
         for a in &mut arrivals {
             let c = t.connection(&a.member, &n.id);
             let design = designs.get(a.member.as_str()).map(|d| d.0);
-            condition(a, c, design, &snapshot, &areas, &plates_here, level3);
+            condition(a, c, design, &snapshot, &areas, &plates_here, level3, bolts);
             if level3 {
                 place_bolts(a, at, c, &snapshot);
+                a.grip = grip(a, &snapshot, &plates_here);
             }
         }
         let plates = plates_here
@@ -416,6 +443,7 @@ pub fn joint_details(text: &str, library: &SectionLibrary) -> Result<JointDetail
 
 /// The condition of `a` from its connection `c`, its member's design data
 /// and the other arrivals (for what it bolts onto).
+#[allow(clippy::too_many_arguments)]
 fn condition(
     a: &mut Arrival,
     c: Option<&TypeConnection>,
@@ -424,6 +452,7 @@ fn condition(
     areas: &BTreeMap<String, f64>,
     plates: &[&ohl_structures::connections::TypePlate],
     level3: bool,
+    bolts: &ohl_structures::bolts::BoltLibrary,
 ) {
     use Source::*;
     let si = |l: &ohl_core::units::Length| l.si();
@@ -467,26 +496,56 @@ fn condition(
         (None, None) if is_angle => Valued::of(BoltedLeg::Long, Assumed),
         _ => Valued::none(),
     };
+    a.leg_y = leg_along_y(a, all);
+    // An assumed leg is the one that lies flat (the drawing's).
+    if a.leg.source == Assumed
+        && let Some(g) = a.profile.as_ref().and_then(|p| p.angle)
+    {
+        let (mine, other) = if a.leg_y { (g.b, g.h) } else { (g.h, g.b) };
+        let leg = if mine >= other {
+            BoltedLeg::Long
+        } else {
+            BoltedLeg::Short
+        };
+        a.leg = Valued::of(leg, Assumed);
+    }
     // The bolts.
     a.bolts = match (
         c.and_then(|c| c.bolts.as_ref()),
         design.and_then(|d| d.bolts),
     ) {
-        (Some(b), _) => Valued::of(
-            BoltSet {
-                count: b.count,
-                diameter: b.diameter.si(),
-                hole: b.hole.map(|h| h.si()),
-                grade: b.grade.clone(),
-            },
-            Given,
-        ),
+        (Some(b), _) => {
+            // The library's bolt, what is typed here overriding it.
+            let lib = b.bolt.as_deref().and_then(|id| bolts.get(id));
+            if let (Some(id), None) = (&b.bolt, lib) {
+                a.notes.push(format!("bolt {id}: in no bolt library"));
+            }
+            match b.diameter.map(|d| d.si()).or(lib.map(|l| l.diameter.si())) {
+                Some(diameter) => Valued::of(
+                    BoltSet {
+                        count: b.count,
+                        diameter,
+                        hole: b
+                            .hole
+                            .map(|h| h.si())
+                            .or(lib.and_then(|l| l.hole.map(|h| h.si()))),
+                        grade: b.grade.clone().or(lib.and_then(|l| l.grade.clone())),
+                        bolt: b.bolt.clone(),
+                        drawn: lib.map_or([None; 3], |l| l.drawn()),
+                    },
+                    Given,
+                ),
+                None => Valued::none(),
+            }
+        }
         (None, Some(b)) => Valued::of(
             BoltSet {
                 count: b.count,
                 diameter: b.diameter,
                 hole: b.hole,
                 grade: None,
+                bolt: None,
+                drawn: [None; 3],
             },
             Member,
         ),
@@ -507,7 +566,7 @@ fn condition(
         .profile
         .as_ref()
         .and_then(|p| p.angle)
-        .map(|g| bolted_width(g, a.leg.value));
+        .map(|g| if a.leg_y { g.b } else { g.h });
     a.gauges = match c.filter(|c| !c.gauges.is_empty()) {
         Some(c) => Valued::of(c.gauges.iter().map(si).collect(), Given),
         None => match leg_width {
@@ -607,7 +666,7 @@ fn condition(
         Some(e) => Valued::of(e.si(), Given),
         None => match (a.profile.as_ref().and_then(|p| p.angle), &a.gauges.value) {
             (Some(g), Some(gauges)) if a.eccentric.value == Some(true) => {
-                let (heel, along) = leg_frame(g, a.leg.value);
+                let (heel, along) = (g.heel, if a.leg_y { [1.0, 0.0] } else { [0.0, 1.0] });
                 let mean = gauges.iter().sum::<f64>() / gauges.len().max(1) as f64;
                 let at = [heel[0] + along[0] * mean, heel[1] + along[1] * mean];
                 let src = if a.gauges.known() && a.leg.known() {
@@ -678,30 +737,99 @@ fn along_y(g: Angle, leg: Option<BoltedLeg>) -> bool {
     }
 }
 
-/// The width of the leg bolted, m.
-fn bolted_width(g: Angle, leg: Option<BoltedLeg>) -> f64 {
-    if along_y(g, leg) { g.b } else { g.h }
+/// Whether `a`'s leg bolted lies along its section's y: the long or short
+/// leg when given (the member's or here) and the legs differ; else the leg
+/// that lies flat against a leg of the member it bolts onto (its normal
+/// most nearly that leg's); else the long leg.
+fn leg_along_y(a: &Arrival, all: &[Arrival]) -> bool {
+    let Some(p) = a.profile.as_ref() else {
+        return true;
+    };
+    let Some(g) = p.angle else {
+        return true;
+    };
+    let sized = matches!(a.leg.value, Some(BoltedLeg::Long | BoltedLeg::Short))
+        && a.leg.known()
+        && (g.b - g.h).abs() > 1e-9;
+    if sized {
+        return along_y(g, a.leg.value);
+    }
+    let onto = a
+        .onto
+        .value
+        .as_ref()
+        .and_then(|o| all.iter().find(|b| &b.member == o))
+        .and_then(|b| b.profile.as_ref());
+    match onto {
+        Some(q) => {
+            let flat = |n: [f64; 3]| dot(n, q.axes[1]).abs().max(dot(n, q.axes[2]).abs());
+            // Along y: its normal is z; along z: y.
+            flat(p.axes[2]) >= flat(p.axes[1])
+        }
+        None => along_y(g, a.leg.value),
+    }
 }
 
-/// The heel and the direction along the leg bolted, in (y, z).
-fn leg_frame(g: Angle, leg: Option<BoltedLeg>) -> ([f64; 2], [f64; 2]) {
-    if along_y(g, leg) {
-        (g.heel, [1.0, 0.0])
-    } else {
-        (g.heel, [0.0, 1.0])
+/// The shift that seats `a`'s leg bolted on the face of the member it
+/// bolts onto ([`Arrival::offset`]): along the bolts' axis, so the leg's
+/// outer face (the heel's) lies on the onto leg's face turned towards it;
+/// none when it bolts onto no angle or the legs are not near parallel
+/// (within 25°).
+fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival]) -> [f64; 3] {
+    let (Some(p), Some(o)) = (
+        a.profile.as_ref(),
+        a.onto
+            .value
+            .as_ref()
+            .and_then(|o| all.iter().find(|b| &b.member == o))
+            .and_then(|b| b.profile.as_ref()),
+    ) else {
+        return [0.0; 3];
+    };
+    let (Some(g), Some(h)) = (p.angle, o.angle) else {
+        return [0.0; 3];
+    };
+    // The leg bolted's normal, towards its own side (its outstanding leg).
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let heel = |q: &Profile, g: Angle| {
+        add(
+            joint,
+            add(scale(q.axes[1], g.heel[0]), scale(q.axes[2], g.heel[1])),
+        )
+    };
+    let own = dot(sub(heel(p, g), joint), nb);
+    // The onto leg most nearly parallel: its normal from the heel into
+    // its thickness (a leg along y: z).
+    let (nl, cos) = [o.axes[2], o.axes[1]]
+        .into_iter()
+        .map(|n| (n, dot(n, nb)))
+        .max_by(|x, y| x.1.abs().total_cmp(&y.1.abs()))
+        .expect("two legs");
+    if cos.abs() < 25f64.to_radians().cos() {
+        return [0.0; 3];
     }
+    // Its face turned towards `a`'s outer face (whose outward normal is
+    // −nb): the inner one when the leg's normal goes along nb.
+    let face = if cos > 0.0 {
+        add(heel(o, h), scale(nl, h.t))
+    } else {
+        heel(o, h)
+    };
+    scale(nb, dot(sub(face, joint), nb) - own)
 }
 
 /// The bolts of `a` where they are: given points, else the layout (the
 /// bolts shared among the gauge lines, from the end distance at the pitch).
-fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, _all: &[Arrival]) {
+fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, all: &[Arrival]) {
     let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
         return;
     };
     let Some(g) = p.angle else {
         return;
     };
-    let along_y = along_y(g, a.leg.value);
+    let along_y = a.leg_y;
+    a.offset = seat(a, joint, all);
+    let joint = add(joint, a.offset);
     let (ey, ez) = (p.axes[1], p.axes[2]);
     // The bolts go through the leg bolted: across it, along the other axis.
     a.bolt_axis = if along_y { ez } else { ey };
@@ -979,4 +1107,171 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 /// The angle between two members' lines, 0 to 90°.
 fn angle_between(a: [f64; 3], b: [f64; 3]) -> f64 {
     dot(a, b).abs().clamp(0.0, 1.0).acos().to_degrees()
+}
+
+/// A joint like another, its member ends matched to the other's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Similar {
+    /// The joint.
+    pub joint: String,
+    /// Each member end of the joint compared with, matched: (its member,
+    /// this joint's member).
+    pub pairs: Vec<(String, String)>,
+}
+
+/// The joints like `id` (stage 3 of the joint details: its details
+/// copied to them): as many member ends, matched one to one by
+/// cross-section, class and angle to what they bolt onto (within 1°),
+/// so mirror joints count; `id` itself left out.
+pub fn similar_joints(d: &JointDetails, id: &str) -> Vec<Similar> {
+    let Some(from) = d.joint(id) else {
+        return Vec::new();
+    };
+    let key = |a: &Arrival| {
+        (
+            a.profile.as_ref().map(|p| p.section_id.clone()),
+            a.class.clone(),
+        )
+    };
+    let angle = |a: &Arrival| a.angle.as_ref().map(|x| x.1);
+    let mut out = Vec::new();
+    for j in &d.joints {
+        if j.id == id || j.arrivals.len() != from.arrivals.len() || from.arrivals.is_empty() {
+            continue;
+        }
+        let mut used = vec![false; j.arrivals.len()];
+        let mut pairs = Vec::new();
+        for a in &from.arrivals {
+            let found = j.arrivals.iter().enumerate().position(|(k, b)| {
+                !used[k]
+                    && key(a) == key(b)
+                    && match (angle(a), angle(b)) {
+                        (Some(x), Some(y)) => (x - y).abs() <= 1.0,
+                        (None, None) => true,
+                        _ => false,
+                    }
+            });
+            match found {
+                Some(k) => {
+                    used[k] = true;
+                    pairs.push((a.member.clone(), j.arrivals[k].member.clone()));
+                }
+                None => break,
+            }
+        }
+        if pairs.len() == from.arrivals.len() {
+            out.push(Similar {
+                joint: j.id.clone(),
+                pairs,
+            });
+        }
+    }
+    out
+}
+
+/// What the bolts of `a` clamp: its leg's thickness and what it bolts
+/// onto's.
+fn grip(
+    a: &Arrival,
+    all: &[Arrival],
+    plates: &[&ohl_structures::connections::TypePlate],
+) -> [f64; 2] {
+    let own = a
+        .profile
+        .as_ref()
+        .and_then(|p| p.angle)
+        .map_or(0.008, |g| g.t);
+    let onto = a.onto.value.as_ref().and_then(|o| {
+        plates
+            .iter()
+            .find(|p| &p.id == o)
+            .map(|p| p.thickness.si())
+            .or_else(|| {
+                all.iter()
+                    .find(|b| &b.member == o)
+                    .and_then(|b| b.profile.as_ref())
+                    .and_then(|p| p.angle)
+                    .map(|g| g.t)
+            })
+    });
+    [own, onto.unwrap_or(own)]
+}
+
+/// The part of a bolt a face belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoltPart {
+    /// The hexagonal head, on the leg bolted's own side.
+    Head,
+    /// The round shank through both thicknesses.
+    Shank,
+    /// The hexagonal nut, beyond what the leg bolts onto.
+    Nut,
+}
+
+/// The proportions a bolt is drawn with, in bolt diameters (for the
+/// drawings only — no standard's dimensions): across the head's and the
+/// nut's flats, the head's height, the nut's, the shank beyond the nut.
+pub const BOLT_DRAWN: [f64; 4] = [1.5, 0.65, 0.8, 0.3];
+
+/// The faces of a bolt of diameter `d` at `p` (on the face between the
+/// two thicknesses `grip`), its axis `axis` towards the head, its sizes
+/// `drawn` (the library bolt's, else [`BOLT_DRAWN`]): polygons in the
+/// structure's axes, each with its part.
+pub fn bolt_faces(
+    p: [f64; 3],
+    axis: [f64; 3],
+    d: f64,
+    grip: [f64; 2],
+    drawn: [Option<f64>; 3],
+) -> Vec<(Vec<[f64; 3]>, BoltPart)> {
+    let [flats, head, nut, beyond] = BOLT_DRAWN;
+    // The library bolt's sizes, else the proportions (in diameters).
+    let flats = drawn[0].map_or(flats, |x| x / d);
+    let head = drawn[1].map_or(head, |x| x / d);
+    let nut = drawn[2].map_or(nut, |x| x / d);
+    let n = scale(axis, 1.0 / norm(axis).max(1e-12));
+    let u = {
+        let t = if n[2].abs() < 0.9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let c = cross(n, t);
+        scale(c, 1.0 / norm(c))
+    };
+    let v = cross(n, u);
+    // A prism of `sides` round the axis from `a0` to `a1` along it,
+    // `r` its corners' radius.
+    let prism = |sides: usize, r: f64, a0: f64, a1: f64, part: BoltPart| {
+        let ring = |a: f64| -> Vec<[f64; 3]> {
+            (0..sides)
+                .map(|k| {
+                    let t = k as f64 * std::f64::consts::TAU / sides as f64;
+                    add(
+                        add(p, scale(n, a)),
+                        add(scale(u, r * t.cos()), scale(v, r * t.sin())),
+                    )
+                })
+                .collect()
+        };
+        let (lo, hi) = (ring(a0), ring(a1));
+        let mut out = vec![(lo.clone(), part), (hi.clone(), part)];
+        for k in 0..sides {
+            let k2 = (k + 1) % sides;
+            out.push((vec![lo[k], lo[k2], hi[k2], hi[k]], part));
+        }
+        out
+    };
+    // Across the flats to the corners' radius.
+    let hex = flats * d / 3f64.sqrt();
+    let mut out = prism(6, hex, grip[0], grip[0] + head * d, BoltPart::Head);
+    out.extend(prism(
+        12,
+        d / 2.0,
+        -(grip[1] + nut * d + beyond * d),
+        grip[0],
+        BoltPart::Shank,
+    ));
+    out.extend(prism(6, hex, -(grip[1] + nut * d), -grip[1], BoltPart::Nut));
+    out
 }

@@ -257,7 +257,7 @@ column scrolls with the others).
 | — | **To do** (the Level panel), **3D view**, **Inspector**, **Libraries** (closed by default; View or File › Libraries) |
 | **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
-| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details** |
+| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details** (with the **Joint view** pane beside the 3D view) |
 | **Load cases** | **Load case editor**, **Load table** |
 | **Results** | **FE results** |
 | **Line loads** | **Line loads** |
@@ -514,7 +514,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
 
 ## Joint details (towers)
 
-*2026-11-02, stages 0 to 2 of the [joint details](../development/joint-details.md);
+*2026-11-02, stages 0 to 3 of the [joint details](../development/joint-details.md);
 built, in active development, not approved yet.*
 
 **Geometry › Structure kind ›** lattice tower, portal, pole or other (the
@@ -525,7 +525,9 @@ plates stay in the file, not shown.
 
 **Design › Joint details…** shows the joint selected (in the 3D view or
 the Joints table, or picked in its list, each joint with how complete
-its details are, in its colour):
+its details are, in its colour): its tables in the panel, its drawing in
+the **Joint view**, a pane of its own opened on the right of the 3D view
+(View › Joint view shows or hides it; no window over the view):
 
 - **Close-up**: the members meeting there as their cross-sections (angles
   with their roll, so the leg bolted shows), cut a little beyond the
@@ -557,6 +559,59 @@ its details are, in its colour):
     drawing only (gauges evenly across the leg, a pitch of three and an
     end distance of one and a half bolt diameters);
   - **not given** (—).
+
+**Defining the joints** (stage 3, 2026-11-02). Every value of the
+connections table is edited in place and given at that member end: a
+list (held, onto — the members meeting there and the joint's plates —,
+leg, gauge lines, eccentric, restrained) or a length typed in mm (the
+first gauge, pitch, end and edge distance, eccentricity; `30`, `30 mm`
+or `0.03 m`). **Not given here** in a list, or right-click a typed
+value, clears it: back to the member's design data or what is worked
+out. Each change is one undo step.
+
+- **Bolts** (click the bolts of a row, or its **…** menu › Bolt layout):
+  the bolt layout form above the table (no window) — a **bolt of the
+  bolt libraries** (its diameter, hole and grade the library's; only its
+  id is written) or one typed here, how many, diameter, hole, grade, one or two
+  gauge lines (two staggered by half a pitch) and their gauges, pitch,
+  end and edge distance, starting from what the row shows; it says how
+  far the bolts reach along the member and what does not fit the leg (a
+  gauge beyond the leg less the edge distance, a pitch no larger than the
+  bolt). The minimum distances of a design code are typed: none is
+  built in. **Apply** writes them all at that end (bolt points given
+  before go).
+- A row's **…** menu: **Clear this end**; **Same on every end of group
+  …** / **of class …** (what is given here on both ends of every member
+  of the same group or class, what they bolt onto kept); **Save as a
+  preset…** and **Apply a preset**.
+- **Copy to the N joint(s) like it**: every member end of this joint on
+  the joints with the same members — cross-section, class and angle to
+  what they bolt onto within 1°, so the mirror joints too — their
+  connections replaced, what they bolt onto matched, a plate copied to
+  each.
+- **+ Plate**: a gusset plate at the joint (10 mm to start: type its
+  thickness), its material, the members bolted onto it (Onto), 🗑
+  removes it (what bolted onto it: not given any more).
+- **Presets** are kept in `Connections/connection-presets.ohlcp` next to
+  the structure file (format `ohl-connection-presets`; a `[[preset]]`
+  per name with the fields of a connection but `onto` and `bolt_points`),
+  for every structure in the folder; a file that cannot be read is said
+  above the table.
+
+**How the joint is drawn.** The model's member axes meet at the joint;
+a real joint's legs lie back to back. The drawings shift each bolted
+member across (along its bolts) so the leg bolted lies flat on the face
+of the leg it bolts onto, turned towards it — for the drawings only, the
+analysis keeps the axes. The leg bolted is the long or short one given;
+otherwise the one that can lie flat against the other member (the
+assumed leg follows it). A bolt is drawn as its hexagonal head on the
+member's own side, its shank through both legs (the plate, when it bolts
+onto one) and its nut: with the sizes of its library bolt
+(`head_across_flats`, `head_height`, `nut_height`) or else, for the
+drawing only, 1.5 diameters across the flats, a head of 0.65 and a nut
+of 0.8 diameters. Members whose angles have no `orientation` lie as the
+model turns them by default, often not as on a tower: give their legs'
+directions (`orientation = "y-x+"`…) for a true picture.
 
 A joint is **complete** when every member end's condition is given, the
 member's or worked out; **partly assumed** when some of it is assumed;
@@ -825,6 +880,7 @@ the line application and `ohl line` keep them for a structure's folder:
 | Library | Files | Read from (and imported into) |
 |---|---|---|
 | Cross-section libraries | `.ohlsec` | `--sections` (a folder), else `Sections/` beside the structure file |
+| Bolt libraries | `.ohlb` | `Bolts/` beside the structure file (2026-11-02; [format](structure-library.md)) |
 | Insulator assemblies | `.ohli` | `--insulators`, else the structure's folder and its `Insulators/` (imported into `Insulators/`) |
 | Poles | `.ohlp` | beside the structure file |
 | Structure models | `.ohlfe` | beside the structure file |

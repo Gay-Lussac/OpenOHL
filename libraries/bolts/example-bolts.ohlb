@@ -1,0 +1,57 @@
+# Example bolt library. Every bolt below is INVENTED (odd values on
+# purpose): it shows the format, it is not a standard's or a supplier's
+# table. Put your own bolts in a .ohlb file in Bolts/ next to the
+# structures (OHL-Structure: File › Libraries › Import).
+format = "ohl-bolts"
+version = 1
+
+[[bolt]]
+id = "X13-example"
+name = "Example bolt 13 mm (invented)"
+diameter = "13 mm"
+hole = "14.5 mm"
+grade = "example-A"
+ultimate = "770 MPa"
+yield = "610 MPa"
+shear_capacity = "41 kN"
+shear_capacity_shank = "52 kN"
+tension_capacity = "63 kN"
+head_across_flats = "20 mm"
+head_height = "8.5 mm"
+nut_height = "10.5 mm"
+grip = "18 mm"
+mass_kg = 0.07
+
+[[bolt]]
+id = "X17-example"
+name = "Example bolt 17 mm (invented)"
+diameter = "17 mm"
+hole = "18.5 mm"
+grade = "example-A"
+ultimate = "770 MPa"
+yield = "610 MPa"
+shear_capacity = "71 kN"
+shear_capacity_shank = "89 kN"
+tension_capacity = "107 kN"
+head_across_flats = "25 mm"
+head_height = "11 mm"
+nut_height = "14 mm"
+grip = "24 mm"
+mass_kg = 0.14
+
+[[bolt]]
+id = "X21-example"
+name = "Example bolt 21 mm (invented)"
+diameter = "21 mm"
+hole = "23 mm"
+grade = "example-B"
+ultimate = "980 MPa"
+yield = "870 MPa"
+shear_capacity = "137 kN"
+shear_capacity_shank = "170 kN"
+tension_capacity = "205 kN"
+head_across_flats = "31 mm"
+head_height = "13.5 mm"
+nut_height = "17 mm"
+grip = "30 mm"
+mass_kg = 0.26

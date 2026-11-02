@@ -133,13 +133,17 @@ pub enum Panel {
     /// A tower's joint in detail: the members arriving, their condition,
     /// the bolts ([`crate::joint_panel`]).
     JointDetails,
+    /// The joint of Joint details drawn: a close-up or a face view, a
+    /// pane beside the 3D view ([`crate::joint_panel`]).
+    JointView,
 }
 
 impl Panel {
     /// Every panel, in the order of the View menu.
-    pub const ALL: [Panel; 22] = [
+    pub const ALL: [Panel; 23] = [
         Panel::Level,
         Panel::View3d,
+        Panel::JointView,
         Panel::Inspector,
         Panel::Libraries,
         Panel::PointsInsulators,
@@ -187,6 +191,7 @@ impl Panel {
             Panel::Libraries => "Libraries",
             Panel::Inspector => "Inspector",
             Panel::JointDetails => "Joint details",
+            Panel::JointView => "Joint view",
         }
     }
 
@@ -234,6 +239,10 @@ impl Panel {
                 "The recipes evaluated: per case, the loads at each point or member"
             }
             Panel::Results => "The cases of the load table solved by the finite-element model",
+            Panel::JointView => {
+                "The joint of Joint details drawn beside the 3D view: a close-up or a face view \
+                 (saved as SVG or PDF)"
+            }
             Panel::JointDetails => {
                 "A tower's joint in detail: the members arriving and from where, how each end \
                  is held, the leg bolted, the bolts; a close-up and a face view"
@@ -250,7 +259,11 @@ impl Panel {
     /// libraries).
     pub fn area(self) -> Option<Area> {
         Some(match self {
-            Panel::Level | Panel::View3d | Panel::Libraries | Panel::Inspector => return None,
+            Panel::Level
+            | Panel::View3d
+            | Panel::Libraries
+            | Panel::Inspector
+            | Panel::JointView => return None,
             Panel::PointsInsulators | Panel::WiresSets | Panel::StructureFields => Area::Geometry,
             Panel::Joints
             | Panel::Members
@@ -422,6 +435,16 @@ pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
                 dock.main_surface_mut()
                     .split_right(NodeIndex::root(), 0.45, vec![panel]);
             }
+            // The joint drawn in a pane of its own on the right of the 3D
+            // view (owner, 2026-11-02: "opens on the tower window as a new
+            // pane … easier to not fill the view with screens").
+            Panel::JointView => match dock.find_tab(&Panel::View3d) {
+                Some(view) if view.surface == egui_dock::SurfaceIndex::main() => {
+                    dock.main_surface_mut()
+                        .split_right(view.node, 0.5, vec![panel]);
+                }
+                _ => dock.push_to_first_leaf(panel),
+            },
             // The Inspector and the To do list on the right of the view,
             // together.
             Panel::Level | Panel::Inspector => {
