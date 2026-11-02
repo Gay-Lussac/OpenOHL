@@ -55,12 +55,17 @@ pub enum Tool {
     InsertJoint,
     /// What is clicked is deleted (asked first).
     Delete,
+    /// What is clicked opens where it is edited (owner 2026-11-02): the
+    /// Inspector with its fields, its table's row, a tower's joint in
+    /// Joint details and the Joint view.
+    Edit,
 }
 
 impl Tool {
     /// Every tool, in the inventory's order.
-    pub const ALL: [Tool; 11] = [
+    pub const ALL: [Tool; 12] = [
         Tool::Select,
+        Tool::Edit,
         Tool::Move,
         Tool::Delete,
         Tool::AddPoint,
@@ -87,6 +92,7 @@ impl Tool {
             Tool::Symmetry => "Symmetry",
             Tool::InsertJoint => "Insert a joint on a member",
             Tool::Delete => "Delete",
+            Tool::Edit => "Edit",
         }
     }
 
@@ -104,6 +110,7 @@ impl Tool {
             Tool::Symmetry => "symmetry",
             Tool::InsertJoint => "insert-joint",
             Tool::Delete => "delete",
+            Tool::Edit => "edit",
         }
     }
 
@@ -138,6 +145,10 @@ impl Tool {
                 "Click a member: a joint inserted on it (the member split there, continuous)"
             }
             Tool::Delete => "Click something: delete it with what goes with it (asked first)",
+            Tool::Edit => {
+                "Click a joint, member or point: its fields in the Inspector, its row in its \
+                 table; a tower's joint also in Joint details and the Joint view"
+            }
         }
     }
 
@@ -155,6 +166,7 @@ impl Tool {
             Tool::Symmetry => Icon::Symmetry,
             Tool::InsertJoint => Icon::InsertJoint,
             Tool::Delete => Icon::Delete,
+            Tool::Edit => Icon::Edit,
         }
     }
 }
@@ -182,10 +194,10 @@ impl Hotbar {
     /// a joint wait in the inventory).
     pub const DEFAULT: [Tool; 9] = [
         Tool::Select,
+        Tool::Edit,
         Tool::Move,
         Tool::AddPoint,
         Tool::OneString,
-        Tool::TwoStrings,
         Tool::Link,
         Tool::AddJoint,
         Tool::AddMember,
@@ -614,6 +626,7 @@ impl StructureApp {
                 self.selected = vec![h];
                 self.ask_delete();
             }
+            (Tool::Edit, Some(h)) => self.edit_clicked(h),
             (tool, None) => {
                 self.selected.clear();
                 if !matches!(tool, Tool::AddMember | Tool::TwoStrings) {
@@ -627,6 +640,29 @@ impl StructureApp {
                 ));
             }
         }
+    }
+
+    /// The Edit tool on `h`: selected, its fields in the Inspector (in
+    /// front), its table's row shown; a tower's joint also in Joint
+    /// details and the Joint view.
+    pub fn edit_clicked(&mut self, h: Handle) {
+        self.selected = vec![h.clone()];
+        self.scroll_to = Some(h.clone());
+        let tower = self
+            .file
+            .as_ref()
+            .is_some_and(|f| ohl_structure_edit::is_tower(f.structure().kind));
+        let mut also = "";
+        if let Handle::Joint(id) = &h
+            && tower
+        {
+            self.joints.joint = Some(id.clone());
+            self.joints.face = None;
+            self.focus(crate::layout::Panel::JointDetails);
+            also = ", Joint details and the Joint view";
+        }
+        self.focus(crate::layout::Panel::Inspector);
+        self.message = Some((format!("Edit {}: the Inspector{also}", h.describe()), false));
     }
 
     /// A joint at `at` (one edit, its mirror images along).
@@ -688,7 +724,7 @@ mod tests {
         let mut h = Hotbar::default();
         assert_eq!(h.tool(), Tool::Select);
         h.hold(Tool::Move);
-        assert_eq!(h.active, 1);
+        assert_eq!(h.active, 2);
         h.hold(Tool::Symmetry);
         assert_eq!(h.active, 8);
         assert_eq!(h.slots[8], Some(Tool::Symmetry));

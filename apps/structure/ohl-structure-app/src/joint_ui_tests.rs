@@ -343,3 +343,69 @@ pitch = "55 mm"
 end_distance = "30 mm"
 edge_distance = "25 mm"
 "#;
+
+/// The Joint view follows the joint selected even when the Joint details
+/// panel is behind another tab (owner 2026-11-02: "clicking on them but
+/// still have only one showing").
+#[test]
+fn the_joint_view_follows_the_selection_with_the_panel_hidden() {
+    let path = copy_of("type-02.ohls", "joint-follow");
+    let text = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("kind = \"other\"", "kind = \"lattice\"");
+    std::fs::write(&path, text).unwrap();
+    let mut h = harness(&path);
+    menu(&mut h, "Design", "Joint details…");
+    assert!(h.state().is_open(Panel::JointView));
+    // Another tab in front of Joint details.
+    menu(&mut h, "Body", "Joints…");
+    let nodes: Vec<String> = h
+        .state()
+        .file
+        .as_ref()
+        .unwrap()
+        .structure()
+        .nodes
+        .iter()
+        .map(|n| n.id.clone())
+        .collect();
+    for id in [&nodes[3], &nodes[7]] {
+        h.state_mut().selected = vec![Handle::Joint(id.clone())];
+        h.run();
+        assert_eq!(h.state().joints.joint.as_deref(), Some(id.as_str()));
+    }
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
+
+/// The Edit tool (owner 2026-11-02: "an edit tool … a click on members
+/// or joints and open the necessary window to edit them"): a member
+/// clicked is selected, the Inspector in front with its fields; a
+/// tower's joint also opens Joint details and the Joint view on it.
+#[test]
+fn the_edit_tool_opens_where_it_is_edited() {
+    use crate::tools::Tool;
+    let path = copy_of("type-02.ohls", "edit-tool");
+    let text = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("kind = \"other\"", "kind = \"lattice\"");
+    std::fs::write(&path, text).unwrap();
+    let mut h = harness(&path);
+    h.state_mut().hold_tool(Tool::Edit);
+    assert_eq!(h.state().tool(), Tool::Edit);
+    h.state_mut()
+        .tool_click(Some(Handle::Member("m155".into())), None);
+    h.run();
+    assert_eq!(h.state().selected, vec![Handle::Member("m155".into())]);
+    assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
+    h.get_by_label_contains("Member m155");
+    assert!(!h.state().is_open(Panel::JointView));
+    h.state_mut()
+        .tool_click(Some(Handle::Joint("L9A".into())), None);
+    h.run();
+    assert!(h.state().is_open(Panel::JointDetails) && h.state().is_open(Panel::JointView));
+    assert_eq!(h.state().joints.joint.as_deref(), Some("L9A"));
+    assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
+    // The Inspector's heading and the Joint view's.
+    assert_eq!(h.get_all_by_label("Joint L9A").count(), 2);
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}

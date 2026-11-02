@@ -275,11 +275,11 @@ fn a_joint_moves_only_with_the_move_tool() {
     drag(&mut h, at, at + egui::vec2(40.0, -30.0));
     assert_eq!(text(&h), before);
     assert_ne!(h.state().view_camera().unwrap().yaw, -135f64.to_radians());
-    // The Move tool: key 2.
+    // The Move tool: key 3 (Edit on 2 since 2026-11-02).
     h.state_mut().view_fit = true;
     h.run();
     h.run();
-    h.key_press(egui::Key::Num2);
+    h.key_press(egui::Key::Num3);
     h.run();
     assert_eq!(h.state().tool(), Tool::Move);
     let at = h.state().view_screen(j).unwrap();
@@ -300,7 +300,7 @@ fn a_joint_moves_only_with_the_move_tool() {
 fn the_hotbar_keys_and_the_inventory() {
     let path = copy_of("type-02.ohls", "review-hotbar");
     let mut h = harness(&path);
-    h.key_press(egui::Key::Num3);
+    h.key_press(egui::Key::Num4);
     h.run();
     assert_eq!(h.state().tool(), Tool::AddPoint);
     h.get_by_label("Add point");

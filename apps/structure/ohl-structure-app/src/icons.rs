@@ -53,12 +53,14 @@ pub enum Icon {
     TwoStrings,
     /// The Insert a joint on a member tool.
     InsertJoint,
+    /// The Edit tool.
+    Edit,
 }
 
 impl Icon {
     /// Every icon (the tests check each file).
     #[cfg(test)]
-    pub const ALL: [Icon; 14] = [
+    pub const ALL: [Icon; 15] = [
         Icon::AddJoint,
         Icon::AddMember,
         Icon::PointOnJoint,
@@ -73,6 +75,7 @@ impl Icon {
         Icon::OneString,
         Icon::TwoStrings,
         Icon::InsertJoint,
+        Icon::Edit,
     ];
 
     /// Its file's name (without `.svg`).
@@ -92,6 +95,7 @@ impl Icon {
             Icon::OneString => "add-string",
             Icon::TwoStrings => "two-strings",
             Icon::InsertJoint => "insert-joint",
+            Icon::Edit => "edit",
         }
     }
 
@@ -117,6 +121,7 @@ impl Icon {
             Icon::OneString => icon!("add-string"),
             Icon::TwoStrings => icon!("two-strings"),
             Icon::InsertJoint => icon!("insert-joint"),
+            Icon::Edit => icon!("edit"),
         }
     }
 

@@ -319,7 +319,10 @@ their menu or from View.
   too). The slots and the slot held are kept for the next start. The
   tool held is named in a **strip above the view** with what a click
   does and its options. The tools: **Select** (a click selects; the
-  default), **Move** (drag a joint or point to move it, snapped to the
+  default), **Edit** (2026-11-02: a joint, member or point clicked
+  opens where it is edited — its fields in the Inspector, brought to the
+  front, and its row in its table; a tower's joint also in Joint details
+  and the Joint view), **Move** (drag a joint or point to move it, snapped to the
   grid — **snap** in the strip — or onto a joint; one undo step per
   drag), **Add point** (on a joint clicked, else at the top of the stick
   figure), **One string** (below the point clicked; **string length** in
@@ -329,7 +332,8 @@ their menu or from View.
   plane facing you through the structure's middle, snapped), **Add
   member** (click two joints; the next member starts at the second),
   **Delete** (what is clicked, asked first); in the inventory also
-  **Insert a joint on a member** (click a member; **at** in the strip)
+  **Two strings to one wire point** (in the default hotbar before
+  2026-11-02, the Edit tool now in its place), **Insert a joint on a member** (click a member; **at** in the strip)
   and **Symmetry** (the body's symmetry and **Make symmetric** in the
   strip). Every change a tool makes is one undo step; the menus keep
   their entries.
@@ -524,8 +528,10 @@ its Pole panels. One undo step; nothing is deleted: when a tower with
 connections becomes a pole, the message says how many connections and
 plates stay in the file, not shown.
 
-**Design › Joint details…** shows the joint selected (in the 3D view or
-the Joints table, or picked in its list, each joint with how complete
+**Design › Joint details…** shows the joint selected last (in the 3D
+view — the Edit tool opens it on the joint clicked —, the Joints table,
+or picked in its list; the Joint view follows the selection even when
+the panel is behind another tab; each joint with how complete
 its details are, in its colour): its tables in the panel, its drawing in
 the **Joint view**, a pane of its own opened on the right of the 3D view
 (View › Joint view shows or hides it; no window over the view):

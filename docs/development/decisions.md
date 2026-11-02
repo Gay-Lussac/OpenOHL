@@ -80,6 +80,17 @@ active development, not approved yet)**
 - Member-capacity plugins still receive the member's design data only
   (the plugin interface is unchanged).
 
+**OHL-Structure's Edit tool (owner, 2026-11-02: "an edit tool … that
+allows for a click on members or joints and open the necessary window to
+edit them")**: a click selects what is clicked and opens where it is
+edited — the Inspector in front (its fields), its row in its table; a
+tower's joint also Joint details and the Joint view on it. In the
+default hotbar's second slot (Two strings to one wire point moved to the
+inventory; a hotbar kept from before is not changed: E, drag Edit onto a
+slot). The Joint view now follows the joint selected itself ("clicking
+on them but still have only one showing": only the Joint details panel
+followed, so a view beside another tab in front stayed on its joint).
+
 **A plate without an outline lies in its bolts' face, in the Joint view
 as in the export (owner, 2026-11-02: "make the joint view follow the
 export for plates")**: one function (`joints::face_hull`) for both; the

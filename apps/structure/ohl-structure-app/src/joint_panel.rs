@@ -118,6 +118,22 @@ impl StructureApp {
         }
     }
 
+    /// The joint shown follows the joint selected last (in the 3D view, the
+    /// Joints table or the panel's list); else the one shown before, else
+    /// the first.
+    fn follow_selected_joint(&mut self) {
+        if let Some(Handle::Joint(id)) = self
+            .selected
+            .iter()
+            .rev()
+            .find(|h| matches!(h, Handle::Joint(_)))
+            && self.joints.joint.as_ref() != Some(id)
+        {
+            self.joints.joint = Some(id.clone());
+            self.joints.face = None;
+        }
+    }
+
     /// The Joint details panel.
     pub(crate) fn joint_panel_ui(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
@@ -140,17 +156,7 @@ impl StructureApp {
             ));
             return;
         }
-        // The joint selected, else the one shown before, else the first.
-        if let Some(Handle::Joint(id)) = self
-            .selected
-            .iter()
-            .rev()
-            .find(|h| matches!(h, Handle::Joint(_)))
-            && self.joints.joint.as_ref() != Some(id)
-        {
-            self.joints.joint = Some(id.clone());
-            self.joints.face = None;
-        }
+        self.follow_selected_joint();
         let Some(details) = self.joint_details() else {
             return;
         };
@@ -283,6 +289,8 @@ impl StructureApp {
     /// The Joint view pane (beside the 3D view): the joint shown in the
     /// Joint details panel as a close-up or a face view.
     pub(crate) fn joint_view_ui(&mut self, ui: &mut egui::Ui) {
+        // Also when the Joint details panel is not the tab in front.
+        self.follow_selected_joint();
         let Some(f) = &self.file else {
             return;
         };
