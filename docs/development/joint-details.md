@@ -2,8 +2,9 @@
 
 *Proposal, 2026-11-02 — stages 0 to 2 built the same day (in active
 development, not approved yet: owner, "Go ahead with 0-2, yes and
-yes"), stage 3 too ("Go ahead with the next stage"); stages 4 and 5
-not built; the bolt library built (below). Asked by the owner:
+yes"), stage 3 too ("Go ahead with the next stage"), stages 4.1 and
+4.2 too ("Go with … B"); the rest of stage 4 and stage 5 not built; the
+bolt library built (below). Asked by the owner:
 "a roadmap for a tool to show and allow to define the joints in the OHL
 structure in details for a pylon that isn't a pole … where the bars are
 coming from, what's their condition on the joint and where are the
@@ -140,7 +141,16 @@ tower program's connection data is not built. How it works: [OHL-Structure
 
 > **Owner:**
 
-### Stage 4 — What the calculations take from it (M–L)
+### Stage 4 — What the calculations take from it (M–L) — 4.1 and 4.2 built 2026-11-02
+
+Built as 4.1 and 4.2 below, but: worked out only at an end with a
+`[[connection]]` (an end without one keeps the member's flags and the
+assumptions, so a tower without connection data computes as before);
+bearing without the end and edge distances (the standard's rules for
+them to come from its text); two gauge lines' holes in one section
+(staggering not counted). The rules are in the core
+(`ohl_structures_fe::member_ends`) and the Joint details table shows
+them; how it works: [theory](../theory/structures-fe.md#member-capacity-methods).
 
 Each item is an option or a default to agree; every result says which
 values were worked out from the joints and which assumed.
@@ -225,7 +235,8 @@ added and imported/exported."
   of materials counts the bolts per kind (stage 4.6).
 
 Built as above, but: the head's and nut's sizes and one mass and grip per
-bolt (as sold); the checks and the bill of materials do not read it yet.
+bolt (as sold); the bill of materials does not read it yet; the checks do since stage
+4.2 (2026-11-02: its shear capacities and ultimate strength).
 [Format](../user-guide/structure-library.md). Questions left: masses per
 grip length; one library per project or per folder (today: per folder,
 as the cross-sections)?
@@ -258,4 +269,4 @@ Stage 5 alongside
 
 The proposal is Stages 0–2 first, so the joints can be **seen** on the
 towers already in the projects, then 3 and 4.1–4.2. Those change the
-results most for the least work.
+results most for the least work. (4.1 and 4.2 built 2026-11-02.)

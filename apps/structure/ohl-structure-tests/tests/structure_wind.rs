@@ -99,6 +99,7 @@ fn the_structure_application_takes_the_line_cases_wind_on_the_body() {
             recipes: &resolved,
             cases: &run_cases,
             extension: None,
+            bolts: None,
         },
         &ohl_structures_fe::default_budget(),
     )

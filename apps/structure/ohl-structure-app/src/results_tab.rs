@@ -292,6 +292,8 @@ impl StructureApp {
             return false;
         }
         let extension = self.results_extension();
+        // The bolts its connections name (`Bolts/` beside it).
+        let bolts = self.bolt_library();
         let Some(f) = &self.file else {
             return false;
         };
@@ -320,6 +322,7 @@ impl StructureApp {
                     recipes: &recipes,
                     cases: &run,
                     extension: ext.as_deref(),
+                    bolts: Some(&bolts.0),
                 },
                 budget,
             )

@@ -30,6 +30,20 @@
 //! for an angle bolted by one leg; the bolts' shear (count × shear planes
 //! × each one's shear capacity); bearing (count × 1.5 f_u d t × plies).
 //!
+//! **At each end** (2026-11-02, stage 4.1 and 4.2 of the joint details):
+//! the ends' eccentricity and restraint are each end's
+//! ([`crate::member_ends`]: given at the end's `[[connection]]`, the
+//! member's flags, worked out at an end with a connection, else assumed),
+//! the two together giving the curves' none / one end / both ends. The
+//! bolt shear, bearing and net section are taken at each end with what
+//! its connection gives over the member's data (its bolts, a library
+//! bolt's shear capacity with the threads in or out of the shear plane
+//! and its ultimate strength, the holes in one section from its gauge
+//! lines or bolt points, the leg bolted); the weaker end governs, named
+//! (`bolt shear at N2`) when the ends differ. A member without connections
+//! is checked as before. Per end, what came from the joints is said in
+//! [`Capacity::joints`].
+//!
 //! A crossing diagonal (class `crossing` with a partner) in compression
 //! is braced at the crossing only when its partner is in tension (as
 //! given); otherwise its L/r is at least L over its smaller geometric
@@ -41,11 +55,15 @@
 //! without a root radius when it has none, one leg bolted, a hole 2 mm
 //! larger than the bolt, one hole per section, the bolts' threads in the
 //! shear plane (0.62 f_ub on 0.75 of the gross area) when only their
-//! strength is given. Without bolts, the connection is not checked and
+//! strength is given (with the threads given out of the plane but no
+//! capacity for it: as with them in). Without bolts, the connection is not checked and
 //! the tension is on the gross section (said so). Local buckling is
 //! checked on angles (and on sections given a `width_thickness`) only.
 
-use crate::design::{ConnectedLeg, Ends, MemberClass};
+use ohl_structures::connections::ConnectionKind;
+
+use crate::design::{Bolts, ConnectedLeg, EndDesign, Ends, MemberClass, MemberDesign};
+use crate::member_ends::{self, Source};
 use crate::model::{Member, Model, Section};
 
 /// The method's name in files and results.
@@ -74,6 +92,10 @@ pub struct Capacity {
     pub tension_assumed: Vec<String>,
     /// Slenderness above the class's limit, in words.
     pub limit: Option<String>,
+    /// For a member with connections (`[[connection]]`): per end, its
+    /// conditions and where each comes from, in words ("N2 eccentric
+    /// (worked out: one leg bolted), restrained (given)"); empty without.
+    pub joints: Vec<String>,
 }
 
 /// The effective slenderness KL/r from L/r and the ends (ASCE 10-97,
@@ -197,17 +219,27 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
             }
         }
     }
-    let ecc = d.end_eccentricity.unwrap_or_else(|| {
-        assumed.push("both ends eccentric".into());
-        Ends::BothEnds
-    });
-    let restraint = d.end_restraint.unwrap_or_else(|| {
-        if l_r > 120.0 {
-            assumed.push("no end restraint".into());
+    // The ends' eccentricity and restraint, end by end (crate::member_ends).
+    let ends = member_ends::end_conditions(model, idx);
+    let at = |end: usize| model.nodes[if end == 0 { m.i } else { m.j }].id.as_str();
+    let assumed_at = |c: &[member_ends::Condition; 2]| -> [bool; 2] {
+        [0, 1].map(|e| c[e].source == Source::Assumed)
+    };
+    match assumed_at(&ends.eccentric) {
+        [true, true] => assumed.push("both ends eccentric".into()),
+        [true, false] => assumed.push(format!("eccentric at {}", at(0))),
+        [false, true] => assumed.push(format!("eccentric at {}", at(1))),
+        [false, false] => {}
+    }
+    if l_r > 120.0 {
+        match assumed_at(&ends.restrained) {
+            [true, true] => assumed.push("no end restraint".into()),
+            [true, false] => assumed.push(format!("not restrained at {}", at(0))),
+            [false, true] => assumed.push(format!("not restrained at {}", at(1))),
+            [false, false] => {}
         }
-        Ends::None
-    });
-    let kl_r = effective_slenderness(l_r, ecc, restraint);
+    }
+    let kl_r = effective_slenderness(l_r, ends.eccentricity, ends.restraint);
     out.kl_r = Some(kl_r);
     if let Some((limit, class)) = class_limit(d.class)
         && kl_r > limit
@@ -236,27 +268,214 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     };
     let column = column_stress(fcr, e, kl_r) * a;
     let mut comp = (column, format!("KL/r {kl_r:.0}"));
-    // Connection.
+    // The connection, at each end: the end's own data over the member's.
     let thickness = d.thickness.or(legs.map(|l| l.1));
+    let checks = [0, 1].map(|end| end_check(d, d.ends[end].as_ref(), s, thickness, fy, a));
+    // Ends alike (no connection data, or the same capacities at both): as
+    // one, as before; else what governs named by its end (a note of one
+    // end only is named by it in any case).
+    let alike = (checks[0].shear, checks[0].bearing, &checks[0].tension)
+        == (checks[1].shear, checks[1].bearing, &checks[1].tension);
+    let name = |what: &str, end: usize| {
+        if alike {
+            what.to_owned()
+        } else {
+            format!("{what} at {}", at(end))
+        }
+    };
+    for (end, c) in checks.iter().enumerate() {
+        for (v, what) in [(c.shear, "bolt shear"), (c.bearing, "bearing")] {
+            if let Some(v) = v
+                && v < comp.0
+            {
+                comp = (v, name(what, end));
+            }
+        }
+    }
+    let notes = |pick: fn(&EndCheck) -> &Vec<String>| -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (end, c) in checks.iter().enumerate() {
+            for n in pick(c) {
+                let n = if pick(&checks[1 - end]).contains(n) {
+                    n.clone()
+                } else {
+                    format!("{n} at {}", at(end))
+                };
+                if !out.contains(&n) {
+                    out.push(n);
+                }
+            }
+        }
+        out
+    };
+    let conn = notes(|c| &c.conn);
+    out.compression = Some(comp);
+    out.compression_assumed = assumed;
+    out.compression_assumed.extend(conn.iter().cloned());
+    // Tension: the weaker end.
+    let mut tension = (f64::INFINITY, String::new());
+    for (end, c) in checks.iter().enumerate() {
+        if c.tension.0 < tension.0 {
+            tension = (c.tension.0, name(&c.tension.1, end));
+        }
+    }
+    if let Some(t) = s.tension {
+        tension = (t, "allowable".to_owned());
+    }
+    out.tension = Some(tension);
+    out.tension_assumed = conn;
+    for n in notes(|c| &c.tension_notes) {
+        if !out.tension_assumed.contains(&n) {
+            out.tension_assumed.push(n);
+        }
+    }
+    // Where the conditions come from, for a member with connections.
+    if ends.connected.contains(&true) {
+        for end in 0..2 {
+            let say = |c: &member_ends::Condition, yes: &str, no: &str| {
+                let word = match c.value {
+                    Some(true) => yes.to_owned(),
+                    Some(false) => no.to_owned(),
+                    None => format!("{yes} at one end"),
+                };
+                match &c.why {
+                    Some(w) => format!("{word} ({}: {w})", c.source.words()),
+                    None => format!("{word} ({})", c.source.words()),
+                }
+            };
+            let mut line = format!(
+                "{} {}, {}",
+                at(end),
+                say(&ends.eccentric[end], "eccentric", "concentric"),
+                say(&ends.restrained[end], "restrained", "not restrained")
+            );
+            if let Some(e) = &d.ends[end] {
+                if let Some(b) = &e.bolt {
+                    line.push_str(&format!(", bolt {b}"));
+                }
+                for n in &e.notes {
+                    line.push_str(&format!(", {n}"));
+                }
+            } else {
+                line.push_str(", no connection given");
+            }
+            out.joints.push(line);
+        }
+    }
+    out
+}
+
+/// One end's connection as the check takes it.
+#[derive(Debug, Clone, PartialEq)]
+struct EndCheck {
+    /// The bolts' shear, N.
+    shear: Option<f64>,
+    /// Bearing, N.
+    bearing: Option<f64>,
+    /// The tension capacity at this end and what governs it.
+    tension: (f64, String),
+    /// What the connection assumed or could not check.
+    conn: Vec<String>,
+    /// What the tension (net section) assumed besides.
+    tension_notes: Vec<String>,
+}
+
+/// The bolts at one end: what the end's connection gives over the
+/// member's (a diameter, hole, shear capacity of the member's only for
+/// bolts of the same diameter); with the library's shear capacity with
+/// the threads out of the shear plane and whether the threads are in it.
+fn end_bolts(
+    d: &MemberDesign,
+    end: Option<&EndDesign>,
+    notes: &mut Vec<String>,
+) -> Option<(Bolts, Option<f64>, Option<bool>)> {
+    let layout = end.and_then(|e| e.holes);
+    let member = d.bolts.map(|mut b| {
+        if layout.is_some() {
+            b.holes = layout;
+        }
+        (b, None, None)
+    });
+    let Some(e) = end else {
+        return member;
+    };
+    let Some(own) = e.bolts else {
+        if let Some(k) = e.kind
+            && k != ConnectionKind::Bolted
+        {
+            notes.push(format!("{}: no bolts", k.as_str()));
+            return None;
+        }
+        return member;
+    };
+    let Some(diameter) = own.diameter else {
+        notes.push("bolt diameter unknown: the member's bolts".into());
+        return member;
+    };
+    let same = d.bolts.filter(|b| (b.diameter - diameter).abs() < 1e-9);
+    let b = Bolts {
+        diameter,
+        hole: own.hole.or(same.and_then(|b| b.hole)),
+        count: own.count,
+        shear_planes: own
+            .shear_planes
+            .or(d.bolts.map(|b| b.shear_planes))
+            .unwrap_or(1),
+        shear_capacity: own.shear_capacity.or(same.and_then(|b| b.shear_capacity)),
+        ultimate: own.ultimate.or(d.bolts.and_then(|b| b.ultimate)),
+        holes: layout.or(d.bolts.and_then(|b| b.holes)),
+    };
+    Some((b, own.shear_capacity_shank, own.threads_in_shear))
+}
+
+/// The connection's capacities at one end (`end`: its connection, none:
+/// the member's data only), as before for the member's data.
+fn end_check(
+    d: &MemberDesign,
+    end: Option<&EndDesign>,
+    s: &Section,
+    thickness: Option<f64>,
+    fy: f64,
+    a: f64,
+) -> EndCheck {
     let plies = f64::from(d.plies.unwrap_or(1));
     let mut shear = None;
     let mut bearing = None;
     let mut conn: Vec<String> = Vec::new();
-    match d.bolts {
-        None => conn.push("no bolts given: connection not checked".into()),
+    let bolts = end_bolts(d, end, &mut conn);
+    match bolts {
+        None => {
+            if conn.is_empty() {
+                conn.push("no bolts given: connection not checked".into());
+            }
+        }
         // Holes only (the bolts elsewhere): the net section, no bolt check.
-        Some(b) if b.count == 0 => conn.push("no end bolts: connection not checked".into()),
-        Some(b) => {
-            let per_plane = match (b.shear_capacity, b.ultimate) {
-                (Some(v), _) => Some(v),
-                (None, Some(fub)) => {
-                    conn.push("bolt threads in the shear plane".into());
-                    Some(
-                        BOLT_SHEAR * fub * ROOT_AREA * std::f64::consts::PI * b.diameter.powi(2)
-                            / 4.0,
-                    )
+        Some((b, _, _)) if b.count == 0 => {
+            conn.push("no end bolts: connection not checked".into());
+        }
+        Some((b, shank, threads_in)) => {
+            let gross = std::f64::consts::PI * b.diameter.powi(2) / 4.0;
+            // The threads out of the shear plane: the library's capacity
+            // for it; without one, as with the threads in (on the safe
+            // side, said).
+            let out_given = threads_in == Some(false);
+            let per_plane = match (shank.filter(|_| out_given), b.shear_capacity, b.ultimate) {
+                (Some(v), _, _) => Some(v),
+                (None, Some(v), _) => {
+                    if out_given {
+                        conn.push("bolt shear as with the threads in the shear plane".into());
+                    }
+                    Some(v)
                 }
-                (None, None) => {
+                (None, None, Some(fub)) => {
+                    if out_given {
+                        conn.push("bolt shear as with the threads in the shear plane".into());
+                    } else if threads_in.is_none() {
+                        conn.push("bolt threads in the shear plane".into());
+                    }
+                    Some(BOLT_SHEAR * fub * ROOT_AREA * gross)
+                }
+                _ => {
                     conn.push("bolt shear not checked (no capacity)".into());
                     None
                 }
@@ -271,33 +490,23 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
             }
         }
     }
-    for (v, what) in [(shear, "bolt shear"), (bearing, "bearing")] {
-        if let Some(v) = v
-            && v < comp.0
-        {
-            comp = (v, what.to_owned());
-        }
-    }
-    out.compression = Some(comp);
-    out.compression_assumed = assumed;
-    out.compression_assumed.extend(conn.iter().cloned());
-    // Tension.
-    let mut assumed = conn;
-    let mut tension = match (d.bolts, thickness) {
+    let connected_leg = end.and_then(|e| e.leg).or(d.connected_leg);
+    let mut notes = Vec::new();
+    let mut tension = match (bolts, thickness) {
         (None, _) => (a * fy, "gross section, no holes".to_owned()),
-        (Some(b), Some(t)) => {
+        (Some((b, _, _)), Some(t)) => {
             let hole = b.hole.unwrap_or_else(|| {
-                assumed.push("hole 2 mm larger than the bolt".into());
+                notes.push("hole 2 mm larger than the bolt".into());
                 b.diameter + HOLE_CLEARANCE
             });
             let holes = f64::from(b.holes.unwrap_or_else(|| {
-                assumed.push("one hole per section".into());
+                notes.push("one hole per section".into());
                 1
             }));
-            let one_leg = match d.connected_leg {
+            let one_leg = match connected_leg {
                 Some(c) => c.one_leg(),
                 None => {
-                    assumed.push("one leg bolted".into());
+                    notes.push("one leg bolted".into());
                     true
                 }
             };
@@ -305,28 +514,28 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
             (net, "net section".to_owned())
         }
         (Some(_), None) => {
-            assumed.push("net section not checked (no thickness)".into());
-            let one_leg = d.connected_leg.is_none_or(ConnectedLeg::one_leg);
+            notes.push("net section not checked (no thickness)".into());
+            let one_leg = connected_leg.is_none_or(ConnectedLeg::one_leg);
             (
                 a * fy * if one_leg { 0.9 } else { 1.0 },
                 "gross section".to_owned(),
             )
         }
     };
-    if let Some(t) = s.tension {
-        tension = (t, "allowable".to_owned());
-    } else {
-        for (v, what) in [(shear, "bolt shear"), (bearing, "bearing")] {
-            if let Some(v) = v
-                && v < tension.0
-            {
-                tension = (v, what.to_owned());
-            }
+    for (v, what) in [(shear, "bolt shear"), (bearing, "bearing")] {
+        if let Some(v) = v
+            && v < tension.0
+        {
+            tension = (v, what.to_owned());
         }
     }
-    out.tension = Some(tension);
-    out.tension_assumed = assumed;
-    out
+    EndCheck {
+        shear,
+        bearing,
+        tension,
+        conn,
+        tension_notes: notes,
+    }
 }
 
 #[cfg(test)]

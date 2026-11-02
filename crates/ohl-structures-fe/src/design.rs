@@ -175,6 +175,80 @@ pub struct MemberDesign {
     pub end_distance: Option<f64>,
     /// Bolt spacing, m.
     pub spacing: Option<f64>,
+    /// What each end's connection gives (a structure file's
+    /// `[[connection]]`, version 9; [`crate::member_ends`]): at the
+    /// member's first joint, at its second; none: the member's data at
+    /// that end, as before.
+    pub ends: [Option<EndDesign>; 2],
+}
+
+/// What a member end bolts onto.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Onto {
+    /// Another member meeting at the joint (its index).
+    Member(usize),
+    /// A gusset plate at the joint.
+    Plate {
+        /// Its id.
+        id: String,
+        /// Its thickness, m.
+        thickness: f64,
+    },
+    /// Something not found at the joint (kept, not used).
+    Other(String),
+}
+
+/// The bolts of one member end (`[[connection]] bolts`), SI units: what
+/// the connection types over what its library bolt gives.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct EndBolts {
+    /// How many.
+    pub count: u32,
+    /// Bolt diameter, m (none: a library bolt not found).
+    pub diameter: Option<f64>,
+    /// Hole diameter, m.
+    pub hole: Option<f64>,
+    /// Shear planes per bolt.
+    pub shear_planes: Option<u32>,
+    /// Shear capacity per plane, the threads in it, N (the library's).
+    pub shear_capacity: Option<f64>,
+    /// Shear capacity per plane, the threads out of it, N (the library's).
+    pub shear_capacity_shank: Option<f64>,
+    /// Ultimate tensile strength, Pa (the library's).
+    pub ultimate: Option<f64>,
+    /// The threads in the shear plane.
+    pub threads_in_shear: Option<bool>,
+}
+
+/// One member end's connection, SI units: only what it gives (all
+/// optional); the rest is the member's ([`MemberDesign`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct EndDesign {
+    /// How it is held (none: bolted).
+    pub kind: Option<ohl_structures::connections::ConnectionKind>,
+    /// What it bolts onto.
+    pub onto: Option<Onto>,
+    /// The leg bolted.
+    pub leg: Option<ConnectedLeg>,
+    /// Its bolts.
+    pub bolts: Option<EndBolts>,
+    /// The library bolt they are, by id.
+    pub bolt: Option<String>,
+    /// Holes in one cross-section, from the layout (gauge lines, bolt
+    /// points).
+    pub holes: Option<u32>,
+    /// Edge distance, m.
+    pub edge_distance: Option<f64>,
+    /// End distance, m.
+    pub end_distance: Option<f64>,
+    /// Pitch, m.
+    pub pitch: Option<f64>,
+    /// Eccentric, given.
+    pub eccentric: Option<bool>,
+    /// Held against turning, given.
+    pub restrained: Option<bool>,
+    /// What could not be used ("bolt M16: in no bolt library").
+    pub notes: Vec<String>,
 }
 
 impl MemberDesign {
@@ -288,6 +362,7 @@ impl DesignFile {
                 edge_distance: positive("edge_distance", self.edge_distance.map(Length::si))?,
                 end_distance: positive("end_distance", self.end_distance.map(Length::si))?,
                 spacing: positive("spacing", self.spacing.map(Length::si))?,
+                ends: [None, None],
             },
             self.crossing.clone(),
         ))

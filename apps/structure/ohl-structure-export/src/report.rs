@@ -554,6 +554,7 @@ pub fn from_text(input: &FromText) -> Result<Report, String> {
             recipes: input.recipes,
             cases: &cases,
             extension: input.extension,
+            bolts: None,
         },
         &budget,
     )?;

@@ -44,6 +44,7 @@ use ohl_core::budget::Budget;
 use ohl_sections::SectionLibrary;
 use ohl_structure_loads::{At, LoadCaseRecipe, LoadTable, Pick};
 use ohl_structures::StructureType;
+use ohl_structures::bolts::BoltLibrary;
 use ohl_structures_fe::{Model, NodalLoad, Pole, PoleLoad};
 
 use crate::{CaseResult, CaseToRun, analyse_one};
@@ -66,6 +67,9 @@ pub struct RunInput<'a> {
     pub cases: &'a [CaseToRun],
     /// The extension the structure stands on (none: as written).
     pub extension: Option<&'a str>,
+    /// The bolt library its connections' bolts are looked up in (none:
+    /// the libraries in `Bolts/` beside it, in `dir`; no `dir`: none).
+    pub bolts: Option<&'a BoltLibrary>,
 }
 
 /// A section the model uses.
@@ -315,7 +319,24 @@ fn model_on(input: &RunInput) -> (Result<Model, String>, Vec<String>) {
                     e.dz.si()
                 ));
             }
-            Model::from_structure_type_extended(input.text, input.sections, input.extension)
+            let beside;
+            let bolts = match (input.bolts, input.dir) {
+                (Some(b), _) => b,
+                (None, Some(dir)) => {
+                    beside = BoltLibrary::beside(dir).0;
+                    &beside
+                }
+                (None, None) => {
+                    beside = BoltLibrary::default();
+                    &beside
+                }
+            };
+            Model::from_structure_type_with_bolts(
+                input.text,
+                input.sections,
+                bolts,
+                input.extension,
+            )
         }
     };
     (model, notes)

@@ -20,7 +20,8 @@
 //!
 //! The details are worked out by the link crate
 //! ([`ohl_structure_link::joint_details`]) and kept until the file or the
-//! libraries change. Not used by the checks yet (stage 4).
+//! libraries change. The end conditions shown are the check's
+//! (`ohl_structures_fe::member_ends`, stage 4.1 and 4.2).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -213,9 +214,12 @@ impl StructureApp {
         };
         ui.label(
             egui::RichText::new(
-                "Shown and worked out only: the checks do not take these yet (stage 4 of the \
-                 joint details). Values in a connection override the member's design data at \
-                 that end.",
+                "The ASCE 10-97 check takes from this table each end's eccentric and restrained \
+                 (as shown) and its bolts, holes and leg bolted for the bolt shear, bearing and \
+                 net section, the weaker end governing; not yet the distances, the plates' own \
+                 checks or the eccentricity. An end without a connection is checked from the \
+                 member's design data, as before. Values in a connection override the member's \
+                 design data at that end.",
             )
             .small()
             .weak(),

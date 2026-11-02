@@ -35,6 +35,7 @@ pub mod design;
 pub mod drawn;
 mod element;
 pub mod links;
+pub mod member_ends;
 pub mod model;
 pub mod pole;
 mod skyline;
@@ -287,6 +288,8 @@ mod bending_tests;
 mod guard_tests;
 #[cfg(test)]
 mod held_limit_tests;
+#[cfg(test)]
+mod member_ends_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]

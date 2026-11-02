@@ -84,6 +84,7 @@ use std::path::Path;
 
 use ohl_core::units::{Angle, Area, Density, Force, Length, SecondMoment, SectionModulus, Stress};
 use ohl_sections::SectionLibrary;
+use ohl_structures::bolts::BoltLibrary;
 use ohl_structures::structures::STRUCTURE_FILE_EXTENSION;
 use serde::Deserialize;
 
@@ -1020,6 +1021,20 @@ impl Model {
         library: &SectionLibrary,
         extension: Option<&str>,
     ) -> Result<Self, String> {
+        Self::from_structure_type_with_bolts(text, library, &BoltLibrary::default(), extension)
+    }
+
+    /// The same, the bolts its connections name (`[[connection]] bolts =
+    /// { bolt = "…" }`) looked up in `bolts` (stage 4 of the joint
+    /// details, 2026-11-02): each member end's connection read into its
+    /// design data ([`crate::design::MemberDesign::ends`],
+    /// [`crate::member_ends`]).
+    pub fn from_structure_type_with_bolts(
+        text: &str,
+        library: &SectionLibrary,
+        bolts: &BoltLibrary,
+        extension: Option<&str>,
+    ) -> Result<Self, String> {
         let mut file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
         if let Some(name) = extension {
             use ohl_structures::LibraryItem;
@@ -1033,13 +1048,14 @@ impl Model {
                 with_extension(&mut file, name, &x);
             }
         }
-        Self::from_structure_table(file, library)
+        Self::from_structure_table(file, library, bolts)
     }
 
     /// The model of a structure file's tables.
     fn from_structure_table(
         mut file: toml::Table,
         library: &SectionLibrary,
+        bolts: &BoltLibrary,
     ) -> Result<Self, String> {
         ohl_structures::on_members::apply_to_table(&mut file)?;
         let mut model = toml::Table::new();
@@ -1075,6 +1091,7 @@ impl Model {
             library,
         )?;
         out.link_points(file.get("point").and_then(toml::Value::as_array))?;
+        crate::member_ends::read_connections(&mut out, &file, bolts)?;
         out.check()?;
         Ok(out)
     }
@@ -1092,15 +1109,37 @@ impl Model {
 
     /// The same; a structure file standing on its extension `extension`
     /// ([`Model::from_structure_type_extended`]; a model file has no
-    /// extensions: refused with one).
+    /// extensions: refused with one). The bolts a structure file's
+    /// connections name are those of the bolt libraries beside it
+    /// (`Bolts/`, [`BoltLibrary::beside`]; a library file that does not
+    /// read is left out, its bolts then said to be in no library).
     pub fn load_extended(
         path: &Path,
         library: &SectionLibrary,
         extension: Option<&str>,
     ) -> Result<Self, String> {
+        Self::load_with_bolts(path, library, None, extension)
+    }
+
+    /// The same, the bolts from `bolts` (none: the bolt libraries beside
+    /// the file).
+    pub fn load_with_bolts(
+        path: &Path,
+        library: &SectionLibrary,
+        bolts: Option<&BoltLibrary>,
+        extension: Option<&str>,
+    ) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         if ohl_core::files::has_extension(path, STRUCTURE_FILE_EXTENSION) {
-            Self::from_structure_type_extended(&text, library, extension)
+            let beside;
+            let bolts = match bolts {
+                Some(b) => b,
+                None => {
+                    beside = BoltLibrary::beside(path.parent().unwrap_or(Path::new("."))).0;
+                    &beside
+                }
+            };
+            Self::from_structure_type_with_bolts(&text, library, bolts, extension)
         } else if let Some(e) = extension {
             Err(format!("a model file has no extension \"{e}\""))
         } else {

@@ -37,8 +37,11 @@
 //! What a connection does not give is taken from the member's
 //! `[member.design]` (the same at both ends) by the structure
 //! application, which shows each value as given, worked out or assumed.
-//! The checks do not read connections yet (stage 4 of the roadmap): a
-//! file with connections computes as one without.
+//! The ASCE 10-97 check reads them (stage 4.1 and 4.2 of the roadmap,
+//! 2026-11-02; `ohl_structures_fe::member_ends`): each end's eccentricity
+//! and restraint, its bolts (a library bolt's strengths) for the bolt
+//! shear, bearing and net section at that end. A member without
+//! connections computes as before.
 //!
 //! References are not refused when they lead nowhere (a member removed
 //! by a generator's rebuild, a joint deleted): [`StructureType::connection_notes`]

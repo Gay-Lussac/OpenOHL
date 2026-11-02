@@ -16,8 +16,10 @@
 //!   drawing only (a pitch, an end distance);
 //! - **not given**: nothing, and nothing assumed.
 //!
-//! Plain data for the structure application; the checks do not read it
-//! (stage 4). A structure below level 3 (no cross-sections, no model)
+//! Plain data for the structure application. Eccentric and restrained are
+//! the check's own ([`ohl_structures_fe::member_ends`], 2026-11-02,
+//! stage 4.1): what is shown is what is checked; what a member end bolts
+//! onto is worked out by the same rule. A structure below level 3 (no cross-sections, no model)
 //! gets the arrivals without profiles, bolts or design data.
 //!
 //! [joint details]: https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md
@@ -27,7 +29,8 @@ use std::collections::BTreeMap;
 use ohl_sections::{SectionLibrary, Shape};
 use ohl_structures::connections::{BoltedLeg, ConnectionKind, TypeConnection};
 use ohl_structures::{LibraryItem, StructureType};
-use ohl_structures_fe::design::{ConnectedLeg, Ends, MemberDesign};
+use ohl_structures_fe::design::{ConnectedLeg, MemberClass, MemberDesign};
+use ohl_structures_fe::member_ends::{self, connected_leg};
 use ohl_structures_fe::model::Model;
 
 /// Where a value comes from.
@@ -303,7 +306,7 @@ pub fn joint_details(
     let mut notes = t.connection_notes();
     // Level 3: the model (design data, sections) and the members' axes and
     // profiles as the exports take them.
-    let (model, export) = match Model::from_structure_type_with(text, library) {
+    let (model, export) = match Model::from_structure_type_with_bolts(text, library, bolts, None) {
         Ok(m) if !m.members.is_empty() => {
             let e = crate::export_structure(text, library, None, &[]).ok();
             (Some(m), e)
@@ -316,6 +319,15 @@ pub fn joint_details(
             (None, None)
         }
     };
+    // Each member's end conditions as the check takes them.
+    let conditions: BTreeMap<&str, member_ends::EndConditions> = model
+        .as_ref()
+        .map(|m| {
+            (0..m.members.len())
+                .map(|k| (m.members[k].id.as_str(), member_ends::end_conditions(m, k)))
+                .collect()
+        })
+        .unwrap_or_default();
     let position: BTreeMap<&str, [f64; 3]> = t
         .nodes
         .iter()
@@ -415,7 +427,18 @@ pub fn joint_details(
         for a in &mut arrivals {
             let c = t.connection(&a.member, &n.id);
             let design = designs.get(a.member.as_str()).map(|d| d.0);
-            condition(a, c, design, &snapshot, &areas, &plates_here, level3, bolts);
+            let ends = conditions.get(a.member.as_str());
+            condition(
+                a,
+                c,
+                design,
+                &snapshot,
+                &areas,
+                &plates_here,
+                level3,
+                bolts,
+                ends,
+            );
             if level3 {
                 place_bolts(a, at, c, &snapshot);
                 a.grip = grip(a, &snapshot, &plates_here);
@@ -453,6 +476,7 @@ fn condition(
     plates: &[&ohl_structures::connections::TypePlate],
     level3: bool,
     bolts: &ohl_structures::bolts::BoltLibrary,
+    ends: Option<&member_ends::EndConditions>,
 ) {
     use Source::*;
     let si = |l: &ohl_core::units::Length| l.si();
@@ -535,21 +559,12 @@ fn condition(
                     },
                     Given,
                 ),
-                None => Valued::none(),
+                // No diameter (a bolt in no library): the member's bolts,
+                // as the check takes them.
+                None => member_bolts(design),
             }
         }
-        (None, Some(b)) => Valued::of(
-            BoltSet {
-                count: b.count,
-                diameter: b.diameter,
-                hole: b.hole,
-                grade: None,
-                bolt: None,
-                drawn: [None; 3],
-            },
-            Member,
-        ),
-        _ => Valued::none(),
+        (None, _) => member_bolts(design),
     };
     let diameter = a.bolts.value.as_ref().map(|b| b.diameter);
     let count = a.bolts.value.as_ref().map_or(0, |b| b.count);
@@ -603,64 +618,45 @@ fn condition(
         (None, Some(p)) => Valued::of(p, Member),
         _ => Valued::none(),
     };
-    // Eccentric: given; the member's (both or neither end); from the leg
-    // bolted; else as the check assumes.
-    let member_ends = |e: Option<Ends>| -> Option<Option<bool>> {
-        match e? {
-            Ends::None => Some(Some(false)),
-            Ends::BothEnds => Some(Some(true)),
-            Ends::OneEnd => Some(None),
+    // Eccentric and restrained: at level 3 as the check takes them
+    // (`ohl_structures_fe::member_ends`: given; the member's; worked out at
+    // an end with a connection; else assumed); below it, what is given here
+    // and what the same rules work out from it.
+    if let Some(e) = ends {
+        a.eccentric = valued(&e.eccentric[a.end]);
+        a.restrained = valued(&e.restrained[a.end]);
+        for (c, what) in [
+            (&e.eccentric[a.end], "eccentric"),
+            (&e.restrained[a.end], "restrained"),
+        ] {
+            if c.value.is_none() {
+                a.notes
+                    .push(format!("the member: one end {what}, which not said"));
+            }
         }
-    };
-    a.eccentric = match c.and_then(|c| c.eccentric) {
-        Some(e) => Valued::of(e, Given),
-        None => match member_ends(design.and_then(|d| d.end_eccentricity)) {
-            Some(Some(e)) => Valued::of(e, Member),
-            m => {
-                if m.is_some() {
-                    a.notes
-                        .push("the member: one end eccentric, which not said".into());
-                }
-                match a.leg.value {
-                    Some(BoltedLeg::Long | BoltedLeg::Short) if a.leg.known() => {
-                        Valued::of(true, WorkedOut)
-                    }
-                    Some(BoltedLeg::Both) if a.leg.known() => Valued::of(false, WorkedOut),
-                    _ if is_angle => Valued::of(true, Assumed),
-                    _ => Valued::none(),
-                }
-            }
-        },
-    };
-    // Restrained: given; the member's; two bolts or more into a stiffer
-    // member or a plate; else not (as the check assumes).
-    a.restrained = match c.and_then(|c| c.restrained) {
-        Some(r) => Valued::of(r, Given),
-        None => match member_ends(design.and_then(|d| d.end_restraint)) {
-            Some(Some(r)) => Valued::of(r, Member),
-            m => {
-                if m.is_some() {
-                    a.notes
-                        .push("the member: one end restrained, which not said".into());
-                }
-                let onto_stiffer = a.onto.value.as_ref().is_some_and(|o| {
-                    plates.iter().any(|p| &p.id == o)
-                        || areas
-                            .get(o)
-                            .zip(areas.get(&a.member))
-                            .is_some_and(|(onto, own)| onto > own)
-                });
-                match a.bolts.value.as_ref() {
-                    Some(b) if a.bolts.known() && b.count >= 2 && onto_stiffer => {
-                        Valued::of(true, WorkedOut)
-                    }
-                    Some(b) if a.bolts.known() && b.count <= 1 => Valued::of(false, WorkedOut),
-                    _ if level3 => Valued::of(false, Assumed),
-                    _ => Valued::none(),
-                }
-            }
-        },
-    };
+    } else {
+        a.eccentric = match c.and_then(|c| c.eccentric) {
+            Some(e) => Valued::of(e, Given),
+            None => match a.leg.value.filter(|_| a.leg.known()) {
+                Some(l) => member_ends::eccentric_from_leg(connected_leg(l))
+                    .map_or(Valued::none(), |e| Valued::of(e, WorkedOut)),
+                None => Valued::none(),
+            },
+        };
+        let onto_plate = a
+            .onto
+            .value
+            .as_ref()
+            .is_some_and(|o| plates.iter().any(|p| &p.id == o));
+        a.restrained = match c.and_then(|c| c.restrained) {
+            Some(r) => Valued::of(r, Given),
+            None => match a.bolts.value.as_ref().filter(|_| a.bolts.known()) {
+                Some(b) => member_ends::restrained_from_bolts(b.count, onto_plate)
+                    .map_or(Valued::none(), |r| Valued::of(r, WorkedOut)),
+                None => Valued::none(),
+            },
+        };
+    }
     // The eccentricity: given, else from the gauge and the section.
     a.eccentricity = match c.and_then(|c| c.eccentricity) {
         Some(e) => Valued::of(e.si(), Given),
@@ -681,42 +677,64 @@ fn condition(
     };
 }
 
+/// The member's own bolts (`[member.design] bolts`), if any.
+fn member_bolts(design: Option<&MemberDesign>) -> Valued<BoltSet> {
+    match design.and_then(|d| d.bolts) {
+        Some(b) => Valued::of(
+            BoltSet {
+                count: b.count,
+                diameter: b.diameter,
+                hole: b.hole,
+                grade: None,
+                bolt: None,
+                drawn: [None; 3],
+            },
+            Source::Member,
+        ),
+        None => Valued::none(),
+    }
+}
+
+/// A condition of the check ([`member_ends::Condition`]) as shown.
+fn valued(c: &member_ends::Condition) -> Valued<bool> {
+    Valued {
+        value: c.value,
+        source: match c.source {
+            member_ends::Source::Given => Source::Given,
+            member_ends::Source::Member => Source::Member,
+            member_ends::Source::WorkedOut => Source::WorkedOut,
+            member_ends::Source::Assumed => Source::Assumed,
+        },
+    }
+}
+
 /// The member that is the joint's leg for `a`: the other arrivals of
 /// class leg, else those within 30° of vertical; the largest section,
 /// else the most nearly in line with `a` when `a` is one of them (a
 /// splice), else the first.
 fn leg_of(a: &Arrival, all: &[Arrival], areas: &BTreeMap<String, f64>) -> Option<String> {
-    let others: Vec<&Arrival> = all.iter().filter(|b| b.member != a.member).collect();
-    let mut legs: Vec<&Arrival> = others
+    let list: Vec<member_ends::Arriving> = all
         .iter()
-        .copied()
-        .filter(|b| b.class.as_deref() == Some("leg"))
-        .collect();
-    if legs.is_empty() {
-        legs = others
-            .iter()
-            .copied()
-            .filter(|b| b.direction[2].abs() > 30f64.to_radians().cos())
-            .collect();
-    }
-    let a_is_leg = a.class.as_deref() == Some("leg")
-        || (a.class.is_none() && a.direction[2].abs() > 30f64.to_radians().cos());
-    if a_is_leg {
-        // The leg continuing through the joint.
-        return legs
-            .iter()
-            .max_by(|x, y| {
-                let k = |b: &Arrival| -dot(a.direction, b.direction);
-                k(x).total_cmp(&k(y))
-            })
-            .map(|b| b.member.clone());
-    }
-    legs.iter()
-        .max_by(|x, y| {
-            let k = |b: &Arrival| areas.get(&b.member).copied().unwrap_or(0.0);
-            k(x).total_cmp(&k(y))
+        .map(|b| member_ends::Arriving {
+            direction: b.direction,
+            class: b.class.as_deref().and_then(class_of),
+            area: areas.get(&b.member).copied().unwrap_or(0.0),
         })
-        .map(|b| b.member.clone())
+        .collect();
+    let own = all.iter().position(|b| b.member == a.member)?;
+    member_ends::joint_leg(own, &list).map(|k| all[k].member.clone())
+}
+
+/// A member class from its name.
+fn class_of(name: &str) -> Option<MemberClass> {
+    [
+        MemberClass::Leg,
+        MemberClass::Bracing,
+        MemberClass::Redundant,
+        MemberClass::Crossing,
+    ]
+    .into_iter()
+    .find(|c| c.as_str() == name)
 }
 
 fn bolted_leg(l: ConnectedLeg) -> BoltedLeg {

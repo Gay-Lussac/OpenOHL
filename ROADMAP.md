@@ -843,7 +843,14 @@ Six stages, the questions per stage and per detail level:
 - [x] A bolt library (`.ohlb`, `Bolts/` beside the structure), imported
   and exported; bolts drawn with head and nut, the members seated leg on
   leg in the drawings (2026-11-02)
-- [ ] Stage 4 — the checks take their conditions from the joints
+- [x] Stage 4.1 and 4.2 — the ASCE 10-97 check takes each end's
+  eccentricity and restraint (given, the member's, worked out at an end
+  with a connection, assumed) and its bolts (a library bolt's strengths)
+  for the bolt shear, bearing and net section, the weaker end governing;
+  a tower without connections unchanged; `ohl structures fe --bolts`
+  (2026-11-02)
+- [ ] Stage 4.3 to 4.6 — buckling lengths from what braces a member,
+  the FE model's options, the joints' own checks, weight and quantities
 - [ ] Stage 5 — exports with bolts and plates, validation
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that

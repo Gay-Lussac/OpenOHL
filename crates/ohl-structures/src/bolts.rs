@@ -45,6 +45,8 @@ pub const BOLT_FILE_EXTENSION: &str = "ohlb";
 pub const BOLT_FILE_FORMAT: &str = "ohl-bolts";
 /// The newest version read.
 pub const BOLT_FILE_VERSION: u32 = 1;
+/// The folder of bolt libraries beside a structure.
+pub const BOLTS_FOLDER: &str = "Bolts";
 
 /// A bolt of a library.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -210,6 +212,13 @@ impl BoltLibrary {
             }
         }
         (lib, errors)
+    }
+
+    /// The bolt libraries of the structures in folder `dir`: those in its
+    /// [`BOLTS_FOLDER`] ([`Self::load_all`]; none there: an empty
+    /// library).
+    pub fn beside(dir: &Path) -> (Self, Vec<String>) {
+        Self::load_all(&[dir.join(BOLTS_FOLDER)])
     }
 
     /// The bolt `id`.

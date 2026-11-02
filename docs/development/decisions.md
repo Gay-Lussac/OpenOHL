@@ -10,6 +10,43 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Joint details of towers, stages 4.1 and 4.2: the check takes its
+conditions from the joints (owner, 2026-11-02: "Go with … B"; built, in
+active development, not approved yet)**
+
+- Each member end's eccentric and restrained: given at the end; else the
+  member's flags (*one end*: the end the other end's given value leaves);
+  else worked out — **only at an end with a `[[connection]]`** — from the
+  leg bolted (one leg: eccentric; both: not) and the bolts (two or more
+  onto a member of larger area or onto a plate: restrained; one: not);
+  else assumed (eccentric, not restrained). The two ends give the
+  none / one end / both ends of ASCE 10-97's curves. The rules moved
+  from OHL-Structure's display into the core
+  (`ohl_structures_fe::member_ends`): the Joint details table shows what
+  the check takes. A tower without connection data is checked as before
+  (the owner's "yes" of the same day); so an end without a connection
+  now shows its eccentric and restrained as the member's or assumed
+  where the display worked them out from the member's data before.
+- Bolt shear, bearing and net section at each end: the end's bolts over
+  the member's (a hole and shear capacity of the member's only for bolts
+  of the same diameter), a library bolt's `shear_capacity` (threads in),
+  `shear_capacity_shank` (threads out, `threads_in_shear = false`) and
+  `ultimate`, the holes in one section from the gauge lines (staggering
+  not counted, on the safe side) or the bolt points; the weaker end
+  governs, named (`bolt shear at N2`). Threads out without a capacity for
+  them: the threads-in value, said. The end and edge distances are not
+  used yet (the standard's rules for them to be taken from its text);
+  bearing stays 1.5 f_u d t on the member's leg.
+- What governs says per end, for a member with connections, where each
+  condition comes from (`[joints: …]`); the capacity note counts them.
+- The bolt library: `Bolts/` beside a structure read by path (the line's
+  structure checks too), `ohl structures fe --bolts` (default `Bolts/`
+  next to the file), OHL-Structure's run with its loaded bolt library.
+  A bolt in no library: said, the member's bolts taken at that end (the
+  table shows the same). The self-weight factor is unchanged.
+- Member-capacity plugins still receive the member's design data only
+  (the plugin interface is unchanged).
+
 **Joint details of towers, stage 3: defining joints (owner, 2026-11-02:
 "Go ahead with the next stage"; built, in active development, not
 approved yet)**

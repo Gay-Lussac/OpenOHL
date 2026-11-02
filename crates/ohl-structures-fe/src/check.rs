@@ -76,6 +76,13 @@ pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
                      what governs)"
                 ));
             }
+            let joints = usage.iter().filter(|u| u.governs.contains(JOINTS)).count();
+            if joints > 0 {
+                text.push_str(&format!(
+                    "; {joints} member(s) with end conditions from their connections (\"{JOINTS} \
+                     …]\")"
+                ));
+            }
             if simple > 0 {
                 text.push_str(&format!(
                     "; {simple} member(s) without a yield strength: {SIMPLE}"
@@ -89,6 +96,12 @@ pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
 /// The mark before what a capacity method assumed for a member's missing
 /// design data, in what governs: `[assumed: length ratios 1, …]`.
 pub const ASSUMED: &str = "[assumed:";
+
+/// The mark before the conditions a member's ends take from their
+/// connections, per end, in what governs: `[joints: N2 eccentric (worked
+/// out: one leg bolted), restrained (given); N4 …]`
+/// ([`crate::asce10::Capacity::joints`]).
+pub const JOINTS: &str = "[joints:";
 
 /// The mark of a member checked by the simple check under ASCE 10-97
 /// because its section has no yield strength.
@@ -217,6 +230,7 @@ fn usage_of(
                     })
             });
             let mut assumed: &[String] = &[];
+            let mut joints: &[String] = &[];
             let mut extra = String::new();
             if !external
                 && model.analysis.capacity == CapacityMethod::Asce10
@@ -236,6 +250,7 @@ fn usage_of(
                     )),
                     (None, Some((cap, what))) if m.kind != MemberKind::Cable => {
                         assumed = asce.as_ref().map_or(&[][..], |c| &c.tension_assumed[..]);
+                        joints = asce.as_ref().map_or(&[][..], |c| &c.joints[..]);
                         Some((
                             n / (strength * cap),
                             format!("tension {:.1} kN of {:.1} kN ({what})", kn(n), kn(*cap)),
@@ -289,6 +304,7 @@ fn usage_of(
                 && let Some((cap, what)) = &c.compression
             {
                 assumed = &c.compression_assumed;
+                joints = &c.joints;
                 if let Some(l) = &c.limit {
                     extra = format!("; {l}");
                 }
@@ -323,6 +339,9 @@ fn usage_of(
             };
             let axial = axial.map(|(u, mut words)| {
                 words.push_str(&extra);
+                if !joints.is_empty() {
+                    words.push_str(&format!(" {JOINTS} {}]", joints.join("; ")));
+                }
                 if !assumed.is_empty() {
                     words.push_str(&format!(" {ASSUMED} {}]", assumed.join(", ")));
                 }

@@ -114,13 +114,16 @@ fn each_value_says_where_it_comes_from() {
         let s: f64 = (0..3).map(|k| d[k] * a.direction[k]).sum();
         assert!((s - along).abs() < 1e-9, "{s}");
     }
-    // The diagonal's other end: the member's one bolt, the leg assumed.
+    // The diagonal's other end: the member's one bolt, the leg assumed;
+    // no connection there, so nothing worked out: not restrained, assumed
+    // (as the check takes it, ohl_structures_fe::member_ends).
     let n4 = d.joint("N4").unwrap();
     let b = &n4.arrivals[0];
     assert_eq!(b.bolts.source, Source::Member);
     assert_eq!(b.leg.source, Source::Assumed);
     assert_eq!(b.restrained.value, Some(false));
-    assert_eq!(b.restrained.source, Source::WorkedOut);
+    assert_eq!(b.restrained.source, Source::Assumed);
+    assert_eq!(b.eccentric.source, Source::Assumed);
     assert_eq!(b.pitch.source, Source::Assumed);
     // The legs at N2 have nothing of their own: partly assumed.
     assert_eq!(n2.completeness, Completeness::PartlyAssumed);
@@ -304,7 +307,7 @@ design = { class = "bracing" }
 
 /// A bolt of a library: its diameter, hole, grade and drawn sizes from
 /// the library, what the connection types overriding them; an id no
-/// library has: said, no diameter.
+/// library has: said, the member's bolts.
 #[test]
 fn a_library_bolt_is_taken_from_the_library() {
     let bolts = ohl_structures::bolts::BoltLibrary::load(
@@ -342,7 +345,8 @@ fn a_library_bolt_is_taken_from_the_library() {
         .map(|k| (c[k] - p[k] - along * a.bolt_axis[k]).powi(2))
         .sum();
     assert!((r2.sqrt() - 0.025 / 3f64.sqrt()).abs() < 1e-9);
-    // Not in the library: said, the bolts unknown.
+    // Not in the library: said, the member's bolts taken (as the check
+    // takes them).
     let d = joint_details(&text, &library(), &Default::default()).unwrap();
     let a = d
         .joint("N2")
@@ -351,6 +355,7 @@ fn a_library_bolt_is_taken_from_the_library() {
         .iter()
         .find(|a| a.member == "D1")
         .unwrap();
-    assert!(a.bolts.value.is_none());
+    assert_eq!(a.bolts.source, Source::Member);
+    assert_eq!(a.bolts.value.as_ref().unwrap().count, 1);
     assert!(a.notes.iter().any(|n| n.contains("in no bolt library")));
 }

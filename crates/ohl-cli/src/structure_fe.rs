@@ -57,6 +57,11 @@ pub struct FeArgs {
     /// looked up there first, then in the model's [[section]] tables.
     #[arg(long)]
     sections: Option<PathBuf>,
+    /// Bolt library (.ohlb file or folder): the bolts the structure's
+    /// connections name (`bolts = { bolt = "…" }`); default: the `Bolts`
+    /// folder next to the structure file.
+    #[arg(long)]
+    bolts: Option<PathBuf>,
     /// Member wind: factored wind pressure, Pa, on the members whose
     /// cross-section comes from the cross-section library (their profiles' widths,
     /// the model's drag factor), added to every case.
@@ -208,7 +213,21 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         Some(p) => ohl_sections::SectionLibrary::load(p)?,
         None => ohl_sections::SectionLibrary::default(),
     };
-    let mut model = Model::load_extended(&args.model, &sections, args.extension.as_deref())?;
+    let (bolts, errors) = match &args.bolts {
+        Some(p) => ohl_structures::bolts::BoltLibrary::load_all(std::slice::from_ref(p)),
+        None => ohl_structures::bolts::BoltLibrary::beside(
+            args.model.parent().unwrap_or(Path::new(".")),
+        ),
+    };
+    if !errors.is_empty() {
+        return Err(format!("bolt library: {}", errors.join("; ")));
+    }
+    let mut model = Model::load_with_bolts(
+        &args.model,
+        &sections,
+        Some(&bolts),
+        args.extension.as_deref(),
+    )?;
     if args.linear {
         model.analysis.nonlinear = false;
     }
@@ -476,6 +495,7 @@ fn plugin_capacities(
             compression_assumed: r.notes.clone(),
             tension_assumed: r.notes,
             limit: None,
+            joints: Vec::new(),
         })
         .collect())
 }

@@ -514,8 +514,9 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
 
 ## Joint details (towers)
 
-*2026-11-02, stages 0 to 3 of the [joint details](../development/joint-details.md);
-built, in active development, not approved yet.*
+*2026-11-02, stages 0 to 3, 4.1 and 4.2 of the
+[joint details](../development/joint-details.md); built, in active
+development, not approved yet.*
 
 **Geometry › Structure kind ›** lattice tower, portal, pole or other (the
 menu stays open). A lattice tower or a portal has joint details; a pole
@@ -551,9 +552,11 @@ the **Joint view**, a pane of its own opened on the right of the 3D view
   - **the member's** design data, in italics (both ends alike);
   - **worked out** (blue): onto the joint's leg (the members of class
     leg, else those within 30° of vertical; the largest, or the one in
-    line for a leg); eccentric from one leg bolted; restrained from two
-    bolts or more into a stiffer member or a plate (one bolt: not); the
-    eccentricity from the gauge and the section;
+    line for a leg); at an end with a connection, eccentric from one leg
+    bolted (both legs: not) and restrained from two bolts or more into a
+    stiffer member or a plate (one bolt: not) — an end without a
+    connection keeps the member's flags or the assumptions, as the check
+    does; the eccentricity from the gauge and the section;
   - **assumed** (orange): as the checks assume when nothing is given
     (one leg bolted, the ends eccentric, not restrained), or for the
     drawing only (gauges evenly across the leg, a pitch of three and an
@@ -616,9 +619,25 @@ directions (`orientation = "y-x+"`…) for a true picture.
 A joint is **complete** when every member end's condition is given, the
 member's or worked out; **partly assumed** when some of it is assumed;
 **no connection data** when no end has any. Below level 3 the panel
-lists the members meeting at the joint only. **The checks do not take
-these values yet** (stage 4 of the roadmap): what is shown changes no
-result.
+lists the members meeting at the joint only.
+
+**What the check takes from the table** (stages 4.1 and 4.2,
+2026-11-02): the ASCE 10-97 member check takes each end's **eccentric**
+and **restrained** exactly as the table shows them (given, the
+member's, worked out, assumed — the rules are the check's own), the two
+ends together choosing its slenderness curve; and at each end the
+**bolts** (count, diameter, hole, shear planes, a library bolt's shear
+capacity with the threads in or out of the shear plane and its
+strength), the **holes** in one section (the gauge lines) and the **leg
+bolted**, for the bolt shear, bearing and net section — the weaker end
+governs. The end and edge distances, the pitch, the plates' own checks
+and the eccentricity's value are shown but not used yet. A member with
+no connection is checked from its design data as before. In the **FE
+results**, what governs a member with connections says per end where
+each condition comes from (`[joints: N2 eccentric (worked out: one leg
+bolted), restrained (worked out: 2 bolts onto L2); N4 …]`) and names
+the end that governs (`bolt shear at N2`); the run takes the bolts of
+the bolt libraries beside the structure (`Bolts/`).
 
 ## Load cases
 

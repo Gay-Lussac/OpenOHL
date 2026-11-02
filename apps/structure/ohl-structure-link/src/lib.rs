@@ -863,7 +863,8 @@ pub type CaseRun = (String, Result<CaseResult, String>);
 /// The finite-element model of `structure`: its own members, or the
 /// `model = "….ohlfe"` it names (beside the file, in `dir`); `text` is the
 /// structure file's text. A member's section is looked up in `sections`
-/// first.
+/// first, the bolts its connections name in the bolt libraries beside it
+/// (`Bolts/` in `dir`).
 fn model_of(
     structure: &StructureType,
     text: &str,
@@ -872,7 +873,13 @@ fn model_of(
 ) -> Result<Model, String> {
     match &structure.model {
         Some(file) => Model::load_with(&dir.unwrap_or(Path::new(".")).join(file), sections),
-        None => Model::from_structure_type_with(text, sections),
+        None => Model::from_structure_type_with_bolts(
+            text,
+            sections,
+            &dir.map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
+                .unwrap_or_default(),
+            None,
+        ),
     }
 }
 

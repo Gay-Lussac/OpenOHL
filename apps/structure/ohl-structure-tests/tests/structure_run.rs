@@ -105,6 +105,7 @@ fn the_case_is_solved_on_the_extension_chosen() {
                 recipes: &recipes,
                 cases: &cases,
                 extension,
+                bolts: None,
             },
             &default_budget(),
         )
@@ -150,6 +151,7 @@ fn the_case_is_solved_on_the_extension_chosen() {
             recipes: &recipes,
             cases: &cases,
             extension: Some("+9"),
+            bolts: None,
         },
         &default_budget(),
     );
@@ -206,6 +208,7 @@ fn the_pole_check_of_the_line() {
                 recipes: &recipes,
                 cases: &cases,
                 extension: None,
+                bolts: None,
             },
             &default_budget(),
         )
@@ -330,6 +333,7 @@ points = ["A1"]
             recipes: &recipes,
             cases: &cases,
             extension: None,
+            bolts: None,
         },
         &default_budget(),
     )
