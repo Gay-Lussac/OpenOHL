@@ -19,10 +19,13 @@
 //! p_jump(x) = p_iced(x) + k · Δ(x)
 //! ```
 //!
-//! k = 1 is the bare position at rest; a published rebound factor above 1
-//! the overshoot. **No factor is built in**: the rule's `factor` is
-//! required and is to be taken from a published source the user designs
-//! to (see the theory page, `docs/theory/ice-shedding.md`).
+//! k = 1 is the bare position at rest, above 1 the overshoot. The rule's
+//! `factor` defaults to [`DEFAULT_FACTOR`] (2: the undamped rebound of
+//! an elastic system whose load is removed at once — an upper bound from
+//! mechanics, not a published factor; owner 2026-11-02: "keep a logical
+//! rebound factor for now, will be decided later … can be changed as a
+//! parameter"); a rule may give its own (see the theory page,
+//! `docs/theory/ice-shedding.md`).
 //!
 //! The static rise, by the rule's `shedding`:
 //!
@@ -63,6 +66,16 @@ use crate::checks::{Wire, wires_of};
 use crate::geometry::{P3, closest_between_segments, distance};
 use crate::rules::{PairVoltage, RawRequirement, Requirement};
 use crate::tension::TensionTargets;
+
+fn default_factor() -> f64 {
+    DEFAULT_FACTOR
+}
+
+/// The rebound factor when a rule gives none: 2, the undamped rebound of
+/// an elastic system whose load is removed at once (it swings to twice its
+/// static displacement) — an upper bound from mechanics, conservative,
+/// not a published factor; to be decided by the owner (2026-11-02).
+pub const DEFAULT_FACTOR: f64 = 2.0;
 
 /// How the jump is found (owner, 2026-11-02: the simplified method now; a
 /// dynamic time-domain solve may come later beside it).
@@ -153,8 +166,8 @@ pub struct IceSheddingRule {
     pub method: Method,
     /// Which spans shed.
     pub shedding: Shedding,
-    /// The rebound factor k (above 0; required: from a published source,
-    /// none built in; 0: not set).
+    /// The rebound factor k (above 0; [`DEFAULT_FACTOR`] when the rule
+    /// gives none).
     pub factor: f64,
     /// The clearance to keep between the jumped wire and each other wire.
     pub distance: Requirement,
@@ -175,7 +188,7 @@ impl IceSheddingRule {
             calculation: None,
             method: Method::Simplified,
             shedding: Shedding::One,
-            factor: 0.0,
+            factor: DEFAULT_FACTOR,
             distance: Requirement::Fixed(0.0),
             pair_voltage: PairVoltage::Higher,
             targets: TensionTargets::default(),
@@ -195,10 +208,7 @@ impl IceSheddingRule {
     /// What is wrong with it (none: nothing).
     pub fn problem(&self) -> Option<String> {
         if !(self.factor.is_finite() && self.factor > 0.0) {
-            return Some(format!(
-                "\"{}\": set the rebound factor (from a published source)",
-                self.name
-            ));
+            return Some(format!("\"{}\": a rebound factor above 0", self.name));
         }
         if let Some(e) = self.distance.problem() {
             return Some(format!("\"{}\": {e}", self.name));
@@ -294,6 +304,7 @@ pub(crate) struct RawIceSheddingRule {
     method: Option<String>,
     #[serde(default)]
     shedding: Option<String>,
+    #[serde(default = "default_factor")]
     factor: f64,
     distance: RawRequirement,
     #[serde(default)]
@@ -1124,7 +1135,7 @@ mod tests {
     }
 
     /// A rule file with ice shedding rules reads and writes them back;
-    /// the factor and the distance are required.
+    /// the distance is required, the factor defaults to 2.
     #[test]
     fn ice_shedding_rules_in_a_rule_file() {
         let text = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"i\"\n\
@@ -1147,9 +1158,17 @@ mod tests {
         assert!(set.is_for(crate::rules::PresetCheck::IceShedding));
         let back = RuleSet::parse(&set.to_toml()).unwrap();
         assert_eq!(back.ice_shedding_rules, set.ice_shedding_rules);
+        // No factor given: the default, 2.
+        let none = RuleSet::parse(
+            "format = \"ohl-clearance-rules\"\nversion = 1\n[[ice_shedding_rule]]\nname = \"d\"\n\
+             distance = \"1 m\"\n",
+        )
+        .unwrap();
+        assert_eq!(none.ice_shedding_rules[0].factor, DEFAULT_FACTOR);
+        assert_eq!(DEFAULT_FACTOR, 2.0);
+        assert!(none.ice_shedding_rules[0].problem().is_none());
         for bad in [
             "factor = 0.0\ndistance = \"1 m\"",
-            "distance = \"1 m\"",
             "factor = 1.0",
             "factor = 1.0\ndistance = \"0 m\"",
             "factor = 1.0\ndistance = \"1 m\"\nshedding = \"some\"",

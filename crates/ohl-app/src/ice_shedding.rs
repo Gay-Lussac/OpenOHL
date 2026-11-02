@@ -428,9 +428,10 @@ impl IceSheddingWindow {
                              iced position. One span shedding alone (the default) holds the \
                              span's iced tension — the bare wire rises the most (conservative); \
                              every span shedding solves the line in the bare case. The other \
-                             wires keep their ice. No factor is built in: take it from the \
-                             published source you design to. Built, in active development, not \
-                             approved yet.",
+                             wires keep their ice. The rebound factor is 2 when the rule gives \
+                             none: the undamped rebound of a load removed at once, an upper bound \
+                             from mechanics, not a published factor (to be decided); a rule may \
+                             give its own. Built, in active development, not approved yet.",
                         );
                         check_ui::how_computed(
                             ui,
@@ -875,7 +876,7 @@ fn rule_fields(
                 changed |= resp.drag_stopped() || resp.lost_focus();
                 if r.factor <= 0.0 {
                     ui.label(
-                        egui::RichText::new("set the factor (from a published source)")
+                        egui::RichText::new("a factor above 0 (2 by default)")
                             .color(ui.visuals().warn_fg_color),
                     );
                 }

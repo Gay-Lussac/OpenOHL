@@ -1212,7 +1212,8 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `ice_shedding::Method`), `shedding` (`one`, the default: each span
   alone, its iced tension held; `all`: every span of the wire, the bare
   case solved — `ice_shedding::Shedding`), `factor` (the rebound factor,
-  **required**, > 0; no default), `distance` (required, as a rule file
+  > 0; `ice_shedding::DEFAULT_FACTOR` = 2 when not given, since
+  2026-11-02), `distance` (required, as a rule file
   writes a distance: fixed, `by_voltage` or a formula; above 0),
   `pair_voltage` (`higher` default, `sum`, `difference`), `targets` (the
   wires that shed, as the tension rules') — read as

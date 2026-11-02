@@ -30,12 +30,18 @@ with \\( k \\) the rule's **rebound factor**: \\( k = 1 \\) is the bare
 wire at rest, \\( k > 1 \\) its overshoot. The jump reported is the
 largest \\( k\,\Delta \\) over the span.
 
-**No factor is built in.** The factor is a required value of the rule,
-to be taken from a published method; a published factor must be read
-with its own definition (what it multiplies — here the static rise
-between the iced and the bare position at rest, both with the same
-supports) before it is typed in. The repository's examples use invented
-factors, labelled as such.
+**The default factor: 2** (owner, 2026-11-02: "keep a logical rebound
+factor for now, will be decided later … can be changed as a
+parameter"). When a load is removed at once from an undamped elastic
+system, it swings about its new rest position with the amplitude of the
+change: its farthest point is twice the static displacement. A wire is
+damped (by the air, its strands, its supports) and its spans exchange
+length, so it rises less: **2 is an upper bound from mechanics, a
+conservative assumption, not a published factor.** A rule may give its
+own `factor`; a published one must be read with its own definition
+(what it multiplies — here the static rise between the iced and the
+bare position at rest, both with the same supports) before it is typed
+in. The repository's examples use the default.
 
 ### Sources
 

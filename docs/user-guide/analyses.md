@@ -115,7 +115,8 @@ cases = ["glaze ice"]       # the iced cases (none: every case with ice)
 # bare = "-5 °C bare"       # the bare case (default: the iced case without its ice)
 # shedding = "all"          # one (default) or all
 # calculation = "creep-fe"  # how the wires are solved (default: each section's own)
-factor = 1.5                # the rebound factor k — REQUIRED, from a published source
+factor = 2.0                # the rebound factor k — optional, 2 by default (an upper
+                            # bound from mechanics, to be decided; give a published one)
 distance = "2 m"            # or { by_voltage = [[110, "1 m"], [245, "2 m"]] }
 # pair_voltage = "higher"   # higher (default), sum or difference
 # targets = { circuits = ["North"] }   # the wires that shed (default: every wire)

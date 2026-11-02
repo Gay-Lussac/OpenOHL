@@ -52,7 +52,8 @@ fn ohl_ice_shedding_writes_every_pair_and_says_which_fail() {
     let margin = |r: &Vec<&str>| r[13].parse::<f64>().unwrap();
     assert!(rows.windows(2).all(|w| margin(&w[0]) <= margin(&w[1])));
     // A span shedding alone rises more than every span shedding (the
-    // tension held: the conservative case), the jump 1.5 × the rise.
+    // tension held: the conservative case), the jump 2 × the rise (the
+    // default rebound factor: the example gives none).
     let rise = |rule: &str, section: &str, span: &str| -> f64 {
         rows.iter()
             .find(|r| r[0].starts_with(rule) && r[3] == section && r[4] == span)
@@ -63,7 +64,7 @@ fn ohl_ice_shedding_writes_every_pair_and_says_which_fail() {
     assert!(rise("One span", "S1", "1") > rise("Every span", "S1", "1"));
     for r in &rows {
         let (rise, jump): (f64, f64) = (r[8].parse().unwrap(), r[9].parse().unwrap());
-        assert!((jump - 1.5 * rise).abs() < 2e-3, "{r:?}");
+        assert!((jump - 2.0 * rise).abs() < 2e-3, "{r:?}");
         assert_eq!(r[2], "glaze ice without ice");
     }
     // A distance no pair keeps: status 1.

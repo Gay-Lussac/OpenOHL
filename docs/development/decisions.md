@@ -150,11 +150,14 @@ development, not approved yet)**
   distance. `[[ice_shedding_rule]]` in the rule file, `ohl
   ice-shedding`, Checks › Ice shedding…, the 3D layer of the jumped
   spans, runs saved in Performed checks.
-- The rebound factor is a **required** value of the rule, no default:
-  no ice-shedding method with coefficients was found in the reference
-  documents at hand (CIGRE TB 324 covers the static states only); the
-  theory page names published studies to take it from, without their
-  numbers.
+- The rebound factor: no ice-shedding method with coefficients was found
+  in the reference documents at hand (CIGRE TB 324 covers the static
+  states only); the theory page names published studies, without their
+  numbers. Owner, the same day: "keep a logical rebound factor for now,
+  will be decided later … can be changed as a parameter": **2 by
+  default** (the undamped rebound of a load removed at once — an upper
+  bound from mechanics, conservative, not a published factor), a rule's
+  `factor` overriding it; the examples and tests use the default.
 - Which spans shed: one span alone by default — its iced horizontal
   tension held (a conservative assumption: the largest rise) —, or every
   span of the wire (`shedding = "all"`: the line solved in the bare case,

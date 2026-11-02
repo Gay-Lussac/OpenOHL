@@ -178,7 +178,9 @@ spans and runs saved in Performed checks; see [Ice
 shedding](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/ice-shedding.md).
 One span shedding holds its iced tension (conservative); every span
 shedding solves the bare case. No rebound factor was found in the
-reference documents at hand: it is the user's, from a published source.
+reference documents at hand: 2 by default (the undamped rebound, an
+upper bound from mechanics; owner 2026-11-02: to be decided later), a
+rule may give its own.
 Still open: the dynamic time-domain solve (a second method beside the
 simplified one).*
 
