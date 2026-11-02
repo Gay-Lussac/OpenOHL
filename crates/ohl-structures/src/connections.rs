@@ -24,6 +24,10 @@
 //! # bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]  # instead of
 //! #   the layout: along the member from the joint, across from the heel
 //! # eccentric = true / restrained = false   # given instead of worked out
+//! # cut = "40 mm"   # where the steel stops from the work point (none:
+//! #   worked out so it fits); the axis still runs to the work point
+//! # shift = "15 mm"  # the end moved sideways to fit (none: 0); its force
+//! #   then passes beside the work point: an eccentricity, analysed
 //!
 //! [[plate]]
 //! id = "G1"
@@ -193,6 +197,36 @@ pub struct TypeConnection {
     /// The eccentricity, given (none: from the gauge and the section).
     #[serde(default)]
     pub eccentricity: Option<Length>,
+    /// Where the member's steel stops, from the joint's work point along
+    /// the member (none: worked out so it fits — before the outstanding
+    /// leg of what it bolts onto). The member's axis still runs to the
+    /// work point: the forces meet there (owner 2026-11-02).
+    #[serde(default)]
+    pub cut: Option<Length>,
+    /// A sideways shift of the member's end, so it fits (on a gusset plate,
+    /// beside another member): across the member, towards what it bolts
+    /// onto (the onto member's direction from the joint, else the joint's
+    /// leg, less its part along the member: [`shift_direction`]), m;
+    /// negative the other way. None: 0 — the axis runs to the work point.
+    /// Its force then passes beside the work point: an eccentricity the
+    /// analysis takes into account (owner 2026-11-02).
+    #[serde(default)]
+    pub shift: Option<Length>,
+}
+
+/// The direction a member end's `shift` is measured in: across the
+/// member (`along`, unit, from the joint), towards `towards` (unit, from
+/// the joint: the direction of what it bolts onto), its part along the
+/// member removed. None: they run in line.
+pub fn shift_direction(along: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
+    let d = along[0] * towards[0] + along[1] * towards[1] + along[2] * towards[2];
+    let u = [
+        towards[0] - d * along[0],
+        towards[1] - d * along[1],
+        towards[2] - d * along[2],
+    ];
+    let l = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+    (l > 1e-6).then(|| [u[0] / l, u[1] / l, u[2] / l])
 }
 
 /// A gusset plate at a joint (`[[plate]]`).
@@ -303,12 +337,13 @@ impl StructureType {
                     return Err(format!("{at}: one gauge per gauge line"));
                 }
             }
-            let sizes = [c.pitch, c.end_distance, c.edge_distance, c.eccentricity];
+            let sizes = [c.pitch, c.end_distance, c.edge_distance, c.eccentricity, c.cut];
             if sizes
                 .iter()
                 .flatten()
                 .chain(&c.gauges)
                 .any(|v| v.si() < 0.0)
+                || c.shift.is_some_and(|s| !s.si().is_finite())
             {
                 return Err(format!("{at}: distances not below 0"));
             }

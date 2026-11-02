@@ -17,7 +17,7 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 use crate::edits::{array, next_id, raise_version};
 
 /// The fields of a connection a user gives (not its member and joint).
-pub const FIELDS: [&str; 13] = [
+pub const FIELDS: [&str; 15] = [
     "kind",
     "onto",
     "leg",
@@ -31,6 +31,8 @@ pub const FIELDS: [&str; 13] = [
     "eccentric",
     "restrained",
     "eccentricity",
+    "cut",
+    "shift",
 ];
 
 /// The fields a preset or a copy to other members carries: all but
