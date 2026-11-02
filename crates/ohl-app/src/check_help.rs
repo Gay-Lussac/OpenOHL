@@ -1490,6 +1490,49 @@ pub fn galloping_ellipses(ui: &mut egui::Ui) {
     text(&p, w1 + egui::vec2(-46.0, -26.0), "b from sag", ink.faint);
 }
 
+/// The ice shedding jump (Ice shedding): seen from the side, the wire
+/// above iced, the lower wire iced, bare at rest (dashed) and jumped by
+/// k × the rise; the clearance c from the jumped wire to the wire above.
+pub fn ice_jump(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: ice shedding jump",
+        "From the side: the wire above keeps its ice; the lower wire iced (solid), bare at rest \
+         (dashed, Δ above it at mid-span) and jumped (k Δ above it); the clearance c is the \
+         shortest distance from the jumped wire to the wire above.",
+    );
+    let (a, b) = (
+        egui::pos2(r.left() + 10.0, r.top() + 22.0),
+        egui::pos2(r.right() - 10.0, r.top() + 22.0),
+    );
+    let above = sag_line(
+        egui::pos2(a.x, a.y - 14.0),
+        egui::pos2(b.x, b.y - 14.0),
+        34.0,
+    );
+    p.add(egui::Shape::line(above, egui::Stroke::new(1.4, ink.faint)));
+    p.add(egui::Shape::line(
+        sag_line(a, b, 60.0),
+        egui::Stroke::new(1.6, ink.wire),
+    ));
+    let bare = sag_line(a, b, 44.0);
+    for w in bare.windows(2).step_by(2) {
+        p.line_segment([w[0], w[1]], egui::Stroke::new(1.0, ink.line));
+    }
+    p.add(egui::Shape::line(
+        sag_line(a, b, 30.0),
+        egui::Stroke::new(1.6, ink.key),
+    ));
+    let m = (a.x + b.x) / 2.0;
+    p.line_segment(
+        [egui::pos2(m, a.y + 30.0), egui::pos2(m, a.y + 20.0)],
+        egui::Stroke::new(1.2, ink.key),
+    );
+    text(&p, egui::pos2(m + 4.0, a.y + 16.0), "c", ink.key);
+    text(&p, egui::pos2(m + 4.0, a.y + 46.0), "k Δ", ink.key);
+}
+
 /// The as-built fit (As-built wires): the LiDAR points of a wire, the
 /// catenary fitted to them, and the model's wire; the sag difference at
 /// mid-span.

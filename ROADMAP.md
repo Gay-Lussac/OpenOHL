@@ -46,7 +46,8 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 **Next up** (2026-10-25): the broken-wire case (O9), local winds per
 span (O15), the sheave model for sections in the blocks and the lyre
 pylons' risers are built (in active development, not approved yet);
-next background maps in the project (O16). Still open: O13 (the conductor jump, to be evaluated), the
+next background maps in the project (O16). Still open: O13's dynamic method (the simplified one is built,
+2026-11-02), the
 jumpers' swing band margin (left to the owner, Phase 4) and the items
 not built in the record below (`[ ]`).
 
@@ -166,6 +167,20 @@ or several). Reference data to come from published sources, not from
 memory.
 > **Owner:** (2026-10-19) Add the evaluation of the conductor jump when the
 > ice drops suddenly.
+> **Owner:** (2026-11-02) Let's go with the simplified for now.
+
+*Built 2026-11-02, in active development (not approved yet): the
+simplified method — `[[ice_shedding_rule]]` in the rule file (iced
+cases, bare case, one span or every span shedding, a **required**
+rebound factor, the distance by voltage, the wires), `ohl
+ice-shedding`, Checks › Ice shedding… with the 3D layer of the jumped
+spans and runs saved in Performed checks; see [Ice
+shedding](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/ice-shedding.md).
+One span shedding holds its iced tension (conservative); every span
+shedding solves the bare case. No rebound factor was found in the
+reference documents at hand: it is the user's, from a published source.
+Still open: the dynamic time-domain solve (a second method beside the
+simplified one).*
 
 ### O14. Situation plans, phase plans and plan sets exported at once
 Two kinds of drawing beside the plan-and-profile sheets, and a way to

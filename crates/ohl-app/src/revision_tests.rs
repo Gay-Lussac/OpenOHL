@@ -191,6 +191,7 @@ fn each_result_uses_what_it_is_computed_from() {
         ("clearance windows", crate::clearance_zones::USES),
         ("thermal clearance limits", crate::thermal::USES),
         ("galloping", crate::galloping::USES),
+        ("ice shedding", crate::ice_shedding::USES),
         ("distance between conductors", crate::phase_distance::USES),
         ("structure loads", crate::loads::USES),
         ("costs", crate::bom::USES),

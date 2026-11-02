@@ -117,6 +117,29 @@ development, not approved yet)**
   stage 5's validation and theory page.
   [Structure exports › Bolts and gusset plates](structure-exports.md#bolts-and-gusset-plates).
 
+**The conductor jump when the ice drops (roadmap O13; owner,
+2026-11-02: "Let's go with the simplified for now"; built, in active
+development, not approved yet)**
+
+- The simplified method: the jumped wire is the iced one raised by the
+  rule's rebound factor × the static rise (bare less iced at rest), its
+  clearance to every other wire of its span checked against the rule's
+  distance. `[[ice_shedding_rule]]` in the rule file, `ohl
+  ice-shedding`, Checks › Ice shedding…, the 3D layer of the jumped
+  spans, runs saved in Performed checks.
+- The rebound factor is a **required** value of the rule, no default:
+  no ice-shedding method with coefficients was found in the reference
+  documents at hand (CIGRE TB 324 covers the static states only); the
+  theory page names published studies to take it from, without their
+  numbers.
+- Which spans shed: one span alone by default — its iced horizontal
+  tension held (a conservative assumption: the largest rise) —, or every
+  span of the wire (`shedding = "all"`: the line solved in the bare case,
+  the tensions re-balanced). The bare case is the rule's, else the iced
+  case without its ice. The other wires keep their ice (conservative).
+- A dynamic time-domain solve is left for later as a second `method`
+  beside `simplified`.
+
 **Joint details of towers, stage 3: defining joints (owner, 2026-11-02:
 "Go ahead with the next stage"; built, in active development, not
 approved yet)**

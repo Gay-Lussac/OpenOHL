@@ -1,0 +1,33 @@
+# Example ice shedding rules for the synthetic line (2026-11-02, roadmap
+# O13: the conductor jump when the ice drops, the simplified method).
+# INVENTED rebound factors and distances for the example only — not from
+# any standard, paper or utility: take the rebound factor from the
+# published source you design to, and the distance from your regulation.
+#
+# The jumped wire: its iced position raised by factor × its static rise
+# (the bare position less the iced one). `shedding` is "one" (default:
+# each span alone, its iced tension held — the conservative choice) or
+# "all" (every span of the wire, the line solved in the bare case). The
+# bare case is `bare` (a weather case's name), else the iced case without
+# its ice.
+#
+#   ohl ice-shedding examples/synthetic-line/synthetic-line.ohl.json \
+#     --weather examples/synthetic-line/weather-cases.ohlwc \
+#     --rules examples/synthetic-line/ice-shedding-rules.ohlr
+format = "ohl-clearance-rules"
+version = 1
+name = "Synthetic example ice shedding rules (invented values)"
+checks = ["ice-shedding"]
+
+[[ice_shedding_rule]]
+name = "One span (invented 1.5)"
+cases = ["glaze ice"]
+factor = 1.5
+distance = { by_voltage = [[110.0, "1 m"], [245.0, "2 m"]] }
+
+[[ice_shedding_rule]]
+name = "Every span (invented 1.5)"
+cases = ["glaze ice"]
+shedding = "all"
+factor = 1.5
+distance = { by_voltage = [[110.0, "1 m"], [245.0, "2 m"]] }

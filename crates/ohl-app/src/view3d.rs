@@ -70,6 +70,8 @@ pub struct View3d {
     pub safety_volume: crate::safety_volume::Overlay,
     /// The lightning shielding check's drawing.
     pub lightning: crate::lightning::Overlay,
+    /// The ice shedding check's drawing (2026-11-02).
+    pub ice_shedding: crate::ice_shedding::Overlay,
     /// The magnetic field's isolines, cuts and surfaces.
     pub magnetic_field: crate::field_overlay::Overlay,
     /// The electric field's cuts and surfaces.
@@ -1399,6 +1401,7 @@ impl View3d {
                     crate::safety_volume::scene(model.origin, &self.safety_volume)
                 }
                 Layer::Lightning => crate::lightning::scene(model.origin, &self.lightning),
+                Layer::IceShedding => crate::ice_shedding::scene(model.origin, &self.ice_shedding),
                 Layer::MagneticField => {
                     crate::field_overlay::scene(model.origin, &self.magnetic_field)
                 }

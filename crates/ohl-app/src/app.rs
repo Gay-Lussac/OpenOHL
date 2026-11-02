@@ -335,6 +335,8 @@ pub struct Ready {
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
     /// Checks › Electrical › Lightning shielding (2026-10-31).
     pub lightning: crate::lightning::LightningWindow,
+    /// Checks › Analyses › Ice shedding (2026-11-02, roadmap O13).
+    pub ice_shedding: crate::ice_shedding::IceSheddingWindow,
     /// Checks › Electrical › Line parameters (2026-10-27).
     pub line_parameters: crate::line_parameters::LineParametersWindow,
     /// Checks › Electrical › Magnetic field (2026-10-27).
@@ -538,6 +540,7 @@ impl Ready {
             galloping: Default::default(),
             wire_tensions: Default::default(),
             lightning: Default::default(),
+            ice_shedding: Default::default(),
             line_parameters: Default::default(),
             magnetic_field: Default::default(),
             electric_field: Default::default(),
@@ -2304,6 +2307,7 @@ impl eframe::App for App {
                     || ready.radial_clearances.open
                     || ready.wire_tensions.open
                     || ready.lightning.open
+                    || ready.ice_shedding.open
                     || ready.string_checks.open
                     || ready.internal_clearances.open
                     || ready.clearances.open
@@ -2387,6 +2391,11 @@ impl eframe::App for App {
                         .lightning
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 crate::lightning::handle(ready, out);
+                let out =
+                    ready
+                        .ice_shedding
+                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
+                crate::ice_shedding::handle(ready, out);
                 ready.magnetic_field.keep(&mut ready.model, &ctx);
                 ready.electric_field.keep(&mut ready.model, &ctx);
                 ready.galloping.keep(&mut ready.model, &ctx);

@@ -265,6 +265,20 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
                 }
             );
         }
+        for r in &p.rules.ice_shedding_rules {
+            println!(
+                "  {}: ice shedding, rebound factor {}, {}, distance {}{}",
+                r.name,
+                r.factor,
+                r.shedding.describe(),
+                r.distance,
+                if r.cases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — cases {}", r.cases.join(", "))
+                }
+            );
+        }
         for r in &p.rules.lightning_rules {
             println!(
                 "  {}: lightning shielding, {}{}",

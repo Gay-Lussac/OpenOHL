@@ -285,6 +285,7 @@ impl Ready {
             From::PhaseDistance(crate::phase_distance::Kind::UnequalWind) => self.unequal_wind.open,
             From::Check(crate::dockable::Panel::WireTensions) => self.wire_tensions.open,
             From::Check(crate::dockable::Panel::Lightning) => self.lightning.open,
+            From::Check(crate::dockable::Panel::IceShedding) => self.ice_shedding.open,
             From::Check(crate::dockable::Panel::Galloping) => self.galloping.open,
             From::Check(crate::dockable::Panel::Vegetation) => self.vegetation.open,
             From::Check(_) => true,
@@ -373,6 +374,11 @@ impl Ready {
                 }
                 crate::safety_volume::CHECK_ID => {
                     if let Err(e) = self.safety_volume.load_saved(&r, &self.model) {
+                        self.status = Some((e, true));
+                    }
+                }
+                crate::ice_shedding::CHECK_ID => {
+                    if let Err(e) = self.ice_shedding.load_saved(&r, &self.model) {
                         self.status = Some((e, true));
                     }
                 }

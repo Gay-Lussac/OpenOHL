@@ -15,7 +15,8 @@
 //! and as-built wires fitted to LiDAR points and compared with the model
 //! ([`wirefit`]).
 //! The electrified parts at each structure against its own body:
-//! [`internal`].
+//! [`internal`]. The conductor jump when the ice drops, against the other
+//! wires of its span: [`ice_shedding`].
 //!
 //! Vertical ground clearance, for example, is found under every piece of
 //! the solved wire polyline (closely spaced points on the exact catenary)
@@ -41,6 +42,7 @@ pub mod envelope;
 pub mod fall;
 pub mod galloping;
 pub mod geometry;
+pub mod ice_shedding;
 pub mod internal;
 pub mod isoclearance;
 pub mod lightning;

@@ -255,6 +255,9 @@ impl Plan {
         for r in &mut set.lightning_rules {
             r.cases = self.entries(&r.cases);
         }
+        for r in &mut set.ice_shedding_rules {
+            r.cases = self.entries(&r.cases);
+        }
     }
 
     /// A rule file's text with its rules naming the project's cases; the
@@ -268,6 +271,7 @@ impl Plan {
             "string_rule",
             "internal_rule",
             "lightning_rule",
+            "ice_shedding_rule",
         ] {
             if let Some(list) = doc.get_mut(key).and_then(Item::as_array_of_tables_mut) {
                 self.rename_tables(list);
@@ -492,7 +496,8 @@ impl Part {
                 | PresetCheck::Tension
                 | PresetCheck::Strings
                 | PresetCheck::Internal
-                | PresetCheck::Lightning,
+                | PresetCheck::Lightning
+                | PresetCheck::IceShedding,
             ) => false,
         }
     }
@@ -563,6 +568,16 @@ impl Part {
                     .collect();
                 matching(&named)
             }
+            // The ice shedding check: the cases its rules name (iced and
+            // bare).
+            Part::Check(PresetCheck::IceShedding) => {
+                let named: Vec<&String> = rules
+                    .ice_shedding_rules
+                    .iter()
+                    .flat_map(|r| r.cases.iter().chain(r.bare.iter()))
+                    .collect();
+                matching(&named)
+            }
             _ => matching(&named_by(&|r| self.takes(r))),
         }
     }
@@ -589,10 +604,15 @@ impl Part {
             // The lightning rules are the lightning check's only.
             doc.remove("lightning_rule");
         }
+        if self != Part::Rules && self != Part::Check(PresetCheck::IceShedding) {
+            // The ice shedding rules are the ice shedding check's only.
+            doc.remove("ice_shedding_rule");
+        }
         if self == Part::Check(PresetCheck::Tension)
             || self == Part::Check(PresetCheck::Strings)
             || self == Part::Check(PresetCheck::Internal)
             || self == Part::Check(PresetCheck::Lightning)
+            || self == Part::Check(PresetCheck::IceShedding)
         {
             // Its own rules only (2026-10-22, 2026-10-24).
             for key in ["rule", "check", "wind", "vegetation"] {

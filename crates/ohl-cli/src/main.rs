@@ -15,6 +15,7 @@ mod clearance_run;
 mod code_run;
 mod cost_run;
 mod electrical_run;
+mod ice_shedding_run;
 mod internal_run;
 mod io_run;
 mod lightning_run;
@@ -128,6 +129,13 @@ enum Command {
     /// to the span: the length exposed, where it is worst, the margin.
     /// Exit status 0: every phase covered, 1: some exposed, 2: an error.
     Lightning(Box<lightning_run::LightningArgs>),
+    /// The conductor jump when the ice drops (ice shedding, the simplified
+    /// method): per iced weather case of the `[[ice_shedding_rule]]` tables
+    /// of a rule file, each span of the wires named jumps by the rule's
+    /// rebound factor × its static rise (iced to bare), against each other
+    /// wire of its span: the clearance before and after, the required.
+    /// Exit status 0: every clearance kept, 1: some not, 2: an error.
+    IceShedding(Box<ice_shedding_run::IceSheddingArgs>),
     /// The string check: every string in each weather case of the
     /// `[[string_rule]]` tables of a rule file — its load against its own
     /// maximum load, its swing against its own and the rule's limits, the
@@ -1109,6 +1117,14 @@ fn main() -> ExitCode {
         Some(Command::Line(args)) => line(&args, &[], None),
         Some(Command::Zones(args)) => zones_run::command(&args),
         Some(Command::Tensions(args)) => match tensions_run::run(&args) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::from(1),
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some(Command::IceShedding(args)) => match ice_shedding_run::run(&args) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::from(1),
             Err(e) => {

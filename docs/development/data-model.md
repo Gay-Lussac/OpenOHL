@@ -1203,6 +1203,38 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   current_ka, status`; `ohl lightning --json` writes the `Report`. The app
   keeps the window's rules in `<model>.lightning-rules.ohlr`; the 3D
   layer `Layer::Lightning` (`lightning::scene`).
+- **Ice shedding rules** (2026-11-02, additive; roadmap O13): a rule
+  file may hold optional `[[ice_shedding_rule]]` tables — `name`,
+  `cases` (the iced cases, patterns; none: every case with ice), `bare`
+  (a weather case's name; none: each iced case without its ice,
+  `WeatherCase::without_ice`), `calculation` (as the tension rules'),
+  `method` (`simplified`, the default and only one so far:
+  `ice_shedding::Method`), `shedding` (`one`, the default: each span
+  alone, its iced tension held; `all`: every span of the wire, the bare
+  case solved — `ice_shedding::Shedding`), `factor` (the rebound factor,
+  **required**, > 0; no default), `distance` (required, as a rule file
+  writes a distance: fixed, `by_voltage` or a formula; above 0),
+  `pair_voltage` (`higher` default, `sum`, `difference`), `targets` (the
+  wires that shed, as the tension rules') — read as
+  `RuleSet::ice_shedding_rules`
+  (`ohl_clearance::ice_shedding::IceSheddingRule`), written back by
+  `RuleSet::to_toml`; `checks` may name `"ice-shedding"`
+  (`PresetCheck::IceShedding`). The check is
+  `ohl_clearance::ice_shedding::check` (what to solve:
+  `ice_shedding::solves`): `IceSheddingReport { rows:
+  Vec<IceSheddingRow>, jumped: Vec<JumpedSpan>, notes }` (serde), a row
+  per jumping span, other wire of its span, rule and iced case (`rule`,
+  `case`, `bare`, `calculation`, `section`, `span`, `other`,
+  `other_span` — spans from 0 —, `rise`, `jump`, `before`, `after`,
+  `required` m, `kv`, `at` fraction, `points` the closest points), the
+  smallest margin first; a `JumpedSpan` per jumped span (`rule`, `case`,
+  `section`, `span`, `points`, `short`). Its CSV `rule, case, bare_case,
+  section, span, other_section, other_span, factor, rise_m, jump_m,
+  before_m, after_m, required_m, margin_m, status, at_fraction, x, y, z,
+  other_x, other_y, other_z` (spans from 1); `ohl ice-shedding`. The app
+  keeps the window's rules in `<model>.ice-shedding-rules.ohlr`; the 3D
+  layer `Layer::IceShedding` (`ice_shedding::scene`); the panel
+  `Panel::IceShedding`.
 - **Tension rules** (2026-10-22, additive): a rule file (`.ohlr`) may
   hold optional `[[tension_rule]]` tables — `name`, `cases` (patterns;
   none: every case), `factor` (> 0: the allowed tension is factor × the
@@ -2788,6 +2820,14 @@ in turn, `mesh` packed as the safety volumes'; `null` for a run of more
 than 2 000 000 triangles —; the electric field also `radius` (m) and
 `ground_model`. Opened again, it is out of date when the line state or
 the calculation option differs from now.
+
+The ice shedding check (`check` `ohl.ice-shedding`, title "Ice
+shedding", 2026-11-02; `ohl-app` `ice_shedding`) keeps as `parameters`:
+`version` (1), `loads_per`, and `rules` — the rules checked as the text
+of a rule file (`RuleSet::to_toml`, `[[ice_shedding_rule]]` tables). Its
+`results`: `report` — the `IceSheddingReport` as serde writes it (rows,
+jumped spans, notes). Opened again, it is out of date when the line state
+or the calculation option differs from now.
 
 ### Commands (the only way to change a project)
 

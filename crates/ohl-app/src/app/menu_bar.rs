@@ -831,6 +831,18 @@ pub(super) fn menus(
             ui.close();
         }
         if ui
+            .button("Ice shedding…")
+            .on_hover_text(
+                "The jump of a wire when its ice drops (the simplified method: the static rise \
+                 × a rebound factor), against the other wires of its span, by the rules of a \
+                 rule file",
+            )
+            .clicked()
+        {
+            r.ice_shedding.show(&r.model);
+            ui.close();
+        }
+        if ui
             .button("String checks…")
             .on_hover_text(
                 "Every string as solved: its load and swing against its own limits and the \

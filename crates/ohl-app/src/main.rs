@@ -52,6 +52,7 @@ mod galloping;
 mod ground_lines;
 mod handles;
 mod help;
+mod ice_shedding;
 mod icons;
 mod import_into;
 mod internal_clearances;

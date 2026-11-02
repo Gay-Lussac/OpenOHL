@@ -805,6 +805,8 @@ struct RawRules {
     internal_rules: Vec<crate::internal::RawInternalRule>,
     #[serde(rename = "lightning_rule", default)]
     lightning_rules: Vec<crate::lightning::RawLightningRule>,
+    #[serde(rename = "ice_shedding_rule", default)]
+    ice_shedding_rules: Vec<crate::ice_shedding::RawIceSheddingRule>,
 }
 
 #[derive(Deserialize)]
@@ -1014,6 +1016,10 @@ pub struct RuleSet {
     /// optional, since 2026-10-31: [`crate::lightning`]); a file without
     /// them reads as before.
     pub lightning_rules: Vec<crate::lightning::LightningRule>,
+    /// The ice shedding check's rules (`[[ice_shedding_rule]]`,
+    /// optional, since 2026-11-02: [`crate::ice_shedding`]); a file
+    /// without them reads as before.
+    pub ice_shedding_rules: Vec<crate::ice_shedding::IceSheddingRule>,
 }
 
 /// A check a rule file (a design code's preset) is for.
@@ -1033,11 +1039,13 @@ pub enum PresetCheck {
     Internal,
     /// The lightning shielding check (`[[lightning_rule]]`, 2026-10-31).
     Lightning,
+    /// The ice shedding check (`[[ice_shedding_rule]]`, 2026-11-02).
+    IceShedding,
 }
 
 impl PresetCheck {
     /// `"vertical"`, `"radial"`, `"vegetation"`, `"tension"`, `"strings"`,
-    /// `"internal"` or `"lightning"`.
+    /// `"internal"`, `"lightning"` or `"ice-shedding"`.
     pub fn as_str(self) -> &'static str {
         match self {
             PresetCheck::Vertical => "vertical",
@@ -1047,6 +1055,7 @@ impl PresetCheck {
             PresetCheck::Strings => "strings",
             PresetCheck::Internal => "internal",
             PresetCheck::Lightning => "lightning",
+            PresetCheck::IceShedding => "ice-shedding",
         }
     }
 
@@ -1060,8 +1069,9 @@ impl PresetCheck {
             "strings" => Ok(PresetCheck::Strings),
             "internal" => Ok(PresetCheck::Internal),
             "lightning" => Ok(PresetCheck::Lightning),
+            "ice-shedding" => Ok(PresetCheck::IceShedding),
             other => Err(format!(
-                "checks: \"{other}\" is not vertical, radial, vegetation, tension, strings, internal or lightning"
+                "checks: \"{other}\" is not vertical, radial, vegetation, tension, strings, internal, lightning or ice-shedding"
             )),
         }
     }
@@ -1604,6 +1614,11 @@ impl RuleSet {
             .into_iter()
             .map(crate::lightning::RawLightningRule::resolve)
             .collect::<Result<Vec<_>, _>>()?;
+        let ice_shedding_rules = raw
+            .ice_shedding_rules
+            .into_iter()
+            .map(crate::ice_shedding::RawIceSheddingRule::resolve)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             name: raw.name,
             rules,
@@ -1615,6 +1630,7 @@ impl RuleSet {
             string_rules,
             internal_rules,
             lightning_rules,
+            ice_shedding_rules,
         })
     }
 
@@ -1656,6 +1672,7 @@ impl RuleSet {
             string_rules: Vec::new(),
             internal_rules: Vec::new(),
             lightning_rules: Vec::new(),
+            ice_shedding_rules: Vec::new(),
         }
     }
 
@@ -1675,6 +1692,7 @@ impl RuleSet {
             PresetCheck::Strings => !self.string_rules.is_empty(),
             PresetCheck::Internal => !self.internal_rules.is_empty(),
             PresetCheck::Lightning => !self.lightning_rules.is_empty(),
+            PresetCheck::IceShedding => !self.ice_shedding_rules.is_empty(),
         }
     }
 
@@ -1773,6 +1791,9 @@ impl RuleSet {
             t.push_str(&r.to_toml());
         }
         for r in &self.lightning_rules {
+            t.push_str(&r.to_toml());
+        }
+        for r in &self.ice_shedding_rules {
             t.push_str(&r.to_toml());
         }
         t

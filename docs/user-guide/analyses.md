@@ -1,12 +1,13 @@
 # Galloping, blowout, vegetation and as-built wires
 
 Analyses of a solved line beyond the clearance rules: galloping ellipses,
-blown-out wires against the right of way, LiDAR classification, vegetation
+the conductor jump when the ice drops, blown-out wires against the right of way, LiDAR classification, vegetation
 near the wires, safety volumes around the wires for work near the line
 and catenaries fitted to the surveyed wires. Each is a
 command of `ohl` and (but for classification and the right of way) a window
 of the desktop app's **Checks** menu. The methods are in the theory manual:
 [Galloping ellipses and blowout](../theory/galloping.md),
+[Ice shedding](../theory/ice-shedding.md),
 [LiDAR analyses](../theory/lidar-analysis.md),
 [Safety volumes](../theory/safety-volumes.md).
 
@@ -86,6 +87,71 @@ named from 1), *Only violations* on by default, the notes folded above
 the table; a row clicked selects its span and draws it in the weather
 case of the run. **Export CSV…** writes the rows shown, **Full report
 (CSV)…** every pair with the case.
+
+## Ice shedding: the conductor jump when the ice drops
+
+*Built 2026-11-02, in active development (not approved yet); roadmap
+O13, the simplified method.* When the ice falls off a span at once, the
+wire jumps upwards and may come close to the wire above it. The check
+raises each span of the wires a rule names from its iced position by the
+rule's **rebound factor** k times its **static rise** (the bare position
+at rest less the iced one), and measures the clearance from the jumped
+wire to every other wire of the same span (phase to phase, phase to
+earth wire), the other wires keeping their ice. The method, its
+assumptions and the sources: [Ice shedding](../theory/ice-shedding.md).
+
+```bash
+ohl ice-shedding synthetic-line.ohl.json --weather weather-cases.ohlwc \
+    --rules ice-shedding-rules.ohlr --csv ice-shedding.csv
+```
+
+The rules are tables of a rule file (`.ohlr`), beside or instead of its
+clearance rules:
+
+```toml
+[[ice_shedding_rule]]
+name = "One span sheds"
+cases = ["glaze ice"]       # the iced cases (none: every case with ice)
+# bare = "-5 °C bare"       # the bare case (default: the iced case without its ice)
+# shedding = "all"          # one (default) or all
+# calculation = "creep-fe"  # how the wires are solved (default: each section's own)
+factor = 1.5                # the rebound factor k — REQUIRED, from a published source
+distance = "2 m"            # or { by_voltage = [[110, "1 m"], [245, "2 m"]] }
+# pair_voltage = "higher"   # higher (default), sum or difference
+# targets = { circuits = ["North"] }   # the wires that shed (default: every wire)
+```
+
+- `factor` is required: no value is built in. Take it from the published
+  method you design to and check how it defines the factor — here it
+  multiplies the static rise from the iced to the bare position at rest
+  (k = 1: the bare wire at rest).
+- `shedding = "one"` (default): each span sheds alone, the others keep
+  their ice; the span's iced horizontal tension is held, which gives the
+  largest rise (conservative). `"all"`: every span of the wire sheds; the
+  line is solved in the bare case too and the tension drops, so the rise
+  is smaller. The time: one solve per iced case, one more per bare case
+  with `"all"`.
+- A weather case without ice is skipped (a rule naming none with ice
+  says so).
+
+The output lists per rule, iced case, span and other wire of the span:
+the largest rise, the jump (k × rise), the clearance before (both iced)
+and after the jump, the required distance and pass or fail, the smallest
+margin first; exit status 0 when every clearance is kept, 1 when one is
+not, 2 on an error. CSV columns: rule, case, bare case, section, span,
+other section, other span, factor, rise, jump, before, after, required,
+margin, status, where (fraction of the span), the closest points.
+
+In the desktop app: **Checks › Ice shedding…** — the rules in *3 Rules*
+(kept in the project as `<line>.ice-shedding-rules.ohlr`; a design-code
+plugin's preset brings its ice shedding rules), the wires that shed in
+*2 Scope*, then **Run**. The Results tab lists every pair; a row clicked
+selects its span, drawn in its iced case. The 3D view's layer *Ice
+shedding (jumped wires)* draws each jumped span (red where a clearance
+after the jump is short, else orange) and the shortest distance of each
+failing pair while the window is open. **Save in Performed checks** keeps
+the run with the project line ([The library of performed
+checks](#the-library-of-performed-checks)).
 
 ## Blowout and the right of way
 

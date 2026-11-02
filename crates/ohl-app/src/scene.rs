@@ -63,6 +63,9 @@ pub enum Layer {
     /// shielding, 2026-10-31): the phases' exposed parts (red), the
     /// covered zone's boundary (translucent).
     Lightning,
+    /// The ice shedding check (Checks › Ice shedding, 2026-11-02): the
+    /// jumped spans, red where a clearance is short.
+    IceShedding,
     /// Safety volumes around the wires (Checks › Safety volumes),
     /// translucent: drawn last.
     SafetyVolume,
@@ -73,7 +76,7 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 22] = [
+    pub const ALL: [Layer; 23] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -95,6 +98,7 @@ impl Layer {
         Layer::MagneticField,
         Layer::ElectricField,
         Layer::Lightning,
+        Layer::IceShedding,
         Layer::SafetyVolume,
     ];
 
@@ -121,6 +125,7 @@ impl Layer {
             Layer::MagneticField => "Magnetic field (isolines, surfaces)",
             Layer::ElectricField => "Electric field (isolines, surfaces)",
             Layer::Lightning => "Lightning shielding",
+            Layer::IceShedding => "Ice shedding (jumped wires)",
             Layer::SafetyVolume => "Safety volumes",
             Layer::RigidLinks => "Rigid links (attachment points)",
         }
@@ -162,6 +167,7 @@ pub const LAYER_GROUPS: [(&str, &[Layer]); 4] = [
             Layer::MagneticField,
             Layer::ElectricField,
             Layer::Lightning,
+            Layer::IceShedding,
             Layer::SafetyVolume,
         ],
     ),
@@ -1730,6 +1736,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         | Layer::MagneticField
         | Layer::ElectricField
         | Layer::Lightning
+        | Layer::IceShedding
         | Layer::SafetyVolume => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {

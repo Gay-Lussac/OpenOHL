@@ -63,6 +63,7 @@
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)
 - [Wind on lattice structures: faces, solidity, shielding](theory/structure-wind.md)
 - [Galloping ellipses and blowout](theory/galloping.md)
+- [Ice shedding: the conductor jump](theory/ice-shedding.md)
 - [LiDAR analyses](theory/lidar-analysis.md)
 - [Safety volumes](theory/safety-volumes.md)
 - [Plan and profile drawings](theory/drawings.md)

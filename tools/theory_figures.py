@@ -2233,13 +2233,52 @@ def field_parts():
     return f
 
 
+# =====================================================================================
+# Ice shedding
+# =====================================================================================
+def ice_jump():
+    f = Fig("ice-jump", 760, 400, "The conductor jump when the ice drops",
+            "A span seen from the side: the wire above stays iced; the lower wire iced, its bare "
+            "position at rest (the static rise Delta), and its jumped position, k Delta above the "
+            "iced one; the clearance c between the jumped wire and the wire above.")
+    f.text(20, 26, "The jump when the ice drops (simplified method, side view)", "t")
+    A, B = 80.0, 680.0
+    g = 330
+    ground(f, 40, 720, g)
+    f.path(f"M{A},{g} L{A},{70} M{B},{g} L{B},{70}", "st")
+    up, lo = 90.0, 150.0
+    f.poly(parab(A, up, B, up, 90, 80), "w2l")
+    f.text(B - 6, up - 8, "wire above (iced, stays)", "e lab")
+    sag_i, sag_b, k = 120.0, 80.0, 1.6
+    f.poly(parab(A, lo, B, lo, sag_i, 80), "wire")
+    f.poly(parab(A, lo, B, lo, sag_b, 80), "inkl ds")
+    f.poly(parab(A, lo, B, lo, sag_i - k * (sag_i - sag_b), 80), "acc")
+    m = (A + B) / 2
+    yi, yb = lo + sag_i, lo + sag_b
+    yj = lo + sag_i - k * (sag_i - sag_b)
+    ya = up + 4 * 90 * 0.25 * 0.75
+    f.vdim2(m + 40, yi, yb, "Δ (static rise)")
+    f.vdim2(m - 40, yi, yj, "k Δ", left=True)
+    yq = lo + 4 * (sag_i - k * (sag_i - sag_b)) * 0.25 * 0.75
+    f.arrow(m + 150, yq - 1, m + 150, ya + 1, "acc", 1.4, 7, both=True)
+    f.text(m + 158, (yq + ya) / 2 + 4, "c", "i")
+    f.label(m - 200, lo + 4 * sag_i * 0.18 * 0.82, m - 260, 300, "iced")
+    f.label(m + 230, lo + 4 * sag_b * 0.88 * 0.12, m + 250, 300, "bare, at rest")
+    f.label(m - 200, lo + 4 * (sag_i - k * (sag_i - sag_b)) * 0.18 * 0.82, m - 290, 120, "jumped")
+    f.text(20, 362, "p_{jump}(x) = p_{iced}(x) + k Δ(x);   k: the rule's rebound factor (published), "
+           "Δ: bare less iced at rest", "")
+    f.text(20, 382, "checked: c ≥ the rule's distance; c to the surfaces, the other wire iced", "lab")
+    return f
+
+
 FIGURES = [catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
            shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, lidar_classes,
            swing_band, fall_in, safety_section, jumper_gap, sheet_ranges, lowest_line,
            vertical_radial, vertical_arc, max_tension, bs_segment, field_pieces, field_cut,
-           field_volume, field_blocks, field_cutoff, field_grid_step, field_parts]
+           field_volume, field_blocks, field_cutoff, field_grid_step, field_parts,
+           ice_jump]
 
 
 def main(argv):

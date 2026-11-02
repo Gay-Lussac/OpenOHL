@@ -152,6 +152,7 @@ impl StringChecksWindow {
             string_rules: self.rules.clone(),
             internal_rules: Vec::new(),
             lightning_rules: Vec::new(),
+            ice_shedding_rules: Vec::new(),
         }
     }
 
