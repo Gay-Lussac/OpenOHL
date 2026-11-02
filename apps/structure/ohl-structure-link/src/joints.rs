@@ -440,6 +440,7 @@ pub fn joint_details(
             })
             .collect();
         let snapshot = arrivals.clone();
+        let seats = plate_seats(&t, &n.id, &plates_here, &snapshot, &areas);
         for a in &mut arrivals {
             let c = t.connection(&a.member, &n.id);
             let design = designs.get(a.member.as_str()).map(|d| d.0);
@@ -454,15 +455,16 @@ pub fn joint_details(
                 level3,
                 bolts,
                 ends,
+                &seats,
             );
             if level3 {
-                place_bolts(a, at, c, &snapshot);
+                place_bolts(a, at, c, &snapshot, &seats);
                 a.grip = grip(a, &snapshot, &plates_here);
             }
         }
         let plates = plates_here
             .iter()
-            .map(|p| plate(p, at, &arrivals))
+            .map(|p| plate(p, at, &arrivals, seats.get(&p.id)))
             .collect();
         let completeness = completeness(&arrivals, level3);
         joints.push(JointDetail {
@@ -493,6 +495,7 @@ fn condition(
     level3: bool,
     bolts: &ohl_structures::bolts::BoltLibrary,
     ends: Option<&member_ends::EndConditions>,
+    seats: &PlateSeats,
 ) {
     use Source::*;
     let si = |l: &ohl_core::units::Length| l.si();
@@ -536,7 +539,7 @@ fn condition(
         (None, None) if is_angle => Valued::of(BoltedLeg::Long, Assumed),
         _ => Valued::none(),
     };
-    a.leg_y = leg_along_y(a, all);
+    a.leg_y = leg_along_y(a, all, seats);
     // An assumed leg is the one that lies flat (the drawing's).
     if a.leg.source == Assumed
         && let Some(g) = a.profile.as_ref().and_then(|p| p.angle)
@@ -775,7 +778,7 @@ fn along_y(g: Angle, leg: Option<BoltedLeg>) -> bool {
 /// leg when given (the member's or here) and the legs differ; else the leg
 /// that lies flat against a leg of the member it bolts onto (its normal
 /// most nearly that leg's); else the long leg.
-fn leg_along_y(a: &Arrival, all: &[Arrival]) -> bool {
+fn leg_along_y(a: &Arrival, all: &[Arrival], seats: &PlateSeats) -> bool {
     let Some(p) = a.profile.as_ref() else {
         return true;
     };
@@ -794,6 +797,11 @@ fn leg_along_y(a: &Arrival, all: &[Arrival]) -> bool {
         .as_ref()
         .and_then(|o| all.iter().find(|b| &b.member == o))
         .and_then(|b| b.profile.as_ref());
+    // Onto a plate: the leg lying in the plate's plane (its normal along
+    // the plate's).
+    if let Some(s) = a.onto.value.as_ref().and_then(|o| seats.get(o)) {
+        return dot(p.axes[2], s.normal).abs() >= dot(p.axes[1], s.normal).abs();
+    }
     match onto {
         Some(q) => {
             let flat = |n: [f64; 3]| dot(n, q.axes[1]).abs().max(dot(n, q.axes[2]).abs());
@@ -804,12 +812,99 @@ fn leg_along_y(a: &Arrival, all: &[Arrival]) -> bool {
     }
 }
 
+/// How a gusset plate lies at its joint: square to `normal` (the plane of
+/// the members bolted onto it), on the flange of the joint's `leg` (an
+/// angle) when there is one, `thickness` thick.
+#[derive(Debug, Clone)]
+struct PlateSeat {
+    normal: [f64; 3],
+    leg: Option<String>,
+    thickness: f64,
+}
+
+/// The plates of a joint by id.
+type PlateSeats = BTreeMap<String, PlateSeat>;
+
+/// How each plate at joint `joint` lies: in the plane of the members
+/// bolted onto it (their directions; one member: with the joint's leg; an
+/// outline given: its own plane), on the joint's leg.
+fn plate_seats(
+    t: &StructureType,
+    joint: &str,
+    plates: &[&ohl_structures::connections::TypePlate],
+    all: &[Arrival],
+    areas: &BTreeMap<String, f64>,
+) -> PlateSeats {
+    let mut out = PlateSeats::new();
+    for p in plates {
+        let on: Vec<&Arrival> = t
+            .connections
+            .iter()
+            .filter(|c| c.joint == joint && c.onto.as_deref() == Some(p.id.as_str()))
+            .filter_map(|c| all.iter().find(|a| a.member == c.member))
+            .collect();
+        let leg = on.first().and_then(|a| leg_of(a, all, areas));
+        let leg_dir = leg
+            .as_ref()
+            .and_then(|l| all.iter().find(|a| &a.member == l))
+            .map(|a| a.direction);
+        let given = (p.outline.len() >= 3).then(|| {
+            let q: Vec<[f64; 3]> = p.outline.iter().map(|x| x.map(|v| v.si())).collect();
+            cross(sub(q[1], q[0]), sub(q[2], q[0]))
+        });
+        let mut dirs: Vec<[f64; 3]> = on.iter().map(|a| a.direction).collect();
+        dirs.extend(leg_dir);
+        let spanned = dirs.iter().enumerate().find_map(|(k, d)| {
+            dirs[k + 1..]
+                .iter()
+                .map(|e| cross(*d, *e))
+                .find(|c| norm(*c) > 1e-3)
+        });
+        let Some(n) = given.filter(|c| norm(*c) > 1e-9).or(spanned) else {
+            continue;
+        };
+        out.insert(
+            p.id.clone(),
+            PlateSeat {
+                normal: scale(n, 1.0 / norm(n)),
+                leg,
+                thickness: p.thickness.si(),
+            },
+        );
+    }
+    out
+}
+
 /// The shift that seats `a`'s leg bolted on the face of the member it
 /// bolts onto ([`Arrival::offset`]): along the bolts' axis, so the leg's
 /// outer face (the heel's) lies on the onto leg's face turned towards it;
 /// none when it bolts onto no angle or the legs are not near parallel
 /// (within 25°).
-fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival]) -> [f64; 3] {
+fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival], seats: &PlateSeats) -> [f64; 3] {
+    // Onto a plate: on the plate, which lies on the joint's leg (seated
+    // onto the leg, then the plate's thickness out); no leg: the plate
+    // through the work point.
+    if let Some(s) = a.onto.value.as_ref().and_then(|o| seats.get(o)) {
+        let Some(p) = a.profile.as_ref() else {
+            return [0.0; 3];
+        };
+        let Some(g) = p.angle else {
+            return [0.0; 3];
+        };
+        let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+        let on_leg = s.leg.as_ref().map(|l| {
+            let mut b = a.clone();
+            b.onto = Valued::of(l.clone(), Source::WorkedOut);
+            seat(&b, joint, all, &PlateSeats::new())
+        });
+        return match on_leg {
+            Some(o) if norm(o) > 0.0 => add(o, scale(nb, s.thickness)),
+            _ => {
+                let heel = add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1]));
+                scale(nb, -dot(heel, nb))
+            }
+        };
+    }
     let (Some(p), Some(o)) = (
         a.profile.as_ref(),
         a.onto
@@ -854,7 +949,13 @@ fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival]) -> [f64; 3] {
 
 /// The bolts of `a` where they are: given points, else the layout (the
 /// bolts shared among the gauge lines, from the end distance at the pitch).
-fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, all: &[Arrival]) {
+fn place_bolts(
+    a: &mut Arrival,
+    joint: [f64; 3],
+    c: Option<&TypeConnection>,
+    all: &[Arrival],
+    seats: &PlateSeats,
+) {
     a.cut = match c.and_then(|c| c.cut) {
         Some(x) => Valued::of(x.si(), Source::Given),
         None => match fit_cut(a, all) {
@@ -892,7 +993,7 @@ fn place_bolts(a: &mut Arrival, joint: [f64; 3], c: Option<&TypeConnection>, all
     };
     let along_y = a.leg_y;
     a.offset = add(
-        seat(a, joint, all),
+        seat(a, joint, all, seats),
         scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0),
     );
     let joint = add(joint, a.offset);
@@ -1002,6 +1103,7 @@ fn plate(
     p: &ohl_structures::connections::TypePlate,
     joint: [f64; 3],
     arrivals: &[Arrival],
+    seat: Option<&PlateSeat>,
 ) -> PlateDetail {
     let onto: Vec<&Arrival> = arrivals
         .iter()
@@ -1018,22 +1120,54 @@ fn plate(
             members,
         };
     }
+    // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
+    // and try to keep hidden in the shape of the corner … fitting"): each
+    // member's leg bolted over its bolts (from its first bolt less its end
+    // distance to its last plus it), and the joint's leg — the corner —
+    // over its own width as far along it as those reach; the plate the
+    // hull of them, in the face of the bolts (the exports lay it there too).
     let mut pts = vec![joint];
     for a in &onto {
-        pts.extend(a.bolt_points.iter().copied());
+        pts.extend(leg_strip(a, joint));
         if a.bolt_points.is_empty() {
             pts.push(add(joint, scale(a.direction, 0.15)));
         }
     }
-    // Laid in the face of the first member's bolts onto it (where they
-    // clamp it), as the exports lay it (owner 2026-11-02: "make the joint
-    // view follow the export for plates"); without bolts, in the plane of
-    // the members onto it.
+    let leg = seat
+        .and_then(|s| s.leg.as_ref())
+        .and_then(|l| arrivals.iter().find(|a| &a.member == l));
+    if let Some(l) = leg
+        && let Some(g) = l.profile.as_ref().and_then(|p| p.angle)
+    {
+        // The corner's flange lying under the plate (its normal along the
+        // bolts'), from its heel across its width, over the stretch along
+        // the leg the members' strips reach (both ways from the joint).
+        let n = onto.first().map_or([0.0, 0.0, 1.0], |a| a.bolt_axis);
+        let p = l.profile.as_ref().expect("an angle");
+        let across = if dot(p.axes[2], n).abs() >= dot(p.axes[1], n).abs() {
+            (p.axes[1], g.b)
+        } else {
+            (p.axes[2], g.h)
+        };
+        let heel = add(
+            add(joint, l.offset),
+            add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
+        );
+        let reach = pts
+            .iter()
+            .map(|q| dot(sub(*q, joint), l.direction))
+            .fold((0.0f64, 0.0f64), |(lo, hi), s| (lo.min(s), hi.max(s)));
+        for s in [reach.0, reach.1] {
+            let base = add(heel, scale(l.direction, s));
+            pts.push(base);
+            pts.push(add(base, scale(across.0, across.1)));
+        }
+    }
     let outline = match onto
         .iter()
         .find_map(|a| a.bolt_points.first().map(|q| (*q, a)))
     {
-        Some((at, a)) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.03),
+        Some((at, a)) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.0),
         None => hull_around(&pts, joint, &onto, 0.03),
     };
     PlateDetail {
@@ -1044,6 +1178,50 @@ fn plate(
         outline_given: false,
         members,
     }
+}
+
+/// The corners of `a`'s leg bolted over its bolts: from its first bolt
+/// less its end distance to its last plus it (1.5 bolt diameters when not
+/// given, for the drawing), across the leg's width (structure's axes).
+fn leg_strip(a: &Arrival, joint: [f64; 3]) -> Vec<[f64; 3]> {
+    let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
+        return a.bolt_points.clone();
+    };
+    let Some(g) = p.angle else {
+        return a.bolt_points.clone();
+    };
+    if a.bolt_flat.is_empty() {
+        return Vec::new();
+    }
+    let margin = a.end_distance.value.unwrap_or(1.5 * b.diameter);
+    let lo = a
+        .bolt_flat
+        .iter()
+        .map(|q| q[0])
+        .fold(f64::INFINITY, f64::min)
+        - margin;
+    let hi = a
+        .bolt_flat
+        .iter()
+        .map(|q| q[0])
+        .fold(f64::NEG_INFINITY, f64::max)
+        + margin;
+    let (across, w) = if a.leg_y {
+        (p.axes[1], g.b)
+    } else {
+        (p.axes[2], g.h)
+    };
+    let heel = add(
+        add(joint, a.offset),
+        add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
+    );
+    let mut out = Vec::new();
+    for s in [lo.max(0.0), hi] {
+        let base = add(heel, scale(a.direction, s));
+        out.push(base);
+        out.push(add(base, scale(across, w)));
+    }
+    out
 }
 
 /// The convex hull of `pts` in the plane through `at` square to `normal`

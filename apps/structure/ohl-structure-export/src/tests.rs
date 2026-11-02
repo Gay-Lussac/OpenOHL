@@ -1275,7 +1275,7 @@ fn bolts_and_plates_in_ifc() {
     assert!((d1[0].length() - (0.006 + 0.007 + 0.014 + beyond * 0.017)).abs() < 1e-12);
     assert!((d2[0].length() - (0.006 + 0.008 + (nut + beyond) * 0.016)).abs() < 1e-12);
     // As the joint view: D1 seated (its whole solid shifted, one end with
-    // bolts), the bolts at its seated points; D2 and the legs on their axes.
+    // bolts), the bolts at its seated points.
     let d = ohl_structure_link::joint_details(&text, &library, &example_bolts()).unwrap();
     let n2 = d.joint("N2").unwrap();
     let a1 = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
@@ -1285,9 +1285,17 @@ fn bolts_and_plates_in_ifc() {
     for (b, p) in d1.iter().zip(&a1.bolt_points) {
         assert!((0..3).all(|k| (b.point[k] - p[k]).abs() < 1e-12));
     }
+    // D2 seated on its plate (on the leg it lies on), the legs on their
+    // axes.
     for (m, o) in s.members.iter().zip(&s.body_offsets) {
-        if m.id != "D1" {
-            assert_eq!(*o, [0.0; 3], "{}", m.id);
+        match m.id.as_str() {
+            "D1" => {}
+            "D2" => {
+                let a2 = n2.arrivals.iter().find(|a| a.member == "D2").unwrap();
+                assert!(a2.offset.iter().any(|v| v.abs() > 1e-4), "{:?}", a2.offset);
+                assert_eq!(*o, a2.offset);
+            }
+            _ => assert_eq!(*o, [0.0; 3], "{}", m.id),
         }
     }
     // 30 and 80 mm from the joint along D1.

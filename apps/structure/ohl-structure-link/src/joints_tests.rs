@@ -160,15 +160,30 @@ fn a_plate_lies_around_its_bolts() {
     let p = &n2.plates[0];
     assert_eq!(p.members, vec!["D1".to_owned()]);
     assert!(!p.outline_given && p.outline.len() >= 3);
-    // Every bolt inside the outline's reach (30 mm around).
+    // Every bolt inside the outline (its edges turning one way about the
+    // bolts' axis around each bolt), and the corner's flange width covered.
+    assert!(inside(&p.outline, a.bolt_axis, a.bolt_points[0]));
     for b in &a.bolt_points {
-        let near = p
-            .outline
-            .iter()
-            .map(|q| ((q[0] - b[0]).powi(2) + (q[1] - b[1]).powi(2) + (q[2] - b[2]).powi(2)).sqrt())
-            .fold(f64::INFINITY, f64::min);
-        assert!(near <= 0.031 + 1e-9, "{near}");
+        assert!(inside(&p.outline, a.bolt_axis, *b), "{b:?} {:?}", p.outline);
     }
+}
+
+/// Whether `q` lies inside the convex `outline` seen along `n`.
+fn inside(outline: &[[f64; 3]], n: [f64; 3], q: [f64; 3]) -> bool {
+    let k = outline.len();
+    let side = |i: usize| {
+        let (a, b) = (outline[i], outline[(i + 1) % k]);
+        let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let d = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
+        let c = [
+            e[1] * d[2] - e[2] * d[1],
+            e[2] * d[0] - e[0] * d[2],
+            e[0] * d[1] - e[1] * d[0],
+        ];
+        c[0] * n[0] + c[1] * n[1] + c[2] * n[2]
+    };
+    let s: Vec<f64> = (0..k).map(side).collect();
+    s.iter().all(|v| *v >= -1e-9) || s.iter().all(|v| *v <= 1e-9)
 }
 
 /// Below level 3 (no cross-sections): the arrivals, nothing more.
@@ -498,4 +513,39 @@ fn the_steel_stops_where_it_fits_and_a_shift_moves_the_end() {
     // the bolts, which is square to it).
     let moved: f64 = (0..3).map(|k| (b.offset[k] - a.offset[k]) * u[k]).sum();
     assert!((moved - 0.02).abs() < 1e-9, "{moved}");
+}
+
+/// A member bolted onto a gusset plate (owner 2026-11-02: "wouldn't it be
+/// better to also have it on the plate?"): its leg bolted lies in the
+/// plate's plane (the plane of the members onto it and the joint's leg),
+/// so its bolts go square through the plate, and the plate lies in their
+/// face.
+#[test]
+fn a_member_onto_a_plate_lies_flat_on_it() {
+    let text = format!(
+        "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n",
+        AT_N2.replace("leg = \"long\"\n", "onto = \"G1\"\n")
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let leg = n2.arrivals.iter().find(|a| a.member == "L1").unwrap();
+    // The plane of the diagonal and the leg: y (the face y+).
+    let n = [
+        a.direction[1] * leg.direction[2] - a.direction[2] * leg.direction[1],
+        a.direction[2] * leg.direction[0] - a.direction[0] * leg.direction[2],
+        a.direction[0] * leg.direction[1] - a.direction[1] * leg.direction[0],
+    ];
+    let ln = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    let cos: f64 = (0..3).map(|k| a.bolt_axis[k] * n[k] / ln).sum();
+    assert!(
+        cos.abs() > 0.999,
+        "the bolts square through the plate: {cos}"
+    );
+    // The plate in the bolts' face.
+    let b0 = a.bolt_points[0];
+    for q in &n2.plates[0].outline {
+        let off: f64 = (0..3).map(|k| (q[k] - b0[k]) * a.bolt_axis[k]).sum();
+        assert!(off.abs() < 1e-9);
+    }
 }

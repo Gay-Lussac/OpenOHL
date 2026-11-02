@@ -430,22 +430,9 @@ pub fn export_joints(
             let face = onto
                 .iter()
                 .find_map(|a| placed(a).first().map(|q| (*q, a.bolt_axis)));
-            let outline = match face {
-                Some((at, axis)) if !p.outline_given => {
-                    // Not given: around the joint and the bolts onto it
-                    // (30 mm, as the joint view), laid in their face.
-                    let mut pts = vec![j.position];
-                    for a in &onto {
-                        let b = placed(a);
-                        if b.is_empty() {
-                            pts.push(add3(j.position, a.direction, 0.15));
-                        }
-                        pts.extend(b);
-                    }
-                    crate::joints::face_hull(&pts, at, axis, onto[0].direction, 0.03)
-                }
-                _ => p.outline.clone(),
-            };
+            // Where the Joint view draws it (around its members' bolts and
+            // on the corner), the same outline.
+            let outline = p.outline.clone();
             let Some(mut normal) = polygon_normal(&outline) else {
                 s.notes.push(format!(
                     "plate {} at {}: no outline to draw, left out of IFC",

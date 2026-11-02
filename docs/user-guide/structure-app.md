@@ -540,8 +540,12 @@ the **Detail view**, a pane of its own opened on the right of the 3D view
   with their roll, so the leg bolted shows), cut a little beyond the
   joint, the bolts through the leg bolted (red; grey where their layout is
   partly assumed), the plates (blue; a plate without an outline in the
-  file is laid in the face of the bolts onto it, 30 mm around them and
-  the joint, as the IFC export lays it); drag to turn it, scroll to zoom,
+  file lies on the leg of the corner member it is bolted to, in the
+  face of the bolts onto it, shaped to the corner: over the corner leg's
+  width where the members' bolts reach along it, and over each member's
+  bolted leg from its first bolt to its last (an end distance beyond
+  each), so that it stays within the corner's shape — assumed, as the
+  IFC export lays it); drag to turn it, scroll to zoom,
   **Reset view**. Bolts are drawn on angles only.
 - **Face view**: the joint square to a face (x+, x−, y+, y−, or the plan
   from above; the face most of its members lie in first), as a shop
@@ -669,7 +673,9 @@ analysis keeps the axes. The leg bolted is the long or short one given;
 otherwise the one that can lie flat against the other member (the
 assumed leg follows it). A bolt is drawn as its hexagonal head on the
 member's own side, its shank through both legs (the plate, when it bolts
-onto one) and its nut: with the sizes of its library bolt
+onto one) and its nut. A member bolted onto a plate lies flat on it: its
+leg bolted is the one parallel to the plate, which lies on the corner
+member's leg in the plane of the members onto it. A bolt is drawn with the sizes of its library bolt
 (`head_across_flats`, `head_height`, `nut_height`) or else, for the
 drawing only, 1.5 diameters across the flats, a head of 0.65 and a nut
 of 0.8 diameters. Members whose angles have no `orientation` lie as the
@@ -1079,12 +1085,13 @@ holds its bolts (each with its diameter, its length under the head, a
 head, a shank and a nut; property set `OHL_Fastener`: joint, member,
 end, grip, hole, grade, library bolt) and its plates (the outline
 extruded by the thickness; `OHL_Plate`). They are where the **Joint
-view** draws them: a member bolted onto a leg is **seated** — its solid
+view** draws them: a member bolted onto a leg or a plate is **seated** — its solid
 moved across so that its leg lies on the leg it bolts onto, as in the
 drawings — when its bolted ends agree on that shift; otherwise its solid
 stays on its axis and its bolts move with it. The analysis model (IFC4)
 always keeps the axes. A plate without an outline in the file lies
-around its bolts (30 mm, assumed), in their face. SAF has no bolts or
+as the Joint view draws it (on the corner leg, around its bolts;
+assumed). SAF has no bolts or
 plates; CSV gives the connections and plates as the file does. A file
 without connections and plates is exported exactly as before.
 

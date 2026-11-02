@@ -10,6 +10,25 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Gusset plates seated on the corner and shaped to it (owner,
+2026-11-02: "The light orange bolt seems to be of axis … Wouldn't it be
+better to also have it on the plate?"; "the plate should use the corner
+width it's bolted onto and try to keep hidden in the shape of the
+corner"; built, in active development, not approved yet)**
+
+- A plate lies on the leg of the joint's corner member that is parallel
+  to the plane of the members onto it (from their connections; a given
+  outline's plane when no member says); the members onto it are seated
+  on the plate's far face (the corner leg plus the plate's thickness)
+  and bolt their leg parallel to the plate.
+- A plate without an outline is drawn as the convex hull, in the bolts'
+  face, of the joint, each member's bolted leg from its first bolt less
+  its end distance to its last plus it (1.5 bolt diameters when not
+  given), and the corner leg's flange over the stretch those reach —
+  no margin beyond. It replaces the 30 mm around the bolts; the IFC
+  export takes the same outline. Assumed (a fabricator's plate may be
+  larger); a given outline is unchanged.
+
 **Bolt libraries kept in the project; built-up members, stage B2:
 imported (owner, 2026-11-02: "maybe rework a bit the xml importer as
 some of these infos might be in the exported xml … Same for the built
