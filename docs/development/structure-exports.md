@@ -8,7 +8,9 @@ guide: [The structure application › Export](../user-guide/structure-app.md#exp
 A **level 3** structure (joints, members with cross-sections, supports) is
 written with its cross-sections (from the [cross-section library](../user-guide/section-library.md)
 or the file's own `[[section]]` tables), materials, supports, member kinds
-and load cases (a [load table](../user-guide/structure-load-cases.md)).
+and load cases (a [load table](../user-guide/structure-load-cases.md)); a
+tower with [joint details](joint-details.md) with its bolts and gusset
+plates in IFC ([below](#bolts-and-gusset-plates), 2026-11-02).
 Only open, documented formats are written; no proprietary binary format.
 
 ## What the target programs import (research, 2026-10-17)
@@ -32,9 +34,9 @@ program with SAF **1.0.5**) [S1].
 
 | Format | For | Holds |
 |---|---|---|
-| **IFC4** (ADD2 TC1), header `ViewDefinition [StructuralAnalysisView]` | analysis programs (analysis model with load cases), BIM viewers | members as `IfcMember` with profile solids **and** the structural analysis model with load cases, in one file |
-| **IFC4**, members only, `ViewDefinition [ReferenceView_V1.2]` | BIM viewers, coordination | the members with profile solids, materials |
-| **IFC2x3** (TC1), `ViewDefinition [CoordinationView_V2.0]` | **steel-detailing programs** that convert IFC2x3 only (IFC object conversion into native parts) | the members with parametric profiles and materials, in a site, building and storey (the analysis model of IFC2x3 is not written) |
+| **IFC4** (ADD2 TC1), header `ViewDefinition [StructuralAnalysisView]` | analysis programs (analysis model with load cases), BIM viewers | members as `IfcMember` with profile solids **and** the structural analysis model with load cases, in one file; bolts and gusset plates |
+| **IFC4**, members only, `ViewDefinition [ReferenceView_V1.2]` | BIM viewers, coordination | the members with profile solids, materials; bolts and gusset plates |
+| **IFC2x3** (TC1), `ViewDefinition [CoordinationView_V2.0]` | **steel-detailing programs** that convert IFC2x3 only (IFC object conversion into native parts) | the members with parametric profiles and materials, in a site, building and storey (the analysis model of IFC2x3 is not written); bolts and gusset plates |
 | **SAF** 2.2.0 (xlsx) | analysis programs that read SAF | materials, cross-sections, nodes, members, supports, load group, load cases, point and line loads |
 | **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv`; with connections or plates in the file (version 9) `connections.csv` and `plates.csv`, the values as the file gives them |
 
@@ -109,6 +111,58 @@ maps profile and material **names** to its catalogues (missing ones are
 asked for): the profile name written is the
 cross-section's id.
 
+### Bolts and gusset plates
+
+*Stage 5 of [joint details](joint-details.md), exports part (owner,
+2026-11-02: "Go with … C"); built, in active development, not approved
+yet.* Written for a file with `[[connection]]` or `[[plate]]` (structure
+file version 9), with the members (IFC4 with or without the analysis
+model, and IFC2x3); a file without them is written exactly as before
+(a test compares the files). What is written is what
+`ohl_structure_link::joint_details` works out and the **Joint view**
+draws: the bolts where the layout or the given bolt points put them, the
+bolts' diameter, head and nut from the [bolt library](../user-guide/structure-library.md)
+when a connection names a bolt (else typed, the head and nut then drawn
+with the proportions `BOLT_DRAWN`: 1.5 d across the flats, 0.65 d head,
+0.8 d nut, 0.3 d of shank beyond the nut — drawing proportions, no
+standard's sizes). The bolt library comes as the cross-sections do: the
+tool's `--bolts` (default `Bolts/` beside the file), File › Export's
+**Bolt library** (default the window's, as the Joint view).
+
+| Export data (`export_joints`) | IFC4 | IFC2x3 |
+|---|---|---|
+| a joint with bolts or plates | `IfcElementAssembly` (`.USERDEFINED.`, `ObjectType` `joint`, `Name` and `Tag` the joint's id), placed at the joint, contained in the site with the members; `IfcRelAggregates` to its bolts and plates (these are not contained themselves) | the same (`PredefinedType` is required there: `USERDEFINED`, with the `ObjectType`), in the storey |
+| bolt (`ExportBolt`) | `IfcMechanicalFastener` `.BOLT.`, `Name` "member end number" (`D1 j 2`), `ObjectType` the library bolt's id (else `bolt`), `NominalDiameter`, `NominalLength` = the length under the head (both grips, the nut and the shank beyond it); placed at the bolt with z along its axis towards the head, the origin on the face between the two parts it clamps; body `SweptSolid`: head and nut `IfcExtrudedAreaSolid` of a hexagonal `IfcArbitraryClosedProfileDef`, the shank of an `IfcCircleProfileDef` (profiles shared by bolts of the same size); property set `OHL_Fastener` (Joint, Member, End `i`/`j`, GripLeg, GripOnto; where given Hole, Grade, Bolt) | `IfcMechanicalFastener` without `PredefinedType` (IFC2x3 has none), the rest the same |
+| gusset plate (`ExportPlate`) | `IfcPlate` (`.NOTDEFINED.`, `ObjectType` `gusset plate`), placed on its outline's face with z through the thickness, away from the members on it; body an `IfcArbitraryClosedProfileDef` of the outline extruded by the thickness; its material, when the plate names one, the structure's material of that id or name, else an `IfcMaterial` of that name (`IfcRelAssociatesMaterial`); `OHL_Plate` (Joint, Thickness, Members, OutlineGiven) | `IfcPlate` without `PredefinedType` |
+| the member's seat (`body_offsets`) | the `IfcMember`'s body solid moved by it (its `Position`, in the placement's axes); the placement and the `Axis` line stay on the analysis axis | the same |
+
+**Where the members' solids go (decided 2026-11-02, simplest correct
+option).** The model's axes meet at the joint; a real joint's legs lie
+back to back. The Joint view therefore draws each bolted member shifted
+along its bolts so its leg lies flat on the leg it bolts onto
+(`Arrival::offset`, the drawings only), and puts the bolts there. A
+member has two ends, and the shift can differ between them (bolted onto
+a leg at one end, onto a plate or another leg at the other), while an
+extruded solid can be moved only as a whole. So:
+
+- a member whose ends with bolts **agree** on the shift (most often:
+  one end bolted, or both onto legs alike) is exported **seated**: its
+  solid moved by that shift, its bolts where the Joint view draws them;
+- a member whose bolted ends **differ** keeps its solid on its axis, and
+  its bolts are moved back by their end's shift, so they still go
+  through its own leg (they then lie a leg's thickness or so off the leg
+  they bolt onto); a note lists such members;
+- the physical member's placement and its `Axis` line, the structural
+  analysis model (IFC4), SAF and CSV keep the axes: the analysis is on
+  the axes, as the FE model.
+
+A plate whose outline is not given lies around the joint and the bolts
+onto it (30 mm, as the Joint view; assumed) in the face of the first
+member's bolts onto it, so the bolts clamp it; the Joint view draws such
+a plate in the plane of the members' directions instead (the two agree
+when the leg bolted lies in the face). A given outline is written as
+given.
+
 ### SAF (2.2.0)
 
 | Sheet | Rows | Notes |
@@ -124,6 +178,10 @@ cross-section's id.
 | `StructuralLoadCase` | one per case | Permanent, load group LG1, load type Standard; the description says the self-weight factor |
 | `StructuralPointAction` | one row per non-zero component (X, Y, Z) of a load, kN | at a joint: In node; along a member: On beam, Relative position from the start |
 | `StructuralCurveAction` | one row per non-zero component of a uniform load, kN/m | On beam, Uniform, Global, Length, Relative, Full, 0 → 1 |
+
+SAF describes the analysis model; none of its object pages read [S2]
+has a bolt, a fastener or a plate, so the bolts and gusset plates are
+not written to SAF (IFC and CSV only).
 
 The workbook is written by the crate itself (a zip of SpreadsheetML
 parts with the workspace's `zip` crate, as `ohl-io`'s XLSX export; no
@@ -208,6 +266,12 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
   is longer than h is written as it is (the attributes allow it).
 - **IFC2x3** carries no analysis model and no material values (the
   detailing program maps names).
+- **Bolts and plates**: not in SAF (it has no object for them); in CSV
+  as the file gives the connections and plates (no bolt positions). In
+  IFC the bolts' sizes beyond the diameter are the library's or drawing
+  proportions, a plate without an outline is assumed, and a member seated
+  differently at its two ends stays on its axis
+  ([above](#bolts-and-gusset-plates)).
 - **Tension-only members that bend** are frames in IFC4's analysis
   model and in SAF; their tension-only behaviour is information only
   ([above](#tension-only-members-that-bend-and-members-not-checked)).
@@ -238,6 +302,13 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
   columns not in rows as usual" [S4]; they are written as name–value
   pairs, column A and B.
 - Exports for other tower programs: later (decision 12).
+- **Bolts and plates in a detailing program**: whether its IFC2x3
+  conversion takes the members' seated bodies (or only their axes and
+  profiles, which would put the seated bolts a shift away from the
+  members), and whether it makes native bolts of `IfcMechanicalFastener`
+  and native plates of `IfcPlate` in a joint assembly, is for the import
+  test (O8). No `IfcRelConnectsWithRealizingElements` (which members a
+  bolt joins) is written; the `OHL_Fastener` set says it.
 - A structure whose model is a separate `.ohlfe` (`model = "…"`) is not
   exported yet (the export builds the model from the `.ohls` itself).
 
@@ -246,13 +317,14 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 `tools/check_structure_exports.py` checks exported files; the test
 `exports_pass_the_free_tools` (`apps/structure/ohl-structure-tests/tests/exports_checked.rs`)
 writes the IFC4 (with and without the analysis model), IFC2x3 and SAF
-exports of three structures — the example lattice
+exports of four structures — the example lattice
 `examples/synthetic-line/Structures/type-02.ohls` (`[[section]]` tables:
 no shapes), the invented `examples/exports/every-profile.ohls` (every
 profile of the example cross-section library, a spring support, a load along a
 member, a tension-only member that bends and a member not checked) and a body built by the generators (X panels with horizontals,
-triangular crossarms, a peak; library angles) — and runs the script on
-them. The test runs only when `OHL_IFC_PYTHON` names a Python with
+triangular crossarms, a peak; library angles) and an invented joint
+with bolts (two of the example bolt library, three typed) and a gusset
+plate — and runs the script on them. The test runs only when `OHL_IFC_PYTHON` names a Python with
 IfcOpenShell; otherwise it says so and passes:
 
 ```bash
@@ -286,6 +358,12 @@ export; the polygonal pole profile is checked through `every-profile`.
   centroid on the member's axis (a warning beyond 1 mm), and in IFC4 the
   volume against A × L of the cross-section (a warning beyond 3 %).
 - Every profile with geometry has `OHL_Section` (IFC4).
+- A member's body moved by its solid's `Position` (seated at its
+  joints): its centroid checked against its axis moved alike.
+- Every bolt (`IfcMechanicalFastener`) and plate (`IfcPlate`): a part of
+  a joint's `IfcElementAssembly`, its property set (`OHL_Fastener`,
+  `OHL_Plate`), a bolt's nominal diameter and length positive, its body
+  built by the geometry kernel with a positive volume.
 
 **SAF, per file** (the standard library only; the published SAF
 specification and its SDK are not used, so only what the exporter states
@@ -317,6 +395,11 @@ give such cross-sections in the cross-section library.
 Rerun on 2026-10-19 after `every-profile` gained a tension-only member
 that bends and a member not checked (`Bending`, `Check` in `OHL_Member`,
 the analysis members' `Description`, SAF `Layer`): 12 files, 0 errors.
+Not rerun after the bolts and plates were added (2026-11-02): IfcOpenShell
+is not installed where they were built; the unit tests check the STEP
+structure, the attribute counts of the new entities in both schemas, the
+bolts' diameters, lengths and placements and the plate's thickness. The
+joint structure is in the test, to be run with `OHL_IFC_PYTHON`.
 
 **What the free tools cannot confirm** (only the target programs can):
 

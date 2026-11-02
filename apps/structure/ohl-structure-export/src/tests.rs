@@ -229,6 +229,21 @@ impl Parsed {
         self.entities.values().filter(|(k, _)| k == kind).count()
     }
 
+    /// The entity `#n` a reference names.
+    fn at(&self, r: &str) -> &(String, Vec<String>) {
+        &self.entities[&r.trim_start_matches('#').parse::<usize>().unwrap()]
+    }
+
+    /// The coordinates of the point `#n`.
+    fn coordinates(&self, r: &str) -> Vec<f64> {
+        let (kind, a) = self.at(r);
+        assert_eq!(kind, "IFCCARTESIANPOINT");
+        a[0].trim_matches(|c| c == '(' || c == ')')
+            .split(',')
+            .map(|x| x.parse().unwrap())
+            .collect()
+    }
+
     fn of(&self, kind: &str) -> Vec<&Vec<String>> {
         self.entities
             .values()
@@ -305,6 +320,10 @@ impl Parsed {
             ("IFCPERSONANDORGANIZATION", 3),
             ("IFCAPPLICATION", 4),
             ("IFCOWNERHISTORY", 8),
+            ("IFCELEMENTASSEMBLY", 10),
+            ("IFCMECHANICALFASTENER", if ifc4 { 11 } else { 10 }),
+            ("IFCPLATE", if ifc4 { 9 } else { 8 }),
+            ("IFCARBITRARYCLOSEDPROFILEDEF", 3),
         ]
         .into_iter()
         .collect();
@@ -330,6 +349,9 @@ impl Parsed {
             "IFCSTRUCTURALANALYSISMODEL",
             "IFCRELSERVICESBUILDINGS",
             "IFCRELASSOCIATESMATERIAL",
+            "IFCELEMENTASSEMBLY",
+            "IFCMECHANICALFASTENER",
+            "IFCPLATE",
         ];
         let mut ids = BTreeSet::new();
         for (n, (kind, args)) in &self.entities {
@@ -354,7 +376,13 @@ impl Parsed {
 
 #[test]
 fn type_02_as_export_data() {
-    let s = structure(&type_02(), &SectionLibrary::default(), None).unwrap();
+    let s = structure(
+        &type_02(),
+        &SectionLibrary::default(),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
     assert_eq!(s.id, "type-02");
     assert_eq!(s.nodes.len(), 46);
     assert_eq!(s.members.len(), 178);
@@ -399,7 +427,13 @@ fn type_02_as_export_data() {
 
 #[test]
 fn ifc4_of_type_02() {
-    let s = structure(&type_02(), &SectionLibrary::default(), None).unwrap();
+    let s = structure(
+        &type_02(),
+        &SectionLibrary::default(),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
     let text = ifc::ifc(&s, &IfcOptions::default()).unwrap();
     let p = parse_step(&text);
     assert!(p.header.contains("FILE_SCHEMA(('IFC4'))"));
@@ -616,7 +650,13 @@ fn member_axes_follow_the_model() {
 
 #[test]
 fn saf_sheets_and_round_trip() {
-    let s = structure(&type_02(), &SectionLibrary::default(), None).unwrap();
+    let s = structure(
+        &type_02(),
+        &SectionLibrary::default(),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
     let bytes = saf::workbook(&s).unwrap();
     let back = xlsx::read(&bytes).unwrap();
     let names: Vec<&str> = back.iter().map(|x| x.name.as_str()).collect();
@@ -793,8 +833,8 @@ fn csv_tables() {
 #[test]
 fn exports_are_deterministic() {
     let text = type_02();
-    let a = structure(&text, &SectionLibrary::default(), None).unwrap();
-    let b = structure(&text, &SectionLibrary::default(), None).unwrap();
+    let a = structure(&text, &SectionLibrary::default(), &Default::default(), None).unwrap();
+    let b = structure(&text, &SectionLibrary::default(), &Default::default(), None).unwrap();
     assert_eq!(a, b);
     let o = IfcOptions::default();
     assert_eq!(ifc::ifc(&a, &o).unwrap(), ifc::ifc(&b, &o).unwrap());
@@ -803,7 +843,13 @@ fn exports_are_deterministic() {
     // GlobalIds follow the ids: the member m1 keeps its id when a joint
     // is renamed elsewhere.
     let renamed = text.replace("\"A2\"", "\"A2x\"");
-    let c = structure(&renamed, &SectionLibrary::default(), None).unwrap();
+    let c = structure(
+        &renamed,
+        &SectionLibrary::default(),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
     let id_of = |t: &str| {
         let p = parse_step(t);
         p.of("IFCMEMBER")
@@ -959,7 +1005,7 @@ fn bending_and_unchecked() -> ExportStructure {
             "section = \"GEN-1\"\n",
             "section = \"GEN-1\"\ncheck = false\n",
         );
-    structure(&text, &example_library(), None).unwrap()
+    structure(&text, &example_library(), &Default::default(), None).unwrap()
 }
 
 #[test]
@@ -1088,7 +1134,7 @@ fn connections_and_plates_as_csv() {
          gauges = [\"30 mm\"]\npitch = \"50 mm\"\n"
     );
     let library = example_library();
-    let s = structure(&text, &library, None).unwrap();
+    let s = structure(&text, &library, &Default::default(), None).unwrap();
     let t = csv::tables(&s);
     let get = |n: &str| t.iter().find(|(x, _)| *x == n).map(|x| x.1.clone());
     let c = get("connections.csv").unwrap();
@@ -1099,10 +1145,268 @@ fn connections_and_plates_as_csv() {
     );
     assert!(get("plates.csv").unwrap().contains("G1,N1,0.01,,"));
     assert!(get("connections.csv").is_some());
-    let none = structure(SHAPES, &library, None).unwrap();
+    let none = structure(SHAPES, &library, &Default::default(), None).unwrap();
     assert!(
         csv::tables(&none)
             .iter()
             .all(|(n, _)| *n != "connections.csv")
     );
+}
+
+/// A leg in two members in the face y = 1 m and two diagonals to its
+/// middle N2: D1 bolted onto the leg by two library bolts, D2 onto the
+/// gusset plate G1 by three typed ones, each by its short leg, which lies
+/// in the face (invented).
+const TOWER: &str = r#"id = "T"
+name = "t"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "1 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "1 m", "5 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "1 m", "10 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["4 m", "1 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N5"
+point = ["-4 m", "1 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-61x7"
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-61x7"
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "UA-83x52x6"
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "UA-83x52x6"
+"#;
+
+const TOWER_JOINT: &str = r#"
+[[connection]]
+member = "D1"
+joint = "N2"
+onto = "L1"
+leg = "short"
+bolts = { count = 2, bolt = "X17-example" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+
+[[connection]]
+member = "D2"
+joint = "N2"
+onto = "G1"
+leg = "short"
+bolts = { count = 3, diameter = "16 mm", grade = "8.8" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+
+[[plate]]
+id = "G1"
+joint = "N2"
+thickness = "8 mm"
+material = "plate steel"
+"#;
+
+fn example_bolts() -> ohl_structures::bolts::BoltLibrary {
+    ohl_structures::bolts::BoltLibrary::load(&root().join("libraries/bolts/example-bolts.ohlb"))
+        .unwrap()
+}
+
+/// The refs in a STEP list `(#1,#2)`.
+fn refs(list: &str) -> Vec<&str> {
+    list.trim_matches(|c| c == '(' || c == ')')
+        .split(',')
+        .collect()
+}
+
+/// The bolts and the plate where the joint view draws them: D1 seated on
+/// the leg (its solid shifted with it), D2 on the plate; in IFC4 and
+/// IFC2x3 a joint assembly with five fasteners and a plate, their
+/// diameters, lengths and placements.
+#[test]
+fn bolts_and_plates_in_ifc() {
+    let text = format!("{TOWER}{TOWER_JOINT}");
+    let library = example_library();
+    let s = structure(&text, &library, &example_bolts(), None).unwrap();
+    assert_eq!(s.bolts.len(), 5, "{:?}", s.notes);
+    assert_eq!(s.joint_plates.len(), 1);
+    let d1: Vec<&ExportBolt> = s.bolts.iter().filter(|b| b.member == "D1").collect();
+    let d2: Vec<&ExportBolt> = s.bolts.iter().filter(|b| b.member == "D2").collect();
+    assert_eq!((d1.len(), d2.len()), (2, 3));
+    // The library bolt's diameter and sizes; the typed one's proportions.
+    assert!(d1.iter().all(|b| (b.diameter - 0.017).abs() < 1e-12));
+    assert!((d1[0].sizes[0] - 0.025).abs() < 1e-12);
+    assert!((d1[0].sizes[2] - 0.014).abs() < 1e-12);
+    assert_eq!(d1[0].bolt.as_deref(), Some("X17-example"));
+    assert!(d2.iter().all(|b| (b.diameter - 0.016).abs() < 1e-12));
+    let [flats, _, nut, beyond] = ohl_structure_link::BOLT_DRAWN;
+    assert!((d2[0].sizes[0] - flats * 0.016).abs() < 1e-12);
+    // Length under the head: the diagonal's 6 mm and the leg's 7 mm (D1),
+    // the plate's 8 mm (D2), the nut and the shank beyond it.
+    assert!((d1[0].length() - (0.006 + 0.007 + 0.014 + beyond * 0.017)).abs() < 1e-12);
+    assert!((d2[0].length() - (0.006 + 0.008 + (nut + beyond) * 0.016)).abs() < 1e-12);
+    // As the joint view: D1 seated (its whole solid shifted, one end with
+    // bolts), the bolts at its seated points; D2 and the legs on their axes.
+    let d = ohl_structure_link::joint_details(&text, &library, &example_bolts()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a1 = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let k1 = s.members.iter().position(|m| m.id == "D1").unwrap();
+    assert!(a1.offset.iter().any(|v| v.abs() > 1e-4), "{:?}", a1.offset);
+    assert_eq!(s.body_offsets[k1], a1.offset);
+    for (b, p) in d1.iter().zip(&a1.bolt_points) {
+        assert!((0..3).all(|k| (b.point[k] - p[k]).abs() < 1e-12));
+    }
+    for (m, o) in s.members.iter().zip(&s.body_offsets) {
+        if m.id != "D1" {
+            assert_eq!(*o, [0.0; 3], "{}", m.id);
+        }
+    }
+    // 30 and 80 mm from the joint along D1.
+    let dir = a1.direction;
+    for (b, along) in d1.iter().zip([0.03, 0.08]) {
+        let x: f64 = (0..3).map(|k| (b.point[k] - n2.position[k]) * dir[k]).sum();
+        assert!((x - along).abs() < 1e-9, "{x}");
+    }
+    // The plate lies in D2's bolts' face, through its thickness away from
+    // the heads.
+    let g = &s.joint_plates[0];
+    assert!(!g.outline_given && g.outline.len() >= 3);
+    for b in &d2 {
+        let off: f64 = (0..3)
+            .map(|k| (b.point[k] - g.outline[0][k]) * g.normal[k])
+            .sum();
+        assert!(off.abs() < 1e-9, "{off}");
+        let side: f64 = (0..3).map(|k| b.axis[k] * g.normal[k]).sum();
+        assert!(side < -0.999, "{side}");
+    }
+
+    for schema in [Schema::Ifc4, Schema::Ifc2x3] {
+        let text = ifc::ifc(
+            &s,
+            &IfcOptions {
+                schema,
+                analysis: schema == Schema::Ifc4,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let p = parse_step(&text);
+        p.check_attributes(schema);
+        assert_eq!(p.count("IFCELEMENTASSEMBLY"), 1);
+        assert_eq!(p.count("IFCMECHANICALFASTENER"), 5);
+        assert_eq!(p.count("IFCPLATE"), 1);
+        // Shared profiles: one shank per bolt size (the angles' are L
+        // profiles), one hexagon per size and the plate's outline.
+        assert_eq!(p.count("IFCCIRCLEPROFILEDEF"), 2);
+        assert_eq!(p.count("IFCARBITRARYCLOSEDPROFILEDEF"), 3);
+        let joint = s.nodes.iter().find(|n| n.id == "N2").unwrap().point;
+        for f in p.of("IFCMECHANICALFASTENER") {
+            // Name "D1 j 2": member, end, number.
+            let name: Vec<&str> = f[2].trim_matches('\'').split(' ').collect();
+            let b = s
+                .bolts
+                .iter()
+                .filter(|b| b.member == name[0])
+                .nth(name[2].parse::<usize>().unwrap() - 1)
+                .unwrap();
+            assert_eq!(f[8], crate::step::real(b.diameter));
+            assert_eq!(f[9], crate::step::real(b.length()));
+            if schema == Schema::Ifc4 {
+                assert_eq!(f[10], ".BOLT.");
+            }
+            // Placed at the bolt, relative to the joint's assembly, its z
+            // along the bolt's axis.
+            let place = &p.at(&f[5]).1;
+            let axes = &p.at(&place[1]).1;
+            let at = p.coordinates(&axes[0]);
+            for k in 0..3 {
+                assert!((at[k] - (b.point[k] - joint[k])).abs() < 1e-9);
+            }
+            let z = &p.at(&axes[1]).1[0];
+            let want = b.axis.map(crate::step::real).join(",");
+            assert_eq!(*z, format!("({want})"));
+            // Head, shank and nut.
+            let shape = &p.at(&f[6]).1;
+            let rep = &p.at(refs(&shape[2])[0]).1;
+            assert_eq!(refs(&rep[3]).len(), 3);
+        }
+        // The plate: its outline extruded by 8 mm.
+        let plate = &p.of("IFCPLATE")[0];
+        let shape = &p.at(&plate[6]).1;
+        let rep = &p.at(refs(&shape[2])[0]).1;
+        let solid = &p.at(refs(&rep[3])[0]).1;
+        assert_eq!(solid[3], "0.008");
+        // D1's body moved by its seat, in its placement's axes (x = local
+        // y, y = local z, z along); its axis line stays on the analysis axis.
+        let m = p
+            .of("IFCMEMBER")
+            .into_iter()
+            .find(|m| m[2] == "'D1'")
+            .unwrap();
+        let shape = &p.at(&m[6]).1;
+        let reps = refs(&shape[2]);
+        let body = &p.at(reps[1]).1;
+        let solid = &p.at(refs(&body[3])[0]).1;
+        let at = p.coordinates(&p.at(&solid[1]).1[0]);
+        let ax = s.members[k1].axes;
+        let want = [ax[1], ax[2], ax[0]].map(|a| (0..3).map(|k| a[k] * a1.offset[k]).sum::<f64>());
+        for k in 0..3 {
+            assert!((at[k] - want[k]).abs() < 1e-9, "{at:?} {want:?}");
+        }
+        let axis = &p.at(reps[0]).1;
+        let line = &p.at(refs(&axis[3])[0]).1;
+        assert_eq!(p.coordinates(refs(&line[0])[0]), [0.0; 3]);
+    }
+}
+
+/// No connection and no plate: no bolts, no shift, the IFC files as
+/// before (the export data without the joints).
+#[test]
+fn no_connections_no_change() {
+    let library = example_library();
+    let s = structure(TOWER, &library, &example_bolts(), None).unwrap();
+    assert!(s.bolts.is_empty() && s.joint_plates.is_empty() && s.body_offsets.is_empty());
+    let (table, recipes) = own_load_table(TOWER, &library).unwrap();
+    let before =
+        ohl_structure_link::export_structure(TOWER, &library, Some(&table), &recipes).unwrap();
+    assert_eq!(s, before);
+    for schema in [Schema::Ifc4, Schema::Ifc2x3] {
+        let o = IfcOptions {
+            schema,
+            analysis: schema == Schema::Ifc4,
+            ..Default::default()
+        };
+        let text = ifc::ifc(&s, &o).unwrap();
+        assert_eq!(text, ifc::ifc(&before, &o).unwrap());
+        assert!(!text.contains("IFCMECHANICALFASTENER"));
+    }
 }

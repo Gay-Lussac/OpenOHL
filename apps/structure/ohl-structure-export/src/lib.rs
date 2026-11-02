@@ -21,7 +21,9 @@
 //!
 //! Each takes plain data, an [`ExportStructure`], made by
 //! `ohl_structure_link::export_structure` from the structure file, the
-//! section library and a load table ([`structure`] here). The crate also
+//! section library and a load table, with the bolts and gusset plates of
+//! the joint details (`ohl_structure_link::export_joints`, the bolt
+//! library) ([`structure`] here). The crate also
 //! builds the command-line tool `ohl-structure-export`.
 
 pub mod csv;
@@ -38,11 +40,13 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use ohl_sections::SectionLibrary;
+pub use ohl_structure_link::{ExportBolt, ExportPlate};
 pub use ohl_structure_link::{
     ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
     ExportSection, ExportStructure, LoadPlace,
 };
 use ohl_structure_loads::{LineValues, LoadCaseRecipe, LoadTable, StructureLoadCases};
+use ohl_structures::bolts::BoltLibrary;
 
 pub use step::{guid, hash128, uuid};
 
@@ -181,15 +185,38 @@ pub fn load_sections(paths: &[PathBuf]) -> Result<(SectionLibrary, Vec<String>),
 }
 
 /// The structure file `text` as export data: its sections from `library`
-/// first; the load cases from `table` (a CSV load table), else its own
-/// recipes evaluated without line values ([`own_load_table`]).
+/// first; its bolts and gusset plates where the joint details put them,
+/// the bolts' sizes from `bolts` (`ohl_structure_link::export_joints`);
+/// the load cases from `table` (a CSV load table), else its own recipes
+/// evaluated without line values ([`own_load_table`]).
 pub fn structure(
     text: &str,
     library: &SectionLibrary,
+    bolts: &BoltLibrary,
     table: Option<&LoadTable>,
 ) -> Result<ExportStructure, String> {
     let (own, recipes) = own_load_table(text, library)?;
-    ohl_structure_link::export_structure(text, library, Some(table.unwrap_or(&own)), &recipes)
+    let mut s =
+        ohl_structure_link::export_structure(text, library, Some(table.unwrap_or(&own)), &recipes)?;
+    ohl_structure_link::export_joints(&mut s, text, library, bolts)?;
+    Ok(s)
+}
+
+/// The bolt libraries of `paths` (files `.ohlb`, or folders whose `.ohlb`
+/// files are read); none given: `Bolts/` beside the structure file
+/// `file` when it is there. The files that do not read, and bolt ids given
+/// twice (the first kept), are the second value.
+pub fn load_bolts(paths: &[PathBuf], file: Option<&Path>) -> (BoltLibrary, Vec<String>) {
+    let dirs = if paths.is_empty() {
+        file.and_then(Path::parent)
+            .map(|d| d.join("Bolts"))
+            .filter(|d| d.is_dir())
+            .into_iter()
+            .collect()
+    } else {
+        paths.to_vec()
+    };
+    BoltLibrary::load_all(&dirs)
 }
 
 /// Writes `s` in `format` to `out` (a file; a folder for CSV); returns

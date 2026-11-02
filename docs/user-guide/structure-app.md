@@ -989,7 +989,7 @@ members with cross-sections, a supported joint.
 | **IFC4 — members with their profiles** | `.ifc` | BIM viewers, coordination |
 | **IFC2x3 — members for steel-detailing programs** | `.ifc` | steel-detailing programs that take a reference model in IFC2x3 only |
 | **SAF (xlsx) — analysis model with load cases (analysis programs)** | `.xlsx` | analysis programs reading the Structural Analysis Format |
-| **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads` |
+| **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads`; with joint details `connections` and `plates` |
 
 Pre-alpha, in active development: the exports are checked with free tools (IfcOpenShell's IFC validation, a reader of the SAF workbook; [Structure exports › Checks with free tools](../development/structure-exports.md#checks-with-free-tools)), but no exported file has been imported into another program yet. Sample files to try in other programs are in `examples/exports/`.
 
@@ -1012,11 +1012,31 @@ written as any other, flagged the same way (`Check` false, "not
 checked", the `check` column). See
 [Structure exports](../development/structure-exports.md#tension-only-members-that-bend-and-members-not-checked).
 
+**Bolts and gusset plates** (a tower with [joint details](#joint-details-towers):
+a file with `[[connection]]` or `[[plate]]`): both IFC files carry
+them, the IFC2x3 one too. Per joint an assembly named after the joint
+holds its bolts (each with its diameter, its length under the head, a
+head, a shank and a nut; property set `OHL_Fastener`: joint, member,
+end, grip, hole, grade, library bolt) and its plates (the outline
+extruded by the thickness; `OHL_Plate`). They are where the **Joint
+view** draws them: a member bolted onto a leg is **seated** — its solid
+moved across so that its leg lies on the leg it bolts onto, as in the
+drawings — when its bolted ends agree on that shift; otherwise its solid
+stays on its axis and its bolts move with it. The analysis model (IFC4)
+always keeps the axes. A plate without an outline in the file lies
+around its bolts (30 mm, assumed), in their face. SAF has no bolts or
+plates; CSV gives the connections and plates as the file does. A file
+without connections and plates is exported exactly as before.
+
 Under the entries:
 
 - **Cross-section library**: by default the window's (`--sections`, else the
   `Sections` folder beside the file — the one the load panels use);
   **Choose library…** takes another file.
+- **Bolt library**: by default the window's (the `Bolts` folder beside the
+  file, as the Joint view); **Choose bolt library…** takes another
+  `.ohlb` file. A connection naming a bolt takes its diameter and its
+  head's and nut's sizes from it (else the drawing proportions).
 - **Loads**: by default the **Load table panel's table**: for a placed
   structure (opened with **Open in OHL-Structure…** from the line) the line's values at
   that place, and the values typed over the table; for a structure opened
@@ -1032,12 +1052,13 @@ The same from the command line:
 
 ```bash
 ohl-structure-export examples/synthetic-line/Structures/type-02.ohls --format saf -o type-02.xlsx
-ohl-structure-export tower.ohls --format ifc --sections libraries/sections --loads loads.csv -o tower.ifc
+ohl-structure-export tower.ohls --format ifc --sections libraries/sections --bolts libraries/bolts --loads loads.csv -o tower.ifc
 ```
 
 `--format` is `ifc`, `ifc-members`, `ifc2x3`, `saf` or `csv` (`-o` a
 folder); `--sections` takes library files or folders (the first giving an
-id wins); `--loads` a load table (CSV; without it the file's own recipes
+id wins); `--bolts` bolt library files or folders (default: the `Bolts`
+folder beside the file, when there is one); `--loads` a load table (CSV; without it the file's own recipes
 without line values); `--timestamp` writes the export
 time into IFC headers (without it, exports of the same file are
 identical byte for byte).

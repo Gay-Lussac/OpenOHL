@@ -9,7 +9,7 @@
 //! ohl-structure-export examples/synthetic-line/Structures/type-02.ohls \
 //!     --format saf -o type-02.xlsx
 //! ohl-structure-export tower.ohls --format ifc --sections libraries/sections \
-//!     --loads tower-loads.csv -o tower.ifc
+//!     --bolts libraries/bolts --loads tower-loads.csv -o tower.ifc
 //! ```
 //!
 //! A tool of its own (not `ohl structures export`): the command line
@@ -40,6 +40,11 @@ struct Args {
     /// the file's [[section]] tables.
     #[arg(long, num_args = 1..)]
     sections: Vec<PathBuf>,
+    /// Bolt library files (.ohlb) or folders, for the bolts a connection
+    /// names (diameter, head and nut in IFC); default: Bolts/ beside the
+    /// file.
+    #[arg(long, num_args = 1..)]
+    bolts: Vec<PathBuf>,
     /// A load table (CSV, as the structure application writes it) instead
     /// of the file's own load cases evaluated without line values.
     #[arg(long)]
@@ -67,6 +72,10 @@ fn run(args: &Args) -> Result<(), String> {
     for id in left_out {
         eprintln!("note: section library: \"{id}\" given twice, the first one kept");
     }
+    let (bolts, unread) = ohl_structure_export::load_bolts(&args.bolts, Some(&args.file));
+    for e in unread {
+        eprintln!("note: bolt library: {e}");
+    }
     let table = match &args.loads {
         Some(p) => Some(
             std::fs::read_to_string(p)
@@ -77,7 +86,7 @@ fn run(args: &Args) -> Result<(), String> {
         ),
         None => None,
     };
-    let s = ohl_structure_export::structure(&text, &library, table.as_ref())
+    let s = ohl_structure_export::structure(&text, &library, &bolts, table.as_ref())
         .map_err(|e| format!("{}: {e}", args.file.display()))?;
     let time = if args.timestamp {
         std::time::SystemTime::now()

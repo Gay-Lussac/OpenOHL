@@ -224,6 +224,292 @@ pub struct ExportStructure {
     pub connections: Vec<ohl_structures::connections::TypeConnection>,
     /// The gusset plates as the file gives them.
     pub plates: Vec<ohl_structures::connections::TypePlate>,
+    /// The bolts where the joint details put them ([`export_joints`]);
+    /// empty when the file has no connection or plate.
+    pub bolts: Vec<ExportBolt>,
+    /// The gusset plates where the joint details put them
+    /// ([`export_joints`]).
+    pub joint_plates: Vec<ExportPlate>,
+    /// Per member, the shift of its physical solid from its axis
+    /// (structure's axes, m): its leg seated on the leg it bolts onto, as
+    /// the joint view draws it ([`export_joints`]); empty or zero: on the
+    /// axis. The analysis model always keeps the axes.
+    pub body_offsets: Vec<[f64; 3]>,
+}
+
+/// A bolt as the exports place it, consistent with its member's solid
+/// (shifted by [`ExportStructure::body_offsets`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportBolt {
+    /// The joint's id.
+    pub joint: String,
+    /// The member's id.
+    pub member: String,
+    /// Its end at the joint (0: the first joint, 1: the second).
+    pub end: usize,
+    /// Where it is (structure's axes, m): on the face between the leg
+    /// bolted and what it bolts onto.
+    pub point: [f64; 3],
+    /// Its axis (unit), from that face towards the head.
+    pub axis: [f64; 3],
+    /// Diameter, m.
+    pub diameter: f64,
+    /// Hole, m (none: not given).
+    pub hole: Option<f64>,
+    /// Grade (none: not given).
+    pub grade: Option<String>,
+    /// The library bolt it is (none: typed only).
+    pub bolt: Option<String>,
+    /// What it clamps, m: the leg bolted (head side) and what it bolts
+    /// onto (nut side).
+    pub grip: [f64; 2],
+    /// Across the flats of head and nut, the head's height, the nut's, m:
+    /// the library bolt's, else the drawing proportions
+    /// ([`crate::BOLT_DRAWN`]).
+    pub sizes: [f64; 3],
+    /// The shank beyond the nut, m (drawing proportion).
+    pub beyond: f64,
+}
+
+impl ExportBolt {
+    /// The length under the head, m: both grips, the nut and the shank
+    /// beyond it.
+    pub fn length(&self) -> f64 {
+        self.grip[0] + self.grip[1] + self.sizes[2] + self.beyond
+    }
+}
+
+/// A gusset plate as the exports place it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportPlate {
+    /// Id.
+    pub id: String,
+    /// The joint's id.
+    pub joint: String,
+    /// Thickness, m.
+    pub thickness: f64,
+    /// Material (as the file names it).
+    pub material: Option<String>,
+    /// Its outline (structure's axes, m): one face of the plate; given,
+    /// or around the bolts onto it and laid in their face.
+    pub outline: Vec<[f64; 3]>,
+    /// From the outline's face through the thickness (unit): away from
+    /// the members bolted onto it.
+    pub normal: [f64; 3],
+    /// The outline given in the file.
+    pub outline_given: bool,
+    /// The members bolted onto it.
+    pub members: Vec<String>,
+}
+
+fn add3(a: [f64; 3], b: [f64; 3], k: f64) -> [f64; 3] {
+    [a[0] + k * b[0], a[1] + k * b[1], a[2] + k * b[2]]
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// The unit normal of a polygon (Newell's method); none when degenerate.
+fn polygon_normal(pts: &[[f64; 3]]) -> Option<[f64; 3]> {
+    let mut n = [0.0; 3];
+    for (k, a) in pts.iter().enumerate() {
+        let b = pts[(k + 1) % pts.len()];
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    let l = dot3(n, n).sqrt();
+    (pts.len() >= 3 && l > 1e-12).then(|| n.map(|v| v / l))
+}
+
+/// The convex hull of `pts` in the plane through `at` square to `normal`
+/// (each point moved along `normal` into it), grown by `margin`; its x
+/// along `along` as far as it lies in the plane.
+fn face_hull(
+    pts: &[[f64; 3]],
+    at: [f64; 3],
+    normal: [f64; 3],
+    along: [f64; 3],
+    margin: f64,
+) -> Vec<[f64; 3]> {
+    let n = normal.map(|v| v / dot3(normal, normal).sqrt());
+    let mut u = add3(along, n, -dot3(along, n));
+    if dot3(u, u) < 1e-12 {
+        u = if n[2].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        u = add3(u, n, -dot3(u, n));
+    }
+    let u = u.map(|v| v / dot3(u, u).sqrt());
+    let v = cross(n, u);
+    let mut grown = Vec::new();
+    for p in pts {
+        let d = sub(*p, at);
+        let (x, y) = (dot3(d, u), dot3(d, v));
+        for k in 0..8 {
+            let t = f64::from(k) * std::f64::consts::FRAC_PI_4;
+            grown.push([x + margin * t.cos(), y + margin * t.sin()]);
+        }
+    }
+    crate::joint_sheet::hull(grown)
+        .into_iter()
+        .map(|q| add3(add3(at, u, q[0]), v, q[1]))
+        .collect()
+}
+
+/// Adds the bolts and gusset plates of the joint details to `s` (made by
+/// [`export_structure`] from the same `text` and `library`), the bolts'
+/// sizes from `bolts`; nothing when the file has no `[[connection]]` and
+/// no `[[plate]]` (the export then stays as before).
+///
+/// Each bolt is where the joint view draws it ([`crate::joint_details`]),
+/// so on the face of the leg it bolts onto, the member seated there by
+/// its end's shift ([`crate::Arrival::offset`]). A member's physical
+/// solid is shifted the same way ([`ExportStructure::body_offsets`]) when
+/// the ends with bolts agree on the shift; when they differ (or none has
+/// one) the solid stays on the axis and the bolts move back with it, so
+/// they always go through their member's leg. A plate whose outline is
+/// not given lies in the face of the bolts onto it.
+pub fn export_joints(
+    s: &mut ExportStructure,
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &ohl_structures::bolts::BoltLibrary,
+) -> Result<(), String> {
+    if s.connections.is_empty() && s.plates.is_empty() {
+        return Ok(());
+    }
+    let d = crate::joint_details(text, library, bolts)?;
+    if !d.level3 {
+        return Ok(());
+    }
+    // The shift of each end with bolts, per member.
+    let mut shifts: BTreeMap<&str, Vec<[f64; 3]>> = BTreeMap::new();
+    for j in &d.joints {
+        for a in &j.arrivals {
+            if !a.bolt_points.is_empty() {
+                shifts.entry(a.member.as_str()).or_default().push(a.offset);
+            }
+        }
+    }
+    let mut apart = Vec::new();
+    let body: BTreeMap<&str, [f64; 3]> = shifts
+        .iter()
+        .map(|(m, v)| {
+            let same = v
+                .iter()
+                .all(|o| (0..3).all(|k| (o[k] - v[0][k]).abs() <= 1e-6));
+            if !same {
+                apart.push(*m);
+            }
+            (*m, if same { v[0] } else { [0.0; 3] })
+        })
+        .collect();
+    if !apart.is_empty() {
+        s.notes.push(format!(
+            "member(s) {} seated differently at their two ends: their solids \
+             kept on their axes, their bolts with them",
+            apart.join(", ")
+        ));
+    }
+    s.body_offsets = s
+        .members
+        .iter()
+        .map(|m| body.get(m.id.as_str()).copied().unwrap_or([0.0; 3]))
+        .collect();
+    let [flats, head, nut, beyond] = crate::BOLT_DRAWN;
+    for j in &d.joints {
+        for a in &j.arrivals {
+            let Some(b) = a.bolts.value.as_ref() else {
+                continue;
+            };
+            let shift = body.get(a.member.as_str()).copied().unwrap_or([0.0; 3]);
+            let dia = b.diameter;
+            for p in &a.bolt_points {
+                s.bolts.push(ExportBolt {
+                    joint: j.id.clone(),
+                    member: a.member.clone(),
+                    end: a.end,
+                    point: add3(add3(*p, a.offset, -1.0), shift, 1.0),
+                    axis: a.bolt_axis,
+                    diameter: dia,
+                    hole: b.hole,
+                    grade: b.grade.clone(),
+                    bolt: b.bolt.clone(),
+                    grip: a.grip,
+                    sizes: [
+                        b.drawn[0].unwrap_or(flats * dia),
+                        b.drawn[1].unwrap_or(head * dia),
+                        b.drawn[2].unwrap_or(nut * dia),
+                    ],
+                    beyond: beyond * dia,
+                });
+            }
+        }
+        for p in &j.plates {
+            let onto: Vec<&crate::Arrival> = j
+                .arrivals
+                .iter()
+                .filter(|a| a.onto.value.as_deref() == Some(p.id.as_str()))
+                .collect();
+            // The bolts onto it as exported.
+            let placed = |a: &crate::Arrival| -> Vec<[f64; 3]> {
+                let shift = body.get(a.member.as_str()).copied().unwrap_or([0.0; 3]);
+                a.bolt_points
+                    .iter()
+                    .map(|q| add3(add3(*q, a.offset, -1.0), shift, 1.0))
+                    .collect()
+            };
+            // The first member bolted onto it: its bolts' face and side.
+            let face = onto
+                .iter()
+                .find_map(|a| placed(a).first().map(|q| (*q, a.bolt_axis)));
+            let outline = match face {
+                Some((at, axis)) if !p.outline_given => {
+                    // Not given: around the joint and the bolts onto it
+                    // (30 mm, as the joint view), laid in their face.
+                    let mut pts = vec![j.position];
+                    for a in &onto {
+                        let b = placed(a);
+                        if b.is_empty() {
+                            pts.push(add3(j.position, a.direction, 0.15));
+                        }
+                        pts.extend(b);
+                    }
+                    face_hull(&pts, at, axis, onto[0].direction, 0.03)
+                }
+                _ => p.outline.clone(),
+            };
+            let Some(mut normal) = polygon_normal(&outline) else {
+                s.notes.push(format!(
+                    "plate {} at {}: no outline to draw, left out of IFC",
+                    p.id, j.id
+                ));
+                continue;
+            };
+            // Through the thickness away from the members on it: against
+            // their bolts' axis (the heads are on the members' side).
+            if let Some((_, axis)) = face
+                && dot3(normal, axis) > 0.0
+            {
+                normal = normal.map(|v| -v);
+            }
+            s.joint_plates.push(ExportPlate {
+                id: p.id.clone(),
+                joint: j.id.clone(),
+                thickness: p.thickness,
+                material: p.material.clone(),
+                outline,
+                normal,
+                outline_given: p.outline_given,
+                members: p.members.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {

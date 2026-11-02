@@ -7,8 +7,9 @@
 //! or CSV tables
 //! (`ohl-structure-export`). By default with the window's section library
 //! and its load table (the Load table panel: a placed structure's line
-//! values and the values typed); another library or a load table (CSV)
-//! can be chosen here.
+//! values and the values typed) and the window's bolt libraries (`Bolts/`
+//! beside the structure: the bolts and plates of the joint details in
+//! IFC); another library or a load table (CSV) can be chosen here.
 
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,9 @@ pub struct ExportSettings {
     pub sections: Option<PathBuf>,
     /// Load table chosen (CSV); none: the Load table panel's table.
     pub loads: Option<PathBuf>,
+    /// Bolt library chosen (a file); none: the window's (`Bolts/` beside
+    /// the file, the project's libraries).
+    pub bolts: Option<PathBuf>,
 }
 
 impl StructureApp {
@@ -69,6 +73,26 @@ impl StructureApp {
                 }
                 if self.export.sections.is_some() && ui.button("The window's").clicked() {
                     self.export.sections = None;
+                }
+            });
+            let bolts = match &self.export.bolts {
+                Some(p) => p.display().to_string(),
+                None => "the window's (Bolts/ beside the structure)".into(),
+            };
+            ui.label(format!("Bolt library: {bolts}"));
+            ui.horizontal(|ui| {
+                if ui.button("Choose bolt library…").clicked()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .add_filter(
+                            "Bolt library",
+                            &[ohl_structures::bolts::BOLT_FILE_EXTENSION],
+                        )
+                        .pick_file()
+                {
+                    self.export.bolts = Some(p);
+                }
+                if self.export.bolts.is_some() && ui.button("The window's bolts").clicked() {
+                    self.export.bolts = None;
                 }
             });
             let loads = match &self.export.loads {
@@ -125,36 +149,50 @@ impl StructureApp {
     /// Exports the structure as it is now (unsaved edits and typed loads
     /// included) in `format` to `out`; what was written, or why not.
     pub fn export(&mut self, format: Format, out: &Path) -> Result<String, String> {
-        let f = self.file.as_ref().ok_or("no structure open")?;
+        if self.file.is_none() {
+            return Err("no structure open".into());
+        }
         let library = match &self.export.sections {
             Some(p) => ohl_structure_export::load_sections(std::slice::from_ref(p))?.0,
             None => self.loads.sections.clone(),
         };
+        let bolts = match &self.export.bolts {
+            Some(p) => ohl_structures::bolts::BoltLibrary::load(p)?,
+            None => self.bolt_library().0.clone(),
+        };
+        let f = self.file.as_ref().ok_or("no structure open")?;
         let s = match &self.export.loads {
             Some(p) => {
                 let table = std::fs::read_to_string(p)
                     .map_err(|e| e.to_string())
                     .and_then(|t| LoadTable::from_csv(&t))
                     .map_err(|e| format!("{}: {e}", p.display()))?;
-                ohl_structure_export::structure(&f.text(), &library, Some(&table))?
+                ohl_structure_export::structure(&f.text(), &library, &bolts, Some(&table))?
             }
             None => {
                 self.loads.refresh(f);
                 let recipes = self.loads.recipes().map(<[_]>::to_vec).unwrap_or_default();
-                ohl_structure_link::export_structure(
+                let mut s = ohl_structure_link::export_structure(
                     &f.text(),
                     &library,
                     Some(self.loads.table()),
                     &recipes,
-                )?
+                )?;
+                ohl_structure_link::export_joints(&mut s, &f.text(), &library, &bolts)?;
+                s
             }
         };
         let time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
         let written = ohl_structure_export::write(&s, format, out, time)?;
+        let joints = if s.bolts.is_empty() && s.joint_plates.is_empty() {
+            String::new()
+        } else {
+            format!(", {} bolts, {} plates", s.bolts.len(), s.joint_plates.len())
+        };
         let mut m = format!(
-            "exported {} members, {} load cases to {}",
+            "exported {} members, {} load cases{joints} to {}",
             s.members.len(),
             s.load_cases.len(),
             written

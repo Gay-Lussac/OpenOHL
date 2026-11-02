@@ -9,7 +9,8 @@
 //!   writes now (`OHL_UPDATE_EXPORT_SAMPLES=1` rewrites them);
 //! - with `OHL_IFC_PYTHON` pointing to a Python that has IfcOpenShell,
 //!   the IFC4, IFC2x3 and SAF exports of the example lattice structure,
-//!   the every-profile sample and a body built by the generators are
+//!   the every-profile sample, a body built by the generators and a joint
+//!   with bolts and a gusset plate are
 //!   checked by `tools/check_structure_exports.py` (IfcOpenShell's schema
 //!   and rule validation, content and references); skipped otherwise.
 
@@ -109,6 +110,87 @@ fn generated() -> String {
     )
 }
 
+/// A leg in two members and two diagonals to its middle, one bolted onto
+/// the leg by two bolts of the example library, the other onto a gusset
+/// plate by three typed ones (invented).
+const JOINT: &str = r#"format = "ohl-structure"
+version = 9
+id = "joint"
+name = "A joint with bolts and a plate (invented)"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "1 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "1 m", "5 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "1 m", "10 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["4 m", "1 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N5"
+point = ["-4 m", "1 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-61x7"
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-61x7"
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "UA-83x52x6"
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "UA-83x52x6"
+
+[[connection]]
+member = "D1"
+joint = "N2"
+onto = "L1"
+leg = "short"
+bolts = { count = 2, bolt = "X17-example" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+
+[[connection]]
+member = "D2"
+joint = "N2"
+onto = "G1"
+leg = "short"
+bolts = { count = 3, diameter = "16 mm", grade = "8.8" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+
+[[plate]]
+id = "G1"
+joint = "N2"
+thickness = "8 mm"
+"#;
+
 /// The formats checked, with their file names.
 const FORMATS: [(Format, &str); 4] = [
     (Format::Ifc, "ifc4.ifc"),
@@ -128,7 +210,7 @@ const SAMPLES: [(Format, &str); 3] = [
 fn the_sample_exports_are_current() {
     let dir = root().join("examples/exports");
     let text = std::fs::read_to_string(dir.join("every-profile.ohls")).unwrap();
-    let s = ohl_structure_export::structure(&text, &library(), None).unwrap();
+    let s = ohl_structure_export::structure(&text, &library(), &Default::default(), None).unwrap();
     let update = std::env::var_os("OHL_UPDATE_EXPORT_SAMPLES").is_some();
     let tmp = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("export-samples");
     std::fs::create_dir_all(&tmp).unwrap();
@@ -170,10 +252,15 @@ fn exports_pass_the_free_tools() {
             std::fs::read_to_string(examples.join("exports/every-profile.ohls")).unwrap(),
         ),
         ("generated", generated()),
+        ("joint", JOINT.to_owned()),
     ];
     let library = library();
+    let bolts = ohl_structures::bolts::BoltLibrary::load(
+        &root().join("libraries/bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
     for (id, text) in &structures {
-        let s = ohl_structure_export::structure(text, &library, None).unwrap();
+        let s = ohl_structure_export::structure(text, &library, &bolts, None).unwrap();
         for (format, suffix) in FORMATS {
             ohl_structure_export::write(&s, format, &dir.join(format!("{id}-{suffix}")), 0)
                 .unwrap();
@@ -190,6 +277,6 @@ fn exports_pass_the_free_tools() {
     assert!(out.status.success(), "the checks found errors (above)");
     assert!(report.contains(&format!(
         "{} files checked, 0 with errors",
-        3 * FORMATS.len()
+        4 * FORMATS.len()
     )));
 }

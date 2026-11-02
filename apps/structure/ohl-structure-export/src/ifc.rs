@@ -31,11 +31,25 @@
 //! profiles and materials, in a site, building and storey — the form
 //! steel-detailing programs convert into their own parts.
 //!
+//! **Bolts and gusset plates** (both schemas, with the members; a file
+//! with `[[connection]]` or `[[plate]]` only): per joint an
+//! `IfcElementAssembly` (`.USERDEFINED.`, `ObjectType` `joint`) at the
+//! joint, aggregating its bolts as `IfcMechanicalFastener` (nominal
+//! diameter, nominal length under the head; body: a hexagonal head, a
+//! round shank and a hexagonal nut, each an `IfcExtrudedAreaSolid`) and
+//! its plates as `IfcPlate` (the outline, an `IfcArbitraryClosedProfileDef`,
+//! extruded by the thickness). The members' solids are seated as the
+//! joint view draws them (`ExportStructure::body_offsets`, the body's
+//! position; the placement and axis stay on the analysis axis), so the
+//! bolts go through the legs.
+//!
 //! GlobalIds come from the structure's id and each object's id, so an
 //! export of the same structure gives the same ids.
 
 use ohl_sections::Shape;
-use ohl_structure_link::{ExportKind, ExportMember, ExportSection, ExportStructure, LoadPlace};
+use ohl_structure_link::{
+    ExportBolt, ExportKind, ExportMember, ExportPlate, ExportSection, ExportStructure, LoadPlace,
+};
 
 use crate::step::{Step, opt_string, real, string};
 
@@ -98,6 +112,33 @@ pub fn iso_time(t: i64) -> String {
 
 fn add3(a: [f64; 3], b: [f64; 3], f: f64) -> [f64; 3] {
     [a[0] + f * b[0], a[1] + f * b[1], a[2] + f * b[2]]
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn unit(a: [f64; 3]) -> [f64; 3] {
+    let n = dot(a, a).sqrt().max(1e-300);
+    a.map(|v| v / n)
+}
+
+/// A unit vector square to the unit `n`.
+fn square_to(n: [f64; 3]) -> [f64; 3] {
+    let t = if n[2].abs() < 0.9 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    unit(cross(n, t))
 }
 
 /// A length that must be positive when given: `$` for 0.
@@ -545,11 +586,12 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
     if o.members {
         let identity = f.add("IFCAXIS2PLACEMENT3D", &format!("{origin},$,$"));
         let along = f.direction([0.0, 0.0, 1.0]);
-        for m in &s.members {
+        for (k, m) in s.members.iter().enumerate() {
             let e = member(
                 &mut f,
                 s,
                 m,
+                s.body_offsets.get(k).copied().unwrap_or([0.0; 3]),
                 &oh,
                 &member_place,
                 &body,
@@ -564,10 +606,12 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
             by_section[m.section].push(e.clone());
             physical.push(e);
         }
+        let assemblies = joints(&mut f, s, &oh, &member_place, &body, &materials, ifc4);
+        let contained: Vec<String> = physical.iter().chain(&assemblies).cloned().collect();
         let g = f.guid("contained");
         f.add(
             "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-            &format!("{g},{oh},$,$,({}),{container}", physical.join(",")),
+            &format!("{g},{oh},$,$,({}),{container}", contained.join(",")),
         );
     }
 
@@ -834,6 +878,7 @@ fn member(
     f: &mut Step,
     s: &ExportStructure,
     m: &ExportMember,
+    offset: [f64; 3],
     oh: &str,
     container_place: &str,
     body: &str,
@@ -856,9 +901,18 @@ fn member(
         &format!("{axis_ctx},'Axis','Curve3D',({line})"),
     )];
     if let Some(p) = profile {
+        // Seated (the joint view's shift): the body moved across, in the
+        // placement's axes (x = local y, y = local z, z = along).
+        let local = [m.axes[1], m.axes[2], m.axes[0]].map(|a| dot(offset, a));
+        let at = if local.iter().any(|v| v.abs() > 1e-12) {
+            let o = f.point(local);
+            f.add("IFCAXIS2PLACEMENT3D", &format!("{o},$,$"))
+        } else {
+            identity.to_owned()
+        };
         let solid = f.add(
             "IFCEXTRUDEDAREASOLID",
-            &format!("{p},{identity},{along},{}", real(m.length)),
+            &format!("{p},{at},{along},{}", real(m.length)),
         );
         reps.push(f.add(
             "IFCSHAPEREPRESENTATION",
@@ -908,5 +962,312 @@ fn member(
         "OHL_Member",
         &values,
     );
+    e
+}
+
+/// The bolts and plates of `s`, per joint an `IfcElementAssembly` placed
+/// at the joint (in `container_place`) aggregating them; returns the
+/// assemblies.
+fn joints(
+    f: &mut Step,
+    s: &ExportStructure,
+    oh: &str,
+    container_place: &str,
+    body: &str,
+    materials: &[String],
+    ifc4: bool,
+) -> Vec<String> {
+    let mut assemblies = Vec::new();
+    let mut plate_materials: Vec<(String, Vec<String>)> = Vec::new();
+    // Profiles shared by bolts of the same sizes: (key, reference).
+    let mut profiles: Vec<(String, String)> = Vec::new();
+    for n in &s.nodes {
+        let bolts: Vec<&ExportBolt> = s.bolts.iter().filter(|b| b.joint == n.id).collect();
+        let plates: Vec<&ExportPlate> = s.joint_plates.iter().filter(|p| p.joint == n.id).collect();
+        if bolts.is_empty() && plates.is_empty() {
+            continue;
+        }
+        let at = f.point(n.point);
+        let axes = f.add("IFCAXIS2PLACEMENT3D", &format!("{at},$,$"));
+        let place = f.add("IFCLOCALPLACEMENT", &format!("{container_place},{axes}"));
+        let mut parts = Vec::new();
+        let mut count: Vec<(&str, usize, usize)> = Vec::new();
+        for b in bolts {
+            // The bolt's number at its member end.
+            let k = match count.iter_mut().find(|c| c.0 == b.member && c.1 == b.end) {
+                Some(c) => {
+                    c.2 += 1;
+                    c.2
+                }
+                None => {
+                    count.push((&b.member, b.end, 1));
+                    1
+                }
+            };
+            parts.push(bolt(
+                f,
+                b,
+                k,
+                n.point,
+                &place,
+                oh,
+                body,
+                &mut profiles,
+                ifc4,
+            ));
+        }
+        for p in plates {
+            let e = plate(f, p, n.point, &place, oh, body, ifc4);
+            if let Some(m) = &p.material {
+                match plate_materials.iter_mut().find(|x| &x.0 == m) {
+                    Some(x) => x.1.push(e.clone()),
+                    None => plate_materials.push((m.clone(), vec![e.clone()])),
+                }
+            }
+            parts.push(e);
+        }
+        let g = f.guid(&format!("joint:{}", n.id));
+        let a = f.add(
+            "IFCELEMENTASSEMBLY",
+            &format!(
+                "{g},{oh},{},$,'joint',{place},$,{},$,.USERDEFINED.",
+                string(&n.id),
+                string(&n.id)
+            ),
+        );
+        let g = f.guid(&format!("joint-parts:{}", n.id));
+        f.add(
+            "IFCRELAGGREGATES",
+            &format!("{g},{oh},$,$,{a},({})", parts.join(",")),
+        );
+        assemblies.push(a);
+    }
+    // The plates' materials: the structure's of that id or name, else one
+    // by the name given.
+    for (m, objects) in plate_materials {
+        let known = s
+            .materials
+            .iter()
+            .position(|x| x.id == m || x.name == m)
+            .map(|k| materials[k].clone());
+        let relating = known.unwrap_or_else(|| {
+            if ifc4 {
+                f.add("IFCMATERIAL", &format!("{},$,$", string(&m)))
+            } else {
+                f.add("IFCMATERIAL", &string(&m))
+            }
+        });
+        let g = f.guid(&format!("plate-material:{m}"));
+        f.add(
+            "IFCRELASSOCIATESMATERIAL",
+            &format!("{g},{oh},$,$,({}),{relating}", objects.join(",")),
+        );
+    }
+    assemblies
+}
+
+/// A closed polyline profile of `pts` (2D).
+fn closed_profile(f: &mut Step, name: &str, pts: &[[f64; 2]]) -> String {
+    let mut refs: Vec<String> = pts.iter().map(|p| f.point2(*p)).collect();
+    refs.push(refs[0].clone());
+    let line = f.add("IFCPOLYLINE", &format!("({})", refs.join(",")));
+    f.add(
+        "IFCARBITRARYCLOSEDPROFILEDEF",
+        &format!(".AREA.,{},{line}", string(name)),
+    )
+}
+
+/// An extruded solid of `profile` from `z0` along the placement's z over
+/// `depth`.
+fn extruded(f: &mut Step, profile: &str, z0: f64, depth: f64) -> String {
+    let o = f.point([0.0, 0.0, z0]);
+    let at = f.add("IFCAXIS2PLACEMENT3D", &format!("{o},$,$"));
+    let up = f.direction([0.0, 0.0, 1.0]);
+    f.add(
+        "IFCEXTRUDEDAREASOLID",
+        &format!("{profile},{at},{up},{}", real(depth)),
+    )
+}
+
+/// A profile of `profiles` by its key, made by `make` the first time.
+fn shared(
+    f: &mut Step,
+    profiles: &mut Vec<(String, String)>,
+    key: String,
+    make: impl FnOnce(&mut Step) -> String,
+) -> String {
+    if let Some(p) = profiles.iter().find(|p| p.0 == key) {
+        return p.1.clone();
+    }
+    let r = make(f);
+    profiles.push((key, r.clone()));
+    r
+}
+
+/// The `k`-th bolt of its member end as an `IfcMechanicalFastener`
+/// placed in the joint's assembly (at `joint`, placement `place`): its z
+/// along the bolt's axis (towards the head), the origin on the face
+/// between the two parts it clamps.
+#[allow(clippy::too_many_arguments)]
+fn bolt(
+    f: &mut Step,
+    b: &ExportBolt,
+    k: usize,
+    joint: [f64; 3],
+    place: &str,
+    oh: &str,
+    body: &str,
+    profiles: &mut Vec<(String, String)>,
+    ifc4: bool,
+) -> String {
+    let axis = unit(b.axis);
+    let at = f.point(add3(b.point, joint, -1.0));
+    let z = f.direction(axis);
+    let x = f.direction(square_to(axis));
+    let axes = f.add("IFCAXIS2PLACEMENT3D", &format!("{at},{z},{x}"));
+    let local = f.add("IFCLOCALPLACEMENT", &format!("{place},{axes}"));
+    let [flats, head, nut] = b.sizes;
+    let d = b.diameter;
+    let shank = shared(f, profiles, format!("shank:{}", real(d)), |f| {
+        let o = f.point2([0.0, 0.0]);
+        let xd = f.add("IFCDIRECTION", "(1.,0.)");
+        let p2 = f.add("IFCAXIS2PLACEMENT2D", &format!("{o},{xd}"));
+        f.add(
+            "IFCCIRCLEPROFILEDEF",
+            &format!(".AREA.,'bolt shank',{p2},{}", real(d / 2.0)),
+        )
+    });
+    let hex = shared(f, profiles, format!("hex:{}", real(flats)), |f| {
+        // Across the flats to the corners' radius.
+        let r = flats / 3f64.sqrt();
+        let pts: Vec<[f64; 2]> = (0..6)
+            .map(|k| {
+                let t = f64::from(k) * std::f64::consts::FRAC_PI_3;
+                [r * t.cos(), r * t.sin()]
+            })
+            .collect();
+        closed_profile(f, "bolt head and nut", &pts)
+    });
+    let below = b.grip[1] + nut + b.beyond;
+    let items = [
+        extruded(f, &hex, b.grip[0], head),
+        extruded(f, &shank, -below, below + b.grip[0]),
+        extruded(f, &hex, -(b.grip[1] + nut), nut),
+    ];
+    let rep = f.add(
+        "IFCSHAPEREPRESENTATION",
+        &format!("{body},'Body','SweptSolid',({})", items.join(",")),
+    );
+    let shape = f.add("IFCPRODUCTDEFINITIONSHAPE", &format!("$,$,({rep})"));
+    let end = if b.end == 0 { "i" } else { "j" };
+    let key = format!("bolt:{}:{}:{end}:{k}", b.joint, b.member);
+    let g = f.guid(&key);
+    let e = f.add(
+        "IFCMECHANICALFASTENER",
+        &format!(
+            "{g},{oh},{},$,{},{local},{shape},$,{},{}{}",
+            string(&format!("{} {end} {k}", b.member)),
+            string(b.bolt.as_deref().unwrap_or("bolt")),
+            real(d),
+            real(b.length()),
+            if ifc4 { ",.BOLT." } else { "" }
+        ),
+    );
+    let length = |x: f64| format!("IFCPOSITIVELENGTHMEASURE({})", real(x));
+    let mut values = vec![
+        ("Joint", label(&b.joint)),
+        ("Member", label(&b.member)),
+        ("End", label(end)),
+        ("GripLeg", length(b.grip[0])),
+        ("GripOnto", length(b.grip[1])),
+    ];
+    if let Some(h) = b.hole {
+        values.push(("Hole", length(h)));
+    }
+    if let Some(g) = &b.grade {
+        values.push(("Grade", label(g)));
+    }
+    if let Some(id) = &b.bolt {
+        values.push(("Bolt", label(id)));
+    }
+    properties(
+        f,
+        oh,
+        &key,
+        std::slice::from_ref(&e),
+        "OHL_Fastener",
+        &values,
+    );
+    e
+}
+
+/// A gusset plate as an `IfcPlate` in the joint's assembly: its outline
+/// (a face) extruded through its thickness along its normal.
+fn plate(
+    f: &mut Step,
+    p: &ExportPlate,
+    joint: [f64; 3],
+    place: &str,
+    oh: &str,
+    body: &str,
+    ifc4: bool,
+) -> String {
+    let n = unit(p.normal);
+    let o = p.outline[0];
+    // x along the first side not along the normal, y = z × x.
+    let ex = p
+        .outline
+        .iter()
+        .map(|q| {
+            let d = add3(*q, o, -1.0);
+            add3(d, n, -dot(d, n))
+        })
+        .find(|d| dot(*d, *d) > 1e-18)
+        .map_or_else(|| square_to(n), unit);
+    let ey = cross(n, ex);
+    let at = f.point(add3(o, joint, -1.0));
+    let z = f.direction(n);
+    let x = f.direction(ex);
+    let axes = f.add("IFCAXIS2PLACEMENT3D", &format!("{at},{z},{x}"));
+    let local = f.add("IFCLOCALPLACEMENT", &format!("{place},{axes}"));
+    let pts: Vec<[f64; 2]> = p
+        .outline
+        .iter()
+        .map(|q| {
+            let d = add3(*q, o, -1.0);
+            [dot(d, ex), dot(d, ey)]
+        })
+        .collect();
+    let profile = closed_profile(f, &p.id, &pts);
+    let solid = extruded(f, &profile, 0.0, p.thickness);
+    let rep = f.add(
+        "IFCSHAPEREPRESENTATION",
+        &format!("{body},'Body','SweptSolid',({solid})"),
+    );
+    let shape = f.add("IFCPRODUCTDEFINITIONSHAPE", &format!("$,$,({rep})"));
+    let key = format!("plate:{}:{}", p.joint, p.id);
+    let g = f.guid(&key);
+    let e = f.add(
+        "IFCPLATE",
+        &format!(
+            "{g},{oh},{},$,'gusset plate',{local},{shape},{}{}",
+            string(&p.id),
+            string(&p.id),
+            if ifc4 { ",.NOTDEFINED." } else { "" }
+        ),
+    );
+    let values = [
+        ("Joint", label(&p.joint)),
+        (
+            "Thickness",
+            format!("IFCPOSITIVELENGTHMEASURE({})", real(p.thickness)),
+        ),
+        ("Members", label(&p.members.join(", "))),
+        (
+            "OutlineGiven",
+            format!("IFCBOOLEAN(.{}.)", if p.outline_given { "T" } else { "F" }),
+        ),
+    ];
+    properties(f, oh, &key, std::slice::from_ref(&e), "OHL_Plate", &values);
     e
 }

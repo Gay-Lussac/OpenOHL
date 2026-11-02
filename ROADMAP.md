@@ -851,7 +851,11 @@ Six stages, the questions per stage and per detail level:
   (2026-11-02)
 - [ ] Stage 4.3 to 4.6 — buckling lengths from what braces a member,
   the FE model's options, the joints' own checks, weight and quantities
-- [ ] Stage 5 — exports with bolts and plates, validation
+- [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
+  (a joint assembly per joint), the members seated as the Joint view
+  draws them (2026-11-02)
+- [ ] Stage 5, validation — connection capacities against hand
+  calculations and a tower program's results; the theory page
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition
@@ -860,7 +864,7 @@ Six stages, the questions per stage and per detail level:
 > (2026-11-02) "Go ahead with 0-2, yes and yes" (both questions of the
 > detail levels: yes). "Go ahead with the next stage" (3). "A bolt
 > library could be nice to have too so that it can be easily added and
-> imported/exported."
+> imported/exported." (2026-11-02) "Go with … C" (stage 5, exports).
 
 ### O20. Built-up members: two angles back to back, in a star, four in a cross
 Members made of several profiles: shown as their parts and calculated

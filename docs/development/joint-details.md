@@ -3,8 +3,9 @@
 *Proposal, 2026-11-02 — stages 0 to 2 built the same day (in active
 development, not approved yet: owner, "Go ahead with 0-2, yes and
 yes"), stage 3 too ("Go ahead with the next stage"), stages 4.1 and
-4.2 too ("Go with … B"); the rest of stage 4 and stage 5 not built; the
-bolt library built (below). Asked by the owner:
+4.2 and stage 5's exports too ("Go with … B" and "… C"); the rest of
+stage 4 and stage 5's validation not built; the bolt library built
+(below). Asked by the owner:
 "a roadmap for a tool to show and allow to define the joints in the OHL
 structure in details for a pylon that isn't a pole … where the bars are
 coming from, what's their condition on the joint and where are the
@@ -199,7 +200,16 @@ values were worked out from the joints and which assumed.
 
 > **Owner:**
 
-### Stage 5 — Exports and validation (M)
+### Stage 5 — Exports and validation (M) — exports built 2026-11-02
+
+Built: the bolts and gusset plates in IFC4 and IFC2x3 — a joint
+assembly per joint with its bolts (`IfcMechanicalFastener`) and plates
+(`IfcPlate`), where the Joint view draws them; the members' solids
+seated as drawn where their bolted ends agree, else on their axes with
+their bolts; the analysis model on the axes. SAF has no fasteners (IFC and
+CSV only). How: [Structure exports › Bolts and gusset plates](structure-exports.md#bolts-and-gusset-plates).
+Not built: exports for tower or detailing programs' own formats, the
+validation and the theory page below.
 
 - IFC and Tekla exports with bolts and plates (structure exports).
 - Validation: the per-end connection capacities against hand

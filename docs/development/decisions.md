@@ -47,6 +47,37 @@ active development, not approved yet)**
 - Member-capacity plugins still receive the member's design data only
   (the plugin interface is unchanged).
 
+**Joint details of towers, stage 5: the bolts and gusset plates in the
+structure exports (owner, 2026-11-02: "Go with … C"; built, in active
+development, not approved yet)**
+
+- IFC4 and IFC2x3 write, for a file with `[[connection]]` or `[[plate]]`,
+  per joint an `IfcElementAssembly` aggregating its bolts
+  (`IfcMechanicalFastener`: nominal diameter, length under the head, a
+  hexagonal head, a round shank and a hexagonal nut) and its gusset
+  plates (`IfcPlate`: the outline extruded by the thickness), with the
+  property sets `OHL_Fastener` and `OHL_Plate`; only entities of each
+  schema (IFC2x3: no `PredefinedType` on fasteners and plates). A file
+  without them is exported exactly as before.
+- Where they go: as the Joint view draws them (`joint_details`). The
+  members' solids — before, always on the analysis axes — are **seated**
+  as drawn (moved along the bolts so the leg lies on the leg it bolts
+  onto) when the member's bolted ends agree on the shift; when they
+  differ the solid stays on the axis and its bolts move back with it (a
+  note says which). Chosen as the simplest correct option: a solid moves
+  only as a whole, and the bolts always go through their own member's
+  leg. The placement, the axis line and the analysis model keep the
+  axes. A plate without an outline lies around its bolts in their face.
+- Sizes from the bolt library (`--bolts`, default `Bolts/` beside the
+  file; File › Export's bolt library, default the window's), else the
+  drawing proportions; no standard's sizes.
+- SAF has no object for bolts or plates: not written there; CSV keeps the
+  connections and plates as the file gives them.
+- Not yet: IfcOpenShell's check of the new files (not installed where
+  built; the test is ready), an import into a detailing program (O8),
+  stage 5's validation and theory page.
+  [Structure exports › Bolts and gusset plates](structure-exports.md#bolts-and-gusset-plates).
+
 **Joint details of towers, stage 3: defining joints (owner, 2026-11-02:
 "Go ahead with the next stage"; built, in active development, not
 approved yet)**

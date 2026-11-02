@@ -47,8 +47,9 @@ mod run;
 mod volumes;
 
 pub use export::{
-    ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
-    ExportSection, ExportStructure, LoadPlace, export_structure, member_axes,
+    ExportBolt, ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
+    ExportPlate, ExportSection, ExportStructure, LoadPlace, export_joints, export_structure,
+    member_axes,
 };
 pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,

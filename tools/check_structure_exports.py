@@ -27,7 +27,11 @@ IFC, per file:
   analysis member's joints (IFC4 with the analysis model), its body solid
   built by IfcOpenShell's geometry kernel with a volume of about A x L
   (A from Pset_ProfileMechanical, IFC4), property set OHL_Member on every
-  member and OHL_Section on every profile with geometry (IFC4).
+  member and OHL_Section on every profile with geometry (IFC4); a body
+  moved by its solid's Position (a member seated at its joints) is checked
+  against its axis moved alike; the bolts (IfcMechanicalFastener) and
+  plates (IfcPlate) parts of a joint's IfcElementAssembly, with their
+  property sets, nominal sizes and bodies built.
 
 SAF, per file: the workbook opens (zip, SpreadsheetML), the sheets and
 column headers are the exporter's (apps/structure/ohl-structure-export/src/saf.rs,
@@ -321,6 +325,12 @@ def check_ifc_content(f, r):
         # mesh) on the member's axis: the profile is placed at its centroid.
         c = _mesh_centroid(shape_util, shape.geometry)
         axis_local = [list(p.Coordinates) for p in line.Points]
+        # A member seated at its joints (the joint view's shift): its body
+        # solid is moved by its Position; the axis line stays on the
+        # analysis axis.
+        solid_at = body.Items[0].Position
+        seat = list(solid_at.Location.Coordinates) if solid_at is not None else [0.0, 0.0, 0.0]
+        axis_local = [[q[k] + seat[k] for k in range(3)] for q in axis_local]
         off = _distance_to_line(c, axis_local[0], axis_local[1])
         worst_off = max(worst_off, off)
         if off > 1e-3:
@@ -352,6 +362,7 @@ def check_ifc_content(f, r):
         + (f", worst |volume / (A x L) - 1| = {worst:.4f}" if ifc4 and solids else "")
         + (f", centroid at most {worst_off * 1000:.3f} mm off the axis" if solids else "")
     )
+    check_joints(f, r, geom)
     if ifc4:
         for p in profiles:
             if p.is_a() == "IfcProfileDef":
@@ -359,6 +370,46 @@ def check_ifc_content(f, r):
             names = {pp.Name for pp in (p.HasProperties or [])}
             if "OHL_Section" not in names:
                 r.error(f"profile {p.ProfileName}: no OHL_Section")
+
+
+def check_joints(f, r, geom):
+    """The bolts (IfcMechanicalFastener) and gusset plates (IfcPlate): each
+    a part of a joint's IfcElementAssembly, a nominal diameter and length
+    (bolts), OHL_Fastener / OHL_Plate, a body built with a positive volume."""
+    import ifcopenshell.util.element as element
+
+    fasteners = f.by_type("IfcMechanicalFastener")
+    plates = f.by_type("IfcPlate")
+    if not fasteners and not plates:
+        return
+    built = 0
+    for e, pset in [(x, "OHL_Fastener") for x in fasteners] + [(x, "OHL_Plate") for x in plates]:
+        parents = [rel.RelatingObject for rel in (e.Decomposes or [])]
+        if not any(p.is_a("IfcElementAssembly") for p in parents):
+            r.error(f"{e.is_a()} {e.Name}: not part of a joint assembly")
+        if pset not in element.get_psets(e):
+            r.error(f"{e.is_a()} {e.Name}: no {pset}")
+        if e.is_a("IfcMechanicalFastener") and not (
+            (e.NominalDiameter or 0) > 0 and (e.NominalLength or 0) > 0
+        ):
+            r.error(f"bolt {e.Name}: nominal diameter {e.NominalDiameter}, length {e.NominalLength}")
+        if geom is None:
+            continue
+        g, shape_util, settings = geom
+        try:
+            shape = g.create_shape(settings, e)
+        except Exception as ex:
+            r.error(f"{e.is_a()} {e.Name}: geometry kernel could not build the body: {ex}")
+            continue
+        volume = shape_util.get_volume(shape.geometry)
+        if not volume > 0:
+            r.error(f"{e.is_a()} {e.Name}: body volume {volume}")
+            continue
+        built += 1
+    r.fact(
+        f"joints: {len(f.by_type('IfcElementAssembly'))} assemblies, {len(fasteners)} bolts, "
+        f"{len(plates)} plates, {built} bodies built"
+    )
 
 
 # ---------------------------------------------------------------- SAF
