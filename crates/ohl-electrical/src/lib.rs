@@ -25,6 +25,8 @@
 //!   from the potential coefficients, 3D from the solved wires with their
 //!   images in a ground plane fitted under each point, or 2D — in
 //!   profiles, given points, cuts and volumes.
+//! - [`field_plan`]: how the fields' cuts are drawn and in which weather
+//!   the wires hang (`.ohlfp`, a field plan template).
 //! - [`field_views`]: a field's vertical cuts and volumes (isosurfaces),
 //!   for any field given as a function of the place; [`contour`]: the
 //!   isolines and isosurfaces they are drawn with.
@@ -44,6 +46,7 @@ pub mod contour;
 pub mod cross_section;
 pub mod earth;
 pub mod electric;
+pub mod field_plan;
 pub mod field_results;
 pub mod field_views;
 pub mod lightning;

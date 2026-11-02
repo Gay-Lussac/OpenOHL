@@ -853,7 +853,7 @@ pub fn open_existing(path: &Path) -> Result<Session, String> {
 /// application's `PROJECT_LIBRARIES`), each written to its folder of the
 /// working copies: poles, structure models and load tables go with the
 /// structure types, bolt libraries into `Bolts/` beside them.
-const PROJECT_LIBRARY_KINDS: [(&str, &str); 14] = [
+const PROJECT_LIBRARY_KINDS: [(&str, &str); 15] = [
     ("cables", "cables"),
     ("structures", "structures"),
     ("insulators", "insulators"),
@@ -867,6 +867,7 @@ const PROJECT_LIBRARY_KINDS: [(&str, &str); 14] = [
     ("femodels", "structures"),
     ("sections", "sections"),
     ("bolts", "structures/Bolts"),
+    ("field-plans", "field-plans"),
     ("loads", "structures"),
 ];
 

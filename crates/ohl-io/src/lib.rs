@@ -16,6 +16,7 @@
 
 pub mod checks;
 pub mod codes;
+pub mod field_cuts;
 pub mod field_input;
 pub mod formats;
 pub mod geopackage;

@@ -569,17 +569,34 @@ pub fn analyse(
         match nearest {
             // The governing cut: where a phase conductor comes closest.
             Some(p) => list.push((
-                al.project([p[0], p[1]]).0.clamp(lo, hi),
+                crossing_station(
+                    al,
+                    &b.ring,
+                    al.project([p[0], p[1]]).0.clamp(lo, hi),
+                    lo,
+                    hi,
+                ),
                 0,
                 bi,
                 name(TAGS[0]),
             )),
             None => own.push("no phase conductor: no governing cut".to_owned()),
         }
-        list.push((nearest_station(al, &b.ring, lo, hi), 1, bi, name(TAGS[1])));
+        let near = nearest_station(al, &b.ring, lo, hi);
+        list.push((
+            crossing_station(al, &b.ring, near, lo, hi),
+            1,
+            bi,
+            name(TAGS[1]),
+        ));
         if params.centroid_cut {
             let t = al.project(b.centroid).0.clamp(lo, hi);
-            list.push((t, 2, bi, name(TAGS[2])));
+            list.push((
+                crossing_station(al, &b.ring, t, lo, hi),
+                2,
+                bi,
+                name(TAGS[2]),
+            ));
         }
     }
     let mut cuts = Vec::new();
@@ -819,7 +836,7 @@ fn t_range(s: &Span, ring: &[P2]) -> (f64, f64) {
 
 /// The footprint's stations along the alignment (its boundary projected),
 /// least and largest, within the alignment.
-fn station_range(al: &Alignment, ring: &[P2]) -> (f64, f64) {
+pub(crate) fn station_range(al: &Alignment, ring: &[P2]) -> (f64, f64) {
     let (lo, hi) = boundary_samples(ring, 0.25)
         .into_iter()
         .map(|p| al.project(p).0)
@@ -831,6 +848,34 @@ fn station_range(al: &Alignment, ring: &[P2]) -> (f64, f64) {
 
 /// The station of the footprint's point nearest the alignment within
 /// `lo`–`hi` (a side parallel to it: its middle).
+/// `t`, or where the cut is moved towards the middle of the building's
+/// stations `lo`–`hi` until its plane crosses the footprint by at least
+/// 0.25 m (2026-11-02, a real line: at an angle point the plane along the
+/// bisector at a footprint's last station only grazed its corner, and
+/// the building's own cut missed it); `t` when none does.
+pub(crate) fn crossing_station(al: &Alignment, ring: &[P2], t: f64, lo: f64, hi: f64) -> f64 {
+    let crosses = |t: f64| {
+        let plane = al.plane_at(t);
+        let d = |p: &P2| plane.along(*p);
+        let (a, b) = ring
+            .iter()
+            .map(d)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| {
+                (a.min(v), b.max(v))
+            });
+        a <= -0.25 && b >= 0.25
+    };
+    if crosses(t) {
+        return t;
+    }
+    let mid = (lo + hi) / 2.0;
+    let n = ((mid - t).abs() / 0.25).ceil() as usize;
+    (1..=n)
+        .map(|k| t + (mid - t) * k as f64 / n as f64)
+        .find(|s| crosses(*s))
+        .unwrap_or(t)
+}
+
 fn nearest_station(al: &Alignment, ring: &[P2], lo: f64, hi: f64) -> f64 {
     let samples: Vec<(f64, f64)> = boundary_samples(ring, 0.25)
         .into_iter()

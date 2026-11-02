@@ -51,15 +51,27 @@ pub struct FieldCommonArgs {
     #[command(flatten)]
     pub model: ModelArgs,
     /// Weather case file (.ohlwc) holding the case the wires hang in.
-    #[arg(long, requires = "case")]
+    #[arg(long)]
     pub weather: Option<PathBuf>,
-    /// The weather case the wires hang in (default: still air at
-    /// --temperature; an ordinance may ask the largest sag).
+    /// The weather case the wires hang in (default: the --plan's, else
+    /// still air at --temperature; an ordinance may ask the largest sag).
     #[arg(long, requires = "weather")]
     pub case: Option<String>,
     /// Conductor temperature without --case, °C.
     #[arg(long, default_value_t = 40.0)]
     pub temperature: f64,
+    /// An electrical system's own weather case (2026-11-02): SYSTEM=CASE
+    /// (its id; `earth` for the wires of no system, the earth wires), a
+    /// case of --weather. Repeatable; over the --plan's.
+    #[arg(long = "system-case", value_name = "SYSTEM=CASE", requires = "weather")]
+    pub system_case: Vec<String>,
+    /// A field plan template (a .ohlfp file, or one of the project's by
+    /// its name; 2026-11-02): its levels added to the run's, its limits where none is given, its weather cases (every
+    /// wire, per system, the earth wires; from --weather) and, with
+    /// --preset-plugin, its title, logos, point classes and TIN or drawing
+    /// along each cut handed to the report.
+    #[arg(long)]
+    pub plan: Option<PathBuf>,
     /// Terrain file for the ground (default: straight between the
     /// structures' feet, level across).
     #[arg(long, conflicts_with = "surface")]
@@ -792,49 +804,208 @@ struct Solved {
     jumpers: Vec<ohl_line::jumper::JumperShape>,
 }
 
-/// The line of `c` loaded, its weather case chosen.
+/// A field plan template read, with its JSON for a plugin (its logos
+/// embedded).
+struct Plan {
+    plan: ohl_electrical::field_plan::FieldPlan,
+    json: String,
+}
+
+/// The `--plan` read — a file, else a field plan of the project by its
+/// name (with or without `.ohlfp`) —, its logos' files read and embedded
+/// (a relative path from the plan's folder, the project's for one of the
+/// project).
+fn read_plan(c: &FieldCommonArgs) -> Result<Option<Plan>, String> {
+    let Some(given) = &c.plan else {
+        return Ok(None);
+    };
+    let (text, path) = if given.is_file() || !crate::project::is_project(&c.model.file) {
+        (
+            std::fs::read_to_string(given).map_err(|e| format!("{}: {e}", given.display()))?,
+            given.clone(),
+        )
+    } else {
+        let session = crate::project::open_existing(&c.model.file)?;
+        let name = given.display().to_string();
+        let ext = format!(".{}", ohl_electrical::field_plan::EXTENSION);
+        let text = session
+            .library_files(ohl_electrical::field_plan::KIND)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|(n, _)| n == &name || n.strip_suffix(&ext) == Some(name.as_str()))
+            .map(|(_, t)| t)
+            .ok_or_else(|| {
+                format!(
+                    "--plan {name}: no such file, and no field plan {name} in {}",
+                    c.model.file.display()
+                )
+            })?;
+        (text, c.model.file.clone())
+    };
+    let path = &path;
+    let plan = ohl_electrical::field_plan::FieldPlan::parse(&text)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut logos = Vec::new();
+    for l in &plan.title.logo {
+        let file = path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(&l.file);
+        let bytes = std::fs::read(&file).map_err(|e| format!("logo {}: {e}", file.display()))?;
+        logos.push((
+            ohl_electrical::field_plan::data_uri(&l.file, &bytes)?,
+            l.width,
+        ));
+    }
+    let json = plan.plugin_json(&logos);
+    Ok(Some(Plan { plan, json }))
+}
+
+/// The key of the wires of no system in `--system-case` (`earth`) and the
+/// field plan's `earth_wires`: `""`.
+const EARTHED: &str = "";
+
+/// Per system id (`""`: the wires of no system) its own weather case,
+/// where it differs from the run's.
+type PerSystem = Vec<(String, ohl_weather::WeatherCase)>;
+
+/// The line of `c` loaded, its weather case chosen (`--case`, else the
+/// plan's), and each system's own (the plan's, over them
+/// `--system-case`).
 fn load_case(
     c: &FieldCommonArgs,
+    plan: Option<&Plan>,
 ) -> Result<
     (
         ohl_line::Line,
         ohl_cables::Library,
         ohl_weather::WeatherCase,
+        PerSystem,
     ),
     String,
 > {
     let (mut line, library) = load(&c.model)?;
-    let case = match (&c.weather, &c.case) {
-        (Some(path), Some(name)) => {
+    let weather = plan.map(|p| &p.plan.weather);
+    let set = match &c.weather {
+        Some(path) => {
             let set = ohl_weather::WeatherCases::load(path)?;
             line.set_weather_cases(&set.cases);
-            set.select(std::slice::from_ref(name), &[])?
-                .into_iter()
-                .next()
-                .ok_or_else(|| format!("no weather case {name}"))?
+            Some(set)
         }
-        _ => ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(c.temperature)),
+        None => None,
     };
-    Ok((line, library, case))
+    let pick = |name: &str| -> Result<ohl_weather::WeatherCase, String> {
+        let Some(set) = &set else {
+            return Err(format!(
+                "weather case \"{name}\" (the plan's): give the --weather file holding it"
+            ));
+        };
+        set.select(&[name.to_owned()], &[])?
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("no weather case {name}"))
+    };
+    let named = c
+        .case
+        .clone()
+        .or_else(|| weather.map(|w| w.case.clone()).filter(|n| !n.is_empty()));
+    let case = match (&set, named) {
+        (_, Some(name)) => pick(&name)?,
+        (Some(_), None) => return Err("--weather: give --case (or a plan with one)".into()),
+        (None, None) => {
+            ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(c.temperature))
+        }
+    };
+    // Per system: the plan's, then --system-case.
+    let mut names: std::collections::BTreeMap<String, String> = Default::default();
+    if let Some(w) = weather {
+        for (k, v) in &w.systems {
+            if !v.is_empty() {
+                names.insert(k.clone(), v.clone());
+            }
+        }
+        if !w.earth_wires.is_empty() {
+            names.insert(EARTHED.to_owned(), w.earth_wires.clone());
+        }
+    }
+    for text in &c.system_case {
+        let (k, v) = text
+            .split_once('=')
+            .ok_or_else(|| format!("--system-case {text}: SYSTEM=CASE"))?;
+        let k = if k.trim() == "earth" {
+            EARTHED
+        } else {
+            k.trim()
+        };
+        names.insert(k.to_owned(), v.trim().to_owned());
+    }
+    let mut per = Vec::new();
+    for (k, name) in names {
+        if !k.is_empty() && !line.systems.iter().any(|s| s.id == k) {
+            return Err(format!(
+                "weather case of system {k}: no electrical system {k} in the line (its id; `earth` for the wires of no system)"
+            ));
+        }
+        if name != case.name {
+            per.push((k, pick(&name)?));
+        }
+    }
+    Ok((line, library, case, per))
 }
 
-/// The sections and jumpers of `line` solved in `case` (a section not
-/// solved said and left out).
+/// The sections and jumpers of `line` solved in `case`, each system of
+/// `per` in its own (each case solved once; a section not solved said and
+/// left out).
 fn solve(
     line: ohl_line::Line,
     library: ohl_cables::Library,
     case: ohl_weather::WeatherCase,
+    per: &PerSystem,
 ) -> Solved {
-    let mut shapes = Vec::new();
-    for (section, r) in line
-        .sections
-        .iter()
-        .zip(ohl_line::solve::solve_line(&line, &library, &case))
-    {
-        match r {
-            Ok(s) => shapes.push(s),
-            Err(e) => println!("  section {} not solved: {e}", section.id),
+    let mut solved: Vec<(String, Vec<Result<ohl_line::solve::SectionShape, String>>)> = Vec::new();
+    for c in std::iter::once(&case).chain(per.iter().map(|p| &p.1)) {
+        if !solved.iter().any(|s| s.0 == c.name) {
+            let r = ohl_line::solve::solve_line(&line, &library, c)
+                .into_iter()
+                .map(|r| r.map_err(|e| e.to_string()))
+                .collect();
+            solved.push((c.name.clone(), r));
         }
+    }
+    let mut shapes = Vec::new();
+    for (k, section) in line.sections.iter().enumerate() {
+        let key = section.system.clone().unwrap_or_default();
+        let name = per
+            .iter()
+            .find(|p| p.0 == key)
+            .map_or(&case.name, |p| &p.1.name);
+        let r = solved
+            .iter()
+            .find(|s| &s.0 == name)
+            .and_then(|s| s.1.get(k));
+        match r {
+            Some(Ok(s)) => shapes.push(s.clone()),
+            Some(Err(e)) => println!("  section {} not solved in {name}: {e}", section.id),
+            None => {}
+        }
+    }
+    if !per.is_empty() {
+        let said: Vec<String> = per
+            .iter()
+            .map(|(k, c)| {
+                let who = if k.is_empty() {
+                    "the wires of no system".to_owned()
+                } else {
+                    format!("system {k}")
+                };
+                format!("{who} in {}", c.name)
+            })
+            .collect();
+        println!(
+            "  weather per system: {}; the others in {}",
+            said.join("; "),
+            case.name
+        );
     }
     let jumpers: Vec<_> = ohl_line::jumper::solve_jumpers(&line, &library, &case, &shapes)
         .into_iter()
@@ -1154,15 +1325,21 @@ fn ground_of(
 
 fn magnetic(a: &MagneticArgs) -> Result<(), String> {
     use ohl_electrical::magnetic;
-    let (line, library, case) = load_case(&a.common)?;
+    let plan = read_plan(&a.common)?;
+    let (line, library, case, per) = load_case(&a.common, plan.as_ref())?;
     let Some((currents, sources, ends)) = currents(&a.magnetic, &line, &library)? else {
         return Ok(());
     };
     let p = places(&a.common, ohl_electrical::magnetic::WIDTH)?;
-    let levels = levels(&a.level, !p.volumes.is_empty(), "--level µT")?;
+    let mut levels = levels(&a.level, !p.volumes.is_empty(), "--level µT")?;
+    let mut limit = a.limit;
+    if let Some(plan) = &plan {
+        add_levels(&mut levels, &plan.plan.magnetic.values());
+        limit = limit.or(plan.plan.magnetic.limit());
+    }
     let mut settings =
-        magnetic_settings(&a.common, &a.magnetic, &p, currents, ends, levels, a.limit)?;
-    let s = solve(line, library, case);
+        magnetic_settings(&a.common, &a.magnetic, &p, currents, ends, levels, limit)?;
+    let s = solve(line, library, case, &per);
     let terrain = terrain(&a.common, &s.line, p.width + 20.0, false)?;
     let height = ground_of(&terrain);
     let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
@@ -1200,16 +1377,22 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         name,
         t,
     );
-    write_results(&a.common.plugin, &json, preset)
+    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)
 }
 
 fn electric(a: &ElectricArgs) -> Result<(), String> {
     use ohl_electrical::electric;
-    let (line, library, case) = load_case(&a.common)?;
+    let plan = read_plan(&a.common)?;
+    let (line, library, case, per) = load_case(&a.common, plan.as_ref())?;
     let p = places(&a.common, ohl_electrical::electric::WIDTH)?;
-    let levels = levels(&a.level, !p.volumes.is_empty(), "--level kV/m")?;
-    let mut settings = electric_settings(&a.common, &a.electric, &p, &line, levels, a.limit)?;
-    let s = solve(line, library, case);
+    let mut levels = levels(&a.level, !p.volumes.is_empty(), "--level kV/m")?;
+    let mut limit = a.limit;
+    if let Some(plan) = &plan {
+        add_levels(&mut levels, &plan.plan.electric.values());
+        limit = limit.or(plan.plan.electric.limit());
+    }
+    let mut settings = electric_settings(&a.common, &a.electric, &p, &line, levels, limit)?;
+    let s = solve(line, library, case, &per);
     let terrain = terrain(
         &a.common,
         &s.line,
@@ -1248,14 +1431,15 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         name,
         t,
     );
-    write_results(&a.common.plugin, &json, preset)
+    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)
 }
 
 /// `ohl electrical fields`: both fields on the same places and ground,
 /// one set of results, one report.
 fn fields(a: &FieldsArgs) -> Result<(), String> {
     use ohl_electrical::{electric, field_results, magnetic};
-    let (line, library, case) = load_case(&a.common)?;
+    let plan = read_plan(&a.common)?;
+    let (line, library, case, per) = load_case(&a.common, plan.as_ref())?;
     let Some((currents, sources, ends)) = currents(&a.magnetic, &line, &library)? else {
         return Ok(());
     };
@@ -1264,24 +1448,26 @@ fn fields(a: &FieldsArgs) -> Result<(), String> {
     let p = places(&a.common, magnetic::WIDTH)?;
     let pe = places(&a.common, electric::WIDTH)?;
     let volumes = !p.volumes.is_empty();
+    let mut levels_ut = levels(&a.level_ut, volumes, "--level-ut µT")?;
+    let mut levels_kv_m = levels(&a.level_kv_m, volumes, "--level-kv-m kV/m")?;
+    let (mut limit_ut, mut limit_kv_m) = (a.limit_ut, a.limit_kv_m);
+    if let Some(plan) = &plan {
+        add_levels(&mut levels_ut, &plan.plan.magnetic.values());
+        add_levels(&mut levels_kv_m, &plan.plan.electric.values());
+        limit_ut = limit_ut.or(plan.plan.magnetic.limit());
+        limit_kv_m = limit_kv_m.or(plan.plan.electric.limit());
+    }
     let mut ms = magnetic_settings(
         &a.common,
         &a.magnetic,
         &p,
         currents,
         ends,
-        levels(&a.level_ut, volumes, "--level-ut µT")?,
-        a.limit_ut,
+        levels_ut,
+        limit_ut,
     )?;
-    let mut es = electric_settings(
-        &a.common,
-        &a.electric,
-        &pe,
-        &line,
-        levels(&a.level_kv_m, volumes, "--level-kv-m kV/m")?,
-        a.limit_kv_m,
-    )?;
-    let s = solve(line, library, case);
+    let mut es = electric_settings(&a.common, &a.electric, &pe, &line, levels_kv_m, limit_kv_m)?;
+    let s = solve(line, library, case, &per);
     // The ground reaches as far as either field needs.
     let terrain = terrain(
         &a.common,
@@ -1334,7 +1520,7 @@ fn fields(a: &FieldsArgs) -> Result<(), String> {
         name,
         t,
     );
-    write_results(&a.common.plugin, &json, preset)
+    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)
 }
 
 /// A cut's line of the summary: its label, alignment station (said when
@@ -1871,25 +2057,178 @@ fn add_levels(levels: &mut Vec<f64>, extra: &[f64]) {
 }
 
 /// Writes `--json` (the run's `ohl-field-results-set`, `json`) and, with
-/// a preset, the plugin's report files of it into `--out`.
-fn write_results(a: &FieldPluginArgs, json: &str, preset: Option<PresetRun>) -> Result<(), String> {
+/// a preset, the plugin's report files of it into `--out`: one cut at a
+/// time (each cut's document with the line's name and the plan's points
+/// and sections along it, [`plan_extras`]), then the rest (2026-11-02).
+fn write_results(
+    c: &FieldCommonArgs,
+    line_name: &str,
+    json: String,
+    preset: Option<PresetRun>,
+    plan: Option<&Plan>,
+    ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
+) -> Result<(), String> {
+    let a = &c.plugin;
     if let Some(path) = &a.json {
-        std::fs::write(path, json).map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::write(path, &json).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("written: {}", path.display());
     }
     let Some(p) = preset else {
         return Ok(());
     };
+    let set: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("results: {e}"))?;
+    drop(json);
+    let (summary, mut cuts) = ohl_electrical::field_results::split_set(set);
+    for d in &mut cuts {
+        d["line"] = serde_json::Value::from(line_name);
+    }
+    if let Some(plan) = plan {
+        plan_extras(c, &plan.plan, &mut cuts, ground)?;
+    }
+    let cuts: Vec<String> = cuts.into_iter().map(|d| d.to_string()).collect();
+    let results = summary.to_string();
+    let n = cuts.len();
+    let started = std::time::Instant::now();
     let files = p
         .host
-        .field_report(&p.dir, &p.parameters, &p.preset, json)
+        .field_report(
+            &p.dir,
+            &ohl_plugins::ReportInput {
+                parameters: &p.parameters,
+                plan: plan.map_or("", |x| x.json.as_str()),
+                preset: &p.preset,
+                results: &results,
+                cuts: &cuts,
+            },
+            &mut |k, n| {
+                if k % 25 == 0 || k == n {
+                    println!("  report: {k} of {n} cut(s)");
+                }
+            },
+        )
         .map_err(|e| e.to_string())?;
+    println!(
+        "  report: {n} cut(s) and the summary in {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
     let out = a.out.clone().unwrap_or_else(|| PathBuf::from("."));
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     for f in &files {
         let path = out.join(&f.name);
         std::fs::write(&path, &f.bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("written: {} ({})", path.display(), f.media_type);
+    }
+    Ok(())
+}
+
+/// The plan's points and sections along each cut, into its document: the
+/// point cloud's points of its classes (`--cloud`, else the project's),
+/// a TIN (the project's surface named, else the field's `ground`) or a
+/// background drawing of the project crossing the cut.
+fn plan_extras(
+    c: &FieldCommonArgs,
+    plan: &ohl_electrical::field_plan::FieldPlan,
+    cuts: &mut [serde_json::Value],
+    ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
+) -> Result<(), String> {
+    use ohl_electrical::field_plan::Background;
+    use ohl_io::field_cuts::{self, CutPlane};
+    let planes: Vec<Option<CutPlane>> = cuts.iter().map(CutPlane::of).collect();
+    let known: Vec<CutPlane> = planes.iter().flatten().copied().collect();
+    let file = &c.model.file;
+    let project = file.extension().is_some_and(|e| e == "ohl");
+    // The points of the plan's classes.
+    let mut points: Vec<Vec<[f64; 3]>> = vec![Vec::new(); known.len()];
+    let classes: Vec<u8> = plan.cut.classes.iter().map(|k| k.class).collect();
+    if !classes.is_empty() {
+        let cloud = match &c.plugin.cloud {
+            Some(spec) => Some(ohl_pointcloud::open_source(spec)?),
+            None if project => ohl_pointcloud::open_source(&file.display().to_string()).ok(),
+            None => None,
+        };
+        match cloud {
+            Some(cloud) => {
+                let budget =
+                    ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+                let (p, notes) =
+                    field_cuts::cut_points(&*cloud, &known, &classes, plan.cut.band, &budget)?;
+                points = p;
+                for n in notes {
+                    println!("  plan: {n}");
+                }
+            }
+            None => println!("  plan: no point cloud: the cuts without points"),
+        }
+    }
+    // The TIN or the drawing.
+    let surface = match plan.cut.background {
+        Background::Tin if !plan.cut.surface.is_empty() => {
+            if !project {
+                return Err(format!(
+                    "field plan: surface {}: a project's (.ohl) surface",
+                    plan.cut.surface
+                ));
+            }
+            let session = ohl_session::Session::open(file).map_err(|e| e.to_string())?;
+            let (pts, tris) = session
+                .surface(&plan.cut.surface)
+                .map_err(|e| format!("field plan: surface {}: {e}", plan.cut.surface))?;
+            Some(ohl_terrain::Terrain::from_mesh(pts, tris).map_err(|e| e.to_string())?)
+        }
+        _ => None,
+    };
+    let drawing = match plan.cut.background {
+        Background::Dxf => {
+            if !project {
+                return Err(format!(
+                    "field plan: drawing {}: a project's (.ohl) background drawing",
+                    plan.cut.drawing
+                ));
+            }
+            let store = ohl_background::Store::open(file).map_err(|e| e.0)?;
+            Some(
+                store
+                    .drawing(&plan.cut.drawing)
+                    .map_err(|e| format!("field plan: drawing {}: {}", plan.cut.drawing, e.0))?,
+            )
+        }
+        _ => None,
+    };
+    let mut k = 0;
+    for (doc, plane) in cuts.iter_mut().zip(&planes) {
+        let Some(plane) = plane else {
+            continue;
+        };
+        let mut sections = Vec::new();
+        match plan.cut.background {
+            Background::Tin => {
+                let (name, lines) = match &surface {
+                    Some(t) => (
+                        plan.cut.surface.as_str(),
+                        field_cuts::tin_section(&|x, y| t.height(x, y), plane, 1.0),
+                    ),
+                    None => (
+                        "the field's ground",
+                        match ground {
+                            Some(g) => field_cuts::tin_section(&|x, y| g(x, y), plane, 1.0),
+                            None => Vec::new(),
+                        },
+                    ),
+                };
+                sections.push(field_cuts::tin_json(name, &lines));
+            }
+            Background::Dxf => {
+                if let Some(d) = &drawing {
+                    let marks =
+                        d.plane_crossings(plane.origin, plane.right, plane.span, &plan.cut.layers);
+                    sections.push(field_cuts::dxf_json(&plan.cut.drawing, &marks));
+                }
+            }
+            Background::None => {}
+        }
+        field_cuts::fill(doc, points.get(k).map_or(&[][..], |p| &p[..]), sections);
+        k += 1;
     }
     Ok(())
 }

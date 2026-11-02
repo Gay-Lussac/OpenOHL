@@ -11,10 +11,20 @@
 //! `buildings.dxf`) and `notes.txt` once. A run of one field (`ohl
 //! electrical magnetic` or `electric`) gives that field's columns and
 //! files alone.
+//!
+//! One cut at a time (2026-11-02): [`report_cut`] makes a cut's files from
+//! its document (`ohl-field-cut`) and gives each building's largest value
+//! in its section there as its summary; [`report`] the rest from the
+//! results without the grids and those summaries. A field plan template
+//! ([`Plan`], `ohl-field-plan` JSON) adds the title lines and logos, the
+//! levels' colours, widths and labels, the wires' colours, the limits
+//! (where the parameters give none), and the points and the TIN or
+//! drawing the host gathered along the cut.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::analysis::PresetOut;
@@ -37,6 +47,176 @@ fn file(name: String, media_type: &str, text: String) -> File {
         name,
         media_type: media_type.into(),
         bytes: text.into_bytes(),
+    }
+}
+
+/// A field plan template as the host hands it (`ohl-field-plan` JSON;
+/// only what the drawings use, every key optional).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Plan {
+    /// The title over each cut.
+    pub title: PlanTitle,
+    /// The point classes' colours.
+    pub cut: PlanCut,
+    /// The magnetic field's limit and levels.
+    pub magnetic: PlanField,
+    /// The electric field's limit and levels.
+    pub electric: PlanField,
+    /// The wires' colours.
+    pub wires: PlanWires,
+}
+
+/// The title: lines of text and logos.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PlanTitle {
+    /// `{line}`, `{cut}`, `{field}`, `{case}` replaced.
+    pub lines: Vec<String>,
+    /// Data URIs and widths, m.
+    pub logos: Vec<PlanLogo>,
+}
+
+/// A logo.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PlanLogo {
+    /// A data URI.
+    pub href: String,
+    /// Width on the drawing, m.
+    pub width: f64,
+}
+
+/// What the cut shows: the classes' colours.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PlanCut {
+    /// Class and colour.
+    pub classes: Vec<PlanClass>,
+}
+
+/// A class's colour.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PlanClass {
+    /// The class.
+    pub class: u8,
+    /// `#rrggbb`.
+    pub colour: String,
+}
+
+/// A field's limit and levels.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PlanField {
+    /// µT.
+    pub limit_ut: Option<f64>,
+    /// kV/m.
+    pub limit_kv_m: Option<f64>,
+    /// The levels drawn.
+    pub level: Vec<PlanLevel>,
+}
+
+/// A level's look.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PlanLevel {
+    /// Its value.
+    pub value: f64,
+    /// `#rrggbb`.
+    pub colour: String,
+    /// px.
+    pub width: f64,
+    /// Its label ("": value and unit).
+    pub label: String,
+}
+
+/// The wires' colours.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct PlanWires {
+    /// Phase conductors.
+    pub phase: String,
+    /// Earth wires.
+    pub earth: String,
+}
+
+impl Default for PlanWires {
+    fn default() -> Self {
+        Self {
+            phase: "#9b2c2c".into(),
+            earth: "#2f855a".into(),
+        }
+    }
+}
+
+impl Plan {
+    /// The plan of the host's `text` ("": none).
+    pub fn parse(text: &str) -> Result<Option<Self>, String> {
+        if text.trim().is_empty() {
+            return Ok(None);
+        }
+        serde_json::from_str(text)
+            .map(Some)
+            .map_err(|e| format!("field plan: {e}"))
+    }
+
+    fn field(&self, magnetic: bool) -> &PlanField {
+        if magnetic {
+            &self.magnetic
+        } else {
+            &self.electric
+        }
+    }
+
+    /// The look of `level` of a field: colour, width, label.
+    fn level(&self, magnetic: bool, level: f64) -> Option<&PlanLevel> {
+        self.field(magnetic)
+            .level
+            .iter()
+            .find(|l| (l.value - level).abs() <= 1e-9 * level.abs().max(1.0))
+    }
+
+    fn class_colour(&self, class: u8) -> String {
+        self.cut
+            .classes
+            .iter()
+            .find(|c| c.class == class)
+            .map_or_else(|| "#666666".to_owned(), |c| c.colour.clone())
+    }
+}
+
+/// Where a cut lies (for the plan files and the summaries).
+#[derive(Debug, Clone, PartialEq)]
+struct CutPlace {
+    label: String,
+    alignment: String,
+    station: f64,
+    from: String,
+    to: String,
+    at: f64,
+    origin: P2,
+    right: P2,
+    span: (f64, f64),
+}
+
+impl CutPlace {
+    fn parse(c: &Value) -> Self {
+        let span = floats(&c["span"]);
+        Self {
+            label: c["label"].as_str().unwrap_or("").to_owned(),
+            alignment: c["alignment"].as_str().unwrap_or("").to_owned(),
+            station: c["station"].as_f64().unwrap_or(f64::NAN),
+            from: c["from"].as_str().unwrap_or("").to_owned(),
+            to: c["to"].as_str().unwrap_or("").to_owned(),
+            at: c["at"].as_f64().unwrap_or(f64::NAN),
+            origin: pair(&c["origin"]),
+            right: pair(&c["right"]),
+            span: (
+                span.first().copied().unwrap_or(0.0),
+                span.get(1).copied().unwrap_or(0.0),
+            ),
+        }
     }
 }
 
@@ -112,6 +292,20 @@ impl ResultCut {
         }
     }
 
+    fn place(&self) -> CutPlace {
+        CutPlace {
+            label: self.label.clone(),
+            alignment: self.alignment.clone(),
+            station: self.station,
+            from: self.from.clone(),
+            to: self.to.clone(),
+            at: self.at,
+            origin: self.origin,
+            right: self.right,
+            span: self.span(),
+        }
+    }
+
     fn value(&self, row: usize, col: usize) -> f64 {
         self.values
             .get(row * self.offsets.len() + col)
@@ -184,36 +378,37 @@ struct FieldIn {
     limit: Option<f64>,
     /// Digits of its values.
     digits: usize,
-    cuts: Vec<ResultCut>,
     points: Vec<Value>,
     notes: Vec<String>,
 }
 
 impl FieldIn {
-    fn parse(v: &Value, params: &Params) -> Result<Self, String> {
+    fn parse(v: &Value, params: &Params, plan: Option<&Plan>) -> Result<Self, String> {
         if v["format"] != "ohl-field-results" {
             return Err("results: a field that is not ohl-field-results".into());
         }
+        Ok(Self::of(v, params, plan))
+    }
+
+    /// A field of a results document, or of a cut's grid (its quantity
+    /// and unit): the parameters' limit, else the plan's.
+    fn of(v: &Value, params: &Params, plan: Option<&Plan>) -> Self {
         let q = v["quantity"].as_str().unwrap_or("B").to_owned();
         let magnetic = q == "B";
-        Ok(Self {
+        Self {
             unit: v["unit"]
                 .as_str()
                 .unwrap_or(if magnetic { "µT" } else { "kV/m" })
                 .to_owned(),
             unit_col: if magnetic { "uT" } else { "kV_m" },
             limit: if magnetic {
-                params.limit_ut
+                params.limit_ut.or(plan.and_then(|p| p.magnetic.limit_ut))
             } else {
-                params.limit_kv_m
+                params
+                    .limit_kv_m
+                    .or(plan.and_then(|p| p.electric.limit_kv_m))
             },
             digits: if magnetic { 3 } else { 4 },
-            cuts: v["cuts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(ResultCut::parse)
-                .collect(),
             points: v["points"].as_array().cloned().unwrap_or_default(),
             notes: v["notes"]
                 .as_array()
@@ -223,13 +418,13 @@ impl FieldIn {
                 .collect(),
             magnetic,
             q,
-        })
+        }
     }
 }
 
 /// The fields of `results`: an `ohl-field-results-set` (one document per
 /// field), or a single `ohl-field-results` document.
-fn fields_of(results: &str, params: &Params) -> Result<Vec<FieldIn>, String> {
+fn fields_of(results: &str, params: &Params, plan: Option<&Plan>) -> Result<Vec<FieldIn>, String> {
     let v: Value = serde_json::from_str(results).map_err(|e| format!("results: {e}"))?;
     let docs: Vec<&Value> = match v["format"].as_str() {
         Some("ohl-field-results-set") => v["fields"].as_array().into_iter().flatten().collect(),
@@ -240,7 +435,28 @@ fn fields_of(results: &str, params: &Params) -> Result<Vec<FieldIn>, String> {
         return Err("results: no field".into());
     }
     docs.into_iter()
-        .map(|d| FieldIn::parse(d, params))
+        .map(|d| FieldIn::parse(d, params, plan))
+        .collect()
+}
+
+/// The cuts of `results` without their grids, in the first field's order.
+fn places_of(results: &str) -> Vec<CutPlace> {
+    let v: Value = serde_json::from_str(results).unwrap_or_default();
+    let doc = if v["format"] == "ohl-field-results-set" {
+        v["fields"][0].clone()
+    } else {
+        v
+    };
+    doc["cuts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| {
+            let mut c = c.clone();
+            c["origin"] = c["plane"]["origin"].clone();
+            c["right"] = c["plane"]["right"].clone();
+            CutPlace::parse(&c)
+        })
         .collect()
 }
 
@@ -378,12 +594,10 @@ fn section_of(c: &ResultCut, b: &BuildingIn) -> Option<Section> {
     })
 }
 
-/// The report files of the run's `results` for `preset`.
-pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<File>, String> {
-    let fields = fields_of(results, params)?;
+/// The buildings of `preset`: their outlines and summary notes.
+fn buildings_of(preset: &PresetOut) -> Vec<BuildingIn> {
     let summaries = summary_fields(&preset.notes);
-    let wires = crossings(&preset.notes);
-    let buildings: Vec<BuildingIn> = preset
+    preset
         .outlines
         .iter()
         .map(|o| {
@@ -402,48 +616,197 @@ pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<
                 fields,
             }
         })
-        .collect();
-    let mut warnings = Vec::new();
+        .collect()
+}
+
+/// What the host gathered along a cut for the plan: points and sections.
+#[derive(Default)]
+struct Extras {
+    /// Offset, elevation, class.
+    points: Vec<(f64, f64, u8)>,
+    /// TIN lines: name, lines of (offset, elevation).
+    tin: Vec<(String, Vec<Vec<P2>>)>,
+    /// Drawing crossings: name, (offset, elevation, layer, colour).
+    dxf: Vec<(String, Vec<(f64, f64, String, String)>)>,
+}
+
+impl Extras {
+    fn parse(doc: &Value) -> Self {
+        let mut e = Self::default();
+        for p in doc["points"].as_array().into_iter().flatten() {
+            let f = floats(p);
+            if let (Some(s), Some(z), Some(c)) = (f.first(), f.get(1), f.get(2)) {
+                e.points.push((*s, *z, *c as u8));
+            }
+        }
+        for sec in doc["sections"].as_array().into_iter().flatten() {
+            let name = sec["name"].as_str().unwrap_or("").to_owned();
+            match sec["kind"].as_str() {
+                Some("tin") => {
+                    let lines = sec["lines"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|l| l.as_array().into_iter().flatten().map(pair).collect())
+                        .collect();
+                    e.tin.push((name, lines));
+                }
+                Some("dxf") => {
+                    let marks = sec["marks"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|m| {
+                            Some((
+                                m[0].as_f64()?,
+                                m[1].as_f64()?,
+                                m[2].as_str().unwrap_or("").to_owned(),
+                                m[3].as_str().unwrap_or("#000000").to_owned(),
+                            ))
+                        })
+                        .collect();
+                    e.dxf.push((name, marks));
+                }
+                _ => {}
+            }
+        }
+        e
+    }
+}
+
+/// The files of one cut (`cut`: its `ohl-field-cut` document) and its
+/// summary for [`report`]: where it lies and, per field, each building's
+/// largest value in its section there (JSON).
+pub fn report_cut(
+    params: &Params,
+    plan: Option<&Plan>,
+    preset: &PresetOut,
+    cut: &str,
+) -> Result<(Vec<File>, String), String> {
+    let mut doc: Value = serde_json::from_str(cut).map_err(|e| format!("cut: {e}"))?;
+    if doc["format"] != "ohl-field-cut" {
+        return Err("cut: not an ohl-field-cut".into());
+    }
+    let buildings = buildings_of(preset);
+    let wires = crossings(&preset.notes);
+    let extras = Extras::parse(&doc);
+    let grids = doc["fields"]
+        .as_array_mut()
+        .map(std::mem::take)
+        .unwrap_or_default();
+    let meta = [
+        "label",
+        "alignment",
+        "station",
+        "angle_point",
+        "from",
+        "to",
+        "at",
+        "plane",
+    ];
     let mut files = Vec::new();
-    // Per field: the largest value in each building's sections.
-    let mut section_max: Vec<BTreeMap<String, f64>> = Vec::new();
-    for f in &fields {
-        let mut max: BTreeMap<String, f64> = BTreeMap::new();
-        for c in &f.cuts {
+    let mut max = serde_json::Map::new();
+    let mut place = None;
+    let mut warning = None;
+    let titles = Titles {
+        line: doc["line"].as_str().unwrap_or("").to_owned(),
+        case: doc["case"]["name"].as_str().unwrap_or("").to_owned(),
+    };
+    for mut grid in grids {
+        for k in meta {
+            grid[k] = doc[k].clone();
+        }
+        let f = FieldIn::of(&grid, params, plan);
+        let c = ResultCut::parse(&grid);
+        drop(grid);
+        if place.is_none() {
             if let Some(p) = preset.cuts.iter().find(|p| p.label == c.label)
                 && (p.alignment != c.alignment || (p.station - c.station).abs() > 1e-6)
             {
-                warnings.push(format!(
+                warning = Some(format!(
                     "cut {}: computed at {} {:.2} m, asked at {} {:.2} m",
                     c.label, c.alignment, c.station, p.alignment, p.station
                 ));
             }
-            let mut sections: Vec<(&BuildingIn, Section, Option<f64>)> = Vec::new();
-            for b in &buildings {
-                let Some(sec) = section_of(c, b) else {
-                    continue;
-                };
-                let m = c.largest_in(sec.s0, sec.s1, sec.z0, sec.z1);
-                if let Some(m) = m {
-                    let e = max.entry(b.id.clone()).or_insert(f64::NEG_INFINITY);
+            place = Some(c.place());
+        }
+        let mut sections: Vec<(&BuildingIn, Section, Option<f64>)> = Vec::new();
+        let mut field_max = serde_json::Map::new();
+        for b in &buildings {
+            let Some(sec) = section_of(&c, b) else {
+                continue;
+            };
+            let m = c.largest_in(sec.s0, sec.s1, sec.z0, sec.z1);
+            if let Some(m) = m {
+                field_max.insert(b.id.clone(), m.into());
+            }
+            sections.push((b, sec, m));
+        }
+        max.insert(f.q.clone(), Value::Object(field_max));
+        let base = format!("cut-{}-{}", safe_name(&c.label), f.q);
+        files.push(file(format!("{base}.csv"), "text/csv", cut_csv(&c, &f)));
+        files.push(file(
+            format!("{base}.svg"),
+            "image/svg+xml",
+            cut_svg(
+                &c,
+                &f,
+                &sections,
+                wires.get(&c.label).map_or(&[][..], |w| &w[..]),
+                &Drawn {
+                    plan,
+                    extras: &extras,
+                    titles: &titles,
+                },
+            ),
+        ));
+    }
+    let p = place.ok_or("cut: no field")?;
+    let summary = serde_json::json!({
+        "label": p.label, "alignment": p.alignment, "station": p.station,
+        "from": p.from, "to": p.to, "at": p.at,
+        "origin": p.origin, "right": p.right, "span": [p.span.0, p.span.1],
+        "max": max, "warning": warning,
+    });
+    Ok((files, summary.to_string()))
+}
+
+/// The report files besides the cuts': the buildings' and places' tables,
+/// the plan files and the notes, from the run's `results` (without the
+/// cuts' grids) and each cut's summary ([`report_cut`]).
+pub fn report(
+    params: &Params,
+    plan: Option<&Plan>,
+    preset: &PresetOut,
+    results: &str,
+    cuts: &[String],
+) -> Result<Vec<File>, String> {
+    let fields = fields_of(results, params, plan)?;
+    let buildings = buildings_of(preset);
+    let mut warnings = Vec::new();
+    let mut files = Vec::new();
+    // Per field: the largest value in each building's sections.
+    let mut section_max: Vec<BTreeMap<String, f64>> = vec![BTreeMap::new(); fields.len()];
+    let mut places = Vec::new();
+    for text in cuts {
+        let v: Value = serde_json::from_str(text).map_err(|e| format!("cut summary: {e}"))?;
+        if let Some(w) = v["warning"].as_str() {
+            warnings.push(w.to_owned());
+        }
+        for (k, f) in fields.iter().enumerate() {
+            for (id, m) in v["max"][&f.q].as_object().into_iter().flatten() {
+                if let Some(m) = m.as_f64() {
+                    let e = section_max[k]
+                        .entry(id.clone())
+                        .or_insert(f64::NEG_INFINITY);
                     *e = e.max(m);
                 }
-                sections.push((b, sec, m));
             }
-            let base = format!("cut-{}-{}", safe_name(&c.label), f.q);
-            files.push(file(format!("{base}.csv"), "text/csv", cut_csv(c, f)));
-            files.push(file(
-                format!("{base}.svg"),
-                "image/svg+xml",
-                cut_svg(
-                    c,
-                    f,
-                    &sections,
-                    wires.get(&c.label).map_or(&[][..], |w| &w[..]),
-                ),
-            ));
         }
-        section_max.push(max);
+        places.push(CutPlace::parse(&v));
+    }
+    if places.is_empty() {
+        places = places_of(results);
     }
     files.push(file("points.csv".into(), "text/csv", points_csv(&fields)));
     files.push(file(
@@ -451,18 +814,16 @@ pub fn report(params: &Params, preset: &PresetOut, results: &str) -> Result<Vec<
         "text/csv",
         buildings_csv(&fields, &buildings, &section_max, preset),
     ));
-    // The plan files: the cuts' places are the same in every field.
-    let plan_cuts = &fields[0].cuts;
     files.push(file(
         "buildings.geojson".into(),
         "application/geo+json",
-        geojson(&buildings, plan_cuts, preset),
+        geojson(&buildings, &places, preset),
     ));
     if params.dxf {
         files.push(file(
             "buildings.dxf".into(),
             "image/vnd.dxf",
-            dxf(&buildings, plan_cuts, preset),
+            dxf(&buildings, &places, preset),
         ));
     }
     let quantities: Vec<String> = fields
@@ -687,6 +1048,9 @@ const COLOURS: [&str; 8] = [
     "#2b6cb0", "#2f855a", "#b7791f", "#c05621", "#c53030", "#97266d", "#553c9a", "#1a202c",
 ];
 
+/// Colours of the levels a field plan does not style, beside its own.
+const QUIET: [&str; 4] = ["#4a5568", "#2c7a7b", "#6b46c1", "#8a8a5c"];
+
 /// `colour` (`#rrggbb`) as a light band: 16 % of it over white (an
 /// opaque colour: adjacent cells do not darken where they meet).
 fn tint(colour: &str) -> String {
@@ -713,6 +1077,23 @@ fn tick(scale: f64, min_px: f64) -> f64 {
     }
 }
 
+/// What the title lines' `{line}` and `{case}` stand for.
+struct Titles {
+    line: String,
+    case: String,
+}
+
+/// What a cut is drawn with besides its results: the plan, the points
+/// and sections the host gathered along it, the titles' values.
+struct Drawn<'a> {
+    plan: Option<&'a Plan>,
+    extras: &'a Extras,
+    titles: &'a Titles,
+}
+
+/// Pixels per metre of paper (96 dpi).
+const PX_PER_M: f64 = 96.0 / 0.0254;
+
 /// The 2D cut drawn 1:1 (owner, 2026-10-31: "draw the 2D cut at the right
 /// place and show the ground, building, line and calculation results"):
 /// the ground profile along the cut, each building's section where the
@@ -726,8 +1107,77 @@ fn cut_svg(
     f: &FieldIn,
     sections: &[(&BuildingIn, Section, Option<f64>)],
     wires: &[Crossing],
+    drawn: &Drawn<'_>,
 ) -> String {
     let (q, unit, digits) = (&f.q, &f.unit, f.digits);
+    let plan = drawn.plan;
+    let extras = drawn.extras;
+    // Each level's colour, width and legend text: the plan's; the others
+    // the palette's, or with a plan's levels the quieter one (not to be
+    // taken for the plan's own).
+    let looks: Vec<(String, f64, String)> = {
+        let mut other = 0;
+        c.isolines
+            .iter()
+            .enumerate()
+            .map(
+                |(k, (level, _))| match plan.and_then(|p| p.level(f.magnetic, *level)) {
+                    Some(l) => (
+                        l.colour.clone(),
+                        l.width,
+                        if l.label.is_empty() {
+                            format!("{level} {unit}")
+                        } else {
+                            l.label.clone()
+                        },
+                    ),
+                    None => {
+                        let planned = plan.is_some_and(|p| !p.field(f.magnetic).level.is_empty());
+                        let colour = if planned {
+                            other += 1;
+                            QUIET[(other - 1) % QUIET.len()]
+                        } else {
+                            COLOURS[k % COLOURS.len()]
+                        };
+                        (colour.to_owned(), 1.2, format!("{level} {unit}"))
+                    }
+                },
+            )
+            .collect()
+    };
+    let look = |k: usize, _level: f64| -> (String, f64, String) { looks[k].clone() };
+    let wire_colours = plan.map(|p| p.wires.clone()).unwrap_or_default();
+    let field_name = if f.magnetic {
+        format!("magnetic flux density {q} ({unit})")
+    } else {
+        format!("electric field {q} ({unit})")
+    };
+    let title_lines: Vec<String> = plan
+        .map(|p| {
+            p.title
+                .lines
+                .iter()
+                .map(|l| {
+                    l.replace("{line}", &drawn.titles.line)
+                        .replace("{cut}", &c.label)
+                        .replace("{field}", &field_name)
+                        .replace("{case}", &drawn.titles.case)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let logos: Vec<(String, f64)> = plan
+        .map(|p| {
+            p.title
+                .logos
+                .iter()
+                .filter(|l| l.href.starts_with("data:image/"))
+                .map(|l| (l.href.clone(), (l.width * PX_PER_M).clamp(16.0, 400.0)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let logo_h = if logos.is_empty() { 0.0 } else { 48.0 };
+    let head = (16.0 * title_lines.len() as f64).max(logo_h);
     let (lo, hi) = c.span();
     let zgrid = c.elevations.first().copied().unwrap_or(0.0);
     let zhi = c.elevations.last().copied().unwrap_or(zgrid + 1.0);
@@ -764,8 +1214,23 @@ fn cut_svg(
         .isolines
         .iter()
         .enumerate()
-        .map(|(k, (l, _))| (COLOURS[k % COLOURS.len()].to_owned(), format!("{l} {unit}")))
+        .map(|(k, (l, _))| {
+            let (colour, _, text) = look(k, *l);
+            (colour, text)
+        })
         .collect();
+    let mut classes: Vec<u8> = extras.points.iter().map(|p| p.2).collect();
+    classes.sort_unstable();
+    classes.dedup();
+    for class in &classes {
+        legend.push((format!("class:{class}"), format!("points of class {class}")));
+    }
+    for (name, _) in &extras.tin {
+        legend.push(("tin".into(), format!("surface: {name}")));
+    }
+    for (name, _) in &extras.dxf {
+        legend.push(("dxf".into(), format!("drawing {name} (crossings)")));
+    }
     for (kind, text) in [
         ("ground", "ground"),
         ("building", "building to its eaves"),
@@ -781,14 +1246,23 @@ fn cut_svg(
         .map(|(_, t)| text_width(t, 11.0))
         .fold(text_width(&format!("{q} levels"), 12.0), f64::max)
         + 50.0;
-    let (left, top, bottom) = (64.0, 70.0, 74.0);
+    let (left, top, bottom) = (64.0, 70.0 + head, 74.0);
     let right = legend_w + 24.0;
     let plot_w = width_m * scale;
     let plot_h = height_m * scale;
     let legend_h = 24.0 + 18.0 * legend.len() as f64;
+    let logos_w: f64 = logos.iter().map(|l| l.1 + 12.0).sum();
     let w = (left + plot_w + right)
         .max(left + text_width(&title, 15.0) + 16.0)
-        .max(left + text_width(&subtitle, 11.0) + 16.0);
+        .max(left + text_width(&subtitle, 11.0) + 16.0)
+        .max(
+            left + title_lines
+                .iter()
+                .map(|t| text_width(t, 12.0))
+                .fold(0.0, f64::max)
+                + 24.0
+                + logos_w,
+        );
     let h = (top + plot_h + bottom).max(top + legend_h + 16.0);
     let x = |s: f64| left + (s - lo) * scale;
     let y = |z: f64| top + (zhi - z) * scale;
@@ -799,14 +1273,36 @@ fn cut_svg(
          viewBox=\"0 0 {w:.1} {h:.1}\" font-family=\"sans-serif\" font-size=\"11\">"
     );
     let _ = writeln!(o, "<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>");
+    // The plan's title lines and logos (right), above the cut's own.
+    for (k, t) in title_lines.iter().enumerate() {
+        let _ = writeln!(
+            o,
+            "<text x=\"{left}\" y=\"{:.1}\" font-size=\"12\"{}>{}</text>",
+            20.0 + 16.0 * k as f64,
+            if k == 0 { " font-weight=\"bold\"" } else { "" },
+            xml(t)
+        );
+    }
+    let mut lx0 = w - 8.0;
+    for (href, lw) in logos.iter().rev() {
+        lx0 -= lw;
+        let _ = writeln!(
+            o,
+            "<image x=\"{lx0:.1}\" y=\"8\" width=\"{lw:.1}\" height=\"{logo_h:.1}\" href=\"{}\" preserveAspectRatio=\"xMaxYMin meet\"/>",
+            xml(href)
+        );
+        lx0 -= 12.0;
+    }
     let _ = writeln!(
         o,
-        "<text x=\"{left}\" y=\"24\" font-size=\"15\" font-weight=\"bold\">{}</text>",
+        "<text x=\"{left}\" y=\"{:.1}\" font-size=\"15\" font-weight=\"bold\">{}</text>",
+        24.0 + head,
         xml(&title)
     );
     let _ = writeln!(
         o,
-        "<text x=\"{left}\" y=\"42\" fill=\"#444\">{}</text>",
+        "<text x=\"{left}\" y=\"{:.1}\" fill=\"#444\">{}</text>",
+        42.0 + head,
         xml(&subtitle)
     );
     let _ = writeln!(
@@ -839,7 +1335,7 @@ fn cut_svg(
                         y(z1),
                         (c.offsets[end] - c.offsets[k0]) * scale,
                         (z1 - z0) * scale,
-                        tint(COLOURS[(b - 1) % COLOURS.len()])
+                        tint(&look(b - 1, levels[b - 1]).0)
                     );
                 }
             };
@@ -956,8 +1452,8 @@ fn cut_svg(
     }
     // The isolines.
     let _ = writeln!(o, "<g clip-path=\"url(#plot)\">");
-    for (k, (_, lines)) in c.isolines.iter().enumerate() {
-        let colour = COLOURS[k % COLOURS.len()];
+    for (k, (level, lines)) in c.isolines.iter().enumerate() {
+        let (colour, width, _) = look(k, *level);
         for line in lines {
             if line.len() < 2 {
                 continue;
@@ -968,8 +1464,57 @@ fn cut_svg(
                 .collect();
             let _ = writeln!(
                 o,
-                "<polyline points=\"{}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.6\"/>",
+                "<polyline points=\"{}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"{width}\"/>",
                 pts.join(" ")
+            );
+        }
+    }
+    let _ = writeln!(o, "</g>");
+    // The plan's points, TIN and drawing crossings along the cut.
+    let _ = writeln!(o, "<g clip-path=\"url(#plot)\">");
+    for (s0, z0, class) in &extras.points {
+        if *z0 < zlo || *z0 > zhi {
+            continue;
+        }
+        let _ = writeln!(
+            o,
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"1.3\" fill=\"{}\"/>",
+            x(*s0),
+            y(*z0),
+            plan.map_or_else(|| "#666666".to_owned(), |p| p.class_colour(*class))
+        );
+    }
+    for (_, lines) in &extras.tin {
+        for line in lines {
+            let pts: Vec<String> = line
+                .iter()
+                .map(|p| format!("{:.1},{:.1}", x(p[0]), y(p[1].clamp(zlo, zhi))))
+                .collect();
+            let _ = writeln!(
+                o,
+                "<polyline points=\"{}\" fill=\"none\" stroke=\"#5b4636\" stroke-width=\"1.5\" stroke-dasharray=\"6 3\"/>",
+                pts.join(" ")
+            );
+        }
+    }
+    for (_, marks) in &extras.dxf {
+        for (s0, z0, _, colour) in marks {
+            if *z0 < zlo || *z0 > zhi {
+                continue;
+            }
+            let (cx, cy) = (x(*s0), y(*z0));
+            let _ = writeln!(
+                o,
+                "<path d=\"M{:.1},{:.1}L{:.1},{:.1}M{:.1},{:.1}L{:.1},{:.1}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                cx - 3.0,
+                cy - 3.0,
+                cx + 3.0,
+                cy + 3.0,
+                cx - 3.0,
+                cy + 3.0,
+                cx + 3.0,
+                cy - 3.0,
+                xml(colour)
             );
         }
     }
@@ -1019,7 +1564,11 @@ fn cut_svg(
     }
     // The wires crossing the cut, labelled outwards from the axis.
     for (name, s, z, earth) in wires {
-        let colour = if *earth { "#2f855a" } else { "#9b2c2c" };
+        let colour = if *earth {
+            &wire_colours.earth
+        } else {
+            &wire_colours.phase
+        };
         let (tx, anchor) = if *s < -1e-6 {
             (x(*s) - 7.0, "end")
         } else {
@@ -1063,10 +1612,33 @@ fn cut_svg(
                 "<circle cx=\"{:.1}\" cy=\"{ly:.1}\" r=\"4\" fill=\"{}\"/>",
                 lx + 13.0,
                 if kind == "earth" {
-                    "#2f855a"
+                    &wire_colours.earth
                 } else {
-                    "#9b2c2c"
+                    &wire_colours.phase
                 }
+            ),
+            "tin" => format!(
+                "<line x1=\"{lx:.1}\" y1=\"{ly:.1}\" x2=\"{:.1}\" y2=\"{ly:.1}\" stroke=\"#5b4636\" stroke-width=\"1.5\" stroke-dasharray=\"6 3\"/>",
+                lx + 26.0
+            ),
+            "dxf" => format!(
+                "<path d=\"M{:.1},{:.1}L{:.1},{:.1}M{:.1},{:.1}L{:.1},{:.1}\" stroke=\"#333\" stroke-width=\"1.4\"/>",
+                lx + 10.0,
+                ly - 3.0,
+                lx + 16.0,
+                ly + 3.0,
+                lx + 10.0,
+                ly + 3.0,
+                lx + 16.0,
+                ly - 3.0
+            ),
+            class if class.starts_with("class:") => format!(
+                "<circle cx=\"{:.1}\" cy=\"{ly:.1}\" r=\"2.5\" fill=\"{}\"/>",
+                lx + 13.0,
+                plan.map_or_else(
+                    || "#666666".to_owned(),
+                    |p| p.class_colour(class[6..].parse().unwrap_or(0))
+                )
             ),
             "axis" => format!(
                 "<line x1=\"{lx:.1}\" y1=\"{ly:.1}\" x2=\"{:.1}\" y2=\"{ly:.1}\" stroke=\"#666\" stroke-dasharray=\"8 5\"/>",
@@ -1103,7 +1675,7 @@ fn cut_svg(
     o
 }
 
-fn geojson(buildings: &[BuildingIn], cuts: &[ResultCut], preset: &PresetOut) -> String {
+fn geojson(buildings: &[BuildingIn], cuts: &[CutPlace], preset: &PresetOut) -> String {
     let mut features = Vec::new();
     for b in buildings {
         let mut ring: Vec<Value> = b
@@ -1129,7 +1701,7 @@ fn geojson(buildings: &[BuildingIn], cuts: &[ResultCut], preset: &PresetOut) -> 
         }));
     }
     for c in cuts {
-        let (lo, hi) = c.span();
+        let (lo, hi) = c.span;
         let a = [c.origin[0] + lo * c.right[0], c.origin[1] + lo * c.right[1]];
         let b = [c.origin[0] + hi * c.right[0], c.origin[1] + hi * c.right[1]];
         features.push(serde_json::json!({
@@ -1154,7 +1726,7 @@ fn geojson(buildings: &[BuildingIn], cuts: &[ResultCut], preset: &PresetOut) -> 
     .unwrap_or_default()
 }
 
-fn dxf(buildings: &[BuildingIn], cuts: &[ResultCut], preset: &PresetOut) -> String {
+fn dxf(buildings: &[BuildingIn], cuts: &[CutPlace], preset: &PresetOut) -> String {
     let mut o = String::from("0\nSECTION\n2\nENTITIES\n");
     let polyline = |o: &mut String, layer: &str, pts: &[P2], closed: bool| {
         let _ = write!(
@@ -1185,7 +1757,7 @@ fn dxf(buildings: &[BuildingIn], cuts: &[ResultCut], preset: &PresetOut) -> Stri
         }
     }
     for c in cuts {
-        let (lo, hi) = c.span();
+        let (lo, hi) = c.span;
         let a = [c.origin[0] + lo * c.right[0], c.origin[1] + lo * c.right[1]];
         let b = [c.origin[0] + hi * c.right[0], c.origin[1] + hi * c.right[1]];
         polyline(&mut o, "CUTS", &[a, b], false);

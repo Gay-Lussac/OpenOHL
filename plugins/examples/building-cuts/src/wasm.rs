@@ -19,7 +19,9 @@ wit_bindgen::generate!({
     generate_all,
 });
 
-use exports::ohl::plugin::field_presets::{Cut, FieldInput, FieldPreset, OutFile, Outline, Place};
+use exports::ohl::plugin::field_presets::{
+    Cut, CutReport, FieldInput, FieldPreset, OutFile, Outline, Place,
+};
 
 struct BuildingCuts;
 
@@ -143,21 +145,40 @@ impl exports::ohl::plugin::field_presets::Guest for BuildingCuts {
         Ok(presets.into_iter().map(to_wit).collect())
     }
 
+    fn report_cut(
+        parameters: String,
+        plan: String,
+        preset: FieldPreset,
+        cut: String,
+    ) -> Result<CutReport, String> {
+        let params = params::Params::parse(&parameters)?;
+        let plan = report::Plan::parse(&plan)?;
+        let (files, summary) = report::report_cut(&params, plan.as_ref(), &from_wit(preset), &cut)?;
+        Ok(CutReport {
+            files: files.into_iter().map(out_file).collect(),
+            summary,
+        })
+    }
+
     fn report(
         parameters: String,
+        plan: String,
         preset: FieldPreset,
         results: String,
+        cuts: Vec<String>,
     ) -> Result<Vec<OutFile>, String> {
         let params = params::Params::parse(&parameters)?;
-        let files = report::report(&params, &from_wit(preset), &results)?;
-        Ok(files
-            .into_iter()
-            .map(|f| OutFile {
-                name: f.name,
-                media_type: f.media_type,
-                bytes: f.bytes,
-            })
-            .collect())
+        let plan = report::Plan::parse(&plan)?;
+        let files = report::report(&params, plan.as_ref(), &from_wit(preset), &results, &cuts)?;
+        Ok(files.into_iter().map(out_file).collect())
+    }
+}
+
+fn out_file(f: report::File) -> OutFile {
+    OutFile {
+        name: f.name,
+        media_type: f.media_type,
+        bytes: f.bytes,
     }
 }
 

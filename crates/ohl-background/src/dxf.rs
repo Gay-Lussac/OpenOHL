@@ -85,6 +85,59 @@ pub struct Drawing {
 }
 
 impl Drawing {
+    /// Where the drawing's lines cross the vertical plane through
+    /// `origin` (plan) along the unit vector `right`, within offsets
+    /// `span` (2026-11-02, a field plan's DXF in a cut): each crossing's
+    /// offset, elevation, layer name and colour — of the `layers` named
+    /// (all when empty), switched-off layers left out. Segments lying in
+    /// the plane are not crossings.
+    pub fn plane_crossings(
+        &self,
+        origin: [f64; 2],
+        right: [f64; 2],
+        span: [f64; 2],
+        layers: &[String],
+    ) -> Vec<(f64, f64, String, [u8; 3])> {
+        let off = |p: &[f64; 3]| {
+            let (dx, dy) = (p[0] - origin[0], p[1] - origin[1]);
+            (
+                dx * right[0] + dy * right[1],
+                -dx * right[1] + dy * right[0],
+            )
+        };
+        let mut out = Vec::new();
+        for l in &self.lines {
+            let Some(layer) = self.layers.get(l.layer as usize) else {
+                continue;
+            };
+            if layer.off || (!layers.is_empty() && !layers.contains(&layer.name)) {
+                continue;
+            }
+            let n = l.points.len();
+            let segments = if l.closed { n } else { n.saturating_sub(1) };
+            for k in 0..segments {
+                let (a, b) = (&l.points[k], &l.points[(k + 1) % n]);
+                let ((sa, da), (sb, db)) = (off(a), off(b));
+                // Across the plane (a point on it counts once: at the
+                // segment's start).
+                if (da < 0.0 && db < 0.0) || (da > 0.0 && db > 0.0) || (da == 0.0 && db == 0.0) {
+                    continue;
+                }
+                if db == 0.0 && k + 1 < segments {
+                    continue;
+                }
+                let t = da / (da - db);
+                let s = sa + t * (sb - sa);
+                if s < span[0] || s > span[1] {
+                    continue;
+                }
+                let z = a[2] + t * (b[2] - a[2]);
+                out.push((s, z, layer.name.clone(), l.color));
+            }
+        }
+        out
+    }
+
     /// Lowest and highest (x, y, z) of everything drawn.
     pub fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
         let mut out: Option<([f64; 3], [f64; 3])> = None;
@@ -910,6 +963,46 @@ pub fn read_dxf(bytes: &[u8]) -> Result<Drawing, String> {
 
 #[cfg(test)]
 mod tests {
+    /// A 3D polyline across a cut along y at x = 5: crossed once at its
+    /// second segment, at its elevation there; a switched-off layer and
+    /// one not asked are left out.
+    #[test]
+    fn lines_cross_a_cut() {
+        let layer = |name: &str, off: bool| DrawingLayer {
+            name: name.into(),
+            color: [255, 0, 0],
+            off,
+        };
+        let line = |layer: u32| Polyline {
+            layer,
+            color: [10, 20, 30],
+            points: vec![[0.0, 1.0, 100.0], [4.0, 1.0, 102.0], [6.0, 3.0, 104.0]],
+            closed: false,
+        };
+        let d = Drawing {
+            layers: vec![layer("A", false), layer("B", true), layer("C", false)],
+            lines: vec![line(0), line(1), line(2)],
+            ..Drawing::default()
+        };
+        let c = d.plane_crossings(
+            [5.0, 0.0],
+            [0.0, 1.0],
+            [-10.0, 10.0],
+            &["A".into(), "B".into()],
+        );
+        assert_eq!(c.len(), 1);
+        let (s, z, name, colour) = &c[0];
+        assert!(
+            (s - 2.0).abs() < 1e-12 && (z - 103.0).abs() < 1e-12,
+            "{s} {z}"
+        );
+        assert_eq!((name.as_str(), *colour), ("A", [10, 20, 30]));
+        assert!(
+            d.plane_crossings([5.0, 0.0], [0.0, 1.0], [5.0, 10.0], &[])
+                .is_empty()
+        );
+    }
+
     use super::*;
 
     /// A DXF file from (group code, value) pairs.

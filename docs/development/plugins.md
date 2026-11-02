@@ -750,12 +750,23 @@ so. Without a cloud the roles give none (said).
   its **points** (`place`: name, x, y and an elevation or a height above
   the ground), the isoline levels in µT and kV/m, building **outlines**
   (a ring in plan, ground and top; for its report) and notes.
-- `report(parameters, preset, results)`: the report files (`out-file`:
-  name, media type, bytes) from the run's results, `results` being an
-  `ohl-field-results-set` JSON — one `ohl-field-results` document per
-  field run, both from `ohl electrical fields` ([data
-  model](data-model.md#field-results-json)); `report` is called once per
-  run.
+- `report-cut(parameters, plan, preset, cut)` (2026-11-02): one cut's
+  report files (`out-file`: name, media type, bytes) and a `summary` (any
+  text, the plugin's own) handed back to `report`; `cut` is the cut's
+  document (`ohl-field-cut` JSON: its place, each field's grid and
+  isolines, the line's name, the plan's points and sections along it,
+  [data model](data-model.md#field-results-json)), `plan` the field plan
+  template (`ohl-field-plan` JSON, its logos as data URIs; `""` without
+  one). Called once per cut, each call with its own time, so that a
+  long line's results are never held at once (owner 2026-11-02: on a
+  real line with 187 cuts the whole set was 110 MB, more than a plugin
+  gets by default).
+- `report(parameters, plan, preset, results, cuts)`: the report files
+  besides the cuts', from the run's results without the cuts' grids
+  (`results`: an `ohl-field-results-set` JSON, each cut with its `span`
+  in place of its grids) and the cuts' summaries in their order; called
+  once per run, after every `report-cut`. Changed in place on
+  2026-11-02 (the export came after the last release).
 
 **The host checks everything** before it is used
 (`ohl_plugins::field_presets::check_presets`, `check_files`): unique,
@@ -778,8 +789,17 @@ FILE] [--preset NAME] [--out DIR] [--cloud SPEC]` gathers the input (the
 cloud of `--cloud`, else the project's; the survey points of
 `--terrain`), calls `field-presets`, adds the chosen preset's cuts (with
 their labels) and points to those given and its levels to `--level`,
-runs the field(s) as without it, then calls `report` once with the set of results and
-writes the files into `--out` (default: the current folder). `ohl plugin
+runs the field(s) as without it, then calls `report-cut` per cut and
+`report` once (the set split by `ohl_electrical::field_results::split_set`)
+and writes the files into `--out` (default: the current folder). With
+`--plan FILE.ohlfp` (a field plan template, [data
+model](data-model.md#field-plan-template)) the host adds to each cut's
+document the points of the plan's classes within its band of the cut
+(`ohl_io::field_cuts::cut_points`, one pass over the cloud), a TIN
+along it (a project surface, else the field's ground) or a background
+drawing's 3D lines where they cross it
+(`ohl_background::Drawing::plane_crossings`), and hands the plan
+(`FieldPlan::plugin_json`) to both calls. `ohl plugin
 info` lists the export (`optional exports: field-presets`). In
 OHL-Design: not yet.
 

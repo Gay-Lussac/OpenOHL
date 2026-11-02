@@ -15,7 +15,7 @@ use crate::analysis::{InPoint, analyse, presets};
 use crate::geom::{convex_hull, signed_area};
 use crate::model::{Alignment, Model};
 use crate::params::{OutlineKind, Params, TEMPLATE, matches};
-use crate::report::report;
+use crate::report::{Plan, report, report_cut};
 
 /// The invented model (`ohl-export-model`).
 pub fn model_json() -> String {
@@ -220,6 +220,40 @@ fn the_plane_at_a_station_is_the_cores() {
     assert!((p.origin[0] - 300.0).abs() < 1e-9 && p.origin[1].abs() < 1e-9);
     // Beyond the ends: held within.
     assert_eq!(al.plane_at(-5.0).origin, [0.0, 0.0]);
+}
+
+/// A building at an angle point (2026-11-02, found on a real line): the
+/// bisector's plane at its footprint's last station only grazes it, so
+/// the cut is moved inwards until it crosses the footprint.
+#[test]
+fn a_cut_at_an_angle_point_crosses_its_building() {
+    use crate::analysis::{crossing_station, station_range};
+    let a = 60f64.to_radians();
+    let al = Alignment {
+        id: "a".into(),
+        points: vec![
+            [0.0, 0.0],
+            [300.0, 0.0],
+            [300.0 + 300.0 * a.cos(), -300.0 * a.sin()],
+        ],
+        length: 600.0,
+    };
+    // Outside the bend, beside the angle point.
+    let ring = vec![[296.0, 6.0], [306.0, 6.0], [306.0, 14.0], [296.0, 14.0]];
+    let (lo, hi) = station_range(&al, &ring);
+    let crosses = |t: f64| {
+        let p = al.plane_at(t);
+        let d: Vec<f64> = ring.iter().map(|q| p.along(*q)).collect();
+        d.iter().any(|v| *v < -0.2) && d.iter().any(|v| *v > 0.2)
+    };
+    let edge = if crosses(hi) { lo } else { hi };
+    assert!(!crosses(edge), "{lo} {hi}: the edge crosses already");
+    let t = crossing_station(&al, &ring, edge, lo, hi);
+    assert!(crosses(t) && (lo..=hi).contains(&t), "{t} in {lo}–{hi}");
+    // A station that crosses already is kept.
+    let mid = (lo + hi) / 2.0;
+    assert!(crosses(mid));
+    assert_eq!(crossing_station(&al, &ring, mid, lo, hi), mid);
 }
 
 /// Three buildings found, the noise left out, ids in station order.
@@ -472,6 +506,73 @@ fn svg_extent(svg: &str) -> ((f64, f64), Vec<(String, f64)>) {
     ((vb[2], vb[3]), out)
 }
 
+/// As the host hands them (`ohl_electrical::field_results::split_set`):
+/// the set without the cuts' grids and one `ohl-field-cut` document per
+/// cut, both fields' grids in it; `extras` added to each (points,
+/// sections).
+fn split(set: &serde_json::Value, extras: &serde_json::Value) -> (String, Vec<String>) {
+    let mut summary = set.clone();
+    let mut cuts: Vec<serde_json::Value> = Vec::new();
+    for field in summary["fields"].as_array_mut().unwrap() {
+        let (q, u, l) = (
+            field["quantity"].clone(),
+            field["unit"].clone(),
+            field["limit"].clone(),
+        );
+        for (k, c) in field["cuts"].as_array_mut().unwrap().iter_mut().enumerate() {
+            let mut grid = serde_json::json!({"quantity": q, "unit": u, "limit": l});
+            let offsets = c["offsets"].as_array().unwrap().clone();
+            for key in ["offsets", "elevations", "ground", "values", "isolines"] {
+                grid[key] = c.as_object_mut().unwrap().remove(key).unwrap();
+            }
+            c["span"] = serde_json::json!([offsets.first(), offsets.last()]);
+            if cuts.len() <= k {
+                let mut d = serde_json::json!({"format": "ohl-field-cut", "version": 1,
+                    "case": set["case"], "line": "invented line", "fields": [],
+                    "points": extras["points"], "sections": extras["sections"]});
+                for key in [
+                    "label",
+                    "alignment",
+                    "station",
+                    "angle_point",
+                    "from",
+                    "to",
+                    "at",
+                    "plane",
+                ] {
+                    d[key] = c[key].clone();
+                }
+                cuts.push(d);
+            }
+            cuts[k]["fields"].as_array_mut().unwrap().push(grid);
+        }
+    }
+    (
+        summary.to_string(),
+        cuts.iter().map(|c| c.to_string()).collect(),
+    )
+}
+
+/// The report of invented results, a cut at a time and then the rest.
+fn run_report(
+    p: &Params,
+    plan: Option<&Plan>,
+    preset: &crate::analysis::PresetOut,
+    set: &serde_json::Value,
+    extras: &serde_json::Value,
+) -> Vec<crate::report::File> {
+    let (results, cuts) = split(set, extras);
+    let mut files = Vec::new();
+    let mut summaries = Vec::new();
+    for c in &cuts {
+        let (f, s) = report_cut(p, plan, preset, c).unwrap();
+        files.extend(f);
+        summaries.push(s);
+    }
+    files.extend(report(p, plan, preset, &results, &summaries).unwrap());
+    files
+}
+
 /// The report of invented results of both fields (one set): one
 /// buildings.csv with the B and E columns, one points.csv, per cut a CSV
 /// and an SVG per field, the GeoJSON; each drawing inside its viewBox,
@@ -521,9 +622,9 @@ fn report_of_invented_results() {
         "format": "ohl-field-results-set", "version": 1,
         "case": {"name": "test", "temperature_c": 40.0},
         "fields": [field("B", "µT", 1.0), field("E", "kV/m", 0.1)],
-    })
-    .to_string();
-    let files = report(&p, preset, &results).unwrap();
+    });
+    let none = serde_json::json!({"points": [], "sections": []});
+    let files = run_report(&p, None, preset, &results, &none);
     let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
     for want in [
         "buildings.csv",
@@ -622,9 +723,8 @@ fn report_of_invented_results() {
     let one = serde_json::json!({
         "format": "ohl-field-results-set", "version": 1,
         "fields": [field("E", "kV/m", 0.1)],
-    })
-    .to_string();
-    let files = report(&p, preset, &one).unwrap();
+    });
+    let files = run_report(&p, None, preset, &one, &none);
     let summary = String::from_utf8(
         files
             .iter()
@@ -636,6 +736,86 @@ fn report_of_invented_results() {
     .unwrap();
     assert!(summary.contains("max_section_E_kV_m") && !summary.contains("_B_"));
     assert!(!files.iter().any(|f| f.name.ends_with("-B.svg")));
+    // With a field plan (2026-11-02): its title lines and logo, its
+    // level's colour and width, the points of its class, the TIN and the
+    // drawing's crossings in the drawing; its limit where the parameters
+    // give none.
+    let plan = Plan::parse(
+        &serde_json::json!({
+            "format": "ohl-field-plan", "version": 1,
+            "title": {"lines": ["{line}", "Cut {cut}: {field}", "Weather: {case}"],
+                      "logos": [{"href": "data:image/svg+xml;base64,PHN2Zy8+", "width": 0.03}]},
+            "cut": {"classes": [{"class": 6, "colour": "#123456"}]},
+            "magnetic": {"limit_ut": 0.5, "level": [{"value": 1.0, "colour": "#abcdef",
+                         "width": 3.0, "label": "AGW"}]},
+            "electric": {},
+            "wires": {"phase": "#111111", "earth": "#222222"},
+        })
+        .to_string(),
+    )
+    .unwrap()
+    .unwrap();
+    let extras = serde_json::json!({
+        "points": [[1.0, 410.0, 6], [-3.0, 402.0, 6]],
+        "sections": [
+            {"kind": "tin", "name": "dtm", "lines": [[[-40.0, 400.5], [40.0, 400.5]]]},
+            {"kind": "dxf", "name": "plan", "marks": [[2.0, 403.0, "WALLS", "#ff0000"]]},
+        ],
+    });
+    let plain = Params::default();
+    let files = run_report(&plain, Some(&plan), preset, &results, &extras);
+    let svg = String::from_utf8(
+        files
+            .iter()
+            .find(|f| f.name == format!("cut-{}-B.svg", cut.label))
+            .unwrap()
+            .bytes
+            .clone(),
+    )
+    .unwrap();
+    for want in [
+        ">invented line<",
+        "magnetic flux density B (µT)",
+        ">Weather: test<",
+        "<image ",
+        "data:image/svg+xml;base64,PHN2Zy8+",
+        "stroke=\"#abcdef\" stroke-width=\"3\"",
+        ">AGW<",
+        "fill=\"#123456\"",
+        ">points of class 6<",
+        "stroke-dasharray=\"6 3\"",
+        ">surface: dtm<",
+        "stroke=\"#ff0000\"",
+        ">drawing plan (crossings)<",
+        "fill=\"#111111\"",
+    ] {
+        assert!(svg.contains(want), "{want}: {svg}");
+    }
+    let ((w, h), numbers) = svg_extent(&svg);
+    for (attr, n) in numbers {
+        let limit = if attr.starts_with('y') || attr == "cy" {
+            h
+        } else {
+            w
+        };
+        assert!(
+            (0.0..=limit.max(w)).contains(&n),
+            "{attr} {n} outside {w}×{h}"
+        );
+    }
+    let table = String::from_utf8(
+        files
+            .iter()
+            .find(|f| f.name == "buildings.csv")
+            .unwrap()
+            .bytes
+            .clone(),
+    )
+    .unwrap();
+    assert!(
+        table.contains("limit_B_uT") && !table.contains("limit_E"),
+        "{table}"
+    );
 }
 
 /// The time for a large input (run by hand: `cargo test --release

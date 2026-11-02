@@ -1219,6 +1219,13 @@ gives the cuts and points the fields need at each of them:
   **Conservative**: the top floor's place may lie above the eaves (a
   7 m building has places at 1.5, 4.5 and 7.5 m).
 
+The buildings come from the point cloud's building class (the role
+`building`) unless survey codes are given: the template reads every
+survey point near the line (`survey-codes = ["*"]` in its manifest) but
+uses only those whose code matches `building_codes`. The ground around
+each building is taken from 2 m cells of the ground class (2026-11-02;
+1 m cells over a real line passed the plugin's memory).
+
 Its two presets: `buildings` (the cuts and the places) and `places` (the
 places alone, quicker). Its parameters: a TOML file
 (`plugins/examples/building-cuts/example-parameters.toml`; every key
@@ -1241,6 +1248,37 @@ gives the same files with that field alone.
 | `buildings.dxf` | with `dxf = true`: the same in plan (R12: layers BUILDINGS, CUTS, PLACES) |
 | `notes.txt` | what the plugin assumed and found, each field's notes, warnings |
 
+<a id="field-plan-templates"></a>**Field plan templates** (`--plan
+FILE.ohlfp`, 2026-11-02; built, in active development, not approved
+yet): how the cuts are drawn and in which weather the wires hang, kept
+as a project library (kind `field-plans`) or a file:
+
+- **Title**: lines over each drawing (`{line}`, `{cut}`, `{field}`,
+  `{case}` replaced) and logos beside them (SVG, PNG or JPEG files, a
+  width each).
+- **What the cut shows**: the point cloud's points of chosen classes
+  within a band of the cut's plane (each class its colour), and a TIN
+  (a project surface, or the field's ground) or a background drawing
+  of the project (its 3D lines where they cross the cut, by layer).
+- **Limits and lines**: the magnetic and electric limits (the margins in
+  the tables; the template has the Swiss NISV's 1 µT and 5 kV/m — give
+  your ordinance's) and the isolines drawn, each its value, colour,
+  width and label (added to the run's levels).
+- **Wires**: the colours of the phase conductors and earth wires.
+- **Weather**: the case every wire hangs in, the earth wires' own and
+  each electrical system's own (by its id) — names of the `--weather`
+  file. `--system-case SYSTEM=CASE` (`earth` for the wires of no system)
+  overrides it per run.
+
+A new template's text: `ohl_electrical::field_plan::TEMPLATE` (every key
+with its default, commented). The parameters' `limit_ut` / `limit_kv_m`,
+when given, win over the plan's.
+
+The report is made **one cut at a time** (2026-11-02): on a real line
+the whole set of results was 110 MB, more than a plugin gets by default;
+now each cut is handed over alone and the tables are made from the cuts'
+summaries.
+
 A building's section in a cut takes the grid's points up to half a step
 outside it (**conservative**); it is drawn from the building's ground
 (one elevation, the 10th percentile around it) even where the cut's
@@ -1253,6 +1291,14 @@ ohl electrical fields examples/electrical/double-circuit.ohl.json \
     --terrain survey.csv --cloud project.ohl \
     --preset-plugin plugins/examples/building-cuts \
     --params plugins/examples/building-cuts/example-parameters.toml --out report
+```
+
+With a plan template and a weather case per system:
+
+```text
+ohl electrical fields project.ohl --current '*=900' \
+    --weather cases.ohlwc --plan plans.ohlfp --system-case earth=cold \
+    --preset-plugin plugins/examples/building-cuts --out report
 ```
 
 (`survey.csv`, `project.ohl`: your survey and a project with its point

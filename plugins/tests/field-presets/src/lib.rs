@@ -19,10 +19,13 @@
 //! (a point named twice), `bad = "file"` (a report file `../x.txt`),
 //! `bad = "fail"` (its own error).
 //!
-//! `report` writes `summary.txt`: the preset's name, its counts, the
-//! results' size, whether they are an `ohl-field-results-set` and how
-//! many field documents it holds, and how many times each cut's label
-//! appears in them.
+//! `report-cut` writes `cut-LABEL.txt` (whether it is an `ohl-field-cut`,
+//! how many fields and grids it holds, whether a plan was given) and
+//! gives the label as its summary; `report` writes `summary.txt`: the
+//! preset's name, its counts, the results' size, whether they are an
+//! `ohl-field-results-set`, how many field documents it holds, whether
+//! any grid is left in them, how many cut reports it got, whether a plan
+//! was given, and how many cut summaries name each cut.
 
 wit_bindgen::generate!({
     inline: r#"
@@ -36,7 +39,9 @@ wit_bindgen::generate!({
     generate_all,
 });
 
-use exports::ohl::plugin::field_presets::{Cut, FieldInput, FieldPreset, OutFile, Outline, Place};
+use exports::ohl::plugin::field_presets::{
+    Cut, CutReport, FieldInput, FieldPreset, OutFile, Outline, Place,
+};
 
 struct Presets;
 
@@ -164,33 +169,67 @@ impl exports::ohl::plugin::field_presets::Guest for Presets {
         ])
     }
 
-    fn report(
+    fn report_cut(
         parameters: String,
+        plan: String,
+        preset: FieldPreset,
+        cut: String,
+    ) -> Result<CutReport, String> {
+        let label = preset
+            .cuts
+            .iter()
+            .map(|c| c.label.as_str())
+            .find(|l| cut.contains(&format!("\"label\":\"{l}\"")))
+            .unwrap_or("?")
+            .to_owned();
+        let text = format!(
+            "cut {label}\nohl-field-cut {}\nfields {}\nvalues {}\nplan {}\n",
+            cut.contains("\"ohl-field-cut\""),
+            cut.matches("\"quantity\"").count(),
+            cut.matches("\"values\"").count(),
+            !plan.is_empty()
+        );
+        let name = if bad(&parameters) == Some("file") {
+            "../x.txt".to_owned()
+        } else {
+            format!("cut-{label}.txt")
+        };
+        Ok(CutReport {
+            files: vec![OutFile {
+                name,
+                media_type: "text/plain".into(),
+                bytes: text.into_bytes(),
+            }],
+            summary: label,
+        })
+    }
+
+    fn report(
+        _parameters: String,
+        plan: String,
         preset: FieldPreset,
         results: String,
+        cuts: Vec<String>,
     ) -> Result<Vec<OutFile>, String> {
         let mut text = format!(
-            "preset {}\ncuts {}\npoints {}\nresults bytes {}\nohl-field-results-set {}\nfields {}\n",
+            "preset {}\ncuts {}\npoints {}\nresults bytes {}\nohl-field-results-set {}\nfields {}\n\
+             grids {}\ncut reports {}\nplan {}\n",
             preset.name,
             preset.cuts.len(),
             preset.points.len(),
             results.len(),
             results.contains("\"ohl-field-results-set\""),
-            results.matches("\"format\":\"ohl-field-results\"").count()
+            results.matches("\"format\":\"ohl-field-results\"").count(),
+            results.contains("\"values\""),
+            cuts.len(),
+            !plan.is_empty()
         );
         for c in &preset.cuts {
-            let n = results
-                .matches(&format!("\"label\":\"{}\"", c.label))
-                .count();
+            let n = cuts.iter().filter(|s| **s == c.label).count();
             text.push_str(&format!("label {} {n}\n", c.label));
         }
-        let name = if bad(&parameters) == Some("file") {
-            "../x.txt"
-        } else {
-            "summary.txt"
-        };
         Ok(vec![OutFile {
-            name: name.into(),
+            name: "summary.txt".into(),
             media_type: "text/plain".into(),
             bytes: text.into_bytes(),
         }])

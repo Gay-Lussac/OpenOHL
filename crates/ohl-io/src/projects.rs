@@ -76,7 +76,7 @@ impl ImportedProject {
 /// The library files that may be added to an import (owner, 2026-10-27):
 /// kind in the project and file extension. The structure loads
 /// (`*.loads.csv`) are not among them.
-pub const LIBRARY_EXTENSIONS: [(&str, &str); 13] = [
+pub const LIBRARY_EXTENSIONS: [(&str, &str); 14] = [
     ("cables", ohl_cables::WIRE_FILE_EXTENSION),
     (
         "structures",
@@ -99,6 +99,7 @@ pub const LIBRARY_EXTENSIONS: [(&str, &str); 13] = [
     ("femodels", "ohlfe"),
     ("sections", ohl_sections::SECTION_FILE_EXTENSION),
     ("bolts", ohl_structures::bolts::BOLT_FILE_EXTENSION),
+    ("field-plans", "ohlfp"),
 ];
 
 /// The library kind of a file, from its extension (`None`: not a library
@@ -814,6 +815,7 @@ mod tests {
         assert_eq!(library_kind(Path::new("t.ohls")), Some("structures"));
         assert_eq!(library_kind(Path::new("i.ohli")), Some("insulators"));
         assert_eq!(library_kind(Path::new("b.ohlb")), Some("bolts"));
+        assert_eq!(library_kind(Path::new("p.ohlfp")), Some("field-plans"));
         assert_eq!(library_kind(Path::new("x.loads.csv")), None);
         assert_eq!(library_kind(Path::new("noext")), None);
         let d = dir("kinds");

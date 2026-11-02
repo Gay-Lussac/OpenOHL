@@ -204,6 +204,104 @@ pub fn electric_value(
     })
 }
 
+/// A cut's document: the format's name (2026-11-02, a plugin's report
+/// one cut at a time).
+pub const CUT_FORMAT: &str = "ohl-field-cut";
+
+/// A cut's document: the format's version.
+pub const CUT_VERSION: u32 = 1;
+
+/// The grids of a cut, moved to its own document by [`split_set`].
+const GRID_KEYS: [&str; 5] = ["offsets", "elevations", "ground", "values", "isolines"];
+
+/// A run's set (taken, not copied: it may be large) split for a
+/// plugin's report (owner 2026-11-02: one cut at
+/// a time, so that a long line's results need not be held at once): the
+/// set with each cut's grids left out (`span`: its first and last offset
+/// in their place), and per cut, in the order of the first field's cuts,
+/// its document (format `ohl-field-cut` 1):
+///
+/// ```json
+/// {"format": "ohl-field-cut", "version": 1, "case": {…},
+///  "label", "alignment", "station", "angle_point", "from", "to", "at",
+///  "plane": {"origin", "right"},
+///  "fields": [{"quantity", "unit", "limit", "offsets", "elevations",
+///              "ground", "values", "isolines"}, …],
+///  "points": [], "sections": []}
+/// ```
+///
+/// A field's cut is matched by its label and place (each field computes
+/// the same cuts). `points` and `sections` are the host's to fill (the
+/// plan's point classes and its TIN or DXF along the cut), as is `line`
+/// (the line's name, for the plan's title).
+pub fn split_set(set: Value) -> (Value, Vec<Value>) {
+    let mut summary = set;
+    let case = summary["case"].clone();
+    let mut cuts: Vec<Value> = Vec::new();
+    let fields = summary["fields"]
+        .as_array_mut()
+        .map(std::mem::take)
+        .unwrap_or_default();
+    let mut kept = Vec::new();
+    for mut field in fields {
+        let (quantity, unit, limit) = (
+            field["quantity"].clone(),
+            field["unit"].clone(),
+            field["limit"].clone(),
+        );
+        if let Some(list) = field["cuts"].as_array_mut() {
+            for c in list.iter_mut() {
+                let mut grid = json!({"quantity": quantity, "unit": unit, "limit": limit});
+                let offsets = c["offsets"].as_array().cloned().unwrap_or_default();
+                for k in GRID_KEYS {
+                    if let Some(v) = c.as_object_mut().and_then(|o| o.remove(k)) {
+                        grid[k] = v;
+                    }
+                }
+                c["span"] = json!([offsets.first(), offsets.last()]);
+                let same = |d: &Value| {
+                    d["label"] == c["label"]
+                        && d["alignment"] == c["alignment"]
+                        && d["station"] == c["station"]
+                };
+                match cuts.iter_mut().find(|d| same(d)) {
+                    Some(d) => {
+                        if let Some(f) = d["fields"].as_array_mut() {
+                            f.push(grid);
+                        }
+                    }
+                    None => {
+                        let mut d = json!({
+                            "format": CUT_FORMAT,
+                            "version": CUT_VERSION,
+                            "case": case,
+                            "fields": [grid],
+                            "points": [],
+                            "sections": [],
+                        });
+                        for k in [
+                            "label",
+                            "alignment",
+                            "station",
+                            "angle_point",
+                            "from",
+                            "to",
+                            "at",
+                            "plane",
+                        ] {
+                            d[k] = c[k].clone();
+                        }
+                        cuts.push(d);
+                    }
+                }
+            }
+        }
+        kept.push(field);
+    }
+    summary["fields"] = Value::Array(kept);
+    (summary, cuts)
+}
+
 /// A run's results as an `ohl-field-results-set`: the case and each
 /// field's document (of [`magnetic_value`], [`electric_value`]; magnetic
 /// first).
@@ -215,4 +313,42 @@ pub fn set_json(fields: Vec<Value>, case: &str, temperature_c: f64) -> String {
         "fields": fields,
     })
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two fields of two cuts: one document per cut holding both fields'
+    /// grids; the summary without the grids, each cut's span in their
+    /// place.
+    #[test]
+    fn a_set_splits_per_cut() {
+        let cut = |label: &str, v: f64| {
+            json!({"label": label, "alignment": "A", "station": 10.0, "angle_point": false,
+                   "from": "1", "to": "2", "at": 5.0, "quantity": "B", "unit": "µT",
+                   "plane": {"origin": [0.0, 0.0], "right": [1.0, 0.0]},
+                   "offsets": [-2.0, 0.0, 2.0], "elevations": [1.0], "ground": [0.0, 0.0, 0.0],
+                   "values": [v, v, v], "isolines": []})
+        };
+        let field = |q: &str| {
+            json!({"format": FORMAT, "version": VERSION, "quantity": q, "unit": "u",
+                   "limit": null, "cuts": [cut("c1", 1.0), cut("c2", 2.0)], "points": [],
+                   "notes": []})
+        };
+        let set: Value =
+            serde_json::from_str(&set_json(vec![field("B"), field("E")], "hot", 40.0)).unwrap();
+        let (summary, cuts) = split_set(set);
+        assert_eq!(cuts.len(), 2);
+        assert_eq!(cuts[0]["format"], CUT_FORMAT);
+        assert_eq!(cuts[1]["label"], "c2");
+        assert_eq!(cuts[1]["fields"].as_array().unwrap().len(), 2);
+        assert_eq!(cuts[1]["fields"][1]["quantity"], "E");
+        assert_eq!(cuts[1]["fields"][0]["values"][0], 2.0);
+        assert_eq!(cuts[0]["case"]["name"], "hot");
+        let c = &summary["fields"][1]["cuts"][0];
+        assert!(c.get("values").is_none() && c.get("offsets").is_none());
+        assert_eq!(c["span"], json!([-2.0, 2.0]));
+        assert_eq!(summary["format"], SET_FORMAT);
+    }
 }

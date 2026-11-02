@@ -78,6 +78,22 @@ pub const MAX_PLACES: usize = 100_000;
 /// The most report files.
 pub const MAX_FILES: usize = 1_000;
 
+/// What a field-presets plugin's report is made of
+/// ([`WasmHost::field_report`]).
+#[derive(Debug, Clone, Copy)]
+pub struct ReportInput<'a> {
+    /// The plugin's parameters (TOML).
+    pub parameters: &'a str,
+    /// The field plan template (JSON, `ohl-field-plan`; "" for none).
+    pub plan: &'a str,
+    /// The preset run.
+    pub preset: &'a FieldPreset,
+    /// The run's set without the cuts' grids.
+    pub results: &'a str,
+    /// Each cut's document (`ohl-field-cut`).
+    pub cuts: &'a [String],
+}
+
 /// `[field-input]` of a manifest: what the host gathers for the plugin's
 /// `field-presets` export. Unknown keys are refused.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -402,24 +418,55 @@ impl WasmHost {
         Ok(given)
     }
 
-    /// The report files the plugin in `dir` makes of `preset` and the
-    /// run's `results` (`ohl-field-results-set` JSON), checked
-    /// ([`check_files`]).
+    /// The report files the plugin in `dir` makes of `preset`: each cut's
+    /// (`cuts`, documents `ohl-field-cut`, one call each with its own
+    /// time), then the rest from `results` (the set without the cuts'
+    /// grids, `ohl_electrical::field_results::split_set`) and the cuts' summaries;
+    /// `plan` the field plan template's JSON ("" for none). Checked
+    /// ([`check_files`]); `progress` is told each cut done.
     pub fn field_report(
         &self,
         dir: &Path,
-        parameters: &str,
-        preset: &FieldPreset,
-        results: &str,
+        report: &ReportInput<'_>,
+        progress: &mut dyn FnMut(usize, usize),
     ) -> Result<Vec<OutFile>, PluginError> {
         let (mut p, export) = self.field_presets_required(dir)?;
         let name = p.manifest.plugin.name.clone();
-        let files = export
+        let fail = |e: String| PluginError::Runtime(format!("plugin {name}: {e}"));
+        let mut files = Vec::new();
+        let mut summaries = Vec::new();
+        for (k, cut) in report.cuts.iter().enumerate() {
+            p.store.set_epoch_deadline(p.limits.deadline_ticks());
+            let r = export
+                .ohl_plugin_field_presets()
+                .call_report_cut(
+                    &mut p.store,
+                    report.parameters,
+                    report.plan,
+                    report.preset,
+                    cut,
+                )
+                .map_err(|e| classify(e, &p.manifest, "field-presets", p.limits))?
+                .map_err(fail)?;
+            files.extend(r.files);
+            summaries.push(r.summary);
+            progress(k + 1, report.cuts.len());
+        }
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let rest = export
             .ohl_plugin_field_presets()
-            .call_report(&mut p.store, parameters, preset, results)
+            .call_report(
+                &mut p.store,
+                report.parameters,
+                report.plan,
+                report.preset,
+                report.results,
+                &summaries,
+            )
             .map_err(|e| classify(e, &p.manifest, "field-presets", p.limits))?
-            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
-        check_files(&files).map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+            .map_err(fail)?;
+        files.extend(rest);
+        check_files(&files).map_err(fail)?;
         Ok(files)
     }
 
@@ -693,23 +740,37 @@ mod tests {
             "received 2 points (1 survey, classes 6), 1 ground points"
         );
         assert_eq!(p.notes[1], "model: ohl-export-model");
+        // One cut at a time, then the rest (2026-11-02): each cut's call
+        // its own; the summaries handed back in order.
+        let cuts = [
+            "{\"format\":\"ohl-field-cut\",\"label\":\"house-A\",\"fields\":[]}".to_owned(),
+            "{\"format\":\"ohl-field-cut\",\"label\":\"house-B\",\"fields\":[]}".to_owned(),
+        ];
+        let report_input = |parameters| ReportInput {
+            parameters,
+            plan: "",
+            preset: p,
+            results: "{\"format\":\"ohl-field-results-set\",\"fields\":[{\"format\":\"ohl-field-results\"}]}",
+            cuts: &cuts,
+        };
+        let mut done = Vec::new();
         let files = host
-            .field_report(
-                &dir,
-                "",
-                p,
-                "{\"format\":\"ohl-field-results-set\",\"fields\":[{\"format\":\"ohl-field-results\"}]}",
-            )
+            .field_report(&dir, &report_input(""), &mut |k, n| done.push((k, n)))
             .unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "summary.txt");
-        let text = String::from_utf8(files[0].bytes.clone()).unwrap();
+        assert_eq!(done, [(1, 2), (2, 2)]);
+        let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["cut-house-A.txt", "cut-house-B.txt", "summary.txt"]);
+        let text = String::from_utf8(files[2].bytes.clone()).unwrap();
         assert!(
             text.contains("preset default\ncuts 2\npoints 2\n"),
             "{text}"
         );
         assert!(
             text.contains("ohl-field-results-set true\nfields 1\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("cut reports 2\nplan false\nlabel house-A 1\nlabel house-B 1\n"),
             "{text}"
         );
         for (bad, want) in [
@@ -728,7 +789,7 @@ mod tests {
             );
         }
         let e = host
-            .field_report(&dir, "bad = \"file\"", p, "{}")
+            .field_report(&dir, &report_input("bad = \"file\""), &mut |_, _| {})
             .unwrap_err()
             .to_string();
         assert!(e.contains("../x.txt"), "{e}");

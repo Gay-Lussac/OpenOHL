@@ -356,10 +356,11 @@ world system-styles-export {
 /// and the solved model, the plugin decides where vertical cuts across
 /// the line and given points are needed; the host runs the magnetic or
 /// electric field there and hands the results back (`ohl-field-results`
-/// JSON) for the plugin's report files. A pure function like every
-/// plugin: no host callbacks. Added 2026-10-31 to interface version 0.3
-/// without changing anything else: plugins built before load as they
-/// are, and give none.
+/// JSON) for the plugin's report files, one cut at a time and then the
+/// rest (2026-11-02; changed in place: the export came after the last
+/// release). A pure function like every plugin: no host callbacks. Added
+/// 2026-10-31 to interface version 0.3 without changing anything else:
+/// plugins built before load as they are, and give none.
 interface field-presets {
     /// A point the host gathered, metres in the line's coordinate system.
     record input-point {
@@ -474,11 +475,31 @@ interface field-presets {
     /// The presets for `input`. The error says why there are none.
     field-presets: func(input: field-input) -> result<list<field-preset>, string>;
 
-    /// The report files of `preset` (as the host checked it), from the
-    /// run's `results` (JSON, format `ohl-field-results-set`: one
-    /// document per field computed, magnetic first). The error says why
-    /// there are none.
-    report: func(parameters: string, preset: field-preset, results: string) -> result<list<out-file>, string>;
+    /// What a cut's report gives (2026-11-02).
+    record cut-report {
+        /// The cut's files.
+        files: list<out-file>,
+        /// What the plugin needs of the cut for its summary, in its own
+        /// form (handed back to `report` as it is).
+        summary: string,
+    }
+
+    /// The report files of one cut of the run (2026-11-02: one cut at a
+    /// time, so that a long line's results need not be held at once):
+    /// `cut` is its document (JSON, format `ohl-field-cut`: its place,
+    /// each field's grid and isolines, the plan's points and sections
+    /// along it), `plan` the field plan template (JSON, format
+    /// `ohl-field-plan`, its logos as data URIs; "" for none). Called
+    /// once per cut, before `report`. The error says why there are none.
+    report-cut: func(parameters: string, plan: string, preset: field-preset, cut: string) -> result<cut-report, string>;
+
+    /// The report files of `preset` (as the host checked it) besides the
+    /// cuts': from the run's `results` (JSON, format
+    /// `ohl-field-results-set`: one document per field computed, magnetic
+    /// first; each cut without its grids, its `span` in their place) and
+    /// the `summary` of each cut's report, in the cuts' order. The error
+    /// says why there are none.
+    report: func(parameters: string, plan: string, preset: field-preset, results: string, cuts: list<string>) -> result<list<out-file>, string>;
 }
 
 /// A plugin that gives field presets only (extension point

@@ -8,13 +8,14 @@ entry = "target/wasm32-wasip2/release/building_cuts.wasm"
 extension-points = ["field-presets"]
 
 # What the host gathers: the point cloud's building and ground classes
-# (the ground thinned to the lowest point per 1 m cell) and every survey
-# point near the line (the parameters choose the building and ground
-# codes among them).
+# (the ground thinned to the lowest point per 2 m cell: it is used only
+# around each building; 1 m cells over a real line passed the memory)
+# and every survey point near the line (the parameters choose the
+# building and ground codes among them).
 [field-input]
 roles = ["building"]
 ground-roles = ["ground"]
-ground-cell = "1 m"
+ground-cell = "2 m"
 survey-codes = ["*"]
 reach = "100 m"
 max-points = 2000000

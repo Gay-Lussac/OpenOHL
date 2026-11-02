@@ -41,7 +41,7 @@ pub mod field_presets;
 pub mod settings;
 pub use field_presets::{
     FIELD_PRESETS, FIELD_PRESETS_EXPORT, FieldInput, FieldInputTable, FieldPreset, InputPoint,
-    OutFile, Outline, Place, PresetCut,
+    OutFile, Outline, Place, PresetCut, ReportInput,
 };
 pub use settings::{
     Consent, PluginSettings, SETTINGS_FILE, STORAGE_ID, USER_DIR, consent_for,

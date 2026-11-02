@@ -10,6 +10,46 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Field plan templates; the field-presets report one cut at a time
+(owner, 2026-11-02: "Run it on [a real line] to check then add a field in
+the check window with all relevant presets required and also prepare a
+preset template for the export plans (where we can put a logo, choose
+the point class and dxf or tin we want to see in the cut and define the
+limits and colours of the lines. As well as the weather case of each
+circuit and earth wire used)"; "Report per cut", "Core library kind";
+"Limits for the NISV are 1microttsla and 5kv per meter"; "There are
+classes for buildings only use those"; built, in active development,
+not approved yet)**
+
+- **Tried on a real line** (local, scratch copy): the building plugin
+  found 121 buildings from 156 628 points of the building class alone
+  (no survey codes), 187 cuts and 2 300 places. Two limits showed:
+  - the ground handed to the plugin at 1 m cells (4.1 million over the
+    line) passed its memory: its manifest now asks for 2 m cells (it
+    uses the ground only in a ring around each building);
+  - the report took the whole set of results at once (110 MB), more
+    than a plugin gets by default.
+- **The report one cut at a time** (core change, approved): the
+  `field-presets` export's `report` is split into `report-cut` (one
+  cut's document, `ohl-field-cut`, each call with its own time; its
+  files and a summary) and `report` (the set without the cuts' grids
+  and the summaries). Changed in place: the export came after the last
+  release.
+- **Field plan template** (`.ohlfp`, `ohl-field-plan` 1; a project
+  library kind `field-plans`, core): the title lines and logos, the
+  point classes and band shown in the cut, a TIN or a background
+  drawing along it, each field's limit and isolines (colour, width,
+  label), the wires' colours and the weather case of every wire, of the
+  earth wires and per electrical system. The host gathers the points
+  (one pass over the cloud), samples the TIN and crosses the drawing's
+  3D lines with each cut's plane; the plugin draws them. The template
+  carries the NISV limits (1 µT, 5 kV/m) as an example; the plugin's
+  parameters' limits, when given, win over the plan's.
+- **A weather case per system in the CLI** (`--system-case SYSTEM=CASE`,
+  `earth` for the wires of no system; the plan's `[weather]`), as the
+  field windows already had: each case solved once, each section taken
+  from its system's case.
+
 **Gusset plates seated on the corner and shaped to it (owner,
 2026-11-02: "The light orange bolt seems to be of axis … Wouldn't it be
 better to also have it on the plate?"; "the plate should use the corner

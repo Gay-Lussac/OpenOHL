@@ -893,8 +893,10 @@ pub fn remember_weather(session: &ohl_session::Session, path: &Path) {
 /// the structure types ([`kind_files`]: only `*.loads.csv`). `bolts`: the
 /// bolt libraries (2026-11-02), in `Bolts/` beside the structure types,
 /// where OHL-Structure and the structure checks read a structure's bolts
-/// ([`ohl_structures::bolts::BoltLibrary::beside`]).
-pub const PROJECT_LIBRARIES: [(&str, &str); 14] = [
+/// ([`ohl_structures::bolts::BoltLibrary::beside`]). `field-plans`: the
+/// field plan templates (2026-11-02, `.ohlfp`), how the fields' cuts are
+/// drawn and in which weather the wires hang.
+pub const PROJECT_LIBRARIES: [(&str, &str); 15] = [
     ("cables", ohl_cables::WIRE_FILE_EXTENSION),
     (
         "structures",
@@ -917,6 +919,10 @@ pub const PROJECT_LIBRARIES: [(&str, &str); 14] = [
     ("femodels", ohl_structures_fe::model::MODEL_FILE_EXTENSION),
     ("sections", ohl_sections::SECTION_FILE_EXTENSION),
     ("bolts", ohl_structures::bolts::BOLT_FILE_EXTENSION),
+    (
+        ohl_electrical::field_plan::KIND,
+        ohl_electrical::field_plan::EXTENSION,
+    ),
     ("loads", "csv"),
 ];
 

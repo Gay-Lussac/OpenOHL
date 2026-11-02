@@ -322,6 +322,17 @@ fn field_presets_from_a_plugin() {
         summary.contains("label house-A 1\nlabel house-B 1\n"),
         "{summary}"
     );
+    // One cut at a time (2026-11-02): each cut's document with its grid,
+    // the rest without the grids.
+    assert!(
+        summary.contains("grids false\ncut reports 2\nplan false\n"),
+        "{summary}"
+    );
+    let cut = std::fs::read_to_string(out_dir.join("cut-house-A.txt")).unwrap();
+    assert!(
+        cut.contains("ohl-field-cut true\nfields 1\nvalues 1\n"),
+        "{cut}"
+    );
     // The electric field: the points-only preset, the plane ground (quick).
     let ex = root().join("examples/electrical");
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
@@ -474,11 +485,13 @@ fn both_fields_in_one_run() {
             summary.contains("ohl-field-results-set true\nfields 2\n"),
             "{summary}"
         );
-        // Each label once per field.
+        // Each cut reported once, with both fields' grids.
         assert!(
-            summary.contains("label house-A 2\nlabel house-B 2\n"),
+            summary.contains("label house-A 1\nlabel house-B 1\n"),
             "{summary}"
         );
+        let cut = std::fs::read_to_string(out_dir.join("cut-house-B.txt")).unwrap();
+        assert!(cut.contains("fields 2\nvalues 2\n"), "{cut}");
     }
     // A cut at an alignment station without a station, and on an
     // alignment that is not there: refused, said.
@@ -490,6 +503,113 @@ fn both_fields_in_one_run() {
         assert!(!out.status.success());
         let e = String::from_utf8_lossy(&out.stderr);
         assert!(e.contains(want), "{cut}: {e}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A field plan template (2026-11-02): its weather cases (the wires in
+/// one, system sysB and the earth wire each in their own, from
+/// --weather), its levels added and its limits taken; handed to a preset
+/// plugin's report. `--system-case` over the plan's; an unknown system
+/// refused.
+#[test]
+fn a_field_plan_drives_the_run() {
+    let dir = std::env::temp_dir().join(format!("ohl-field-plan-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let weather = dir.join("cases.ohlwc");
+    std::fs::write(
+        &weather,
+        "format = \"ohl-weather-cases\"\nversion = 1\nname = \"t\"\n\
+         [[case]]\nname = \"warm\"\ntemperature = \"40 °C\"\n\
+         [[case]]\nname = \"hot\"\ntemperature = \"80 °C\"\n\
+         [[case]]\nname = \"cold\"\ntemperature = \"10 °C\"\n",
+    )
+    .unwrap();
+    let plan = dir.join("plans.ohlfp");
+    let text = ohl_electrical::field_plan::TEMPLATE
+        .replace("case = \"\"", "case = \"warm\"")
+        .replace("earth_wires = \"\"", "earth_wires = \"cold\"")
+        .replace("systems = {}", "systems = { sysB = \"hot\" }");
+    std::fs::write(&plan, text).unwrap();
+    let ex = root().join("examples/electrical");
+    let json = dir.join("fields.json");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ohl"))
+            .args(["electrical", "fields"])
+            .arg(ex.join("double-circuit.ohl.json"))
+            .arg("--library")
+            .arg(ex.join("wires.ohlw"))
+            .args(["--current", "*=1000", "--profile", "T1:T2@0.5", "--plane"])
+            .arg("--weather")
+            .arg(&weather)
+            .arg("--plan")
+            .arg(&plan)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let mut args = vec!["--cut", "main@150#mid", "--cut-step", "2", "--width", "20"];
+    let j = json.to_str().unwrap().to_owned();
+    args.extend(["--json", j.as_str()]);
+    let out = run(&args);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains(
+            "weather per system: the wires of no system in cold; system sysB in hot; the others in warm"
+        ),
+        "{text}"
+    );
+    let set: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    assert_eq!(set["case"]["name"], "warm");
+    // The plan's limits and levels (1 µT and 0.4 µT; 5 and 1 kV/m).
+    assert_eq!(set["fields"][0]["limit"], 1.0);
+    assert_eq!(set["fields"][1]["limit"], 5.0);
+    let levels = |k: usize| -> Vec<f64> {
+        set["fields"][k]["cuts"][0]["isolines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["level"].as_f64().unwrap())
+            .collect()
+    };
+    assert_eq!(levels(0), vec![0.4, 1.0]);
+    assert_eq!(levels(1), vec![1.0, 5.0]);
+    // --system-case over the plan's; an unknown system refused.
+    let out = run(&["--system-case", "sysB=cold"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("weather per system: the wires of no system in cold; system sysB in cold"),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = run(&["--system-case", "nope=cold"]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no electrical system nope"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Handed to a preset plugin's report.
+    if let Some(plugin) = built_plugin("tests/field-presets") {
+        let out_dir = dir.join("report");
+        let o = out_dir.to_str().unwrap().to_owned();
+        let p = plugin.to_str().unwrap().to_owned();
+        let out = run(&["--preset-plugin", p.as_str(), "--out", o.as_str()]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let summary = std::fs::read_to_string(out_dir.join("summary.txt")).unwrap();
+        assert!(summary.contains("plan true\n"), "{summary}");
+        let cut = std::fs::read_to_string(out_dir.join("cut-house-A.txt")).unwrap();
+        assert!(cut.contains("plan true\n"), "{cut}");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

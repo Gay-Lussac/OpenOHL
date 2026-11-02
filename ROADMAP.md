@@ -560,6 +560,11 @@ core staying independent of them.
      sensitive use per floor, and reports the buildings' summary (both
      fields' columns), the cuts' CSV grids and 1:1 SVG drawings per
      field, the places and a GeoJSON ([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/analyses.md#building-cuts)).
+     *Field plan templates and the report one cut at a time built
+     2026-11-02* (in active development, not approved yet; tried on a
+     real line, local): `.ohlfp` (title, logos, point classes, TIN or
+     drawing in the cut, limits and isolines, wire colours, the weather
+     per system), `ohl electrical … --plan`, `--system-case`.
      The field presets in OHL-Design: not yet; the `cross-sections`
      export for noise methods: not yet.
 7. [ ] **Corona and surface gradient** in the core or the plugin: the
