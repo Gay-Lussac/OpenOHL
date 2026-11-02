@@ -925,7 +925,12 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult, shown: (u64, usize)) {
             );
             table.rows(ui, order.len(), None, |c, i| {
                 let m = &r.members[order[i]];
-                c.cell(|ui| ui.label(&m.id));
+                c.cell(|ui| match &m.eccentric {
+                    // Eccentric ends (connection shifts): marked, the
+                    // words on hover (also in what governs).
+                    Some(e) => ui.label(format!("{} (eccentric)", m.id)).on_hover_text(e),
+                    None => ui.label(&m.id),
+                });
                 c.cell(|ui| {
                     crate::style::num_label(
                         ui,

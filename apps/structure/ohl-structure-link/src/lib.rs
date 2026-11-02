@@ -755,6 +755,11 @@ pub struct MemberResult {
     /// A tension-only member bowed: shortened beyond its own buckling
     /// load, it carries that load (`axial`) and no more.
     pub bowed: bool,
+    /// Its eccentric ends (connection shifts) in words: e, and where the
+    /// moment went or that it was left out
+    /// ([`ohl_structures_fe::offsets::eccentricity_words`]); none: its
+    /// ends at its joints.
+    pub eccentric: Option<String>,
 }
 
 /// A support's reaction: the force and moment on the structure.
@@ -1050,6 +1055,11 @@ fn analyse_one(
     if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
         notes.push(note);
     }
+    // Eccentric member ends (connection shifts, rigid end offsets): how
+    // many, and those left out where only bars meet the joint.
+    if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {
+        notes.push(note);
+    }
     notes.push(ohl_structures_fe::check::capacity_note(model, &usage));
     let joints = model
         .nodes
@@ -1086,6 +1096,11 @@ fn analyse_one(
                 governs: u.map(|u| u.governs.clone()).unwrap_or_default(),
                 slack: solution.members[k].slack,
                 bowed: solution.members[k].bowed,
+                eccentric: ohl_structures_fe::offsets::eccentricity_words(
+                    model,
+                    k,
+                    solution.members[k].axial,
+                ),
             }
         })
         .collect();

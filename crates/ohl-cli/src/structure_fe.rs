@@ -394,6 +394,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ohl_structures_fe::convergence_note(&s) {
             println!("  {note}");
         }
+        if let Some(note) = ohl_structures_fe::eccentricity_note(&model, &s) {
+            println!("  {note}");
+        }
         match &plugin {
             None => println!(
                 "  {}",

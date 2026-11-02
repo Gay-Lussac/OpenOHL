@@ -871,8 +871,13 @@ Six stages, the questions per stage and per detail level:
   for the bolt shear, bearing and net section, the weaker end governing;
   a tower without connections unchanged; `ohl structures fe --bolts`
   (2026-11-02)
+- [x] Stage 4.4, eccentricities — a connection's `shift` as a rigid end
+  offset in the FE model: the moment carried where a frame member meets
+  the joint, left out and said where only bars do; reported per member
+  and case; validation `structfe-015` (2026-11-02)
 - [ ] Stage 4.3 to 4.6 — buckling lengths from what braces a member,
-  the FE model's options, the joints' own checks, weight and quantities
+  the FE model's other options (end releases, bolt slip), the joints'
+  own checks, weight and quantities
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)

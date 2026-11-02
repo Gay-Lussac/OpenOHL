@@ -247,6 +247,10 @@ pub struct EndDesign {
     pub eccentric: Option<bool>,
     /// Held against turning, given.
     pub restrained: Option<bool>,
+    /// The end moved sideways so it fits, m (signed, towards what it
+    /// bolts onto: [`ohl_structures::connections::shift_direction`]); the
+    /// analysis takes it as a rigid end offset ([`crate::offsets`]).
+    pub shift: Option<f64>,
     /// What could not be used ("bolt M16: in no bolt library").
     pub notes: Vec<String>,
 }

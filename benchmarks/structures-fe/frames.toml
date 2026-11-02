@@ -775,3 +775,63 @@ expected.r_B_z = { value = 156.25, rel_tol = 1e-9 }
 expected.r_B_ry = { value = 187.5, rel_tol = 1e-9 }
 expected.u_P1_z = { value = -0.00033482142857142855, rel_tol = 1e-9 }
 expected.moment_applied = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "structfe-015"
+title = "Eccentric member end (a connection's shift, a rigid end offset): a truss shifted e onto a cantilever column puts N·e into it; foot moment P·(H − e)"
+calculation = "structures.fe_point"
+reference = "Statics of a rigid end offset (the member's force moved to the joint with its moment r × F) and Euler–Bernoulli cantilever theory (e.g. Timoshenko & Gere, Mechanics of Materials)"
+notes = "A column C (a frame, H = 4 m, fixed at its foot N1, I = 2e-6 m4, A = 1000 mm2) and a truss T from its top N2 to N3, 3 m along x (N3 held in y and z); T's connection at N2 onto C shifted e = 20 mm: across T towards C, so its axis runs from (0, 0, H − e) to N3. P = 10 kN along x at N3 (the point A1 on it). Joint N3: N = P·L′/3 with L′ = √(9 + e²) = 10000.2222 N. On N2 the force F = (P, 0, P·e/3) and the moment r × F = (0, 0, −e) × F = (0, −P·e, 0). Foot: R_z = −P·e/3 = −66.667 N, M_y = −(H·P − P·e) = −P·(H − e) = −39.8 kN m (−40 kN m without the shift). N2 moves P·H³/(3EI) − P·e·H²/(2EI) = 0.50413 m along x (first order: the cantilever's tip force and tip moment). First order, no self-weight."
+max_seconds = 1.0
+inputs.point = "A1"
+inputs.force_x = 10000.0
+inputs.force_y = 0.0
+inputs.force_z = 0.0
+inputs.structure = '''
+[analysis]
+nonlinear = false
+self_weight = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["0 m", "0 m", "4 m"]
+[[node]]
+id = "N3"
+point = ["3 m", "0 m", "4 m"]
+support = ["y", "z"]
+kind = "attach"
+[[member]]
+id = "C"
+nodes = ["N1", "N2"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "T"
+nodes = ["N2", "N3"]
+section = "s"
+[[connection]]
+member = "T"
+joint = "N2"
+onto = "C"
+shift = "20 mm"
+[[point]]
+label = "A1"
+node = "N3"
+'''
+expected.n_T = { value = 10000.222219753143, rel_tol = 1e-9 }
+expected.r_N1_x = { value = -10000.0, rel_tol = 1e-9 }
+expected.r_N1_z = { value = -66.66666666666667, rel_tol = 1e-9 }
+expected.r_N1_ry = { value = -39800.0, rel_tol = 1e-9 }
+expected.u_N2_x = { value = 0.5041269841269841, rel_tol = 1e-9 }

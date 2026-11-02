@@ -3,8 +3,9 @@
 *Proposal, 2026-11-02 — stages 0 to 2 built the same day (in active
 development, not approved yet: owner, "Go ahead with 0-2, yes and
 yes"), stage 3 too ("Go ahead with the next stage"), stages 4.1 and
-4.2 and stage 5's exports too ("Go with … B" and "… C"); the rest of
-stage 4 and stage 5's validation not built; the bolt library built
+4.2 and stage 5's exports too ("Go with … B" and "… C"), stage 4.4's
+eccentricities from the connections' shifts too; the rest of stage 4
+and stage 5's validation not built; the bolt library built
 (below). Asked by the owner:
 "a roadmap for a tool to show and allow to define the joints in the OHL
 structure in details for a pylon that isn't a pole … where the bars are
@@ -179,7 +180,13 @@ values were worked out from the joints and which assumed.
    braced axes only — the right ones, not k = 1 everywhere.
 4. **The FE model (options, measured before any default):**
    - the connections' eccentricity as offsets at the member ends (moments
-     in frame legs);
+     in frame legs) — **built 2026-11-02 for a connection's `shift`**
+     (owner: "a sideways move is needed to fit the members on the gusset
+     plate … Eccentricities need to be taken into account"; in active
+     development, not approved yet): a rigid end offset to the joint,
+     carried where a frame member meets it, left out and said where only
+     bars do; always on, a tower without shifts unchanged
+     ([theory](../theory/structures-fe.md#eccentric-member-ends-rigid-end-offsets));
    - pinned or held ends as end releases of frame members;
    - **bolt slip** (a hole larger than its bolt) as a joint's stiffness
      up to the slip, which adds to the tower's deflection.
@@ -280,7 +287,8 @@ yes"):
 Stage 0 ─ Stage 1 ─┬─ Stage 2 ─ Stage 3
                    └─ Stage 4.1, 4.2, 4.6 (data only, no UI needed)
                        Stage 4.3 after Stage 3 (needs the bracing points)
-                       Stage 4.4 with O7 (level 4 interaction)
+                       Stage 4.4 with O7 (level 4 interaction; its
+                         eccentricities from shifts built 2026-11-02)
                        Stage 4.5 with O4 (code-check interface)
 Stage 5 alongside
 ```

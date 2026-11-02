@@ -254,6 +254,11 @@ impl Analyses {
                 if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
                     notes.push(format!("model: {note}"));
                 }
+                // Eccentric member ends (connection shifts): those whose
+                // moment was left out at a joint only bars meet.
+                if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {
+                    notes.push(format!("model: {note}"));
+                }
                 // The simple check is said (unsafe); ASCE 10-97, the
                 // default, says its assumptions in what governs.
                 if model.analysis.capacity == ohl_structures_fe::CapacityMethod::Simple {

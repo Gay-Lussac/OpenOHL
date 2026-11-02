@@ -37,6 +37,7 @@ mod element;
 pub mod links;
 pub mod member_ends;
 pub mod model;
+pub mod offsets;
 pub mod pole;
 mod skyline;
 pub mod solve;
@@ -49,6 +50,7 @@ pub use links::PointLoad;
 pub use model::{
     Analysis, CapacityMethod, JointPoint, Member, MemberKind, Model, NodalLoad, Node, Section,
 };
+pub use offsets::{EccentricEnd, eccentricity_note};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole, check_pole_factored};
 pub use solve::{FeError, Loads, MemberForces, Options, Reaction, Solution, default_budget, solve};
 pub use stabilise::{Stabilisation, Stabilised};
@@ -292,6 +294,8 @@ mod held_limit_tests;
 mod member_ends_tests;
 #[cfg(test)]
 mod member_tests;
+#[cfg(test)]
+mod offset_tests;
 #[cfg(test)]
 mod pole_extension_tests;
 #[cfg(test)]

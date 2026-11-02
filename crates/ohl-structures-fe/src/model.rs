@@ -535,6 +535,14 @@ pub struct Member {
     /// Its design data for a capacity method (version 4, 2026-10-27; all
     /// optional, [`crate::design`]).
     pub design: crate::design::MemberDesign,
+    /// Rigid end offsets (2026-11-02): from its first joint and from its
+    /// second to where its axis ends, structure axes, m; zero: the axis
+    /// runs to the joint (the default). A structure file's connection
+    /// `shift` gives them ([`crate::member_ends::read_connections`]): the
+    /// end moved sideways so it fits, its force passing beside the joint
+    /// — an eccentricity the solve takes as a rigid link to the joint
+    /// ([`crate::solve()`], [`Model::eccentric_ends`]).
+    pub offsets: [[f64; 3]; 2],
 }
 
 impl Member {
@@ -558,6 +566,7 @@ impl Member {
             bending: false,
             check: true,
             design: crate::design::MemberDesign::default(),
+            offsets: [[0.0; 3]; 2],
         }
     }
 
@@ -942,6 +951,7 @@ impl Model {
                 dead_load_factor: m.dead_load_factor,
                 bending: m.bending,
                 check: m.check,
+                offsets: [[0.0; 3]; 2],
             });
         }
         for (k, partner) in partners {
@@ -1210,6 +1220,14 @@ impl Model {
             if l.is_nan() || l <= 1e-9 {
                 return Err(format!("member {}: zero length", m.id));
             }
+            if m.offsets.iter().flatten().any(|x| !x.is_finite())
+                || norm(sub(self.end_point(m, 1), self.end_point(m, 0))) <= 1e-9
+            {
+                return Err(format!(
+                    "member {}: end offsets not valid (its ends meet)",
+                    m.id
+                ));
+            }
             if m.k.is_nan() || m.k <= 0.0 || !m.pretension.is_finite() || m.pretension < 0.0 {
                 return Err(format!(
                     "member {}: k must be above 0, pretension 0 or more",
@@ -1267,6 +1285,15 @@ impl Model {
     /// Length of a member, m.
     pub fn length(&self, m: &Member) -> f64 {
         norm(sub(self.nodes[m.j].point, self.nodes[m.i].point))
+    }
+
+    /// Where end `end` (0 at its first joint, 1 at its second) of member
+    /// `m` is: its joint moved by its rigid end offset
+    /// ([`Member::offsets`]), structure axes, m.
+    pub fn end_point(&self, m: &Member, end: usize) -> [f64; 3] {
+        let p = self.nodes[if end == 0 { m.i } else { m.j }].point;
+        let r = m.offsets[end];
+        [p[0] + r[0], p[1] + r[1], p[2] + r[2]]
     }
 
     /// Whether a member's section has a profile (from the section

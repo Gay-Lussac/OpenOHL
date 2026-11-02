@@ -44,6 +44,42 @@ up sections"; built, in active development, not approved yet)**
   of the export's; the 5 kept general are the sections whose data are
   inconsistent (found in B1).
 
+**Joint details of towers, stage 4.4 (eccentricities): a member end's
+shift taken by the analysis as a rigid end offset (owner, 2026-11-02:
+"a sideways move is needed to fit the members on the gusset plate. It
+aligns the forces as much as possible but the construction feasibility
+is essential … Eccentricities need to be taken into account"; built, in
+active development, not approved yet)**
+
+- A connection's `shift` moves the member's end sideways (across it,
+  towards what it bolts onto; the joint's leg for a plate or nothing
+  given). The analysis takes it as a **rigid end offset**: the member's
+  end at the work point + the shift, tied rigidly to the joint (u_end =
+  u_joint + θ × r). A frame member gets the standard rigid end offset
+  transformation of its stiffness and end forces (its length and axes
+  between its offset ends); a truss, cable or tension-only member's
+  force runs between its offset ends and its joint takes the force and
+  r × F. P-Delta and the tension-only active set work between the
+  offset ends; the rigid link's own second-order terms are left out.
+- **Only where a frame member meets the joint** (it has rotations).
+  Where only bars meet it the moment cannot be carried: that offset is
+  **left out** (the force through the work point) and said per member
+  and per case — the policy of an attachment point's offset
+  (2026-10-21); non-conservative for the members at the joint, marked so
+  in the theory; never a singular stiffness.
+- Reported: what governs ends with `[shifted: N2 e 15 mm, … kN m to the
+  joint's frame members | in its end moments and the joint's frames |
+  LEFT OUT …]`; the notes count the eccentric ends and name those left
+  out with their moment (OHL-Structure's FE results, where the member is
+  also marked *(eccentric)*; `ohl structures fe`; the line's structure
+  check). No new design formula: a member checked for its axial force
+  only says where its eccentricity's moment went; ASCE 10-97's curves
+  for an angle bolted by one leg are unchanged (the shift is an
+  additional, explicit eccentricity of the force line).
+- A tower without shifts gives exactly the same results (every test and
+  validation case unchanged). Validation case `structfe-015` (a truss
+  shifted onto a cantilever column, by statics) and unit tests.
+
 **Built-up members, stage B1: built-up cross-sections calculated from
 their angles (owner, 2026-11-02: "plan the double star and 4 corners to
 be shown or at least calculable", "Go with A"; built, in active

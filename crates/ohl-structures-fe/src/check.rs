@@ -59,6 +59,18 @@ pub const SIMPLE: &str = "simple check (Euler buckling, gross yield): not a desi
 /// 10-97 with how many members' capacities rest on assumptions (from
 /// `usage`), or [`SIMPLE`].
 pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
+    let mut text = capacity_words(model, usage);
+    let shifted = usage.iter().filter(|u| u.governs.contains(SHIFTED)).count();
+    if shifted > 0 {
+        text.push_str(&format!(
+            "; {shifted} member(s) with eccentric ends (\"{SHIFTED} …]\": the moment of a shift \
+             in the frames at the joint, not in an axial check)"
+        ));
+    }
+    text
+}
+
+fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
     match model.analysis.capacity {
         CapacityMethod::Simple => format!("member capacities: {SIMPLE}"),
         CapacityMethod::Asce10 => {
@@ -102,6 +114,11 @@ pub const ASSUMED: &str = "[assumed:";
 /// out: one leg bolted), restrained (given); N4 …]`
 /// ([`crate::asce10::Capacity::joints`]).
 pub const JOINTS: &str = "[joints:";
+
+/// The mark before a member's eccentric ends (connection shifts, rigid
+/// end offsets in the solve: [`crate::offsets`]), in what governs:
+/// `[shifted: N2 e 15 mm, 1.20 kN m to the joint's frame members]`.
+pub const SHIFTED: &str = "[shifted:";
 
 /// The mark of a member checked by the simple check under ASCE 10-97
 /// because its section has no yield strength.
@@ -180,6 +197,16 @@ pub fn member_usage_with(
                     KEPT_ACTIVE.to_owned()
                 } else {
                     format!("{} — {KEPT_ACTIVE}", u.governs)
+                };
+            }
+            // Its eccentric ends (connection shifts): where their moment
+            // went, or that it was left out.
+            let n = solution.members.get(u.member).map_or(0.0, |f| f.axial);
+            if let Some(w) = crate::offsets::eccentricity_words(model, u.member, n) {
+                u.governs = if u.governs.is_empty() {
+                    format!("{SHIFTED} {w}]")
+                } else {
+                    format!("{} {SHIFTED} {w}]", u.governs)
                 };
             }
             u

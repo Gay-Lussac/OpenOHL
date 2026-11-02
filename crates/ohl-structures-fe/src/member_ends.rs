@@ -145,7 +145,7 @@ pub fn joint_leg(own: usize, all: &[Arriving]) -> Option<usize> {
 
 /// The members of `model` meeting at node `node`, in order, as
 /// [`Arriving`]s.
-fn arriving(model: &Model, node: usize) -> Vec<(usize, Arriving)> {
+pub(crate) fn arriving(model: &Model, node: usize) -> Vec<(usize, Arriving)> {
     let at = model.nodes[node].point;
     model
         .members
@@ -382,6 +382,7 @@ pub(crate) fn read_connections(
             pitch: c.pitch.map(|l| l.si()),
             eccentric: c.eccentric,
             restrained: c.restrained,
+            shift: c.shift.map(|l| l.si()).filter(|s| *s != 0.0),
             ..EndDesign::default()
         };
         e.onto = c.onto.as_ref().map(|o| {
@@ -418,5 +419,6 @@ pub(crate) fn read_connections(
         }
         model.members[idx].design.ends[end] = Some(e);
     }
+    crate::offsets::from_shifts(model);
     Ok(())
 }

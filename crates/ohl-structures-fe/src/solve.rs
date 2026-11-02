@@ -15,7 +15,8 @@ use nalgebra::{Matrix3, SMatrix, Vector3};
 use ohl_core::budget::{Budget, Stop};
 
 use crate::element::{
-    Mat12, axes, axial_block, frame_elastic, frame_geometric, frame_uniform_load, transformation,
+    Mat12, axes, axes_between, axial_block, frame_elastic, frame_geometric, frame_uniform_load,
+    transformation,
 };
 use crate::model::{MemberKind, Model, NodalLoad};
 use crate::skyline::{Pivot, Skyline, reverse_cuthill_mckee};
@@ -377,6 +378,11 @@ struct Prepared {
     weight_local: [f64; 12],
     /// Equation numbers of the 12 degrees of freedom.
     eq: [Option<usize>; 12],
+    /// The rigid end offset transformation ([`crate::offsets::rigid`]) of
+    /// a member with an eccentric end in this solve (none: its ends at
+    /// its joints); `t` includes it, `l` and `r` are between its offset
+    /// ends.
+    rigid: Option<Mat12>,
 }
 
 /// Solves `model` under `loads`.
@@ -981,6 +987,14 @@ fn slack_stretch(model: &Model, s: &Solution, inactive: &[bool]) -> Vec<f64> {
             d[m.j][2] - d[m.i][2],
         );
         base[k] = e.dot(&du);
+        if m.offsets != [[0.0; 3]; 2] {
+            // Eccentric ends: their offsets turn with their joints (no
+            // rotation where only bars meet a joint).
+            let turn = |n: usize, r: [f64; 3]| {
+                Vector3::new(d[n][3], d[n][4], d[n][5]).cross(&Vector3::from(r))
+            };
+            base[k] += e.dot(&(turn(m.j, m.offsets[1]) - turn(m.i, m.offsets[0])));
+        }
         for &u in &by_node[m.j] {
             terms[k].push((u, e.dot(&unknowns[u].1)));
         }
@@ -1161,8 +1175,25 @@ fn solve_with(
         .zip(&bends)
         .map(|(m, &bends)| {
             let s = &model.sections[m.section];
-            let l = model.length(m);
-            let r = axes(model, m);
+            // Rigid end offsets (eccentric ends): where the joint has
+            // rotations; where only bars meet it, left out (the moment
+            // cannot be carried there: crate::offsets).
+            let ends = [m.i, m.j].map(|n| has_frame[n]);
+            let offsets = [0, 1].map(|e| if ends[e] { m.offsets[e] } else { [0.0; 3] });
+            let rigid = (offsets != [[0.0; 3]; 2]).then(|| crate::offsets::rigid(offsets));
+            let (l, r) = if rigid.is_some() {
+                let p = |n: usize, e: usize| {
+                    let q = model.nodes[n].point;
+                    [0, 1, 2].map(|c| q[c] + offsets[e][c])
+                };
+                let (a, b) = (p(m.i, 0), p(m.j, 1));
+                (
+                    crate::model::norm(crate::model::sub(b, a)),
+                    axes_between(a, b, m),
+                )
+            } else {
+                (model.length(m), axes(model, m))
+            };
             let mut eqs = [None; 12];
             eqs[..6].copy_from_slice(&eq[m.i]);
             eqs[6..].copy_from_slice(&eq[m.j]);
@@ -1175,7 +1206,10 @@ fn solve_with(
             Prepared {
                 l,
                 r,
-                t: transformation(&r),
+                t: match &rigid {
+                    Some(d) => transformation(&r) * d,
+                    None => transformation(&r),
+                },
                 ke: if bends {
                     frame_elastic(l, s)
                 } else {
@@ -1184,6 +1218,7 @@ fn solve_with(
                 ea_l: s.e * s.area / l,
                 weight_local,
                 eq: eqs,
+                rigid,
             }
         })
         .collect();
@@ -1200,8 +1235,20 @@ fn solve_with(
                 * loads.self_weight
                 * p.l
                 / 2.0;
-            f_ext[m.i][2] -= w;
-            f_ext[m.j][2] -= w;
+            if let Some(d) = &p.rigid {
+                // At its offset ends: on the joints with their moments.
+                let mut v = SMatrix::<f64, 12, 1>::zeros();
+                v[2] = -w;
+                v[8] = -w;
+                let g = d.transpose() * v;
+                for k in 0..6 {
+                    f_ext[m.i][k] += g[k];
+                    f_ext[m.j][k] += g[6 + k];
+                }
+            } else {
+                f_ext[m.i][2] -= w;
+                f_ext[m.j][2] -= w;
+            }
         }
     }
     let mut f = vec![0.0; n_eq];
@@ -1412,14 +1459,34 @@ fn solve_with(
                 if options.nonlinear && (!slack[idx] || n != 0.0) {
                     // The transverse part of a rotated axial force (a
                     // bowed member's too: its force follows its chord).
-                    let dg = global_translation(&displacements, m.j)
-                        - global_translation(&displacements, m.i);
+                    let dg = if p.rigid.is_some() {
+                        // Between its offset ends.
+                        p.r.transpose() * Vector3::new(d[6] - d[0], d[7] - d[1], d[8] - d[2])
+                    } else {
+                        global_translation(&displacements, m.j)
+                            - global_translation(&displacements, m.i)
+                    };
                     let block = axial_block(&e, 0.0, n / p.l);
                     fi -= block * dg;
                 }
-                for c in 0..3 {
-                    internal[m.i][c] += fi[c];
-                    internal[m.j][c] -= fi[c];
+                if let Some(rd) = &p.rigid {
+                    // At its offset ends: the joints take the force and
+                    // its moment r × F.
+                    let mut v = SMatrix::<f64, 12, 1>::zeros();
+                    for c in 0..3 {
+                        v[c] = fi[c];
+                        v[6 + c] = -fi[c];
+                    }
+                    let g = rd.transpose() * v;
+                    for c in 0..6 {
+                        internal[m.i][c] += g[c];
+                        internal[m.j][c] += g[6 + c];
+                    }
+                } else {
+                    for c in 0..3 {
+                        internal[m.i][c] += fi[c];
+                        internal[m.j][c] -= fi[c];
+                    }
                 }
             }
             MemberForces {
@@ -1577,7 +1644,23 @@ fn constant_forces(
         } else {
             0.0
         };
-        if n != 0.0 {
+        if n != 0.0
+            && let Some(d) = &p.rigid
+        {
+            // At its offset ends: with the moments on the joints.
+            let e = p.r.row(0).transpose() * n;
+            let mut v = SMatrix::<f64, 12, 1>::zeros();
+            for c in 0..3 {
+                v[c] = e[c];
+                v[6 + c] = -e[c];
+            }
+            let g = d.transpose() * v;
+            for c in 0..12 {
+                if let Some(q) = p.eq[c] {
+                    r[q] += g[c];
+                }
+            }
+        } else if n != 0.0 {
             let e = p.r.row(0).transpose() * n;
             for c in 0..3 {
                 if let Some(q) = p.eq[c] {
@@ -1740,6 +1823,22 @@ fn relative_terms(h: &Stabilisation, node_eq: &[[Option<usize>; 6]]) -> Vec<(usi
     c
 }
 
+/// Adds a member's 12 × 12 matrix (structure axes) at its equations
+/// `eq`, each unordered pair once (the matrix is stored symmetric).
+fn add_upper(k: &mut Skyline, eq: &[Option<usize>; 12], kg: &Mat12) {
+    for a in 0..12 {
+        let Some(qa) = eq[a] else { continue };
+        for b in a..12 {
+            if let Some(qb) = eq[b] {
+                let v = kg[(a, b)];
+                if v != 0.0 {
+                    k.add(qa, qb, v);
+                }
+            }
+        }
+    }
+}
+
 /// Assembles the tangent stiffness at axial forces `axial`.
 fn assemble(
     model: &Model,
@@ -1785,6 +1884,19 @@ fn assemble(
             }
             let e = p.r.row(0).transpose();
             let b = axial_block(&e, ea_l, n_l);
+            if let Some(d) = &p.rigid {
+                // Between its offset ends, tied to the joints: Dᵀ·K·D.
+                let mut kl = Mat12::zeros();
+                for (oa, sa) in [(0, 1.0), (6, -1.0)] {
+                    for (ob, sb) in [(0, 1.0), (6, -1.0)] {
+                        kl.fixed_view_mut::<3, 3>(oa, ob)
+                            .copy_from(&(b * (sa * sb)));
+                    }
+                }
+                let kg = d.transpose() * kl * d;
+                add_upper(k, &p.eq, &kg);
+                continue;
+            }
             for (oa, sa) in [(0, 1.0), (6, -1.0)] {
                 for (ob, sb) in [(0, 1.0), (6, -1.0)] {
                     for r in 0..3 {

@@ -21,7 +21,13 @@ pub(crate) type Mat12 = SMatrix<f64, 12, 12>;
 
 /// Rows: the local x, y, z axes in structure axes.
 pub(crate) fn axes(model: &Model, m: &Member) -> Matrix3<f64> {
-    let d = sub(model.nodes[m.j].point, model.nodes[m.i].point);
+    axes_between(model.nodes[m.i].point, model.nodes[m.j].point, m)
+}
+
+/// The same for the member running from `a` to `b` (its ends moved by
+/// rigid end offsets, [`crate::offsets`]).
+pub(crate) fn axes_between(a: [f64; 3], b: [f64; 3], m: &Member) -> Matrix3<f64> {
+    let d = sub(b, a);
     let l = norm(d);
     let x = [d[0] / l, d[1] / l, d[2] / l];
     let r = m.reference.unwrap_or(if x[2].abs() > 0.999 {
