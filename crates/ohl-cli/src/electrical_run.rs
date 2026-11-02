@@ -1347,8 +1347,12 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
     let preset = preset_from_plugin(&a.common, &s)?;
     if let Some(p) = &preset {
-        settings.cuts.extend(preset_cuts(&p.preset));
-        settings.points.extend(preset_points(&p.preset));
+        settings
+            .cuts
+            .extend(ohl_io::field_input::preset_cuts(&p.preset));
+        settings
+            .points
+            .extend(ohl_io::field_input::preset_points(&p.preset));
         add_levels(&mut settings.levels, &p.preset.levels_ut);
     }
     let src = ohl_electrical::Sources {
@@ -1405,8 +1409,12 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
     let preset = preset_from_plugin(&a.common, &s)?;
     if let Some(p) = &preset {
-        settings.cuts.extend(preset_cuts(&p.preset));
-        settings.points.extend(preset_points(&p.preset));
+        settings
+            .cuts
+            .extend(ohl_io::field_input::preset_cuts(&p.preset));
+        settings
+            .points
+            .extend(ohl_io::field_input::preset_points(&p.preset));
         add_levels(&mut settings.levels, &p.preset.levels_kv_m);
     }
     let src = ohl_electrical::Sources {
@@ -1485,8 +1493,8 @@ fn fields(a: &FieldsArgs) -> Result<(), String> {
             (&mut ms.cuts, &mut ms.points),
             (&mut es.cuts, &mut es.points),
         ] {
-            cuts.extend(preset_cuts(&p.preset));
-            points.extend(preset_points(&p.preset));
+            cuts.extend(ohl_io::field_input::preset_cuts(&p.preset));
+            points.extend(ohl_io::field_input::preset_points(&p.preset));
         }
         add_levels(&mut ms.levels, &p.preset.levels_ut);
         add_levels(&mut es.levels, &p.preset.levels_kv_m);
@@ -2018,37 +2026,6 @@ fn preset_from_plugin(c: &FieldCommonArgs, s: &Solved) -> Result<Option<PresetRu
     }))
 }
 
-/// A preset's cuts as the fields take them: at their alignment stations.
-fn preset_cuts(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::CutSpec> {
-    p.cuts
-        .iter()
-        .map(|c| ohl_electrical::magnetic::CutSpec {
-            at: ohl_electrical::magnetic::CutAt::Station {
-                alignment: c.alignment.clone(),
-                station: c.station,
-            },
-            width: c.width,
-            above: c.above,
-            step: c.step,
-            label: (!c.label.is_empty()).then(|| c.label.clone()),
-        })
-        .collect()
-}
-
-/// A preset's points as the fields take them.
-fn preset_points(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::GivenPoint> {
-    p.points
-        .iter()
-        .map(|q| ohl_electrical::magnetic::GivenPoint {
-            name: q.name.clone(),
-            x: q.x,
-            y: q.y,
-            z: q.z,
-            height: q.height,
-        })
-        .collect()
-}
-
 /// `levels` with `extra` added, ascending, each once.
 fn add_levels(levels: &mut Vec<f64>, extra: &[f64]) {
     levels.extend_from_slice(extra);
@@ -2125,7 +2102,8 @@ fn write_results(
 /// The plan's points and sections along each cut, into its document: the
 /// point cloud's points of its classes (`--cloud`, else the project's),
 /// a TIN (the project's surface named, else the field's `ground`) or a
-/// background drawing of the project crossing the cut.
+/// background drawing of the project crossing the cut
+/// ([`ohl_io::field_cuts::add_extras`]).
 fn plan_extras(
     c: &FieldCommonArgs,
     plan: &ohl_electrical::field_plan::FieldPlan,
@@ -2133,43 +2111,26 @@ fn plan_extras(
     ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
 ) -> Result<(), String> {
     use ohl_electrical::field_plan::Background;
-    use ohl_io::field_cuts::{self, CutPlane};
-    let planes: Vec<Option<CutPlane>> = cuts.iter().map(CutPlane::of).collect();
-    let known: Vec<CutPlane> = planes.iter().flatten().copied().collect();
+    use ohl_io::field_cuts::{self, Along};
     let file = &c.model.file;
     let project = file.extension().is_some_and(|e| e == "ohl");
-    // The points of the plan's classes.
-    let mut points: Vec<Vec<[f64; 3]>> = vec![Vec::new(); known.len()];
     let classes: Vec<u8> = plan.cut.classes.iter().map(|k| k.class).collect();
-    if !classes.is_empty() {
-        let cloud = match &c.plugin.cloud {
-            Some(spec) => Some(ohl_pointcloud::open_source(spec)?),
-            None if project => ohl_pointcloud::open_source(&file.display().to_string()).ok(),
-            None => None,
-        };
-        match cloud {
-            Some(cloud) => {
-                let budget =
-                    ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-                let (p, notes) =
-                    field_cuts::cut_points(&*cloud, &known, &classes, plan.cut.band, &budget)?;
-                points = p;
-                for n in notes {
-                    println!("  plan: {n}");
-                }
-            }
-            None => println!("  plan: no point cloud: the cuts without points"),
+    let cloud = match (&c.plugin.cloud, classes.is_empty()) {
+        (_, true) => None,
+        (Some(spec), false) => Some(ohl_pointcloud::open_source(spec)?),
+        (None, false) if project => ohl_pointcloud::open_source(&file.display().to_string()).ok(),
+        (None, false) => None,
+    };
+    let in_project = |what: &str, name: &str| {
+        if project {
+            Ok(())
+        } else {
+            Err(format!("field plan: {what} {name}: a project's (.ohl)"))
         }
-    }
-    // The TIN or the drawing.
+    };
     let surface = match plan.cut.background {
         Background::Tin if !plan.cut.surface.is_empty() => {
-            if !project {
-                return Err(format!(
-                    "field plan: surface {}: a project's (.ohl) surface",
-                    plan.cut.surface
-                ));
-            }
+            in_project("surface", &plan.cut.surface)?;
             let session = ohl_session::Session::open(file).map_err(|e| e.to_string())?;
             let (pts, tris) = session
                 .surface(&plan.cut.surface)
@@ -2180,12 +2141,7 @@ fn plan_extras(
     };
     let drawing = match plan.cut.background {
         Background::Dxf => {
-            if !project {
-                return Err(format!(
-                    "field plan: drawing {}: a project's (.ohl) background drawing",
-                    plan.cut.drawing
-                ));
-            }
+            in_project("drawing", &plan.cut.drawing)?;
             let store = ohl_background::Store::open(file).map_err(|e| e.0)?;
             Some(
                 store
@@ -2195,40 +2151,41 @@ fn plan_extras(
         }
         _ => None,
     };
-    let mut k = 0;
-    for (doc, plane) in cuts.iter_mut().zip(&planes) {
-        let Some(plane) = plane else {
-            continue;
-        };
-        let mut sections = Vec::new();
-        match plan.cut.background {
-            Background::Tin => {
-                let (name, lines) = match &surface {
-                    Some(t) => (
-                        plan.cut.surface.as_str(),
-                        field_cuts::tin_section(&|x, y| t.height(x, y), plane, 1.0),
-                    ),
-                    None => (
-                        "the field's ground",
-                        match ground {
-                            Some(g) => field_cuts::tin_section(&|x, y| g(x, y), plane, 1.0),
-                            None => Vec::new(),
-                        },
-                    ),
-                };
-                sections.push(field_cuts::tin_json(name, &lines));
-            }
-            Background::Dxf => {
-                if let Some(d) = &drawing {
-                    let marks =
-                        d.plane_crossings(plane.origin, plane.right, plane.span, &plan.cut.layers);
-                    sections.push(field_cuts::dxf_json(&plan.cut.drawing, &marks));
-                }
-            }
-            Background::None => {}
-        }
-        field_cuts::fill(doc, points.get(k).map_or(&[][..], |p| &p[..]), sections);
-        k += 1;
+    let tin = |x: f64, y: f64| match (&surface, ground) {
+        (Some(t), _) => t.height(x, y),
+        (None, Some(g)) => g(x, y),
+        (None, None) => None,
+    };
+    let crossings = |p: &field_cuts::CutPlane| {
+        drawing.as_ref().map_or_else(Vec::new, |d| {
+            d.plane_crossings(p.origin, p.right, p.span, &plan.cut.layers)
+        })
+    };
+    let along = match plan.cut.background {
+        Background::None => Along::Nothing,
+        Background::Tin => Along::Tin(
+            if plan.cut.surface.is_empty() {
+                "the field's ground"
+            } else {
+                &plan.cut.surface
+            },
+            &tin,
+        ),
+        Background::Dxf => Along::Dxf(&plan.cut.drawing, &crossings),
+    };
+    let budget = ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+    let notes = field_cuts::add_extras(
+        cuts,
+        cloud
+            .as_deref()
+            .map(|c| c as &dyn ohl_pointcloud::PointSource),
+        &classes,
+        plan.cut.band,
+        &along,
+        &budget,
+    )?;
+    for n in notes {
+        println!("  plan: {n}");
     }
     Ok(())
 }

@@ -155,7 +155,9 @@ fn building_cuts_end_to_end() {
     let params = dir.join("params.toml");
     std::fs::write(
         &params,
-        "step = 2.0\nlimit_ut = 1.0\nlimit_kv_m = 5.0\ndxf = true\n",
+        // The survey's codes named (by default the classes alone).
+        "building_codes = [\"BLD*\"]\nground_codes = [\"GND*\"]\nstep = 2.0\nlimit_ut = 1.0\n\
+         limit_kv_m = 5.0\ndxf = true\n",
     )
     .unwrap();
     let out_dir = dir.join("report");

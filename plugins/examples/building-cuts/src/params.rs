@@ -84,8 +84,8 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Self {
-            building_codes: vec!["BLD*".into()],
-            ground_codes: vec!["GND*".into()],
+            building_codes: Vec::new(),
+            ground_codes: Vec::new(),
             cell: 0.5,
             gap: 1.5,
             min_points: 20,
@@ -120,11 +120,13 @@ pub const TEMPLATE: &str = r#"# building-cuts parameters (TOML). Every key is op
 # default shown here is taken. Lengths in metres.
 
 # Survey points: the codes of building points and of ground points
-# (`*` any text, `?` one character, any case). Building points with a
+# (`*` any text, `?` one character, any case), e.g. ["BLD*"] and
+# ["GND*"]; none by default: the buildings and the ground from the point
+# cloud's classes alone (owner 2026-11-02). Building points with a
 # breakline id form one outline each, in the surveyed order; without one
 # they are clustered like the point cloud's building points.
-building_codes = ["BLD*"]
-ground_codes = ["GND*"]
+building_codes = []
+ground_codes = []
 
 # Clustering: a plan grid of `cell`; cells closer than `gap` are one
 # building; fewer than `min_points` points or a footprint under

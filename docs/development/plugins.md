@@ -801,7 +801,10 @@ drawing's 3D lines where they cross it
 (`ohl_background::Drawing::plane_crossings`), and hands the plan
 (`FieldPlan::plugin_json`) to both calls. `ohl plugin
 info` lists the export (`optional exports: field-presets`). In
-OHL-Design: not yet.
+OHL-Design: Checks › Electrical › Buildings (fields)… (2026-11-02, [user
+guide](../user-guide/analyses.md#buildings-fields)) runs a plugin in use
+with the export the same way (its points from the project's cloud, no
+survey points), with a field plan template of the project.
 
 The test plugin `plugins/tests/field-presets` gives fixed, **invented**
 cuts and points for the synthetic double circuit

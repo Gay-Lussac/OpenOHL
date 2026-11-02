@@ -795,6 +795,21 @@ pub(super) fn menus(
                 ui.close();
             }
             if ui
+                .button("Buildings (fields)…")
+                .on_hover_text(
+                    "Both fields at the buildings near the line: a plugin with field presets \
+                     finds them from the point cloud's classes and gives the cuts and the places \
+                     of sensitive use; a field plan template gives the limits, the weather per \
+                     system and how the cuts are drawn; the plugin's report goes into a folder",
+                )
+                .clicked()
+            {
+                let magnetic = &r.magnetic_field;
+                r.building_fields
+                    .show(r.case, |c| magnetic.current_of(c), &r.model);
+                ui.close();
+            }
+            if ui
                 .button("Lightning shielding…")
                 .on_hover_text(
                     "Whether the shielding wires keep lightning off the phases, along every span: \

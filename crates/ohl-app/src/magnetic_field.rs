@@ -693,8 +693,8 @@ impl MagneticFieldWindow {
         self.currents.insert(circuit.to_owned(), (amps, false));
     }
 
-    /// A circuit's current, A (tests).
-    #[cfg(test)]
+    /// A circuit's current, A (the Buildings (fields) window starts from
+    /// them).
     pub fn current_of(&self, circuit: &str) -> Option<f64> {
         self.currents.get(circuit).map(|c| c.0)
     }

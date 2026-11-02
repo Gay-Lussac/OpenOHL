@@ -57,6 +57,8 @@ pub enum Panel {
     MagneticField,
     /// Checks › Electrical › Electric field.
     ElectricField,
+    /// Checks › Electrical › Buildings (fields) (2026-11-02).
+    BuildingFields,
     /// Checks › Analyses › Galloping ellipses.
     Galloping,
     /// Checks › Analyses › Wire tensions.
@@ -92,7 +94,7 @@ pub enum Panel {
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 29] = [
+    pub const ALL: [Panel; 30] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -107,6 +109,7 @@ impl Panel {
         Panel::LineParameters,
         Panel::MagneticField,
         Panel::ElectricField,
+        Panel::BuildingFields,
         Panel::Galloping,
         Panel::WireTensions,
         Panel::Lightning,
@@ -141,6 +144,7 @@ impl Panel {
             Panel::LineParameters => "Line parameters",
             Panel::MagneticField => "Magnetic field",
             Panel::ElectricField => "Electric field",
+            Panel::BuildingFields => "Buildings (fields)",
             Panel::Galloping => "Galloping ellipses",
             Panel::WireTensions => "Wire tensions",
             Panel::Lightning => "Lightning shielding",

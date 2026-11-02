@@ -169,6 +169,37 @@ pub fn gather(
     Ok(out)
 }
 
+/// A preset's cuts as the fields take them: at their alignment stations.
+pub fn preset_cuts(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::CutSpec> {
+    p.cuts
+        .iter()
+        .map(|c| ohl_electrical::magnetic::CutSpec {
+            at: ohl_electrical::magnetic::CutAt::Station {
+                alignment: c.alignment.clone(),
+                station: c.station,
+            },
+            width: c.width,
+            above: c.above,
+            step: c.step,
+            label: (!c.label.is_empty()).then(|| c.label.clone()),
+        })
+        .collect()
+}
+
+/// A preset's points as the fields take them.
+pub fn preset_points(p: &ohl_plugins::FieldPreset) -> Vec<ohl_electrical::magnetic::GivenPoint> {
+    p.points
+        .iter()
+        .map(|q| ohl_electrical::magnetic::GivenPoint {
+            name: q.name.clone(),
+            x: q.x,
+            y: q.y,
+            z: q.z,
+            height: q.height,
+        })
+        .collect()
+}
+
 fn list(items: &[String]) -> String {
     if items.is_empty() {
         "none".into()

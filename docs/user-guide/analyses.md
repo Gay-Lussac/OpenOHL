@@ -1171,7 +1171,8 @@ development, not approved yet) finds the **buildings** near the line and
 gives the cuts and points the fields need at each of them:
 
 - **Buildings** from the point cloud's class role `building` and from
-  survey points whose code matches `building_codes` (default `BLD*`).
+  survey points whose code matches `building_codes` (default none: the
+  point cloud's classes alone; e.g. `BLD*`).
   The points are put on a plan grid (`cell`, 0.5 m); cells closer than
   `gap` (1.5 m) belong to one building; fewer than `min_points` (20)
   points or a footprint under `min_area` (10 m²) is no building (the
@@ -1219,10 +1220,11 @@ gives the cuts and points the fields need at each of them:
   **Conservative**: the top floor's place may lie above the eaves (a
   7 m building has places at 1.5, 4.5 and 7.5 m).
 
-The buildings come from the point cloud's building class (the role
-`building`) unless survey codes are given: the template reads every
-survey point near the line (`survey-codes = ["*"]` in its manifest) but
-uses only those whose code matches `building_codes`. The ground around
+By default the buildings and their ground come from the point cloud's
+classes alone (the roles `building` and `ground`; owner 2026-11-02):
+`building_codes` and `ground_codes` are empty. The host still hands the
+plugin the survey points near the line (`survey-codes = ["*"]` in its
+manifest); give codes to use them. The ground around
 each building is taken from 2 m cells of the ground class (2026-11-02;
 1 m cells over a real line passed the plugin's memory).
 
@@ -1439,3 +1441,45 @@ results (`ohl-field-results-set`), both fields in one run with `ohl
 electrical fields` ([above](#both-fields)), and `--preset-plugin DIR
 [--params FILE] [--preset NAME] [--out DIR] [--cloud SPEC]` takes a
 plugin's field presets (above).
+
+## Electrical: buildings near the line (fields)
+
+<a id="buildings-fields"></a>Checks › Electrical › **Buildings
+(fields)…** (2026-11-02; built, in active development, not approved
+yet): both fields at the buildings near the line, in one run. A plugin
+with field presets ([the building-cuts plugin](#building-cuts), or your
+own) finds the buildings from the point cloud's classes and gives the
+cuts across the line at each of them and the places of sensitive use;
+both fields are computed there; the plugin's report (tables, the cuts'
+drawings and grids, plan files) is written into a folder one cut at a
+time.
+
+- **Scope**: the whole line; the weather case the wires hang in when the
+  field plan names none.
+- **Presets**:
+  - **Plugin** (those in use with field presets, File › Plugins ›
+    Plugin manager…) and its **preset** (empty: its first).
+  - **Parameters**: the plugin's own, as a form made from its template —
+    each key with its value, the comment above it as its help, a key
+    left out by default with a box to set it; **Reset to the plugin's**
+    goes back to its template.
+  - **Field plan**: a [field plan template](#field-plan-templates) of the
+    project (library kind `field-plans`): its limits and isolines, the
+    weather case of every wire, of the earth wires and per system (cases
+    of the model), and how the cuts are drawn. **New** opens the
+    template's text (every key with its default) in the window, checked
+    as you type; **Save into the project** keeps it; **Edit** opens the
+    one chosen.
+  - **Currents** per circuit (starting from the Magnetic field window's)
+    and the earth wires' induced currents (through the towers or not).
+    The voltages: each system's nominal (said in the notes).
+- **Model**: the ground (as the field windows) and the folder the report
+  goes into (default: `buildings-fields` beside the project).
+
+**Results**: a row per place — building, place, height, B and its
+cycle's largest (µT), E (kV/m), each margin to the plan's limits (red
+over) — and the verdict; **Open the folder** shows the report; the notes
+say what the plugin read and found, the weather per system and what each
+field assumed. The window's setup is kept in the project for the project
+line worked on. Without a point cloud the run is not blocked: a plugin
+finding the buildings from its classes finds none (said).

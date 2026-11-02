@@ -45,6 +45,14 @@ not approved yet)**
   3D lines with each cut's plane; the plugin draws them. The template
   carries the NISV limits (1 µT, 5 kV/m) as an example; the plugin's
   parameters' limits, when given, win over the plan's.
+- **The window** (Checks › Electrical › Buildings (fields)…): the
+  plugin, its preset and its parameters as a form made from its
+  template (any field-presets plugin gets its own fields), the field
+  plan of the project (New, Edit, saved into the project), the currents
+  per circuit, the earth wires, the ground and the report's folder; the
+  results a row per place with its margins. The buildings from the point
+  cloud's classes alone: the window hands the plugin no survey points,
+  and the building plugin's survey codes are empty by default.
 - **A weather case per system in the CLI** (`--system-case SYSTEM=CASE`,
   `earth` for the wires of no system; the plan's `[weather]`), as the
   field windows already had: each case solved once, each section taken

@@ -448,7 +448,14 @@ fn surveyed_outline() {
             line: "S1".into(),
         })
         .collect();
+    // By default the survey is not read (the classes alone).
     let a = analyse(&Params::default(), &model(), &points, &ground()).unwrap();
+    assert!(a.buildings.is_empty());
+    let p = Params {
+        building_codes: vec!["BLD*".into()],
+        ..Params::default()
+    };
+    let a = analyse(&p, &model(), &points, &ground()).unwrap();
     assert_eq!(a.buildings.len(), 1);
     let b = &a.buildings[0];
     assert!((b.area - 100.0).abs() < 1e-9);

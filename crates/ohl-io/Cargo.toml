@@ -13,6 +13,7 @@ ohl-cables.workspace = true
 ohl-clearance.workspace = true
 ohl-core.workspace = true
 ohl-crs.workspace = true
+ohl-electrical.workspace = true
 ohl-lidar.workspace = true
 ohl-line.workspace = true
 ohl-loads.workspace = true

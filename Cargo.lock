@@ -4123,6 +4123,7 @@ dependencies = [
  "ohl-clearance",
  "ohl-core",
  "ohl-crs",
+ "ohl-electrical",
  "ohl-lidar",
  "ohl-line",
  "ohl-loads",

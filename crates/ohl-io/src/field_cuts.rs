@@ -183,6 +183,62 @@ pub fn dxf_json(name: &str, marks: &[(f64, f64, String, [u8; 3])]) -> Value {
     })
 }
 
+/// A drawing's crossings with a cut: offset, elevation, layer, colour.
+pub type Crossings = Vec<(f64, f64, String, [u8; 3])>;
+
+/// The surface or drawing a plan shows along each cut.
+pub enum Along<'a> {
+    /// Nothing.
+    Nothing,
+    /// A surface: its name and height.
+    Tin(&'a str, &'a dyn Fn(f64, f64) -> Option<f64>),
+    /// A drawing: its name and its crossings with a cut's plane (offset,
+    /// elevation, layer, colour).
+    Dxf(&'a str, &'a dyn Fn(&CutPlane) -> Crossings),
+}
+
+/// The plan's points and sections along each cut, into its document
+/// ([`fill`]): the points of `classes` within `band` of each cut's plane
+/// from `cloud` (none: said), and `along`'s TIN (sampled every metre) or
+/// drawing crossings; notes of what was read.
+pub fn add_extras(
+    cuts: &mut [Value],
+    cloud: Option<&dyn PointSource>,
+    classes: &[u8],
+    band: f64,
+    along: &Along<'_>,
+    budget: &Budget,
+) -> Result<Vec<String>, String> {
+    let planes: Vec<Option<CutPlane>> = cuts.iter().map(CutPlane::of).collect();
+    let known: Vec<CutPlane> = planes.iter().flatten().copied().collect();
+    let mut notes = Vec::new();
+    let mut points: CutPoints = vec![Vec::new(); known.len()];
+    if !classes.is_empty() {
+        match cloud {
+            Some(cloud) => {
+                let (p, n) = cut_points(cloud, &known, classes, band, budget)?;
+                points = p;
+                notes.extend(n);
+            }
+            None => notes.push("no point cloud: the cuts without points".into()),
+        }
+    }
+    let mut k = 0;
+    for (doc, plane) in cuts.iter_mut().zip(&planes) {
+        let Some(plane) = plane else {
+            continue;
+        };
+        let sections = match along {
+            Along::Nothing => Vec::new(),
+            Along::Tin(name, height) => vec![tin_json(name, &tin_section(*height, plane, 1.0))],
+            Along::Dxf(name, crossings) => vec![dxf_json(name, &crossings(plane))],
+        };
+        fill(doc, points.get(k).map_or(&[][..], |p| &p[..]), sections);
+        k += 1;
+    }
+    Ok(notes)
+}
+
 /// Adds a cut's `points` and `sections` to its document.
 pub fn fill(doc: &mut Value, points: &[[f64; 3]], sections: Vec<Value>) {
     doc["points"] = json!(

@@ -662,6 +662,16 @@ impl Plugins {
             .collect()
     }
 
+    /// The plugins in use giving field presets (extension point
+    /// `field-presets`, 2026-11-02): name, folder.
+    pub fn field_preset_dirs(&self) -> Vec<(String, PathBuf)> {
+        self.listed
+            .iter()
+            .filter(|l| self.enabled(l) && l.found.provides(ohl_plugins::FIELD_PRESETS))
+            .map(|l| (l.found.name(), l.found.dir.clone()))
+            .collect()
+    }
+
     /// The directories of the check plugins in use.
     pub fn check_dirs(&self) -> Vec<PathBuf> {
         self.listed

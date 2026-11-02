@@ -337,6 +337,8 @@ pub struct Ready {
     pub lightning: crate::lightning::LightningWindow,
     /// Checks › Analyses › Ice shedding (2026-11-02, roadmap O13).
     pub ice_shedding: crate::ice_shedding::IceSheddingWindow,
+    /// Checks › Electrical › Buildings (fields) (2026-11-02).
+    pub building_fields: crate::building_fields::BuildingFieldsWindow,
     /// Checks › Electrical › Line parameters (2026-10-27).
     pub line_parameters: crate::line_parameters::LineParametersWindow,
     /// Checks › Electrical › Magnetic field (2026-10-27).
@@ -541,6 +543,7 @@ impl Ready {
             wire_tensions: Default::default(),
             lightning: Default::default(),
             ice_shedding: Default::default(),
+            building_fields: Default::default(),
             line_parameters: Default::default(),
             magnetic_field: Default::default(),
             electric_field: Default::default(),
@@ -2398,6 +2401,7 @@ impl eframe::App for App {
                 crate::ice_shedding::handle(ready, out);
                 ready.magnetic_field.keep(&mut ready.model, &ctx);
                 ready.electric_field.keep(&mut ready.model, &ctx);
+                ready.building_fields.keep(&mut ready.model, &ctx);
                 ready.galloping.keep(&mut ready.model, &ctx);
                 ready.wirefit.keep(&mut ready.model, &ctx);
                 ready.vegetation.keep(&mut ready.model, &ctx);
@@ -2406,6 +2410,9 @@ impl eframe::App for App {
                 ready.unequal_wind.keep(&mut ready.model, &ctx);
                 ready.magnetic_field.ui(&ctx, &ready.model);
                 ready.electric_field.ui(&ctx, &ready.model);
+                ready
+                    .building_fields
+                    .ui(&ctx, &ready.model, &self.plugins.field_preset_dirs());
                 // A run saved in Performed checks (2026-11-01).
                 for apply in [
                     ready.magnetic_field.apply.take(),

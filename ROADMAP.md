@@ -565,7 +565,8 @@ core staying independent of them.
      real line, local): `.ohlfp` (title, logos, point classes, TIN or
      drawing in the cut, limits and isolines, wire colours, the weather
      per system), `ohl electrical … --plan`, `--system-case`.
-     The field presets in OHL-Design: not yet; the `cross-sections`
+     The field presets in OHL-Design: Checks › Electrical › Buildings
+     (fields)… (2026-11-02); the `cross-sections`
      export for noise methods: not yet.
 7. [ ] **Corona and surface gradient** in the core or the plugin: the
    conductor surface gradient per subconductor (Markt–Mengele or a charge
