@@ -890,8 +890,11 @@ pub fn remember_weather(session: &ohl_session::Session, path: &Path) {
 /// `loads`: the values typed over a structure's load table in the
 /// structure application, `<stem>.loads.csv` (the type on its own) and
 /// `<stem>.<placed structure>.loads.csv` (one placed structure), beside
-/// the structure types ([`kind_files`]: only `*.loads.csv`).
-pub const PROJECT_LIBRARIES: [(&str, &str); 13] = [
+/// the structure types ([`kind_files`]: only `*.loads.csv`). `bolts`: the
+/// bolt libraries (2026-11-02), in `Bolts/` beside the structure types,
+/// where OHL-Structure and the structure checks read a structure's bolts
+/// ([`ohl_structures::bolts::BoltLibrary::beside`]).
+pub const PROJECT_LIBRARIES: [(&str, &str); 14] = [
     ("cables", ohl_cables::WIRE_FILE_EXTENSION),
     (
         "structures",
@@ -913,15 +916,18 @@ pub const PROJECT_LIBRARIES: [(&str, &str); 13] = [
     ("poles", ohl_structures_fe::pole::POLE_FILE_EXTENSION),
     ("femodels", ohl_structures_fe::model::MODEL_FILE_EXTENSION),
     ("sections", ohl_sections::SECTION_FILE_EXTENSION),
+    ("bolts", ohl_structures::bolts::BOLT_FILE_EXTENSION),
     ("loads", "csv"),
 ];
 
 /// The folder of library `kind` in the working folder and in an export:
 /// poles, structure models and typed structure loads go next to the
-/// structure types that name them.
+/// structure types that name them, bolt libraries into `Bolts/` beside
+/// them (where a structure's bolts are read).
 pub fn library_folder(kind: &str) -> &str {
     match kind {
         "poles" | "femodels" | "loads" => "structures",
+        "bolts" => "structures/Bolts",
         _ => kind,
     }
 }
@@ -1021,7 +1027,7 @@ fn project_libraries(
             "insulators" => sources.insulators.is_some(),
             "loadcases" => sources.load_cases.is_some(),
             "weather" => sources.weather.is_some(),
-            "poles" | "femodels" | "loads" => structures_given,
+            "poles" | "femodels" | "loads" | "bolts" => structures_given,
             _ => false,
         };
         let stored = session.library_files(kind).map_err(|e| e.to_string())?;
@@ -1047,6 +1053,9 @@ fn project_libraries(
                         .filter(|p| p.is_absolute() && p.is_file())
                 }),
                 "poles" | "femodels" | "loads" => own(structures_from.clone(), "structures"),
+                // The `Bolts/` folder beside the structure types.
+                "bolts" => own(structures_from.clone(), "structures")
+                    .map(|d| d.join(ohl_structures::bolts::BOLTS_FOLDER)),
                 // The `Sections/` folder next to the project, else the
                 // files next to it.
                 "sections" => own(sections_dir(sources), "sections"),

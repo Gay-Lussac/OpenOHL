@@ -2,8 +2,8 @@
 
 *Plan, 2026-11-02 — not approved. Asked by the owner: "plan
 the double star and 4 corners to be shown or at least calculable"; "Go
-with A". Stage B1 built (in active development, not approved yet); the
-others not built. Open point O20 in the [roadmap](../roadmap.md);
+with A". Stages B1 and B2 built (in active development, not approved
+yet); the others not built. Open point O20 in the [roadmap](../roadmap.md);
 comment there or under each stage.*
 
 ## What there is today
@@ -94,6 +94,35 @@ was done:
 The local importer of the tower program's files maps its built-up
 angles to the new shapes (the arrangement and the gap from its data,
 when it gives them), keeping its values in the description to compare.
+
+**Built (2026-11-02, in active development, not approved yet).** The
+local importer of a tower program's export (a private plugin, not in
+this repository) maps two angles back to back to `double_angle` (the
+long legs back to back), two in a star to `star_angle` and four in a
+cross to `cross_angle`, with OpenOHL's own formulas (`ohl-sections`).
+The export gives neither the gap nor the root radius, so:
+
+- the **root radius** is taken from the export's area (A / n =
+  t (h + b − t) + (1 − π/4) r² for n angles): the area matches by
+  construction — an assumption: the material the export's area holds
+  beyond the plain legs is put at the root;
+- the **gap** is fitted so that the computed iu + iv (the same in any
+  axes) is the export's, to 0.1 mm, between 0 and 50 mm;
+- the section is mapped only when, with that gap, the computed iu and iv
+  are **each within 5 %** of the export's (the local comparison of B1
+  found up to about 4 % for sections that are what their label says:
+  the single angles differ as much); else — and for a section labelled
+  back to back that carries a star's values (iy = iz with iu ≠ iv) — it
+  stays `general` with the export's values, and its description and the
+  import's notes say why;
+- the export's values (area, iy, iz, iu, iv) and the computed ones with
+  their differences are kept in each section's description; the
+  properties used are OpenOHL's, so a member's stiffness and its wind
+  width (the outline: two legs and the gap across a pair, where the
+  export gives one leg) change a little against an import as `general`.
+
+Double channels and the other profiles stay as before. A first trial on
+a real line's export: see the [decision log](decisions.md#2026-11-02).
 
 ### B3 — Shown (S–M)
 

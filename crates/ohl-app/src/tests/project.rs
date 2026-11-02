@@ -415,6 +415,91 @@ fn the_project_keeps_its_section_library() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// The bolt libraries (`.ohlb`, 2026-11-02) in `Bolts/` beside the
+/// structure types next to the project are copied into it when it opens
+/// and written to `Bolts/` beside the working copies of the types (where
+/// OHL-Structure and the structure checks read a structure's bolts); then
+/// the project's copy is read (the folder gone), one imported there goes
+/// into the project, and Export writes them beside the exported types.
+#[test]
+fn the_project_keeps_its_bolt_libraries() {
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ohl-app-{}-bolts", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    let bolts = dir
+        .join("Structures")
+        .join(ohl_structures::bolts::BOLTS_FOLDER);
+    std::fs::create_dir_all(&bolts).unwrap();
+    std::fs::copy(
+        ex.join("Structures/type-02.ohls"),
+        dir.join("Structures/type-02.ohls"),
+    )
+    .unwrap();
+    let name = "example-bolts.ohlb";
+    std::fs::copy(root().join("libraries/bolts").join(name), bolts.join(name)).unwrap();
+    let file = dir.join("p.ohl");
+    let line = ohl_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
+    ohl_session::Session::open(&file)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    let open = || {
+        model::load(
+            Sources {
+                file: file.clone(),
+                library: Some(root().join("libraries/cables")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap()
+    };
+    let m = open();
+    let session = &m.editing.as_ref().unwrap().session;
+    let files = session.library_files("bolts").unwrap();
+    assert!(files.iter().any(|(n, _)| n == name), "{files:?}");
+    // Not taken for structure types.
+    assert!(
+        session
+            .library_files("structures")
+            .unwrap()
+            .iter()
+            .all(|(n, _)| n != name)
+    );
+    let work = m.library_dir.clone().unwrap();
+    let (lib, errors) = ohl_structures::bolts::BoltLibrary::beside(&work.join("structures"));
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(lib.get("X17-example").is_some());
+    drop(m);
+    // The folder gone: the project's copy; one imported beside the
+    // working types (OHL-Structure's File › Libraries) goes in.
+    std::fs::remove_dir_all(&bolts).unwrap();
+    let mut m = open();
+    let work = m.library_dir.clone().unwrap();
+    let beside = work
+        .join("structures")
+        .join(ohl_structures::bolts::BOLTS_FOLDER);
+    assert!(beside.join(name).is_file());
+    let own = "format = \"ohl-bolts\"\nversion = 1\n\n[[bolt]]\nid = \"invented-B1\"\n\
+               diameter = \"16 mm\"\nshear_capacity = \"50 kN\"\n";
+    std::fs::write(beside.join("own.ohlb"), own).unwrap();
+    m.store_libraries().unwrap();
+    let session = &m.editing.as_ref().unwrap().session;
+    assert_eq!(session.library_files("bolts").unwrap().len(), 2);
+    let out = dir.join("export");
+    m.export_libraries(&out).unwrap();
+    let exported = out
+        .join("structures")
+        .join(ohl_structures::bolts::BOLTS_FOLDER);
+    assert!(exported.join(name).is_file() && exported.join("own.ohlb").is_file());
+    drop(m);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Lines: new lines started from the one worked on, shown next to it (two
 /// ticked in a row: the menu stays open), worked on one at a time (each
 /// its own undo), brought up to date from the main line, submitted for

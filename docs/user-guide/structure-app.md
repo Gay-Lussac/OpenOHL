@@ -959,7 +959,7 @@ the line application and `ohl line` keep them for a structure's folder:
 | Library | Files | Read from (and imported into) |
 |---|---|---|
 | Cross-section libraries | `.ohlsec` | `--sections` (a folder), else `Sections/` beside the structure file |
-| Bolt libraries | `.ohlb` | `Bolts/` beside the structure file (2026-11-02; [format](structure-library.md)) |
+| Bolt libraries | `.ohlb` | `Bolts/` beside the structure file (2026-11-02; [format](structure-library.md)); started from a project, the project's bolt libraries (library kind `bolts`), written there and kept in the project when imported there |
 | Insulator assemblies | `.ohli` | `--insulators`, else the structure's folder and its `Insulators/` (imported into `Insulators/`) |
 | Poles | `.ohlp` | beside the structure file |
 | Structure models | `.ohlfe` | beside the structure file |

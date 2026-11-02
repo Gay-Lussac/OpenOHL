@@ -9,7 +9,8 @@
 //! Structure types page does). The file's time is looked at twice a
 //! second at most, only while a structure application runs or a change is
 //! waiting. The library folders it was given (the structure file's,
-//! `--insulators`, `--sections`) are watched too: library files imported
+//! `--insulators`, `--sections`, and `Bolts/` beside the file) are watched
+//! too: library files imported
 //! there (its File › Libraries) are stored into the project
 //! ([`Change::Libraries`], [`library_signature`]).
 //!
@@ -544,8 +545,9 @@ struct Watched {
 
 /// The library files the structure application imports (its
 /// File › Libraries): section libraries, insulator assemblies, poles,
-/// structure models, load-case recipes, pylon templates.
-pub const LIBRARY_EXTENSIONS: [&str; 6] = ["ohlsec", "ohli", "ohlp", "ohlfe", "ohlslc", "ohlpt"];
+/// structure models, load-case recipes, pylon templates, bolt libraries.
+pub const LIBRARY_EXTENSIONS: [&str; 7] =
+    ["ohlsec", "ohli", "ohlp", "ohlfe", "ohlslc", "ohlpt", "ohlb"];
 
 /// What the library files in `dirs` are: their names, sizes and times
 /// hashed (a file added, changed or removed changes it).
@@ -712,7 +714,8 @@ impl StructureApps {
         let stderr = child.stderr.take().map(Stderr::read);
         let fresh = placed.is_some();
         // The folders it imports libraries into: given, else its defaults
-        // beside the file (`Insulators/`, `Sections/`).
+        // beside the file (`Insulators/`, `Sections/`); its bolt libraries
+        // in `Bolts/` beside it.
         let beside = path.parent().unwrap_or(Path::new("."));
         let folder = |p: &Path| {
             if p.is_file() {
@@ -724,6 +727,7 @@ impl StructureApps {
         let extra = vec![
             insulators.map_or_else(|| beside.join("Insulators"), folder),
             sections.map_or_else(|| beside.join("Sections"), folder),
+            beside.join(ohl_structures::bolts::BOLTS_FOLDER),
         ];
         self.watch_running(
             path,

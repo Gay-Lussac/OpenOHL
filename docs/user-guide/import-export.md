@@ -160,7 +160,7 @@ Their kind comes from the extension: wire types `.ohlw`, clearance rules
 `.ohlr`, structure types `.ohls`, insulators `.ohli`, weather cases
 `.ohlwc`, load cases `.ohllc`, galloping `.ohlg`, ambient `.ohlta`, costs
 `.ohlcost`, poles `.ohlp`, structure models `.ohlfe`, cross-sections
-`.ohlsec`; another file is refused. They are written into the project
+`.ohlsec`, bolts `.ohlb` (2026-11-02); another file is refused. They are written into the project
 with the import (a file of the same name as one the export holds
 replaces it), and the reader's notes list each one. They are added
 before *clip in*, which needs the wire types.

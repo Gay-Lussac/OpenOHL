@@ -852,8 +852,8 @@ pub fn open_existing(path: &Path) -> Result<Session, String> {
 /// The library kinds a project keeps with its line (as the desktop
 /// application's `PROJECT_LIBRARIES`), each written to its folder of the
 /// working copies: poles, structure models and load tables go with the
-/// structure types.
-const PROJECT_LIBRARY_KINDS: [(&str, &str); 13] = [
+/// structure types, bolt libraries into `Bolts/` beside them.
+const PROJECT_LIBRARY_KINDS: [(&str, &str); 14] = [
     ("cables", "cables"),
     ("structures", "structures"),
     ("insulators", "insulators"),
@@ -866,6 +866,7 @@ const PROJECT_LIBRARY_KINDS: [(&str, &str); 13] = [
     ("poles", "structures"),
     ("femodels", "structures"),
     ("sections", "sections"),
+    ("bolts", "structures/Bolts"),
     ("loads", "structures"),
 ];
 
@@ -983,8 +984,9 @@ impl Libraries {
         let (structures, line) = match (given.structures, project("structures")) {
             (Some(p), _) => (p.to_path_buf(), given_text("structures", p, "--structures")),
             (None, Some((dir, mut t))) => {
-                // Poles, structure models and load tables beside them.
-                for kind in ["poles", "femodels", "loads"] {
+                // Poles, structure models, load tables and bolts beside
+                // them.
+                for kind in ["poles", "femodels", "loads", "bolts"] {
                     if let Some(n) = held(kind) {
                         t.push_str(&format!(", {kind} {}", files(n)));
                     }

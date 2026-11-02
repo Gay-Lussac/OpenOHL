@@ -10,6 +10,40 @@ of Parts A, B and C).
 
 ## 2026-11-02
 
+**Bolt libraries kept in the project; built-up members, stage B2:
+imported (owner, 2026-11-02: "maybe rework a bit the xml importer as
+some of these infos might be in the exported xml … Same for the built
+up sections"; built, in active development, not approved yet)**
+
+- New project library kind **`bolts`** (`.ohlb`, the bolt libraries the
+  structures' connections name): stored in the project file like the
+  other libraries, copied in from `Bolts/` in the structure folder when
+  a project opens without any, written to `structures/Bolts/` of the
+  working copies — beside the structure types, where OHL-Structure and
+  the line's structure checks read a structure's bolts
+  (`BoltLibrary::beside`) — and exported there by File › Export ›
+  Libraries (so an exported `structures` folder opens in OHL-Structure
+  with its bolts; not a `bolts/` folder of its own). A bolt library
+  imported in OHL-Structure (Edit… on a structure) into that folder goes
+  into the project. `ohl line` reads them the same way; `.ohlb` may be
+  added to an import (Add library files…). The plugin interface carries
+  a library's kind as a string: no interface change.
+- The local importer of a tower program's export (private) writes the
+  export's bolts as one bolt library (each label once) and maps its
+  built-up angles to `double_angle`, `star_angle` and `cross_angle`
+  ([B2](built-up-members.md#b2--importing-them-s)): the root radius from
+  the export's area, the gap fitted to its second moments, mapped only
+  when the computed iu and iv are each within 5 % of the export's, else
+  kept `general` and said. Where the export does not say whether a
+  bolt's shear capacity is with the threads in the shear plane, the
+  label decides (a label naming a threaded bolt: threads in; else threads
+  out), said in each bolt's description — an assumption.
+- First trial on a real line's export (kept locally): 13 bolts; 65 of 70
+  built-up sections mapped (44 back to back, gaps 0.5–10.4 mm; 13 stars,
+  0–16 mm; 8 crosses, 4–17 mm), the computed second moments within 4.2 %
+  of the export's; the 5 kept general are the sections whose data are
+  inconsistent (found in B1).
+
 **Built-up members, stage B1: built-up cross-sections calculated from
 their angles (owner, 2026-11-02: "plan the double star and 4 corners to
 be shown or at least calculable", "Go with A"; built, in active

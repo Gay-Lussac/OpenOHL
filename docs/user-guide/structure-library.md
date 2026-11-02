@@ -203,7 +203,12 @@ active development, not approved yet). The bolts the connections name,
 kept like the cross-sections: `Bolts/` beside the structure files,
 imported and exported in OHL-Structure (File › Libraries). None of a
 standard's values is built in; `libraries/bolts/example-bolts.ohlb`
-holds invented ones.
+holds invented ones. A project keeps its bolt libraries (library kind
+`bolts`): copied in from `Bolts/` in its structure folder when it opens,
+written to `Bolts/` beside the working copies of the structure types
+(where OHL-Structure and the line's structure checks read them),
+exported with the structure types (`structures/Bolts/`), and brought in
+by a project plugin's import as any other library.
 
 ```toml
 format = "ohl-bolts"

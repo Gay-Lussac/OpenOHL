@@ -897,7 +897,11 @@ questions: [Built-up members](https://github.com/Gay-Lussac/OpenOHL/blob/main/do
   angles: `double_angle`, `star_angle`, `cross_angle`, the gap required;
   each angle's own properties kept; validation cases `sections-001…003`
   (2026-11-02, built, in active development, not approved yet)
-- [ ] B2 — importing them
+- [x] B2 — importing them: the local importer of a tower program's
+  export maps them, the root radius from the area, the gap fitted to
+  the export's second moments (within 5 %, else kept `general`, said);
+  its bolts as the project's bolt library (library kind `bolts`)
+  (2026-11-02, built, in active development, not approved yet)
 - [ ] B3 — shown: each angle drawn, the joints see the plies
 - [ ] B4 — the rules for built-up members
 - [ ] B5 — joints of built-up members
