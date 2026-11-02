@@ -80,6 +80,12 @@ active development, not approved yet)**
 - Member-capacity plugins still receive the member's design data only
   (the plugin interface is unchanged).
 
+**A plate without an outline lies in its bolts' face, in the Joint view
+as in the export (owner, 2026-11-02: "make the joint view follow the
+export for plates")**: one function (`joints::face_hull`) for both; the
+view drew it in the plane of the members' directions before, which for
+a member bolted by its long leg lay square to its bolts.
+
 **Joint details of towers, stage 5: the bolts and gusset plates in the
 structure exports (owner, 2026-11-02: "Go with … C"; built, in active
 development, not approved yet)**

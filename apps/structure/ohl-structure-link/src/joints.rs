@@ -927,7 +927,14 @@ fn plate(
             pts.push(add(joint, scale(a.direction, 0.15)));
         }
     }
-    let outline = hull_around(&pts, joint, &onto, 0.03);
+    // Laid in the face of the first member's bolts onto it (where they
+    // clamp it), as the exports lay it (owner 2026-11-02: "make the joint
+    // view follow the export for plates"); without bolts, in the plane of
+    // the members onto it.
+    let outline = match onto.iter().find_map(|a| a.bolt_points.first().map(|q| (*q, a))) {
+        Some((at, a)) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.03),
+        None => hull_around(&pts, joint, &onto, 0.03),
+    };
     PlateDetail {
         id: p.id.clone(),
         thickness: p.thickness.si(),
@@ -936,6 +943,43 @@ fn plate(
         outline_given: false,
         members,
     }
+}
+
+/// The convex hull of `pts` in the plane through `at` square to `normal`
+/// (each point moved along `normal` into it), grown by `margin`; its x
+/// along `along` as far as it lies in the plane.
+pub(crate) fn face_hull(
+    pts: &[[f64; 3]],
+    at: [f64; 3],
+    normal: [f64; 3],
+    along: [f64; 3],
+    margin: f64,
+) -> Vec<[f64; 3]> {
+    let n = normal.map(|v| v / dot(normal, normal).sqrt());
+    let mut u = add(along, scale(n, -dot(along, n)));
+    if dot(u, u) < 1e-12 {
+        u = if n[2].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        u = add(u, scale(n, -dot(u, n)));
+    }
+    let u = u.map(|v| v / dot(u, u).sqrt());
+    let v = cross(n, u);
+    let mut grown = Vec::new();
+    for p in pts {
+        let d = sub(*p, at);
+        let (x, y) = (dot(d, u), dot(d, v));
+        for k in 0..8 {
+            let t = f64::from(k) * std::f64::consts::FRAC_PI_4;
+            grown.push([x + margin * t.cos(), y + margin * t.sin()]);
+        }
+    }
+    crate::joint_sheet::hull(grown)
+        .into_iter()
+        .map(|q| add(add(at, scale(u, q[0])), scale(v, q[1])))
+        .collect()
 }
 
 /// The convex hull of `pts` in the plane of the first two members' directions

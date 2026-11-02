@@ -359,3 +359,31 @@ fn a_library_bolt_is_taken_from_the_library() {
     assert_eq!(a.bolts.value.as_ref().unwrap().count, 1);
     assert!(a.notes.iter().any(|n| n.contains("in no bolt library")));
 }
+
+/// A plate without an outline lies in the face of the bolts onto it, in
+/// the Joint view as in the export (owner 2026-11-02: "make the joint view
+/// follow the export for plates").
+#[test]
+fn a_plate_lies_in_its_bolts_face_as_exported() {
+    let text = format!(
+        "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n",
+        AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G1\"")
+    );
+    let bolts = ohl_structures::bolts::BoltLibrary::default();
+    let d = joint_details(&text, &library(), &bolts).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let view = &n2.plates[0].outline;
+    let b0 = a.bolt_points[0];
+    for q in view {
+        let along: f64 = (0..3).map(|k| (q[k] - b0[k]) * a.bolt_axis[k]).sum();
+        assert!(along.abs() < 1e-9, "{along}");
+    }
+    let mut s = crate::export_structure(&text, &library(), None, &[]).unwrap();
+    crate::export_joints(&mut s, &text, &library(), &bolts).unwrap();
+    let exported = &s.joint_plates[0].outline;
+    assert_eq!(exported.len(), view.len());
+    for (p, q) in exported.iter().zip(view) {
+        assert!((0..3).all(|k| (p[k] - q[k]).abs() < 1e-9), "{p:?} {q:?}");
+    }
+}

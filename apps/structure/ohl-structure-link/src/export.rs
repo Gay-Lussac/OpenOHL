@@ -323,43 +323,6 @@ fn polygon_normal(pts: &[[f64; 3]]) -> Option<[f64; 3]> {
     (pts.len() >= 3 && l > 1e-12).then(|| n.map(|v| v / l))
 }
 
-/// The convex hull of `pts` in the plane through `at` square to `normal`
-/// (each point moved along `normal` into it), grown by `margin`; its x
-/// along `along` as far as it lies in the plane.
-fn face_hull(
-    pts: &[[f64; 3]],
-    at: [f64; 3],
-    normal: [f64; 3],
-    along: [f64; 3],
-    margin: f64,
-) -> Vec<[f64; 3]> {
-    let n = normal.map(|v| v / dot3(normal, normal).sqrt());
-    let mut u = add3(along, n, -dot3(along, n));
-    if dot3(u, u) < 1e-12 {
-        u = if n[2].abs() < 0.9 {
-            [1.0, 0.0, 0.0]
-        } else {
-            [0.0, 1.0, 0.0]
-        };
-        u = add3(u, n, -dot3(u, n));
-    }
-    let u = u.map(|v| v / dot3(u, u).sqrt());
-    let v = cross(n, u);
-    let mut grown = Vec::new();
-    for p in pts {
-        let d = sub(*p, at);
-        let (x, y) = (dot3(d, u), dot3(d, v));
-        for k in 0..8 {
-            let t = f64::from(k) * std::f64::consts::FRAC_PI_4;
-            grown.push([x + margin * t.cos(), y + margin * t.sin()]);
-        }
-    }
-    crate::joint_sheet::hull(grown)
-        .into_iter()
-        .map(|q| add3(add3(at, u, q[0]), v, q[1]))
-        .collect()
-}
-
 /// Adds the bolts and gusset plates of the joint details to `s` (made by
 /// [`export_structure`] from the same `text` and `library`), the bolts'
 /// sizes from `bolts`; nothing when the file has no `[[connection]]` and
@@ -479,7 +442,7 @@ pub fn export_joints(
                         }
                         pts.extend(b);
                     }
-                    face_hull(&pts, at, axis, onto[0].direction, 0.03)
+                    crate::joints::face_hull(&pts, at, axis, onto[0].direction, 0.03)
                 }
                 _ => p.outline.clone(),
             };

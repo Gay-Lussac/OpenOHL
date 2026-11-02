@@ -533,7 +533,9 @@ the **Joint view**, a pane of its own opened on the right of the 3D view
 - **Close-up**: the members meeting there as their cross-sections (angles
   with their roll, so the leg bolted shows), cut a little beyond the
   joint, the bolts through the leg bolted (red; grey where their layout is
-  partly assumed), the plates (blue); drag to turn it, scroll to zoom,
+  partly assumed), the plates (blue; a plate without an outline in the
+  file is laid in the face of the bolts onto it, 30 mm around them and
+  the joint, as the IFC export lays it); drag to turn it, scroll to zoom,
   **Reset view**. Bolts are drawn on angles only.
 - **Face view**: the joint square to a face (x+, x−, y+, y−, or the plan
   from above; the face most of its members lie in first), as a shop
