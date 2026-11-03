@@ -50,7 +50,9 @@ if [ -f "$PRIVATE/scan.txt" ]; then
     PAT=$(grep -v '^#' "$PRIVATE/scan.txt" | grep -v '^$' | paste -sd '|' -)
     OK='^[0-9]*:@@'
     [ -f "$PRIVATE/scan-ok.txt" ] && OK="$OK|$(grep -v '^#' "$PRIVATE/scan-ok.txt" | grep -v '^$' | paste -sd '|' -)"
-    HITS=$(git diff "$BASE"..HEAD | grep -n -i -E "$PAT" | grep -v -E "$OK" || true)
+    # The lines added only: a line removed (a leak taken out) is already
+    # public and is not pushed again.
+    HITS=$(git diff "$BASE"..HEAD | grep -n -i -E "$PAT" | grep -E '^[0-9]+:\+' | grep -v -E '^[0-9]+:\+\+\+ ' | grep -v -E "$OK" || true)
     if [ -n "$HITS" ]; then
         echo "$HITS" | head -20
         echo scan-FAILED
