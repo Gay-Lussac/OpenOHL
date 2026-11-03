@@ -29,3 +29,18 @@ mod tests {
         assert!(var("PATH").is_ok());
     }
 }
+
+/// The private design-code plugin of this checkout, for the tests that
+/// run it when it is there: the first folder listed in
+/// `local-data/check/plugins.txt` under `root` (the repository; the list
+/// the full check builds and tests, never committed), when it exists.
+/// None in a checkout without it: those tests skip.
+pub fn private_plugin(root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let list = std::fs::read_to_string(root.join("local-data/check/plugins.txt")).ok()?;
+    let rel = list
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))?;
+    let dir = root.join(rel);
+    dir.is_dir().then_some(dir)
+}

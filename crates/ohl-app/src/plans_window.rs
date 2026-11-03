@@ -760,10 +760,14 @@ mod tests {
         assert!(parts >= 3, "{names:?}");
         assert_eq!(count("S.pdf"), parts);
         let _ = std::fs::remove_dir_all(&dir);
-        let lev = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../local-data/plugins/my-code");
-        if lev.is_dir() {
-            let sets = crate::drawings::plugin_plan_sets(&[("my-code".into(), lev.clone())]);
+        // The private design-code plugin, when this checkout has it.
+        if let Some(lev) = ohl_core::env::private_plugin(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        ) {
+            let name = ohl_plugins::Manifest::load(&lev)
+                .map(|m| m.plugin.name)
+                .unwrap_or_default();
+            let sets = crate::drawings::plugin_plan_sets(&[(name, lev.clone())]);
             assert!(!sets.is_empty());
             for (_, n, s) in &sets {
                 assert!(s.is_ok(), "{n}: {:?}", s.as_ref().err());

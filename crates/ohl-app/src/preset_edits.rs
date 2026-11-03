@@ -1101,10 +1101,15 @@ cases = ["hot"]
     /// shown value by value, and an edited label reads as a template.
     #[test]
     fn a_sheet_template_is_edited() {
-        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../local-data/plugins/my-code/sheets/esti-235-a1.ohlsheet");
+        let Some(dir) = ohl_core::env::private_plugin(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        ) else {
+            eprintln!("skipping: no private plugin");
+            return;
+        };
+        let file = dir.join("sheets/esti-235-a1.ohlsheet");
         let Ok(text) = std::fs::read_to_string(&file) else {
-            eprintln!("skipping: no local-data/plugins/my-code");
+            eprintln!("skipping: the private plugin has no such sheet");
             return;
         };
         let l = leaves(&text).unwrap();

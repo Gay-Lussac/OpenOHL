@@ -771,16 +771,17 @@ mod tests {
         close(lc.strength, 0.65);
     }
 
-    /// The Swiss LeV plugin, kept apart from the public code: at
-    /// `local-data/plugins/my-code` when this checkout has it (else the
+    /// The Swiss LeV plugin, kept apart from the public code: the private
+    /// plugin of `local-data/check` when this checkout has it (else the
     /// test is skipped, even when the plugin tests are required; required
     /// to be built when the folder is there).
     fn lev_plugin() -> Option<PathBuf> {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local-data/plugins/my-code");
-        if !dir.is_dir() {
-            eprintln!("skipping: no local-data/plugins/my-code");
+        let Some(dir) =
+            ohl_core::env::private_plugin(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        else {
+            eprintln!("skipping: no private plugin");
             return None;
-        }
+        };
         let m = ohl_plugins::Manifest::load(&dir).unwrap();
         if m.entry_path().is_file() {
             return Some(dir);
@@ -829,7 +830,7 @@ mod tests {
         };
         let host = WasmHost::new().unwrap();
         if !host.load_code(&dir).unwrap().has_rule_presets() {
-            eprintln!("skipping: my-code built without rule-presets");
+            eprintln!("skipping: the private plugin has no rule-presets");
             return;
         }
         let text = std::fs::read_to_string(dir.join("example-parameters.toml")).unwrap();

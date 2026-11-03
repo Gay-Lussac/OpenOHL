@@ -180,22 +180,20 @@ fn plugin_columns_in_tables() {
 }
 
 /// The Swiss LeV plugin in use, when this checkout has it (kept apart
-/// from the public code, at `local-data/plugins/my-code`) and it is built:
+/// from the public code: the private plugin of `local-data/check`) and it
+/// is built:
 /// whether it is. Without the folder the test is skipped (even when the
 /// plugin tests are required); with it, not built: skipped unless they
 /// are.
 pub(super) fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
-    let dir = root().join("local-data/plugins/my-code");
-    if !dir.is_dir() {
-        eprintln!("skipping: no local-data/plugins/my-code");
+    let Some(dir) = ohl_core::env::private_plugin(&root()) else {
+        eprintln!("skipping: no private plugin");
         return false;
-    }
-    let built = dir
-        .join("target/wasm32-wasip2/release/my_code.wasm")
-        .is_file();
+    };
+    let built = ohl_plugins::Manifest::load(&dir).is_ok_and(|m| m.entry_path().is_file());
     assert!(
         built || ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
-        "my-code plugin not built"
+        "the private plugin is not built"
     );
     if !built {
         return false;
@@ -306,7 +304,7 @@ fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
     assert!(v.measure.is_none() && v.measure_wires.is_empty());
 }
 
-/// Checks › LeV/OLEI › Distance between conductors (the menu the my-code
+/// Checks › LeV/OLEI › Distance between conductors (the menu the LeV
 /// plugin defines; none without it): the window opens with the
 /// shipped LeV values, checks the ticked case in the background (pairs
 /// worst first, every circuit), and a pair's span link selects the span
@@ -670,7 +668,7 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
         let s = &r.model.editing.as_ref().unwrap().session;
         let files = s.library_files("phase-distance").unwrap();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "my-code.ohlpd");
+        assert!(files[0].0.ends_with(".ohlpd"), "{}", files[0].0);
         assert!(files[0].1.contains("3.7 m"), "{}", files[0].1);
         assert!(files[0].1.starts_with("# Edited in OHL-Design by"));
         // The next run uses them.
@@ -815,7 +813,11 @@ fn phase_distance_page_sets_the_insulation_levels() {
     let low: Vec<&ohl_line::Section> = line
         .sections
         .iter()
-        .filter(|s| s.fields.get("my-code.insulation_level").map(String::as_str) == Some("low"))
+        .filter(|s| {
+            s.fields
+                .iter()
+                .any(|(k, v)| k.ends_with(".insulation_level") && v == "low")
+        })
         .collect();
     assert!(!low.is_empty());
     let circuit = &low[0].circuit_name;

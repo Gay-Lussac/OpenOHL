@@ -3631,7 +3631,7 @@ decided within it:
 
 **LeV weather groups and the wind study per pylon (owner, 2026-10-25)**
 
-- The my-code plugin's rule presets write weather case groups with their
+- The LeV plugin's rule presets write weather case groups with their
   cases: largest sag (40 °C; 0 °C + 20 N/m), wind deflection (10 °C wind),
   conductors–structure at rest (a new case, 10 °C without wind — the
   owner's reading of the LeV, "defined in the LeV is 10 °C no wind"),

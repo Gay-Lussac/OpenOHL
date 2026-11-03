@@ -216,8 +216,8 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
-    /// The Swiss LeV plugin (kept apart from the public code, at
-    /// `local-data/plugins/my-code` when this checkout has it) runs the
+    /// The Swiss LeV plugin (kept apart from the public code: the private
+    /// plugin of `local-data/check` when this checkout has it) runs the
     /// distance between conductors on the synthetic line at 10 °C: its
     /// values and choices listed, its tables edited through it; the pairs
     /// as measured, required by it (2.2.1); two conductors joined by a
@@ -226,17 +226,14 @@ mod tests {
     /// are.
     #[test]
     fn the_lev_plugin_checks_the_distance_between_conductors() {
-        let dir = root().join("local-data/plugins/my-code");
-        if !dir.is_dir() {
-            eprintln!("skipping: no local-data/plugins/my-code");
+        let Some(dir) = ohl_core::env::private_plugin(&root()) else {
+            eprintln!("skipping: no private plugin");
             return;
-        }
-        let built = dir
-            .join("target/wasm32-wasip2/release/my_code.wasm")
-            .is_file();
+        };
+        let built = ohl_plugins::Manifest::load(&dir).is_ok_and(|m| m.entry_path().is_file());
         assert!(
             built || ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
-            "my-code plugin not built"
+            "the private plugin is not built"
         );
         if !built {
             return;
@@ -245,7 +242,8 @@ mod tests {
         let (checks, problems) = list(&host, std::slice::from_ref(&dir));
         assert!(problems.is_empty(), "{problems:?}");
         let check = checks.iter().find(|c| c.info.id == PHASE_DISTANCE).unwrap();
-        assert!(check.plugin.starts_with("my-code "));
+        let name = ohl_plugins::Manifest::load(&dir).unwrap().plugin.name;
+        assert!(check.plugin.starts_with(&format!("{name} ")));
         assert_eq!(check.info.menu, vec!["LeV/OLEI".to_owned()]);
         assert_eq!(check.info.choices[0].options.len(), 2);
         let values = &check.info.values;
@@ -333,16 +331,17 @@ mod tests {
     /// (the plugin's numbers: z, C); closer than in still air.
     #[test]
     fn the_lev_plugin_checks_unequal_wind() {
-        let dir = root().join("local-data/plugins/my-code");
-        let built = dir
-            .join("target/wasm32-wasip2/release/my_code.wasm")
-            .is_file();
-        if !dir.is_dir() || !built {
+        let Some(dir) = ohl_core::env::private_plugin(&root()) else {
+            eprintln!("skipping: no private plugin");
+            return;
+        };
+        let built = ohl_plugins::Manifest::load(&dir).is_ok_and(|m| m.entry_path().is_file());
+        if !built {
             assert!(
-                !dir.is_dir() || ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
-                "my-code plugin not built"
+                ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+                "the private plugin is not built"
             );
-            eprintln!("skipping: the my-code plugin is not here or not built");
+            eprintln!("skipping: the private plugin is not built");
             return;
         }
         let host = WasmHost::new().unwrap();

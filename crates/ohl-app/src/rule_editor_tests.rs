@@ -302,24 +302,28 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
     assert_eq!(rules_of(&file).rules.len(), 2);
 }
 
-/// The Swiss LeV plugin's rule presets (when this checkout has
-/// `local-data/plugins/my-code`, built with the `rule-presets` export), read
+/// The Swiss LeV plugin's rule presets (when this checkout has its
+/// private design-code plugin, built with the `rule-presets` export), read
 /// as Preset ▾ reads them and merged into a rule file: the law's span
 /// line ground clearance, 7.5 m + 0.01 m/kV (9.7 m at 220 kV).
 #[test]
 fn the_lev_rule_presets_load_into_the_rule_file() {
-    let dir = root().join("local-data/plugins/my-code");
+    let Some(dir) = ohl_core::env::private_plugin(&root()) else {
+        eprintln!("skipping: no private plugin");
+        return;
+    };
     let Ok(m) = ohl_plugins::Manifest::load(&dir) else {
-        eprintln!("skipping: no local-data/plugins/my-code");
+        eprintln!("skipping: no private plugin");
         return;
     };
     if !m.entry_path().is_file() {
-        eprintln!("skipping: my-code not built");
+        eprintln!("skipping: the private plugin is not built");
         return;
     }
+    let name = m.plugin.name.clone();
     let host = ohl_plugins::WasmHost::new().unwrap();
     if !host.load_code(&dir).unwrap().has_rule_presets() {
-        eprintln!("skipping: my-code built without rule-presets");
+        eprintln!("skipping: the private plugin has no rule-presets");
         return;
     }
     let (mut harness, file) = harness_with_rules("lev-rule-preset");
@@ -328,7 +332,7 @@ fn the_lev_rule_presets_load_into_the_rule_file() {
         let r = harness.state_mut().ready().unwrap();
         r.rule_editor
             .presets
-            .read(vec![("my-code".into(), dir.clone())], Some(params));
+            .read(vec![(name.clone(), dir.clone())], Some(params));
         assert!(
             r.rule_editor
                 .presets
@@ -347,7 +351,7 @@ fn the_lev_rule_presets_load_into_the_rule_file() {
             })
             .unwrap();
         let pick = crate::rule_table::PresetPick {
-            group: "my-code".into(),
+            group: name.clone(),
             preset: list[k].clone(),
             how: crate::rule_editor::Load::Merge,
         };
