@@ -61,6 +61,7 @@
 - [Lightning shielding](theory/lightning-shielding.md)
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)
+- [Member capacities by ASCE 10-97](theory/asce10.md)
 - [Wind on lattice structures: faces, solidity, shielding](theory/structure-wind.md)
 - [Galloping ellipses and blowout](theory/galloping.md)
 - [Ice shedding: the conductor jump](theory/ice-shedding.md)

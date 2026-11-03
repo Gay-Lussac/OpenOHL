@@ -396,7 +396,7 @@ Calculation `structures.fe` (output `usage_m`), on invented single bars
 strength factor 1). The expected usages are the force over the capacity
 computed by hand from the published member formulas of ASCE 10-97,
 *Design of Latticed Steel Transmission Structures* (ASCE), metric form
-([theory](../theory/structures-fe.md#member-capacity-methods)); each case's
+([theory](../theory/asce10.md)); each case's
 notes give L/r, KL/r, \\( F_{cr} \\) and the capacity. Tolerance
 \\( 10^{-9} \\) (closed forms).
 

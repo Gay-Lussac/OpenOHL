@@ -152,7 +152,7 @@ bearing without the end and edge distances (the standard's rules for
 them to come from its text); two gauge lines' holes in one section
 (staggering not counted). The rules are in the core
 (`ohl_structures_fe::member_ends`) and the Joint details table shows
-them; how it works: [theory](../theory/structures-fe.md#member-capacity-methods).
+them; how it works: [theory](../theory/asce10.md).
 
 Each item is an option or a default to agree; every result says which
 values were worked out from the joints and which assumed.

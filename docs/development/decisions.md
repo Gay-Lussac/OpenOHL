@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-11-03
 
+**ASCE 10-97: the whole calculation on its own theory page; one constant
+corrected** (owner, 2026-11-03: "make sure the theory is complete for this
+code's calculation in the docs based on the asce 10 97 we can not just
+have the code as reference and no explanation of the functions on side of
+the program"). [Member capacities by ASCE 10-97](../theory/asce10.md)
+gives every step with its clause and equation, the program's function for
+it, the program's own rules (crossing diagonals, end conditions), the
+assumptions said per member and what of the standard is not covered. The
+code was read against the standard's text clause by clause:
+
+- **corrected**: the upper limit of the linear local-buckling range is
+  144 Ψ/√f_y = 377.3/√f_y (Eq. 3.7-2, Ψ = 2.62); the code had 378/√f_y
+  (a member with w/t between the two now takes the elastic F_cr, lower
+  by at most 0.1 %);
+- **not on the safe side, documented, left for the owner to decide**:
+  two bolts onto a gusset plate taken as restraining the end (3.7.4.5 and
+  C3.7.4 (c) say a connection only on a gusset plate does not); "larger
+  area" in place of C3.7.4 (b)'s stiffness I/L against the sum of the
+  restrained members'; the default hole (bolt + 2 mm) below a punched
+  standard hole's net-area diameter (bolt + 3.2 mm, 3.10.1 and 4.1);
+  bearing on the member's f_u only (4.4: the connected part's or the
+  bolt's); the bolt root area taken as 0.75 of the gross; block shear and
+  the short-leg rule of unequal angles (3.10.2) and the maximum w/t of 25
+  (3.7.1) not checked.
+
+
 **Torsional and torsional-flexural buckling in the ASCE 10-97 check**
 (owner, 2026-11-03: "is it written in the norm when a profile knicks and
 turn at the same time in the failure modes?", then "Go ahead with the
@@ -28,7 +54,7 @@ be in the core though or part of a code?"): the shear centre, warping
 constant and symmetry are geometry, in the section library for any code
 (a later SIA 263 check takes the same); the clauses are ASCE 10-97's, in
 its module. Unit tests reproduce the standard's Appendix B Examples 15
-and 16. ([theory](../theory/structures-fe.md#member-capacity-methods))
+and 16. ([theory](../theory/asce10.md))
 
 ## 2026-11-02
 

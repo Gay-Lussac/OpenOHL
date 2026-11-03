@@ -25,9 +25,11 @@
 //!   none: L/r; one end: 30 + 0.75 L/r; both ends: 60 + 0.5 L/r; L/r > 120
 //!   by the ends' rotational restraint — none: L/r; one end: 28.6 + 0.762
 //!   L/r; both ends: 46.2 + 0.615 L/r.
-//! - Local buckling of an angle's legs: (w/t)_lim = 209.6/√f_y (MPa);
-//!   above it F_cr = (1.677 − 0.677 (w/t)/(w/t)_lim) f_y up to w/t =
-//!   378/√f_y, beyond F_cr = 0.0332 π² E/(w/t)²; else F_cr = f_y.
+//! - Local buckling of an angle's legs (3.7.3): (w/t)_lim = 80 Ψ/√f_y
+//!   (Eq. 3.7-1; Ψ = 2.62 with f_y in MPa: 209.6/√f_y); above it F_cr =
+//!   (1.677 − 0.677 (w/t)/(w/t)_lim) f_y up to w/t = 144 Ψ/√f_y (Eq. 3.7-2:
+//!   377.3/√f_y), beyond F_cr = 0.0332 π² E/(w/t)² (Eq. 3.7-3); else F_cr =
+//!   f_y.
 //! - Column curve: C_c = π √(2E/F_cr); F_a = [1 − ½ (KL/r / C_c)²] F_cr
 //!   for KL/r ≤ C_c, else π² E/(KL/r)²; P = F_a A.
 //! - The capacity is the least of P and the connection's bolt shear and
@@ -123,14 +125,17 @@ pub fn effective_slenderness(l_r: f64, eccentricity: Ends, restraint: Ends) -> f
     }
 }
 
+/// Ψ of ASCE 10-97 Eqs. 3.7-1 to 3.7-3 with f_y in MPa.
+const PSI_MPA: f64 = 2.62;
+
 /// The stress replacing f_y for a leg of width/thickness `w_t` (local
-/// buckling), Pa; `fy`, `e` in Pa.
+/// buckling, ASCE 10-97 3.7.3, Eqs. 3.7-1 to 3.7-3), Pa; `fy`, `e` in Pa.
 pub fn local_buckling_stress(fy: f64, e: f64, w_t: f64) -> f64 {
     let fy_mpa = fy / 1e6;
-    let lim = 209.6 / fy_mpa.sqrt();
+    let lim = 80.0 * PSI_MPA / fy_mpa.sqrt();
     if w_t <= lim {
         fy
-    } else if w_t <= 378.0 / fy_mpa.sqrt() {
+    } else if w_t <= 144.0 * PSI_MPA / fy_mpa.sqrt() {
         (1.677 - 0.677 * w_t / lim) * fy
     } else {
         0.0332 * std::f64::consts::PI.powi(2) * e / (w_t * w_t)
