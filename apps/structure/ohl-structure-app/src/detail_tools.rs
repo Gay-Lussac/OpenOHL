@@ -6,10 +6,15 @@
 //! active on the joint and member view with the toolkit reduced to the
 //! ones of the view (edit, add and remove bolts; if necessary move the
 //! member to adapt where it lands on the joint)"), acting in the face
-//! view and the member laid flat:
+//! view and the member laid flat. Since 2026-11-03 they sit in a toolbar
+//! over the bottom of the drawing, as the 3D view's hotbar ([`hotbar`]),
+//! the tool held named above it ([`strip`]):
 //!
-//! - **Edit**: a bolt or member clicked: the member selected, its bolt
-//!   layout form opened for that end;
+//! - **Edit**: a bolt clicked: its properties below, with the bolt
+//!   libraries to change it ([`crate::detail_view`]); a plate: its
+//!   properties; a member (face view): the member in detail, back to the
+//!   joint from there; elsewhere on a member (member view): that end's
+//!   bolt layout form;
 //! - **Add bolt**: a click on a member's leg bolted: a bolt there (on its
 //!   gauge line, along it to 5 mm);
 //! - **Remove bolt**: a bolt clicked goes;
@@ -52,7 +57,8 @@ pub enum DetailTool {
 }
 
 impl DetailTool {
-    const ALL: [DetailTool; 5] = [
+    /// Every tool, in the toolbar's order.
+    pub const ALL: [DetailTool; 5] = [
         DetailTool::Edit,
         DetailTool::AddBolt,
         DetailTool::MoveBolt,
@@ -60,7 +66,25 @@ impl DetailTool {
         DetailTool::MemberEnd,
     ];
 
-    fn name(self) -> &'static str {
+    /// Its icon (of `assets/icons/tools/`).
+    pub fn icon(self) -> crate::icons::Icon {
+        use crate::icons::Icon;
+        match self {
+            DetailTool::Edit => Icon::Edit,
+            DetailTool::AddBolt => Icon::AddBolt,
+            DetailTool::RemoveBolt => Icon::RemoveBolt,
+            DetailTool::MoveBolt => Icon::MoveBolt,
+            DetailTool::MemberEnd => Icon::MemberEnd,
+        }
+    }
+
+    /// What its slot shows.
+    pub(crate) fn slot(self) -> crate::tools::SlotTool {
+        (self.icon(), self.name(), self.help())
+    }
+
+    /// Its name (the slot's hover text, the strip).
+    pub fn name(self) -> &'static str {
         match self {
             DetailTool::Edit => "Edit",
             DetailTool::AddBolt => "Add bolt",
@@ -70,9 +94,14 @@ impl DetailTool {
         }
     }
 
-    fn help(self) -> &'static str {
+    /// What a click (or a drag) in the drawing does with it.
+    pub fn help(self) -> &'static str {
         match self {
-            DetailTool::Edit => "Click a bolt or a member: its bolt layout, in the panel",
+            DetailTool::Edit => {
+                "Click a bolt: its properties below, with the bolt library to change it; a plate: \
+                 its kind, thickness and edges below; a member: the member in detail (‹ Joint or \
+                 Escape: back to the joint)"
+            }
             DetailTool::AddBolt => {
                 "Click on a member's leg bolted: a bolt there, snapped onto the nearest gauge line \
                  where the design code's end distance, spacing and edge distance hold; with no \
@@ -209,23 +238,55 @@ fn mark_breaches(
     }
 }
 
-/// The tool strip; `active`: the tools act in this drawing (not the
+/// The strip above the drawing, as the 3D view's: the tool held and what
+/// a click does with it; `active`: the tools act in this drawing (not the
 /// close-up).
-pub fn strip(ui: &mut egui::Ui, tool: &mut DetailTool, active: bool) {
+pub fn strip(ui: &mut egui::Ui, tool: DetailTool, active: bool) {
     ui.horizontal_wrapped(|ui| {
-        ui.add_enabled_ui(active, |ui| {
-            for t in DetailTool::ALL {
-                ui.selectable_value(tool, t, t.name())
-                    .on_hover_text(t.help());
-            }
-        });
+        ui.add(
+            tool.icon()
+                .image(ui.ctx(), 16.0)
+                .tint(ui.visuals().text_color()),
+        );
+        ui.strong(tool.name()).on_hover_text(tool.help());
         let text = if active {
             tool.help()
         } else {
-            "The tools act in the face view and the member view"
+            "The tools act in the face view and the member view (the close-up is turned and \
+             zoomed only)"
         };
         ui.label(egui::RichText::new(text).small().weak());
     });
+}
+
+/// The Detail view's toolbar over the bottom of its drawing `rect`, as the
+/// 3D view's hotbar: a click on a slot holds its tool (Escape: Edit
+/// again); `active` false: shown, not usable (the close-up).
+pub fn hotbar(ui: &mut egui::Ui, rect: egui::Rect, tool: &mut DetailTool, active: bool) {
+    let n = DetailTool::ALL.len() as f32;
+    let bar = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.bottom() - 30.0),
+        egui::vec2(n * 43.0, 44.0),
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(bar)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            ui.add_enabled_ui(active, |ui| {
+                for t in DetailTool::ALL {
+                    let r = crate::tools::slot_frame(ui, Some(t.slot()), *tool == t, None)
+                        .on_disabled_hover_text(
+                            "The tools act in the face view and the member view",
+                        );
+                    if r.clicked() {
+                        *tool = t;
+                    }
+                }
+            });
+        },
+    );
 }
 
 /// The face view's fit into its rectangle: view metres to points.
@@ -271,6 +332,25 @@ impl FaceFit {
             -f64::from(q.y - self.centre.y) / self.k + self.c[1],
         ]
     }
+}
+
+/// Whether `v` lies inside the polygon `pts` (even-odd).
+fn inside2(pts: &[[f64; 2]], v: [f64; 2]) -> bool {
+    let n = pts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        if (a[1] > v[1]) != (b[1] > v[1]) {
+            let x = a[0] + (v[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+            if v[0] < x {
+                inside = !inside;
+            }
+        }
+    }
+    inside
 }
 
 fn sub2(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
@@ -530,11 +610,19 @@ pub fn face_act(
             let v = fit.back(q);
             match tool {
                 DetailTool::Edit => {
-                    let ia = hit_bolt(v).map(|x| x.0).or_else(|| hit_member(v));
-                    if let Some(ia) = ia {
+                    // A bolt: its properties below; a member: the member
+                    // in detail (back to the joint from there); a plate:
+                    // its properties below.
+                    if let Some((ia, ib)) = hit_bolt(v) {
                         let a = &j.arrivals[ia];
-                        acts.push(Act::Select(a.member.clone()));
-                        acts.push(Act::OpenLayout(a.member.clone(), j.id.clone()));
+                        acts.push(Act::PickBolt(a.member.clone(), j.id.clone(), ib));
+                    } else if let Some(ia) = hit_member(v) {
+                        acts.push(Act::Select(j.arrivals[ia].member.clone()));
+                    } else if let Some(p) = j.plates.iter().find(|p| {
+                        let pts: Vec<[f64; 2]> = p.outline.iter().map(|q| to(*q)).collect();
+                        inside2(&pts, v)
+                    }) {
+                        acts.push(Act::PickPlate(p.id.clone()));
                     }
                 }
                 DetailTool::AddBolt => {
@@ -844,7 +932,25 @@ pub fn member_act(
             };
             match tool {
                 DetailTool::Edit => {
-                    acts.push(Act::OpenLayout(a.member.clone(), j.clone()));
+                    // A bolt: its properties below; elsewhere on the
+                    // member: that end's bolt layout.
+                    let tol = (8.0 / fit.scale()).max(0.012);
+                    let near = a
+                        .bolt_flat
+                        .iter()
+                        .enumerate()
+                        .map(|(ib, q)| {
+                            let along = if end == 0 { q[0] } else { m.length - q[0] };
+                            (ib, (along - v[0]).hypot(q[1] - v[1]))
+                        })
+                        .filter(|x| x.1 < tol)
+                        .min_by(|x, y| x.1.total_cmp(&y.1));
+                    match near {
+                        Some((ib, _)) => {
+                            acts.push(Act::PickBolt(a.member.clone(), j.clone(), ib));
+                        }
+                        None => acts.push(Act::OpenLayout(a.member.clone(), j.clone())),
+                    }
                 }
                 DetailTool::AddBolt => {
                     acts.push(place(

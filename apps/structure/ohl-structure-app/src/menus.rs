@@ -679,6 +679,7 @@ impl StructureApp {
     /// The windows: the deletion asked first, About.
     pub(crate) fn windows(&mut self, ctx: &egui::Context) {
         self.confirm_window(ctx);
+        self.detail_question(ctx);
         self.store_window(ctx);
         self.libraries_window(ctx);
         self.new_structure_window(ctx);

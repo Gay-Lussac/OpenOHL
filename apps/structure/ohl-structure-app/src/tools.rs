@@ -57,7 +57,7 @@ pub enum Tool {
     Delete,
     /// What is clicked opens where it is edited (owner 2026-11-02): the
     /// Inspector with its fields, its table's row, a tower's joint or
-    /// member in Joint or Member details and the Detail view.
+    /// member, once asked, in the Detail view with its details below.
     Edit,
 }
 
@@ -147,10 +147,15 @@ impl Tool {
             Tool::Delete => "Click something: delete it with what goes with it (asked first)",
             Tool::Edit => {
                 "Click a joint, member or point: its fields in the Inspector, its row in its \
-                 table; a tower's joint or member also in Joint or Member details and the \
-                 Detail view"
+                 table; a tower's joint or member: asked whether to open it in the Detail \
+                 view, its details below it"
             }
         }
+    }
+
+    /// What its slot shows.
+    pub(crate) fn slot(self) -> SlotTool {
+        (self.icon(), self.name(), self.help())
     }
 
     /// Its icon (of `assets/icons/tools/`).
@@ -264,10 +269,14 @@ struct Dragged {
     from_slot: Option<usize>,
 }
 
-/// A slot: its tool's icon on a dark square, its number.
-fn slot_frame(
+/// What a slot shows: an icon, a name and what the tool does.
+pub(crate) type SlotTool = (Icon, &'static str, &'static str);
+
+/// A slot: its tool's icon on a dark square, its number (the 3D view's
+/// hotbar and the Detail view's alike).
+pub(crate) fn slot_frame(
     ui: &mut egui::Ui,
-    tool: Option<Tool>,
+    tool: Option<SlotTool>,
     held: bool,
     number: Option<usize>,
 ) -> egui::Response {
@@ -288,12 +297,14 @@ fn slot_frame(
         ),
         egui::StrokeKind::Inside,
     );
-    if let Some(t) = tool {
+    if let Some((icon_of, _, _)) = tool {
         let icon = egui::Rect::from_center_size(rect.center(), egui::vec2(24.0, 24.0));
-        t.icon()
-            .image(ui.ctx(), 24.0)
-            .tint(egui::Color32::WHITE)
-            .paint_at(ui, icon);
+        let tint = if ui.is_enabled() {
+            egui::Color32::WHITE
+        } else {
+            egui::Color32::from_gray(120)
+        };
+        icon_of.image(ui.ctx(), 24.0).tint(tint).paint_at(ui, icon);
     }
     if let Some(n) = number {
         p.text(
@@ -305,14 +316,11 @@ fn slot_frame(
         );
     }
     // Named for screen readers (and tests).
-    let label = tool.map_or_else(
-        || "slot: empty".to_owned(),
-        |t| format!("slot: {}", t.name()),
-    );
+    let label = tool.map_or_else(|| "slot: empty".to_owned(), |t| format!("slot: {}", t.1));
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
     match (tool, number) {
-        (Some(t), Some(n)) => response.on_hover_text(format!("{} ({n}) — {}", t.name(), t.help())),
-        (Some(t), None) => response.on_hover_text(format!("{} — {}", t.name(), t.help())),
+        (Some(t), Some(n)) => response.on_hover_text(format!("{} ({n}) — {}", t.1, t.2)),
+        (Some(t), None) => response.on_hover_text(format!("{} — {}", t.1, t.2)),
         _ => response,
     }
 }
@@ -397,7 +405,7 @@ impl StructureApp {
                     let tool = self.hotbar.slots[k];
                     let held = k == self.hotbar.active;
                     if !arranging {
-                        if slot_frame(ui, tool, held, Some(k + 1)).clicked() {
+                        if slot_frame(ui, tool.map(Tool::slot), held, Some(k + 1)).clicked() {
                             chosen = Some(k);
                         }
                         continue;
@@ -409,7 +417,7 @@ impl StructureApp {
                                 tool: tool.unwrap_or(Tool::Select),
                                 from_slot: Some(k),
                             },
-                            |ui| slot_frame(ui, tool, held, Some(k + 1)),
+                            |ui| slot_frame(ui, tool.map(Tool::slot), held, Some(k + 1)),
                         );
                         if r.response.clicked() {
                             chosen = Some(k);
@@ -470,7 +478,7 @@ impl StructureApp {
                                             tool: t,
                                             from_slot: None,
                                         },
-                                        |ui| slot_frame(ui, Some(t), false, None),
+                                        |ui| slot_frame(ui, Some(t.slot()), false, None),
                                     );
                                     ui.label(egui::RichText::new(t.name()).small());
                                 });
@@ -644,8 +652,9 @@ impl StructureApp {
     }
 
     /// The Edit tool on `h`: selected, its fields in the Inspector (in
-    /// front), its table's row shown; a tower's joint also in Joint
-    /// details and the Joint view.
+    /// front), its table's row shown; a tower's joint or member: asked
+    /// first whether to open it in the Detail view, its details below it
+    /// (owner 2026-11-03; [`StructureApp::detail_question`]).
     pub fn edit_clicked(&mut self, h: Handle) {
         self.selected = vec![h.clone()];
         self.scroll_to = Some(h.clone());
@@ -653,25 +662,11 @@ impl StructureApp {
             .file
             .as_ref()
             .is_some_and(|f| ohl_structure_edit::is_tower(f.structure().kind));
-        let mut also = "";
-        match &h {
-            Handle::Joint(id) if tower => {
-                self.joints.joint = Some(id.clone());
-                self.joints.face = None;
-                self.joints.subject = crate::member_panel::Subject::Joint;
-                self.focus(crate::layout::Panel::JointDetails);
-                also = ", Joint details and the Detail view";
-            }
-            Handle::Member(id) if tower => {
-                self.joints.member = Some(id.clone());
-                self.joints.subject = crate::member_panel::Subject::Member;
-                self.focus(crate::layout::Panel::MemberDetails);
-                also = ", Member details and the Detail view";
-            }
-            _ => {}
-        }
         self.focus(crate::layout::Panel::Inspector);
-        self.message = Some((format!("Edit {}: the Inspector{also}", h.describe()), false));
+        if tower && matches!(h, Handle::Joint(_) | Handle::Member(_)) {
+            self.joints.ask_open = Some(h.clone());
+        }
+        self.message = Some((format!("Edit {}: the Inspector", h.describe()), false));
     }
 
     /// A joint at `at` (one edit, its mirror images along).

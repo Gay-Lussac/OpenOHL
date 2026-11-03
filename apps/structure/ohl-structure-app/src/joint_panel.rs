@@ -75,6 +75,33 @@ pub struct JointPanel {
     pub tool: crate::detail_tools::DetailTool,
     /// A member end being dragged with Member end.
     pub drag: Option<crate::detail_tools::EndDrag>,
+    /// The joint the Detail view goes back to from a member (‹ Joint,
+    /// Escape): the one shown before.
+    pub back: Option<String>,
+    /// What the Edit tool picked in the Detail view: its properties at
+    /// the top of the details below it.
+    pub picked: Option<Picked>,
+    /// Where the Detail view drew last (Escape over it goes back).
+    pub view_rect: Option<egui::Rect>,
+    /// The Edit tool's question: open this joint or member in the Detail
+    /// view?
+    pub ask_open: Option<Handle>,
+}
+
+/// What the Detail view's Edit tool picked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Picked {
+    /// A bolt: its member end and its place among the end's bolts.
+    Bolt {
+        /// Member.
+        member: String,
+        /// Joint.
+        joint: String,
+        /// Its place among the end's bolts (0: the first).
+        index: usize,
+    },
+    /// A plate, by id.
+    Plate(String),
 }
 
 /// A colour per completeness, for the 3D view (View › Joints by their
@@ -235,6 +262,8 @@ impl StructureApp {
             return;
         }
         ui.add_space(4.0);
+        // What the Detail view's Edit tool picked (a bolt, a plate).
+        self.picked_box(ui, details);
         if j.arrivals.iter().any(|a| {
             a.bolts.value.is_some() && a.profile.as_ref().is_some_and(|p| p.angle.is_none())
         }) {
@@ -307,16 +336,26 @@ impl StructureApp {
                 .as_deref()
                 .and_then(|id| ohl_structure_link::member_ends(details, id))
         {
+            // The way back to the joint (owner 2026-11-03): the one it was
+            // opened from first, then its other end; Escape too.
+            let backs = self.back_joints();
+            let mut back = None;
             ui.horizontal_wrapped(|ui| {
+                for (k, j) in backs.iter().enumerate() {
+                    let r = ui.button(format!("‹ Joint {j}"));
+                    let r = if k == 0 {
+                        r.on_hover_text(format!("Back to joint {j} in detail (Escape)"))
+                    } else {
+                        r.on_hover_text(format!("Joint {j}, the member's other end, in detail"))
+                    };
+                    if r.clicked() {
+                        back = Some(j.clone());
+                    }
+                }
                 ui.strong(format!("Member {}", m.member));
-                ui.label(
-                    egui::RichText::new("(click a joint to see it here)")
-                        .small()
-                        .weak(),
-                );
             });
             let leg = ohl_structure_link::flat_leg(&m);
-            crate::detail_tools::strip(ui, &mut self.joints.tool, leg.is_some());
+            crate::detail_tools::strip(ui, self.joints.tool, leg.is_some());
             let ends: Vec<(String, String)> = m
                 .ends
                 .iter()
@@ -327,6 +366,7 @@ impl StructureApp {
             rules_caption(ui, &rules);
             let size = ui.available_size().max(egui::vec2(120.0, 120.0));
             let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+            self.joints.view_rect = Some(rect);
             let painter = ui.painter_at(rect);
             painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
             crate::member_panel::paint_member(
@@ -350,7 +390,11 @@ impl StructureApp {
                 );
                 self.apply_joint_acts(acts, details);
             }
+            crate::detail_tools::hotbar(ui, rect, &mut self.joints.tool, leg.is_some());
             self.offer_window(ui.ctx(), details);
+            if back.is_some() {
+                self.detail_back(back);
+            }
             return;
         }
         let id = self
@@ -377,6 +421,7 @@ impl StructureApp {
             .clone()
             .filter(|f| faces.contains(f))
             .unwrap_or_else(|| faces[0].clone());
+        let mut plate_acts = Vec::new();
         ui.horizontal_wrapped(|ui| {
             ui.strong(format!("Joint {}", j.id));
             ui.selectable_value(&mut self.joints.drawn, Drawn::CloseUp, "Close-up")
@@ -413,33 +458,36 @@ impl StructureApp {
                 self.joints.pitch = 0.0;
                 self.joints.zoom = 0.0;
             }
-        });
-        ui.horizontal_wrapped(|ui| {
-            crate::detail_tools::strip(ui, &mut self.joints.tool, self.joints.drawn == Drawn::Face);
-        });
-        let plates: Vec<(String, Vec<[f64; 3]>)> = j
-            .plates
-            .iter()
-            .filter(|p| !p.outline_given && p.outline.len() >= 3)
-            .map(|p| (p.id.clone(), p.outline.clone()))
-            .collect();
-        if !plates.is_empty()
-            && ui
-                .button("Plate around the bolts")
-                .on_hover_text(
-                    "Write the outline each plate without one is drawn with (around its bolts, \
-                     30 mm beyond) into the file, to be edited",
-                )
-                .clicked()
-        {
-            let acts = plates
-                .into_iter()
-                .map(|(id, o)| crate::joint_tools::Act::PlateOutline(id, o))
+            let plates: Vec<(String, Vec<[f64; 3]>)> = j
+                .plates
+                .iter()
+                .filter(|p| !p.outline_given && p.outline.len() >= 3)
+                .map(|p| (p.id.clone(), p.outline.clone()))
                 .collect();
-            self.apply_joint_acts(acts, details);
+            if !plates.is_empty()
+                && ui
+                    .button("Plate around the bolts")
+                    .on_hover_text(
+                        "Write the outline each plate without one is drawn with into the file, \
+                         to be edited: round its bolts, each kept the design code's end and edge \
+                         distances from its edge (Joint details says which)",
+                    )
+                    .clicked()
+            {
+                let acts = plates
+                    .into_iter()
+                    .map(|(id, o)| crate::joint_tools::Act::PlateOutline(id, o))
+                    .collect();
+                plate_acts = acts;
+            }
+        });
+        if !plate_acts.is_empty() {
+            self.apply_joint_acts(std::mem::take(&mut plate_acts), details);
         }
+        crate::detail_tools::strip(ui, self.joints.tool, self.joints.drawn == Drawn::Face);
         let size = ui.available_size().max(egui::vec2(120.0, 120.0));
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+        self.joints.view_rect = Some(rect);
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
         match self.joints.drawn {
@@ -453,7 +501,7 @@ impl StructureApp {
                     let s = ui.input(|i| i.smooth_scroll_delta.y);
                     self.joints.zoom = (self.joints.zoom + s * 0.002).clamp(-1.5, 2.5);
                 }
-                close_up(&painter, rect, j, &self.joints, ui.visuals().dark_mode);
+                crate::close_up::paint(&painter, rect, j, &self.joints, ui.visuals().dark_mode);
             }
             Drawn::Face => {
                 let view = ohl_structure_link::face_view(j, &face);
@@ -475,9 +523,42 @@ impl StructureApp {
                     &painter,
                     &rules,
                 );
+                // The bolt picked with Edit, ringed.
+                if let Some(Picked::Bolt {
+                    member,
+                    joint,
+                    index,
+                }) = &self.joints.picked
+                    && joint == &j.id
+                    && let Some(a) = j.arrivals.iter().find(|a| &a.member == member)
+                    && let Some(p) = a.bolt_points.get(*index)
+                {
+                    let [r, u, _] = ohl_structure_link::face_axes(&face);
+                    let q = [
+                        p[0] - j.position[0],
+                        p[1] - j.position[1],
+                        p[2] - j.position[2],
+                    ];
+                    let v = [
+                        q[0] * r[0] + q[1] * r[1] + q[2] * r[2],
+                        q[0] * u[0] + q[1] * u[1] + q[2] * u[2],
+                    ];
+                    let rad = a.bolts.value.as_ref().map_or(0.008, |b| b.diameter) * fit.scale();
+                    painter.circle_stroke(
+                        fit.at(v),
+                        rad as f32 + 5.0,
+                        egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 150, 230)),
+                    );
+                }
                 self.apply_joint_acts(acts, details);
             }
         }
+        crate::detail_tools::hotbar(
+            ui,
+            rect,
+            &mut self.joints.tool,
+            self.joints.drawn == Drawn::Face,
+        );
         self.offer_window(ui.ctx(), details);
     }
 
@@ -588,216 +669,6 @@ fn arrivals_only(ui: &mut egui::Ui, j: &JointDetail) {
         });
 }
 
-/// How a face of the close-up is filled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Fill {
-    /// Convex: filled as it is.
-    Convex,
-    /// An angle's end: an L, filled as two rectangles.
-    Angle,
-    /// Another concave end: outlined.
-    Outline,
-}
-
-/// The close-up: the members as prisms of their profile, the bolts, the
-/// plates, painted far to near.
-fn close_up(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    j: &JointDetail,
-    s: &JointPanel,
-    dark: bool,
-) {
-    let reach = ohl_structure_link::reach(j);
-    let (cy, sy) = (f64::from(s.yaw).cos(), f64::from(s.yaw).sin());
-    let (cp, sp) = (
-        f64::from(s.pitch + 0.35).cos(),
-        f64::from(s.pitch + 0.35).sin(),
-    );
-    // Seen from the front (−y), turned and tilted: x right, z up.
-    let view = |p: [f64; 3]| {
-        let d = [
-            p[0] - j.position[0],
-            p[1] - j.position[1],
-            p[2] - j.position[2],
-        ];
-        let x = d[0] * cy + d[1] * sy;
-        let y = -d[0] * sy + d[1] * cy;
-        let up = d[2] * cp - y * sp;
-        let depth = d[2] * sp + y * cp;
-        [x, up, depth]
-    };
-    let k = f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(s.zoom).exp();
-    let at = |q: [f64; 3]| rect.center() + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32);
-    let light = [0.35, 0.55, 0.75];
-    // Depth, corners, colour, and whether the face is convex (an angle's
-    // or a channel's end is not: drawn by its parts or outlined).
-    let mut faces: Vec<(f64, Vec<egui::Pos2>, egui::Color32, Fill)> = Vec::new();
-    let steel = if dark {
-        [150.0, 165.0, 185.0]
-    } else {
-        [120.0, 135.0, 155.0]
-    };
-    for a in &j.arrivals {
-        let length = a.length.min(reach);
-        let Some(p) = &a.profile else {
-            continue;
-        };
-        let corner = |sd: f64, q: [f64; 2]| {
-            let x: [f64; 3] = std::array::from_fn(|i| {
-                j.position[i]
-                    + a.offset[i]
-                    + a.direction[i] * sd
-                    + p.axes[1][i] * q[0]
-                    + p.axes[2][i] * q[1]
-            });
-            view(x)
-        };
-        let start = a.cut.value.unwrap_or(0.0).min(length);
-        let near: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(start, *q)).collect();
-        let far: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(length, *q)).collect();
-        let n = near.len();
-        let cap = if p.angle.is_some() {
-            Fill::Angle
-        } else if p.outline.len() == 8 {
-            Fill::Outline
-        } else {
-            Fill::Convex
-        };
-        let mut add = |poly: Vec<[f64; 3]>, fill: Fill| {
-            let e1 = sub(poly[1], poly[0]);
-            let e2 = sub(poly[poly.len() - 1], poly[0]);
-            let mut nrm = cross(e1, e2);
-            let l = dot(nrm, nrm).sqrt();
-            if l < 1e-12 {
-                return;
-            }
-            nrm = [nrm[0] / l, nrm[1] / l, nrm[2] / l];
-            let shade = 0.45 + 0.55 * dot(nrm, light).abs();
-            let c = egui::Color32::from_rgb(
-                (steel[0] * shade) as u8,
-                (steel[1] * shade) as u8,
-                (steel[2] * shade) as u8,
-            );
-            let depth = poly.iter().map(|q| q[2]).sum::<f64>() / poly.len() as f64;
-            faces.push((depth, poly.iter().map(|q| at(*q)).collect(), c, fill));
-        };
-        for i in 0..n {
-            let i2 = (i + 1) % n;
-            add(vec![near[i], near[i2], far[i2], far[i]], Fill::Convex);
-        }
-        add(near.clone(), cap);
-        add(far.clone(), cap);
-    }
-    for pl in &j.plates {
-        if pl.outline.len() < 3 {
-            continue;
-        }
-        let poly: Vec<[f64; 3]> = pl.outline.iter().map(|q| view(*q)).collect();
-        let depth = poly.iter().map(|q| q[2]).sum::<f64>() / poly.len() as f64;
-        faces.push((
-            depth,
-            poly.iter().map(|q| at(*q)).collect(),
-            egui::Color32::from_rgba_unmultiplied(70, 140, 210, 150),
-            Fill::Convex,
-        ));
-    }
-    // The bolts: head, shank and nut, shaded as the members (zinc; orange
-    // where their layout is partly assumed).
-    for a in &j.arrivals {
-        let Some(b) = &a.bolts.value else { continue };
-        let assumed = a.gauges.source == Source::Assumed || a.pitch.source == Source::Assumed;
-        let base = if assumed {
-            [235.0, 170.0, 60.0]
-        } else {
-            [200.0, 202.0, 196.0]
-        };
-        for p in &a.bolt_points {
-            for (poly, _) in
-                ohl_structure_link::bolt_faces(*p, a.bolt_axis, b.diameter, a.grip, b.drawn)
-            {
-                let poly: Vec<[f64; 3]> = poly.iter().map(|q| view(*q)).collect();
-                let e1 = sub(poly[1], poly[0]);
-                let e2 = sub(poly[poly.len() - 1], poly[0]);
-                let n = cross(e1, e2);
-                let l = dot(n, n).sqrt();
-                if l < 1e-15 {
-                    continue;
-                }
-                let shade = 0.45 + 0.55 * (dot(n, light) / l).abs();
-                let c = egui::Color32::from_rgb(
-                    (base[0] * shade) as u8,
-                    (base[1] * shade) as u8,
-                    (base[2] * shade) as u8,
-                );
-                let depth = poly.iter().map(|q| q[2]).sum::<f64>() / poly.len() as f64;
-                faces.push((
-                    depth,
-                    poly.iter().map(|q| at(*q)).collect(),
-                    c,
-                    Fill::Convex,
-                ));
-            }
-        }
-    }
-    // Far first (the larger depth is nearer the viewer: drawn last).
-    faces.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let edge = egui::Stroke::new(0.6, egui::Color32::from_black_alpha(140));
-    for (_, pts, c, fill) in faces {
-        match fill {
-            // An angle's end: an L of six corners, two rectangles.
-            Fill::Angle if pts.len() == 6 => {
-                for quad in [[0, 1, 2, 3], [0, 3, 4, 5]] {
-                    painter.add(egui::Shape::convex_polygon(
-                        quad.iter().map(|i| pts[*i]).collect(),
-                        c,
-                        egui::Stroke::NONE,
-                    ));
-                }
-                painter.add(egui::Shape::closed_line(pts, edge));
-            }
-            Fill::Angle | Fill::Outline => {
-                painter.add(egui::Shape::closed_line(pts, egui::Stroke::new(1.2, c)));
-            }
-            Fill::Convex => {
-                painter.add(egui::Shape::convex_polygon(pts, c, edge));
-            }
-        }
-    }
-    // Members without a profile: lines.
-    for a in j.arrivals.iter().filter(|a| a.profile.is_none()) {
-        let far = add3(j.position, scale3(a.direction, a.length.min(reach)));
-        painter.line_segment(
-            [at(view(j.position)), at(view(far))],
-            egui::Stroke::new(2.0, egui::Color32::GRAY),
-        );
-    }
-    // The labels at the members' cut ends.
-    let text = if dark {
-        egui::Color32::from_gray(220)
-    } else {
-        egui::Color32::from_gray(30)
-    };
-    for a in &j.arrivals {
-        let end = add3(j.position, scale3(a.direction, a.length.min(reach) + 0.03));
-        painter.text(
-            at(view(end)),
-            egui::Align2::CENTER_CENTER,
-            &a.member,
-            egui::FontId::proportional(12.0),
-            text,
-        );
-    }
-    painter.circle_filled(at(view(j.position)), 3.0, text);
-    painter.text(
-        rect.left_bottom() + egui::vec2(6.0, -6.0),
-        egui::Align2::LEFT_BOTTOM,
-        format!("joint {} — drag to turn, scroll to zoom", j.id),
-        egui::FontId::proportional(11.0),
-        text,
-    );
-}
-
 /// The face view painted into `rect`, fitted.
 fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: bool) {
     // The same fit as the tools ([`crate::detail_tools::FaceFit`]).
@@ -883,30 +754,6 @@ fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: boo
         egui::FontId::proportional(11.0),
         ink,
     );
-}
-
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn add3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-fn scale3(a: [f64; 3], k: f64) -> [f64; 3] {
-    [a[0] * k, a[1] * k, a[2] * k]
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// The design code's bolt minimums of the ends drawn, one line each (the

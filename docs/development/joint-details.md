@@ -238,6 +238,28 @@ member (the joints' own data), its ASCE 10-97 capacities worked out live,
 the usage under the last run's forces, its leg bolted laid flat with the
 holes of both ends: [OHL-Structure](../user-guide/structure-app.md#joint-details-towers).
 
+### The Detail view, plates and bolts — built 2026-11-03
+
+(Owner, 2026-11-03.) The Detail view's tools are a toolbar over the
+bottom of its drawing, as the 3D view's hotbar, with the tool held above
+it; its details (Joint details, Member details) sit in a leaf of their
+own below it. The 3D view's Edit tool asks before it opens a tower's joint
+or member there. A member opened from a joint goes back to it (‹ Joint,
+Escape). The Edit tool on a bolt shows its properties below with the bolt
+libraries to change the end's bolts; on a plate, its kind, edges and the
+bolts too near its edge. Several plates per joint, bolted or welded onto
+the leg (`[[plate]] kind`); a plate drawn without an outline keeps the
+code's end and edge distances (the member end's minimums from
+`ohl_structures_fe::bolt_rules`) round every bolt onto it. The close-up
+is drawn in small pieces sorted by their own depth (whole faces sorted by
+their middles hid the bolts at some angles). Open: a plate's minimums
+from its own thickness and steel (today the member end's), the plates'
+own checks, a weld's own data (size, length).
+
+How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#joint-details-towers).
+
+> **Owner:**
+
 ### Bolt library — built 2026-11-02
 
 "A bolt library could be nice to have too so that it can be easily

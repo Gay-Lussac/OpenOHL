@@ -34,7 +34,9 @@
 mod app;
 mod body_tab;
 mod case_editor;
+mod close_up;
 mod detail_tools;
+mod detail_view;
 mod export_menu;
 mod extensions_panel;
 mod generators_ui;

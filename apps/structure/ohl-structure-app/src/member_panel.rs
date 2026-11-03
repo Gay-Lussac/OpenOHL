@@ -53,10 +53,16 @@ impl StructureApp {
                 if self.joints.joint.as_ref() != Some(id) {
                     self.joints.joint = Some(id.clone());
                     self.joints.face = None;
+                    self.joints.picked = None;
                 }
                 self.joints.subject = Subject::Joint;
             }
             Some(Handle::Member(id)) => {
+                // From a joint: the way back to it (‹ Joint, Escape).
+                if self.joints.subject == Subject::Joint {
+                    self.joints.back = self.joints.joint.clone();
+                    self.joints.picked = None;
+                }
                 self.joints.member = Some(id.clone());
                 self.joints.subject = Subject::Member;
             }
@@ -167,6 +173,8 @@ impl StructureApp {
             );
             return;
         }
+        // What the Detail view's Edit tool picked (a bolt).
+        self.picked_box(ui, details);
         self.capacity_box(ui, &chosen);
         ui.add_space(4.0);
         self.joint_forms(ui);

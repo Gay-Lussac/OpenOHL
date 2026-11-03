@@ -31,7 +31,7 @@ use ohl_structure_link::{
     Arrival, BoltRules, BoltedLeg, ConnectionKind, JointDetail, JointDetails, Source, Valued,
 };
 
-use ohl_structures::connections::MAX_GAUGE_LINES;
+use ohl_structures::connections::{MAX_GAUGE_LINES, PlateKind};
 
 use crate::app::StructureApp;
 use crate::detail_tools::Rules;
@@ -64,8 +64,15 @@ pub enum Act {
     OpenPreset(String, String),
     /// A preset applied to a member end.
     ApplyPreset(String, String, String),
-    /// A plate added at a joint.
-    AddPlate(String),
+    /// A plate added at a joint, bolted or welded onto its leg.
+    AddPlate(String, PlateKind),
+    /// A plate's kind changed.
+    PlateKind(String, PlateKind),
+    /// A bolt picked with the Detail view's Edit tool: its properties
+    /// below (member, joint, its place among the end's bolts).
+    PickBolt(String, String, usize),
+    /// A plate picked with the Edit tool: its properties below.
+    PickPlate(String),
     /// A plate's thickness (m) or material changed.
     Plate(String, Option<f64>, Option<String>),
     /// A plate removed.
@@ -521,17 +528,39 @@ impl StructureApp {
                     None => Some((format!("no preset {name}"), true)),
                 }
             }
-            Act::AddPlate(joint) => {
+            Act::AddPlate(joint, kind) => {
                 let id = f.edit(&format!("Plate at {joint}"), |doc, t| {
-                    connection_edits::add_plate(doc, t, &joint, 0.010, Default::default())
+                    connection_edits::add_plate(doc, t, &joint, 0.010, kind)
                 });
+                self.joints.picked = Some(crate::joint_panel::Picked::Plate(id.clone()));
                 Some((
                     format!(
-                        "plate {id} at {joint}, 10 mm thick: type its thickness; members bolt onto \
-                         it with Onto"
+                        "plate {id} at {joint} ({} onto the leg), 10 mm thick: type its thickness; \
+                         members bolt onto it with Onto",
+                        kind.as_str()
                     ),
                     false,
                 ))
+            }
+            Act::PlateKind(id, kind) => {
+                let r = f.edit(&format!("Plate {id} {}", kind.as_str()), |doc, _| {
+                    connection_edits::set_plate_kind(doc, &id, kind)
+                });
+                r.err().map(|e| (e, true))
+            }
+            Act::PickBolt(member, joint, index) => {
+                self.joints.picked = Some(crate::joint_panel::Picked::Bolt {
+                    member,
+                    joint,
+                    index,
+                });
+                self.focus_details();
+                None
+            }
+            Act::PickPlate(id) => {
+                self.joints.picked = Some(crate::joint_panel::Picked::Plate(id));
+                self.focus_details();
+                None
             }
             Act::Plate(id, thickness, material) => {
                 let r = f.edit(&format!("Plate {id}"), |doc, _| {
@@ -1548,22 +1577,61 @@ pub fn joint_bar(
         }
         if ui
             .button("+ Plate")
-            .on_hover_text("A gusset plate at this joint (10 mm to start: type its thickness)")
+            .on_hover_text(
+                "A gusset plate bolted onto this joint's leg (10 mm to start: type its thickness); \
+                 a joint may have several",
+            )
             .clicked()
         {
-            acts.push(Act::AddPlate(j.id.clone()));
+            acts.push(Act::AddPlate(j.id.clone(), PlateKind::Bolted));
+        }
+        if ui
+            .button("+ Welded plate")
+            .on_hover_text(
+                "A gusset plate welded onto this joint's leg (10 mm to start); the members bolt \
+                 onto it as onto a bolted one",
+            )
+            .clicked()
+        {
+            acts.push(Act::AddPlate(j.id.clone(), PlateKind::Welded));
         }
     });
     if !j.plates.is_empty() {
         egui::Grid::new("joint-plates")
             .striped(true)
             .show(ui, |ui| {
-                for h in ["Plate", "Thickness mm", "Material", "Members onto it", ""] {
+                for h in [
+                    "Plate",
+                    "Kind",
+                    "Thickness mm",
+                    "Material",
+                    "Members onto it",
+                    "",
+                ] {
                     ui.strong(h);
                 }
                 ui.end_row();
                 for p in &j.plates {
-                    ui.label(&p.id);
+                    if ui
+                        .link(&p.id)
+                        .on_hover_text("Its properties and edges above")
+                        .clicked()
+                    {
+                        acts.push(Act::PickPlate(p.id.clone()));
+                    }
+                    let mut kind = p.kind;
+                    egui::ComboBox::from_id_salt(("plate-kind", &p.id))
+                        .selected_text(kind.as_str())
+                        .show_ui(ui, |ui| {
+                            for k in PlateKind::ALL {
+                                ui.selectable_value(&mut kind, k, k.as_str());
+                            }
+                        })
+                        .response
+                        .on_hover_text("Bolted or welded onto the joint's leg");
+                    if kind != p.kind {
+                        acts.push(Act::PlateKind(p.id.clone(), kind));
+                    }
                     let v = Valued {
                         value: Some(p.thickness),
                         source: Source::Given,

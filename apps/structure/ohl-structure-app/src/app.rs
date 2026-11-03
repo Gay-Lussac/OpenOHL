@@ -536,7 +536,11 @@ impl StructureApp {
             // chosen dropped first); 1-9: a slot of the hotbar; E: the
             // inventory.
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-                self.let_go_of_tool();
+                // Over the Detail view (or with it in front): back from a
+                // member to its joint first.
+                if !self.detail_escape(ctx) {
+                    self.let_go_of_tool();
+                }
             }
             const SLOTS: [Key; 9] = [
                 Key::Num1,
@@ -808,6 +812,10 @@ impl StructureApp {
             && !self.is_open(Panel::JointView)
         {
             crate::layout::open_panel(&mut self.dock, Panel::JointView);
+        }
+        // Its details below it, on their own.
+        if matches!(panel, Panel::JointDetails | Panel::MemberDetails) {
+            crate::layout::settle_details(&mut self.dock, panel);
         }
         crate::layout::open_panel(&mut self.dock, panel);
         if let Some(a) = panel.area() {

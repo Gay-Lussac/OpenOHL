@@ -55,12 +55,20 @@ pub enum Icon {
     InsertJoint,
     /// The Edit tool.
     Edit,
+    /// The Detail view's Add bolt tool.
+    AddBolt,
+    /// The Detail view's Move bolt tool.
+    MoveBolt,
+    /// The Detail view's Remove bolt tool.
+    RemoveBolt,
+    /// The Detail view's Member end tool.
+    MemberEnd,
 }
 
 impl Icon {
     /// Every icon (the tests check each file).
     #[cfg(test)]
-    pub const ALL: [Icon; 15] = [
+    pub const ALL: [Icon; 19] = [
         Icon::AddJoint,
         Icon::AddMember,
         Icon::PointOnJoint,
@@ -76,6 +84,10 @@ impl Icon {
         Icon::TwoStrings,
         Icon::InsertJoint,
         Icon::Edit,
+        Icon::AddBolt,
+        Icon::MoveBolt,
+        Icon::RemoveBolt,
+        Icon::MemberEnd,
     ];
 
     /// Its file's name (without `.svg`).
@@ -96,6 +108,10 @@ impl Icon {
             Icon::TwoStrings => "two-strings",
             Icon::InsertJoint => "insert-joint",
             Icon::Edit => "edit",
+            Icon::AddBolt => "add-bolt",
+            Icon::MoveBolt => "move-bolt",
+            Icon::RemoveBolt => "remove-bolt",
+            Icon::MemberEnd => "member-end",
         }
     }
 
@@ -122,6 +138,10 @@ impl Icon {
             Icon::TwoStrings => icon!("two-strings"),
             Icon::InsertJoint => icon!("insert-joint"),
             Icon::Edit => icon!("edit"),
+            Icon::AddBolt => icon!("add-bolt"),
+            Icon::MoveBolt => icon!("move-bolt"),
+            Icon::RemoveBolt => icon!("remove-bolt"),
+            Icon::MemberEnd => icon!("member-end"),
         }
     }
 
