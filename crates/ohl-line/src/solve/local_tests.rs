@@ -365,3 +365,30 @@ fn jumpers_take_the_full_wind_square_to_each_piece() {
         "{w:?}"
     );
 }
+
+/// Local ice (2026-11-03): a span's ice times its factor loads it more —
+/// its sag in still air with ice grows; a factor of 1 changes nothing.
+#[test]
+fn local_ice_loads_its_span() {
+    let (mut line, cable) = two_spans();
+    let budget = default_fe_budget();
+    let case = windy(-5.0, 10.0, 0.0);
+    let base = solve_section(&line, &line.sections[0], &cable, &case, &budget).unwrap();
+    line.sections[0].ice_factors = vec![SpanWind {
+        span: 0,
+        factor: 1.0,
+    }];
+    let same = solve_section(&line, &line.sections[0], &cable, &case, &budget).unwrap();
+    assert_eq!(same.spans[0].sag, base.spans[0].sag);
+    line.sections[0].ice_factors = vec![SpanWind {
+        span: 0,
+        factor: 2.0,
+    }];
+    let more = solve_section(&line, &line.sections[0], &cable, &case, &budget).unwrap();
+    assert!(
+        more.spans[0].sag > base.spans[0].sag,
+        "{} {}",
+        more.spans[0].sag,
+        base.spans[0].sag
+    );
+}

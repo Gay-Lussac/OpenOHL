@@ -185,6 +185,29 @@ stretch, the wind per stretched metre), the closed-form elastic catenary
 in that plane; the solver agrees to 10⁻⁷ (blowout 41.26° at factor 1,
 52.77° at 1.5, plumb at 0).
 
+## Local ice and local conditions (2026-11-03)
+
+A span may carry its own **ice factor** as it carries a wind factor
+(`ice_factors`): in every weather case with ice, its ice thickness (and
+a given ice load) times the factor, the span's own weight unchanged; the
+ruling span takes the largest of the section's (on the safe side for the
+tension). With a factor of 1 everywhere the section is solved as before,
+bit for bit.
+
+A structure's **local conditions** (`local` in the line file: factors on
+the wind for strength and for clearances and on the ice on the wires;
+the ice on its members; its snow on the ground, given or by SIA 261 (10)
+from the reference altitude) are taken by a check with *Use local
+conditions*: each span's wind and ice factors are its two structures'
+worst (default) or mean (`solver.local_spans`), a span's own kept
+(`ohl_line::local::localized`), and the wires are solved again with
+them — for strength with `wind_static`, for clearances with
+`wind_clearance`.
+
+**Conservative:** the worst of the two structures' factors on the whole
+span (the default); the mean is the option where a wind or snow study
+supports it.
+
 ## A broken wire (2026-10-25)
 
 *Built, in active development (not approved yet).* Roadmap O9 (owner,

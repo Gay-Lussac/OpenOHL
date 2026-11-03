@@ -273,6 +273,19 @@ impl WeatherCase {
         }
     }
 
+    /// The case with its ice (thickness and given load) times `factor`
+    /// (local ice; the same case when 1 or without ice).
+    pub fn with_ice_factor(&self, factor: f64) -> Self {
+        if factor == 1.0 || (self.ice_thickness.si() == 0.0 && self.ice_load.is_none()) {
+            return self.clone();
+        }
+        Self {
+            ice_thickness: Length::from_si(self.ice_thickness.si() * factor),
+            ice_load: self.ice_load.map(|l| l * factor),
+            ..self.clone()
+        }
+    }
+
     /// The case without its ice (the same temperature and wind).
     pub fn without_ice(&self) -> Self {
         Self {

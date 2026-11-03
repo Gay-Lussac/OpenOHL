@@ -445,17 +445,19 @@ impl LocalWinds {
     /// None when no span has a factor other than 1 (the section solved
     /// as before, bit for bit).
     fn of(section: &Section, cases: Cases<'_>) -> Option<Self> {
-        if !section.has_local_wind() {
+        if !section.has_local_wind() && !section.has_local_ice() {
             return None;
         }
         let n = section.points.len().saturating_sub(1);
+        // Each span's wind and ice times its factors (local ice, owner
+        // 2026-11-03).
+        let local = |c: &WeatherCase, s: usize| {
+            c.with_wind_factor(section.wind_factor(s))
+                .with_ice_factor(section.ice_factor(s))
+        };
         Some(Self {
-            spans: (0..n)
-                .map(|s| (s, cases.of(s).with_wind_factor(section.wind_factor(s))))
-                .collect(),
-            rolling: (0..n)
-                .map(|s| (s, cases.base.with_wind_factor(section.wind_factor(s))))
-                .collect(),
+            spans: (0..n).map(|s| (s, local(cases.of(s), s))).collect(),
+            rolling: (0..n).map(|s| (s, local(cases.base, s))).collect(),
             points: (0..section.points.len())
                 .map(|k| section.wind_factor_at_point(k))
                 .collect(),
@@ -2558,7 +2560,10 @@ fn solve_cases(
     // The ruling span has one tension for all spans: the case's wind
     // times the largest local factor of the section (on the safe side for
     // the tension; Simplification for the spans with less).
-    let rs_case = cases.base.with_wind_factor(section.largest_wind_factor());
+    let rs_case = cases
+        .base
+        .with_wind_factor(section.largest_wind_factor())
+        .with_ice_factor(section.largest_ice_factor());
     // The line's bimetallic model for cables that do not give their own.
     let own = &*line.bimetallic.apply(cable);
     // Its own weight per metre at the stringing temperature; the jumpers
@@ -3184,3 +3189,9 @@ mod span_case_tests;
 
 #[cfg(test)]
 mod local_tests;
+
+/// The two-span line of the local tests (for other modules' tests).
+#[cfg(test)]
+pub(crate) fn local_tests_fixture() -> (Line, ohl_cables::Cable) {
+    local_tests::two_spans()
+}

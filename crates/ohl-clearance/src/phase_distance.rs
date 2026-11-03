@@ -1156,6 +1156,7 @@ pub(crate) mod tests {
             weather_groups: Vec::new(),
             soil_resistivity_ohm_m: None,
             earthing_resistance_ohm: None,
+            local: Default::default(),
             fields: Default::default(),
         };
         let mut st = st;

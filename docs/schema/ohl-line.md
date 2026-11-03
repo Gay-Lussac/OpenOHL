@@ -36,6 +36,7 @@ The names are those of the line file:
              soil_resistivity_ohm_m="8.5"           <!-- soil resistivity measured here, Ω·m -->
              earthing_resistance_ohm="6.2">         <!-- its earthing (footing), Ω (2026-10-29) -->
     <weather_group name="…"/>                   <!-- its weather case groups (the structure override) -->
+    <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa) -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" length="…" angle_deg="…" direction_deg="…" weight="…" wind_area="…"
@@ -102,7 +103,7 @@ The names are those of the line file:
     <load_case name="…"/>
   </creep_stretch>
   <defaults spacer_compression="10000"/>        <!-- the project's default values -->
-  <solver jumper_loads="pull" taps="once" loads_per="unstretched" blocks="equal_h"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched, sheaves (blocks: version 10) -->
+  <solver jumper_loads="pull" taps="once" loads_per="unstretched" blocks="equal_h" local_spans="mean"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched, sheaves (blocks: version 10), worst (local_spans, 2026-11-03) -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
   <structure_loads condition="creep">           <!-- Criteria › Loads for structures; default as strung, no weather case -->
     <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->

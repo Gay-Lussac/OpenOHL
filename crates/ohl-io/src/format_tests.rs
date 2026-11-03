@@ -389,6 +389,16 @@ fn rich_line() -> Line {
     // A soil resistivity measured at a structure (2026-10-27).
     line.structures[1].soil_resistivity_ohm_m = Some(8.5);
     line.structures[1].earthing_resistance_ohm = Some(6.2);
+    // Local conditions (2026-11-03) and how the spans take them.
+    line.structures[1].local = ohl_line::local::LocalConditions {
+        wind_static: Some(1.2),
+        wind_clearance: Some(0.8),
+        wire_ice: Some(1.5),
+        structure_ice: Some(0.02),
+        snow_ground: None,
+        snow_altitude: Some(950.0),
+    };
+    line.solver.local_spans = ohl_line::local::SpanRule::Mean;
     line.sections[0].weather_groups = vec!["snow zone 2".into()];
     // Local winds (line file 9, roadmap O15).
     line.sections[0].set_wind_factor(0, 0, 1.25);

@@ -41,6 +41,7 @@ pub mod library;
 #[cfg(test)]
 mod link_tests;
 pub mod links;
+pub mod local;
 pub mod objects;
 mod rod;
 pub mod route;
@@ -380,6 +381,11 @@ pub struct SolverOptions {
     /// horizontal tension for every span. A file without it: the default.
     #[serde(default, skip_serializing_if = "InTheBlocks::is_default")]
     pub blocks: InTheBlocks,
+    /// How a span takes its two structures' local factors (owner,
+    /// 2026-11-03; [`local::SpanRule`]): the worst, the default, or the
+    /// mean.
+    #[serde(default, skip_serializing_if = "local::SpanRule::is_default")]
+    pub local_spans: local::SpanRule,
 }
 
 /// How a section in the blocks shares its unstressed length between its
@@ -1371,6 +1377,11 @@ pub struct Structure {
     /// leads from the earth wires into the ground.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earthing_resistance_ohm: Option<f64>,
+    /// Its local conditions (owner, 2026-11-03; [`local::LocalConditions`]):
+    /// factors on the wind and ice there and its snow, taken by the checks
+    /// with Use local conditions ticked.
+    #[serde(default, skip_serializing_if = "local::LocalConditions::is_empty")]
+    pub local: local::LocalConditions,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1416,6 +1427,8 @@ struct StructureFile {
     soil_resistivity_ohm_m: Option<f64>,
     #[serde(default)]
     earthing_resistance_ohm: Option<f64>,
+    #[serde(default)]
+    local: local::LocalConditions,
     #[serde(default)]
     fields: Fields,
 }
@@ -1465,6 +1478,7 @@ impl From<StructureFile> for Structure {
             weather_groups: f.weather_groups,
             soil_resistivity_ohm_m: f.soil_resistivity_ohm_m,
             earthing_resistance_ohm: f.earthing_resistance_ohm,
+            local: f.local,
             fields: f.fields,
         }
     }
@@ -2479,6 +2493,12 @@ pub struct Section {
     /// takes the case's wind (factor 1). Line file version 9.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wind_factors: Vec<SpanWind>,
+    /// Local ice (owner 2026-11-03, with the structures' local
+    /// conditions): spans whose ice (and wet snow) is the weather case's
+    /// times a factor of their own, in every case with ice
+    /// ([`Section::ice_factor`]); a span not listed takes the case's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ice_factors: Vec<SpanWind>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -2592,6 +2612,8 @@ struct SectionFile {
     #[serde(default)]
     wind_factors: Vec<SpanWind>,
     #[serde(default)]
+    ice_factors: Vec<SpanWind>,
+    #[serde(default)]
     fields: Fields,
 }
 
@@ -2615,6 +2637,7 @@ impl From<SectionFile> for Section {
             calculation: f.calculation,
             weather_groups: f.weather_groups,
             wind_factors: f.wind_factors,
+            ice_factors: f.ice_factors,
             fields: f.fields,
         };
         for l in f.loads {
@@ -2827,6 +2850,28 @@ impl Section {
             .iter()
             .find(|w| w.span == span)
             .map_or(1.0, |w| w.factor)
+    }
+
+    /// The local ice factor of span `span` (1 when not given).
+    pub fn ice_factor(&self, span: usize) -> f64 {
+        self.ice_factors
+            .iter()
+            .find(|w| w.span == span)
+            .map_or(1.0, |w| w.factor)
+    }
+
+    /// Whether a span has a local ice other than the case's.
+    pub fn has_local_ice(&self) -> bool {
+        self.ice_factors.iter().any(|w| w.factor != 1.0)
+    }
+
+    /// The largest local ice factor of its spans (a span without one
+    /// counts 1), for the ruling span (on the safe side for the tension).
+    pub fn largest_ice_factor(&self) -> f64 {
+        let spans = self.points.len().saturating_sub(1);
+        (0..spans)
+            .map(|s| self.ice_factor(s))
+            .fold(if spans == 0 { 1.0 } else { f64::MIN }, f64::max)
     }
 
     /// Whether a span has a local wind other than the case's.
@@ -3849,6 +3894,24 @@ impl Line {
                 if !(w.factor.is_finite() && (0.0..=MAX_WIND_FACTOR).contains(&w.factor)) {
                     return invalid(format!(
                         "section {}: local wind factor {} of span {} (0 to {MAX_WIND_FACTOR})",
+                        sec.id,
+                        w.factor,
+                        w.span + 1
+                    ));
+                }
+            }
+            let mut ices = std::collections::BTreeSet::new();
+            for w in &sec.ice_factors {
+                if w.span >= spans || !ices.insert(w.span) {
+                    return invalid(format!(
+                        "section {}: local ice of span {}: not one of its spans, or given twice",
+                        sec.id,
+                        w.span + 1
+                    ));
+                }
+                if !(w.factor.is_finite() && (0.0..=MAX_WIND_FACTOR).contains(&w.factor)) {
+                    return invalid(format!(
+                        "section {}: local ice factor {} of span {} (0 to {MAX_WIND_FACTOR})",
                         sec.id,
                         w.factor,
                         w.span + 1

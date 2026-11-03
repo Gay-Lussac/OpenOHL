@@ -400,6 +400,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         weather_groups,
         soil_resistivity_ohm_m,
         earthing_resistance_ohm,
+        local,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -426,6 +427,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         && members.is_empty()
         && routes.is_empty()
         && weather_groups.is_empty()
+        && local.is_empty()
         && fields.is_empty()
     {
         out.push_str("/>\n");
@@ -433,6 +435,23 @@ fn write_structure(out: &mut String, s: &Structure) {
     }
     out.push_str(">\n");
     write_on_routes(out, routes, "    ");
+    if !local.is_empty() {
+        // The local conditions (2026-11-03).
+        out.push_str("    <local");
+        for (name, v) in [
+            ("wind_static", local.wind_static),
+            ("wind_clearance", local.wind_clearance),
+            ("wire_ice", local.wire_ice),
+            ("structure_ice_m", local.structure_ice),
+            ("snow_ground_pa", local.snow_ground),
+            ("snow_altitude_m", local.snow_altitude),
+        ] {
+            if let Some(v) = v {
+                attr(out, name, &num(v));
+            }
+        }
+        out.push_str("/>\n");
+    }
     for g in weather_groups {
         out.push_str("    <weather_group");
         attr(out, "name", g);
@@ -580,6 +599,7 @@ fn write_section(out: &mut String, s: &Section) {
         calculation,
         weather_groups,
         wind_factors,
+        ice_factors,
         fields,
     } = s;
     out.push_str("  <section");
@@ -606,6 +626,14 @@ fn write_section(out: &mut String, s: &Section) {
         let _ = writeln!(
             out,
             "    <wind_factor span=\"{}\" factor=\"{}\"/>",
+            w.span,
+            num(w.factor)
+        );
+    }
+    for w in ice_factors {
+        let _ = writeln!(
+            out,
+            "    <ice_factor span=\"{}\" factor=\"{}\"/>",
             w.span,
             num(w.factor)
         );
@@ -1118,6 +1146,7 @@ pub fn to_xml(line: &Line) -> String {
             taps,
             loads_per,
             blocks,
+            local_spans,
         } = solver;
         out.push_str("  <solver");
         attr(&mut out, "jumper_loads", jumper_loads.as_str());
@@ -1129,6 +1158,9 @@ pub fn to_xml(line: &Line) -> String {
         }
         if !blocks.is_default() {
             attr(&mut out, "blocks", blocks.as_str());
+        }
+        if !local_spans.is_default() {
+            attr(&mut out, "local_spans", local_spans.as_str());
         }
         out.push_str("/>\n");
     }
@@ -1422,6 +1454,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         ],
         &[
             "weather_group",
+            "local",
             "point",
             "wire",
             "string",
@@ -1643,6 +1676,33 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             .collect::<Result<_, String>>()?,
         soil_resistivity_ohm_m: optional(e, "soil_resistivity_ohm_m")?,
         earthing_resistance_ohm: optional(e, "earthing_resistance_ohm")?,
+        local: match e.child("local") {
+            None => ohl_line::local::LocalConditions::default(),
+            Some(l) => {
+                check(
+                    l,
+                    &[
+                        "wind_static",
+                        "wind_clearance",
+                        "wire_ice",
+                        "structure_ice_m",
+                        "snow_ground_pa",
+                        "snow_altitude_m",
+                    ],
+                    &[],
+                )?;
+                let local = ohl_line::local::LocalConditions {
+                    wind_static: optional(l, "wind_static")?,
+                    wind_clearance: optional(l, "wind_clearance")?,
+                    wire_ice: optional(l, "wire_ice")?,
+                    structure_ice: optional(l, "structure_ice_m")?,
+                    snow_ground: optional(l, "snow_ground_pa")?,
+                    snow_altitude: optional(l, "snow_altitude_m")?,
+                };
+                local.check().map_err(|m| format!("structure {id}: {m}"))?;
+                local
+            }
+        },
         id,
         fields: read_fields(e)?,
     })
@@ -1674,6 +1734,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "spread",
             "weather_group",
             "wind_factor",
+            "ice_factor",
             "field",
         ],
     )?;
@@ -1711,6 +1772,16 @@ fn read_section(e: &Element) -> Result<Section, String> {
             .collect::<Result<_, String>>()?,
         wind_factors: e
             .children_named("wind_factor")
+            .map(|w| {
+                check(w, &["span", "factor"], &[])?;
+                Ok(ohl_line::SpanWind {
+                    span: number(w, "span")?,
+                    factor: number(w, "factor")?,
+                })
+            })
+            .collect::<Result<_, String>>()?,
+        ice_factors: e
+            .children_named("ice_factor")
             .map(|w| {
                 check(w, &["span", "factor"], &[])?;
                 Ok(ohl_line::SpanWind {
@@ -2146,7 +2217,11 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     let solver = match root.child("solver") {
         None => ohl_line::SolverOptions::default(),
         Some(s) => {
-            check(s, &["jumper_loads", "taps", "loads_per", "blocks"], &[])?;
+            check(
+                s,
+                &["jumper_loads", "taps", "loads_per", "blocks", "local_spans"],
+                &[],
+            )?;
             let jumper_loads = match owned(s, "jumper_loads") {
                 None => ohl_line::JumperLoads::default(),
                 Some(t) => ohl_line::JumperLoads::parse(&t)
@@ -2167,11 +2242,17 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                 Some(t) => ohl_line::InTheBlocks::parse(&t)
                     .ok_or_else(|| format!("solver blocks \"{t}\": sheaves or equal_h"))?,
             };
+            let local_spans = match owned(s, "local_spans") {
+                None => ohl_line::local::SpanRule::default(),
+                Some(t) => ohl_line::local::SpanRule::parse(&t)
+                    .ok_or_else(|| format!("solver local_spans \"{t}\": worst or mean"))?,
+            };
             ohl_line::SolverOptions {
                 jumper_loads,
                 taps,
                 loads_per,
                 blocks,
+                local_spans,
             }
         }
     };

@@ -305,6 +305,19 @@
                   <xs:attribute name="name" type="xs:string" use="required"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="local" minOccurs="0">
+                <xs:annotation>
+                  <xs:documentation>Its local conditions (2026-11-03), taken by the checks with Use local conditions ticked: factors on the wind for strength and for clearances and on the ice on the wires, the ice on the structure (m), the snow on the ground (Pa) or the reference altitude for SIA 261's snow (m).</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="wind_static" type="xs:double"/>
+                  <xs:attribute name="wind_clearance" type="xs:double"/>
+                  <xs:attribute name="wire_ice" type="xs:double"/>
+                  <xs:attribute name="structure_ice_m" type="xs:double"/>
+                  <xs:attribute name="snow_ground_pa" type="xs:double"/>
+                  <xs:attribute name="snow_altitude_m" type="xs:double"/>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
                   <xs:documentation>An attachment point: where strings hang
@@ -867,6 +880,16 @@
                 <xs:restriction base="xs:string">
                   <xs:enumeration value="sheaves"/>
                   <xs:enumeration value="equal_h"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <!-- 2026-11-03: a span's local factors, the worst of its two
+                 structures' (default) or their mean. -->
+            <xs:attribute name="local_spans" default="worst">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="worst"/>
+                  <xs:enumeration value="mean"/>
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>
