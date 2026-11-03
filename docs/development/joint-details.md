@@ -249,12 +249,11 @@ Escape). The Edit tool on a bolt shows its properties below with the bolt
 libraries to change the end's bolts; on a plate, its kind, edges and the
 bolts too near its edge. Several plates per joint, bolted or welded onto
 the leg (`[[plate]] kind`); a plate drawn without an outline keeps the
-code's end and edge distances (the member end's minimums from
-`ohl_structures_fe::bolt_rules`) round every bolt onto it. The close-up
+code's end and edge distances in the plate (`bolt_rules::rules_in`:
+the plate's thickness and its material's ultimate strength, else the
+member's; the member end's force and bolts) round every bolt onto it. The close-up
 is drawn in small pieces sorted by their own depth (whole faces sorted by
-their middles hid the bolts at some angles). Open: a plate's minimums
-from its own thickness and steel (today the member end's), the plates'
-own checks, a weld's own data (size, length).
+their middles hid the bolts at some angles). Open: the plates' own checks, a weld's own data (size, length).
 
 How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#joint-details-towers).
 

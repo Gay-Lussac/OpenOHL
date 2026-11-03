@@ -571,8 +571,9 @@ Inspector (its fields, as for any other object).
   along it, over each member's bolted leg from its first bolt to its
   last, and **round every bolt onto it with the design code's distances
   kept from its edge** — the end distance along the member, the edge
-  distance across it, the member end's minimums as the bolt tools take
-  them (ASCE 10-97 4.5; with the simple check, the end's own end and
+  distance across it, worked out in the plate: its own thickness and
+  its material's steel (else the member's), the member end's force and
+  bolts (ASCE 10-97 4.5, SIA 263 Table 17; with the simple check, the end's own end and
   edge distances, else 1.5 bolt diameters, assumed) — as the IFC export
   lays it); drag to turn it, scroll to zoom, **Reset view**. Bolts are
   drawn on angles only. Every face is drawn in small pieces sorted by
