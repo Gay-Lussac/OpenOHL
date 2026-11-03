@@ -26,6 +26,8 @@
 //! # yield = "345 MPa"            # steel, hollow, no capacity given: the
 //! #                              #   shaft by ASCE/SEI 48-19 (crate::asce48)
 //! # bend_radius = "20 mm"        # a polygon's inside bend radius (none: sharp)
+//! # code = "sia263-2013"         # the steel shaft's code: asce48-19 (default)
+//! #                              #   or sia263-2013 (crate::sia263)
 //! moment_capacity = "180 kN m"   # or: at the ground line
 //! elasticity = "11 GPa"          # optional: P-Delta amplification
 //! density = "650 kg/m3"          # optional: the pole's weight (P-Delta)
@@ -123,6 +125,8 @@ struct PoleFile {
     #[serde(default)]
     bend_radius: Option<Length>,
     #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
     moment_capacity: Option<Moment>,
     #[serde(default)]
     elasticity: Option<Stress>,
@@ -163,6 +167,8 @@ pub struct Pole {
     pub yield_strength: Option<f64>,
     /// Inside bend radius of a polygonal shaft, m (none: sharp corners).
     pub bend_radius: Option<f64>,
+    /// The code a hollow steel shaft is checked by ([`PoleCode`]).
+    pub code: PoleCode,
     /// Moment capacity at the ground line, N·m.
     pub moment_capacity: Option<f64>,
     /// Moment capacity by height above ground: (m, N·m), rising heights.
@@ -180,6 +186,39 @@ pub struct Pole {
     /// it is not the linear taper from the ground line to the top (empty:
     /// that taper).
     pub profile: Vec<(f64, f64)>,
+}
+
+/// The code a hollow steel shaft without a given capacity is checked by
+/// (`code` in a pole file or `[pole]`; owner 2026-11-03).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PoleCode {
+    /// ASCE/SEI 48-19 (`"asce48-19"`, the default; [`crate::asce48`]).
+    #[default]
+    Asce48,
+    /// SIA 263:2013 (`"sia263-2013"`; [`crate::sia263::shaft_usage`]).
+    Sia263,
+}
+
+impl PoleCode {
+    /// The code of a name (none: the default).
+    pub fn parse(name: Option<&str>) -> Result<Self, String> {
+        match name.map(str::trim) {
+            None | Some("asce48-19") => Ok(Self::Asce48),
+            Some(crate::sia263::NAME) => Ok(Self::Sia263),
+            Some(other) => Err(format!(
+                "code \"{other}\": asce48-19 (default) or {}",
+                crate::sia263::NAME
+            )),
+        }
+    }
+
+    /// As results name it.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Asce48 => "ASCE/SEI 48-19",
+            Self::Sia263 => crate::sia263::TITLE,
+        }
+    }
 }
 
 impl Pole {
@@ -215,6 +254,7 @@ impl Pole {
             fibre_stress: f.fibre_stress.map(|s| s.si()),
             yield_strength: f.yield_strength.map(|s| s.si()),
             bend_radius: f.bend_radius.map(|l| l.si()),
+            code: PoleCode::parse(f.code.as_deref()).map_err(|e| format!("pole: {e}"))?,
             moment_capacity: f.moment_capacity.map(|m| m.0),
             capacity: f
                 .capacity
@@ -333,6 +373,7 @@ impl Pole {
             fibre_stress: p.fibre_stress.map(|s| s.si()),
             yield_strength: p.yield_strength.map(|s| s.si()).or(yield_strength),
             bend_radius: p.bend_radius.map(|l| l.si()),
+            code: PoleCode::parse(p.code.as_deref()).map_err(bad)?,
             moment_capacity,
             capacity,
             elasticity,
@@ -759,7 +800,12 @@ pub fn check_pole_factored(
                 // ASCE/SEI 48-19: the axial force, shear and torsion of
                 // the loads above, with the moment.
                 let (p, v, t) = forces_at(pole, loads, wind, h, self_weight);
-                let (u, w) = crate::asce48::usage(&shaft, p, moment, v, t, fy, strength);
+                let (u, w) = match pole.code {
+                    PoleCode::Asce48 => crate::asce48::usage(&shaft, p, moment, v, t, fy, strength),
+                    PoleCode::Sia263 => {
+                        crate::sia263::shaft_usage(&shaft, p, moment, v, t, fy, strength)
+                    }
+                };
                 let (_, i) = shaft.area_inertia();
                 (u, fy * i / shaft.reach(), w)
             }
@@ -787,7 +833,8 @@ pub fn check_pole_factored(
             wind_moment: wind_ground[0].hypot(wind_ground[1]),
             amplification,
             governs: format!(
-                "ASCE/SEI 48-19 at {height:.1} m: {code} × {strength}; moment {:.1} kN m{}",
+                "{} at {height:.1} m: {code} × {strength}; moment {:.1} kN m{}",
+                pole.code.title(),
                 moment / 1000.0,
                 if amplification != 1.0 {
                     format!(" (P-Delta × {amplification:.3})")

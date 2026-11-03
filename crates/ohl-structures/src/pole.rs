@@ -39,6 +39,7 @@
 //! drag = 0.8
 //! # yield = "345 MPa"     # steel, hollow, no capacity: ASCE/SEI 48-19
 //! # bend_radius = "20 mm"  # the polygon's inside bend radius (none: sharp)
+//! # code = "sia263-2013"  # the steel shaft's code (default asce48-19)
 //! # fibre_stress = "55 MPa" / moment_capacity = "900 kN m" /
 //! [[pole.capacity]]
 //! height = "0 m"            # above the ground line
@@ -217,6 +218,10 @@ pub struct InlinePole {
     /// on the safe side).
     #[serde(default)]
     pub bend_radius: Option<Length>,
+    /// The code a hollow steel shaft is checked by: `asce48-19` (none,
+    /// the default) or `sia263-2013`.
+    #[serde(default)]
+    pub code: Option<String>,
     /// Moment capacity at the ground line (e.g. `"900 kN m"`; read by the
     /// pole check).
     #[serde(default)]

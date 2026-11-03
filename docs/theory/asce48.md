@@ -17,7 +17,8 @@ only and has no rule for tubes; ASCE/SEI 48 is its companion for poles
 of material `steel`, hollow (a `wall`), with its `yield` stress and **no
 capacity given** (no `[[capacity]]` table, `moment_capacity` or
 `fibre_stress`): its shaft is checked by this page at the pole check's 41
-heights. A given capacity keeps the moment check of the
+heights — unless the pole names `code = "sia263-2013"` (2026-11-03):
+then by [SIA 263](sia263.md#steel-pole-shafts). A given capacity keeps the moment check of the
 [structure analysis](structures-fe.md#pole-check) page, as before. A
 `[pole]` naming a `section` takes the yield stress of that section's
 material when it gives none itself.
