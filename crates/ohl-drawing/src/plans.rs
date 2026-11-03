@@ -238,12 +238,6 @@ const END: f64 = 40.0;
 /// The least distance between two tracks, mm.
 const LANE: f64 = 2.4;
 
-/// The phases' colours, by the phase label's place among its circuit's.
-const PHASE_COLORS: [&str; 3] = ["#d62728", "#2ca02c", "#1f5fd6"];
-
-/// The earth wires' colour.
-const EARTH_COLOR: &str = "#444444";
-
 /// The dash patterns of the circuits' tracks, by the circuit's place in
 /// the table (repeating), mm.
 const CIRCUIT_DASHES: [&[f64]; 6] = [
@@ -366,30 +360,30 @@ fn arrow(items: &mut Vec<Item>, from: [f64; 2], tip: [f64; 2], color: &str) {
 /// number; the owner and number when given) under the tracks. A
 /// schematic: drawn in the case shown.
 pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
-    let mut a = arrangements(d);
-    // The phases' colours, as phase plans have them: each circuit's
-    // phase labels in order red, green, blue (then again); the earth
-    // wires dark grey.
-    let mut labels: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-    for w in a.iter().flat_map(|x| &x.wires) {
-        let l = labels.entry(w.circuit.clone()).or_default();
-        if !l.contains(&w.phase) {
-            l.push(w.phase.clone());
+    phase_plan_of(&[d], o, page)
+}
+
+/// The phase plan of several routes' drawings in one (owner,
+/// 2026-11-03: "choose which routes and alignments are part of 1 plan"):
+/// their structures one after the other in the order given (a structure
+/// ending one and starting the next drawn once), framed and titled as the
+/// first. Each wire in its own colour (owner, 2026-11-03: the phases
+/// "should also follow the colours of the circuits instead of having
+/// their own"), its circuit's dashes.
+pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Sheet> {
+    let Some(&d) = ds.first() else {
+        return Vec::new();
+    };
+    let mut a: Vec<Arrangement> = Vec::new();
+    for x in ds {
+        for arr in arrangements(x) {
+            if a.last().is_some_and(|l| l.structure == arr.structure) {
+                // The structure ending the last drawing: its wires ahead
+                // are the next drawing's.
+                a.pop();
+            }
+            a.push(arr);
         }
-    }
-    for l in labels.values_mut() {
-        l.sort();
-    }
-    for w in a.iter_mut().flat_map(|x| &mut x.wires) {
-        w.color = if w.earth {
-            EARTH_COLOR.to_owned()
-        } else {
-            let k = labels[&w.circuit]
-                .iter()
-                .position(|p| *p == w.phase)
-                .unwrap_or(0);
-            PHASE_COLORS[k % PHASE_COLORS.len()].to_owned()
-        };
     }
     let columns = phase_columns(&a);
     if columns.is_empty() {
@@ -399,8 +393,10 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
     let size = 1.8;
     // The circuits drawn, in the line's order (then as they appear).
     let mut circuits: Vec<crate::CircuitInfo> = Vec::new();
-    for c in &d.circuits {
-        if a.iter().flat_map(|x| &x.wires).any(|w| w.circuit == c.name) {
+    for c in ds.iter().flat_map(|x| &x.circuits) {
+        if !circuits.iter().any(|k| k.name == c.name)
+            && a.iter().flat_map(|x| &x.wires).any(|w| w.circuit == c.name)
+        {
             circuits.push(c.clone());
         }
     }
@@ -1328,6 +1324,28 @@ mod tests {
             assert!(svg.contains(">Circuits<"), "the table");
             assert!(svg.contains(&d.circuits[0].name), "a circuit's name");
         }
+        // Each wire in its own (its circuit's) colour, as the line draws it.
+        let colours: std::collections::BTreeSet<String> = a
+            .iter()
+            .flat_map(|x| &x.wires)
+            .map(|w| w.color.to_lowercase())
+            .collect();
+        for c in &colours {
+            assert!(svg.to_lowercase().contains(c.as_str()), "colour {c}");
+        }
+        // Two drawings in one plan: their structures one after the other.
+        let mut second = d.clone();
+        for m in &mut second.structures {
+            m.id = format!("{}'", m.id);
+        }
+        let both = phase_plan_of(
+            &[&d, &second],
+            &Options::default(),
+            &crate::page_format("A3").unwrap(),
+        );
+        let svg2: String = both.iter().map(Sheet::svg).collect();
+        assert!(svg2.contains(&a[0].structure));
+        assert!(svg2.contains(&format!("{}'", a[a.len() - 1].structure)));
     }
 
     /// A wire under a V with a short string below hangs, for the phase

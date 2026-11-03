@@ -557,8 +557,9 @@ Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
   the parcel numbers) and the orthophotos (under a white veil).
 - **Phase plan** (2026-10-25, after a utility's phase plan) — every wire
   a **track** along the page at its place across the line, in its
-  phase's colour (each circuit's phase labels in order red, green, blue;
-  earth wires dark grey) and its circuit's dashes. Each run of
+  wire's colour as the line draws it (its circuit's colour, since
+  2026-11-03; before: red, green, blue by phase) and its circuit's
+  dashes. Each run of
   structures whose wires **leaving ahead** have the same arrangement
   (compared by level and place, not by height; each wire placed where its
   strings hang on the structure — the top of its chain of strings, a V's
@@ -578,6 +579,17 @@ Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
   when any is given. Nothing typed twice: taken
   from the line. A schematic: drawn in the weather case shown, whatever
   the cases the sheets take; jumpers are not tracks.
+
+  **Alignments in one plan** (2026-11-03; built, in active development,
+  not approved yet): by default each route's alignment gets its own
+  phase plan. In Export › Plans › Phase plan, **Add a plan of several**
+  gives a plan its name and the routes and alignments drawn in it,
+  ticked (a route's tick takes all its alignments): they are drawn one
+  after the other in the line's order, a structure ending one and
+  starting the next drawn once, in one plan (files
+  `<name>-phase-plan…`). The alignments in no such plan get their own as
+  before. The plans are kept in the project for the line worked on
+  (`app.phase_plans`).
 
 The route and situation plans draw the wires in the sheets' cases; those
 not solved yet are solved while the window is open, and an Export asked

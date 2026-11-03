@@ -13,7 +13,9 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use crate::drawings::{Input, PlanKind, PlanRequest, plan_set_inputs, run_plan_set, run_plans};
+use crate::drawings::{
+    Input, PhaseGroup, PlanKind, PlanRequest, plan_set_inputs, run_plan_set, run_plans,
+};
 use crate::model::Model;
 use crate::survey_io::Job;
 use ohl_drawing::plan_set::PlanSet;
@@ -61,7 +63,14 @@ pub struct PlansWindow {
     /// Export asked while its weather cases were being solved: started
     /// once they are.
     pub waiting: bool,
+    /// The phase plans of alignments drawn together (owner, 2026-11-03),
+    /// kept in the project (`app.phase_plans.<line>`).
+    pub groups: Vec<PhaseGroup>,
+    kept: crate::check_ui::Kept,
 }
+
+/// The project setting the phase plans' groups are kept in.
+pub const SETTING: &str = "app.phase_plans";
 
 impl Default for PlansWindow {
     fn default() -> Self {
@@ -83,6 +92,8 @@ impl Default for PlansWindow {
             set: 0,
             one_pdf: false,
             waiting: false,
+            groups: Vec::new(),
+            kept: Default::default(),
         }
     }
 }
@@ -116,6 +127,121 @@ impl PlansWindow {
             drawings: self.drawings,
             photo: self.photo,
             corridor: self.corridor,
+            groups: if self.kind == PlanKind::Phase {
+                self.groups.clone()
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    /// Reads the phase plans' groups from the project when not read yet
+    /// for the line worked on, writes them when they changed.
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let json = serde_json::to_string(&self.groups).unwrap_or_default();
+        let mut kept = std::mem::take(&mut self.kept);
+        if let crate::check_ui::Step::Load(text) =
+            kept.step(model, ctx, SETTING, "phase plans", &json)
+        {
+            self.groups = text
+                .as_deref()
+                .and_then(|t| serde_json::from_str(t).ok())
+                .unwrap_or_default();
+            kept.loaded(serde_json::to_string(&self.groups).unwrap_or_default());
+        }
+        self.kept = kept;
+    }
+
+    /// The phase plans' groups: each a name and the alignments ticked —
+    /// a route's tick takes all its alignments (owner, 2026-11-03).
+    fn groups_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let views = model.line.alignment_views();
+        ui.label(egui::RichText::new("Alignments in one plan").strong())
+            .on_hover_text(
+                "A phase plan of several routes and alignments, drawn one after the other in \
+                 the line's order; an alignment in no plan here gets its own, as before",
+            );
+        let mut remove = None;
+        for (k, g) in self.groups.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label("Plan");
+                ui.add(egui::TextEdit::singleline(&mut g.name).desired_width(180.0));
+                if ui.small_button("Remove").clicked() {
+                    remove = Some(k);
+                }
+            });
+            egui::Grid::new(("phase-plan-group", k))
+                .num_columns(2)
+                .spacing([10.0, 2.0])
+                .show(ui, |ui| {
+                    let mut routes: Vec<String> = Vec::new();
+                    for v in &views {
+                        if !routes.contains(&v.route) {
+                            routes.push(v.route.clone());
+                        }
+                    }
+                    for r in &routes {
+                        let ids: Vec<&String> = views
+                            .iter()
+                            .filter(|v| &v.route == r)
+                            .map(|v| &v.id)
+                            .collect();
+                        let name =
+                            model
+                                .line
+                                .routes
+                                .iter()
+                                .find(|x| &x.id == r)
+                                .map_or(r.clone(), |x| {
+                                    if x.name.is_empty() {
+                                        x.id.clone()
+                                    } else {
+                                        x.name.clone()
+                                    }
+                                });
+                        let mut all = ids.iter().all(|id| g.alignments.contains(id));
+                        if ui
+                            .checkbox(&mut all, egui::RichText::new(name).strong())
+                            .on_hover_text("Every alignment of the route")
+                            .changed()
+                        {
+                            for id in &ids {
+                                g.alignments.retain(|a| a != *id);
+                                if all {
+                                    g.alignments.push((*id).clone());
+                                }
+                            }
+                        }
+                        ui.label("");
+                        ui.end_row();
+                        for v in views.iter().filter(|v| &v.route == r) {
+                            let mut on = g.alignments.contains(&v.id);
+                            let text = if v.name.is_empty() { &v.id } else { &v.name };
+                            ui.label("");
+                            if ui.checkbox(&mut on, text).changed() {
+                                g.alignments.retain(|a| a != &v.id);
+                                if on {
+                                    g.alignments.push(v.id.clone());
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    }
+                });
+        }
+        if let Some(k) = remove {
+            self.groups.remove(k);
+        }
+        if ui
+            .button("Add a plan of several")
+            .on_hover_text("Tick the routes and alignments drawn together in one phase plan")
+            .clicked()
+        {
+            let n = self.groups.len() + 1;
+            self.groups.push(PhaseGroup {
+                name: format!("phase plan {n}"),
+                alignments: Vec::new(),
+            });
         }
     }
 
@@ -266,6 +392,10 @@ impl PlansWindow {
                     })
                     .small(),
                 );
+                if !self.set_mode && self.kind == PlanKind::Phase {
+                    self.groups_ui(ui, model);
+                    ui.separator();
+                }
                 egui::Grid::new("plans-settings")
                     .num_columns(2)
                     .spacing([10.0, 6.0])
@@ -418,6 +548,13 @@ impl PlansWindow {
                 }
                 Some(out) => {
                     let mut w = drawings.clone();
+                    // Alignments drawn together: every route read (the
+                    // Drawings window's one route aside).
+                    if self.kind == PlanKind::Phase
+                        && self.groups.iter().any(|g| !g.alignments.is_empty())
+                    {
+                        w.route = None;
+                    }
                     w.formats = self
                         .formats
                         .iter()
@@ -472,6 +609,54 @@ mod tests {
             .collect();
         for what in ["route-plan.pdf", "situation-plan.pdf", "phase-plan.pdf"] {
             assert!(names.iter().any(|n| n.ends_with(what)), "{what}: {names:?}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Owner, 2026-11-03: routes and alignments chosen into one phase
+    /// plan — one plan of them, named after it; the alignments in no
+    /// plan each their own, as before.
+    #[test]
+    fn alignments_drawn_together_in_one_phase_plan() {
+        let model = crate::tests::synthetic();
+        let views = model.line.alignment_views();
+        let w = crate::drawings::DrawingsWindow {
+            formats: vec![ohl_drawing::export::Format::Svg],
+            ..Default::default()
+        };
+        let dir = std::env::temp_dir().join(format!("ohl-app-{}-phase-groups", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut win = PlansWindow::default();
+        win.show(PlanKind::Phase);
+        win.groups = vec![PhaseGroup {
+            name: "North and south".into(),
+            alignments: views.iter().map(|v| v.id.clone()).collect(),
+        }];
+        let req = win.request();
+        assert_eq!(req.groups.len(), 1);
+        let input = Input::for_plans(&model, 0, &w, dir.clone(), &req).unwrap();
+        let done = run_plans(&input, &req, &|_, _| {}).unwrap();
+        assert!(done.contains("files written"), "{done}");
+        let names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names
+                .iter()
+                .all(|n| n.starts_with("North-and-south-phase-plan")),
+            "{names:?}"
+        );
+        assert!(!names.is_empty());
+        // Every alignment's first structure is in it.
+        let svg: String = names
+            .iter()
+            .map(|n| std::fs::read_to_string(dir.join(n)).unwrap())
+            .collect();
+        for v in &views {
+            if let Some(s) = v.structures.first() {
+                assert!(svg.contains(s.as_str()), "{s}");
+            }
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

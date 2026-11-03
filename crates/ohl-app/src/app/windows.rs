@@ -768,6 +768,7 @@ pub(super) fn tool_windows(
         let wanted = r.plans.wanted(&r.model, r.drawings.settings());
         r.model.want(wanted, ctx);
     }
+    r.plans.keep(&mut r.model, ctx);
     r.plans.ui(ctx, &r.model, r.case, r.drawings.settings());
     measuring_frame(ctx, r);
     if let Some((path, text)) = r.case_groups.ui(ctx, &r.model)

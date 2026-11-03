@@ -1473,6 +1473,34 @@ pub struct PlanRequest {
     pub photo: bool,
     /// The corridor drawn at the line width.
     pub corridor: bool,
+    /// The phase plan: alignments drawn together in one plan (owner,
+    /// 2026-11-03: "choose which routes and alignments are part of 1
+    /// plan"); an alignment in none its own plan, as before.
+    pub groups: Vec<PhaseGroup>,
+}
+
+/// Alignments drawn in one phase plan.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct PhaseGroup {
+    /// The plan's name (its files' and title's).
+    pub name: String,
+    /// The alignments, by id (drawn in the line's order).
+    pub alignments: Vec<String>,
+}
+
+/// A name as a file name: letters, digits, `-` and `_`, the rest `-`.
+fn file_safe(name: &str) -> String {
+    let s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if s.is_empty() { "plan".into() } else { s }
 }
 
 impl Input {
@@ -1533,11 +1561,65 @@ fn run_plans_kept(
         .ok_or_else(|| format!("paper \"{}\": not a size", req.page))?;
     let options = input.route_options();
     let (mut files, mut warnings) = (0, Vec::new());
-    let n = input.routes.len();
-    for (r, route) in input.routes.iter().enumerate() {
+    // The phase plans of alignments drawn together first; the others
+    // each its own as before.
+    let grouped: Vec<&PhaseGroup> = if req.kind == PlanKind::Phase {
+        req.groups
+            .iter()
+            .filter(|g| !g.alignments.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for (k, g) in grouped.iter().enumerate() {
+        report(
+            format!("phase plan {} ({} of {})", g.name, k + 1, grouped.len()),
+            0.0,
+        );
+        let mut ds = Vec::new();
+        for route in input.routes.iter().filter(|r| g.alignments.contains(&r.id)) {
+            ds.push(input.drawing_with_backgrounds(route)?);
+        }
+        for a in &g.alignments {
+            if !input.routes.iter().any(|r| &r.id == a) {
+                warnings.push(format!("phase plan {}: no alignment {a}", g.name));
+            }
+        }
+        let Some(first) = ds.first() else {
+            continue;
+        };
+        let mut first = first.clone();
+        first.name = g.name.clone();
+        let mut refs: Vec<&ohl_drawing::RouteDrawing> = vec![&first];
+        refs.extend(ds.iter().skip(1));
+        let sheets = ohl_drawing::plans::phase_plan_of(&refs, &options, &page);
+        let mut written = ohl_drawing::export::write_plan(
+            sheets,
+            &input.export,
+            &format!("{}-phase-plan", file_safe(&g.name)),
+            &format!("{} — {}", req.kind.title(), g.name),
+            &input.out,
+            &budget,
+        )?;
+        pages.append(&mut written.pages);
+        files += written.files.len();
+        warnings.extend(
+            written
+                .warnings
+                .into_iter()
+                .map(|w| format!("phase plan {}: {w}", g.name)),
+        );
+    }
+    let alone: Vec<&AlignmentView> = input
+        .routes
+        .iter()
+        .filter(|r| !grouped.iter().any(|g| g.alignments.contains(&r.id)))
+        .collect();
+    let n = alone.len();
+    for (r, route) in alone.into_iter().enumerate() {
         report(
             format!("route {} ({} of {n})", route.id, r + 1),
-            r as f32 / n as f32,
+            r as f32 / n.max(1) as f32,
         );
         let d = input.drawing_with_backgrounds(route)?;
         let (sheets, what) = match req.kind {
@@ -1703,6 +1785,7 @@ pub fn plan_set_inputs(
                     drawings: true,
                     photo: true,
                     corridor: true,
+                    groups: Vec::new(),
                 };
                 let input = Input::for_plans(model, case, &ww, out.clone(), &req).map_err(at)?;
                 jobs.push((kind.title().to_lowercase(), keep(input), Some(req)));
