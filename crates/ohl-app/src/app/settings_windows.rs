@@ -514,6 +514,49 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .small()
                 .weak(),
             );
+            ui.separator();
+            ui.strong("Local conditions on the spans");
+            ui.label(
+                "How a span takes the local conditions of its two structures (Structures table: \
+                 wind static, wind clearance, wire ice) in a check with Use local conditions \
+                 ticked. A structure without a factor counts 1; a span's own local winds and \
+                 local ice (Sections table) are kept.",
+            );
+            for (choice, text, help) in [
+                (
+                    ohl_line::local::SpanRule::Worst,
+                    "The worst of the two (default)",
+                    "Each span takes the larger factor of its two structures: on the safe side",
+                ),
+                (
+                    ohl_line::local::SpanRule::Mean,
+                    "The mean of the two",
+                    "Each span takes the mean of its two structures' factors: a span between a \
+                     sheltered and an exposed structure halfway",
+                ),
+            ] {
+                ui.radio_value(&mut draft.local_spans, choice, text)
+                    .on_hover_text(help);
+            }
+            let with = r
+                .model
+                .line
+                .structures
+                .iter()
+                .filter(|s| !s.local.is_empty())
+                .count();
+            ui.label(
+                egui::RichText::new(format!(
+                    "{with} structure(s) on this line give local conditions. The effect: only on \
+                     the spans between two structures with different factors, and only in the \
+                     checks with Use local conditions ticked (the views and tables show the \
+                     weather cases as written). Time: none here; a check with the switch ticked \
+                     solves its weather cases again on the line with the local conditions (its \
+                     switch's hover shows the time measured)."
+                ))
+                .small()
+                .weak(),
+            );
             if let Err(why) = r.model.can_edit() {
                 crate::menu::error_label(ui, format!("read-only: {why}"));
             }

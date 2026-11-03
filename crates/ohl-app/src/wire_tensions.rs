@@ -30,6 +30,14 @@ use crate::selection::Selection;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Strength,
+    "wire-tensions",
+    "the wires' tensions",
+);
+
 /// A check's answer: the report and the rules it was made with.
 #[derive(Debug, Clone, Default)]
 pub struct Report {
@@ -60,8 +68,9 @@ pub struct Out {
 pub struct WireTensionsWindow {
     /// Shown.
     pub open: bool,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the tensions with
+    /// the structures' wind for strength and wire ice on their spans.
+    pub local: bool,
     /// What it checks: the circuits, routes and sections (owner,
     /// 2026-10-28: the scope of every check window), kept in its rule
     /// file's `[check]`.
@@ -114,12 +123,9 @@ impl WireTensionsWindow {
             match RuleSet::load(&file) {
                 Ok(set) => {
                     self.rules = set.tension_rules;
-                    // The overrides ticked, from its [check].
+                    // Use local conditions, from its [check].
                     if let Some(c) = set.check {
-                        self.overrides = crate::case_groups::Overrides {
-                            structures: c.structure_override,
-                            sections: c.section_override,
-                        };
+                        self.local = c.local;
                         self.scope = check_ui::Scope::of_check(&c);
                     }
                 }
@@ -143,9 +149,8 @@ impl WireTensionsWindow {
             name: "Wire tensions".into(),
             rules: Vec::new(),
             wind: None,
-            // The overrides ticked.
-            // The scope and the overrides ticked.
-            check: check_ui::check_of(&self.scope, self.overrides),
+            // The scope and Use local conditions.
+            check: check_ui::check_of(&self.scope, self.local),
             vegetation: None,
             checks: vec![PresetCheck::Tension],
             tension_rules: self.rules.clone(),
@@ -196,15 +201,18 @@ impl WireTensionsWindow {
             ));
             return;
         }
-        let line = model.line.clone();
+        // The line with the local conditions when ticked (the wind for
+        // strength).
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let rules = self.rules.clone();
-        let filter = self.overrides.filter(model);
         // The scope's sections only (none: the whole line).
         let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
+            let line = local.line();
             let mut solved = Vec::new();
-            let mut notes = Vec::new();
+            let mut notes = local.notes();
             // Each case once per calculation its rules ask (2026-11-01).
             let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
             let plan = ohl_clearance::calculation::solves(
@@ -215,14 +223,12 @@ impl WireTensionsWindow {
             );
             for (k, calc) in plan {
                 let case = &cases[k];
-                let line = ohl_clearance::calculation::line_for(&line, calc);
+                let line = ohl_clearance::calculation::line_for(line, calc);
                 let mut shapes = Vec::new();
-                for (section, r) in
-                    line.sections
-                        .iter()
-                        .zip(ohl_line::solve::solve_line_memo_default(
-                            &line, &library, case,
-                        ))
+                for (section, r) in line
+                    .sections
+                    .iter()
+                    .zip(local.sections(&line, &library, case))
                 {
                     match r {
                         Ok(s) if keep.as_ref().is_some_and(|k| !k.contains(&s.section)) => {}
@@ -244,8 +250,9 @@ impl WireTensionsWindow {
                 .iter()
                 .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
                 .collect();
-            let mut report = tension::check(&line, &library, &views, &rules, &filter);
+            let mut report = tension::check(line, &library, &views, &rules, &Default::default());
             report.notes.splice(0..0, notes);
+            local.finish(LOCAL.1, started.elapsed());
             Ok(Report { report, rules })
         });
     }
@@ -384,7 +391,7 @@ impl WireTensionsWindow {
                     }
                 }
                 help::footer(ui, "wire-tensions-window", |ui| {
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     run |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -393,7 +400,14 @@ impl WireTensionsWindow {
                         Some(scope_words),
                         Some(check_ui::scope_plan(&model.line, &self.scope, rule_cases)),
                         |ui| {
-                            changed |= overrides.ui(ui);
+                            changed |= crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });
@@ -754,18 +768,19 @@ fn ticks(ui: &mut egui::Ui, all: &[String], chosen: &mut Vec<String>) -> bool {
 mod tests {
     use super::*;
 
-    /// The overrides ticked are kept in the rule file's [check] and read
-    /// back from it (owner, 2026-10-25).
+    /// Use local conditions ticked is kept in the rule file's [check] and
+    /// read back from it (owner, 2026-11-03).
     #[test]
-    fn the_overrides_are_kept_in_the_rule_file() {
-        let mut w = WireTensionsWindow::default();
-        w.overrides.sections = true;
+    fn use_local_conditions_is_kept_in_the_rule_file() {
+        let w = WireTensionsWindow {
+            local: true,
+            ..Default::default()
+        };
         let text = w.rule_set().to_toml();
-        assert!(text.contains("section_override = true"), "{text}");
-        assert!(!text.contains("structure_override"), "{text}");
+        assert!(text.contains("local = true"), "{text}");
+        assert!(!text.contains("override"), "{text}");
         let back = RuleSet::parse(&text).unwrap();
-        let c = back.check.unwrap();
-        assert!(c.section_override && !c.structure_override);
+        assert!(back.check.unwrap().local);
         // None ticked: no [check] at all.
         assert!(
             !WireTensionsWindow::default()
@@ -777,6 +792,86 @@ mod tests {
     use eframe::egui;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
+
+    /// Runs the check on `model` in the high wind (Use local conditions
+    /// ticked or not) and waits for its report.
+    fn run_high_wind(model: &Model, local: bool) -> Report {
+        let ctx = egui::Context::default();
+        let mut w = WireTensionsWindow {
+            local,
+            rules: vec![TensionRule {
+                factor: 1.0,
+                cases: vec!["high wind".into()],
+                ..TensionRule::blank("invented 1.0")
+            }],
+            ..Default::default()
+        };
+        w.start(model, &ctx);
+        let started = std::time::Instant::now();
+        loop {
+            w.job.poll();
+            if let Some(r) = w.job.result.take() {
+                return r.unwrap();
+            }
+            assert!(started.elapsed().as_secs() < 120, "no answer in 120 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    /// Use local conditions (owner, 2026-11-03): structure T2's wind for
+    /// strength 1.5 makes the tensions of its spans in the high wind
+    /// larger than with the switch unticked, the notes say so; ticked
+    /// with no local conditions, the same tensions as unticked.
+    #[test]
+    fn local_wind_at_a_structure_raises_its_spans_tensions() {
+        let mut model = crate::tests::synthetic();
+        let t = |r: &Report, span: usize| {
+            r.report
+                .rows
+                .iter()
+                .find(|x| x.section == "S1" && x.span == span)
+                .unwrap()
+                .tension
+        };
+        let base = run_high_wind(&model, false);
+        let same = run_high_wind(&model, true);
+        assert_eq!(t(&same, 0), t(&base, 0));
+        assert!(
+            same.report
+                .notes
+                .iter()
+                .any(|n| n.contains("no structure gives any")),
+            "{:?}",
+            same.report.notes
+        );
+        model
+            .line
+            .structures
+            .iter_mut()
+            .find(|s| s.id == "T2")
+            .unwrap()
+            .local
+            .wind_static = Some(1.5);
+        let with = run_high_wind(&model, true);
+        for span in [0, 1] {
+            assert!(
+                t(&with, span) > t(&base, span) * 1.01,
+                "span {span}: {} > {}",
+                t(&with, span),
+                t(&base, span)
+            );
+        }
+        assert!(
+            with.report
+                .notes
+                .iter()
+                .any(|n| n.contains("1 structure(s), spans worst; solved again")),
+            "{:?}",
+            with.report.notes
+        );
+        // Unticked: the weather case as written.
+        assert_eq!(t(&run_high_wind(&model, false), 0), t(&base, 0));
+    }
 
     /// Checks › Wire tensions: a rule with an invented factor so small that
     /// every span fails; Run lists every span, the failures marked in the

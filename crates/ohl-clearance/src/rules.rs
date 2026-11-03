@@ -79,12 +79,13 @@
 //!   section by this calculation method (`"fe"` finite elements, `"rs"`
 //!   ruling span; default each section's own), LiDAR points only within
 //!   `search_distance` of the wires (default: as far as the rules reach);
-//!   `structure_override`, `section_override` (2026-10-25, default false):
-//!   the checks' structure and section overrides ticked — results at
-//!   objects with weather case groups take only the check's cases in
-//!   them (the desktop windows: clearances, wire tensions, string
-//!   checks; the command line does not apply them yet); the rest `ohl
-//!   zones` too; `ohl line` ignores it. `routes`, `alignments`
+//!   `local` (2026-11-03, default false): the check's **Use local
+//!   conditions** ticked — the line solved again with its structures'
+//!   local conditions on the spans (`ohl_line::local::localized`; the
+//!   desktop windows; the command line does not apply it yet).
+//!   `structure_override`, `section_override` (2026-10-25, the weather
+//!   case group overrides it replaces) are still read and ignored; the
+//!   rest `ohl zones` too; `ohl line` ignores it. `routes`, `alignments`
 //!   (2026-10-27, ids, default none: the whole line): only the sections
 //!   and jumpers on a route or an alignment named are solved and checked
 //!   ([`CheckScope::wires_on`]; `ohl zones` too, `--route`/`--alignment`
@@ -819,9 +820,13 @@ struct RawCheck {
     #[serde(default)]
     search_distance: Option<Length>,
     #[serde(default)]
-    structure_override: bool,
-    #[serde(default)]
-    section_override: bool,
+    local: bool,
+    /// The weather case group overrides (2026-10-25), replaced by `local`
+    /// (2026-11-03): read and ignored.
+    #[serde(default, rename = "structure_override")]
+    _structure_override: bool,
+    #[serde(default, rename = "section_override")]
+    _section_override: bool,
     #[serde(default)]
     routes: Vec<String>,
     #[serde(default)]
@@ -1268,12 +1273,10 @@ pub struct CheckScope {
     /// LiDAR points farther from the wires are ignored, m (`None`: as
     /// far as the rules reach).
     pub search_distance: Option<f64>,
-    /// The structure override ticked (owner, 2026-10-25): at a structure
-    /// with weather case groups, only the check's cases in them.
-    pub structure_override: bool,
-    /// The section override ticked: on a section with weather case
-    /// groups, only the check's cases in them.
-    pub section_override: bool,
+    /// **Use local conditions** ticked (owner, 2026-11-03; replaces the
+    /// structure and section overrides of 2026-10-25): the check computes
+    /// on the line with its structures' local conditions on the spans.
+    pub local: bool,
     /// The routes checked, by id (owner, 2026-10-27): with
     /// [`CheckScope::alignments`] empty too, the whole line; else only the
     /// sections and jumpers on a route or an alignment chosen
@@ -1301,8 +1304,7 @@ impl CheckScope {
             && self.sections.is_empty()
             && self.method.is_none()
             && self.search_distance.is_none()
-            && !self.structure_override
-            && !self.section_override
+            && !self.local
     }
 
     /// Whether weather case `name` is run (its list, or every case).
@@ -1572,8 +1574,7 @@ impl RuleSet {
                 }
                 Ok(CheckScope {
                     search_distance,
-                    structure_override: c.structure_override,
-                    section_override: c.section_override,
+                    local: c.local,
                     circuits: c.circuits,
                     routes: c.routes,
                     alignments: c.alignments,
@@ -1767,11 +1768,8 @@ impl RuleSet {
             if let Some(d) = c.search_distance {
                 let _ = writeln!(t, "search_distance = {}", length(d));
             }
-            if c.structure_override {
-                t.push_str("structure_override = true\n");
-            }
-            if c.section_override {
-                t.push_str("section_override = true\n");
+            if c.local {
+                t.push_str("local = true\n");
             }
         }
         if let Some(v) = &self.vegetation {
@@ -1938,6 +1936,25 @@ impl Rule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `[check] local = true` (2026-11-03) is read and written back; the
+    /// old overrides' keys are still read and ignored (not written).
+    #[test]
+    fn use_local_conditions_in_the_check_table() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n";
+        let set = RuleSet::parse(&format!("{head}[check]\nlocal = true\n")).unwrap();
+        assert!(set.check.as_ref().unwrap().local);
+        let text = set.to_toml();
+        assert!(text.contains("local = true"), "{text}");
+        assert_eq!(RuleSet::parse(&text).unwrap().check, set.check);
+        let old = RuleSet::parse(&format!(
+            "{head}[check]\nstructure_override = true\nsection_override = true\n"
+        ))
+        .unwrap();
+        let c = old.check.clone().unwrap();
+        assert!(!c.local && c.is_empty());
+        assert!(!old.to_toml().contains("override"));
+    }
 
     /// `[wind] arc = true` is read and written back; a file without it
     /// reads as before (no arc), and is written without it.

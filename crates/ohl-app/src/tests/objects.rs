@@ -968,63 +968,101 @@ fn the_weather_case_table_writes_its_file() {
     assert_solved_fully(&r.model);
 }
 
-/// Weather case groups on structures and sections (owner, 2026-10-25),
-/// typed in their tables as a comma list: a group the case file does not
-/// have is refused (naming those it has); kept on the object, nothing
-/// solved again for them.
+/// A structure's local conditions (owner, 2026-11-03) typed in the
+/// Structures table: the factors as typed, the structure ice in mm, the
+/// snow in kN/m² (kept in SI), a negative factor refused; emptied, not
+/// given. A section's local ice typed beside its local winds. Weather case
+/// groups already on a structure (from its file) are kept by a table edit
+/// though the table no longer shows them.
 #[test]
-fn structures_and_sections_take_weather_groups() {
+fn structures_take_local_conditions_and_sections_local_ice() {
     use crate::tables::TableKind;
-    let mut model = synthetic_project("structure-groups");
-    let path = model.sources.file.parent().unwrap().join("cases.ohlwc");
-    let text = std::fs::read_to_string(root().join("examples/synthetic-line/weather-cases.ohlwc"))
+    let mut model = synthetic_project("structure-local");
+    model
+        .line
+        .structures
+        .iter_mut()
+        .find(|s| s.id == "T2")
         .unwrap()
-        + "\n[[group]]\nname = \"internal\"\ncases = [\"glaze ice\"]\n\
-           [[group]]\nname = \"snow\"\ncases = [\"everyday\"]\n";
-    std::fs::write(&path, text).unwrap();
-    model.sources.weather = Some(path);
+        .weather_groups = vec!["internal".into()];
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     let kind = TableKind::Structures;
-    set_cell(
-        &mut harness,
-        kind,
-        "T2",
-        "weather groups",
-        "internal; other",
+    assert!(
+        !crate::tables::TableKind::Structures
+            .columns()
+            .iter()
+            .any(|c| c.0 == "weather groups")
     );
+    set_cell(&mut harness, kind, "T2", "wind static", "-1");
     let e = apply_table(&mut harness, kind, false).unwrap_err();
-    assert!(e.contains("internal, snow"), "{e}");
-    set_cell(&mut harness, kind, "T2", "weather groups", "internal; snow");
+    assert!(e.contains("wind_static") && e.contains("0 or more"), "{e}");
+    for (col, v) in [
+        ("wind static", "1.5"),
+        ("wind clearance", "0.8"),
+        ("wire ice", "2"),
+        ("structure ice mm", "10"),
+        ("snow s_k kN/m²", "2.5"),
+        ("snow h0 m", "1200"),
+    ] {
+        set_cell(&mut harness, kind, "T2", col, v);
+    }
     apply_table(&mut harness, kind, false).unwrap();
-    let s1 = harness.state_mut().ready().unwrap().model.line.sections[0]
-        .id
-        .clone();
+    let s1 = {
+        let r = harness.state_mut().ready().unwrap();
+        let t2 = r.model.line.structure("T2").unwrap();
+        assert_eq!(
+            t2.local,
+            ohl_line::local::LocalConditions {
+                wind_static: Some(1.5),
+                wind_clearance: Some(0.8),
+                wire_ice: Some(2.0),
+                structure_ice: Some(0.01),
+                snow_ground: Some(2500.0),
+                snow_altitude: Some(1200.0),
+            }
+        );
+        assert_eq!(t2.weather_groups, vec!["internal"]);
+        let rows = kind.rows(&r.model, r.case);
+        let row = rows.iter().find(|x| x.key == "T2").unwrap();
+        assert_eq!(row.cells[kind.column("structure ice mm")], "10.0");
+        r.model.line.sections[0].id.clone()
+    };
+    set_cell(&mut harness, kind, "T2", "wind static", "");
+    apply_table(&mut harness, kind, false).unwrap();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .structure("T2")
+            .unwrap()
+            .local
+            .wind_static,
+        None
+    );
     set_cell(
         &mut harness,
         TableKind::Sections,
         &s1,
-        "weather groups",
-        "snow",
+        "local ice",
+        "2–3: 1.5",
     );
     apply_table(&mut harness, TableKind::Sections, false).unwrap();
     let r = harness.state_mut().ready().unwrap();
-    let t2 = r.model.line.structure("T2").unwrap();
-    assert_eq!(t2.weather_groups, vec!["internal", "snow"]);
-    assert_eq!(r.model.line.sections[0].weather_groups, vec!["snow"]);
-    // The overrides' filter: at T2 the glaze ice and everyday cases only,
-    // on the section everyday only; elsewhere every case.
-    let f = crate::case_groups::Overrides {
-        structures: true,
-        sections: true,
-    }
-    .filter(&r.model);
-    assert!(f.takes(Some("T2"), None, "glaze ice"));
-    assert!(!f.takes(Some("T2"), None, "max temperature"));
-    assert!(!f.takes(None, Some(&s1), "glaze ice"));
-    assert!(f.takes(Some("T3"), None, "max temperature"));
+    let sec = &r.model.line.sections[0];
+    assert_eq!(sec.ice_factor(1), 1.5);
+    assert_eq!(sec.ice_factor(0), 1.0);
+    let rows = TableKind::Sections.rows(&r.model, r.case);
+    let row = rows.iter().find(|x| x.key == s1).unwrap();
+    assert_eq!(
+        row.cells[TableKind::Sections.column("local ice")],
+        "2–3: 1.5"
+    );
 }
 
 /// The soil resistivity measured at a structure (owner, 2026-10-27):

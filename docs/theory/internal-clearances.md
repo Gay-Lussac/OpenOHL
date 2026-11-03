@@ -152,8 +152,10 @@ line: each leg carries the assembly's volumes.
 A rule gives the weather cases, the voltages, the parts and the distance
 to keep — fixed, by voltage or by a formula — and optionally **another in
 the cases with wind** (`distance_wind`: a wind pressure above 0; owner,
-2026-10-19). The structure and section overrides take a structure's or a
-section's own weather case groups. No distance is built in.
+2026-10-19). With **Use local conditions** ticked (2026-11-03) the cases
+are solved again on the line with the structures' wind for clearances
+and wire ice on their spans (and a group's wind study taken at its
+structures). No distance is built in.
 
 ## Cost and exit clause
 

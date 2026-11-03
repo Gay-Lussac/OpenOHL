@@ -73,25 +73,19 @@ a description, the cases ticked; **Save** writes them into the file, one
 change) and **picked as one** — a group's button adds its cases — in
 **Line › Criteria › Loads for structures** and in the checks' case lists
 (vertical and radial clearances, vegetation, safety volumes, wire
-tensions, string checks, distance between conductors). **Structures and sections** take groups of their own — the **weather
-groups** column of the Structures and Sections tables, ticked in its dropdown (the case file's groups only, nothing typed; a group name has no semicolon)
-(a wind study's lower winds at some pylons; the snow load varying along
-the line by section). Every check has two ticks — beside **Run**, in the vertical and radial
-clearance windows under *2 Scope*:
-**structure override** and **section override**. Ticked, a result at a
-structure (a string, a structure's loads) or on a span takes only the
-check's cases that are in that structure's or section's groups — a span
-is at its section and at both its ends — and is left out in the others;
-objects without groups take every case of the check. A case is still
-computed for the line as a whole: the overrides choose which results
-count where. Checks with them: vertical and radial clearances, vegetation,
-safety volumes, wire tensions, string checks, distance between conductors
-(also under unequal wind: a pair only in a case both its spans take),
-galloping, and the structure loads (the structure override only: their
-loads are summed per structure from every section). The ticks of the
-clearance windows, wire tensions and string checks are kept in their
-rule files (`[check]` `structure_override`, `section_override`); the
-others' for the session. Renaming a case in
+tensions, string checks, distance between conductors). **Groups are only
+that** (2026-11-03): named lists of cases for picking several at once.
+Until then structures and sections took groups of their own (a
+**weather groups** column in the Structures and Sections tables) and
+every check had a **structure override** and a **section override**
+tick taking at those objects only the check's cases in their groups;
+that way of giving local conditions is replaced by the structures'
+[local conditions](#local-conditions) and one **Use local conditions**
+switch per check. The groups still in a line file are read and kept, no
+longer used: a check run says so once ("weather groups on structures
+are no longer used: give local conditions"); the old ticks in rule
+files (`[check]` `structure_override`, `section_override`) and in the
+windows' kept setups (`overrides`) are read and ignored. Renaming a case in
 the Weather cases table renames it in the groups too; a name no case has
 (deleted, or renamed elsewhere) stays in its group, shown as such, not
 refused. Group names are unique in the file.
@@ -111,7 +105,8 @@ structure_wind = "my-code.wind_study"
 structure_wind_min = "300 Pa"
 ```
 
-With the **structure override** ticked, the internal clearances check a
+With **Use local conditions** ticked (until 2026-11-03: the structure
+override), the internal clearances check a
 structure with a value in that column in the group's cases at that
 pressure: those cases are solved again at it (for the whole line, the
 results taken at those structures only) and its rows named
@@ -121,6 +116,67 @@ case's own wind taken. Structures without a value keep the case's wind.
 (The LeV's explanations, ESTI 240 Art. 33: a wind study may lower the
 wind for the distances of the conductors to the structures down to
 300 N/m², per EN 50341-1.) Only the internal clearances take it so far.
+The study's runs are on the line as written (its pressure in place of
+the case's), not times the structures' wind for clearances; whether the
+study stays a group's column or becomes a structure's local condition is
+the owner's to decide.
+
+### Local conditions
+
+*Built, in active development, not approved yet* (owner, 2026-11-03).
+A structure may give **local conditions** — the Structures table's
+columns **wind static** (a factor on the weather cases' wind for
+strength), **wind clearance** (a factor on their wind for clearances),
+**wire ice** (a factor on the ice and wet snow on the wires of its
+spans), **structure ice mm** (ice on its members), **snow s_k kN/m²**
+and **snow h0 m** (the snow on the ground, given or from the reference
+altitude); in the line file a structure's `local`
+([Line file](line-file.md)). A span takes the **worst** of its two
+structures' factors, or their **mean** (Line › Criteria › Calculation
+options; a structure without one counts 1); a span's own local winds and
+local ice (Sections table) are kept.
+
+Every check has one switch beside **Run**: **Use local conditions**.
+Unticked, the check takes the weather cases as written. Ticked, it
+computes on the line with the local conditions on its spans, each of its
+weather cases solved again on it (the solves shared by the checks of the
+same wind, from the memo of solves). Which wind a check takes:
+
+| Check | Wind | Why |
+|---|---|---|
+| Structure loads (and the usage) | for strength | the wires' tensions, ice and wind on the structures; also the wind on the structures' own wind bands, times their **wind static** |
+| String checks | for strength | the strings' loads against their resistance |
+| Wire tensions | for strength | the wires' tensions |
+| Ice shedding | for strength | the tensions and sags before and after the ice drops |
+| Galloping | for strength | the sag and tension sizing the ellipses |
+| Internal clearances | for clearances | the swing of the strings and jumpers at the structures |
+| Vertical and radial clearances, Clearances | for clearances | the wires' swing and sag |
+| Distance between conductors (and under unequal wind) | for clearances | the conductors' swing and sag |
+| Safety volumes | for clearances | the wires' swing building the volumes |
+| Vegetation | for clearances | the wires' swing and sag over the vegetation |
+| Lightning | for clearances | the wires' positions against the shield wires |
+
+The **wire ice** factor is taken by every check with the switch ticked.
+The **structure ice** and the **snow** are kept with the structure and
+not yet taken by a check (the structure loads' load cases will take
+them). The member wind of the usage check (finite elements) and the
+poles' wind are not yet times **wind static**; the wind on a type's wind
+bands is.
+
+When no structure gives local conditions, the switch changes nothing
+and nothing is solved again (its hover says so, the notes too). The
+check's notes say what was taken: "local conditions (wind for strength,
+wire ice): N structure(s), spans worst; solved again". The switch's
+hover says what the check takes the wind for, the structures giving
+local conditions on this line, and the time of its last runs with and
+without them (measured). Measured on the synthetic example line (an
+optimised build, 2026-11-03): its five weather cases solved again on the
+line with local conditions in about 50 ms (the line as written: 40 to
+50 ms); a second check of the same wind takes them from the memo in
+under 1 ms. The switch is kept with the check: in its rule
+file's `[check]` (`local = true`) where it has one, else in its setup
+kept in the project (`"local": true`); the structure loads' for the
+session. The command line does not take it yet.
 
 A rule preset's groups come with its weather cases into the project's
 file (its cases under the project's names), a group of a name the file

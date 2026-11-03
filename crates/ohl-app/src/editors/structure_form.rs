@@ -48,6 +48,7 @@ impl StructureForm {
             along_line: along.is_some(),
             routes: Vec::new(),
             weather_groups: Vec::new(),
+            local: Default::default(),
             soil_resistivity_ohm_m: None,
             earthing_resistance_ohm: None,
             new_route: String::new(),
@@ -155,6 +156,7 @@ impl StructureForm {
             along_line: false,
             routes: s.routes.clone(),
             weather_groups: s.weather_groups.clone(),
+            local: s.local,
             soil_resistivity_ohm_m: s.soil_resistivity_ohm_m,
             earthing_resistance_ohm: s.earthing_resistance_ohm,
             new_route: String::new(),
@@ -231,6 +233,7 @@ impl StructureForm {
                 points: self.global_points(),
                 routes: self.routes.clone(),
                 weather_groups: self.weather_groups.clone(),
+                local: self.local,
                 soil_resistivity_ohm_m: self.soil_resistivity_ohm_m,
                 earthing_resistance_ohm: self.earthing_resistance_ohm,
                 ..Structure::new(id.clone(), self.position)
@@ -268,6 +271,7 @@ impl StructureForm {
             s.description = self.description.trim().to_owned();
             s.routes = self.routes.clone();
             s.weather_groups.clone_from(&self.weather_groups);
+            s.local = self.local;
             s.soil_resistivity_ohm_m = self.soil_resistivity_ohm_m;
             s.earthing_resistance_ohm = self.earthing_resistance_ohm;
             // Its own points as in the window (in its axes, turned and

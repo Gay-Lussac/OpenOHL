@@ -30,6 +30,14 @@ use crate::selection::Selection;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Strength,
+    "string-checks",
+    "the strings' loads against their resistance",
+);
+
 /// A check's answer: the report and the rules it was made with.
 #[derive(Debug, Clone, Default)]
 pub struct Report {
@@ -65,8 +73,9 @@ pub struct StringChecksWindow {
     pub rules: Vec<StringRule>,
     /// What was done last, in words (an error: true).
     pub status: Option<(String, bool)>,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the strings' loads with the
+    /// structures' wind for strength and wire ice on their spans.
+    pub local: bool,
     /// What it checks: the circuits, routes and sections (owner,
     /// 2026-10-28: the scope of every check window), kept in its rule
     /// file's `[check]`.
@@ -112,12 +121,9 @@ impl StringChecksWindow {
             match RuleSet::load(&file) {
                 Ok(set) => {
                     self.rules = set.string_rules;
-                    // The overrides ticked, from its [check].
+                    // Use local conditions, from its [check].
                     if let Some(c) = set.check {
-                        self.overrides = crate::case_groups::Overrides {
-                            structures: c.structure_override,
-                            sections: c.section_override,
-                        };
+                        self.local = c.local;
                         self.scope = check_ui::Scope::of_check(&c);
                     }
                 }
@@ -143,9 +149,8 @@ impl StringChecksWindow {
             name: "String checks".into(),
             rules: Vec::new(),
             wind: None,
-            // The overrides ticked.
-            // The scope and the overrides ticked.
-            check: check_ui::check_of(&self.scope, self.overrides),
+            // The scope and Use local conditions.
+            check: check_ui::check_of(&self.scope, self.local),
             vegetation: None,
             checks: vec![PresetCheck::Strings],
             tension_rules: Vec::new(),
@@ -196,15 +201,17 @@ impl StringChecksWindow {
             ));
             return;
         }
-        let line = model.line.clone();
+        // The line with the local conditions when ticked.
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let rules = self.rules.clone();
-        let filter = self.overrides.filter(model);
         // The scope's sections only (none: the whole line).
         let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
+            let line = local.line();
             let mut solved = Vec::new();
-            let mut notes = Vec::new();
+            let mut notes = local.notes();
             // Each case once per calculation its rules ask (2026-11-01).
             let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
             let plan = ohl_clearance::calculation::solves(
@@ -215,14 +222,12 @@ impl StringChecksWindow {
             );
             for (k, calc) in plan {
                 let case = &cases[k];
-                let line = ohl_clearance::calculation::line_for(&line, calc);
+                let line = ohl_clearance::calculation::line_for(line, calc);
                 let mut shapes = Vec::new();
-                for (section, r) in
-                    line.sections
-                        .iter()
-                        .zip(ohl_line::solve::solve_line_memo_default(
-                            &line, &library, case,
-                        ))
+                for (section, r) in line
+                    .sections
+                    .iter()
+                    .zip(local.sections(&line, &library, case))
                 {
                     match r {
                         Ok(s) if keep.as_ref().is_some_and(|k| !k.contains(&s.section)) => {}
@@ -244,8 +249,9 @@ impl StringChecksWindow {
                 .iter()
                 .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
                 .collect();
-            let mut report = strings::check(&line, &views, &rules, &filter);
+            let mut report = strings::check(line, &views, &rules, &Default::default());
             report.notes.splice(0..0, notes);
+            local.finish(LOCAL.1, started.elapsed());
             Ok(Report { report, rules })
         });
     }
@@ -386,7 +392,7 @@ impl StringChecksWindow {
                     }
                 }
                 help::footer(ui, "string-checks-window", |ui| {
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     run |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -395,7 +401,14 @@ impl StringChecksWindow {
                         Some(scope_words),
                         Some(check_ui::scope_plan(&model.line, &self.scope, rule_cases)),
                         |ui| {
-                            changed |= overrides.ui(ui);
+                            changed |= crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });

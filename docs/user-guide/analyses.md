@@ -499,7 +499,8 @@ each a tick menu that stays open (search, All / None / Invert). The line is
 still solved whole (sections solved together stay together); the spans
 of the wires out of scope are left out of the check: no grow-in point or
 danger tree is looked for near them, and the scope is said in the run's
-notes. The panel's setup — settings, cases (by name), scope, overrides —
+notes. The panel's setup — settings, cases (by name), scope, **Use local
+conditions** (`local`, 2026-11-03: the wind for clearances) —
 is **kept in the project** for each project line (project setting
 `app.vegetation.<line>`), read again when the project opens.
 

@@ -32,10 +32,43 @@ use crate::model::Model;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Strength,
+    "structure-loads",
+    "the wires' loads on the structures (their tensions, ice and wind) and the wind on the \
+     structures' own wind bands, times the structure's factor; the member wind of the usage \
+     check and the poles' wind not yet",
+);
+
+/// Scales the wind on the structures' own bands ([`ohl_loads::add_structure_wind`]:
+/// the loads without a point labelled "wind on the structure") at each
+/// structure giving a wind for strength by its factor.
+fn local_structure_wind(loads: &mut [ohl_loads::CaseLoads], line: &ohl_line::Line) {
+    for c in loads {
+        for l in &mut c.loads {
+            let Some(f) = line
+                .structure(&l.structure)
+                .and_then(|s| s.local.wind_static)
+            else {
+                continue;
+            };
+            if l.point.is_empty() && l.label.starts_with("wind on the structure") {
+                for v in [&mut l.force, &mut l.local, &mut l.factored] {
+                    for x in v.iter_mut() {
+                        *x *= f;
+                    }
+                }
+            }
+        }
+    }
+}
+
 type Outcome = Result<Vec<CaseLoads>, String>;
 
 /// A computation's answer: the loads, and the usage computed from them.
-type Finished = (Outcome, Vec<CaseUsage>);
+type Finished = (Outcome, Vec<CaseUsage>, Vec<String>);
 
 /// Colour of what is not checked because a wire did not solve (grey).
 const INCOMPLETE: egui::Color32 = egui::Color32::from_rgb(150, 156, 170);
@@ -159,10 +192,10 @@ pub struct LoadsPage {
     pub open: bool,
     /// The last results (or why there are none).
     pub results: Option<Outcome>,
-    /// The structure override of its cases (its loads are at the
-    /// structures: a load case at a structure with groups only when its
-    /// weather case is in them; the section override not offered).
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the loads with the
+    /// structures' wind for strength and wire ice on their spans, and their
+    /// wind for strength on their own wind bands.
+    pub local: bool,
     /// A computation running: since, its answer.
     running: Option<(Instant, Receiver<Finished>)>,
     /// How much of their capacity the structures use, per load case (with
@@ -172,6 +205,9 @@ pub struct LoadsPage {
     pub show_usage: bool,
     /// How long the last one took.
     pub took: Option<std::time::Duration>,
+    /// The last run's notes (Use local conditions, the weather groups no
+    /// longer read).
+    pub notes: Vec<String>,
     /// The load case shown.
     pub case: usize,
     /// Structures shown (id contains this text).
@@ -252,7 +288,9 @@ impl LoadsPage {
             ));
             return;
         };
-        let line = model.line.clone();
+        // The line with the local conditions when ticked (the wind for
+        // strength).
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let types = model
             .types
@@ -266,7 +304,6 @@ impl LoadsPage {
             .map_err(|e| format!("cross-section library: {e}"));
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.structures);
-        let filter = self.overrides.filter(model);
         // The load cases and structures ticked (2 Scope).
         let ticked = self.cases_ticked.clone();
         let structures = self.structures.clone();
@@ -275,6 +312,8 @@ impl LoadsPage {
         let c = ctx.clone();
         self.stamp.started(model.revision());
         std::thread::spawn(move || {
+            let started = Instant::now();
+            let line = local.line();
             let r = sections
                 .clone()
                 .and_then(|_| ohl_loads::LoadCases::load(&path))
@@ -288,7 +327,7 @@ impl LoadsPage {
                         return Err("no load case ticked (2 Scope)".to_owned());
                     }
                     ohl_loads::structure_loads(
-                        &line,
+                        line,
                         &library,
                         &weather,
                         &cases,
@@ -297,7 +336,11 @@ impl LoadsPage {
                 });
             let mut r = r;
             if let Ok(loads) = &mut r {
-                ohl_loads::add_structure_wind(loads, &line, &types, &weather);
+                ohl_loads::add_structure_wind(loads, line, &types, &weather);
+                if local.applied() {
+                    local_structure_wind(loads, line);
+                }
+
                 if let Some(on) = &scope {
                     for c in loads.iter_mut() {
                         c.loads.retain(|l| on.contains(&l.structure));
@@ -310,26 +353,18 @@ impl LoadsPage {
                     c.missing
                         .retain(|m| crate::tick_list::ticked(&structures, &m.structure));
                 }
-                // The structure override: a load case at a structure with
-                // groups only when its weather case is in them.
-                for c in loads.iter_mut() {
-                    let w = c.case.weather.clone();
-                    c.loads
-                        .retain(|l| filter.takes(Some(&l.structure), None, &w));
-                    c.missing
-                        .retain(|m| filter.takes(Some(&m.structure), None, &w));
-                }
             }
             let usage = r.as_ref().map_or_else(
                 |_| Vec::new(),
                 |loads| {
                     let sections = sections.clone().unwrap_or_default();
                     ohl_loads::capacity::usage_with_sections(
-                        &line, &types, &sections, &library, &weather, loads,
+                        line, &types, &sections, &library, &weather, loads,
                     )
                 },
             );
-            let _ = tx.send((r, usage));
+            local.finish(LOCAL.1, started.elapsed());
+            let _ = tx.send((r, usage, local.notes()));
             c.request_repaint();
         });
         self.running = Some((Instant::now(), rx));
@@ -341,8 +376,9 @@ impl LoadsPage {
             return;
         };
         let r = match rx.try_recv() {
-            Ok((r, usage)) => {
+            Ok((r, usage, notes)) => {
                 self.usage = usage;
+                self.notes = notes;
                 Some(r)
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => None,
@@ -480,13 +516,9 @@ impl LoadsPage {
                     crate::check_ui::count(structures, "structure")
                 )),
             };
-            let overrides = &mut self.overrides;
+            let local = &mut self.local;
             match crate::check_ui::run_footer(ui, f, |ui| {
-                ui.checkbox(&mut overrides.structures, "structure override")
-                    .on_hover_text(
-                        "At a structure with weather case groups (Structures table): only the \
-                         load cases whose weather case is in them",
-                    );
+                crate::local_solve::switch(ui, local, LOCAL.1, LOCAL.0, LOCAL.2, &model.line);
             }) {
                 crate::check_ui::Action::Run => self.start(model, ui.ctx()),
                 crate::check_ui::Action::Stop => self.running = None,
@@ -649,6 +681,9 @@ impl LoadsPage {
         if results.is_empty() {
             ui.label("The load case file has no case.");
             return None;
+        }
+        for n in &self.notes {
+            ui.label(egui::RichText::new(n).small().weak());
         }
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.show_usage, false, "Loads");

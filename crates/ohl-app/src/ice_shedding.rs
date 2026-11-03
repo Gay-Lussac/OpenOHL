@@ -36,6 +36,14 @@ use crate::selection::Selection;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Strength,
+    "ice-shedding",
+    "the wires' tensions and sags before and after the ice drops",
+);
+
 /// Its id in the library of performed checks.
 pub const CHECK_ID: &str = "ohl.ice-shedding";
 
@@ -79,8 +87,9 @@ pub struct Overlay {
 pub struct IceSheddingWindow {
     /// Shown.
     pub open: bool,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the shedding with the structures' wire
+    /// ice and wind for strength on their spans.
+    pub local: bool,
     /// The circuits, routes and sections that shed (kept in its rule
     /// file's `[check]`).
     pub scope: check_ui::Scope,
@@ -134,10 +143,7 @@ impl IceSheddingWindow {
                 Ok(set) => {
                     self.rules = set.ice_shedding_rules;
                     if let Some(c) = set.check {
-                        self.overrides = crate::case_groups::Overrides {
-                            structures: c.structure_override,
-                            sections: c.section_override,
-                        };
+                        self.local = c.local;
                         self.scope = check_ui::Scope::of_check(&c);
                     }
                 }
@@ -183,7 +189,7 @@ impl IceSheddingWindow {
     pub fn rule_set(&self) -> RuleSet {
         RuleSet {
             name: "Ice shedding".into(),
-            check: check_ui::check_of(&self.scope, self.overrides),
+            check: check_ui::check_of(&self.scope, self.local),
             checks: vec![PresetCheck::IceShedding],
             ice_shedding_rules: self.rules.clone(),
             ..RuleSet::default()
@@ -232,23 +238,22 @@ impl IceSheddingWindow {
         }
         let cases: Vec<ohl_weather::WeatherCase> =
             model.cases.iter().map(|c| c.case.clone()).collect();
-        let line = model.line.clone();
+        // The line with the local conditions when ticked.
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let rules = self.rules.clone();
-        let filter = self.overrides.filter(model);
         let keep = self.scope.keeps(&model.line);
         self.saving.stale = None;
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
+            let line = local.line();
             let (plan, mut notes) = engine::solves(&rules, &cases, cases.len());
+            notes.splice(0..0, local.notes());
             let mut shapes = Vec::new();
             for (case, calc) in &plan {
-                let l = ohl_clearance::calculation::line_for(&line, *calc);
+                let l = ohl_clearance::calculation::line_for(line, *calc);
                 let mut solved = Vec::new();
-                for (section, r) in l
-                    .sections
-                    .iter()
-                    .zip(ohl_line::solve::solve_line_memo_default(&l, &library, case))
-                {
+                for (section, r) in l.sections.iter().zip(local.sections(&l, &library, case)) {
                     match r {
                         Ok(s) => solved.push(s),
                         Err(e) => notes.push(format!(
@@ -269,17 +274,18 @@ impl IceSheddingWindow {
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
             let mut report = engine::check(
-                &line,
+                line,
                 &library,
                 &rules,
                 &cases,
                 cases.len(),
                 &solved,
-                &filter,
+                &Default::default(),
                 keep.as_ref(),
                 &budget,
             )?;
             report.notes.splice(0..0, notes);
+            local.finish(LOCAL.1, started.elapsed());
             Ok(Arc::new(Report { report, rules }))
         });
     }
@@ -478,7 +484,7 @@ impl IceSheddingWindow {
                 }
                 let work = self.work(model);
                 help::footer(ui, WINDOW, |ui| {
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     run |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -488,7 +494,14 @@ impl IceSheddingWindow {
                         Some(scope_words),
                         Some(check_ui::scope_plan(&model.line, &self.scope, work)),
                         |ui| {
-                            changed |= overrides.ui(ui);
+                            changed |= crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });
@@ -1036,8 +1049,10 @@ mod tests {
     /// The rules and the scope are kept in the rule file and read back.
     #[test]
     fn the_rules_are_kept_in_the_rule_file() {
-        let mut w = IceSheddingWindow::default();
-        w.overrides.sections = true;
+        let mut w = IceSheddingWindow {
+            local: true,
+            ..Default::default()
+        };
         w.rules = vec![IceSheddingRule {
             factor: 1.5,
             distance: ohl_clearance::rules::Requirement::Fixed(1.0),
@@ -1048,7 +1063,7 @@ mod tests {
         let back = RuleSet::parse(&text).unwrap();
         assert_eq!(back.ice_shedding_rules, w.rules);
         assert_eq!(back.checks, [PresetCheck::IceShedding]);
-        assert!(back.check.unwrap().section_override);
+        assert!(back.check.unwrap().local);
     }
 
     /// Checks › Ice shedding… on the example line with the example's

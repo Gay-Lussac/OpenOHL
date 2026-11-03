@@ -66,8 +66,11 @@ pub struct StructureForm {
     /// The routes it gives itself (empty: those of the alignments it
     /// stands on).
     pub routes: Vec<String>,
-    /// Its weather case groups ([`ohl_line::Structure::weather_groups`]).
+    /// Its weather case groups ([`ohl_line::Structure::weather_groups`]):
+    /// kept as read, no longer used by the checks.
     pub weather_groups: Vec<String>,
+    /// Its local conditions ([`ohl_line::Structure::local`]).
+    pub local: ohl_line::local::LocalConditions,
     /// The soil resistivity measured at it, Ω·m
     /// ([`ohl_line::Structure::soil_resistivity_ohm_m`]).
     pub soil_resistivity_ohm_m: Option<f64>,
@@ -337,6 +340,8 @@ pub struct SectionForm {
     pub weather_groups: Vec<String>,
     /// Its local winds ([`ohl_line::Section::wind_factors`]).
     pub wind_factors: Vec<ohl_line::SpanWind>,
+    /// Its local ice ([`ohl_line::Section::ice_factors`]).
+    pub ice_factors: Vec<ohl_line::SpanWind>,
     /// Display colour (`#rrggbb`; none: its phase's).
     pub color: Option<String>,
     /// What it is, in words.

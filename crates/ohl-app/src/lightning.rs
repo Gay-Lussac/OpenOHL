@@ -36,6 +36,14 @@ use crate::selection::Selection;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Clearance,
+    "lightning",
+    "the wires' swing, their place against the shield wires",
+);
+
 /// The id of the window's body, tabs and footer.
 const WINDOW: &str = "lightning-window";
 
@@ -96,8 +104,9 @@ pub struct Overlay {
 pub struct LightningWindow {
     /// Shown.
     pub open: bool,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the wires' positions with the
+    /// structures' wind for clearances and wire ice on their spans.
+    pub local: bool,
     /// The project's rule file read.
     loaded: bool,
     /// The rule file kept.
@@ -151,10 +160,7 @@ impl LightningWindow {
                 Ok(set) => {
                     self.rules = set.lightning_rules;
                     if let Some(c) = set.check {
-                        self.overrides = crate::case_groups::Overrides {
-                            structures: c.structure_override,
-                            sections: c.section_override,
-                        };
+                        self.local = c.local;
                     }
                 }
                 Err(e) => self.status = Some((e, true)),
@@ -200,7 +206,7 @@ impl LightningWindow {
     pub fn rule_set(&self) -> RuleSet {
         RuleSet {
             name: "Lightning shielding".into(),
-            check: check_ui::check_of(&check_ui::Scope::default(), self.overrides),
+            check: check_ui::check_of(&check_ui::Scope::default(), self.local),
             checks: vec![PresetCheck::Lightning],
             lightning_rules: self.rules.clone(),
             ..RuleSet::default()
@@ -249,7 +255,8 @@ impl LightningWindow {
         }
         let cases: Vec<ohl_weather::WeatherCase> =
             model.cases.iter().map(|c| c.case.clone()).collect();
-        let line = model.line.clone();
+        // The line with the local conditions when ticked.
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let rules = self.rules.clone();
         let ground = model.ground_for_checks();
@@ -259,18 +266,21 @@ impl LightningWindow {
         self.progress = Some((done.clone(), (pairs * spans).max(1), cancel.clone()));
         self.picked = None;
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
+            let line = local.line();
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
             let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> =
                 ground.as_ref().map(|_| &height as _);
             let solve =
                 |line: &ohl_line::Line, case: &ohl_weather::WeatherCase| -> engine::Solved {
-                    ohl_line::solve::solve_line_memo_default(line, &library, case)
+                    local
+                        .sections(line, &library, case)
                         .into_iter()
                         .map(|r| r.map_err(|e| e.to_string()))
                         .collect()
                 };
             let mut report = engine::run(
-                &line,
+                line,
                 &library,
                 &cases,
                 cases.len(),
@@ -288,6 +298,8 @@ impl LightningWindow {
                         .into(),
                 );
             }
+            report.notes.splice(0..0, local.notes());
+            local.finish(LOCAL.1, started.elapsed());
             Ok(Arc::new(Report { report, rules }))
         });
     }
@@ -453,7 +465,7 @@ impl LightningWindow {
                         }
                         return;
                     }
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     run |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -470,7 +482,14 @@ impl LightningWindow {
                             spans * pairs,
                         )),
                         |ui| {
-                            changed |= overrides.ui(ui);
+                            changed |= crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });

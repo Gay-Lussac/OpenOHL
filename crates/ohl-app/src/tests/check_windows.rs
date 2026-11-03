@@ -12,6 +12,44 @@ use crate::app::Tab;
 use crate::dockable::Panel;
 use egui_kittest::kittest::NodeT;
 
+/// Use local conditions (owner, 2026-11-03) in a check's footer, in
+/// place of the structure and section overrides: a click ticks it, the
+/// window keeps it in its rule file's `[check]`; its hover says what the
+/// check takes the wind for and that nothing on this line gives local
+/// conditions.
+#[test]
+fn use_local_conditions_is_one_switch_kept_with_the_check() {
+    let mut h = window();
+    let dir = std::env::temp_dir().join(format!("ohl-app-{}-local-switch", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("t.string-rules.ohlr");
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.string_checks.show(&r.model);
+        r.string_checks.file = Some(file.clone());
+    }
+    h.run();
+    assert!(h.query_by_label("structure override").is_none());
+    assert!(h.query_by_label("section override").is_none());
+    h.get_by_label("Use local conditions").click();
+    h.run();
+    assert!(h.state_mut().ready().unwrap().string_checks.local);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("local = true"), "{text}");
+    let hover = crate::local_solve::hover(
+        "string-checks",
+        ohl_line::local::Purpose::Strength,
+        "x",
+        &h.state_mut().ready().unwrap().model.line,
+    );
+    assert!(hover.contains("wind for strength"), "{hover}");
+    assert!(
+        hover.contains("no structure gives local conditions"),
+        "{hover}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn window() -> Harness<'static, App> {
     let mut h = Harness::builder()
         .with_size(egui::vec2(1500.0, 1000.0))
@@ -531,7 +569,7 @@ fn a_check_setup_is_kept_in_the_project() {
 
 /// The small reworks (owner, 2026-10-31: "go ahead with all small
 /// stuff"): the modelling settings folded in *4 Model* (Vertical
-/// clearances' *Solved by*), its overrides in the footer; String checks'
+/// clearances' *Solved by*), Use local conditions in the footer; String checks'
 /// rule table names its own columns; Internal clearances says before Run
 /// how many structures have a body; a Line parameters row selects its
 /// circuit's spans.
@@ -544,7 +582,7 @@ fn the_model_is_folded_and_the_setups_say_what_they_need() {
     }
     h.run();
     assert!(h.query_by_label("Solved by").is_none(), "folded by default");
-    h.get_by_label("structure override");
+    h.get_by_label("Use local conditions");
     open_model(&mut h);
     h.get_by_label("Solved by");
     {

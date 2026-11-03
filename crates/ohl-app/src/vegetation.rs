@@ -66,6 +66,14 @@ pub const GUIDE: &str = "user-guide/analyses";
 /// What a vegetation report is computed from.
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Clearance,
+    "vegetation",
+    "the wires' swing and sag over the vegetation",
+);
+
 /// The id of the window's body, tabs and footer.
 const PANEL: &str = "vegetation-panel";
 
@@ -679,8 +687,9 @@ pub struct Out {
 pub struct VegetationWindow {
     /// Shown (closed: its layers are taken off the views).
     pub open: bool,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the clearances with the structures'
+    /// wind for clearances and wire ice on their spans.
+    pub local: bool,
     /// Weather cases ticked (indices in the model's cases).
     pub cases: Vec<usize>,
     /// The settings.
@@ -814,8 +823,11 @@ impl VegetationWindow {
             }
         }
         self.saved_stale = None;
-        // By the calculation chosen (2026-11-01; none: each section's own).
-        let line = ohl_clearance::calculation::line_for(&model.line, self.settings.calculation)
+        // The line with the local conditions when ticked (the wind for
+        // clearances), by the calculation chosen (2026-11-01; none: each
+        // section's own).
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
+        let line = ohl_clearance::calculation::line_for(local.line(), self.settings.calculation)
             .into_owned();
         let library = model.library.clone();
         let ground = model.ground_for_checks();
@@ -839,7 +851,6 @@ impl VegetationWindow {
         let iso = settings.iso.0.then_some(settings.iso.1);
         let origin = model.origin;
         let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
-        let filter = self.overrides.filter(model);
         // The wires in scope (owner, 2026-10-27): the line solved whole
         // (sections solved together stay together), the others' spans
         // left out of the check.
@@ -852,6 +863,7 @@ impl VegetationWindow {
         });
         let cancel = self.job.cancel_token();
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
             // Exit clause: ~1 µs a point and position set; an hour is far
             // beyond what a line needs. Stop cancels it.
             let budget = ohl_core::budget::Budget::new()
@@ -883,7 +895,8 @@ impl VegetationWindow {
                 &mut |x, y, z, c| points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c)),
             )?;
             let at = |v: i32, k: usize| v as f64 / 1000.0 + origin[k];
-            let mut notes = positions.notes.clone();
+            let mut notes = local.notes();
+            notes.extend(positions.notes.iter().cloned());
             notes.extend(scope_note);
             if let Some(mode) = ice {
                 let spans = ohl_clearance::vegetation::spans_near(
@@ -906,8 +919,6 @@ impl VegetationWindow {
                     positions.spans.len()
                 ));
             }
-            // The structure and section overrides: each span its own cases.
-            positions.retain_cases(&line, &filter);
             let positions = Arc::new(positions);
             let mut check =
                 VegetationCheck::with_positions(Arc::clone(&positions), &classes, params.clone());
@@ -958,6 +969,7 @@ impl VegetationWindow {
             report.points = read;
             report.notes = notes;
             report.lines = lines;
+            local.finish(LOCAL.1, started.elapsed());
             Ok(report)
         });
     }
@@ -1221,7 +1233,7 @@ impl VegetationWindow {
                 }
                 again |= help::footer(ui, PANEL, |ui| {
                     let scope = check_ui::scope_words(&model.line, &self.scope, true);
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     let plan = check_ui::scope_plan(&model.line, &self.scope, self.cases.len());
                     check_ui::job_footer(
                         ui,
@@ -1232,7 +1244,14 @@ impl VegetationWindow {
                         Some(scope),
                         Some(plan),
                         |ui| {
-                            overrides.ui(ui);
+                            let _ = crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     )
                 });
@@ -1276,7 +1295,7 @@ impl VegetationWindow {
     }
 
     /// The setup as kept in the project: the settings, the cases (by
-    /// name), the scope, the overrides (JSON).
+    /// name), the scope, Use local conditions (JSON).
     fn stored(&self, model: &Model) -> String {
         let cases: Vec<String> = self
             .cases
@@ -1286,7 +1305,7 @@ impl VegetationWindow {
         serde_json::json!({
             "settings": self.settings.to_json(&cases),
             "scope": self.scope,
-            "overrides": [self.overrides.structures, self.overrides.sections],
+            "local": self.local,
         })
         .to_string()
     }
@@ -1314,13 +1333,8 @@ impl VegetationWindow {
         {
             self.scope = scope;
         }
-        if let Some([a, b]) = v
-            .get("overrides")
-            .and_then(|o| serde_json::from_value::<[bool; 2]>(o.clone()).ok())
-        {
-            self.overrides.structures = a;
-            self.overrides.sections = b;
-        }
+        // Use local conditions (2026-11-03; the old "overrides" ignored).
+        self.local = v.get("local").and_then(Value::as_bool).unwrap_or(false);
     }
 
     /// Reads the setup from the project when not read yet for the line

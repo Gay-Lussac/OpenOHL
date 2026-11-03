@@ -6,7 +6,14 @@
 //! a few weather cases, kept in the weather case file beside the cases
 //! (`[[group]]`, [`ohl_weather::CaseGroup`]); made in Line › Criteria › Weather
 //! case groups…, picked as one in Line › Criteria › Loads for structures and in
-//! the checks' case lists (a group's button adds its cases).
+//! the checks' case lists (a group's button adds its cases). Since
+//! 2026-11-03 groups are only that: named lists of cases for picking
+//! several at once. The structures' and sections' groups (and the checks'
+//! structure and section overrides that read them) gave way to the
+//! structures' local conditions and the checks' **Use local conditions**
+//! ([`crate::local_solve`]); a group's wind study column
+//! (`structure_wind`) is still taken by Internal clearances with that
+//! switch ticked.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -42,86 +49,6 @@ pub fn groups(model: &Model) -> Vec<CaseGroup> {
         .unwrap_or_default();
     *cache = Some((path, modified, g.clone()));
     g
-}
-
-/// A check's two ticks (owner, 2026-10-25): the **structure override**
-/// and the **section override** — results at a structure or on a section
-/// with weather case groups (Structures and Sections tables) take only
-/// the check's cases in those groups.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Overrides {
-    /// The structures' groups.
-    pub structures: bool,
-    /// The sections' groups.
-    pub sections: bool,
-}
-
-impl Overrides {
-    /// The two ticks (in a check's footer, beside Run); whether one
-    /// changed.
-    pub fn ui(&mut self, ui: &mut egui::Ui) -> bool {
-        let a = ui
-            .checkbox(&mut self.structures, "structure override")
-            .on_hover_text(
-                "At a structure with weather case groups (Structures table): only this check's \
-                 cases in them",
-            )
-            .changed();
-        let b = ui
-            .checkbox(&mut self.sections, "section override")
-            .on_hover_text(
-                "On a section with weather case groups (Sections table): only this check's \
-                 cases in them",
-            )
-            .changed();
-        a || b
-    }
-
-    /// The filter of the ticks for `model`'s structures and sections.
-    pub fn filter(self, model: &Model) -> ohl_weather::CaseFilter {
-        let groups = groups(model);
-        ohl_weather::CaseFilter {
-            structures: self.structures.then(|| {
-                ohl_weather::OwnCases::new(
-                    model
-                        .line
-                        .structures
-                        .iter()
-                        .map(|s| (s.id.as_str(), &s.weather_groups[..])),
-                    &groups,
-                )
-            }),
-            sections: self.sections.then(|| {
-                ohl_weather::OwnCases::new(
-                    model
-                        .line
-                        .sections
-                        .iter()
-                        .map(|s| (s.id.as_str(), &s.weather_groups[..])),
-                    &groups,
-                )
-            }),
-        }
-    }
-}
-
-/// Whether the overrides let span `span` of section `section` take
-/// weather case `case` (its section's groups and both its ends'; a
-/// section not in the line: yes).
-pub fn span_takes(
-    line: &ohl_line::Line,
-    filter: &ohl_weather::CaseFilter,
-    section: &str,
-    span: usize,
-    case: &str,
-) -> bool {
-    match line.sections.iter().find(|s| s.id == section) {
-        Some(sec) => {
-            let end = |k: usize| sec.points.get(k).map_or("", |p| p.structure.as_str());
-            filter.takes_span(&sec.id, [end(span), end(span + 1)], case)
-        }
-        None => true,
-    }
 }
 
 /// A group's buttons: the cases of the one clicked added to `chosen`

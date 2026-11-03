@@ -41,6 +41,14 @@ use crate::selection::Selection;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Clearance,
+    "phase-distance",
+    "the conductors' swing and sag between the phases",
+);
+
 /// The extension of a phase distance values file when the check gives
 /// none (the LeV plugin's `.ohlpd`).
 const PHASE_DISTANCE_FILE_EXTENSION: &str = "ohlpd";
@@ -399,24 +407,14 @@ pub struct Out {
     pub wires: Option<Vec<MeasureWire>>,
 }
 
-/// Whether the overrides let conductor `c` (a span's wire) take weather
-/// case `case`.
-fn conductor_takes(
-    line: &ohl_line::Line,
-    filter: &ohl_weather::CaseFilter,
-    c: &Conductor,
-    case: &str,
-) -> bool {
-    crate::case_groups::span_takes(line, filter, &c.wire.section, c.wire.span, case)
-}
-
 /// The Distance between conductors window (and the one under unequal
 /// wind).
 pub struct PhaseDistanceWindow {
     /// The check it runs.
     pub kind: Kind,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the distances with the structures'
+    /// wind for clearances and wire ice on their spans.
+    pub local: bool,
     /// To be shown (the app opens its page).
     pub open: bool,
     /// A values file chosen (none: the project's copy, else the
@@ -485,7 +483,7 @@ impl PhaseDistanceWindow {
     pub fn new(kind: Kind) -> Self {
         Self {
             kind,
-            overrides: Default::default(),
+            local: false,
             open: false,
             file: None,
             cases: BTreeSet::new(),
@@ -1002,11 +1000,15 @@ impl PhaseDistanceWindow {
             .as_ref()
             .ok()
             .and_then(|e| e.session.check_state().ok());
-        // By the calculation chosen (2026-11-01): every case solved anew.
-        let line = ohl_clearance::calculation::line_for(&model.line, self.calculation).into_owned();
+        // The line with the local conditions when ticked (the wind for
+        // clearances), by the calculation chosen (2026-11-01): every case
+        // solved anew when either is taken.
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
+        let line =
+            ohl_clearance::calculation::line_for(local.line(), self.calculation).into_owned();
         let library = model.library.clone();
         let wind = model.wind;
-        let own = self.calculation.is_none();
+        let own = self.calculation.is_none() && !local.applied();
         let cases: Vec<(crate::model::Solved, bool)> = self
             .cases
             .iter()
@@ -1021,17 +1023,17 @@ impl PhaseDistanceWindow {
             low_share: self.low_share,
         };
         let wind_step = self.wind_step;
-        let filter = self.overrides.filter(model);
         // The routes chosen: the pairs with a span on them only.
         let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
-            let mut notes = Vec::new();
+            let started = std::time::Instant::now();
+            let mut notes = local.notes();
             let mut rows = Vec::new();
             if kind == Kind::UnequalWind
                 && let Some((solved, _)) = cases.first()
             {
                 let case = &solved.case;
-                let (mut levels, n) = ohl_clearance::unequal_wind::solve_levels(
+                let (levels, n) = ohl_clearance::unequal_wind::solve_levels(
                     &line,
                     &library,
                     case,
@@ -1043,22 +1045,6 @@ impl PhaseDistanceWindow {
                     },
                 )?;
                 notes.extend(n.into_iter().map(|n| format!("\"{}\" {n}", case.name)));
-                // The overrides: the conductors whose span does not take
-                // the case left out, the same at every level.
-                if let Some(first) = levels.first() {
-                    let keep: Vec<bool> = first
-                        .conductors
-                        .iter()
-                        .map(|c| conductor_takes(&line, &filter, c, &case.name))
-                        .collect();
-                    for l in &mut levels {
-                        let mut k = 0;
-                        l.conductors.retain(|_| {
-                            k += 1;
-                            keep.get(k - 1).copied().unwrap_or(true)
-                        });
-                    }
-                }
                 // Exit clause: the pairs of a 25 km line at about 20
                 // levels in seconds.
                 let budget =
@@ -1133,8 +1119,7 @@ impl PhaseDistanceWindow {
                         .iter()
                         .map(|f| format!("\"{name}\": not solved: {f}")),
                 );
-                let mut cs = conductors(&line, &solved.shapes, &library);
-                cs.retain(|c| conductor_takes(&line, &filter, c, &name));
+                let cs = conductors(&line, &solved.shapes, &library);
                 // Exit clause: about a second for a 25 km line.
                 let budget =
                     ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(300));
@@ -1199,6 +1184,7 @@ impl PhaseDistanceWindow {
             }
             rows.sort_by(|a, b| a.margin().total_cmp(&b.margin()));
             params.diagram_name = diagram_name.clone();
+            local.finish(LOCAL.1, started.elapsed());
             Ok(Report {
                 code: params.plugin.clone(),
                 diagram: diagram_name,
@@ -1448,7 +1434,7 @@ impl PhaseDistanceWindow {
         let scope_words = check_ui::scope_words(&model.line, &self.scope, false);
         let plan = check_ui::scope_plan(&model.line, &self.scope, self.cases.len());
         help::footer(ui, page, |ui| {
-            let overrides = &mut self.overrides;
+            let local = &mut self.local;
             if check_ui::job_footer(
                 ui,
                 &mut self.job,
@@ -1457,7 +1443,14 @@ impl PhaseDistanceWindow {
                 Some(scope_words),
                 Some(plan),
                 |ui| {
-                    overrides.ui(ui);
+                    let _ = crate::local_solve::switch(
+                        ui,
+                        local,
+                        LOCAL.1,
+                        LOCAL.0,
+                        LOCAL.2,
+                        &model.line,
+                    );
                 },
             ) {
                 self.start(model, ui.ctx());
@@ -1503,7 +1496,7 @@ impl PhaseDistanceWindow {
             "wind_step": self.wind_step,
             "low_share": self.low_share,
             "calculation": self.calculation.map(|c| c.name()),
-            "overrides": [self.overrides.structures, self.overrides.sections],
+            "local": self.local,
         })
         .to_string()
     }
@@ -1552,10 +1545,8 @@ impl PhaseDistanceWindow {
         self.calculation = get("calculation")
             .as_str()
             .and_then(ohl_line::condition::Calculation::parse);
-        if let Ok([a, b]) = serde_json::from_value::<[bool; 2]>(get("overrides")) {
-            self.overrides.structures = a;
-            self.overrides.sections = b;
-        }
+        // Use local conditions (2026-11-03; the old "overrides" ignored).
+        self.local = get("local").as_bool().unwrap_or(false);
     }
 
     /// Reads the setup from the project when not read yet for the line

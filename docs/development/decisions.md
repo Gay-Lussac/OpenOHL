@@ -51,6 +51,50 @@ development, not approved yet.
   structure takes its own, else its type's, else every case; names are
   checked against the library when the loads are computed.
 
+**Use local conditions, one switch per check; weather case groups only
+for picking cases** (owner, 2026-11-03: "maybe it's easier to remove the
+groups entirely and just have wind for static and wind for internal
+clearances, with ice on the tower, and ice and wind on the sections and
+to have the button to overwrite the values"; the proposal's step 3,
+approved). Built, in active development, not approved yet.
+
+- Every check window has one switch beside Run, **Use local
+  conditions**, in place of the structure and section override ticks.
+  Unticked: the weather cases as written. Ticked: the check computes on
+  `ohl_line::local::localized(line, purpose)`, each of its weather cases
+  solved again on it (`ohl_app::local_solve`, the solves shared through
+  ohl-line's memo of whole solves, keyed by the localized line, the
+  library and the case). No structure giving local conditions: nothing
+  changes, nothing is solved again, the notes and the hover say so.
+- The wind per check: **for strength** — structure loads (and the
+  usage; also the wind on the types' wind bands, times the structure's
+  `wind_static`), string checks, wire tensions, ice shedding, galloping;
+  **for clearances** — internal clearances, vertical and radial
+  clearances and the Clearances window, distance between conductors
+  (and under unequal wind), safety volumes, vegetation, lightning. The
+  wire ice factor is taken by all. Not yet taken: the structure ice and
+  the snow (kept with the structure; the load case library will take
+  them), the member wind of the usage check and the poles' wind.
+- A group's wind study column (`structure_wind`) stays as it was, taken
+  by Internal clearances with the switch ticked, its runs on the line as
+  written (its pressure is the case's, not times the structures'
+  factors) — for the owner to decide whether it becomes a structure's
+  local condition.
+- The structures' and sections' `weather_groups` are read and kept, no
+  longer read by the checks (a run notes them once); the Structures and
+  Sections tables' **weather groups** columns are gone. The Structures
+  table gains the local conditions' columns, the Sections table **local
+  ice** (`Section::ice_factors_text`, `ohl_line::parse_ice_factors`).
+  Line › Criteria › Calculation options gains the span rule (worst,
+  mean), a field of `SolverOptions` set by the same command.
+- Kept: `[check] local = true` in rule files, `"local": true` in the
+  windows' setups kept in the project; the old `structure_override`,
+  `section_override` and `overrides` keys are read and ignored. The
+  command line does not take the switch yet; ohl-clearance's
+  `CaseFilter` parameters stay (the desktop passes an empty one).
+- Time: each check's last run with and without the local conditions is
+  shown in the switch's hover (measured, the project's rule).
+
 **Steel pole shafts by ASCE/SEI 48-19** (owner, 2026-11-03: "Can you look
 in the code what would apply for pole structures and start implementing
 it", then "What code would be needed for the polygonal or round

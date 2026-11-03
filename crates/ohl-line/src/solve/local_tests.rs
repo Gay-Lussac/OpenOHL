@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::condition::Calculation;
-use crate::{SpanWind, parse_wind_factors};
+use crate::{SpanWind, parse_ice_factors, parse_wind_factors};
 use ohl_core::units::{Length, Stress, Temperature};
 use std::path::Path;
 
@@ -200,6 +200,12 @@ fn local_winds_in_words() {
         parse_wind_factors("1-2: 1.2; 4:0.7", 4).unwrap(),
         s.wind_factors
     );
+    // Local ice: the same words.
+    s.ice_factors = parse_ice_factors("2–3: 1.5", 4).unwrap();
+    assert_eq!(s.ice_factors_text(), "2–3: 1.5");
+    assert_eq!(s.ice_factor(1), 1.5);
+    assert_eq!(s.ice_factor(0), 1.0);
+    s.ice_factors.clear();
     assert_eq!(parse_wind_factors("", 4).unwrap(), vec![]);
     assert_eq!(parse_wind_factors("3: 1", 4).unwrap(), vec![]);
     for bad in [

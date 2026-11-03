@@ -191,13 +191,25 @@ impl TableKind {
                             s.routes.join(", ")
                         },
                         s.description.clone(),
-                        s.weather_groups.join("; "),
                         s.soil_resistivity_ohm_m
                             .map(|r| f(r, 3))
                             .unwrap_or_default(),
                         s.earthing_resistance_ohm
                             .map(|r| f(r, 3))
                             .unwrap_or_default(),
+                        // Its local conditions (owner, 2026-11-03).
+                        s.local.wind_static.map(|v| f(v, 3)).unwrap_or_default(),
+                        s.local.wind_clearance.map(|v| f(v, 3)).unwrap_or_default(),
+                        s.local.wire_ice.map(|v| f(v, 3)).unwrap_or_default(),
+                        s.local
+                            .structure_ice
+                            .map(|v| f(v * 1000.0, 1))
+                            .unwrap_or_default(),
+                        s.local
+                            .snow_ground
+                            .map(|v| f(v / 1000.0, 3))
+                            .unwrap_or_default(),
+                        s.local.snow_altitude.map(|v| f(v, 1)).unwrap_or_default(),
                     ],
                 })
                 .collect(),
@@ -322,8 +334,8 @@ impl TableKind {
                             s.calculation.label().to_owned(),
                             s.color.clone().unwrap_or_default(),
                             s.description.clone(),
-                            s.weather_groups.join("; "),
                             s.wind_factors_text(),
+                            s.ice_factors_text(),
                         ],
                     }
                 })
