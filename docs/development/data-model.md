@@ -3032,7 +3032,7 @@ alignment's heights; `ground_lines::Ground`), never stored.
 The structure application reads a structure's libraries beside its file
 (`Sections/`, `Insulators/`, poles `.ohlp`, models `.ohlfe`, recipes
 `.ohlslc`, `StructureTemplates/`) or from the folders the line application
-passes (the working copy); files it imports there (File › Libraries) are
+passes (the working copy); files it imports there (File › Import) are
 stored into the project by the line application (`Change::Libraries`).
 See [OHL-Structure](../user-guide/structure-app.md#libraries).
 

@@ -441,20 +441,21 @@ impl StructureApp {
     fn tools(&mut self, ui: &mut egui::Ui, _t: &StructureType, area: Area) {
         ui.horizontal_wrapped(|ui| {
             if area == Area::Geometry {
+                // Named as the tools and the Geometry menu.
                 if ui
-                    .button("+ Point")
+                    .add(crate::icons::Icon::AddPoint.button(ui, "Add a point"))
                     .on_hover_text("A point where strings hang, at the top of the stick figure (move it in the view or the table)")
                     .clicked()
                 {
                     self.add_point();
                 }
                 let tops = self.picked_tops();
-                for (name, n, help) in [
-                    ("One string", 1, "A string from the point picked down to a new wire point (its set: Sets)"),
-                    ("Two strings to one wire point", 2, "Two strings from the two points picked to one wire point below their middle"),
+                for (icon, name, n, help) in [
+                    (crate::icons::Icon::OneString, "One string below the point", 1, "A string from the point picked down to a new wire point (its set: Sets)"),
+                    (crate::icons::Icon::TwoStrings, "Two strings to one wire point", 2, "Two strings from the two points picked to one wire point below their middle"),
                 ] {
                     if ui
-                        .add_enabled(tops.len() == n, egui::Button::new(name))
+                        .add_enabled(tops.len() == n, icon.button(ui, name))
                         .on_hover_text(help)
                         .on_disabled_hover_text(if n == 1 {
                             "Pick one point (or a wire point: a string below it)"
@@ -469,7 +470,7 @@ impl StructureApp {
             }
             if area == Area::Body {
                 if ui
-                    .add(crate::icons::Icon::AddJoint.button(ui, "Add joint"))
+                    .add(crate::icons::Icon::AddJoint.button(ui, "Add a joint"))
                     .on_hover_text("A joint above the joint picked (or at the centre)")
                     .clicked()
                 {
@@ -479,7 +480,7 @@ impl StructureApp {
                 if ui
                     .add_enabled(
                         joints.len() == 2,
-                        crate::icons::Icon::AddMember.button(ui, "Member"),
+                        crate::icons::Icon::AddMember.button(ui, "Add a member"),
                     )
                     .on_hover_text("A member between the two joints picked")
                     .on_disabled_hover_text("Pick two joints (Shift + click the second)")
@@ -489,7 +490,7 @@ impl StructureApp {
                 }
                 if self.picked_attachable_joint()
                     && ui
-                        .add(crate::icons::Icon::PointOnJoint.button(ui, "Point here"))
+                        .add(crate::icons::Icon::PointOnJoint.button(ui, "Point on the joint"))
                         .on_hover_text("A point where strings hang, on this joint (it moves with it)")
                         .clicked()
                 {
@@ -509,7 +510,7 @@ impl StructureApp {
                 self.toggle_link_tool();
             }
             if ui
-                .add_enabled(!self.selected.is_empty(), egui::Button::new("Delete…"))
+                .add_enabled(!self.selected.is_empty(), egui::Button::new("Delete selected…"))
                 .on_hover_text(
                     "Delete what is picked, with what goes with each (asks first; one undo step)",
                 )

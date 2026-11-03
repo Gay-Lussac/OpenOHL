@@ -22,8 +22,8 @@
 //!
 //! Without a file it opens on its start page: Open a structure…, the
 //! files opened recently, New structure… (empty, or from a pylon
-//! template). File › Libraries imports and exports the libraries a
-//! structure uses; Plugins › Plugin manager shares the plugins and their
+//! template). File › Import and Export take the libraries a
+//! structure uses; File › Plugins › Plugin manager shares the plugins and their
 //! settings with the line application.
 //!
 //! `ohl-structure --version` prints the version and the build id (the git
@@ -35,6 +35,7 @@ mod app;
 mod body_tab;
 mod case_editor;
 mod close_up;
+mod context_menu;
 mod detail_tools;
 mod detail_view;
 mod export_menu;
@@ -91,6 +92,8 @@ mod layout_tests;
 mod link_tests;
 #[cfg(test)]
 mod load_tests;
+#[cfg(test)]
+mod menu_tests;
 #[cfg(test)]
 mod placed_tests;
 #[cfg(test)]

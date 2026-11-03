@@ -33,86 +33,121 @@ pub struct ExportSettings {
 }
 
 impl StructureApp {
-    /// The Export submenu of the File menu.
-    pub fn export_menu(&mut self, ui: &mut egui::Ui) {
+    /// File › Export's file formats (each asks where), the file-format
+    /// plugins listed greyed out.
+    pub(crate) fn export_format_items(&mut self, ui: &mut egui::Ui) {
         let has = self.file.is_some();
-        ui.menu_button("Export", |ui| {
-            for f in Format::ALL {
-                if ui
-                    .add_enabled(has, egui::Button::new(f.description()))
-                    .on_disabled_hover_text("Open a structure first")
-                    .clicked()
-                {
-                    ui.close();
-                    self.export_to(f);
-                }
+        for f in Format::ALL {
+            if ui
+                .add_enabled(has, egui::Button::new(format!("{}…", f.description())))
+                .on_disabled_hover_text("Open a structure first")
+                .clicked()
+            {
+                ui.close();
+                self.export_to(f);
             }
-            // File-format plugins write the line's export model, not a
-            // structure: listed, not applicable (yet).
-            for name in self.plugins.io_plugins() {
-                ui.add_enabled(false, egui::Button::new(format!("{name} (plugin)")))
-                    .on_disabled_hover_text(
-                        "A file-format plugin: it takes the line's export model (its \
-                         structures, wires and cases), not a structure — use it in the line \
-                         application (File › Export)",
-                    );
-            }
-            ui.separator();
-            let sections = match &self.export.sections {
-                Some(p) => p.display().to_string(),
-                None => "the window's (as the load panels)".into(),
-            };
-            ui.label(format!("Cross-section library: {sections}"));
-            ui.horizontal(|ui| {
-                if ui.button("Choose library…").clicked()
-                    && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Cross-section library", &["ohlsec"])
-                        .pick_file()
-                {
-                    self.export.sections = Some(p);
-                }
-                if self.export.sections.is_some() && ui.button("The window's").clicked() {
-                    self.export.sections = None;
-                }
+        }
+        // File-format plugins write the line's export model, not a
+        // structure: listed, not applicable (yet).
+        for name in self.plugins.io_plugins() {
+            ui.add_enabled(false, egui::Button::new(format!("{name} (plugin)")))
+                .on_disabled_hover_text(
+                    "A file-format plugin: it takes the line's export model (its \
+                     structures, wires and cases), not a structure — use it in the line \
+                     application (File › Export)",
+                );
+        }
+    }
+
+    /// File › Export › Export options…: what the file formats take
+    /// besides the structure (moved out of the menu: a menu holds
+    /// commands, not settings).
+    pub(crate) fn export_options_window(&mut self, ctx: &egui::Context) {
+        if !self.export_options {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Export options")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "What File › Export's file formats take besides the structure (until \
+                         the program is started again).",
+                    )
+                    .small()
+                    .weak(),
+                );
+                egui::Grid::new("export-options")
+                    .num_columns(3)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        let sections = match &self.export.sections {
+                            Some(p) => p.display().to_string(),
+                            None => "the window's (as the load panels)".into(),
+                        };
+                        ui.label("Cross-section library");
+                        ui.label(sections);
+                        ui.horizontal(|ui| {
+                            if ui.button("Choose…").clicked()
+                                && let Some(p) = rfd::FileDialog::new()
+                                    .add_filter("Cross-section library", &["ohlsec"])
+                                    .pick_file()
+                            {
+                                self.export.sections = Some(p);
+                            }
+                            if self.export.sections.is_some() && ui.button("The window's").clicked()
+                            {
+                                self.export.sections = None;
+                            }
+                        });
+                        ui.end_row();
+                        let bolts = match &self.export.bolts {
+                            Some(p) => p.display().to_string(),
+                            None => "the window's (Bolts/ beside the structure)".into(),
+                        };
+                        ui.label("Bolt library");
+                        ui.label(bolts);
+                        ui.horizontal(|ui| {
+                            if ui.button("Choose…").clicked()
+                                && let Some(p) = rfd::FileDialog::new()
+                                    .add_filter(
+                                        "Bolt library",
+                                        &[ohl_structures::bolts::BOLT_FILE_EXTENSION],
+                                    )
+                                    .pick_file()
+                            {
+                                self.export.bolts = Some(p);
+                            }
+                            if self.export.bolts.is_some() && ui.button("The window's").clicked() {
+                                self.export.bolts = None;
+                            }
+                        });
+                        ui.end_row();
+                        let loads = match &self.export.loads {
+                            Some(p) => p.display().to_string(),
+                            None => "the Load table panel's table".into(),
+                        };
+                        ui.label("Loads");
+                        ui.label(loads);
+                        ui.horizontal(|ui| {
+                            if ui.button("Choose…").clicked()
+                                && let Some(p) = rfd::FileDialog::new()
+                                    .add_filter("Load table", &["csv"])
+                                    .pick_file()
+                            {
+                                self.export.loads = Some(p);
+                            }
+                            if self.export.loads.is_some() && ui.button("The panel's").clicked() {
+                                self.export.loads = None;
+                            }
+                        });
+                        ui.end_row();
+                    });
             });
-            let bolts = match &self.export.bolts {
-                Some(p) => p.display().to_string(),
-                None => "the window's (Bolts/ beside the structure)".into(),
-            };
-            ui.label(format!("Bolt library: {bolts}"));
-            ui.horizontal(|ui| {
-                if ui.button("Choose bolt library…").clicked()
-                    && let Some(p) = rfd::FileDialog::new()
-                        .add_filter(
-                            "Bolt library",
-                            &[ohl_structures::bolts::BOLT_FILE_EXTENSION],
-                        )
-                        .pick_file()
-                {
-                    self.export.bolts = Some(p);
-                }
-                if self.export.bolts.is_some() && ui.button("The window's bolts").clicked() {
-                    self.export.bolts = None;
-                }
-            });
-            let loads = match &self.export.loads {
-                Some(p) => p.display().to_string(),
-                None => "the Load table panel's table".into(),
-            };
-            ui.label(format!("Loads: {loads}"));
-            ui.horizontal(|ui| {
-                if ui.button("Choose load table…").clicked()
-                    && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Load table", &["csv"])
-                        .pick_file()
-                {
-                    self.export.loads = Some(p);
-                }
-                if self.export.loads.is_some() && ui.button("The panel's table").clicked() {
-                    self.export.loads = None;
-                }
-            });
-        });
+        self.export_options = open;
     }
 
     /// Asks where, then exports in `format`.

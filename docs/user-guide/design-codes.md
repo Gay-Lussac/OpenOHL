@@ -231,7 +231,7 @@ Structure loads uses the load cases. The code's clearance presets go into the pr
 weather case files (for the rule tables' **Preset** (a dropdown), under *This project*;
 its rule presets are read when a check window with rules opens), its wind
 factors for structures into the project line's cross-section library. The
-code's notes are shown in the window. In OHL-Structure, **Load cases ›
+code's notes are shown in the window. In OHL-Structure, **Loads ›
 Load cases from a design code…** writes the wind factors into the section
 library the structure reads when the files are written (the tick), and
 says when the code gives none.

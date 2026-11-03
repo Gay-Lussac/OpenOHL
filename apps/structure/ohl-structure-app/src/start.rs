@@ -507,7 +507,7 @@ impl StructureApp {
                 )
                 .on_hover_text(
                     "The ones shipped with OpenOHL, into Sections/ and Insulators/ beside the new \
-                     file (a file there is kept); change or replace them later (File › Libraries)",
+                     file (a file there is kept); change or replace them later (File › Import, File › Export)",
                 );
                 if let Some(e) = &n.error {
                     error_label(ui, e.as_str());

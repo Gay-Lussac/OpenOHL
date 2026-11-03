@@ -177,7 +177,7 @@ fn plugins_are_managed_with_shared_settings() {
         a.plugins = crate::plugins_ui::PluginsState::load(Some(u));
         a.open(&p);
     });
-    menu(&mut h, "Plugins", "Plugin manager…");
+    crate::tests::menu_path(&mut h, &["File", "Plugins", "Plugin manager…"]);
     h.get_by_label("Plugin manager");
     h.get_by_label("hello-python");
     h.get_by_label("geojson");

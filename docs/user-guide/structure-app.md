@@ -141,15 +141,15 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   load case*). The structure's recipes follow as cases of their own (they
   may still take line values); a line case with the name of a recipe is
   called *NAME (line)*. **FE results** can run the line's cases directly.
-- **Store in the structure file…** (by the load table, or **Load cases ›
-  Store the line's cases in the file…**): a tick per line case; **Store**
+- **Store in the structure file…** (by the load table, or **Loads ›
+  Store the line's cases…**): a tick per line case; **Store**
   writes the cases ticked into the structure file as `[[load_case]]`
   tables of given values — a `value` and `direction` per point and
   component, `line_case`, and a description saying the line, the place
   and the date — in one undo step. The file then has these forces
   without the line (exports, design elsewhere). Stored again, cases of
   the same names are replaced (asked first: **Replace and store**).
-- **Take the line's load cases as they are** (Load cases menu, and in the
+- **Take the line's load cases** (Loads menu; *as they are* in the
   Load case editor while the structure has no case) writes instead one
   load case per line result: its line forces at every point, every
   factor 1, and (a structure with members) the wind on the body at the
@@ -174,35 +174,44 @@ the type follows in the line.
 
 ## The window
 
-At the top, the **menus**: **File** (New structure…, Open, Save, Save
-as, [Libraries ›](#libraries), Export ›, Close), **Edit** (Undo, Redo,
-Clear selection — the same words as in OHL-Design —, **Move tool**,
-**Tools inventory (E)**), **View**, then one
-menu per part of the work — **Geometry**, **Body**, **Design**, **Load
-cases**, **Results**, **Line loads** — then **Plugins**
-([below](#plugins)) and **Help** (**User guide…**: the manual on this
-computer, as in OHL-Design — the book built by `mdbook build`, else its
-sources in `docs/`, nothing fetched from the internet —; **Start from
-scratch (tutorial)…**: [the tutorial](../tutorial/index.md) of the line
-application, your first line from the starter template; **About OHL-Structure**: version, licence);
-**Undo**, **Redo** and **Save** at their right (the same place as
-OHL-Design's quick bar). Shortcuts are written ⌘ on macOS, Ctrl
-elsewhere. Each work menu lists
-its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
-brought to the front) and its **actions** (Geometry: *Add a point*, *One
-string below the point*, *Two strings to one wire point*, *Link tool*
-([below](#attachment-points-joints-and-the-link-tool)), *Delete
-what is selected…*; Body: *Add a joint*, *Member between the two joints*,
-*Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
-selected…* — *Add a joint*, *Member…*, *Point on the joint*, *Symmetry*,
-*Generators…* and *Supports…* have their icons, also on the panels'
-buttons (Add joint, Member, Point here, symmetry), tinted with the text
-colour; Load cases: *Store the line's cases in the file…*, *Take the
-line's load cases as they are*, *Add a load case*, *Load cases from a
-design code…* ([Plugins](#plugins)), *Import / Export load
-recipes…*, *Import a load table…*, *Export the load table…*; Results:
-*Run the cases*, *Cancel the run*, *Structure report…*; Line loads: *Read the line's values
-again*); an action brings its panel to the front.
+At the top, the **menus** (2026-11-03: aligned with OHL-Design's; built,
+in active development):
+
+| Menu | Entries |
+|---|---|
+| **File** | **New structure…** (⌘N), **Open…** (⌘O), **Open recent ›** (a file no longer there greyed out) · **Save** (⌘S), **Save as…** (Shift+⌘S) · **Import ›** (per library kind — *Cross-section libraries*, *Bolt libraries*, *Insulator assemblies*, *Poles*, *Structure models*, *Load-case recipes*, *Structure templates* — each *A file…* or *The files of a folder…*; **Load recipes…**, **Load table…**; [Libraries](#libraries)) · **Export ›** (the file formats…, [below](#export); **Libraries it uses…**, **Every library…**; **Load recipes…**, **Load table…**, **Structure report…**; **Export options…**: the cross-section library, bolt library and load table the formats take) · **Plugins ›** (**Plugin manager…**, [below](#plugins)) · **Close** (the structure: the start page again; greyed out with unsaved changes), **Quit** (⌘Q; asks first with unsaved changes) |
+| **Edit** | **Undo** (⌘Z), **Redo** (Shift+⌘Z), each naming what it undoes · **Delete selected…** (Delete or Backspace: everything selected, with what goes with each, asked first; one undo step), **Clear selection** · **Tools ›** (**Tool inventory** (E), then every tool of the 3D view by its group — *Select and edit*, *Geometry*, *Body* —, its hotbar key 1–9 shown, the one held marked; the menu stays open until a tool is chosen) |
+| **View** | **Fit the view** · the main panels ticked (**3D view**, **Detail view**, **Inspector**, **To do**, **Libraries**) · **Tables ›** (every other panel, ticked, under a grey heading per menu; one of another structure kind greyed out, why on hover) · **Display options ›** (**Rigid links**, **Joints by their details**, **Volumes on the strings**, **Load arrows**, **Deformed**, **Reactions**, **Usage legend**) · **UI scale ›**, **Reset layout** |
+| **Geometry** | **Structure kind ›** · its panels · **Add a point**, **One string below the point**, **Two strings to one wire point** |
+| **Body** | its panels (Pole not for a tower without a pole) · **Add a joint**, **Add a member**, **Point on the joint** · **Symmetry ›** (none, or a mirror; **Make symmetric**) |
+| **Design** | its panels (Joint and Member details not for a pole, Pole design not for a tower without a pole) · **Support the feet (pinned)** |
+| **Loads** | **Load case editor**, **Load table**, **Line loads** · **Add a load case**, **Take the line's load cases**, **Store the line's cases…**, **Load cases from a design code…** ([Plugins](#plugins)), **Read the line's values again** |
+| **Results** | **FE results** · **Run the cases**, **Cancel the run** · **Structure report…** |
+| **Help** | **User guide…** (the manual on this computer, as in OHL-Design — the book built by `mdbook build`, else its sources in `docs/`, nothing fetched from the internet), **Start from scratch (tutorial)…** ([the tutorial](../tutorial/index.md) of the line application), **Glossary…** · **To do** (the panel) · **Controls ›** (the 3D view's and the Detail view's mouse and keys, the shortcuts) · **About OHL-Structure** (version, licence) |
+
+The conventions, as in OHL-Design: an entry ending in **…** opens a
+dialog or asks first; a panel never does (it opens, or comes to the
+front). An entry greyed out says why on hover — the work menus without
+a structure open say *Open a structure first*. A tick menu (View and
+its submenus, Structure kind, Symmetry, Tools) stays open while you
+tick; a long one scrolls within the screen. An action is named as the
+tool doing the same (*Add a joint* in Body, on the Joints panel and as
+the hotbar's tool) and shows that tool's icon; it brings its panel to
+the front. **Undo**, **Redo** and **Save** are icon buttons at the
+right of the menus (⟲ ⟳ 💾, the icons of OHL-Design's quick bar; their
+names and shortcuts on hover). Shortcuts are written ⌘ on macOS, Ctrl
+elsewhere.
+
+A **right-click** in the 3D view on a joint, member or point selects it
+and opens its menu: its name, **Inspector**, **Open in the Detail view**
+(a tower's joint or member), **Point on the joint** (a joint),
+**Insert a joint** (a member, at the Insert a joint tool's fraction),
+**Link to a joint…** and **Unlink** (a point), **Delete…** (asked
+first). On an object of a selection of several, or where there is
+nothing, with something selected: the selection's menu (**Inspector**,
+**Delete selected…**, **Clear selection**). A right-click on a panel's
+**tab**: **Dock with the tables**, **Dock on the right (with the
+Inspector)**, **Float in a window of its own** (as OHL-Design's pages).
 
 Under the menus, the **header**: the file's name (its full path and the
 structure's id and name on hover), *\* unsaved* when it has changes, the
@@ -217,15 +226,20 @@ another group, or out as a window of its own), drag the borders to size
 them, close one with its ×. **View** ticks each panel to show or hide it
 (the menu stays open while ticking), **UI scale ›** sizes the whole
 window's text and controls (90 % to 150 %; the menu stays open; kept
-for the next start), **Rigid links** shows or hides the
-rigid links in the 3D view, **Joints by their details** (off by default; a
+for the next start). **View › Display options ›** gathers what the 3D
+view draws: **Rigid links** shows or hides the
+rigid links, **Joints by their details** (off by default; a
 tower's joints coloured green complete, orange partly assumed, red no
 connection data — see [Joint details](#joint-details-towers)), **Volumes on the strings** (off by default)
 draws the shapes of the strings' insulator assemblies — fittings, horns,
 rings — on the strings as they hang in still air, grounded grey,
 electrified orange, insulated pale (placed as OHL-Design places them on
 the solved strings; see [Volumes on the
-strings](structure-library.md#volumes-on-the-strings)), **Reset layout** puts every panel
+strings](structure-library.md#volumes-on-the-strings)), **Load arrows**
+(a Loads panel in front; their scale in the load panels), **Deformed**
+and **Reactions** (FE results in front; the deformed shape's scale in
+FE results) and the **Usage legend**. The load and results panels keep
+their own ticks beside the scales (the same settings). **Reset layout** puts every panel
 back, and **Fit the view** shows the whole structure. The arrangement is
 kept for the next start. By default (2026-10-26) the **3D view** is
 large in the middle with its hotbar, the **Inspector** on its right (the
@@ -254,13 +268,12 @@ column scrolls with the others).
 
 | Menu | Panels |
 |---|---|
-| — | **To do** (the Level panel), **3D view**, **Inspector**, **Libraries** (closed by default; View or File › Libraries) |
+| View (its main panels) | **3D view**, **Detail view**, **Inspector**, **To do** (the Level panel), **Libraries** (closed by default) |
 | **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
-| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details** (with the **Detail view** pane beside the 3D view) |
-| **Load cases** | **Load case editor**, **Load table** |
+| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details**, **Member details** (with the **Detail view** pane beside the 3D view) |
+| **Loads** | **Load case editor**, **Load table**, **Line loads** |
 | **Results** | **FE results** |
-| **Line loads** | **Line loads** |
 
 The level of the file decides the panel in front when it opens: Points &
 strings at level 1, Joints at level 2 (the Pole for a pole), Supports
@@ -291,13 +304,14 @@ their menu or from View.
   grid at the level of the feet and a compass. **Attach joints** are
   ringed in orange, **support joints** marked with a green triangle, and
   each attachment point at an offset from its joint is joined to it by
-  its **rigid link**, a magenta rod (none at zero offset; View › Rigid
-  links). A click **selects** a joint,
+  its **rigid link**, a magenta rod (none at zero offset; View › Display
+  options › Rigid links). A click **selects** a joint,
   point, wire point, rigid link (it selects its attachment point, and the
-  view writes its joint, offset and length — and, after a run, its
+  view writes its joint, offset and length in magenta — and, after a run, its
   moment in the case shown) or member, Shift + click selects another; a
-  right-click on an attachment point opens its menu (**Link to a
-  joint…**, **Unlink**). A click never moves anything: a joint or point
+  right-click opens the menu of what is under the pointer, or of the
+  selection ([above](#the-window)). The view's notes are written in the
+  colour of what they are about, without a box. A click never moves anything: a joint or point
   moves only with the **Move** tool held (below). A drag elsewhere turns
   the view, a right-drag pans, the wheel zooms. The buttons at the top
   left turn it to a **standard view**: **Front** (looking along +y,
@@ -313,7 +327,7 @@ their menu or from View.
 - **Hotbar and tools** (as in OHL-Design): nine slots at the bottom of
   the 3D view, each a tool; a click on a slot or the keys **1–9** hold
   one, **Escape** lets go of it (Select again), **E** (or the slots'
-  **E** button, or Edit › Tools inventory) opens the **inventory** of
+  **E** button, or Edit › Tools › Tool inventory) opens the **inventory** of
   every tool: drag one onto a slot, drag a slot onto another to swap
   them, or into the inventory to empty it (right-click empties a slot
   too). The slots and the slot held are kept for the next start. The
@@ -324,19 +338,20 @@ their menu or from View.
   front, and its row in its table; a tower's joint or member, once asked, in
   the Detail view with its details below — 2026-11-03), **Move** (drag a joint or point to move it, snapped to the
   grid — **snap** in the strip — or onto a joint; one undo step per
-  drag), **Add point** (on a joint clicked, else at the top of the stick
-  figure), **One string** (below the point clicked; **string length** in
+  drag), **Add a point** (on a joint clicked, else at the top of the stick
+  figure), **One string below the point** (below the point clicked; **string length** in
   the strip), **Two strings to one wire point** (click two points),
   **Link** (the Link tool, [below](#attachment-points-joints-and-the-link-tool)),
-  **Add joint** (above a joint clicked, or where you click — in the
-  plane facing you through the structure's middle, snapped), **Add
+  **Add a joint** (above a joint clicked, or where you click — in the
+  plane facing you through the structure's middle, snapped), **Add a
   member** (click two joints; the next member starts at the second),
   **Delete** (what is clicked, asked first); in the inventory also
   **Two strings to one wire point** (in the default hotbar before
-  2026-11-02, the Edit tool now in its place), **Insert a joint on a member** (click a member; **at** in the strip)
+  2026-11-02, the Edit tool now in its place), **Insert a joint** (click a member; **at** in the strip)
   and **Symmetry** (the body's symmetry and **Make symmetric** in the
-  strip). Every change a tool makes is one undo step; the menus keep
-  their entries.
+  strip). Every change a tool makes is one undo step. Edit › Tools lists
+  them all by group with their keys; the Geometry and Body menus have
+  the same actions under the same names, on what is selected.
 - **Inspector** (right of the view): what is selected, with its fields
   to edit — a **joint** (x, y, z, its kind, its support, the members
   meeting it, the points linked to it), a **member** (its joints,
@@ -354,12 +369,12 @@ their menu or from View.
 
 | Menu | Tables | Tools |
 |---|---|---|
-| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked (the string's length: the tool strip of the One string tools), **Link** (the Link tool), **Delete…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
-| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint (not on a support joint: strings hang from attach joints), **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
+| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **Add a point**, **One string below the point** and **Two strings to one wire point** for the points picked (the string's length: the tool strip of the string tools), **Link** (the Link tool), **Delete selected…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
+| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add a joint** (above the joint picked), **Add a member** between two joints picked, **Point on the joint** (not on a support joint: strings hang from attach joints), **Delete selected…**; the symmetry's icon (its option on hover; set in Body › Symmetry or with the Symmetry tool), **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints; the button is above the table, and in the Design menu), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
-| **Load cases** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line result, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
+| **Loads** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line result, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
-| **Line loads**: **Line loads** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
+| **Loads**: **Line loads** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
 ## Attachment points, joints and the Link tool
 
@@ -373,8 +388,9 @@ A joint has a **kind**: *attach* (strings hang here), *support* (the
 structure stands here), or none — set in the Joints table, or worked
 out (*auto*).
 
-- **Link tool** (Geometry › Link tool, **Link** on the Geometry and
-  Body panels, or the hotbar's Link): click an attachment point, then an attach joint — the
+- **Link tool** (Edit › Tools › Link, **Link** on the Geometry and
+  Body panels, the hotbar's Link, or **Link to a joint…** in a point's
+  right-click menu): click an attachment point, then an attach joint — the
   point is linked to that joint **where it is**, its distance from the
   joint kept as its offset; one edit, one undo step. While a point is
   chosen, only the **attach joints** are ringed in green and take the
@@ -395,8 +411,9 @@ out (*auto*).
   position less the joint's, in the structure's axes), one undo step;
   the joint does not move. A joint moved takes its points along at
   their offsets. **Offsets** can also be typed directly.
-- **Insert a joint on a member** (a right-click on a member's name in
-  the Members table of the Design panel): an attach joint at the
+- **Insert a joint** on a member (a right-click on the member in the 3D
+  view, or on its name in the Members table of the Design panel; the
+  Insert a joint tool): an attach joint at the
   fraction **at** of its length from its first joint, the member split
   there into two pieces that stay **continuous** — the same cross-section,
   kind and other fields on both sides (a rigid connection, not a hinge),
@@ -463,7 +480,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   they come again; joints and members made by hand are never touched; a
   joint it no longer makes stays while a member made by hand or a point
   uses it, and is listed under the table (*kept, as made by hand*).
-- **Symmetry** (none, x, y or both): with it on, a joint or member
+- **Symmetry** (Body › Symmetry, or the Symmetry tool — 2026-11-03: no longer on the Joints and Members panels; none, x, y or both): with it on, a joint or member
   added, moved (dragged in the view or typed in the Joints table) or
   deleted takes its mirror images along — about x = 0 (left and right of
   the line), y = 0 (ahead and back) or both. A joint on a mirror plane
@@ -479,7 +496,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
 
 ## Poles and extensions
 
-- **Body › Pole…** (a structure of kind pole, or with a pole): the
+- **Body › Pole** (a structure of kind pole, or with a pole): the
   pole's cross-section (round, or a polygon with its sides), its
   embedment, and its **outline** — a row per height with its z and
   diameter (dragged or typed; the circumference shown), 🗑 per row,
@@ -490,7 +507,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   fields into the structure file (one undo step; the pole check gives
   the same numbers). A `.ohlp` without a wall brings none: level 3
   lists it until you type a thickness, tick solid or pick a cross-section. Diameters at two heights make level 2.
-- **Design › Pole design…**: the material (wood, steel, concrete, other), a
+- **Design › Pole design**: the material (wood, steel, concrete, other), a
   **cross-section** of the cross-section library next to the file (a polygonal
   hollow cross-section with the pole's sides, or a circular hollow one for a
   round pole: its wall, and its material's elasticity and density), or
@@ -500,7 +517,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   refused); fibre stress, moment capacity, elasticity, density,
   drag. Under them what level 3 still lacks, or *The pole check can read
   the pole (level 3)*.
-- **Body › Extensions…**: the extensions (**+ Extension**: +3 m, +6 m…),
+- **Body › Extensions**: the extensions (**+ Extension**: +3 m, +6 m…),
   the one picked with its `dz` and **show in 3D** — the view then shows
   the structure standing on it, its piece below the feet (lilac) and its
   legs lowered, as the finite-element model has it. Its **piece**: built
@@ -528,12 +545,12 @@ its Pole panels. One undo step; nothing is deleted: when a tower with
 connections becomes a pole, the message says how many connections and
 plates stay in the file, not shown.
 
-**Design › Joint details…** shows the joint selected last (in the 3D
+**Design › Joint details** shows the joint selected last (in the 3D
 view, the Joints table, or picked in its list; the Detail view follows
 the selection even when the panel is behind another tab; each joint with
 how complete its details are, in its colour): its drawing in the
 **Detail view**, a pane of its own opened on the right of the 3D view
-(View › Detail view shows or hides it; no window over the view), and its
+(View › Detail view shows or hides it, a right-click on a joint or member: **Open in the Detail view**; no window over the view), and its
 tables in **Joint details below the Detail view** — that leaf holds only
 the Detail view's own details (Joint details, Member details), not the
 tables, loads or results (2026-11-03; a panel kept elsewhere by an older
@@ -637,7 +654,7 @@ out. Each change is one undo step.
   for every structure in the folder; a file that cannot be read is said
   above the table.
 
-**Design › Member details…** (2026-11-02) shows a tower's member — the
+**Design › Member details** (2026-11-02) shows a tower's member — the
 one selected (the Edit tool opens it on the member clicked, once asked) or picked in
 its list — from its own side:
 
@@ -773,7 +790,7 @@ the bolt libraries beside the structure (`Bolts/`).
 
 ## Load cases
 
-The **Load case editor** (Load cases menu) edits the structure's
+The **Load case editor** (Loads menu) edits the structure's
 `[[load_case]]` tables ([Structure load cases](structure-load-cases.md)):
 the cases on the left (name, the first line of the description), the
 case on the right:
@@ -1021,7 +1038,7 @@ point dragged in the view with the Move tool, is one step. Comments and the orde
 **Save** (⌘S, Ctrl+S) writes the file (and the typed loads beside it); **Save as…** (Shift+⌘S, Shift+Ctrl+S) another
 one, which is then the file edited. A file that does not read (the error
 is shown in red) is not saved. Closing the window with unsaved changes
-asks first: **Save and close**, **Close without saving** or **Cancel**.
+asks first: **Save and close**, **Close without saving** or **Cancel** (File › Quit, ⌘Q, the same). **File › Close** closes the structure and shows the start page again; with unsaved changes it is greyed out (save or undo them first).
 
 ## Libraries
 
@@ -1051,9 +1068,10 @@ and insulators beside it** (ticked by default) puts the shipped examples
 into `Sections/` and `Insulators/` beside the new file (a file there is
 kept), so the cross-section lists are not empty to start with.
 
-**File › Libraries ›**:
+**File › Import ›** and **File › Export ›** (2026-11-03: before, File ›
+Libraries):
 
-- **Import *library* ›** *A file…* or *The files of a folder…*: every
+- **Import › *library kind* ›** *A file…* or *The files of a folder…*: every
   file is read and checked first, then copied into the folder of the
   table (a file of the same name is replaced). A file that does not read
   — a typo, a wrong unit — or a cross-section or assembly whose id another file
@@ -1066,13 +1084,13 @@ kept), so the cross-section lists are not empty to start with.
   a second, stores them into the project and reads its libraries again.
   Load-case recipes and structure templates are not project libraries: they
   stay in the working copy and are not stored into the project.
-- **Export what it uses…**: into a folder chosen, in the line
+- **Export › Libraries it uses…**: into a folder chosen, in the line
   application's layout — `structures/` (the structure file as edited,
   its pole and model), `sections/` (each cross-section library with only the
   cross-sections the structure names and the materials they use, comments
   kept), `insulators/` (its assemblies), `structure-templates/` (the template
-  it was built from). **Export every library…** writes every file read.
-- **Libraries panel…**: the **Libraries** panel (also in View) lists per
+  it was built from). **Export › Every library…** writes every file read.
+- **View › Libraries**: the **Libraries** panel lists per
   kind the files read and where from, each with its ids (a cross-section
   library's cross-sections, with how many the structure uses), why a file does
   not read, and at the top what the structure **names that no library
@@ -1084,7 +1102,7 @@ kept), so the cross-section lists are not empty to start with.
 
 ## Plugins
 
-**Plugins › Plugin manager…** (also on the start page) lists the plugins
+**File › Plugins › Plugin manager…** (also on the start page) lists the plugins
 as the line application's does — the plugins installed for you (in the
 line application's data folder, `plugins/` — still the folder named "OLS
 CAD", kept from before the rename so nothing is lost) and those of the folders added — each with its version,
@@ -1104,14 +1122,14 @@ What applies here:
 
 | Extension point | In OHL-Structure |
 |---|---|
-| `design-code` | **Load cases › Load cases from a design code…** (also in the Plugins menu): choose the plugin and your parameter file, **▶ Generate** (on a thread; the plugin's time and memory limits apply), read its notes, **Take them as recipes**: one recipe per load case of the code taking the line's factored values in that case at every point (as *Take the line's load cases as they are*; one undo step). Ticked, the weather and load case files it generated are written beside the structure (`<plugin>.ohlwc`, `<plugin>.ohllc`) to give to the line. |
+| `design-code` | **Loads › Load cases from a design code…**: choose the plugin and your parameter file, **▶ Generate** (on a thread; the plugin's time and memory limits apply), read its notes, **Take them as recipes**: one recipe per load case of the code taking the line's factored values in that case at every point (as *Take the line's load cases*; one undo step). Ticked, the weather and load case files it generated are written beside the structure (`<plugin>.ohlwc`, `<plugin>.ohllc`) to give to the line. |
 | `check` | listed: member and joint code checks will run here; nothing to run yet |
 | `io` | file formats of the line: they take the line's export model, not a structure — listed greyed under File › Export |
 | `terrain`, `project`, Python scripts | the line application's |
 
 ## Export
 
-**File › Export** writes the structure as it is in the window (unsaved
+**File › Export ›** (each format's entry ends in "…": it asks where) writes the structure as it is in the window (unsaved
 edits included) for another program. It needs **level 3**: joints,
 members with cross-sections, a supported joint.
 
@@ -1161,13 +1179,14 @@ assumed). SAF has no bolts or
 plates; CSV gives the connections and plates as the file does. A file
 without connections and plates is exported exactly as before.
 
-Under the entries:
+**File › Export › Export options…** (a window; 2026-11-03: before,
+under the entries of the menu), until the program is started again:
 
 - **Cross-section library**: by default the window's (`--sections`, else the
   `Sections` folder beside the file — the one the load panels use);
-  **Choose library…** takes another file.
+  **Choose…** takes another file.
 - **Bolt library**: by default the window's (the `Bolts` folder beside the
-  file, as the Detail view); **Choose bolt library…** takes another
+  file, as the Detail view); **Choose…** takes another
   `.ohlb` file. A connection naming a bolt takes its diameter and its
   head's and nut's sizes from it (else the drawing proportions).
 - **Loads**: by default the **Load table panel's table**: for a placed
@@ -1175,7 +1194,7 @@ Under the entries:
   that place, and the values typed over the table; for a structure opened
   on its own the recipes without line values (loads needing a line value
   are left out; the message says how many). Its `[[load]]` tables are
-  case `model`. **Choose load table…** takes a load table written as CSV
+  case `model`. **Choose…** takes a load table written as CSV
   instead ([Structure load cases](structure-load-cases.md)).
 
 The message at the bottom of the window says what was written. What each format

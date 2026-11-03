@@ -5,7 +5,7 @@
 //! The UI review of 2026-10-26 (owner): units in the column headers, the
 //! short "No line values" line closed, an error notice staying until
 //! closed, the recent files and the example on the start page, the 3D
-//! view's standard views, the Line loads menu; then the tools: a click
+//! view's standard views, the Line loads panel; then the tools: a click
 //! only selects, the Move tool drags (one undo step), the hotbar's keys
 //! and the inventory, an Inspector edit (one undo step), the calmer
 //! arrangement. With `OHL_RENDER_PNG` set, images of the window.
@@ -53,16 +53,16 @@ fn the_window_opens_calmly() {
 fn units_are_in_the_column_headers() {
     let path = copy_of("type-02.ohls", "review-units");
     let mut h = harness(&path);
-    menu(&mut h, "Body", "Joints…");
+    menu(&mut h, "Body", "Joints");
     for header in ["Joint", "x [m]", "y [m]", "z [m]", "Kind", "Members"] {
         assert!(h.query_by_label(header).is_some(), "{header}");
     }
     // The supports' heights: bare numbers, the unit in the header.
-    menu(&mut h, "Design", "Supports…");
+    menu(&mut h, "Design", "Supports");
     h.get_by_label("z [m]");
     assert!(h.query_all_by_label("0.000").count() >= 4);
     assert!(h.query_by_label("0.000 m").is_none());
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     for header in ["Transverse [kN]", "Longitudinal [kN]", "Vertical [kN]"] {
         assert!(h.query_by_label(header).is_some(), "{header}");
     }
@@ -76,7 +76,7 @@ fn units_are_in_the_column_headers() {
 fn the_line_values_notice_is_closed() {
     let path = copy_of("type-02.ohls", "review-notice");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     h.state_mut().message = None;
     h.state_mut().notices.items.clear();
     h.run();
@@ -216,13 +216,13 @@ fn the_standard_views() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
-/// "In the line" is now "Line loads": the menu and its panel.
+/// "In the line" is now "Line loads": a panel of the Loads menu (since the menu cleanup of 2026-11-03).
 #[test]
-fn line_loads_is_the_menu_and_the_panel() {
+fn line_loads_is_a_panel_of_the_loads_menu() {
     let path = copy_of("type-02.ohls", "review-rename");
     let mut h = harness(&path);
     assert!(h.query_by_label("In the line").is_none());
-    menu(&mut h, "Line loads", "Line loads…");
+    menu(&mut h, "Loads", "Line loads");
     assert_eq!(h.state_mut().focused(), Some(Panel::InTheLine));
     assert_eq!(Panel::InTheLine.title(), "Line loads");
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
@@ -303,7 +303,7 @@ fn the_hotbar_keys_and_the_inventory() {
     h.key_press(egui::Key::Num4);
     h.run();
     assert_eq!(h.state().tool(), Tool::AddPoint);
-    h.get_by_label("Add point");
+    h.get_by_label("Add a point");
     h.key_press(egui::Key::Num6);
     h.run();
     assert_eq!(h.state().tool(), Tool::Link);
@@ -316,7 +316,7 @@ fn the_hotbar_keys_and_the_inventory() {
     h.run();
     assert!(h.state().inventory);
     h.get_by_label("Inventory — tools");
-    h.get_by_label("Insert a joint on a member");
+    h.get_by_label("Insert a joint");
     shot(&mut h, "ohl-structure-inventory.png");
     // Closed again (E); a slot clicked in the hotbar holds its tool.
     h.key_press(egui::Key::E);

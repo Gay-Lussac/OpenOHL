@@ -275,7 +275,7 @@ added and imported/exported."
   values ships, as for the cross-sections.
 - A connection names a bolt: `bolts = { count = 2, bolt = "M16-8.8" }`;
   values typed in the connection still override the library's.
-- OHL-Structure: File › Libraries and the Libraries panel list the bolt
+- OHL-Structure: File › Import and the Libraries panel list the bolt
   libraries, **Import** and **Export** as for cross-sections; the bolt
   layout window picks a bolt from them; a bolt the structure names but no
   library has is listed (as a cross-section).

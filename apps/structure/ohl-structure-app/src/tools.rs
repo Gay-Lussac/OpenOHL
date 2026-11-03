@@ -83,16 +83,26 @@ impl Tool {
         match self {
             Tool::Select => "Select",
             Tool::Move => "Move",
-            Tool::AddJoint => "Add joint",
-            Tool::AddMember => "Add member",
-            Tool::AddPoint => "Add point",
-            Tool::OneString => "One string",
+            Tool::AddJoint => "Add a joint",
+            Tool::AddMember => "Add a member",
+            Tool::AddPoint => "Add a point",
+            Tool::OneString => "One string below the point",
             Tool::TwoStrings => "Two strings to one wire point",
             Tool::Link => "Link",
             Tool::Symmetry => "Symmetry",
-            Tool::InsertJoint => "Insert a joint on a member",
+            Tool::InsertJoint => "Insert a joint",
             Tool::Delete => "Delete",
             Tool::Edit => "Edit",
+        }
+    }
+
+    /// Its group in Edit › Tools (as OHL-Design's themes): selecting and
+    /// editing, the geometry (level 1), the body (level 2).
+    pub fn theme(self) -> &'static str {
+        match self {
+            Tool::Select | Tool::Edit | Tool::Move | Tool::Delete => "Select and edit",
+            Tool::AddPoint | Tool::OneString | Tool::TwoStrings | Tool::Link => "Geometry",
+            Tool::AddJoint | Tool::AddMember | Tool::InsertJoint | Tool::Symmetry => "Body",
         }
     }
 

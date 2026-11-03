@@ -46,7 +46,6 @@ pub(crate) fn harness(path: &Path) -> Harness<'static, StructureApp> {
     h
 }
 
-/// Clicks menu `top`, then its entry `entry`.
 /// Clicks the widget labelled `label`, scrolled into view first (the
 /// Load case editor's parts may lie below a short panel's edge).
 pub(crate) fn press(h: &mut Harness<'static, StructureApp>, label: &str) {
@@ -56,11 +55,43 @@ pub(crate) fn press(h: &mut Harness<'static, StructureApp>, label: &str) {
     h.run();
 }
 
+/// Clicks menu `top`, then its entry `entry`.
 pub(crate) fn menu(h: &mut Harness<'static, StructureApp>, top: &str, entry: &str) {
+    menu_path(h, &[top, entry]);
+}
+
+/// Clicks menu `path[0]`, hovers its submenus `path[1..n-1]` (opened by
+/// hovering), then clicks the last entry.
+pub(crate) fn menu_path(h: &mut Harness<'static, StructureApp>, path: &[&str]) {
+    let (last, rest) = path.split_last().expect("a menu path");
+    let (top, submenus) = rest.split_first().expect("a menu and an entry");
     h.get_by_label(top).click();
     h.run();
-    h.get_by_label(entry).click();
+    for s in submenus {
+        menu_entry(h, s).hover();
+        h.run();
+        h.run();
+    }
+    menu_entry(h, last).click();
     h.run();
+}
+
+/// A menu entry by its text: its accessible name is the text, or the
+/// text followed by its shortcut or a submenu's arrow; the first such
+/// (the open menus come before the panels, whose buttons may share it).
+pub(crate) fn menu_entry<'h>(
+    h: &'h Harness<'static, StructureApp>,
+    text: &'h str,
+) -> egui_kittest::Node<'h> {
+    use egui_kittest::kittest::NodeT;
+    let spaced = format!("{text} ");
+    h.query_all_by_label_contains(text)
+        .find(|n| {
+            n.accesskit_node()
+                .label()
+                .is_some_and(|l| l == text || l.starts_with(&spaced))
+        })
+        .unwrap_or_else(|| panic!("no menu entry {text:?}"))
 }
 
 /// A full design opens on the Design panels with its level; a joint added
@@ -76,11 +107,11 @@ fn a_structure_is_edited_undone_and_saved() {
     // The X-braces cross without a joint: advice, not a lack (the
     // header's "N to do").
     h.get_by_label("40 to do");
-    menu(&mut h, "Body", "Joints…");
+    menu(&mut h, "Body", "Joints");
     assert_eq!(h.state().area, Area::Body);
     h.state_mut().selected = vec![Handle::Joint("A1".into())];
     h.run();
-    h.get_by_label("Add joint").click();
+    h.get_by_label("Add a joint").click();
     h.run();
     let text = h.state().file.as_ref().unwrap().text();
     assert!(
@@ -125,7 +156,7 @@ fn the_header_names_what_the_next_level_lacks() {
     assert_eq!(h.state().area, Area::Body);
     assert_eq!(h.state_mut().focused(), Some(Panel::Members));
     // The placeholders say what comes.
-    menu(&mut h, "Results", "FE results…");
+    menu(&mut h, "Results", "FE results");
     assert_eq!(h.state().area, Area::Results);
     h.get_by_label_contains("Results need level 3");
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
@@ -137,7 +168,7 @@ fn the_header_names_what_the_next_level_lacks() {
 fn closing_with_changes_asks_first() {
     let path = copy_of("type-01.ohls", "close");
     let mut h = harness(&path);
-    h.get_by_label("+ Point").click();
+    h.get_by_label("Add a point").click();
     h.run();
     assert!(h.state().dirty());
     h.state_mut().closing = true;

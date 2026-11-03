@@ -75,7 +75,7 @@ fn a_load_row_is_added_and_undone() {
     let path = copy_of("type-02.ohls", "add");
     let mut h = harness(&path);
     let before = h.state().file.as_ref().unwrap().text();
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     assert_eq!(h.state().area, Area::LoadCases);
     assert_eq!(loads_of(&h, 0), 3);
     press(&mut h, "+ Load");
@@ -116,7 +116,7 @@ fn a_load_row_is_added_and_undone() {
 fn opened_alone_the_line_values_are_missing() {
     let path = copy_of("type-02.ohls", "alone");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     assert_eq!(h.state_mut().focused(), Some(Panel::LoadTable));
     let r = row(&h, "wind", 1, "A1");
     assert_eq!(
@@ -144,7 +144,7 @@ fn opened_alone_the_line_values_are_missing() {
 fn a_typed_value_is_kept_after_evaluating_again() {
     let path = copy_of("type-02.ohls", "typed");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     let r = row(&h, "wind", 1, "A1");
     h.state_mut().loads.type_value(&r, [3000.0, 0.0, 0.0]);
     h.run();
@@ -176,7 +176,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
     );
     // Opened again: the value is back.
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     let back = row(&h, "wind", 1, "A1");
     assert_eq!(
         (back.force, back.source),
@@ -194,7 +194,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
 fn the_table_goes_out_and_back_as_csv() {
     let path = copy_of("type-02.ohls", "csv");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     let r = row(&h, "ice, unbalanced", 1, "A11");
     h.state_mut().loads.type_value(&r, [0.0, 0.0, 7000.0]);
     let own = LoadRow {
@@ -235,7 +235,7 @@ fn the_table_goes_out_and_back_as_csv() {
 fn results_of_a_typed_case() {
     let path = copy_of("type-02.ohls", "results");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     for (label, force) in [
         ("A1", [4000.0, 1000.0, 9000.0]),
         ("A11", [4000.0, 0.0, 9000.0]),
@@ -257,7 +257,7 @@ fn results_of_a_typed_case() {
     // The editor's window closed (it lies over the panels).
     crate::layout::close_panel(&mut h.state_mut().dock, crate::layout::Panel::LoadRecipes);
     h.run();
-    menu(&mut h, "Results", "FE results…");
+    menu(&mut h, "Results", "FE results");
     h.state_mut().results.case = "typed".into();
     h.run();
     h.get_by_label("▶ Run").click();

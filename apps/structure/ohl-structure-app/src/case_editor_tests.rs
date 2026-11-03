@@ -120,7 +120,7 @@ fn last_case(h: &Harness<'static, StructureApp>) -> ohl_structure_loads::LoadCas
 fn line_forces_are_added_a_point_unticked_and_the_wind_mirrored() {
     let (path, at) = placed("parts");
     let mut h = harness(&path, &at);
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     press(&mut h, "+ Case");
     press(&mut h, "Add line forces");
     let c = last_case(&h);
@@ -200,7 +200,7 @@ fn line_forces_are_added_a_point_unticked_and_the_wind_mirrored() {
 fn mirror_wind_turns_the_body_wind_too() {
     let (path, at) = placed("mirror");
     let mut h = harness(&path, &at);
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     let k = h
         .state()
         .loads

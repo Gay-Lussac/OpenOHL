@@ -63,7 +63,7 @@ its joint and its offset follows; a joint moved takes its points along.
 In both applications the **Attachment points** table gives each one's
 joint, offset and the offset's length; the **Link tool** links a point
 to a joint where it is (OHL-Design: Edit › Tools › Structures › Link attachment
-point; OHL-Structure: Geometry › Link tool); a point's menu unlinks it;
+point; OHL-Structure: the Link tool, Edit › Tools › Link); a point's menu unlinks it;
 an unlinked point is drawn red in OHL-Design.
 *Built (engine, command line and both applications, 2026-10-21; in
 active development, not approved yet).*
@@ -93,7 +93,7 @@ the joint as the same force plus the moment r × F (applied where a frame
 member meets the joint; where only trusses meet it the moment is left
 out, with a note). Drawn as a magenta rod in both applications' 3D views
 and OHL-Design's structure screen, on its own layer (OHL-Design: View ›
-Layers › Rigid links; OHL-Structure: View › Rigid links), none at zero
+Layers › Rigid links; OHL-Structure: View › Display options › Rigid links), none at zero
 offset; a click on it selects its attachment point, which shows the
 joint, the offset vector, its length and its moment per load case where
 computed. *Replaces:* eccentricity (of an attachment). *German:* starre

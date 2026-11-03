@@ -599,7 +599,7 @@ impl StructureApp {
         };
         ui.label(egui::RichText::new(text).weak()).on_hover_text(
             "The [wind] table of the cross-section library: from a design-code plugin \
-             (Load cases › Load cases from a design code…, files written) or typed in a \
+             (Loads › Load cases from a design code…, files written) or typed in a \
              .ohlsec file. Used by the finite-element check's member wind in the line \
              application and by ohl structures fe.",
         );

@@ -13,7 +13,7 @@ own loads](../development/structure-load-cases-spec.md) (owner,
 Status: built, in active development (not approved yet)
 (`apps/structure/ohl-structure-loads`). The structure application edits
 the cases in the **Load case editor** and shows the **Load table**
-(Load cases menu), and solves the table's cases in its **FE results**
+(Loads menu), and solves the table's cases in its **FE results**
 panel (Results menu) ([The structure application](structure-app.md#load-cases)).
 **Open in OHL-Structure…** on a placed structure in the line application
 opens the structure with that place's line values and keeps the values

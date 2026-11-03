@@ -64,7 +64,7 @@ fn the_kind_is_toggled_and_a_joint_shown_in_detail() {
     let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
     let mut h = harness(&path);
     assert_eq!(kind(&h), StructureKind::Other);
-    menu(&mut h, "Design", "Joint details…");
+    menu(&mut h, "Design", "Joint details");
     assert_eq!(h.state_mut().focused(), Some(Panel::JointDetails));
     // Its drawing in a pane of its own beside the 3D view.
     assert!(h.state().is_open(Panel::JointView));
@@ -192,7 +192,7 @@ fn an_angle_tower_shows_its_bolts() {
     std::fs::write(&tower, ANGLES).unwrap();
     let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
     let mut h = harness(&tower);
-    menu(&mut h, "Design", "Joint details…");
+    menu(&mut h, "Design", "Joint details");
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.run();
     h.run();
@@ -361,10 +361,10 @@ fn the_joint_view_follows_the_selection_with_the_panel_hidden() {
         .replace("kind = \"other\"", "kind = \"lattice\"");
     std::fs::write(&path, text).unwrap();
     let mut h = harness(&path);
-    menu(&mut h, "Design", "Joint details…");
+    menu(&mut h, "Design", "Joint details");
     assert!(h.state().is_open(Panel::JointView));
     // Another tab in front of Joint details.
-    menu(&mut h, "Body", "Joints…");
+    menu(&mut h, "Body", "Joints");
     let nodes: Vec<String> = h
         .state()
         .file
@@ -481,7 +481,7 @@ fn member_details_follow_the_bolts_live() {
     assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
     assert_eq!(h.state().joints.subject, Subject::Member);
     assert_eq!(h.state().joints.member.as_deref(), Some("D1"));
-    menu(&mut h, "Design", "Member details…");
+    menu(&mut h, "Design", "Member details");
     h.run();
     h.get_by_label_contains("Resistance (ASCE 10-97");
     h.get_by_label("Tension");
@@ -584,7 +584,7 @@ fn the_detail_view_tools_act() {
     .unwrap();
     let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
     let mut h = harness(&tower);
-    menu(&mut h, "Design", "Joint details…");
+    menu(&mut h, "Design", "Joint details");
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.state_mut().joints.drawn = Drawn::Face;
     h.run();
@@ -699,7 +699,7 @@ fn bolt_tools_keep_the_code() {
     )
     .unwrap();
     let mut h = harness(&tower);
-    menu(&mut h, "Design", "Joint details…");
+    menu(&mut h, "Design", "Joint details");
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.state_mut().joints.drawn = Drawn::Face;
     h.run();
@@ -805,7 +805,7 @@ fn the_detail_view_goes_back_and_shows_what_is_picked() {
     let tower = dir.join("angles.ohls");
     std::fs::write(&tower, ANGLES).unwrap();
     let mut h = harness(&tower);
-    menu(&mut h, "Design", "Joint details…");
+    menu(&mut h, "Design", "Joint details");
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.state_mut().joints.drawn = Drawn::Face;
     h.run();

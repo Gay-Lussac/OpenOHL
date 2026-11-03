@@ -25,7 +25,7 @@ fn apply(h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>) {
 fn a_body_is_generated_grouped_and_undone() {
     let path = copy_of("type-01.ohls", "body");
     let mut h = harness(&path);
-    menu(&mut h, "Body", "Generators…");
+    menu(&mut h, "Body", "Generators");
     assert_eq!(h.state_mut().focused(), Some(Panel::Generators));
     h.get_by_label("legs and panels").click();
     h.run();
@@ -53,7 +53,7 @@ fn a_body_is_generated_grouped_and_undone() {
     assert_eq!(t.members.len(), 72);
     assert!(t.points.iter().all(|p| p.node.is_some()));
     // Two members picked (the second with Shift), a group set on them.
-    menu(&mut h, "Body", "Members…");
+    menu(&mut h, "Body", "Members");
     h.get_by_label("body-M1").click();
     h.run();
     h.get_by_label("body-M2")
@@ -79,7 +79,7 @@ fn a_body_is_generated_grouped_and_undone() {
         .collect();
     assert_eq!(grouped, ["body-M1", "body-M2"]);
     // Design › Groups lists it.
-    menu(&mut h, "Design", "Groups…");
+    menu(&mut h, "Design", "Groups");
     assert_eq!(h.state_mut().focused(), Some(crate::layout::Panel::Groups));
     assert!(h.get_all_by_label("main-leg").count() >= 1);
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
@@ -93,7 +93,7 @@ fn a_body_is_generated_grouped_and_undone() {
 fn generator_options_in_the_forms() {
     let path = copy_of("type-01.ohls", "options");
     let mut h = harness(&path);
-    menu(&mut h, "Body", "Generators…");
+    menu(&mut h, "Body", "Generators");
     h.get_by_label("legs and panels").click();
     h.run();
     assert_eq!(h.state().body.preview.len(), 64);
@@ -132,7 +132,7 @@ fn generator_options_in_the_forms() {
 fn long_tables_draw_the_rows_in_view_and_scroll_to_a_pick() {
     let path = copy_of("type-02.ohls", "rows-in-view");
     let mut h = harness(&path);
-    menu(&mut h, "Body", "Members…");
+    menu(&mut h, "Body", "Members");
     h.run();
     let t = h.state().file.as_ref().unwrap().structure().clone();
     let first = t.members[0].id.clone();
@@ -157,7 +157,7 @@ fn long_tables_draw_the_rows_in_view_and_scroll_to_a_pick() {
 fn frame_time_of_the_members_and_joints_sheets() {
     let path = copy_of("type-02.ohls", "frame-time");
     let mut h = harness(&path);
-    for entry in ["Members…", "Joints…"] {
+    for entry in ["Members", "Joints"] {
         menu(&mut h, "Body", entry);
         h.run();
         for _ in 0..10 {

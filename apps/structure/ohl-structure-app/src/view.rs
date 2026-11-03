@@ -45,12 +45,19 @@ pub enum ViewAction {
     LinkClick(Option<Handle>),
     /// A right-click with the Link tool: cancel.
     Cancel,
-    /// A point's menu: link, unlink.
-    Link(crate::link_tool::LinkAction),
     /// A click with an acting tool ([`crate::tools::Tool`]) on this (none:
     /// nothing there), and where it meets the plane facing the camera
     /// through the point looked at.
     ToolClick(Option<Handle>, Option<[f64; 3]>),
+}
+
+/// What the 3D view's right-click menu is of.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MenuOn {
+    /// A joint, member, point or wire point (selected with the click).
+    Object(Handle),
+    /// What is selected (several, or nothing under the pointer).
+    Selection,
 }
 
 /// A standard view of the 3D view's buttons.
@@ -115,7 +122,9 @@ pub const CONTROLS: &str = "Drag: turn the view. Right-drag: pan. Wheel: zoom.\n
      Move tool: drag a joint or point to move it (snapped to the grid, or onto a joint; one \
      undo step).\n\
      Hotbar: keys 1-9 hold a tool, E: the inventory, Escape: let go of the tool.\n\
-     Right-click a point: link, unlink.\n\
+     Right-click a joint, member or point: its menu (Inspector, Detail view, delete, insert \
+     a joint, a point on the joint, link, unlink); elsewhere with something selected: the \
+     selection's menu. Delete: delete what is selected (asked first).\n\
      Axes: x right of the line (red), y ahead (green), z up (blue).";
 
 /// A drag moving a joint or a (wire) point.
@@ -140,8 +149,8 @@ pub struct View {
     drag: Option<Move>,
     /// A panel's drawing over the structure (loads, results), by its key.
     overlay: Option<(u64, GpuScene)>,
-    /// The point whose menu is open (right-clicked).
-    menu_point: Option<String>,
+    /// What the right-click menu is of (the last right-click).
+    pub menu_on: Option<MenuOn>,
     /// Where it was drawn last and its camera (the hotbar's place;
     /// `View::screen_of` in the tests).
     last: Option<(egui::Rect, Camera)>,
@@ -229,17 +238,18 @@ impl View {
         camera.projector(size)(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
     }
 
-    /// The view; edits go into `file`.
+    /// The view; edits go into `file`. Its response (its right-click menu
+    /// is the application's, [`crate::context_menu`]); none without a GPU.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
         rs: Option<&egui_wgpu::RenderState>,
         file: &mut StructureFile,
         v: ViewInput<'_>,
-    ) {
+    ) -> Option<egui::Response> {
         let Some(rs) = rs else {
             ui.centered_and_justified(|ui| ui.label("The 3D view needs a GPU (wgpu)."));
-            return;
+            return None;
         };
         let g = v.g;
         let (rect, response) =
@@ -316,41 +326,24 @@ impl View {
         } else if response.secondary_clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
-            // A point's menu.
-            self.menu_point = match pick(g, &project, local(pos), 12.0) {
-                Some(Handle::Point(l)) => Some(l),
-                _ => None,
+            // The right-click menu ([`crate::context_menu`]): of what is
+            // under the pointer (selected), or of the selection (an object
+            // of a selection of several, or nothing under the pointer).
+            self.menu_on = match pick(g, &project, local(pos), 12.0) {
+                Some(h) if v.selected.len() > 1 && v.selected.contains(&h) => {
+                    Some(MenuOn::Selection)
+                }
+                Some(h) => {
+                    *v.selected = vec![h.clone()];
+                    Some(MenuOn::Object(h))
+                }
+                None if !v.selected.is_empty() => Some(MenuOn::Selection),
+                None => None,
             };
+            self.dirty = true;
         }
-        if linking.is_none()
-            && let Some(l) = self.menu_point.clone()
-        {
-            response.context_menu(|ui| {
-                ui.label(egui::RichText::new(format!("point {l}")).strong());
-                if ui
-                    .button("Link to a joint…")
-                    .on_hover_text("The Link tool on this point: click the joint to link it to")
-                    .clicked()
-                {
-                    *v.action = Some(ViewAction::Link(crate::link_tool::LinkAction::Start(
-                        l.clone(),
-                    )));
-                    ui.close();
-                }
-                if ui
-                    .button("Unlink")
-                    .on_hover_text(
-                        "It keeps its place, a joint of its own on no member (its load then \
-                         reaches no member: link it again for the analysis)",
-                    )
-                    .clicked()
-                {
-                    *v.action = Some(ViewAction::Link(crate::link_tool::LinkAction::Unlink(
-                        l.clone(),
-                    )));
-                    ui.close();
-                }
-            });
+        if linking.is_some() {
+            self.menu_on = None;
         }
         // An acting tool: a click acts (on what is under the pointer, or
         // where it meets the plane facing the camera through the target).
@@ -584,6 +577,7 @@ impl View {
             usage_legend(&painter, rect);
         }
         self.buttons(ui, rect);
+        Some(response)
     }
 
     /// The buttons over the view's top left: the standard views, Fit, and
@@ -711,8 +705,13 @@ fn marks(
         for (_, m) in moments.iter().filter(|m| &m.0 == l) {
             text.push_str(&format!("\n{m}"));
         }
-        note(painter, q + egui::vec2(12.0, 12.0), text);
+        note(painter, q + egui::vec2(12.0, 12.0), text, rgba(RIGID));
     }
+}
+
+/// A colour of the scene's (RGBA bytes) for egui.
+fn rgba(c: [u8; 4]) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
 /// The Link tool with a point chosen: the attach joints ringed (only
@@ -746,6 +745,7 @@ fn link_marks(
                 painter,
                 a + egui::vec2(14.0, -24.0),
                 format!("joint {id}: {}", ohl_structures::NOT_ATTACH),
+                rgba(ATTACH),
             );
         }
         return;
@@ -761,26 +761,24 @@ fn link_marks(
                 "link {point} to joint {id}: {}",
                 crate::link_tool::offset_words(o)
             ),
+            egui::Color32::WHITE,
         );
     }
 }
 
-/// Text on a dark box, kept inside the view.
-fn note(painter: &egui::Painter, at: egui::Pos2, text: String) {
-    let galley =
-        painter.layout_no_wrap(text, egui::FontId::proportional(13.0), egui::Color32::WHITE);
+/// A view note: text in the colour of the object it is about (the link
+/// drawn white, a rigid link magenta, a joint taking no link orange),
+/// without a box (the project's rule for notes in a view), kept inside
+/// the view.
+fn note(painter: &egui::Painter, at: egui::Pos2, text: String, color: egui::Color32) {
+    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(13.0), color);
     let clip = painter.clip_rect().shrink(4.0);
     let size = galley.size();
     let at = egui::pos2(
         at.x.min(clip.right() - size.x).max(clip.left()),
         at.y.min(clip.bottom() - size.y).max(clip.top()),
     );
-    painter.rect_filled(
-        egui::Rect::from_min_size(at, galley.size()).expand(3.0),
-        3.0,
-        egui::Color32::from_black_alpha(190),
-    );
-    painter.galley(at, galley, egui::Color32::WHITE);
+    painter.galley(at, galley, color);
 }
 
 /// The height the hotbar takes at the bottom of the 3D view, points

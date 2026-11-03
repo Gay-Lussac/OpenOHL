@@ -104,44 +104,24 @@ impl StructureApp {
         }
     }
 
-    /// The second row of the Joints and Members panels' tools: symmetry, Make symmetric,
-    /// the group of the members picked.
+    /// The second row of the Joints and Members panels' tools: the group
+    /// of the members picked (the symmetry: Body › Symmetry and the
+    /// Symmetry tool, one place in the menus).
     pub(crate) fn body_tools(&mut self, ui: &mut egui::Ui, t: &StructureType) {
         let Some(f) = &mut self.file else {
             return;
         };
         ui.horizontal_wrapped(|ui| {
-            let now = symmetry_option(t);
-            let mut chosen = now;
+            let symmetry = symmetry_option(t);
             ui.add(
                 crate::icons::Icon::Symmetry
                     .image(ui.ctx(), 16.0)
                     .tint(ui.visuals().text_color()),
-            );
-            ui.label("symmetry").on_hover_text(
-                "Joints and members added, moved or deleted take their mirror images along \
-                 (about x = 0: left and right of the line; about y = 0: ahead and back)",
-            );
-            egui::ComboBox::from_id_salt("symmetry")
-                .selected_text(chosen.map_or("none", Mirror::name))
-                .width(130.0)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut chosen, None, "none");
-                    for m in Mirror::ALL {
-                        ui.selectable_value(&mut chosen, Some(m), m.name());
-                    }
-                });
-            if chosen != now {
-                set_symmetry_of(f, chosen, &mut self.message);
-            }
-            if ui
-                .add_enabled(now.is_some(), egui::Button::new("Make symmetric"))
-                .on_hover_text("Every joint and member gets the mirror images it lacks")
-                .on_disabled_hover_text("Choose a symmetry first")
-                .clicked()
-            {
-                make_symmetric_of(f, &mut self.message);
-            }
+            )
+            .on_hover_text(format!(
+                "Symmetry: {} (Body › Symmetry, or the Symmetry tool)",
+                symmetry.map_or("none", Mirror::name)
+            ));
             ui.separator();
             let members = picked_members(&self.selected);
             ui.label("group");

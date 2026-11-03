@@ -123,7 +123,7 @@ fn a_placed_structure_shows_its_line_values_and_keeps_its_typed_loads() {
     write(&at, [1500.0, -200.0, 6000.0]);
     let mut h = harness(&path, &at);
     h.get_by_label("loads of T2 in test line");
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     refresh(&mut h);
     let r = row(&h, "wind", 1, "A1");
     assert_eq!((r.force, r.source), ([1500.0, 0.0, 0.0], Source::Line));
@@ -213,7 +213,7 @@ fn no_load_case_file_is_said_plainly() {
     .save(&at)
     .unwrap();
     let mut h = harness(&path, &at);
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     h.get_by_label_contains("The line gives no values for T2: the project has no load cases");
     h.get_by_label_contains("Criteria › Load cases library, or a design-code plugin");
     // The same in Line values.
@@ -233,7 +233,7 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
     let at = line_values_path(&path, "T2");
     write(&at, [1500.0, -200.0, 6000.0]);
     let mut h = harness(&path, &at);
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     refresh(&mut h);
     let rows = h.state().loads.table().rows.clone();
     assert_eq!(rows.len(), 4, "{rows:?}");
@@ -256,12 +256,12 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
     assert_eq!(ice.unwrap().force, [0.0, 0.0, 8000.0]);
     h.get_by_label_contains("The line gives the forces at 2 point(s) of T2 in 2 case(s)");
     // No recipe: said, with the line's cases to take.
-    menu(&mut h, "Load cases", "Load case editor…");
+    menu(&mut h, "Loads", "Load case editor");
     h.get_by_label_contains("This structure has no load cases of its own");
     h.get_by_label("Take the line's load cases as they are");
 
     // Stored: every case ticked, one edit.
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     h.get_by_label("Store in the structure file…").click();
     h.run();
     h.get_by_label("Store").click();
@@ -287,7 +287,7 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
 
     // Opened alone: the stored cases give the same forces.
     let mut alone = crate::tests::harness(&path);
-    menu(&mut alone, "Load cases", "Load table…");
+    menu(&mut alone, "Loads", "Load table");
     alone.get_by_label("No line values (opened on its own)");
     alone.get_by_label_contains("Stored in this file from the line: wind, ice");
     let f = alone.state().file.clone().unwrap();
@@ -314,7 +314,7 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
     // The line solved again; stored again: asked, then replaced.
     write(&at, [1700.0, 0.0, 6100.0]);
     let mut h = harness(&path, &at);
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     h.get_by_label("Store in the structure file…").click();
     h.run();
     h.get_by_label("Store").click();
@@ -350,7 +350,7 @@ fn a_case_with_a_wire_not_solved_is_marked_incomplete() {
     }];
     v.save(&at).unwrap();
     let mut h = harness(&path, &at);
-    menu(&mut h, "Load cases", "Load table…");
+    menu(&mut h, "Loads", "Load table");
     h.get_by_label_contains("Case ice incomplete: section S3 not solved (did not converge)");
     refresh(&mut h);
     let rows = h.state().loads.table().rows.clone();
@@ -378,7 +378,7 @@ fn a_case_with_a_wire_not_solved_is_marked_incomplete() {
     );
     h.get_by_label_contains("Case ice incomplete");
     // FE results of the ice case: marked, not a plain pass.
-    menu(&mut h, "Results", "FE results…");
+    menu(&mut h, "Results", "FE results");
     h.state_mut().results.case = "ice".into();
     h.run();
     h.get_by_label("▶ Run").click();

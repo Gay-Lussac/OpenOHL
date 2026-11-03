@@ -67,6 +67,10 @@ fn view_shows_and_hides_a_panel() {
     let mut h = harness(&path);
     h.get_by_label("View").click();
     h.run();
+    // View › Tables: a tick menu too.
+    crate::tests::menu_entry(&h, "Tables").hover();
+    h.run();
+    h.run();
     h.get_by_label("Structure fields").click();
     h.run();
     assert!(h.state().is_open(Panel::StructureFields));

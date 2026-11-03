@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The Line loads panel (Line loads menu): the status of the line
+//! The Line loads panel (Loads menu): the status of the line
 //! values, the values the line gives at the placed structure (from its
 //! line-values file, `--line-values`), per point and case — a case whose
 //! values lack a wire not solved marked "incomplete: S12 not solved" —
@@ -60,7 +60,7 @@ fn kn(v: Option<f64>) -> String {
 }
 
 impl StructureApp {
-    /// The Line loads panel (Line loads menu).
+    /// The Line loads panel (Loads menu).
     pub fn in_the_line_ui(&mut self, ui: &mut egui::Ui) {
         if let Some(f) = &self.file {
             self.loads.refresh(f);
