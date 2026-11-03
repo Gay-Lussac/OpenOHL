@@ -268,7 +268,7 @@ files](../user-guide/line-file.md).
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic wire types above the transition temperature, for wire types that do not say | — |
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); `loads_per` (2026-10-21, `LoadsPer`, written only when not the default) — `stretched` (default, exact: the finite elements carry the ice and wind per metre of the stretched wire, `CableElement::stretched_load`, a fixed point) or `unstretched` (per unit of unstressed length, the former treatment, as other programs: a Simplification, about T/EA ≈ 0.1 % less; in the solver `solve::Reference::loads_per`, set from the line in `solve_fe`, and the jumpers' `solve_jumper_in`; the closed forms unaffected); in the project's line settings and OHL XML `<solver taps loads_per>`; `ohl line --loads-per` overrides it; `blocks` (2026-10-25, `InTheBlocks`, line file version 10, written only when not the default) — `sheaves` (default: a section in the blocks shares its length over frictionless sheaves, the wire's tension equal on both sides of each suspension clamp; `ohl_sagtension::sheaves::share`, in the solver `solve::over_sheaves` and `settled_over_sheaves`, the stringing state `in_the_blocks_at_stringing` for `clip_lengths` and the curves' zero-strain lengths; `solve::Reference::blocks`, set from the line in `solve_fe`) or `equal_h` (simplified: one horizontal tension, the strings plumb along the line, the model before; the ruling-span method keeps it either way); the sagging table follows it (`SaggingTable::blocks`, `SaggingSpan::horizontal_tension`, `TensionSection::solve_over_sheaves`, `NonlinearSection::solve_over_sheaves`); OHL XML `<solver blocks>`; `ohl line --blocks` overrides it; `ohl sagtension`'s `[sagging] blocks` (default `sheaves`) and the validation calculation `sagtension.sagging`'s input `blocks`; the app's results keep it in `revision::Revision::loads_per` (the line's hash taken without it, so a change is named on its own) and saved check reports in `parameters.loads_per` (vegetation, safety volumes) | — |
 | `circuit_starts` | `[SectionPoint]` | — | conductor path ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
-| `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `weather_cases` — the weather cases sent, by name (default none), each a line result unfactored, a wind case twice (`<case> — wind from the left` / `— right`); `condition` — the wires' condition in them; `broken_cases` (version 9, 2026-10-25, roadmap O9) — the line's load cases with a broken wire sent, by name, after the weather cases, each its weather case with that wire broken, unfactored, `<weather case> — <section> span <n> broken` (`ohl_structure_link::structure_cases_with`, `broken_result_name`, tag `broken wire`); `load_cases` — read, not used since 2026-10-25; a name no longer in the line (or no longer a broken-wire case) is skipped and named in the file's note. Line file `{"structure_loads": {"weather_cases": [...], "condition": "creep", "broken_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>`, `<weather_case name>` and `<broken_case name>` | load case and weather case **names** |
+| `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `weather_cases` — the weather cases sent, by name (default none), each a line result unfactored, a wind case twice (`<case> — wind from the left` / `— right`); `condition` — the wires' condition in them; `broken_cases` (version 9, 2026-10-25, roadmap O9) — the line's load cases with a broken wire sent, by name, after the weather cases, each its weather case with that wire broken, unfactored, `<weather case> — <section> span <n> broken` (`ohl_structure_link::structure_cases_with`, `broken_result_name`, tag `broken wire`); `load_cases` — read, not used since 2026-10-25; a name no longer in the line (or no longer a broken-wire case) is skipped and named in the file's note; `type_load_cases` (2026-11-03, per-pylon sets, `BTreeMap<type id, [case name]>`) — a structure type's default load cases of the line's load case library, taken by its structures listing none of their own (`Line::load_cases_for(structure) -> &[String]`: the structure's `load_cases`, else its type's, empty = every case; `Line::takes_load_case(id, case)`, `has_load_case_sets`; names checked against the library when the loads are computed, `ohl_loads::load_case_set_notes`; OHL XML `<type_cases type><case name/></type_cases>` in `<structure_loads>`). Line file `{"structure_loads": {"weather_cases": [...], "condition": "creep", "broken_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>`, `<weather_case name>` and `<broken_case name>` | load case and weather case **names** |
 | `electrical` | `ElectricalSettings` | — | the line's electrical settings for the line parameters (version 11, 2026-10-27, roadmap O18; Checks › Electrical › Line parameters): `soil_resistivity_ohm_m` (Ω·m, homogeneous earth; none: `DEFAULT_SOIL_RESISTIVITY_OHM_M` 100 Ω·m **assumed**, the IEEE distribution test feeders' value, said in every result), `earth_return` (`carson_series` default, `complex_depth`, `carson_first_terms`), `mean_height` (`solved` default: the solved wire's average over the span; `two_thirds_sag`: attachment height minus 2/3 of the sag), `earthing_resistance_ohm` (Ω, 2026-10-29: the structures' earthing where they give none; none: `DEFAULT_EARTHING_RESISTANCE_OHM` 10 Ω **assumed**, said). Line file `{"electrical": {...}}` (left out when default); project `meta` row `electrical`; OHL XML `<electrical soil_resistivity_ohm_m earthing_resistance_ohm earth_return mean_height/>` | — |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
@@ -386,6 +386,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `description` | string | — | free text | — |
 | `height_adjust` | f64 | m | typed: feet above the ground at `position` (may be negative) | — |
 | `weather_groups` | `[string]` | — | its weather case groups: a check with the structure override takes here only its cases in them (2026-10-25); not read by the solve | `.ohlwc` `[[group]] name` |
+| `load_cases` | `[string]` | — | 2026-11-03, per-pylon sets: names of cases of the line's load case library this structure takes (empty: its type's default `structure_loads.type_load_cases`, else every case; `Line::load_cases_for`); `ohl_loads::structure_loads` computes its loads only in those cases; not read by the solve (`incremental::same_but_drawing`); OHL XML `<load_case name/>` in `<structure>` | load case **names** |
 | `local` | `LocalConditions` | factors; m; Pa; m | 2026-11-03 (`ohl_line::local`): `wind_static`, `wind_clearance`, `wire_ice` (factors), `structure_ice` (m), `snow_ground` (s_k, Pa), `snow_altitude` (h₀ for SIA 261 (10), `local::snow_on_ground`); `LocalConditions::snow`, `check`; `local::localized(line, Purpose::{Strength, Clearance})` sets each span's wind and ice factors from its two structures' by `SolverOptions::local_spans` (`SpanRule::{Worst, Mean}`), a span's own kept; `local::has_local`; OHL XML `<local wind_static wind_clearance wire_ice structure_ice_m snow_ground_pa snow_altitude_m/>`, `<solver local_spans>`; not read by the base solve (`incremental::same_but_drawing`) | `.ohlwc` none |
 | `soil_resistivity_ohm_m` | f64? | Ω·m | soil resistivity measured at the structure (2026-10-27; line file version 11 when set; OHL XML attribute `soil_resistivity_ohm_m`); the line parameters take on each span the geometric mean of its two structures' (one measured: that one; none: the line's `electrical`) | — |
 | `earthing_resistance_ohm` | f64? | Ω | resistance of its earthing (footing) to remote earth (2026-10-29; line file version 11 when set; OHL XML attribute `earthing_resistance_ohm`; the Structures table's **earthing Ω**); the magnetic field's earth wire network leads the structure's current into the ground through it (none: the line's `electrical`, else 10 Ω assumed; `Line::earthing_resistance`) | — |
@@ -1986,6 +1987,13 @@ pressure times its factor (`ohl_line::solve::LocalWinds`, in memory only,
 over a span's own case where it has one); `WeatherCase::with_wind_factor`
 (a factor of 1 or no wind: the case unchanged).
 
+**Several broken spans together** (2026-11-03, in memory):
+`solve_section_broken_spans(line, section, cable, case, spans, budget,
+coupling)` and `solve_line_broken_spans(line, library, case, &[(section,
+spans)], budget)`: every span listed gone in one solve; a point between
+two broken spans holds no wire; `SectionShape::broken_spans` (all, in
+order) beside `broken` (the first). The single-span functions call them.
+
 **A broken wire** (2026-10-25, roadmap O9, in memory):
 `ohl_line::solve::solve_section_broken(line, section, cable, case, span,
 budget, coupling)` (span 0 = first; FE only) and `solve_line_broken(line,
@@ -2003,13 +2011,33 @@ case name), `condition` (initial, creep, load, max sag), factors
 the set of a section point at one of the span's ends; `BrokenWire::spans(line)`
 the spans broken from 0, or why not; `describe()` → `S3 span 2 broken`);
 written at version 3 only when a case has one (`written_version`);
+**version 4** (2026-11-03; `LoadCase::uses_version_4`, written at 4 only
+then): `broken_also` (`[[case.broken]]` after the first, in `broken`;
+`broken_wires()`, `has_broken()`, `set_broken(vec)`; the v3 table reads
+as one; `validate` refuses `"every"` twice or beside another break of
+its section, a break given twice), `removed` (`[[case.removed]]`,
+`RemovedWire { section, set? }`, `check(line)`, `describe()`; refused
+twice or also broken), `wind_from` (`WindSide`?; `wire_weather(w)`),
+`use_local` (bool), `on_structure` (`StructureOptions`: `direction`
+`WindDirection::{Right, Ahead, Left, Back, Angle(deg)}` — from, 0° right,
+90° ahead, `towards()` (−cos, −sin) in (x right, y ahead); `ice`
+`StructureIce::{Local, Thickness(m)}`; `ice_density` kg/m³?; `snow`;
+`snow_shape`, `snow_exposure`, `snow_thermal` (μ, C_e, C_T; defaults
+`DEFAULT_SNOW_*` 0.8, 1.0, 1.0); `snow_factor()`). Per structure:
+`structure_wind_at(w, s)` (× local `wind_static` with `use_local`),
+`structure_ice_at(w, s) -> Result<Option<IceOn {thickness, density}>>`
+(Err without a density), `structure_snow_at(s) -> Option<SnowOn {ground,
+factor}>` (`load()` = μ C_e C_T s_k, `snow_load`). `LoadCases::to_toml()`
+/ `LoadCase::to_toml(version)` write a file at `written_version`.
 `structure` (version 2, `[case.structure]`, `StructureWind`:
 `wind_pressure` Pa?, `wind_factor`?) — the wind on the structures' own
 bodies when it differs from the wires': each given replaces, for the
 structures only, the weather case's pressure or the transverse factor.
 `LoadCase::structure_wind(weather) -> BodyWind` (`pressure`, `factor`,
-`towards` −1/+1 across the line, `own_pressure`, `own_factor`;
-`factored()`, `origin()`) is the one rule every structure check takes:
+`towards` −1/+1 across the line — with a direction the transverse part
+of where it blows —, `direction` (`WindDirection`, version 4),
+`own_pressure`, `own_factor`; `factored()`, `origin()`, `towards_xy()`,
+`has_longitudinal()`) is the one rule every structure check takes:
 the wind bands (`add_structure_wind`), the member wind and the pole wind
 of the capacity checks (`analysis.rs`), and the line values sent to
 OHL-Structure. The wires and strings never take it.
@@ -2022,7 +2050,15 @@ words) and `missing` (`MissingWire`: `structure`, `kind`
 section not solved ends at or hangs on, or whose strings hold a jumper
 not solved: that structure's loads in that case are **incomplete**;
 `CaseLoads::missing_at`, `is_incomplete`) and `structure_wind`
-(`BodyWind` of the case). `AttachmentLoad::broken_span`
+(`BodyWind` of the case), `notes` (version 4: what the case assumed, in
+words). `add_structure_loads(results, line, types, sections, weather)`
+(2026-11-03): `add_structure_wind` (the bands, by the case's direction,
+× local `wind_static` with `use_local`, only for structures taking the
+case) and the ice and snow per structure as loads without a point ("ice
+on the structure", "snow on the structure"; `analysis::body_weights` on
+the model's members with a profile, `analysis::pole_ice` on a pole's
+shaft). `AttachmentLoad::broken_span`
+
 (`Option<[usize; 3]>`, 2026-10-25): in a broken-wire case the broken
 span (from 1) giving each component (transverse, longitudinal,
 vertical) — with `"every"` the envelope's (the largest factored of each

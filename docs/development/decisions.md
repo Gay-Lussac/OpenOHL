@@ -10,6 +10,47 @@ of Parts A, B and C).
 
 ## 2026-11-03
 
+**Load case file version 4: removed conductors, several broken wires,
+the structure wind's direction, ice and snow on the structures, per-pylon
+sets** (step 4 of the approved local-conditions and load-case design, the
+core; the form in the Load cases library and OHL-Structure's use of the
+library cases come next). The owner: "a removed conductor option and
+broken is only used for actually broke cables"; "a load case should be
+able to apply ice and snow on a pylon structure"; "on each pylon you
+should have a load case for structure that can be different per
+structure and composed of cases from the library". Built, in active
+development, not approved yet.
+
+- `.ohllc` version 4 (versions 1 to 3 read unchanged; written at 4 only
+  when a case uses one of its values): `wind_from` (the wires' side in
+  the case; in a case whose weather has no wind the notes say it has no
+  effect), `use_local` (the structures' local conditions for strength),
+  `[[case.removed]]` (the section's wire absent: all its spans out of the
+  solve, with the jumpers and spacers only on it), `[[case.broken]]`
+  (several; all broken together in one solve per section; the v3 single
+  table reads as one; `"every"` keeps its one-at-a-time envelope and is
+  refused beside another break of its section or a second `"every"`),
+  and in `[case.structure]` `direction` (left, right, ahead, back or an
+  angle: 0° from the right, counted towards ahead), `ice` (true: the
+  local `structure_ice`; or a thickness) with `ice_density` (default the
+  weather case's; refused when computed without one — never assumed),
+  `snow` with μ, C_e, C_T (defaults 0.8, 1.0, 1.0 by SIA 261 5.3.4, 5.2.4,
+  5.2.5; q = μ C_e C_T s_k, (9)).
+- The solver breaks several spans of a section in one solve
+  (`solve_section_broken_spans`, `solve_line_broken_spans`; a point
+  between two broken spans holds no wire).
+- The wind bands give one area: a wind from another direction takes it
+  along the direction it blows — an approximation, not on the safe side
+  where the structure shows more area along the line (theory: Structure
+  wind). Ice and snow go on the members with a profile (the fe check)
+  and on a pole's shaft (ice), listed per structure as loads without a
+  point; a type with wind bands only gives no surface: not counted, said
+  (not on the safe side). Every assumption is marked in the theory page.
+- Per-pylon sets: `Structure::load_cases` and the types' defaults
+  `structure_loads.type_load_cases` in the line file and OHL XML; a
+  structure takes its own, else its type's, else every case; names are
+  checked against the library when the loads are computed.
+
 **Steel pole shafts by ASCE/SEI 48-19** (owner, 2026-11-03: "Can you look
 in the code what would apply for pole structures and start implementing
 it", then "What code would be needed for the polygonal or round

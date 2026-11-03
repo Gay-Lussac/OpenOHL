@@ -401,6 +401,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         soil_resistivity_ohm_m,
         earthing_resistance_ohm,
         local,
+        load_cases,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -428,6 +429,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         && routes.is_empty()
         && weather_groups.is_empty()
         && local.is_empty()
+        && load_cases.is_empty()
         && fields.is_empty()
     {
         out.push_str("/>\n");
@@ -455,6 +457,12 @@ fn write_structure(out: &mut String, s: &Structure) {
     for g in weather_groups {
         out.push_str("    <weather_group");
         attr(out, "name", g);
+        out.push_str("/>\n");
+    }
+    // Its load cases (per-pylon sets, 2026-11-03).
+    for c in load_cases {
+        out.push_str("    <load_case");
+        attr(out, "name", c);
         out.push_str("/>\n");
     }
     for p in points {
@@ -1178,6 +1186,7 @@ pub fn to_xml(line: &Line) -> String {
             weather_cases,
             condition,
             broken_cases,
+            type_load_cases,
         } = structure_loads;
         out.push_str("  <structure_loads");
         if let Some(c) = condition {
@@ -1207,6 +1216,18 @@ pub fn to_xml(line: &Line) -> String {
             out.push_str("    <broken_case");
             attr(&mut out, "name", c);
             out.push_str("/>\n");
+        }
+        // Per structure type its default load cases (2026-11-03).
+        for (t, cases) in type_load_cases {
+            out.push_str("    <type_cases");
+            attr(&mut out, "type", t);
+            out.push_str(">\n");
+            for c in cases {
+                out.push_str("      <case");
+                attr(&mut out, "name", c);
+                out.push_str("/>\n");
+            }
+            out.push_str("    </type_cases>\n");
         }
         out.push_str("  </structure_loads>\n");
     }
@@ -1358,13 +1379,32 @@ fn read_alignment_point(e: &Element) -> Result<AlignmentPoint, String> {
 
 /// `<structure_loads load_cases="all|listed" condition?>` with its
 /// `<load_case name>` (not used since 2026-10-25), `<weather_case name>`
-/// and `<broken_case name>` (version 9).
+/// and `<broken_case name>` (version 9), and per structure type its
+/// default load cases `<type_cases type><case name/></type_cases>`
+/// (2026-11-03).
 fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String> {
     check(
         e,
         &["load_cases", "condition"],
-        &["load_case", "weather_case", "broken_case"],
+        &["load_case", "weather_case", "broken_case", "type_cases"],
     )?;
+    let mut type_load_cases = std::collections::BTreeMap::new();
+    for t in e.children_named("type_cases") {
+        check(t, &["type"], &["case"])?;
+        let id = text(t, "type")?.to_owned();
+        let cases = t
+            .children_named("case")
+            .map(|c| {
+                check(c, &["name"], &[])?;
+                Ok(text(c, "name")?.to_owned())
+            })
+            .collect::<Result<Vec<String>, String>>()?;
+        if type_load_cases.insert(id.clone(), cases).is_some() {
+            return Err(format!(
+                "structure_loads: type_cases of type {id} given twice"
+            ));
+        }
+    }
     let names = |tag: &str| {
         e.children_named(tag)
             .map(|c| {
@@ -1387,6 +1427,7 @@ fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String>
         weather_cases: names("weather_case")?,
         condition: owned(e, "condition"),
         broken_cases: names("broken_case")?,
+        type_load_cases,
     })
 }
 
@@ -1455,6 +1496,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         &[
             "weather_group",
             "local",
+            "load_case",
             "point",
             "wire",
             "string",
@@ -1703,6 +1745,13 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 local
             }
         },
+        load_cases: e
+            .children_named("load_case")
+            .map(|c| {
+                check(c, &["name"], &[])?;
+                Ok(text(c, "name")?.to_owned())
+            })
+            .collect::<Result<_, String>>()?,
         id,
         fields: read_fields(e)?,
     })

@@ -318,6 +318,14 @@
                   <xs:attribute name="snow_altitude_m" type="xs:double"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="load_case" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>Its load cases (per-pylon sets, 2026-11-03), by name, cases of the line's load case library (checked when the loads are computed); none: its type's default (structure_loads type_cases), else every case.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
                   <xs:documentation>An attachment point: where strings hang
@@ -942,6 +950,24 @@
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="type_cases" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A structure type's default load cases
+                    (per-pylon sets, 2026-11-03): the cases of the line's load
+                    case library a structure of that type takes when it lists
+                    none of its own; each type once.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="case" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="type" type="xs:string" use="required"/>
                 </xs:complexType>
               </xs:element>
             </xs:sequence>

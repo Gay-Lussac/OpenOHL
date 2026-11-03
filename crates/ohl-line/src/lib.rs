@@ -329,6 +329,12 @@ pub struct StructureLoads {
     /// twice). Their factors are the structure load cases'.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub broken_cases: Vec<String>,
+    /// Per structure type (by id), its default load cases (owner
+    /// 2026-11-03, per-pylon sets): names of cases of the line's load
+    /// case library a structure of that type takes when it gives none of
+    /// its own ([`Structure::load_cases`], [`Line::load_cases_for`]).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub type_load_cases: BTreeMap<String, Vec<String>>,
 }
 
 impl StructureLoads {
@@ -1382,6 +1388,15 @@ pub struct Structure {
     /// with Use local conditions ticked.
     #[serde(default, skip_serializing_if = "local::LocalConditions::is_empty")]
     pub local: local::LocalConditions,
+    /// Its load cases (owner 2026-11-03: "on each pylon you should have a
+    /// load case for structure that can be different per structure and
+    /// composed of cases from the library"): names of cases of the line's
+    /// load case library; empty: its type's default
+    /// ([`StructureLoads::type_load_cases`]), else every case
+    /// ([`Line::load_cases_for`]). Names are checked against the library
+    /// when the loads are computed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub load_cases: Vec<String>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1429,6 +1444,8 @@ struct StructureFile {
     earthing_resistance_ohm: Option<f64>,
     #[serde(default)]
     local: local::LocalConditions,
+    #[serde(default)]
+    load_cases: Vec<String>,
     #[serde(default)]
     fields: Fields,
 }
@@ -1479,6 +1496,7 @@ impl From<StructureFile> for Structure {
             soil_resistivity_ohm_m: f.soil_resistivity_ohm_m,
             earthing_resistance_ohm: f.earthing_resistance_ohm,
             local: f.local,
+            load_cases: f.load_cases,
             fields: f.fields,
         }
     }
@@ -3509,6 +3527,36 @@ impl Line {
     /// Structure by id.
     pub fn structure(&self, id: &str) -> Option<&Structure> {
         self.structures.iter().find(|s| s.id == id)
+    }
+
+    /// The load cases of `structure` (per-pylon sets, owner 2026-11-03):
+    /// its own ([`Structure::load_cases`]), else its type's default
+    /// ([`StructureLoads::type_load_cases`]); empty: every case of the
+    /// line's load case library.
+    pub fn load_cases_for<'a>(&'a self, structure: &'a Structure) -> &'a [String] {
+        if !structure.load_cases.is_empty() {
+            return &structure.load_cases;
+        }
+        structure
+            .structure_type
+            .as_deref()
+            .and_then(|t| self.structure_loads.type_load_cases.get(t))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// Whether structure `id` takes load case `case` ([`Line::load_cases_for`];
+    /// a structure not in the line: every case).
+    pub fn takes_load_case(&self, id: &str, case: &str) -> bool {
+        self.structure(id).is_none_or(|s| {
+            let set = self.load_cases_for(s);
+            set.is_empty() || set.iter().any(|c| c == case)
+        })
+    }
+
+    /// Whether any structure or type gives its own load cases.
+    pub fn has_load_case_sets(&self) -> bool {
+        !self.structure_loads.type_load_cases.is_empty()
+            || self.structures.iter().any(|s| !s.load_cases.is_empty())
     }
 
     /// The limits of string `label` of structure `structure` (not checked

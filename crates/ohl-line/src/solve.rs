@@ -171,8 +171,12 @@ pub struct SectionShape {
     pub spacers: Vec<SpacerState>,
     /// The span solved with its wire gone ([`solve_section_broken`]; none:
     /// the section whole). That span's shape has no points and no
-    /// tension.
+    /// tension. With several spans broken together
+    /// ([`solve_section_broken_spans`]): the first of them.
     pub broken: Option<usize>,
+    /// Every span solved with its wire gone, in order (empty: the section
+    /// whole).
+    pub broken_spans: Vec<usize>,
 }
 
 /// A string as solved.
@@ -378,9 +382,10 @@ struct Cases<'a> {
     /// The spans' cases a section in the blocks rolls in (none: the
     /// section's case): the local winds only, not the spans' own cases.
     rolling: Option<&'a std::collections::BTreeMap<usize, WeatherCase>>,
-    /// A span whose wire is gone (a broken wire, roadmap O9): no element
-    /// there, its two clamps held by their strings alone.
-    broken: Option<usize>,
+    /// The spans whose wire is gone (a broken wire, roadmap O9; several
+    /// broken together, 2026-11-03): no element there, their clamps held
+    /// by their strings alone.
+    broken: &'a [usize],
 }
 
 impl<'a> Cases<'a> {
@@ -391,7 +396,7 @@ impl<'a> Cases<'a> {
             own: None,
             points: None,
             rolling: None,
-            broken: None,
+            broken: &[],
         }
     }
 
@@ -418,14 +423,14 @@ impl<'a> Cases<'a> {
         Self {
             own: self.rolling,
             rolling: self.rolling,
-            broken: None,
+            broken: &[],
             ..*self
         }
     }
 
-    /// Whether span `s` is the broken one.
+    /// Whether span `s` is a broken one.
     fn is_broken(&self, s: usize) -> bool {
-        self.broken == Some(s)
+        self.broken.contains(&s)
     }
 }
 
@@ -1039,7 +1044,7 @@ fn build(
         .map(|k| {
             let back = k.checked_sub(1).is_none_or(|s| cases.is_broken(s));
             let ahead = k + 1 >= n || cases.is_broken(k);
-            cases.broken.is_some() && back && ahead
+            !cases.broken.is_empty() && back && ahead
         })
         .collect();
     for (k, holder) in layout.iter().enumerate() {
@@ -2444,13 +2449,43 @@ pub fn solve_section_broken(
     budget: &Budget,
     coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
+    solve_section_broken_spans(line, section, cable, case, &[span], budget, coupling)
+}
+
+/// [`solve_section_broken`] with the wires of several spans `spans` (0 =
+/// first) gone together in one solve (owner 2026-11-03: a load case may
+/// break several wires at once): no element in any of them; a point
+/// between two broken spans holds no wire (its strings hang under their
+/// own weight, as a section end next to a broken span). Each piece of
+/// the section left between broken spans re-solves with its clamps held
+/// by their strings. Refused as there, for every span listed; a span
+/// given twice counts once.
+///
+/// Expected cost: as [`solve_section`].
+pub fn solve_section_broken_spans(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    spans: &[usize],
+    budget: &Budget,
+    coupling: &Coupling,
+) -> Result<SectionShape, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
-    let spans = section.points.len().saturating_sub(1);
-    if span >= spans {
-        return Err(invalid(format!(
-            "no span {} to break (it has {spans})",
-            span + 1
-        )));
+    let count = section.points.len().saturating_sub(1);
+    let mut broken: Vec<usize> = spans.to_vec();
+    broken.sort_unstable();
+    broken.dedup();
+    if broken.is_empty() {
+        return Err(invalid("no span to break".into()));
+    }
+    for &span in &broken {
+        if span >= count {
+            return Err(invalid(format!(
+                "no span {} to break (it has {count})",
+                span + 1
+            )));
+        }
     }
     if section.calculation.method() == crate::condition::Method::Rs {
         return Err(invalid(
@@ -2459,29 +2494,32 @@ pub fn solve_section_broken(
                 .into(),
         ));
     }
-    let on_broken: Vec<&str> = section
-        .span_points
-        .iter()
-        .filter(|p| p.span == span)
-        .map(|p| p.label.as_str())
-        .collect();
-    let here =
-        |r: &crate::SpanPointRef| r.section == section.id && on_broken.contains(&r.point.as_str());
-    let held = on_broken.iter().any(|label| {
-        coupling.spacers.holds.iter().any(|h| h.point == *label)
-            || coupling.spacers.pulls.contains_key(*label)
-    }) || line.spacers.iter().any(|x| here(&x.a) || here(&x.b))
-        || line.jumpers.iter().any(|j| {
-            j.taps()
-                .any(|t| matches!(t, crate::Tap::Span(r) if here(r)))
-        });
-    if held {
-        return Err(invalid(format!(
-            "span {}: a spacer or a jumper hangs on its span points ({}): a broken wire there \
-             is not modelled",
-            span + 1,
-            on_broken.join(", ")
-        )));
+    for &span in &broken {
+        let on_broken: Vec<&str> = section
+            .span_points
+            .iter()
+            .filter(|p| p.span == span)
+            .map(|p| p.label.as_str())
+            .collect();
+        let here = |r: &crate::SpanPointRef| {
+            r.section == section.id && on_broken.contains(&r.point.as_str())
+        };
+        let held = on_broken.iter().any(|label| {
+            coupling.spacers.holds.iter().any(|h| h.point == *label)
+                || coupling.spacers.pulls.contains_key(*label)
+        }) || line.spacers.iter().any(|x| here(&x.a) || here(&x.b))
+            || line.jumpers.iter().any(|j| {
+                j.taps()
+                    .any(|t| matches!(t, crate::Tap::Span(r) if here(r)))
+            });
+        if held {
+            return Err(invalid(format!(
+                "span {}: a spacer or a jumper hangs on its span points ({}): a broken wire \
+                 there is not modelled",
+                span + 1,
+                on_broken.join(", ")
+            )));
+        }
     }
     // The wind's side is the line's (as [`solve_section_coupled`]).
     let flipped;
@@ -2495,7 +2533,7 @@ pub fn solve_section_broken(
         case
     };
     let cases = Cases {
-        broken: Some(span),
+        broken: &broken,
         ..Cases::one(case)
     };
     solve_cases(line, section, cable, cases, budget, coupling)
@@ -2517,25 +2555,53 @@ pub fn solve_line_broken(
     span: usize,
     budget: &Budget,
 ) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
-    let k = line
-        .sections
-        .iter()
-        .position(|s| s.id == section)
-        .ok_or_else(|| LineError::Invalid(format!("no section {section} to break a wire of")))?;
+    solve_line_broken_spans(line, library, case, &[(section, vec![span])], budget)
+}
+
+/// [`solve_line_broken`] with several wires broken together (owner
+/// 2026-11-03): per section listed, its spans (0 = first) broken in one
+/// solve ([`solve_section_broken_spans`]); the other sections as they
+/// are. A section listed twice has its spans joined. One result per
+/// section, in order. Err: a section not in the line.
+///
+/// Expected cost: one line solve and one more section solve per section
+/// listed.
+pub fn solve_line_broken_spans(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    broken: &[(&str, Vec<usize>)],
+    budget: &Budget,
+) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
+    let mut by_section: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for (section, spans) in broken {
+        let k = line
+            .sections
+            .iter()
+            .position(|s| s.id == *section)
+            .ok_or_else(|| {
+                LineError::Invalid(format!("no section {section} to break a wire of"))
+            })?;
+        by_section.entry(k).or_default().extend(spans);
+    }
     let mut results = solve_line_with(line, library, case, budget);
-    let s = &line.sections[k];
     let jumpers = crate::jumper::end_loads(line, case, |id| library.get(id));
     let coupling = Coupling {
         jumpers: Some(jumpers),
         ..Coupling::default()
     };
-    results[k] = match library.get(&s.cable) {
-        Some(cable) => solve_section_broken(line, s, cable, case, span, budget, &coupling),
-        None => Err(LineError::Invalid(format!(
-            "section {}: wire type {} is not in the wire library",
-            s.id, s.cable
-        ))),
-    };
+    for (k, spans) in by_section {
+        let s = &line.sections[k];
+        results[k] = match library.get(&s.cable) {
+            Some(cable) => {
+                solve_section_broken_spans(line, s, cable, case, &spans, budget, &coupling)
+            }
+            None => Err(LineError::Invalid(format!(
+                "section {}: wire type {} is not in the wire library",
+                s.id, s.cable
+            ))),
+        };
+    }
     Ok(results)
 }
 
@@ -2981,11 +3047,12 @@ fn solve_fe(
     }
     // Above the wire's strength (owner, 2026-10-22).
     flags.extend(rts_flags(&spans, cable));
-    if let Some(k) = cases.broken {
+    for k in cases.broken {
         flags.push(format!("span {}: the wire broken (roadmap O9)", k + 1));
     }
     Ok(SectionShape {
-        broken: cases.broken,
+        broken: cases.broken.first().copied(),
+        broken_spans: cases.broken.to_vec(),
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),
         spans,

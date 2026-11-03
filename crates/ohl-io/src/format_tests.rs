@@ -321,7 +321,16 @@ fn rich_line() -> Line {
         weather_cases: vec!["ice 25 mm".into(), "wind <&>".into()],
         condition: Some("creep".into()),
         broken_cases: vec!["S1 span 2 broken".into()],
+        // Per structure type its default load cases (2026-11-03).
+        type_load_cases: [(
+            "tower <A>".to_owned(),
+            vec!["wind 90°".to_owned(), "ice".to_owned()],
+        )]
+        .into_iter()
+        .collect(),
     };
+    // A structure's own load cases (per-pylon sets, 2026-11-03).
+    line.structures[0].load_cases = vec!["wind 90°".into(), "construction & T1".into()];
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
     }

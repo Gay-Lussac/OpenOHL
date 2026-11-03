@@ -1362,7 +1362,7 @@ impl Model {
     /// component normal to the member, its length (sin θ) and the
     /// profile's width for it. None: no profile, or the wind along the
     /// member.
-    pub(crate) fn across(&self, m: &Member, w: [f64; 3]) -> Option<([f64; 3], f64, f64)> {
+    pub fn across(&self, m: &Member, w: [f64; 3]) -> Option<([f64; 3], f64, f64)> {
         let p = self.sections[m.section].profile.as_ref()?;
         let r = crate::element::axes(self, m);
         let row = |k: usize| [r[(k, 0)], r[(k, 1)], r[(k, 2)]];

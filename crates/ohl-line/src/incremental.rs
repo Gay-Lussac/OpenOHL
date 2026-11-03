@@ -365,6 +365,8 @@ fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
         // (The base solve takes the weather cases as written; a check
         // using the local conditions solves again with them.)
         local: _,
+        // (Read by the structure loads only, after the solve.)
+        load_cases: _,
         fields,
     } = a;
     *id == b.id

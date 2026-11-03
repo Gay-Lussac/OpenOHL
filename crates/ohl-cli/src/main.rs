@@ -1994,7 +1994,18 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 &set.cases,
                 &ohl_wirefe::default_fe_budget(),
             )?;
-            ohl_loads::add_structure_wind(&mut results, &line, &types, &all);
+            // The structures' sections (the models' members and the wind
+            // and ice on them).
+            let sections = match sections_arg
+                .clone()
+                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
+            {
+                Some(p) => ohl_sections::SectionLibrary::load(&p)?,
+                None => ohl_sections::SectionLibrary::default(),
+            };
+            // The wind on the structures' bands, and the ice and snow on
+            // them (load case file version 4).
+            ohl_loads::add_structure_loads(&mut results, &line, &types, &sections, &all);
             println!(
                 "structure loads: {} load cases in {:.1?}",
                 results.len(),
@@ -2026,8 +2037,11 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                         )
                     }
                 );
-                if let Some(b) = &r.case.broken {
+                for b in r.case.broken_wires() {
                     println!("    broken wire: {}", b.describe());
+                }
+                for n in &r.notes {
+                    println!("    note: {n}");
                 }
             }
             extra_tables.push(ohl_io::tables::Table::from_csv(
@@ -2040,13 +2054,6 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 println!("  written to {}", out.display());
             }
             // Structure checks: the types' allowable spans and loads.
-            let sections = match sections_arg
-                .clone()
-                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
-            {
-                Some(p) => ohl_sections::SectionLibrary::load(&p)?,
-                None => ohl_sections::SectionLibrary::default(),
-            };
             let usage = ohl_loads::capacity::usage_with_sections(
                 &line, &types, &sections, &library, &all, &results,
             );
