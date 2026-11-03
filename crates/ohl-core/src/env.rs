@@ -17,19 +17,6 @@ pub fn var(name: &str) -> Result<String, std::env::VarError> {
     std::env::var(name)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn read() {
-        // Not set (a name no one sets).
-        assert!(var_os("OHL_NO_SUCH_VARIABLE_8231").is_none());
-        assert!(var("OHL_NO_SUCH_VARIABLE_8231").is_err());
-        assert!(var("PATH").is_ok());
-    }
-}
-
 /// The private design-code plugin of this checkout, for the tests that
 /// run it when it is there: the first folder listed in
 /// `local-data/check/plugins.txt` under `root` (the repository; the list
@@ -43,4 +30,17 @@ pub fn private_plugin(root: &std::path::Path) -> Option<std::path::PathBuf> {
         .find(|l| !l.is_empty() && !l.starts_with('#'))?;
     let dir = root.join(rel);
     dir.is_dir().then_some(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read() {
+        // Not set (a name no one sets).
+        assert!(var_os("OHL_NO_SUCH_VARIABLE_8231").is_none());
+        assert!(var("OHL_NO_SUCH_VARIABLE_8231").is_err());
+        assert!(var("PATH").is_ok());
+    }
 }
