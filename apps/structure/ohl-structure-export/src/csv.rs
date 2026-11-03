@@ -356,7 +356,14 @@ fn connections(s: &ExportStructure) -> String {
 /// The plates as the file gives them.
 fn plates(s: &ExportStructure) -> String {
     table(
-        &["id", "joint", "thickness_m", "material", "outline_m"],
+        &[
+            "id",
+            "joint",
+            "thickness_m",
+            "material",
+            "outline_m",
+            "kind",
+        ],
         s.plates
             .iter()
             .map(|p| {
@@ -370,6 +377,7 @@ fn plates(s: &ExportStructure) -> String {
                         .map(|q| q.iter().map(|v| num(v.si())).collect::<Vec<_>>().join(" "))
                         .collect::<Vec<_>>()
                         .join(";"),
+                    p.kind.map(|k| k.as_str().to_owned()).unwrap_or_default(),
                 ]
             })
             .collect(),

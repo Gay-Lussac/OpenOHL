@@ -969,7 +969,13 @@ fn connections_are_defined_field_by_field() {
     assert_eq!(c.gauge_lines, Some(1));
     // On a plate; copied to the other end (N3) with the plate.
     let t = read(&doc);
-    let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let g = ce::add_plate(
+        &mut doc,
+        &t,
+        "N2",
+        0.01,
+        ohl_structures::connections::PlateKind::Welded,
+    );
     ce::set_connection_field(
         &mut doc,
         "M2",
@@ -997,7 +1003,13 @@ fn connections_are_defined_field_by_field() {
     assert_eq!(far.bolts.as_ref().unwrap().count, 3);
     let copy = far.onto.clone().unwrap();
     assert_ne!(copy, g);
-    assert_eq!(t.plates.iter().find(|p| p.id == copy).unwrap().joint, "N3");
+    let copied = t.plates.iter().find(|p| p.id == copy).unwrap();
+    assert_eq!(copied.joint, "N3");
+    // Welded, as the plate copied.
+    assert_eq!(
+        copied.kind(),
+        ohl_structures::connections::PlateKind::Welded
+    );
     assert!(
         t.connection_notes().is_empty(),
         "{:?}",
@@ -1024,6 +1036,12 @@ fn connections_are_defined_field_by_field() {
     let p = t.plates.iter().find(|p| p.id == g).unwrap();
     assert!((p.thickness.si() - 0.012).abs() < 1e-12);
     assert_eq!(p.material.as_deref(), Some("S355"));
+    // Back to bolted: the key goes (the default).
+    ce::set_plate_kind(&mut doc, &g, ohl_structures::connections::PlateKind::Bolted).unwrap();
+    let t = read(&doc);
+    let p = t.plates.iter().find(|p| p.id == g).unwrap();
+    assert_eq!(p.kind, None);
+    assert!(ce::set_plate_kind(&mut doc, "nope", Default::default()).is_err());
     ce::remove_plate(&mut doc, &g);
     let t = read(&doc);
     assert!(t.connection("M2", "N2").unwrap().onto.is_none());
@@ -1133,7 +1151,7 @@ fn bolt_points_and_plate_outlines_are_written() {
     ce::set_bolt_points(&mut doc, "M2", "N2", &[], None);
     assert!(read(&doc).connection("M2", "N2").is_none());
     let t = read(&doc);
-    let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let g = ce::add_plate(&mut doc, &t, "N2", 0.01, Default::default());
     assert!(ce::set_plate_outline(&mut doc, &g, &[[0.0, 0.0, 30.0]]).is_err());
     ce::set_plate_outline(
         &mut doc,

@@ -168,6 +168,123 @@ fn a_plate_lies_around_its_bolts() {
     }
 }
 
+/// The distance of `q` from the nearest edge of `outline` (inside it),
+/// seen along `n`, m.
+fn from_edge(outline: &[[f64; 3]], n: [f64; 3], q: [f64; 3]) -> f64 {
+    let k = outline.len();
+    let ln = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    (0..k)
+        .map(|i| {
+            let (a, b) = (outline[i], outline[(i + 1) % k]);
+            let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let d = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
+            let c = [
+                e[1] * d[2] - e[2] * d[1],
+                e[2] * d[0] - e[0] * d[2],
+                e[0] * d[1] - e[1] * d[0],
+            ];
+            let le = (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+            ((c[0] * n[0] + c[1] * n[1] + c[2] * n[2]) / ln / le).abs()
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The plate drawn around its bolts keeps the design code's minimum edge
+/// and end distances from each of them (the member end's, ASCE 10-97 by
+/// default) and says where they come from; an outline given too small has
+/// the bolts too near its edge said.
+#[test]
+fn a_plate_keeps_the_codes_distances_from_its_bolts() {
+    let text = format!(
+        "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n",
+        AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G1\"")
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let p = &n2.plates[0];
+    let r = crate::bolt_rules(&text, &library(), &Default::default(), "D1", "N2", None)
+        .expect("the code's rules");
+    assert!(p.edges[0].contains(r.code), "{:?}", p.edges);
+    assert!(p.notes.is_empty(), "{:?}", p.notes);
+    assert!(matches!(p.leg.as_deref(), Some("L1" | "L2")));
+    let least = r.edge.min(r.end);
+    for b in &a.bolt_points {
+        let e = from_edge(&p.outline, a.bolt_axis, *b);
+        assert!(e >= least - 1e-6, "{e} < {least}");
+    }
+    // An outline given: a square of 20 mm round the first bolt — too near.
+    let b = a.bolt_points[0];
+    let (u, v) = (a.direction, {
+        let n = a.bolt_axis;
+        let d = a.direction;
+        [
+            n[1] * d[2] - n[2] * d[1],
+            n[2] * d[0] - n[0] * d[2],
+            n[0] * d[1] - n[1] * d[0],
+        ]
+    });
+    let corner = |s: f64, t: f64| {
+        let q: Vec<String> = (0..3)
+            .map(|k| format!("\"{:.6} m\"", b[k] + u[k] * s + v[k] * t))
+            .collect();
+        format!("[{}]", q.join(", "))
+    };
+    let square = [
+        corner(-0.02, -0.02),
+        corner(0.02, -0.02),
+        corner(0.02, 0.02),
+        corner(-0.02, 0.02),
+    ]
+    .join(", ");
+    let given = text.replace(
+        "thickness = \"8 mm\"\n",
+        &format!("thickness = \"8 mm\"\noutline = [{square}]\n"),
+    );
+    let d = joint_details(&given, &library(), &Default::default()).unwrap();
+    let p = &d.joint("N2").unwrap().plates[0];
+    assert!(p.outline_given);
+    assert!(
+        p.notes.iter().any(|n| n.contains("bolt 1 of D1")),
+        "{:?}",
+        p.notes
+    );
+    assert!(
+        p.notes.iter().any(|n| n.contains("outside")),
+        "{:?}",
+        p.notes
+    );
+}
+
+/// Two plates at one joint, the second welded (2026-11-03): each drawn
+/// round its own members' bolts, its kind kept.
+#[test]
+fn a_joint_takes_two_plates_one_welded() {
+    use ohl_structures::connections::PlateKind;
+    let text = format!(
+        "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\nkind = \"welded\"\n",
+        AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G2\"")
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    assert_eq!(n2.plates.len(), 2);
+    assert_eq!(n2.plates[0].kind, PlateKind::Bolted);
+    assert_eq!(n2.plates[1].kind, PlateKind::Welded);
+    assert_eq!(n2.plates[1].members, ["D1"]);
+    assert!(n2.plates[0].members.is_empty());
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    for b in &a.bolt_points {
+        assert!(inside(&n2.plates[1].outline, a.bolt_axis, *b));
+    }
+    // The face view says it is welded.
+    let v = crate::face_view(n2, &crate::faces_of(n2)[0]);
+    assert!(v.marks.iter().any(|m| matches!(
+        m,
+        crate::Mark::Text { text, .. } if text.contains("G2") && text.contains("welded")
+    )));
+}
+
 /// Whether `q` lies inside the convex `outline` seen along `n`.
 fn inside(outline: &[[f64; 3]], n: [f64; 3], q: [f64; 3]) -> bool {
     let k = outline.len();

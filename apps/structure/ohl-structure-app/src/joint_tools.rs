@@ -523,7 +523,7 @@ impl StructureApp {
             }
             Act::AddPlate(joint) => {
                 let id = f.edit(&format!("Plate at {joint}"), |doc, t| {
-                    connection_edits::add_plate(doc, t, &joint, 0.010)
+                    connection_edits::add_plate(doc, t, &joint, 0.010, Default::default())
                 });
                 Some((
                     format!(

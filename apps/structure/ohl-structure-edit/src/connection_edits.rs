@@ -11,7 +11,7 @@
 //! connections or plates.
 
 use ohl_structures::StructureType;
-use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES};
+use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES, PlateKind};
 use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::edits::{array, next_id, raise_version};
@@ -345,6 +345,9 @@ fn copy_plate(doc: &mut DocumentMut, t: &StructureType, id: &str, joint: &str) -
     if let Some(m) = &p.material {
         x.insert("material", toml_edit::value(m.clone()));
     }
+    if let Some(k) = p.kind {
+        x.insert("kind", toml_edit::value(k.as_str()));
+    }
     array(doc, "plate").push(x);
     raise_version(doc, i64::from(CONNECTIONS_VERSION));
     new
@@ -361,8 +364,15 @@ fn plate_ids(doc: &DocumentMut) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Adds a plate at `joint`, `thickness` m thick; its id (`G1`, `G2`…).
-pub fn add_plate(doc: &mut DocumentMut, t: &StructureType, joint: &str, thickness: f64) -> String {
+/// Adds a plate at `joint`, `thickness` m thick, bolted or welded onto the
+/// joint's leg (a joint may have several); its id (`G1`, `G2`…).
+pub fn add_plate(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    joint: &str,
+    thickness: f64,
+    kind: PlateKind,
+) -> String {
     let taken: Vec<String> = t
         .plates
         .iter()
@@ -376,9 +386,31 @@ pub fn add_plate(doc: &mut DocumentMut, t: &StructureType, joint: &str, thicknes
     x.insert("id", toml_edit::value(id.clone()));
     x.insert("joint", toml_edit::value(joint));
     x.insert("thickness", Item::Value(mm(thickness)));
+    if kind != PlateKind::default() {
+        x.insert("kind", toml_edit::value(kind.as_str()));
+    }
     array(doc, "plate").push(x);
     raise_version(doc, i64::from(CONNECTIONS_VERSION));
     id
+}
+
+/// A plate's kind: bolted (the default, written as no key) or welded onto
+/// the joint's leg.
+pub fn set_plate_kind(doc: &mut DocumentMut, id: &str, kind: PlateKind) -> Result<(), String> {
+    let t = doc
+        .get_mut("plate")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+        })
+        .ok_or_else(|| format!("no plate {id}"))?;
+    if kind == PlateKind::default() {
+        t.remove("kind");
+    } else {
+        t.insert("kind", toml_edit::value(kind.as_str()));
+    }
+    Ok(())
 }
 
 /// A plate's thickness (m) or material (empty: none).

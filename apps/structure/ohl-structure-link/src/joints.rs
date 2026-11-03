@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use ohl_sections::{SectionLibrary, Shape};
-use ohl_structures::connections::{BoltedLeg, ConnectionKind, TypeConnection};
+use ohl_structures::connections::{BoltedLeg, ConnectionKind, PlateKind, TypeConnection};
 use ohl_structures::{LibraryItem, StructureType};
 use ohl_structures_fe::design::{ConnectedLeg, MemberClass, MemberDesign};
 use ohl_structures_fe::member_ends::{self, connected_leg};
@@ -270,6 +270,27 @@ pub struct PlateDetail {
     pub outline_given: bool,
     /// The members bolted onto it.
     pub members: Vec<String>,
+    /// Bolted or welded onto the joint's leg.
+    pub kind: PlateKind,
+    /// The joint's leg it lies on (none: no angle leg found; it then lies
+    /// through the work point).
+    pub leg: Option<String>,
+    /// How far its edge keeps from the bolts onto it, per member end:
+    /// "D1: end ≥ 31 mm, edge ≥ 28 mm (ASCE 10-97 4.5.1, 4.5.3)", or what
+    /// was taken when the capacity method has no rules.
+    pub edges: Vec<String>,
+    /// Bolts nearer its edge than those distances (an outline given in
+    /// the file; the outline worked out keeps them).
+    pub notes: Vec<String>,
+}
+
+/// How far a plate's edge keeps from one bolt onto it: along the member
+/// (the force's direction: the end distance) and across it (the edge
+/// distance), m.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Keep {
+    along: f64,
+    across: f64,
 }
 
 /// A joint in detail.
@@ -462,9 +483,17 @@ pub fn joint_details(
                 a.grip = grip(a, &snapshot, &plates_here);
             }
         }
+        // The code's minimums of each member end onto a plate (its bolts'
+        // shear capacity as the force: no analysis here, on the safe
+        // side), for the plates' edges.
+        let rules = |a: &Arrival| {
+            let m = model.as_ref()?;
+            let idx = m.members.iter().position(|x| x.id == a.member)?;
+            ohl_structures_fe::bolt_rules::rules(m, idx, a.end, None)
+        };
         let plates = plates_here
             .iter()
-            .map(|p| plate(p, at, &arrivals, seats.get(&p.id)))
+            .map(|p| plate(p, at, &arrivals, seats.get(&p.id), &rules))
             .collect();
         let completeness = completeness(&arrivals, level3);
         joints.push(JointDetail {
@@ -1097,27 +1126,195 @@ fn fit_cut(a: &Arrival, all: &[Arrival]) -> Option<f64> {
     Some(need.min(a.length / 2.0))
 }
 
-/// A plate's detail: its outline given, else the bolts onto it and the
-/// joint, in the plane of the members onto it, 30 mm around (assumed).
+/// How far a plate's edge keeps from the bolts of `a` (onto it): the
+/// code's minimum end distance along the member and edge distance across
+/// it, the member end's ([`ohl_structures_fe::bolt_rules`], worked out
+/// with its leg's thickness and steel); a capacity method without such
+/// rules: the end's own end and edge distances, else 1.5 bolt diameters
+/// (assumed). With the words for the panel.
+fn keep(
+    a: &Arrival,
+    rules: &dyn Fn(&Arrival) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
+) -> (Keep, String) {
+    if let Some(r) = rules(a) {
+        return (
+            Keep {
+                along: r.end,
+                across: r.edge,
+            },
+            format!(
+                "{}: end ≥ {:.0} mm, edge ≥ {:.0} mm ({} {}, {}; the member end's minimums)",
+                a.member,
+                r.end * 1000.0,
+                r.edge * 1000.0,
+                r.code,
+                r.clauses[0],
+                r.clauses[2]
+            ),
+        );
+    }
+    let d = a.bolts.value.as_ref().map_or(0.016, |b| b.diameter);
+    let pick = |v: &Valued<f64>| match v.value {
+        Some(x) if v.known() => (x, v.source.words()),
+        _ => (1.5 * d, "assumed: 1.5 bolt diameters"),
+    };
+    let (along, from_along) = pick(&a.end_distance);
+    let (across, from_across) = pick(&a.edge_distance);
+    (
+        Keep { along, across },
+        format!(
+            "{}: end {:.0} mm ({from_along}), edge {:.0} mm ({from_across}) — the capacity \
+             method gives no minimums",
+            a.member,
+            along * 1000.0,
+            across * 1000.0
+        ),
+    )
+}
+
+/// The directions a bolt of `a` keeps its distances in, in the plate's
+/// plane: along the member and across it.
+fn keep_axes(a: &Arrival) -> ([f64; 3], [f64; 3]) {
+    let n = a.bolt_axis;
+    let along = sub(a.direction, scale(n, dot(a.direction, n)));
+    let along = scale(along, 1.0 / norm(along).max(1e-12));
+    (along, cross(n, along))
+}
+
+/// The points round a bolt at `p` that a plate's outline must enclose:
+/// an ellipse of half-axes `k.along` (along the member) and `k.across`,
+/// as a polygon drawn round it (never inside it).
+fn keep_ring(p: [f64; 3], axes: ([f64; 3], [f64; 3]), k: Keep) -> Vec<[f64; 3]> {
+    const N: usize = 16;
+    let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
+    (0..N)
+        .map(|i| {
+            let t = i as f64 * std::f64::consts::TAU / N as f64;
+            add(
+                p,
+                add(
+                    scale(axes.0, k.along * grow * t.cos()),
+                    scale(axes.1, k.across * grow * t.sin()),
+                ),
+            )
+        })
+        .collect()
+}
+
+/// The bolts of the arrivals onto a plate nearer its outline `outline`
+/// (its plane's) than they must keep, in words; one outside it too.
+fn bolts_near_edge(outline: &[[f64; 3]], onto: &[(&Arrival, Keep)], id: &str) -> Vec<String> {
+    if outline.len() < 3 {
+        return Vec::new();
+    }
+    let n = cross(sub(outline[1], outline[0]), sub(outline[2], outline[0]));
+    if norm(n) < 1e-12 {
+        return Vec::new();
+    }
+    let n = scale(n, 1.0 / norm(n));
+    let u = scale(
+        sub(outline[1], outline[0]),
+        1.0 / norm(sub(outline[1], outline[0])),
+    );
+    let v = cross(n, u);
+    let flat = |q: [f64; 3]| {
+        let d = sub(q, outline[0]);
+        [dot(d, u), dot(d, v)]
+    };
+    let poly: Vec<[f64; 2]> = outline.iter().map(|q| flat(*q)).collect();
+    // Counter-clockwise or not: the inside is on the side of the area's sign.
+    let area: f64 = (0..poly.len())
+        .map(|i| {
+            let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum();
+    let sign = if area >= 0.0 { 1.0 } else { -1.0 };
+    let mut out = Vec::new();
+    for (a, k) in onto {
+        let (ax, cx) = keep_axes(a);
+        let (ax, cx) = (flat(add(outline[0], ax)), flat(add(outline[0], cx)));
+        for (i, p) in a.bolt_points.iter().enumerate() {
+            let q = flat(*p);
+            let mut worst: Option<(f64, f64)> = None;
+            for e in 0..poly.len() {
+                let (s, t) = (poly[e], poly[(e + 1) % poly.len()]);
+                let d = [t[0] - s[0], t[1] - s[1]];
+                let l = d[0].hypot(d[1]);
+                if l < 1e-12 {
+                    continue;
+                }
+                // The inward normal; the distance inside along it.
+                let inward = [-d[1] / l * sign, d[0] / l * sign];
+                let dist = (q[0] - s[0]) * inward[0] + (q[1] - s[1]) * inward[1];
+                // The ellipse's reach towards the edge.
+                let need = (k.along * (ax[0] * inward[0] + ax[1] * inward[1]))
+                    .hypot(k.across * (cx[0] * inward[0] + cx[1] * inward[1]));
+                if worst.is_none_or(|w| dist - need < w.0 - w.1) {
+                    worst = Some((dist, need));
+                }
+            }
+            if let Some((dist, need)) = worst
+                && dist < need - 5e-4
+            {
+                out.push(if dist < 0.0 {
+                    format!("plate {id}: bolt {} of {} lies outside it", i + 1, a.member)
+                } else {
+                    format!(
+                        "plate {id}: bolt {} of {} is {:.0} mm from its edge, {:.0} mm needed",
+                        i + 1,
+                        a.member,
+                        dist * 1000.0,
+                        need * 1000.0
+                    )
+                });
+            }
+        }
+    }
+    out
+}
+
+/// A plate's detail: its outline given (the bolts too near its edge said),
+/// else round the bolts onto it — each kept the code's end and edge
+/// distances from its edge ([`keep`]) — the legs bolted and the corner it
+/// lies on, in the plane of the bolts.
 fn plate(
     p: &ohl_structures::connections::TypePlate,
     joint: [f64; 3],
     arrivals: &[Arrival],
     seat: Option<&PlateSeat>,
+    rules: &dyn Fn(&Arrival) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
 ) -> PlateDetail {
     let onto: Vec<&Arrival> = arrivals
         .iter()
         .filter(|a| a.onto.value.as_deref() == Some(p.id.as_str()))
         .collect();
     let members = onto.iter().map(|a| a.member.clone()).collect();
+    let kept: Vec<(&Arrival, Keep, String)> = onto
+        .iter()
+        .filter(|a| !a.bolt_points.is_empty())
+        .map(|a| {
+            let (k, w) = keep(a, rules);
+            (*a, k, w)
+        })
+        .collect();
+    let edges: Vec<String> = kept.iter().map(|x| x.2.clone()).collect();
+    let keeps: Vec<(&Arrival, Keep)> = kept.iter().map(|x| (x.0, x.1)).collect();
+    let on_leg = seat.and_then(|s| s.leg.clone());
     if !p.outline.is_empty() {
+        let outline: Vec<[f64; 3]> = p.outline.iter().map(|q| q.map(|v| v.si())).collect();
+        let notes = bolts_near_edge(&outline, &keeps, &p.id);
         return PlateDetail {
             id: p.id.clone(),
             thickness: p.thickness.si(),
             material: p.material.clone(),
-            outline: p.outline.iter().map(|q| q.map(|v| v.si())).collect(),
+            outline,
             outline_given: true,
             members,
+            kind: p.kind(),
+            leg: on_leg,
+            edges,
+            notes,
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -1131,6 +1328,13 @@ fn plate(
         pts.extend(leg_strip(a, joint));
         if a.bolt_points.is_empty() {
             pts.push(add(joint, scale(a.direction, 0.15)));
+        }
+    }
+    // Every bolt with the distances it keeps from the plate's edge.
+    for (a, k) in &keeps {
+        let axes = keep_axes(a);
+        for q in &a.bolt_points {
+            pts.extend(keep_ring(*q, axes, *k));
         }
     }
     let leg = seat
@@ -1170,6 +1374,8 @@ fn plate(
         Some((at, a)) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.0),
         None => hull_around(&pts, joint, &onto, 0.03),
     };
+    // Kept by construction; said should the bolts' planes differ.
+    let notes = bolts_near_edge(&outline, &keeps, &p.id);
     PlateDetail {
         id: p.id.clone(),
         thickness: p.thickness.si(),
@@ -1177,6 +1383,10 @@ fn plate(
         outline,
         outline_given: false,
         members,
+        kind: p.kind(),
+        leg: on_leg,
+        edges,
+        notes,
     }
 }
 
@@ -1406,6 +1616,13 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
         Some(ref sh) if sh.is_built_up() => {
             (shift(sh.built_up_outline().unwrap_or_default()), None)
         }
+        // I and H sections, hollow sections and poles: their outline as
+        // the 3D view draws it (about the centroid; a box before).
+        Some(
+            ref sh @ (Shape::ISection { .. }
+            | Shape::RectangularHollow { .. }
+            | Shape::PolygonalHollow { .. }),
+        ) => (ohl_structures_fe::drawn::outline(sh), None),
         _ if w > 0.0 && h > 0.0 => (shift(vec![[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]), None),
         // Only values (a `[[section]]` table): a square of its area.
         _ => {
