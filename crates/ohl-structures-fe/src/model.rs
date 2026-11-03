@@ -708,6 +708,9 @@ pub enum CapacityMethod {
     /// ASCE 10-97 (`"asce10-97"`, the default; [`crate::asce10`]).
     #[default]
     Asce10,
+    /// SIA 263:2013 (`"sia263-2013"`; [`crate::sia263`]): design values
+    /// with γ_M (owner 2026-11-03).
+    Sia263,
     /// The simple check (`"simple"`): Euler buckling and gross yield —
     /// not a design code, unsafe compared with design codes.
     Simple,
@@ -718,6 +721,7 @@ impl CapacityMethod {
     pub fn as_str(self) -> &'static str {
         match self {
             CapacityMethod::Asce10 => crate::asce10::NAME,
+            CapacityMethod::Sia263 => crate::sia263::NAME,
             CapacityMethod::Simple => "simple",
         }
     }
@@ -726,10 +730,12 @@ impl CapacityMethod {
     pub fn parse(name: &str) -> Result<Self, String> {
         match name.trim() {
             crate::asce10::NAME => Ok(CapacityMethod::Asce10),
+            crate::sia263::NAME => Ok(CapacityMethod::Sia263),
             "simple" => Ok(CapacityMethod::Simple),
             other => Err(format!(
-                "capacity \"{other}\": {} (default) or simple",
-                crate::asce10::NAME
+                "capacity \"{other}\": {} (default), {} or simple",
+                crate::asce10::NAME,
+                crate::sia263::NAME
             )),
         }
     }

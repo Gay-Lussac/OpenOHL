@@ -73,15 +73,24 @@ pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
 fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
     match model.analysis.capacity {
         CapacityMethod::Simple => format!("member capacities: {SIMPLE}"),
-        CapacityMethod::Asce10 => {
+        CapacityMethod::Asce10 | CapacityMethod::Sia263 => {
             let assumed = usage.iter().filter(|u| u.governs.contains(ASSUMED)).count();
             let simple = usage
                 .iter()
                 .filter(|u| u.governs.contains(NO_YIELD))
                 .count();
-            let mut text = "member capacities: ASCE 10-97 (Design of Latticed Steel Transmission \
-                            Structures)"
-                .to_owned();
+            let mut text = if model.analysis.capacity == CapacityMethod::Sia263 {
+                format!(
+                    "member capacities: {} (Construction en acier; design values with γ_M1 {}, \
+                     γ_M2 {})",
+                    crate::sia263::TITLE,
+                    crate::sia263::GAMMA_M1,
+                    crate::sia263::GAMMA_M2
+                )
+            } else {
+                "member capacities: ASCE 10-97 (Design of Latticed Steel Transmission Structures)"
+                    .to_owned()
+            };
             if assumed > 0 {
                 text.push_str(&format!(
                     "; {assumed} member(s) with data assumed on the safe side (\"{ASSUMED} …]\" in \
@@ -120,7 +129,7 @@ pub const JOINTS: &str = "[joints:";
 /// `[shifted: N2 e 15 mm, 1.20 kN m to the joint's frame members]`.
 pub const SHIFTED: &str = "[shifted:";
 
-/// The mark of a member checked by the simple check under ASCE 10-97
+/// The mark of a member checked by the simple check under a design code
 /// because its section has no yield strength.
 pub const NO_YIELD: &str = "no yield strength: simple check";
 
@@ -246,21 +255,29 @@ fn usage_of(
             let kn = |x: f64| x / 1000.0;
             // The design method's capacities (none: the simple check).
             let external = given.is_some();
-            let asce = given.or_else(|| {
-                (model.analysis.capacity == CapacityMethod::Asce10 && s.yield_strength.is_some())
-                    .then(|| {
-                        let partner = m
-                            .design
-                            .crossing
-                            .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
-                        crate::asce10::capacity(model, idx, partner)
-                    })
-            });
+            let partner = m
+                .design
+                .crossing
+                .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
+            let mut stability = None;
+            let asce = match given {
+                Some(g) => Some(g),
+                None if s.yield_strength.is_none() => None,
+                None => match model.analysis.capacity {
+                    CapacityMethod::Asce10 => Some(crate::asce10::capacity(model, idx, partner)),
+                    CapacityMethod::Sia263 => {
+                        let (c, st) = crate::sia263::capacity(model, idx, partner);
+                        stability = st;
+                        Some(c)
+                    }
+                    CapacityMethod::Simple => None,
+                },
+            };
             let mut assumed: &[String] = &[];
             let mut joints: &[String] = &[];
             let mut extra = String::new();
             if !external
-                && model.analysis.capacity == CapacityMethod::Asce10
+                && model.analysis.capacity != CapacityMethod::Simple
                 && s.yield_strength.is_none()
             {
                 extra = format!(" ({NO_YIELD})");
@@ -364,14 +381,49 @@ fn usage_of(
                     )
                 })
             };
+            let mut suffix = extra.clone();
+            if !joints.is_empty() {
+                suffix.push_str(&format!(" {JOINTS} {}]", joints.join("; ")));
+            }
+            if !assumed.is_empty() {
+                suffix.push_str(&format!(" {ASSUMED} {}]", assumed.join(", ")));
+            }
+            // SIA 263: compression with the bending of an eccentric
+            // connection, class 4 and frames by the stability check
+            // (formulas 50, 62, 63), the larger of it and the axial one
+            // (the connection's).
+            if let Some(st) = &stability {
+                let frame =
+                    m.is_frame() && !(axial_member(m, s) && !model.analysis.single_angle_moments);
+                let given_cap = if n < 0.0 {
+                    m.capacity_compression.is_some()
+                } else {
+                    m.capacity_tension.is_some()
+                };
+                if !given_cap && (frame || (n < 0.0 && (st.eccentric || st.class4))) {
+                    let moments = if frame {
+                        crate::sia263::frame_moments(st, &f.end_forces)
+                    } else {
+                        [[0.0; 2]; 2]
+                    };
+                    let (u, words) = st.usage(n, moments, strength);
+                    let (u, words) = match &axial {
+                        Some((ua, wa)) if *ua > u || u.is_nan() && !ua.is_nan() => {
+                            (*ua, wa.clone())
+                        }
+                        _ => (u, words),
+                    };
+                    let mut words = words;
+                    words.push_str(&suffix);
+                    return MemberUsage {
+                        member: idx,
+                        usage: Some(u),
+                        governs: words,
+                    };
+                }
+            }
             let axial = axial.map(|(u, mut words)| {
-                words.push_str(&extra);
-                if !joints.is_empty() {
-                    words.push_str(&format!(" {JOINTS} {}]", joints.join("; ")));
-                }
-                if !assumed.is_empty() {
-                    words.push_str(&format!(" {ASSUMED} {}]", assumed.join(", ")));
-                }
+                words.push_str(&suffix);
                 (u, words)
             });
             if !m.is_frame() || (axial_member(m, s) && !model.analysis.single_angle_moments) {

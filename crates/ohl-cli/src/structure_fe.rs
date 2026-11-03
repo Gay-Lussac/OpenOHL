@@ -39,8 +39,9 @@ pub struct FeArgs {
     #[arg(long)]
     linear: bool,
     /// Member capacities, whatever the model says: `asce10-97` (ASCE
-    /// 10-97, the default) or `simple` (Euler buckling, gross yield: not a
-    /// design code, unsafe compared with design codes).
+    /// 10-97, the default), `sia263-2013` (SIA 263:2013, design values
+    /// with γ_M) or `simple` (Euler buckling, gross yield: not a design
+    /// code, unsafe compared with design codes).
     #[arg(long)]
     capacity: Option<String>,
     /// A plugin giving member capacities (its folder; its

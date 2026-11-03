@@ -30,7 +30,7 @@
 //! plies = 1                          # profiles side by side (2 for two angles back to back)
 //! connected_leg = "long"             # both | long | short | none
 //! bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_planes = 1,
-//!           shear_capacity = "60 kN", ultimate = "800 MPa", holes = 1 }
+//!           shear_capacity = "60 kN", ultimate = "800 MPa", holes = 1, grade = "8.8" }
 //! edge_distance = "25 mm"
 //! end_distance = "27 mm"
 //! spacing = "50 mm"
@@ -123,6 +123,33 @@ impl MemberClass {
     }
 }
 
+/// A bolt's strength grade as written ("8.8", "10.9"): the two numbers
+/// apart, for a method whose rules name grades (SIA 263 Table 16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Grade {
+    /// The number before the point.
+    pub major: u8,
+    /// The number after it.
+    pub minor: u8,
+}
+
+impl Grade {
+    /// A grade from its name ("8.8"); none when it is not two numbers
+    /// with a point between them.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (a, b) = text.trim().split_once('.')?;
+        Some(Self {
+            major: a.trim().parse().ok()?,
+            minor: b.trim().parse().ok()?,
+        })
+    }
+
+    /// Its name ("8.8").
+    pub fn name(self) -> String {
+        format!("{}.{}", self.major, self.minor)
+    }
+}
+
 /// A member's end bolts (each end alike), SI units.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bolts {
@@ -142,6 +169,8 @@ pub struct Bolts {
     pub ultimate: Option<f64>,
     /// Holes in one cross-section (the net section; none: not given).
     pub holes: Option<u32>,
+    /// Their grade (none: not given).
+    pub grade: Option<Grade>,
 }
 
 /// A member's design data (all optional), SI units.
@@ -218,6 +247,8 @@ pub struct EndBolts {
     pub ultimate: Option<f64>,
     /// The threads in the shear plane.
     pub threads_in_shear: Option<bool>,
+    /// Their grade (the library's).
+    pub grade: Option<Grade>,
 }
 
 /// One member end's connection, SI units: only what it gives (all
@@ -281,6 +312,8 @@ pub(crate) struct BoltsFile {
     ultimate: Option<Stress>,
     #[serde(default)]
     holes: Option<u32>,
+    #[serde(default)]
+    grade: Option<String>,
 }
 
 /// `[member.design]` as written.
@@ -338,6 +371,12 @@ impl DesignFile {
                         "{what}: design bolts: shear_planes must be 1 or more"
                     ));
                 }
+                let grade = match &b.grade {
+                    None => None,
+                    Some(g) => Some(Grade::parse(g).ok_or_else(|| {
+                        format!("{what}: design bolts grade \"{g}\": two numbers as \"8.8\"")
+                    })?),
+                };
                 Some(Bolts {
                     diameter: positive("bolts diameter", Some(b.diameter.si()))?.unwrap_or(0.0),
                     hole: positive("bolts hole", b.hole.map(Length::si))?,
@@ -349,6 +388,7 @@ impl DesignFile {
                     )?,
                     ultimate: positive("bolts ultimate", b.ultimate.map(Stress::si))?,
                     holes: b.holes,
+                    grade,
                 })
             }
         };

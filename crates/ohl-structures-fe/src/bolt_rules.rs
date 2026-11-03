@@ -186,6 +186,23 @@ pub fn rules(model: &Model, idx: usize, end: usize, force: Option<f64>) -> Optio
                 sheared,
             })
         }
+        // SIA 263 Table 17: minimums by bolt size, the same for any force
+        // and edge (none for a size the table does not list).
+        CapacityMethod::Sia263 => {
+            let [end_min, spacing, edge] = crate::sia263::bolt_minimums(diameter)?;
+            Some(BoltRules {
+                code: crate::sia263::TITLE,
+                end: end_min,
+                spacing,
+                edge,
+                clauses: ["Table 17, e_1", "Table 17, p_1", "Table 17, e_2"],
+                force,
+                diameter,
+                leg,
+                root,
+                sheared,
+            })
+        }
         CapacityMethod::Simple => None,
     }
 }

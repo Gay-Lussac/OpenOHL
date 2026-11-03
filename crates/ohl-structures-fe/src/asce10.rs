@@ -523,7 +523,7 @@ struct EndCheck {
 /// member's (a diameter, hole, shear capacity of the member's only for
 /// bolts of the same diameter); with the library's shear capacity with
 /// the threads out of the shear plane and whether the threads are in it.
-fn end_bolts(
+pub(crate) fn end_bolts(
     d: &MemberDesign,
     end: Option<&EndDesign>,
     notes: &mut Vec<String>,
@@ -563,6 +563,7 @@ fn end_bolts(
         shear_capacity: own.shear_capacity.or(same.and_then(|b| b.shear_capacity)),
         ultimate: own.ultimate.or(d.bolts.and_then(|b| b.ultimate)),
         holes: layout.or(d.bolts.and_then(|b| b.holes)),
+        grade: own.grade.or(same.and_then(|b| b.grade)),
     };
     Some((b, own.shear_capacity_shank, own.threads_in_shear))
 }
@@ -929,6 +930,7 @@ mod tests {
             shear_capacity: Some(60e3),
             ultimate: None,
             holes: Some(1),
+            grade: None,
         });
         m.members[1].design.thickness = Some(0.006);
         m.members[1].design.connected_leg = Some(crate::design::ConnectedLeg::Both);
@@ -1128,6 +1130,7 @@ mod tests {
             shear_capacity: None,
             ultimate: Some(300e6),
             holes: Some(1),
+            grade: None,
         });
         m.members = vec![b];
         let c = capacity(&m, 0, None);

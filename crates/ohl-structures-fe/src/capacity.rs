@@ -137,6 +137,9 @@ pub fn design_toml(model: &Model, d: &MemberDesign) -> String {
         if let Some(v) = b.ultimate {
             parts.push(format!("ultimate = {v:?}"));
         }
+        if let Some(g) = b.grade {
+            parts.push(format!("grade = \"{}\"", g.name()));
+        }
         if let Some(n) = b.holes {
             parts.push(format!("holes = {n}"));
         }

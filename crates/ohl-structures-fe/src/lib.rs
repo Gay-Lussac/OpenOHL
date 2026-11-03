@@ -41,6 +41,7 @@ pub mod member_ends;
 pub mod model;
 pub mod offsets;
 pub mod pole;
+pub mod sia263;
 mod skyline;
 pub mod solve;
 pub mod stabilise;
@@ -300,6 +301,8 @@ mod member_tests;
 mod offset_tests;
 #[cfg(test)]
 mod pole_extension_tests;
+#[cfg(test)]
+mod sia263_tests;
 #[cfg(test)]
 mod spring_tests;
 #[cfg(test)]

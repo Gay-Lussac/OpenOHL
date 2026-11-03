@@ -1598,6 +1598,13 @@ impl StructureApp {
                              column curve, bolts and net section from the members' design \
                              data; missing data assumed on the safe side, said per member",
                         );
+                    ui.selectable_value(&mut chosen, "sia263-2013".to_owned(), "sia263-2013")
+                        .on_hover_text(
+                            "SIA 263:2013: buckling curves, section classes, angles bolted by \
+                             one leg with their eccentricity, bolts by Table 16; design values \
+                             with γM1 1.05 and γM2 1.25 (set the load cases' strength factor to \
+                             1); missing data assumed on the safe side, said per member",
+                        );
                     ui.selectable_value(&mut chosen, "simple".to_owned(), "simple")
                         .on_hover_text(
                             "Simple check (Euler buckling, gross yield): not a design code; \

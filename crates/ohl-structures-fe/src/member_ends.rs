@@ -474,6 +474,9 @@ pub(crate) fn read_connections(
                 shear_capacity_shank: lib.and_then(|l| l.shear_capacity_shank).map(|f| f.si()),
                 ultimate: lib.and_then(|l| l.ultimate).map(|s| s.si()),
                 threads_in_shear: b.threads_in_shear,
+                grade: lib
+                    .and_then(|l| l.grade.as_deref())
+                    .and_then(crate::design::Grade::parse),
             });
         }
         model.members[idx].design.ends[end] = Some(e);
