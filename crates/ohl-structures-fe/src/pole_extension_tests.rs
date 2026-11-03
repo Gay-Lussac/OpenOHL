@@ -525,3 +525,56 @@ fn a_steel_shaft_by_asce48() {
     let e = Pole::parse(&text("")).unwrap_err();
     assert!(e.contains("yield"), "{e}");
 }
+
+/// A solid wood pole with its strength class by SIA 265 (owner,
+/// 2026-11-03): at the ground line (37) with k_c of the cantilever (L_K
+/// = 2 H, the radius at mid-height), η_w 0.6 when no moisture class is
+/// given; a steel shaft by SIA 263 when its code says so.
+#[test]
+fn wood_by_sia265_and_steel_by_sia263() {
+    let text = "format = \"ohl-pole\"\nversion = 1\nid = \"w\"\nmaterial = \"wood\"\n\
+                length = \"12 m\"\nembedment = \"2 m\"\ntop_diameter = \"300 mm\"\n\
+                ground_diameter = \"300 mm\"\nstrength_class = \"C24\"\n";
+    let pole = Pole::parse(text).unwrap();
+    assert!(pole.by_timber_code());
+    let loads = [PoleLoad {
+        point: [0.0, 0.0, 10.0],
+        force: [5e3, 0.0, -20e3],
+    }];
+    let c = check_pole(&pole, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    let c24 = crate::sia265::class("C24").unwrap();
+    let d = 0.3f64;
+    let lambda = 2.0 * 10.0 / (d / 4.0);
+    let kc = crate::sia265::kc(crate::sia265::lambda_rel(lambda, &c24));
+    let a = std::f64::consts::PI * d * d / 4.0;
+    let w = std::f64::consts::PI * d.powi(3) / 32.0;
+    let expected = 20e3 / a / (kc * 12e6 * 0.6) + 50e3 / w / (14e6 * 0.6);
+    assert!(
+        (c.usage - expected).abs() < 1e-9,
+        "{} {expected} {}",
+        c.usage,
+        c.governs
+    );
+    assert!(
+        c.governs.starts_with("SIA 265:2012 at 0.0 m, C24"),
+        "{}",
+        c.governs
+    );
+    assert!(c.governs.contains("moisture class 3 assumed"));
+    let bad = Pole::parse(&text.replace("C24", "C99")).unwrap_err();
+    assert!(bad.contains("strength_class"), "{bad}");
+    // Steel by SIA 263.
+    let steel = Pole::parse(
+        "format = \"ohl-pole\"\nversion = 1\nid = \"s\"\nmaterial = \"steel\"\n\
+         length = \"12 m\"\nembedment = \"2 m\"\ntop_diameter = \"400 mm\"\n\
+         ground_diameter = \"400 mm\"\nwall = \"10 mm\"\nyield = \"355 MPa\"\n\
+         code = \"sia263-2013\"\n",
+    )
+    .unwrap();
+    let c = check_pole(&steel, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    assert!(
+        c.governs.starts_with("SIA 263:2013 at 0.0 m"),
+        "{}",
+        c.governs
+    );
+}

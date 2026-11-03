@@ -28,6 +28,8 @@
 //! # bend_radius = "20 mm"        # a polygon's inside bend radius (none: sharp)
 //! # code = "sia263-2013"         # the steel shaft's code: asce48-19 (default)
 //! #                              #   or sia263-2013 (crate::sia263)
+//! # strength_class = "C24"       # wood, solid, no capacity: SIA 265
+//! # moisture_class = 3           #   (crate::sia265; moisture 1-3, default 3)
 //! moment_capacity = "180 kN m"   # or: at the ground line
 //! elasticity = "11 GPa"          # optional: P-Delta amplification
 //! density = "650 kg/m3"          # optional: the pole's weight (P-Delta)
@@ -127,6 +129,10 @@ struct PoleFile {
     #[serde(default)]
     code: Option<String>,
     #[serde(default)]
+    strength_class: Option<String>,
+    #[serde(default)]
+    moisture_class: Option<u8>,
+    #[serde(default)]
     moment_capacity: Option<Moment>,
     #[serde(default)]
     elasticity: Option<Stress>,
@@ -169,6 +175,13 @@ pub struct Pole {
     pub bend_radius: Option<f64>,
     /// The code a hollow steel shaft is checked by ([`PoleCode`]).
     pub code: PoleCode,
+    /// Wood: the strength class of SIA 265 (Table 6, e.g. "C24") — a
+    /// solid wood pole with it and no capacity given is checked by SIA
+    /// 265 ([`crate::sia265`]).
+    pub strength_class: Option<String>,
+    /// Its moisture class (SIA 265 Table 4: 1, 2 or 3; none: 3, on the
+    /// safe side for a pole outdoors).
+    pub moisture_class: Option<u8>,
     /// Moment capacity at the ground line, N·m.
     pub moment_capacity: Option<f64>,
     /// Moment capacity by height above ground: (m, N·m), rising heights.
@@ -255,6 +268,8 @@ impl Pole {
             yield_strength: f.yield_strength.map(|s| s.si()),
             bend_radius: f.bend_radius.map(|l| l.si()),
             code: PoleCode::parse(f.code.as_deref()).map_err(|e| format!("pole: {e}"))?,
+            strength_class: f.strength_class.clone(),
+            moisture_class: f.moisture_class,
             moment_capacity: f.moment_capacity.map(|m| m.0),
             capacity: f
                 .capacity
@@ -374,6 +389,8 @@ impl Pole {
             yield_strength: p.yield_strength.map(|s| s.si()).or(yield_strength),
             bend_radius: p.bend_radius.map(|l| l.si()),
             code: PoleCode::parse(p.code.as_deref()).map_err(bad)?,
+            strength_class: p.strength_class.clone(),
+            moisture_class: p.moisture_class,
             moment_capacity,
             capacity,
             elasticity,
@@ -433,14 +450,28 @@ impl Pole {
         {
             return Err(format!("pole {id}: capacity heights must rise"));
         }
+        if let Some(c) = &self.strength_class
+            && crate::sia265::class(c).is_none()
+        {
+            return Err(format!(
+                "pole {id}: strength_class \"{c}\": one of {}",
+                crate::sia265::class_names().join(", ")
+            ));
+        }
+        if let Some(m) = self.moisture_class
+            && crate::sia265::eta_w(m).is_none()
+        {
+            return Err(format!("pole {id}: moisture_class {m}: 1, 2 or 3"));
+        }
         if self.fibre_stress.is_none()
             && self.moment_capacity.is_none()
             && self.capacity.is_empty()
             && !self.by_code()
+            && !self.by_timber_code()
         {
             return Err(format!(
-                "pole {id}: give fibre_stress, moment_capacity or [[capacity]], or for a hollow \
-                 steel shaft its yield"
+                "pole {id}: give fibre_stress, moment_capacity or [[capacity]], for a hollow \
+                 steel shaft its yield, or for a wood pole its strength_class"
             ));
         }
         Ok(())
@@ -454,6 +485,17 @@ impl Pole {
         self.material == PoleMaterial::Steel
             && self.yield_strength.is_some()
             && self.wall.is_some()
+            && self.capacity.is_empty()
+            && self.moment_capacity.is_none()
+            && self.fibre_stress.is_none()
+    }
+
+    /// Whether the pole is checked by SIA 265 ([`crate::sia265`]): wood,
+    /// solid, its strength class given, no capacity given.
+    pub fn by_timber_code(&self) -> bool {
+        self.material == PoleMaterial::Wood
+            && self.wall.is_none()
+            && self.strength_class.is_some()
             && self.capacity.is_empty()
             && self.moment_capacity.is_none()
             && self.fibre_stress.is_none()
@@ -790,6 +832,26 @@ pub fn check_pole_factored(
         },
         _ => 1.0,
     };
+    // SIA 265: the class, η_w and the pole's k_c — a cantilever, L_K = 2H
+    // (fixed at the ground line, free at the top), its radius of gyration
+    // at mid-height (approximate for a tapered pole).
+    let timber = if pole.by_timber_code() {
+        let c = pole
+            .strength_class
+            .as_deref()
+            .and_then(crate::sia265::class)
+            .ok_or_else(|| format!("pole {}: strength class unknown", pole.id))?;
+        let eta = crate::sia265::eta_w(pole.moisture_class.unwrap_or(3)).unwrap_or(0.6);
+        let i = pole.diameter_at(pole.height() / 2.0) / 4.0;
+        let lambda = 2.0 * pole.height() / i;
+        Some((
+            c,
+            eta,
+            crate::sia265::kc(crate::sia265::lambda_rel(lambda, &c)),
+        ))
+    } else {
+        None
+    };
     let mut worst: Option<(f64, f64, f64, f64, String)> = None;
     for k in 0..=HEIGHTS {
         let h = pole.height() * k as f64 / HEIGHTS as f64;
@@ -809,6 +871,14 @@ pub fn check_pole_factored(
                 let (_, i) = shaft.area_inertia();
                 (u, fy * i / shaft.reach(), w)
             }
+            _ if timber.is_some() => {
+                let (c, eta, kc) = timber.expect("checked");
+                let (p, v, t) = forces_at(pole, loads, wind, h, self_weight);
+                let d = pole.diameter_at(h);
+                let (u, w) = crate::sia265::round_usage(d, p, moment, v, t, kc, &c, eta, strength);
+                let cap = c.fm_d * 1e6 * eta * std::f64::consts::PI * d.powi(3) / 32.0;
+                (u, cap, w)
+            }
             _ => {
                 let cap = pole.capacity_at(h);
                 (moment / (strength * cap), cap, String::new())
@@ -823,6 +893,33 @@ pub fn check_pole_factored(
         }
     }
     let (usage, height, moment, capacity, code) = worst.expect("heights checked");
+    if let Some((c, eta, _)) = &timber {
+        return Ok(PoleCheck {
+            usage,
+            height,
+            moment,
+            capacity,
+            ground_moment,
+            wind_moment: wind_ground[0].hypot(wind_ground[1]),
+            amplification,
+            governs: format!(
+                "{} at {height:.1} m, {} η_w {eta}{}: {code} × {strength}; moment {:.1} kN m{}",
+                crate::sia265::TITLE,
+                c.name,
+                if pole.moisture_class.is_none() {
+                    " (moisture class 3 assumed)"
+                } else {
+                    ""
+                },
+                moment / 1000.0,
+                if amplification != 1.0 {
+                    format!(" (P-Delta × {amplification:.3})")
+                } else {
+                    String::new()
+                }
+            ),
+        });
+    }
     if pole.by_code() {
         return Ok(PoleCheck {
             usage,

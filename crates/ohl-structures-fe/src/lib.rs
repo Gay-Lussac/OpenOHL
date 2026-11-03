@@ -42,6 +42,7 @@ pub mod model;
 pub mod offsets;
 pub mod pole;
 pub mod sia263;
+pub mod sia265;
 mod skyline;
 pub mod solve;
 pub mod stabilise;

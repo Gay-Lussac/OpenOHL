@@ -40,6 +40,7 @@
 //! # yield = "345 MPa"     # steel, hollow, no capacity: ASCE/SEI 48-19
 //! # bend_radius = "20 mm"  # the polygon's inside bend radius (none: sharp)
 //! # code = "sia263-2013"  # the steel shaft's code (default asce48-19)
+//! # strength_class = "C24"  # wood: SIA 265 (with moisture_class = 1..3)
 //! # fibre_stress = "55 MPa" / moment_capacity = "900 kN m" /
 //! [[pole.capacity]]
 //! height = "0 m"            # above the ground line
@@ -222,6 +223,13 @@ pub struct InlinePole {
     /// the default) or `sia263-2013`.
     #[serde(default)]
     pub code: Option<String>,
+    /// Wood: the strength class of SIA 265 ("C24"; a solid wood pole with
+    /// it and no capacity given is checked by SIA 265).
+    #[serde(default)]
+    pub strength_class: Option<String>,
+    /// Its moisture class (SIA 265: 1, 2 or 3; none: 3).
+    #[serde(default)]
+    pub moisture_class: Option<u8>,
     /// Moment capacity at the ground line (e.g. `"900 kN m"`; read by the
     /// pole check).
     #[serde(default)]
@@ -316,10 +324,12 @@ impl InlinePole {
             && self.moment_capacity.is_none()
             && self.capacity.is_empty()
             && self.yield_strength.is_none()
+            && self.strength_class.is_none()
             && self.section.is_none()
         {
             out.push(
-                "pole: no strength (fibre stress, yield stress, moment capacity or a capacity table)"
+                "pole: no strength (fibre stress, yield stress, strength class, moment capacity or \
+                 a capacity table)"
                     .into(),
             );
         }
