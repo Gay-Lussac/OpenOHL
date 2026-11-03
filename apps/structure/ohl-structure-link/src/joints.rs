@@ -486,14 +486,29 @@ pub fn joint_details(
         // The code's minimums of each member end onto a plate (its bolts'
         // shear capacity as the force: no analysis here, on the safe
         // side), for the plates' edges.
-        let rules = |a: &Arrival| {
-            let m = model.as_ref()?;
-            let idx = m.members.iter().position(|x| x.id == a.member)?;
-            ohl_structures_fe::bolt_rules::rules(m, idx, a.end, None)
-        };
+        // A plate's edges by the plate's own thickness and steel (owner
+        // 2026-11-03; its material's ultimate strength, else the member's).
         let plates = plates_here
             .iter()
-            .map(|p| plate(p, at, &arrivals, seats.get(&p.id), &rules))
+            .map(|p| {
+                let fu = p
+                    .material
+                    .as_deref()
+                    .and_then(|id| library.material(id))
+                    .and_then(|m| m.ultimate);
+                let rules = |a: &Arrival| {
+                    let m = model.as_ref()?;
+                    let idx = m.members.iter().position(|x| x.id == a.member)?;
+                    ohl_structures_fe::bolt_rules::rules_in(
+                        m,
+                        idx,
+                        a.end,
+                        None,
+                        Some((p.thickness.si(), fu)),
+                    )
+                };
+                plate(p, at, &arrivals, seats.get(&p.id), &rules)
+            })
             .collect();
         let completeness = completeness(&arrivals, level3);
         joints.push(JointDetail {
@@ -1128,8 +1143,8 @@ fn fit_cut(a: &Arrival, all: &[Arrival]) -> Option<f64> {
 
 /// How far a plate's edge keeps from the bolts of `a` (onto it): the
 /// code's minimum end distance along the member and edge distance across
-/// it, the member end's ([`ohl_structures_fe::bolt_rules`], worked out
-/// with its leg's thickness and steel); a capacity method without such
+/// it ([`ohl_structures_fe::bolt_rules::rules_in`], worked out with the
+/// plate's thickness and steel, the member end's force and bolts); a capacity method without such
 /// rules: the end's own end and edge distances, else 1.5 bolt diameters
 /// (assumed). With the words for the panel.
 fn keep(
@@ -1143,7 +1158,7 @@ fn keep(
                 across: r.edge,
             },
             format!(
-                "{}: end ≥ {:.0} mm, edge ≥ {:.0} mm ({} {}, {}; the member end's minimums)",
+                "{}: end ≥ {:.0} mm, edge ≥ {:.0} mm ({} {}, {}; in the plate)",
                 a.member,
                 r.end * 1000.0,
                 r.edge * 1000.0,

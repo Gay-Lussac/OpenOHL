@@ -116,6 +116,20 @@ impl BoltRules {
 /// then). None: the capacity method has no such rules (the simple
 /// check), or the end has no bolts of known diameter.
 pub fn rules(model: &Model, idx: usize, end: usize, force: Option<f64>) -> Option<BoltRules> {
+    rules_in(model, idx, end, force, None)
+}
+
+/// [`rules`] in another connected part than the member's leg (owner
+/// 2026-11-03: a plate's edges by the plate's own thickness and steel):
+/// `part` its thickness, m, and its ultimate strength, Pa (none: the
+/// member's). The force and the bolts are the member end's.
+pub fn rules_in(
+    model: &Model,
+    idx: usize,
+    end: usize,
+    force: Option<f64>,
+    part: Option<(f64, Option<f64>)>,
+) -> Option<BoltRules> {
     let m = model.members.get(idx)?;
     let d = &m.design;
     let e = d.ends.get(end).and_then(Option::as_ref);
@@ -143,7 +157,10 @@ pub fn rules(model: &Model, idx: usize, end: usize, force: Option<f64>) -> Optio
         }
         _ => (None, 0.0),
     };
-    let t = d.thickness.or(leg.map(|l| l.1)).unwrap_or(0.0);
+    let t = match part {
+        Some((t, _)) => t,
+        None => d.thickness.or(leg.map(|l| l.1)).unwrap_or(0.0),
+    };
     let force = match (force, shear) {
         (Some(n), _) if count > 0 => Force::Analysis(n.abs() / f64::from(count)),
         (_, Some(v)) => Force::Capacity(v),
@@ -156,7 +173,7 @@ pub fn rules(model: &Model, idx: usize, end: usize, force: Option<f64>) -> Optio
             let [end_min, spacing, edge] = crate::asce10::bolt_minimums(
                 diameter,
                 t,
-                s.ultimate.unwrap_or(0.0),
+                part.and_then(|p| p.1).or(s.ultimate).unwrap_or(0.0),
                 force.value(),
                 redundant,
                 sheared,
