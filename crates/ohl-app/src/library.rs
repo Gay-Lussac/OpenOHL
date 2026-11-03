@@ -778,6 +778,11 @@ pub struct LibraryPage {
     /// Wires: the temperature of the tension–strain graph, °C (none: the
     /// curves' reference temperature).
     curve_temperature: Option<f64>,
+    /// Load cases: the form (owner 2026-11-03), else the file's fields
+    /// (expert).
+    pub form_on: bool,
+    /// Load cases: the form's state.
+    pub form: crate::load_case_form::Form,
 }
 
 /// What the pylon workspace of the structure types page needs from the
@@ -791,6 +796,8 @@ pub struct PageContext<'a> {
     pub insulators: Option<&'a ohl_structures::InsulatorLibrary>,
     /// The angle that means ahead (the compass).
     pub ahead: f64,
+    /// The project's weather cases (the load case form picks from them).
+    pub weather: &'a [ohl_weather::WeatherCase],
 }
 
 /// What the page asks of the application.
@@ -829,6 +836,8 @@ impl LibraryPage {
             workspace: Default::default(),
             standalone: false,
             curve_temperature: None,
+            form_on: true,
+            form: Default::default(),
         };
         let first = match kind {
             LibraryKind::WeatherCases => sources.weather.clone(),
@@ -1295,7 +1304,10 @@ impl LibraryPage {
             .small()
             .weak(),
         );
-        if let Some(e) = &self.error {
+        let form = kind == LibraryKind::LoadCases && self.form_on;
+        if let Some(e) = &self.error
+            && !form
+        {
             crate::menu::error_label(ui, egui::RichText::new(e).small());
         }
         if let Some(w) = &self.warning {
@@ -1331,6 +1343,42 @@ impl LibraryPage {
             return action;
         }
         let mut changed = false;
+        if kind == LibraryKind::LoadCases {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.form_on, true, "Form")
+                    .on_hover_text(
+                        "Each case in plain sections: its weather, the wires removed or broken, \
+                         the wind, ice and snow on the structures, its factors",
+                    );
+                ui.selectable_value(&mut self.form_on, false, "Fields (expert)")
+                    .on_hover_text(
+                        "The file's fields as they are written (comments kept); the form \
+                         rewrites the file with OpenOHL's writer (comments not kept)",
+                    );
+            });
+            if self.form_on {
+                let text = self.text().unwrap_or_default();
+                self.form.sync(&text);
+                let fcx = crate::load_case_form::FormContext {
+                    weather: cx.weather,
+                    line: cx.line,
+                };
+                if let Some(t) = crate::load_case_form::ui(
+                    ui,
+                    &mut self.form,
+                    &mut self.item,
+                    &fcx,
+                    self.error.as_deref(),
+                ) && let Ok(doc) = t.parse::<DocumentMut>()
+                {
+                    self.doc = Some(doc);
+                    self.buffers.clear();
+                    self.message = None;
+                    self.check();
+                }
+                return action;
+            }
+        }
         if kind == LibraryKind::StructureTypes {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.workspace.on, false, "Fields")

@@ -290,6 +290,9 @@ pub fn ui(
             {
                 action = Some(crate::edit::Action::MakeFileAndEdit { id: id.clone() });
             }
+            if let Some(a) = crate::load_case_sets::structure_ui(ui, model, &id) {
+                action = Some(a);
+            }
             ui.separator();
             ui.label(egui::RichText::new("Wire points").strong());
             egui::Grid::new("attachments").striped(true).show(ui, |ui| {

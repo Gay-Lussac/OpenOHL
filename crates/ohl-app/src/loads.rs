@@ -37,32 +37,75 @@ pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
     ohl_line::local::Purpose::Strength,
     "structure-loads",
-    "the wires' loads on the structures (their tensions, ice and wind) and the wind on the \
-     structures' own wind bands, times the structure's factor; the member wind of the usage \
-     check and the poles' wind not yet",
+    "every load case as if it said use_local = true: the wires solved with their spans' wind \
+     and ice for strength, and the wind on the structures' bodies (wind bands, the members of \
+     the usage check, the poles) times each structure's factor, once; a case's own \
+     [case.structure] ice = true takes each structure's ice",
 );
 
-/// Scales the wind on the structures' own bands ([`ohl_loads::add_structure_wind`]:
-/// the loads without a point labelled "wind on the structure") at each
-/// structure giving a wind for strength by its factor.
-fn local_structure_wind(loads: &mut [ohl_loads::CaseLoads], line: &ohl_line::Line) {
-    for c in loads {
-        for l in &mut c.loads {
-            let Some(f) = line
-                .structure(&l.structure)
-                .and_then(|s| s.local.wind_static)
-            else {
-                continue;
-            };
-            if l.point.is_empty() && l.label.starts_with("wind on the structure") {
-                for v in [&mut l.force, &mut l.local, &mut l.factored] {
-                    for x in v.iter_mut() {
-                        *x *= f;
-                    }
-                }
+/// What a run computes from (taken on the main thread).
+pub struct Inputs {
+    /// The line (not localized: the load cases localize it themselves).
+    pub line: ohl_line::Line,
+    /// Its wires.
+    pub library: ohl_cables::Library,
+    /// The structure types.
+    pub types: ohl_structures::StructureLibrary,
+    /// The weather cases.
+    pub weather: Vec<ohl_weather::WeatherCase>,
+    /// The cross-section library (or why it does not read).
+    pub sections: Result<ohl_sections::SectionLibrary, String>,
+    /// The load cases, or why there are none.
+    pub cases: Result<Vec<ohl_loads::LoadCase>, String>,
+    /// **Use local conditions** ticked.
+    pub local: bool,
+    /// The structures kept (View › Work on route).
+    pub scope: Option<std::collections::BTreeSet<String>>,
+    /// The structures ticked (2 Scope).
+    pub structures: Option<Vec<String>>,
+}
+
+/// The loads and their usage (one rule for the local conditions, owner
+/// 2026-11-03): the window's switch sets `use_local` on every case
+/// ([`ohl_loads::with_local`]) and the line goes in as it is, so
+/// `ohl_loads` solves the localized wires and takes each structure's
+/// `wind_static` once on its body wind (bands, members, poles); the
+/// structures' ice and snow rows come with
+/// [`ohl_loads::add_structure_loads`].
+pub fn compute(i: &Inputs) -> (Outcome, Vec<CaseUsage>) {
+    let line = &i.line;
+    let r = i.sections.clone().and_then(|sections| {
+        let cases = ohl_loads::with_local(i.cases.clone()?, i.local);
+        let mut loads = ohl_loads::structure_loads(
+            line,
+            &i.library,
+            &i.weather,
+            &cases,
+            &ohl_loads::default_budget(),
+        )?;
+        ohl_loads::add_structure_loads(&mut loads, line, &i.types, &sections, &i.weather);
+        for c in loads.iter_mut() {
+            if let Some(on) = &i.scope {
+                c.loads.retain(|l| on.contains(&l.structure));
+                c.missing.retain(|m| on.contains(&m.structure));
             }
+            c.loads
+                .retain(|l| crate::tick_list::ticked(&i.structures, &l.structure));
+            c.missing
+                .retain(|m| crate::tick_list::ticked(&i.structures, &m.structure));
         }
-    }
+        Ok(loads)
+    });
+    let usage = r.as_ref().map_or_else(
+        |_| Vec::new(),
+        |loads| {
+            let sections = i.sections.clone().unwrap_or_default();
+            ohl_loads::capacity::usage_with_sections(
+                line, &i.types, &sections, &i.library, &i.weather, loads,
+            )
+        },
+    );
+    (r, usage)
 }
 
 type Outcome = Result<Vec<CaseLoads>, String>;
@@ -288,81 +331,48 @@ impl LoadsPage {
             ));
             return;
         };
-        // The line with the local conditions when ticked (the wind for
-        // strength).
+        // Its notes and run times (the line itself goes in as it is: the
+        // load cases take the local conditions, one rule).
         let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
-        let library = model.library.clone();
-        let types = model
-            .types
-            .as_ref()
-            .map(|(t, _)| t.clone())
-            .unwrap_or_default();
-        let weather: Vec<_> = model.cases.iter().map(|c| c.case.clone()).collect();
-        // The structure models' section library (the project's).
-        let sections = model
-            .section_library()
-            .map_err(|e| format!("cross-section library: {e}"));
-        // The route worked on only (View › Work on route).
-        let scope = model.scope().map(|s| s.structures);
-        // The load cases and structures ticked (2 Scope).
         let ticked = self.cases_ticked.clone();
-        let structures = self.structures.clone();
+        let cases = ohl_loads::LoadCases::load(&path).and_then(|set| {
+            let cases: Vec<_> = set
+                .cases
+                .into_iter()
+                .filter(|c| crate::tick_list::ticked(&ticked, &c.name))
+                .collect();
+            if cases.is_empty() {
+                return Err("no load case ticked (2 Scope)".to_owned());
+            }
+            Ok(cases)
+        });
+        let inputs = Inputs {
+            line: model.line.clone(),
+            library: model.library.clone(),
+            types: model
+                .types
+                .as_ref()
+                .map(|(t, _)| t.clone())
+                .unwrap_or_default(),
+            weather: model.cases.iter().map(|c| c.case.clone()).collect(),
+            // The structure models' section library (the project's).
+            sections: model
+                .section_library()
+                .map_err(|e| format!("cross-section library: {e}")),
+            cases,
+            local: self.local,
+            // The route worked on only (View › Work on route).
+            scope: model.scope().map(|s| s.structures),
+            // The structures ticked (2 Scope).
+            structures: self.structures.clone(),
+        };
         self.units.1 = self.plan_units(model);
         let (tx, rx) = channel();
         let c = ctx.clone();
         self.stamp.started(model.revision());
         std::thread::spawn(move || {
             let started = Instant::now();
-            let line = local.line();
-            let r = sections
-                .clone()
-                .and_then(|_| ohl_loads::LoadCases::load(&path))
-                .and_then(|set| {
-                    let cases: Vec<_> = set
-                        .cases
-                        .into_iter()
-                        .filter(|c| crate::tick_list::ticked(&ticked, &c.name))
-                        .collect();
-                    if cases.is_empty() {
-                        return Err("no load case ticked (2 Scope)".to_owned());
-                    }
-                    ohl_loads::structure_loads(
-                        line,
-                        &library,
-                        &weather,
-                        &cases,
-                        &ohl_loads::default_budget(),
-                    )
-                });
-            let mut r = r;
-            if let Ok(loads) = &mut r {
-                ohl_loads::add_structure_wind(loads, line, &types, &weather);
-                if local.applied() {
-                    local_structure_wind(loads, line);
-                }
-
-                if let Some(on) = &scope {
-                    for c in loads.iter_mut() {
-                        c.loads.retain(|l| on.contains(&l.structure));
-                        c.missing.retain(|m| on.contains(&m.structure));
-                    }
-                }
-                for c in loads.iter_mut() {
-                    c.loads
-                        .retain(|l| crate::tick_list::ticked(&structures, &l.structure));
-                    c.missing
-                        .retain(|m| crate::tick_list::ticked(&structures, &m.structure));
-                }
-            }
-            let usage = r.as_ref().map_or_else(
-                |_| Vec::new(),
-                |loads| {
-                    let sections = sections.clone().unwrap_or_default();
-                    ohl_loads::capacity::usage_with_sections(
-                        line, &types, &sections, &library, &weather, loads,
-                    )
-                },
-            );
+            let (r, usage) = compute(&inputs);
             local.finish(LOCAL.1, started.elapsed());
             let _ = tx.send((r, usage, local.notes()));
             c.request_repaint();
@@ -780,6 +790,55 @@ impl LoadsPage {
             ))
             .small(),
         );
+        // Per-pylon sets: only the structures whose set has this case.
+        if model.line.has_load_case_sets() {
+            let (with, without): (Vec<&ohl_line::Structure>, Vec<&ohl_line::Structure>) = model
+                .line
+                .structures
+                .iter()
+                .partition(|s| model.line.takes_load_case(&s.id, &c.name));
+            ui.label(
+                egui::RichText::new(format!(
+                    "taken by {} of {} structures (their load case sets); not by: {}",
+                    with.len(),
+                    model.line.structures.len(),
+                    if without.is_empty() {
+                        "—".to_owned()
+                    } else {
+                        without
+                            .iter()
+                            .map(|s| s.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
+                ))
+                .small()
+                .weak(),
+            )
+            .on_hover_text(
+                "Each structure takes the load cases of its set (Structures table › load \
+                 cases, or its type's in Line › Criteria › Load cases per structure type; \
+                 none: every case). A structure not taking this case has no loads in it.",
+            );
+        }
+        // What the case assumed (wind side, local conditions, removed and
+        // broken wires, ice and snow on the structures), in a box of its
+        // own height.
+        if !r.notes.is_empty() {
+            help::list(
+                ui,
+                "loads-case-notes",
+                90.0,
+                egui::ScrollArea::vertical()
+                    .id_salt("loads-case-notes")
+                    .auto_shrink([false, true]),
+                |ui| {
+                    for n in &r.notes {
+                        ui.label(egui::RichText::new(format!("• {n}")).small());
+                    }
+                },
+            );
+        }
         if !r.failed.is_empty() {
             // In a box of its own height, scrolled: a long list stays small.
             help::list(

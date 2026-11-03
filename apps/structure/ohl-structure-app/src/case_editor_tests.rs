@@ -62,6 +62,7 @@ fn placed(tag: &str) -> (PathBuf, PathBuf) {
             factor: 1.0,
             towards,
             origin: String::new(),
+            from_deg: None,
         })
         .to_vec();
     let at = line_values_path(&path, "T2");

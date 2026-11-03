@@ -58,8 +58,14 @@ pub struct CaseWind {
     pub pressure: f64,
     /// The factor on it.
     pub factor: f64,
-    /// Where it blows: `-x` (from the right of the line) or `x`.
+    /// Where it blows: `-x` (from the right of the line) or `x` — across
+    /// the line; with [`CaseWind::from_deg`] the across part of it.
     pub towards: Direction,
+    /// The angle it comes from, degrees (0 from the right, 90 from ahead;
+    /// version 5, a load case's direction on the structures); none: across
+    /// the line, as `towards` says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_deg: Option<f64>,
     /// Where the values come from when the case gives its own for the
     /// structures (empty: the weather case's pressure, the transverse
     /// factor).
@@ -293,18 +299,21 @@ pub enum Source {
     Ice,
     /// A point load (`[[load_case.structure.point]]`).
     Point,
+    /// Snow on members (`[[load_case.structure.snow]]`).
+    Snow,
     /// Typed (over an evaluated value, or a row of its own; `[[load]]`).
     Typed,
 }
 
 impl Source {
     /// Every source.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Recipe,
         Self::Line,
         Self::Wind,
         Self::Ice,
         Self::Point,
+        Self::Snow,
         Self::Typed,
     ];
 
@@ -316,6 +325,7 @@ impl Source {
             Self::Wind => "wind",
             Self::Ice => "ice",
             Self::Point => "point",
+            Self::Snow => "snow",
             Self::Typed => "typed",
         }
     }
@@ -579,6 +589,14 @@ pub trait MemberAreas {
     fn length(&self, id: &str) -> Result<f64, String> {
         let _ = id;
         Err("no length: the structure's model is not known here".into())
+    }
+
+    /// The plan of member `id`, m²: its width seen from above times its
+    /// length projected on the ground (a vertical member 0), or why it is
+    /// not known — what snow lies on.
+    fn plan_area(&self, id: &str) -> Result<f64, String> {
+        let _ = id;
+        Err("no plan: the structure's model is not known here".into())
     }
 }
 
@@ -847,6 +865,24 @@ fn part_rows(
             });
         }
     }
+    for (k, snow) in own.snow.iter().enumerate() {
+        let number = Some(Part::Snow.number(k));
+        let text = crate::parts::snow_text(snow);
+        for id in ids.iter().filter(|id| snow.on(id)) {
+            let row = LoadRow {
+                source: Source::Snow,
+                note: text.clone(),
+                ..LoadRow::new(&case.name, number, At::Member, id)
+            };
+            match areas.plan_area(id) {
+                Ok(a) => rows.push(LoadRow {
+                    force: [0.0, 0.0, snow.load * a * snow.factor],
+                    ..row
+                }),
+                Err(why) => rows.push(row.missing(why)),
+            }
+        }
+    }
     for (k, p) in own.point.iter().enumerate() {
         let number = Some(Part::Point.number(k));
         for mut r in point_rows(case, number, &p.as_load(), targets, line) {
@@ -942,10 +978,9 @@ fn line_force_rows(
 /// body wind, ice), for what builds the members' model only when needed.
 pub fn needs_members(case: &LoadCaseRecipe) -> bool {
     case.loads.iter().any(|l| l.members.is_some())
-        || case
-            .structure
-            .as_ref()
-            .is_some_and(|s: &OwnLoads| !s.wind.is_empty() || !s.ice.is_empty())
+        || case.structure.as_ref().is_some_and(|s: &OwnLoads| {
+            !s.wind.is_empty() || !s.ice.is_empty() || !s.snow.is_empty()
+        })
 }
 
 fn surface_rows(

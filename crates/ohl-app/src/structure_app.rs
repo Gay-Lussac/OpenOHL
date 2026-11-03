@@ -129,17 +129,12 @@ impl Placed {
     }
 
     /// The line-values file from the line's structure loads `loads` in
-    /// the cases it sends to its structures.
+    /// the cases it sends to its structures: the weather cases chosen and,
+    /// as its load cases, this structure's set of the load case library
+    /// (owner 2026-11-03: "The library's cases").
     pub fn write(&self, loads: &StructureCaseLoads, line: &ohl_line::Line) -> Result<(), String> {
-        ohl_structure_link::placed_values(
-            &[],
-            &loads.weather,
-            &loads.missing,
-            line,
-            &self.structure,
-            &self.line,
-        )
-        .save(&self.values)
+        ohl_structure_link::placed_values_with(loads, line, &self.structure, &self.line)
+            .save(&self.values)
     }
 }
 
@@ -184,7 +179,9 @@ pub struct LineInputs {
     line: ohl_line::Line,
     library: ohl_cables::Library,
     weather: Vec<ohl_weather::WeatherCase>,
-    /// The line's load cases (for the broken-wire cases sent).
+    /// The line's load case library: its cases go to the placed
+    /// structures (each its set), and its broken-wire cases chosen are
+    /// sent as line results.
     load_cases: Vec<ohl_loads::LoadCase>,
 }
 
@@ -207,11 +204,7 @@ impl LineInputs {
             line: model.line.clone(),
             library: model.library.clone(),
             weather: model.cases.iter().map(|c| c.case.clone()).collect(),
-            load_cases: if model.line.structure_loads.broken_cases.is_empty() {
-                Vec::new()
-            } else {
-                line_load_cases(model)
-            },
+            load_cases: line_load_cases(model),
         }
     }
 
@@ -229,6 +222,8 @@ impl LineInputs {
         if cases.is_empty() {
             return Err(NO_CASES.into());
         }
+        // (The library's cases are computed with the weather cases: one
+        // solve per case and section.)
         ohl_structure_link::structure_case_loads(
             &self.line,
             &self.library,
@@ -1171,9 +1166,10 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
 }
 
 /// The broken-wire cases sent (roadmap O9): a tick per load case of the
-/// line with a broken wire (Line › Criteria › Load cases library, `[case.broken]`),
-/// each sent as its weather case with that wire broken, unfactored (a
-/// wind case twice); one ticked and since gone is listed to untick.
+/// line with broken wires or removed conductors (Line › Criteria › Load
+/// cases library), each sent as its weather case with those wires broken
+/// and removed, unfactored (a wind case twice); one ticked and since gone
+/// is listed to untick.
 pub(crate) fn broken_cases_ui(
     ui: &mut egui::Ui,
     load_cases: &[ohl_loads::LoadCase],
@@ -1181,14 +1177,16 @@ pub(crate) fn broken_cases_ui(
 ) {
     ui.separator();
     ui.label(egui::RichText::new("Broken-wire cases sent").strong());
-    let broken: Vec<&ohl_loads::LoadCase> =
-        load_cases.iter().filter(|c| c.broken.is_some()).collect();
+    let broken: Vec<&ohl_loads::LoadCase> = load_cases
+        .iter()
+        .filter(|c| c.has_broken() || !c.removed.is_empty())
+        .collect();
     if broken.is_empty() && choice.broken_cases.is_empty() {
         ui.label(
             egui::RichText::new(
-                "None in the line's load cases: a load case with a broken wire \
-                 ([case.broken] in Line › Criteria › Load cases library, or from a design code) is \
-                 listed here.",
+                "None in the line's load cases: a load case with a broken wire or a removed \
+                 conductor (Line › Criteria › Load cases library › Wires removed and wires \
+                 broken, or from a design code) is listed here.",
             )
             .small()
             .weak(),
@@ -1207,13 +1205,14 @@ pub(crate) fn broken_cases_ui(
         .show(ui, |ui| {
             for c in &broken {
                 let mut on = choice.broken_cases.contains(&c.name);
-                let what = c.broken.as_ref().map_or(String::new(), |b| b.describe());
+                let what = ohl_structure_link::wires_text(c);
                 if ui
                     .checkbox(&mut on, format!("{} ({}, {what})", c.name, c.weather))
                     .on_hover_text(
-                        "Sent as its weather case with this wire broken, unfactored: the \
-                         section solved with the wire of that span gone, the strings at its \
-                         ends swung to the spans left",
+                        "Sent as its weather case with these wires broken (all together) and \
+                         removed, unfactored: each broken section solved with the wire of \
+                         that span gone, the strings at its ends swung to the spans left; a \
+                         removed section left out (no loads from it)",
                     )
                     .changed()
                 {
@@ -1234,7 +1233,7 @@ pub(crate) fn broken_cases_ui(
                 if ui
                     .checkbox(
                         &mut on,
-                        format!("{name} (not a load case with a broken wire)"),
+                        format!("{name} (not a load case with a broken or removed wire)"),
                     )
                     .changed()
                 {
@@ -1546,6 +1545,7 @@ mod tests {
         // Computed (on a thread of its own in the application), with the
         // creep stretch of the example (as the core's integration test).
         model.line.creep_stretch.creep_case = Some("everyday".into());
+        let library = model.sources.load_cases.take();
         assert_eq!(
             LineInputs::of(&model)
                 .write_all(std::slice::from_ref(&placed))
@@ -1555,8 +1555,40 @@ mod tests {
         let v = PlacedValues::load(&placed.values).unwrap();
         assert!(
             v.note.unwrap().contains(NO_CASES),
-            "nothing sent by default"
+            "nothing sent without a load case library or weather cases"
         );
+        // The load case library (owner 2026-11-03: "The library's
+        // cases"): T2's set of it — every case, it gives none — as its
+        // load cases, factored as the library says.
+        model.sources.load_cases = library;
+        assert!(
+            LineInputs::of(&model)
+                .write_all(std::slice::from_ref(&placed))
+                .is_empty()
+        );
+        let v = PlacedValues::load(&placed.values).unwrap();
+        assert_eq!(v.cases, ["everyday", "wind", "ice"]);
+        let names: Vec<&str> = v.library_cases.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["everyday", "wind", "ice"]);
+        assert_eq!(v.library_cases[1].line[0].transverse, 1.4);
+        assert_eq!(v.library_cases[2].strength, 0.9);
+        // T2 given only "wind": only that one.
+        model
+            .line
+            .structures
+            .iter_mut()
+            .find(|s| s.id == "T2")
+            .unwrap()
+            .load_cases = vec!["wind".into()];
+        assert!(
+            LineInputs::of(&model)
+                .write_all(std::slice::from_ref(&placed))
+                .is_empty()
+        );
+        let v = PlacedValues::load(&placed.values).unwrap();
+        assert_eq!(v.cases, ["wind"]);
+        assert_eq!(v.library_cases.len(), 1);
+        model.sources.load_cases = None;
         // A weather case without wind: one line result, unfactored; one
         // with wind: two, the wind from the left and from the right.
         model.line.structure_loads.weather_cases = vec!["everyday".into(), "high wind".into()];

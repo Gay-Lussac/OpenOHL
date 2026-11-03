@@ -556,6 +556,17 @@ pub(super) fn menus(
             item(ui, Command::Library(LibraryKind::WeatherCases), out);
             item(ui, Command::Library(LibraryKind::LoadCases), out);
             if ui
+                .button("Load cases per structure type…")
+                .on_hover_text(
+                    "Per structure type, the load cases of the library its structures take \
+                     (a structure's own set, in its Properties, comes first; none: every case)",
+                )
+                .clicked()
+            {
+                r.load_case_types_open = true;
+                ui.close();
+            }
+            if ui
                 .button("Creep-Stretch…")
                 .on_hover_text(
                     "The weather cases for the permanent stretch due to creep and due to load \

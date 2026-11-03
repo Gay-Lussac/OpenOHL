@@ -65,8 +65,8 @@ fn de_force<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
 /// a value typed over a row keeps matching when another part changes:
 /// the older loads 1 to 999, then per part a block of [`PART_BLOCK`] —
 /// line forces from 1001, wind on the body from 2001, ice and weight on
-/// the members from 3001, point loads from 4001 (the part's first item
-/// 1001, its second 1002, …).
+/// the members from 3001, point loads from 4001, snow on the members from
+/// 5001 (the part's first item 1001, its second 1002, …).
 pub const PART_BLOCK: usize = 1000;
 
 /// The parts of a case, as the rows of the load table number them.
@@ -82,6 +82,8 @@ pub enum Part {
     Ice,
     /// `[[load_case.structure.point]]`.
     Point,
+    /// `[[load_case.structure.snow]]`.
+    Snow,
 }
 
 impl Part {
@@ -93,6 +95,7 @@ impl Part {
             Self::Wind => 2 * PART_BLOCK,
             Self::Ice => 3 * PART_BLOCK,
             Self::Point => 4 * PART_BLOCK,
+            Self::Snow => 5 * PART_BLOCK,
         }
     }
 
@@ -109,6 +112,7 @@ impl Part {
             2 => Self::Wind,
             3 => Self::Ice,
             4 => Self::Point,
+            5 => Self::Snow,
             _ => return None,
         };
         Some((part, load - part.base() - 1))
@@ -123,6 +127,7 @@ impl Part {
             Some((Self::Wind, k)) => format!("wind {}", k + 1),
             Some((Self::Ice, k)) => format!("ice {}", k + 1),
             Some((Self::Point, k)) => format!("point {}", k + 1),
+            Some((Self::Snow, k)) => format!("snow {}", k + 1),
             None => format!("load {load}"),
         }
     }
@@ -198,9 +203,13 @@ impl LineForces {
 }
 
 /// Where the wind on the body comes from (looking ahead along the line):
-/// the four main directions and the four between them, at 45°.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
+/// the four main directions and the four between them, at 45°, or any
+/// angle (the line's load cases, version 5 of the line-values file; owner
+/// 2026-11-03). Written as a name (`"left"`, `"ahead_right"`…) or the
+/// angle in degrees the wind comes from: 0 from the right, 90 from ahead,
+/// 180 from the left, 270 from behind (`from = 30.0`); older files, names
+/// only, read as before.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindFrom {
     /// From the left: blowing to the right (+x).
     Left,
@@ -218,6 +227,41 @@ pub enum WindFrom {
     BackLeft,
     /// From behind and the right.
     BackRight,
+    /// From this angle, degrees: 0 from the right, 90 from ahead, 180
+    /// from the left, 270 from behind.
+    Angle(f64),
+}
+
+impl Serialize for WindFrom {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Angle(a) => s.serialize_f64(*a),
+            named => s.serialize_str(named.as_str()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for WindFrom {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Number(f64),
+            Text(String),
+        }
+        match Raw::deserialize(d)? {
+            Raw::Number(a) if a.is_finite() => Ok(Self::from_degrees(a)),
+            Raw::Number(a) => Err(serde::de::Error::custom(format!(
+                "from {a}: a direction's name or an angle in degrees"
+            ))),
+            Raw::Text(t) => Self::parse(&t).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "from \"{t}\": left, right, ahead, back, ahead_left, ahead_right, back_left, \
+                     back_right or an angle in degrees (0 from the right, 90 from ahead)"
+                ))
+            }),
+        }
+    }
 }
 
 impl WindFrom {
@@ -233,9 +277,48 @@ impl WindFrom {
         Self::BackRight,
     ];
 
-    /// The name in files.
+    /// The direction of the angle `degrees` the wind comes from (0 from
+    /// the right, 90 from ahead): one of the eight names when it is one
+    /// of theirs (to 1e-9°), else [`WindFrom::Angle`] (in 0 to 360).
+    pub fn from_degrees(degrees: f64) -> Self {
+        let a = degrees.rem_euclid(360.0);
+        let named = [
+            (0.0, Self::Right),
+            (45.0, Self::AheadRight),
+            (90.0, Self::Ahead),
+            (135.0, Self::AheadLeft),
+            (180.0, Self::Left),
+            (225.0, Self::BackLeft),
+            (270.0, Self::Back),
+            (315.0, Self::BackRight),
+            (360.0, Self::Right),
+        ];
+        named
+            .into_iter()
+            .find(|(d, _)| (a - d).abs() < 1e-9)
+            .map_or(Self::Angle(a), |(_, w)| w)
+    }
+
+    /// The angle it comes from, degrees (0 from the right, 90 from ahead).
+    pub fn degrees(self) -> f64 {
+        match self {
+            Self::Right => 0.0,
+            Self::AheadRight => 45.0,
+            Self::Ahead => 90.0,
+            Self::AheadLeft => 135.0,
+            Self::Left => 180.0,
+            Self::BackLeft => 225.0,
+            Self::Back => 270.0,
+            Self::BackRight => 315.0,
+            Self::Angle(a) => a,
+        }
+    }
+
+    /// The name in files (an angle: `"angle"`; it is written as its
+    /// number).
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Angle(_) => "angle",
             Self::Left => "left",
             Self::Right => "right",
             Self::Ahead => "ahead",
@@ -252,17 +335,18 @@ impl WindFrom {
         Self::ALL.into_iter().find(|w| w.as_str() == s)
     }
 
-    /// In words: "from the left", "from ahead left".
-    pub fn words(self) -> &'static str {
+    /// In words: "from the left", "from ahead left", "from 30°".
+    pub fn words(self) -> String {
         match self {
-            Self::Left => "from the left",
-            Self::Right => "from the right",
-            Self::Ahead => "from ahead",
-            Self::Back => "from behind",
-            Self::AheadLeft => "from ahead left",
-            Self::AheadRight => "from ahead right",
-            Self::BackLeft => "from behind left",
-            Self::BackRight => "from behind right",
+            Self::Left => "from the left".into(),
+            Self::Right => "from the right".into(),
+            Self::Ahead => "from ahead".into(),
+            Self::Back => "from behind".into(),
+            Self::AheadLeft => "from ahead left".into(),
+            Self::AheadRight => "from ahead right".into(),
+            Self::BackLeft => "from behind left".into(),
+            Self::BackRight => "from behind right".into(),
+            Self::Angle(a) => format!("from {}° (0° from the right, 90° from ahead)", plain(a)),
         }
     }
 
@@ -279,6 +363,10 @@ impl WindFrom {
             Self::AheadRight => [-s, -s, 0.0],
             Self::BackLeft => [s, s, 0.0],
             Self::BackRight => [-s, s, 0.0],
+            Self::Angle(a) => {
+                let r = a.to_radians();
+                [-r.cos(), -r.sin(), 0.0]
+            }
         }
     }
 
@@ -291,6 +379,7 @@ impl WindFrom {
             Self::AheadRight => Self::AheadLeft,
             Self::BackLeft => Self::BackRight,
             Self::BackRight => Self::BackLeft,
+            Self::Angle(a) => Self::from_degrees(180.0 - a),
             other => other,
         }
     }
@@ -484,6 +573,57 @@ impl PointLoad {
     }
 }
 
+/// Snow on members (version 5 of the line-values file, from a line load
+/// case's snow on the structures; owner 2026-11-03): a load per m² on
+/// each member's plan — its width seen from above times its length
+/// projected on the ground (a vertical member none) — down, the rule of
+/// the line's own structure checks (`ohl_loads`, theory: Ice and snow on
+/// the structure).
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SnowLoad {
+    /// The snow load q, Pa (N/m² of plan), unfactored.
+    #[serde(deserialize_with = "de_pressure", serialize_with = "ser_pa")]
+    pub load: f64,
+    /// Members, by id, or `"all"`.
+    #[serde(default = "all", skip_serializing_if = "is_all")]
+    pub members: Pick,
+    /// Factor.
+    #[serde(default = "one")]
+    pub factor: f64,
+}
+
+impl SnowLoad {
+    fn check(&self) -> Result<(), String> {
+        if !(self.load.is_finite() && self.load >= 0.0) {
+            return Err(format!("load {} Pa (0 or more)", self.load));
+        }
+        if matches!(&self.members, Pick::These(v) if v.is_empty()) {
+            return Err("members: \"all\" or a list of member ids".into());
+        }
+        if !(self.factor.is_finite() && self.factor >= 0.0) {
+            return Err(format!("factor {} (0 or more)", self.factor));
+        }
+        Ok(())
+    }
+
+    /// Whether it is on member `id`.
+    pub fn on(&self, id: &str) -> bool {
+        match &self.members {
+            Pick::All => true,
+            Pick::These(v) => v.iter().any(|m| m == id),
+        }
+    }
+}
+
+fn ser_pa<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&format!("{v} Pa"))
+}
+
+fn de_pressure<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    ohl_core::units::si::de::<_, Stress>(d)
+}
+
 /// Loads on the structure itself (part 2).
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -501,6 +641,10 @@ pub struct OwnLoads {
     /// Point loads.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point: Vec<PointLoad>,
+    /// Snow on members (version 5 of the line-values file: a line load
+    /// case's snow on the structures).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub snow: Vec<SnowLoad>,
 }
 
 impl OwnLoads {
@@ -510,6 +654,7 @@ impl OwnLoads {
             && self.wind.is_empty()
             && self.ice.is_empty()
             && self.point.is_empty()
+            && self.snow.is_empty()
     }
 
     /// How much wider member `id` is for the wind, m: 2·t of each ice
@@ -536,6 +681,10 @@ impl OwnLoads {
             i.check()
                 .map_err(|e| format!("structure ice {}: {e}", k + 1))?;
         }
+        for (k, s) in self.snow.iter().enumerate() {
+            s.check()
+                .map_err(|e| format!("structure snow {}: {e}", k + 1))?;
+        }
         for (k, p) in self.point.iter().enumerate() {
             let at = |e: String| format!("structure point {}: {e}", k + 1);
             if !p.value.is_finite() {
@@ -551,6 +700,7 @@ impl OwnLoads {
             ("wind", self.wind.len()),
             ("ice", self.ice.len()),
             ("point", self.point.len()),
+            ("snow", self.snow.len()),
         ] {
             if n >= PART_BLOCK {
                 return Err(format!(
@@ -672,6 +822,20 @@ pub fn ice_text(i: &IceLoad) -> String {
     format!("{what} on {on} × {}", factor_text(i.factor))
 }
 
+/// A snow load in words: "snow 2.93 kPa on every member's plan × 1.35".
+pub fn snow_text(s: &SnowLoad) -> String {
+    let on = match &s.members {
+        Pick::All => "every member's plan".to_owned(),
+        Pick::These(v) if v.len() == 1 => format!("member {}'s plan", v[0]),
+        Pick::These(v) => format!("the plan of members {}", v.join(", ")),
+    };
+    format!(
+        "snow {} kPa on {on} × {}",
+        plain(s.load / 1000.0),
+        factor_text(s.factor)
+    )
+}
+
 /// A point load in words: "2 kN down at A1".
 pub fn point_text(p: &PointLoad) -> String {
     let d = match p.direction {
@@ -702,6 +866,7 @@ pub fn describe(case: &LoadCaseRecipe) -> String {
         parts.extend(s.wind.iter().map(wind_text));
         parts.extend(s.ice.iter().map(ice_text));
         parts.extend(s.point.iter().map(point_text));
+        parts.extend(s.snow.iter().map(snow_text));
     }
     if !case.loads.is_empty() {
         parts.push(format!(

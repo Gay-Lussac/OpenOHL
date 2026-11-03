@@ -112,6 +112,7 @@ impl StructureDesk {
                 line: None,
                 insulators: Some(&self.insulators),
                 ahead: *ahead,
+                weather: &[],
             };
             // A file saved or opened from the page: this one is shown.
             let action = self.page.ui(ui, &self.sources, cx);

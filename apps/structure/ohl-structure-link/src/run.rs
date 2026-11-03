@@ -496,6 +496,31 @@ fn piece_part_loads(
             ));
         }
     }
+    for (k, snow) in own.snow.iter().enumerate() {
+        let (mut total, mut on) = (0.0, 0);
+        for &m in &piece {
+            let member = &model.members[m];
+            if !snow.on(&member.id) {
+                continue;
+            }
+            // On its plan: its width seen from above × its length on the
+            // ground (a vertical member none).
+            if let Some((_, sin, width)) = model.across(member, [0.0, 0.0, -1.0]) {
+                let f = snow.load * width * model.length(member) * sin * snow.factor;
+                half(m, [0.0, 0.0, -f]);
+                total += f;
+                on += 1;
+            }
+        }
+        if on > 0 {
+            notes.push(format!(
+                "extension {extension}: snow {} ({}) also on its {on} member(s), {:.2} kN",
+                k + 1,
+                ohl_structure_loads::snow_text(snow),
+                total / 1000.0
+            ));
+        }
+    }
     for (k, ice) in own.ice.iter().enumerate() {
         let (mut total, mut on, mut without) = (0.0, 0, 0);
         for &m in &piece {

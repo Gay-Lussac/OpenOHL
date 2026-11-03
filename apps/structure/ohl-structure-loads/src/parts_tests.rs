@@ -166,6 +166,7 @@ fn line() -> LineValues {
                 factor: 1.0,
                 towards,
                 origin: String::new(),
+                from_deg: None,
             })
             .to_vec(),
     }
@@ -269,7 +270,11 @@ fn the_parts_read_check_and_set_the_version() {
             "",
             "a thickness needs a density",
         ),
-        ("from = \"left\"", "from = \"up\"", "unknown variant `up`"),
+        (
+            "from = \"left\"",
+            "from = \"up\"",
+            "from \"up\": left, right",
+        ),
         (
             "strength = 1.0",
             "strength = 1.0\nself_weight = 1.2",

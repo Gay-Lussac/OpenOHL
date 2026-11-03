@@ -210,6 +210,7 @@ impl TableKind {
                             .map(|v| f(v / 1000.0, 3))
                             .unwrap_or_default(),
                         s.local.snow_altitude.map(|v| f(v, 1)).unwrap_or_default(),
+                        crate::load_case_sets::cell(line, s),
                     ],
                 })
                 .collect(),

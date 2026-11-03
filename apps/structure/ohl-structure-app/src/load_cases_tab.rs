@@ -70,6 +70,9 @@ struct Evaluated {
     /// the body, every pressure of the line written in
     /// ([`resolve_line_pressures`]).
     run_recipes: Vec<LoadCaseRecipe>,
+    /// The placed structure's cases of the line's load case library
+    /// ([`library_cases`]).
+    library: Vec<LoadCaseRecipe>,
 }
 
 /// The state of the Load cases and Load table panels.
@@ -182,11 +185,25 @@ impl LoadCasesTab {
         let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
         let order = self.info.as_ref().map_or(&[][..], |i| &i.cases[..]);
         let missing = self.info.as_ref().map_or(&[][..], |i| &i.missing[..]);
-        let (mut evaluated, line_cases) = line_rows(&self.line, order, &names, missing);
+        // The placed structure's cases of the line's load case library
+        // (owner 2026-11-03: "The library's cases"): its load cases, the
+        // structure's own recipes extra; their line cases are taken by
+        // them (no rows or body wind of their own).
+        let library = library_cases(self.info.as_ref(), &names);
+        let covered: Vec<&str> = library
+            .iter()
+            .flat_map(|c| c.line.iter().map(|l| l.result.as_str()))
+            .collect();
+        let (mut evaluated, mut line_cases) = line_rows(&self.line, order, &names, missing);
+        evaluated
+            .rows
+            .retain(|r| !covered.contains(&r.case.as_str()));
+        line_cases.retain(|(_, c)| !covered.contains(&c.as_str()));
         // The line cases' wind on the body: on the members (rows) when
         // there are some, on a pole (the run) in any case.
         let line_wind = line_wind_recipes(&line_cases, &self.line);
-        let mut all: Vec<LoadCaseRecipe> = cases.to_vec();
+        let mut all: Vec<LoadCaseRecipe> = library.clone();
+        all.extend(cases.iter().cloned());
         if !t.members.is_empty() {
             all.extend(line_wind.iter().cloned());
         }
@@ -200,7 +217,12 @@ impl LoadCasesTab {
             evaluate_with_areas(&all, t, &self.line, &ohl_structure_loads::NoAreas)
         };
         let run_recipes = resolve_line_pressures(
-            &cases.iter().cloned().chain(line_wind).collect::<Vec<_>>(),
+            &library
+                .iter()
+                .cloned()
+                .chain(cases.iter().cloned())
+                .chain(line_wind)
+                .collect::<Vec<_>>(),
             &self.line,
         );
         evaluated.rows.extend(of_recipes.rows);
@@ -213,7 +235,15 @@ impl LoadCasesTab {
             table,
             line_cases,
             run_recipes,
+            library,
         });
+    }
+
+    /// The placed structure's load cases from the line's load case
+    /// library (as of the last [`LoadCasesTab::refresh`]; none: opened
+    /// alone, an older line-values file, or a line without a library).
+    pub fn library_recipes(&self) -> &[LoadCaseRecipe] {
+        self.cache.as_ref().map_or(&[], |c| &c.library)
     }
 
     /// What a run solves with (as of the last [`LoadCasesTab::refresh`]):
@@ -1096,6 +1126,25 @@ pub fn line_rows(
     (table, names)
 }
 
+/// The placed structure's load cases from the line's load case library
+/// ([`PlacedValues::library_cases`], owner 2026-11-03: "The library's
+/// cases"), each renamed `<name> (library)` when one of the structure's
+/// own recipes (`own`, its extra cases) has its name.
+pub fn library_cases(info: Option<&PlacedValues>, own: &[String]) -> Vec<LoadCaseRecipe> {
+    info.map_or_else(Vec::new, |i| {
+        i.library_cases
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                if own.contains(&c.name) {
+                    c.name = format!("{} (library)", c.name);
+                }
+                c
+            })
+            .collect()
+    })
+}
+
 /// The note of the line cases' wind rows.
 pub const LINE_WIND_NOTE: &str = "the line case's wind on the structure body";
 
@@ -1803,6 +1852,7 @@ mod line_rows_tests {
                 factor: 1.4,
                 towards: Direction::Left,
                 origin: String::new(),
+                from_deg: None,
             });
         }
         let cases = [

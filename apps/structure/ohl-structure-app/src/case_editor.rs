@@ -294,8 +294,58 @@ impl StructureApp {
         if let Some(e) = &read_error {
             error_label(ui, format!("the load cases do not read: {e}"));
         }
+        // The line's load cases this placed structure takes (owner
+        // 2026-11-03: "The library's cases"): its load cases, read here,
+        // changed in OHL-Design's Load cases library; its own are extra.
+        let library = self.loads.library_recipes().to_vec();
+        if !library.is_empty() {
+            egui::CollapsingHeader::new(format!(
+                "From the line's load case library: {} case(s)",
+                library.len()
+            ))
+            .id_salt("library-cases")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "The load cases of the line this structure takes (its set), with their \
+                         factors, wind, ice and snow on the structure: changed in OHL-Design \
+                         (Line › Criteria › Load cases library, the structure's Load cases). \
+                         The cases below are this structure's own, extra loads.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("library-case-list")
+                    .max_height(160.0)
+                    .show(ui, |ui| {
+                        for c in &library {
+                            let shown = self.loads.shown.as_deref() == Some(c.name.as_str());
+                            if ui
+                                .selectable_label(shown, format!("{} (from the line)", c.name))
+                                .on_hover_text(format!("{}\n\n{}", describe(c), c.description))
+                                .clicked()
+                            {
+                                self.loads.shown = Some(c.name.clone());
+                            }
+                        }
+                    });
+            });
+            ui.label(egui::RichText::new("Extra load cases (this structure's own)").strong());
+        }
         if cases.is_empty() {
-            self.no_case_yet(ui);
+            if library.is_empty() {
+                self.no_case_yet(ui);
+            } else {
+                ui.label(
+                    egui::RichText::new(
+                        "None: + Case adds one, for loads the line's cases do not give.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            }
             return;
         }
         let mut pick = k;

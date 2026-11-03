@@ -103,7 +103,9 @@ use ohl_structures_fe::{Loads, Model, NodalLoad};
 pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineValues {
     let mut out = LineValues::default();
     for case in loads {
-        let w = case.structure_wind;
+        // This structure's: with use_local, times its wind_static (the one
+        // rule, ohl_loads::CaseLoads::structure_wind_at).
+        let w = case.structure_wind_at(line.structure(structure));
         out.structure_wind.push(CaseWind {
             case: case.case.name.clone(),
             pressure: w.pressure,
@@ -114,6 +116,7 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
                 Direction::Right
             },
             origin: w.origin().to_owned(),
+            from_deg: w.has_longitudinal().then(|| w.direction.degrees()),
         });
         for l in case
             .loads
@@ -162,8 +165,11 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
 /// results** (owner, 2026-10-25): each weather case chosen, unfactored,
 /// the wires in the chosen condition; a weather case with wind twice,
 /// the wind from the left and from the right ([`line_result_name`]). The
-/// factors are the structure load cases' (one place for them); the line's
-/// `.ohllc` load cases are not sent.
+/// factors are the structure load cases' (one place for them). Since
+/// 2026-11-03 (owner: "The library's cases") the line's load case
+/// library is sent too ([`StructureCases::library`]): each placed
+/// structure gets its set of it as its load cases
+/// ([`placed_values_with`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StructureCases {
     /// The line results, as load cases of factor 1 (in the order of the
@@ -175,13 +181,29 @@ pub struct StructureCases {
     /// What was chosen and is not there (a weather case since removed),
     /// in words.
     pub missing: Vec<String>,
+    /// The line's load case library (its cases as they are, factors
+    /// kept): each placed structure takes its set of them.
+    pub library: Vec<LoadCase>,
+    /// The line's weather cases (those the library's cases name).
+    pub library_weather: Vec<ohl_weather::WeatherCase>,
 }
 
 impl StructureCases {
     /// No case to send.
     pub fn is_empty(&self) -> bool {
-        self.weather.is_empty()
+        self.weather.is_empty() && self.library.is_empty()
     }
+}
+
+/// What a line result of load case `lc` changes in the wires, for its
+/// name: its removed and broken wires (`S3 removed, S1 span 2 broken`).
+pub fn wires_text(lc: &LoadCase) -> String {
+    lc.removed
+        .iter()
+        .map(ohl_loads::RemovedWire::describe)
+        .chain(lc.broken_wires().map(ohl_loads::BrokenWire::describe))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The name of a line result: weather case `weather` with the wind from
@@ -213,22 +235,30 @@ pub fn broken_result_name(
 /// (the wind from the left and from the right). A name chosen that is not
 /// a load case with a broken wire, or whose weather case is not there, is
 /// listed in [`StructureCases::missing`].
+///
+/// Version 4 of the load case files (2026-11-03): every broken wire of
+/// the case is broken in its line result, and its removed conductors are
+/// left out ([`wires_text`] names them: `S1 span 2 broken, S1 span 3
+/// broken`); a case with removed conductors only is sent the same way.
+/// The library itself goes along ([`StructureCases::library`]).
 pub fn structure_cases_with(
     choice: &StructureLoads,
     weather: &[ohl_weather::WeatherCase],
     load_cases: &[LoadCase],
 ) -> StructureCases {
     let mut out = structure_cases(choice, weather);
+    out.library = load_cases.to_vec();
+    out.library_weather = weather.to_vec();
     let condition = choice
         .condition
         .as_deref()
         .and_then(ohl_loads::WireCondition::parse)
         .unwrap_or_default();
     for name in &choice.broken_cases {
-        let Some((lc, broken)) = load_cases
+        let Some(lc) = load_cases
             .iter()
             .find(|c| &c.name == name)
-            .and_then(|c| Some((c, c.broken.as_ref()?)))
+            .filter(|c| c.has_broken() || !c.removed.is_empty())
         else {
             out.missing
                 .push(format!("load case \"{name}\" with a broken wire"));
@@ -249,8 +279,9 @@ pub fn structure_cases_with(
         } else {
             vec![None]
         };
+        let wires = wires_text(lc);
         for side in sides {
-            let result = broken_result_name(&w.name, broken, side);
+            let result = line_result_name(&format!("{} — {wires}", w.name), side);
             let mut case = w.clone();
             case.name = result.clone();
             if let Some(side) = side {
@@ -259,16 +290,16 @@ pub fn structure_cases_with(
             let mut c = LoadCase::from_weather(&result);
             c.name = result.clone();
             c.description = format!(
-                "load case \"{name}\": weather case \"{}\"{}, {}, unfactored",
+                "load case \"{name}\": weather case \"{}\"{}, {wires}, unfactored",
                 w.name,
                 side.map_or(String::new(), |s| format!(
                     ", the wind from the {}",
                     s.as_str()
                 )),
-                broken.describe()
             );
             c.condition = condition;
-            c.broken = Some(broken.clone());
+            c.set_broken(lc.broken_wires().cloned().collect());
+            c.removed = lc.removed.clone();
             c.tags.push(BROKEN_WIRE_TAG.to_owned());
             out.weather.push(c);
             out.weather_cases.push(case);
@@ -348,25 +379,189 @@ pub struct StructureCaseLoads {
     pub weather: Vec<CaseLoads>,
     /// What was chosen and is not there ([`StructureCases::missing`]).
     pub missing: Vec<String>,
+    /// The loads of the line's load case library's cases, factored as
+    /// the library says ([`StructureCases::library`]); a structure not
+    /// taking a case has no loads in it.
+    pub library: Vec<CaseLoads>,
+    /// The line's weather cases (for the ice on the structures).
+    pub library_weather: Vec<ohl_weather::WeatherCase>,
+    /// Why the library's cases have no loads (a case naming a weather
+    /// case that is not there…); none: computed.
+    pub library_error: Option<String>,
 }
 
 /// The structure loads (`ohl_loads::structure_loads`, every case solved
 /// in one go) of the line results `cases` on `line` with its cables
-/// `library`. Expected cost: that of the structure loads, about one solve
-/// of every section per line result (a wind case counts twice; seconds
-/// for a long line), bounded by `budget` per section.
+/// `library`, and of the line's load case library
+/// ([`StructureCases::library`]). Expected cost: that of the structure
+/// loads, about one solve of every section per line result (a wind case
+/// counts twice; seconds for a long line) and per library case, bounded
+/// by `budget` per section.
 pub fn structure_case_loads(
     line: &Line,
     library: &ohl_cables::Library,
     cases: StructureCases,
     budget: &Budget,
 ) -> Result<StructureCaseLoads, String> {
-    let weather =
-        ohl_loads::structure_loads(line, library, &cases.weather_cases, &cases.weather, budget)?;
+    let weather = if cases.weather.is_empty() {
+        Vec::new()
+    } else {
+        // The line results go to every structure: the per-pylon sets are
+        // of the library's cases.
+        let mut every = line.clone();
+        every.structure_loads.type_load_cases.clear();
+        for s in &mut every.structures {
+            s.load_cases.clear();
+        }
+        ohl_loads::structure_loads(
+            &every,
+            library,
+            &cases.weather_cases,
+            &cases.weather,
+            budget,
+        )?
+    };
+    let (lib, library_error) = if cases.library.is_empty() {
+        (Vec::new(), None)
+    } else {
+        match ohl_loads::structure_loads(
+            line,
+            library,
+            &cases.library_weather,
+            &cases.library,
+            budget,
+        ) {
+            Ok(l) => (l, None),
+            Err(e) => (Vec::new(), Some(e)),
+        }
+    };
     Ok(StructureCaseLoads {
         weather,
         missing: cases.missing,
+        library: lib,
+        library_weather: cases.library_weather,
+        library_error,
     })
+}
+
+/// [`placed_values`] of the loads the line sends (`sent`): the weather
+/// cases' line results as before, and (owner 2026-11-03: "The library's
+/// cases") placed structure `structure`'s set of the line's load case
+/// library (`ohl_line::Line::load_cases_for`) — their values as load
+/// cases, and as its load cases in OHL-Structure
+/// ([`PlacedValues::library_cases`], [`library_recipes`]).
+pub fn placed_values_with(
+    sent: &StructureCaseLoads,
+    line: &Line,
+    structure: &str,
+    line_name: &str,
+) -> PlacedValues {
+    let own: Vec<CaseLoads> = sent
+        .library
+        .iter()
+        .filter(|c| line.takes_load_case(structure, &c.case.name))
+        .cloned()
+        .collect();
+    let mut missing = sent.missing.clone();
+    if let Some(e) = &sent.library_error {
+        missing.push(format!("the load case library's cases ({e})"));
+    }
+    let mut out = placed_values(&own, &sent.weather, &missing, line, structure, line_name);
+    out.library_cases = library_recipes(&own, &sent.library_weather, line, structure);
+    out
+}
+
+/// The line's load cases `loads` (library cases, factored) as load cases
+/// of placed structure `structure` in OHL-Structure (owner 2026-11-03:
+/// "The library's cases"), one per case (a broken wire in every span: one
+/// per break, [`CaseLoads::each_break`]), named as the line's case:
+///
+/// - **line forces**: the case's own values at the attachment points,
+///   unfactored, × its vertical, transverse and longitudinal factors;
+/// - **self weight** × its vertical factor;
+/// - **wind on the body** from the case's direction (any angle,
+///   [`WindFrom::from_degrees`]), its pressure on the structure
+///   (with `use_local` × the structure's `wind_static`,
+///   [`CaseLoads::structure_wind_at`]) × its factor;
+/// - **ice** on every member (`ohl_loads::LoadCase::structure_ice_at`:
+///   the thickness, or the structure's local ice, and its density) and
+///   **snow** on every member's plan (q = μ·C_e·C_T·s_k,
+///   `ohl_loads::LoadCase::structure_snow_at`), × the vertical factor;
+/// - its strength factor.
+///
+/// The rule of the line's own structure checks (`ohl_loads::capacity`),
+/// so both applications give the same loads.
+pub fn library_recipes(
+    loads: &[CaseLoads],
+    weather: &[ohl_weather::WeatherCase],
+    line: &Line,
+    structure: &str,
+) -> Vec<ohl_structure_loads::LoadCaseRecipe> {
+    use ohl_structure_loads::{
+        BodyWindLoad, IceLoad, LineForces, LoadCaseRecipe, OwnLoads, Pick, SnowLoad, WindFrom,
+    };
+    let placed = line.structure(structure);
+    loads
+        .iter()
+        .flat_map(CaseLoads::each_break)
+        .map(|c| {
+            let lc = &c.case;
+            let mut r = LoadCaseRecipe::new(&lc.name);
+            let mut about = vec![format!(
+                "from the line's load case library: weather {}, wires {}",
+                lc.weather,
+                lc.condition.words()
+            )];
+            if !lc.description.is_empty() {
+                about.insert(0, lc.description.clone());
+            }
+            about.extend(c.notes.iter().cloned());
+            r.description = about.join("\n");
+            r.strength = lc.strength;
+            r.line.push(LineForces {
+                vertical: lc.vertical,
+                transverse: lc.transverse,
+                longitudinal: lc.longitudinal,
+                ..LineForces::new(&lc.name)
+            });
+            let mut own = OwnLoads {
+                self_weight: Some(lc.vertical),
+                ..OwnLoads::default()
+            };
+            let body = c.structure_wind_at(placed);
+            if body.factored() > 0.0 {
+                own.wind.push(BodyWindLoad {
+                    from: WindFrom::from_degrees(body.direction.degrees()),
+                    pressure: Some(body.pressure),
+                    pressure_of: None,
+                    factor: body.factor,
+                });
+            }
+            if let Some(w) = weather.iter().find(|w| w.name == lc.weather) {
+                if let Ok(Some(ice)) = lc.structure_ice_at(w, placed) {
+                    own.ice.push(IceLoad {
+                        thickness: Some(ice.thickness),
+                        density: Some(ice.density),
+                        load: None,
+                        members: Pick::All,
+                        factor: lc.vertical,
+                    });
+                }
+            }
+            if let Some(snow) = lc.structure_snow_at(placed)
+                && snow.load() > 0.0
+            {
+                own.snow.push(SnowLoad {
+                    load: snow.load(),
+                    members: Pick::All,
+                    factor: lc.vertical,
+                });
+            }
+            r.self_weight = 1.0;
+            r.structure = Some(own);
+            r
+        })
+        .collect()
 }
 
 /// The line-values file of placed structure `structure` in line
@@ -634,6 +829,23 @@ impl MemberAreas for SectionAreas {
     fn length(&self, id: &str) -> Result<f64, String> {
         let (model, k) = self.member(id, "no length")?;
         Ok(model.length(&model.members[k]))
+    }
+
+    fn plan_area(&self, id: &str) -> Result<f64, String> {
+        let (model, k) = self.member(id, "no plan")?;
+        let m = &model.members[k];
+        let section = &model.sections[m.section];
+        if section.profile.is_none() {
+            return Err(format!(
+                "no plan: cross-section \"{}\" is not in the cross-section library",
+                section.id
+            ));
+        }
+        // Its width seen from above × its length on the ground (the rule
+        // of ohl_loads' snow on the members); vertical: none.
+        Ok(model
+            .across(m, [0.0, 0.0, -1.0])
+            .map_or(0.0, |(_, sin, width)| width * model.length(m) * sin))
     }
 
     fn area_along(&self, id: &str, direction: Direction) -> Result<f64, String> {

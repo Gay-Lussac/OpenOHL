@@ -871,6 +871,22 @@ impl LoadCases {
         Ok(set)
     }
 
+    /// Reads a file's cases without checking them (the load case form
+    /// edits a file whose cases may not check yet while it is being
+    /// filled in); the TOML and its header must read. [`LoadCases::parse`]
+    /// checks.
+    pub fn read_unchecked(text: &str) -> Result<Self, String> {
+        let set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+        ohl_core::files::check_header(
+            set.format.as_deref(),
+            set.version,
+            LOAD_CASE_FILE_FORMAT,
+            LOAD_CASE_FILE_VERSION,
+            "load case",
+        )?;
+        Ok(set)
+    }
+
     /// Reads a file.
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -983,6 +999,22 @@ pub struct BrokenLoads {
 }
 
 impl CaseLoads {
+    /// The wind on the body of structure `s` in this case: the case's
+    /// ([`CaseLoads::structure_wind`]), with [`LoadCase::use_local`] the
+    /// pressure times the structure's local `wind_static` — the one rule
+    /// of [`LoadCase::structure_wind_at`], applied once (owner
+    /// 2026-11-03: a check's "Use local conditions" switch sets
+    /// `use_local` on its cases, nothing else scales the wind).
+    pub fn structure_wind_at(&self, s: Option<&ohl_line::Structure>) -> BodyWind {
+        let mut body = self.structure_wind;
+        if self.case.use_local
+            && let Some(f) = s.and_then(|s| s.local.wind_static)
+        {
+            body.pressure *= f;
+        }
+        body
+    }
+
     /// This case as the structures' finite-element and pole checks take
     /// it: itself, or with a broken wire in every span one case per break
     /// ([`CaseLoads::broken_each`]), named `<case> (span <k> broken)`,
@@ -1396,6 +1428,26 @@ pub fn structure_loads(
         });
     }
     Ok(out)
+}
+
+/// `cases` as a check with **Use local conditions** ticked takes them:
+/// each with [`LoadCase::use_local`] (owner 2026-11-03: the switch and a
+/// case's `use_local` mean the same — this case takes the structures'
+/// local conditions; [`structure_loads`] then solves the wires on the
+/// localized line and every body wind takes `wind_static` once, through
+/// [`LoadCase::structure_wind_at`]). Unticked: the cases as written (a
+/// case's own `use_local` kept).
+pub fn with_local(cases: Vec<LoadCase>, ticked: bool) -> Vec<LoadCase> {
+    if !ticked {
+        return cases;
+    }
+    cases
+        .into_iter()
+        .map(|c| LoadCase {
+            use_local: true,
+            ..c
+        })
+        .collect()
 }
 
 /// The unknown names of the per-pylon load case sets (a structure's own
@@ -1955,3 +2007,6 @@ mod broken_tests;
 
 #[cfg(test)]
 mod v4_tests;
+
+#[cfg(test)]
+mod local_tests;

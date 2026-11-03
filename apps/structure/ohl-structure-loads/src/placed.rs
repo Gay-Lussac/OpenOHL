@@ -38,20 +38,28 @@
 //! the wind on the structure's own body — pressure (Pa), factor, where it
 //! blows, and `origin` when the case gives its own values for the
 //! structures; older files have none (a recipe taking it gets "no line
-//! value").
+//! value"). Version 5 (owner 2026-11-03: "The library's cases") added
+//! `library_cases`: the placed structure's set of the line's load case
+//! library as load cases of the structure (each its line forces with the
+//! case's factors, its self weight, its wind on the body from the case's
+//! direction — any angle, `from` in degrees — its ice and snow on the
+//! members, its strength factor), and `from_deg` on a structure wind
+//! from an angle; older files have none: the structure's own recipes as
+//! before.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::recipe::LineQuantity;
+use crate::recipe::{LineQuantity, LoadCaseRecipe};
 use crate::table::LineValues;
 
 /// `format` of a line-values file.
 pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// `version` of a line-values file (2: `sources`; 3: `missing`; 4:
-/// `structure_wind` in the values; older files are read too).
-pub const LINE_VALUES_FILE_VERSION: u32 = 4;
+/// `structure_wind` in the values; 5: `library_cases`; older files are
+/// read too).
+pub const LINE_VALUES_FILE_VERSION: u32 = 5;
 
 /// A section or jumper at the placed structure that did not solve in one
 /// of the line's cases: the values of that case lack its forces.
@@ -183,6 +191,15 @@ pub struct PlacedValues {
     /// files: none).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<MissingWire>,
+    /// The placed structure's load cases from the line's load case
+    /// library (version 5; owner 2026-11-03: "The library's cases"): its
+    /// set (`ohl_line::Line::load_cases_for`) as load cases of the
+    /// structure, each taking its line case's forces with the case's
+    /// factors and the loads on the structure itself the case gives. The
+    /// structure's own recipes come after them, as extra cases; none
+    /// (older files, a line without a library): the own recipes only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub library_cases: Vec<LoadCaseRecipe>,
 }
 
 impl PlacedValues {
@@ -200,6 +217,7 @@ impl PlacedValues {
             others: Vec::new(),
             note: Some(note.into()),
             missing: Vec::new(),
+            library_cases: Vec::new(),
         }
     }
 

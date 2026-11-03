@@ -114,8 +114,9 @@ mod recipe;
 mod table;
 
 pub use parts::{
-    BodyWindLoad, Converted, IceLoad, LineForces, OwnLoads, PART_BLOCK, Part, PointLoad, WindFrom,
-    convert_older, describe, ice_text, line_forces_text, mirror_wind, point_text, wind_text,
+    BodyWindLoad, Converted, IceLoad, LineForces, OwnLoads, PART_BLOCK, Part, PointLoad, SnowLoad,
+    WindFrom, convert_older, describe, ice_text, line_forces_text, mirror_wind, point_text,
+    snow_text, wind_text,
 };
 pub use placed::{
     CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, MissingWire,

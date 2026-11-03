@@ -76,7 +76,7 @@ pub(super) const STRUCTURES: &[Column] = &[
         "wind static",
         80.0,
         Yes,
-        "local conditions: the factor on the weather cases' wind for strength — the wires' wind on its spans in the structure loads, string checks, wire tensions, ice shedding and galloping, and the wind on its own wind bands in the structure loads — with Use local conditions ticked; a span takes the worst (or the mean) of its two structures' (Line › Criteria › Calculation options); empty: 1",
+        "local conditions: the factor on the weather cases' wind for strength — the wires' wind on its spans in the structure loads, string checks, wire tensions, ice shedding and galloping, and the wind on its own body (wind bands, members, pole) in the structure loads — with Use local conditions ticked or a load case's own; a span takes the worst (or the mean) of its two structures' (Line › Criteria › Calculation options); empty: 1",
     ),
     (
         "wind clearance",
@@ -94,19 +94,28 @@ pub(super) const STRUCTURES: &[Column] = &[
         "structure ice mm",
         95.0,
         Yes,
-        "local conditions: ice on its members, mm (kept with the structure; not yet taken by the structure loads)",
+        "local conditions: ice on its members, mm: taken by the load cases giving the structures' local ice (Load cases library › Ice and snow on the structures)",
     ),
     (
         "snow s_k kN/m²",
         95.0,
         Yes,
-        "local conditions: the snow on the ground there, s_k, kN/m² (given; empty: from h0 by SIA 261 (10) when h0 is given; kept with the structure, not yet taken by a check)",
+        "local conditions: the snow on the ground there, s_k, kN/m² (given; empty: from h0 by SIA 261 (10) when h0 is given): taken by the load cases with snow on the structures (Load cases library › Ice and snow on the structures)",
     ),
     (
         "snow h0 m",
         75.0,
         Yes,
         "local conditions: the reference altitude h0 for SIA 261's snow on the ground (5.2.6), m: its altitude with the regional correction of SIA 261 Annex D",
+    ),
+    // Its load case set (owner, 2026-11-03): edited in its Properties
+    // (several selected: Apply to the others) and per type in Line ›
+    // Criteria › Load cases per structure type.
+    (
+        "load cases",
+        150.0,
+        Derived,
+        "the load cases of the library it takes: how many and which (its own, else its type's, else every case); set in its Properties › Load cases, per type in Line › Criteria › Load cases per structure type",
     ),
 ];
 

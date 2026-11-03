@@ -146,6 +146,7 @@ fn line() -> LineValues {
             factor: 1.5,
             towards: Direction::Left,
             origin: String::new(),
+            from_deg: None,
         }],
     }
 }
@@ -473,7 +474,7 @@ fn line_values_files_mark_the_source_of_each_case() {
     new.cases = vec!["wind".into(), "weather: glaze ice".into()];
     new.sources = vec![CaseSource::LoadCase, CaseSource::WeatherCase];
     let text = new.to_json();
-    assert!(text.contains("\"version\": 4"), "{text}");
+    assert!(text.contains("\"version\": 5"), "{text}");
     assert!(text.contains("\"weather_case\""), "{text}");
     // Nothing missing: no `missing` written.
     assert!(!text.contains("missing"), "{text}");
@@ -481,7 +482,7 @@ fn line_values_files_mark_the_source_of_each_case() {
     assert_eq!(read, new);
     assert_eq!(read.source("weather: glaze ice"), CaseSource::WeatherCase);
     assert_eq!(read.source("wind").label(), "load case");
-    let newer = text.replace("\"version\": 4", "\"version\": 5");
+    let newer = text.replace("\"version\": 5", "\"version\": 6");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
 
