@@ -411,9 +411,18 @@ notes give L/r, KL/r, \\( F_{cr} \\) and the capacity. Tolerance
 | asce10-007 | compression without design data: the assumptions on the safe side (curve 3) |
 | asce10-008 | tension without design data: the gross section |
 
-Not published worked examples (none with all inputs found openly); the
+The cases are not published worked examples; the
 method was also compared, privately, with a tower design program's
 capacities on a real line's towers (theory page).
+
+Torsional and torsional-flexural buckling (2026-11-03): the unit test
+`asce10::tests::standard_examples_15_and_16` reproduces the standard's
+own worked Examples 15 and 16 (Appendix B, 60° angles: r_t 1.33 in,
+r_tf 1.21 in, KL/r_tf 88.8, F_a 26.7 ksi; K'/r_tf 0.878 with mixed ends,
+using the printed inputs). `torsional_buckling_by_profile` checks which
+profiles take which clause, and `ohl_sections`'
+`shear_centre_and_warping` the thin-walled properties against hand
+values.
 
 ## What the cases showed
 

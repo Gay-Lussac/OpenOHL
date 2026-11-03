@@ -14,6 +14,13 @@
 //!   on all three), L its `lk` when given, else its length; r_y, r_z the
 //!   radii of gyration about the section's y and z, r_v the minor
 //!   principal one.
+//! - Torsional and torsional-flexural buckling by the profile's symmetry
+//!   ([`torsional_slenderness`]): an I or H section (3.9.4) and a star or
+//!   cross of angles (3.9.6) by L/r_t, a channel or two angles back to back
+//!   (3.9.5) by L/r_tf, taken into L/r when larger; single angles by L/r
+//!   and their legs' w/t only (3.7, as C3.7 explains), closed sections by
+//!   L/r only (3.9.7); sections without a library profile, or a `general`
+//!   one, not checked for it (3.9.8: tests or analysis; said).
 //! - Effective slenderness KL/r: L/r ≤ 120 by the ends' eccentricity —
 //!   none: L/r; one end: 30 + 0.75 L/r; both ends: 60 + 0.5 L/r; L/r > 120
 //!   by the ends' rotational restraint — none: L/r; one end: 28.6 + 0.762
@@ -141,6 +148,84 @@ pub fn column_stress(fcr: f64, e: f64, kl_r: f64) -> f64 {
     }
 }
 
+/// The equivalent radius of gyration for torsional buckling r_t (ASCE
+/// 10-97 Eq. 3.8-2): warping constant `cw` (m⁶), torsion constant `j`
+/// (m⁴), polar second moment about the shear centre `ips` (m⁴), the length
+/// free to warp `kt_l` (m).
+pub fn torsional_radius(cw: f64, j: f64, ips: f64, kt_l: f64) -> f64 {
+    ((cw + 0.04 * j * kt_l * kt_l) / ips).sqrt()
+}
+
+/// The equivalent radius of gyration for torsional-flexural buckling r_tf
+/// (ASCE 10-97 Eq. 3.8-1) from r_t, the radius about the axis of symmetry
+/// r_u, the shear centre's distance from the centroid `u0` and the polar
+/// radius about the shear centre `rps`. Ends that differ for twisting and
+/// for bending about u (C3.8): r_t / K_t and r_u / K_u passed, the result
+/// then r_tf / K'.
+pub fn torsional_flexural_radius(rt: f64, ru: f64, u0: f64, rps: f64) -> f64 {
+    let (a, b) = (1.0 / (rt * rt), 1.0 / (ru * ru));
+    let c = u0 / (rt * ru * rps);
+    let sum = a + b + ((a - b).powi(2) + 4.0 * c * c).sqrt();
+    (2.0 / sum).sqrt()
+}
+
+/// The slenderness of torsional or torsional-flexural buckling of the
+/// section's profile over `length` (ASCE 10-97 3.9.4–3.9.6), with the
+/// mode in words and what it assumed; none where the code asks only for
+/// flexural buckling (single angles, 3.7 and C3.7; closed sections, 3.9.7)
+/// and where the profile is not known (a `[[section]]` table; a `general`
+/// profile: `Err`, 3.9.8). The member's ends free to warp (K_t 1: the
+/// length free to warp is its whole length, on the safe side); bending
+/// about the axis of symmetry by the member's length ratio for it.
+pub fn torsional_slenderness(
+    s: &Section,
+    length: f64,
+    ratios: [f64; 3],
+) -> Option<Result<(f64, &'static str), ()>> {
+    use ohl_sections::Symmetry;
+    let p = s.profile.as_ref()?;
+    let sym = p.shape.symmetry();
+    if matches!(sym, Symmetry::Angle | Symmetry::Closed) {
+        return None;
+    }
+    let q = p.properties();
+    let (Some(sc), Some(cw)) = (q.shear_centre, q.warping) else {
+        return Some(Err(()));
+    };
+    if sym == Symmetry::Unknown || q.area <= 0.0 || length <= 0.0 {
+        return Some(Err(()));
+    }
+    let j = q.it.unwrap_or(s.j);
+    let u0 = match sym {
+        Symmetry::AboutY => (sc[0] - q.centroid[0]).abs(),
+        Symmetry::AboutZ => (sc[1] - q.centroid[1]).abs(),
+        _ => 0.0,
+    };
+    let ips = q.iy + q.iz + q.area * u0 * u0;
+    let rt = torsional_radius(cw, j, ips, length);
+    Some(Ok(match sym {
+        Symmetry::AboutY | Symmetry::AboutZ => {
+            let (i, k) = if sym == Symmetry::AboutY {
+                (q.iy, ratios[0])
+            } else {
+                (q.iz, ratios[1])
+            };
+            let ru = (i / q.area).sqrt() / k.max(f64::MIN_POSITIVE);
+            let rps = (ips / q.area).sqrt();
+            let rtf = torsional_flexural_radius(rt, ru, u0, rps);
+            (length / rtf, "torsional-flexural, 3.9.5")
+        }
+        _ => (
+            length / rt,
+            if sym == Symmetry::Double {
+                "torsional, 3.9.4"
+            } else {
+                "torsional, 3.9.6"
+            },
+        ),
+    }))
+}
+
 /// The slenderness limit of a member class (compression): leg 150,
 /// bracing 200, redundant 250; none for a crossing diagonal without
 /// another class (bracing: 200).
@@ -219,6 +304,20 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
             }
         }
     }
+    // Torsional and torsional-flexural buckling (3.9.4-3.9.6).
+    let mut mode = None;
+    match torsional_slenderness(s, length, ratios) {
+        Some(Ok((t, what))) if t > l_r => {
+            l_r = t;
+            mode = Some(what);
+            assumed.push("free to warp (K_t 1)".into());
+            if s.profile.as_ref().is_some_and(|p| p.shape.is_built_up()) {
+                assumed.push("warping of the angles left out".into());
+            }
+        }
+        Some(Err(())) => assumed.push("torsional buckling not checked (general profile)".into()),
+        _ => {}
+    }
     // The ends' eccentricity and restraint, end by end (crate::member_ends).
     let ends = member_ends::end_conditions(model, idx);
     let at = |end: usize| model.nodes[if end == 0 { m.i } else { m.j }].id.as_str();
@@ -267,7 +366,13 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
         },
     };
     let column = column_stress(fcr, e, kl_r) * a;
-    let mut comp = (column, format!("KL/r {kl_r:.0}"));
+    let mut comp = (
+        column,
+        match mode {
+            Some(m) => format!("KL/r {kl_r:.0} ({m})"),
+            None => format!("KL/r {kl_r:.0}"),
+        },
+    );
     // The connection, at each end: the end's own data over the member's.
     let thickness = d.thickness.or(legs.map(|l| l.1));
     let checks = [0, 1].map(|end| end_check(d, d.ends[end].as_ref(), s, thickness, fy, a));
@@ -634,6 +739,124 @@ mod tests {
         // No yield strength: no capacity (the check falls back).
         m.sections[0].yield_strength = None;
         assert!(capacity(&m, 0, None).compression.is_none());
+    }
+
+    /// ASCE 10-97 Appendix B, Examples 15 and 16 (60° angles, inches and
+    /// ksi as printed): r_t 1.33 in, r_tf 1.21 in, KL/r_tf 88.8 and F_a
+    /// 26.7 ksi; with the mixed ends of Example 16 (r_t / K_t, K_t 0.5,
+    /// taking r_t 0.663 in as printed) K'/r_tf 0.878.
+    #[test]
+    fn standard_examples_15_and_16() {
+        let rt = torsional_radius(3.68, 0.646, 172.0, 9.0 * 12.0);
+        assert!((rt - 1.33).abs() < 0.005, "{rt}");
+        let rps = (172.0f64 / 7.75).sqrt();
+        let rtf = torsional_flexural_radius(rt, 2.40, 3.58, rps);
+        assert!((rtf - 1.21).abs() < 0.01, "{rtf}");
+        let kl_r = 9.0 * 12.0 / rtf;
+        assert!((kl_r - 88.8).abs() < 0.2, "{kl_r}");
+        let fa = column_stress(35.2, 29_000.0, kl_r);
+        assert!((fa - 26.7).abs() < 0.05, "{fa}");
+        let k = 1.0 / torsional_flexural_radius(0.663 / 0.5, 1.84, 2.71, 3.57);
+        assert!((k - 0.878).abs() < 0.001, "{k}");
+    }
+
+    /// Torsional buckling by the profile: a short-legged I section braced
+    /// about both axes at mid-length but free to twist over its length
+    /// governs by L/r_t (3.9.4, said); a channel by L/r_tf (3.9.5); an
+    /// angle and a tube are not touched; a `general` profile is said not
+    /// checked.
+    #[test]
+    fn torsional_buckling_by_profile() {
+        use crate::model::{Member, MemberKind, Node, Section};
+        use ohl_sections::Shape;
+        let with = |shape: Shape| {
+            let p = ohl_sections::Section {
+                id: "p".into(),
+                name: String::new(),
+                description: String::new(),
+                shape,
+                material: None,
+                given: ohl_sections::Given::default(),
+            };
+            let q = p.properties();
+            let mut s = Section::elastic("s", E, q.area, q.iy);
+            s.iz = q.iz;
+            s.i_min = q.iv;
+            s.j = q.it.unwrap_or(q.iy + q.iz);
+            s.yield_strength = Some(355e6);
+            s.profile = Some(p);
+            let mut m = Model {
+                sections: vec![s],
+                ..Model::default()
+            };
+            m.nodes = vec![
+                Node::pinned("a", [0.0, 0.0, 0.0]),
+                Node::pinned("b", [0.0, 0.0, 4.0]),
+            ];
+            let mut b = Member::new("b", MemberKind::Truss, 0, 1, 0);
+            b.design.length_ratios = Some([0.25; 3]);
+            b.design.end_eccentricity = Some(Ends::None);
+            m.members = vec![b];
+            (capacity(&m, 0, None), q)
+        };
+        let i = Shape::ISection {
+            h: 0.3,
+            b: 0.3,
+            tw: 0.006,
+            tf: 0.006,
+            r: 0.0,
+        };
+        let (c, q) = with(i.clone());
+        let ips = q.iy + q.iz;
+        let rt = torsional_radius(q.warping.unwrap(), q.it.unwrap(), ips, 4.0);
+        assert!((c.kl_r.unwrap() - 4.0 / rt).abs() < 1e-9, "{c:?}");
+        assert!(
+            c.compression
+                .as_ref()
+                .unwrap()
+                .1
+                .contains("torsional, 3.9.4")
+        );
+        assert!(c.compression_assumed.iter().any(|a| a.contains("K_t 1")));
+        let (c, _) = with(Shape::Channel {
+            h: 0.3,
+            b: 0.1,
+            tw: 0.006,
+            tf: 0.006,
+            r: 0.0,
+        });
+        assert!(
+            c.compression
+                .as_ref()
+                .unwrap()
+                .1
+                .contains("torsional-flexural, 3.9.5"),
+            "{c:?}"
+        );
+        for shape in [
+            Shape::EqualAngle {
+                h: 0.1,
+                t: 0.006,
+                r: 0.0,
+            },
+            Shape::CircularHollow { d: 0.1, t: 0.003 },
+        ] {
+            let (c, q) = with(shape);
+            assert!(!c.compression.as_ref().unwrap().1.contains("torsional"));
+            assert!(
+                !c.compression_assumed
+                    .iter()
+                    .any(|a| a.contains("torsional"))
+            );
+            let rv = (q.iv / q.area).sqrt();
+            assert!((c.kl_r.unwrap() - 0.25 * 4.0 / rv).abs() < 1e-6, "{c:?}");
+        }
+        let (c, _) = with(Shape::General { h: 0.1, b: 0.1 });
+        assert!(
+            c.compression_assumed
+                .iter()
+                .any(|a| a.contains("torsional buckling not checked"))
+        );
     }
 
     /// The six curves at L/r 100 and 150 (hand values).

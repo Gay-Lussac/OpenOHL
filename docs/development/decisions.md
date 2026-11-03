@@ -8,6 +8,28 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-03
+
+**Torsional and torsional-flexural buckling in the ASCE 10-97 check**
+(owner, 2026-11-03: "is it written in the norm when a profile knicks and
+turn at the same time in the failure modes?", then "Go ahead with the
+code build"; the standard's text given for the local documents). ASCE
+10-97 checks single angles for flexural and local buckling only (its
+commentary C3.7: torsional-flexural buckling of an angle free to warp is
+close to its legs' local buckling), which the core already did. Other
+open shapes now get the clauses' own check, taken into L/r when larger:
+I and H sections (3.9.4) and stars and crosses of angles (3.9.6) by
+L/r_t, channels and two angles back to back (3.9.5) by L/r_tf (Eqs.
+3.8-1, 3.8-2 with C3.8's mixed ends); closed sections flexural only
+(3.9.7); a `general` profile not checked, said (3.9.8). Conservative:
+K_t 1 (free to warp over the whole length), built-up shapes' warping
+constant 0; both said when they govern. Where it sits (owner: "should it
+be in the core though or part of a code?"): the shear centre, warping
+constant and symmetry are geometry, in the section library for any code
+(a later SIA 263 check takes the same); the clauses are ASCE 10-97's, in
+its module. Unit tests reproduce the standard's Appendix B Examples 15
+and 16. ([theory](../theory/structures-fe.md#member-capacity-methods))
+
 ## 2026-11-02
 
 **Field plan templates; the field-presets report one cut at a time

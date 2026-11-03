@@ -1820,7 +1820,12 @@ of gyration, for buckling between the stitch bolts),
 The format stays version 1 (a program built before refuses the new
 shapes, naming them). `Section::properties()` computes area,
 centroid, second moments about the geometric and principal axes, torsion
-constant, elastic and plastic moduli, radii of gyration and shear areas;
+constant, shear centre and warping constant (thin-walled, from the
+midlines; not given in the file), elastic and plastic moduli, radii of
+gyration and shear areas; `Shape::symmetry()` the shape's symmetry for
+buckling (angle, double, about y, about z, point, closed, unknown: which
+torsional modes a code checks — ASCE 10-97 3.9.4–3.9.6 in
+`ohl_structures_fe::asce10`);
 `Section::wind_width(direction)` the outline's width normal to a wind in
 the section's plane (body wind from the profiles, decision 10 of
 [Building structures](structure-building.md)). Several files merge in

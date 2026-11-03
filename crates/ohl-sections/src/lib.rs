@@ -59,6 +59,12 @@
 //! (`"long"` or `"short"`, required for unequal legs) says which legs of a
 //! `double_angle` lie back to back.
 //!
+//! Torsion and warping (for torsional and torsional-flexural buckling):
+//! the shear centre and the warping constant are computed from the plates'
+//! midlines (thin-walled theory, the fillets left out); they cannot be
+//! given in the file. The shape's symmetry ([`Shape::symmetry`]) says which
+//! buckling modes a code has to check.
+//!
 //! An optional `[wind]` table holds wind factors for structures given as
 //! data — a drag factor per shape, a lattice face's drag and shielding
 //! factors by solidity ratio ([`wind`]); none are shipped.
@@ -220,6 +226,29 @@ pub enum Shape {
     },
 }
 
+/// What a shape's symmetry makes of its buckling in compression (the
+/// clauses of a code differ by it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Symmetry {
+    /// A single angle (equal or unequal legs).
+    Angle,
+    /// Symmetric about both axes, open (I and H): torsional buckling.
+    Double,
+    /// Symmetric about one axis parallel to y (a channel): its shear
+    /// centre on that axis, torsional-flexural buckling about it.
+    AboutY,
+    /// Symmetric about one axis parallel to z (two angles back to back).
+    AboutZ,
+    /// Symmetric about a point, open (a star or cross of angles):
+    /// torsional buckling.
+    Point,
+    /// Closed or solid (tubes, hollow sections, round bars): flexural
+    /// buckling only.
+    Closed,
+    /// Not known (a `general` section).
+    Unknown,
+}
+
 impl Shape {
     /// Name in files.
     pub fn as_str(&self) -> &'static str {
@@ -259,6 +288,66 @@ impl Shape {
             Shape::CrossAngle { h, t, r, .. } => Some((Shape::EqualAngle { h, t, r }, 4)),
             _ => None,
         }
+    }
+
+    /// The shape's symmetry for buckling.
+    pub fn symmetry(&self) -> Symmetry {
+        match self {
+            Shape::EqualAngle { .. } | Shape::UnequalAngle { .. } => Symmetry::Angle,
+            Shape::ISection { .. } => Symmetry::Double,
+            Shape::Channel { .. } => Symmetry::AboutY,
+            Shape::DoubleAngle { .. } => Symmetry::AboutZ,
+            Shape::StarAngle { .. } | Shape::CrossAngle { .. } => Symmetry::Point,
+            Shape::RectangularHollow { .. }
+            | Shape::CircularHollow { .. }
+            | Shape::RoundBar { .. }
+            | Shape::PolygonalHollow { .. } => Symmetry::Closed,
+            Shape::General { .. } => Symmetry::Unknown,
+        }
+    }
+
+    /// The shear centre (from the lower left of the outline box, m; `None`
+    /// at the centroid `c`) and the warping constant C_w, m⁶, from the
+    /// plates' midlines, the fillets left out. Closed and solid shapes:
+    /// at the centroid, C_w 0 (it plays no part in their buckling).
+    /// Built-up shapes: C_w 0 — their angles' own warping left out, on the
+    /// safe side. None for a `general` section.
+    fn shear_centre_warping(&self, c: [f64; 2]) -> Option<([f64; 2], f64)> {
+        Some(match *self {
+            Shape::EqualAngle { h, t, .. } => {
+                let l = h - t / 2.0;
+                ([t / 2.0, t / 2.0], t.powi(3) / 36.0 * 2.0 * l.powi(3))
+            }
+            Shape::UnequalAngle { h, b, t, .. } => {
+                let (lh, lb) = (h - t / 2.0, b - t / 2.0);
+                (
+                    [t / 2.0, t / 2.0],
+                    t.powi(3) / 36.0 * (lh.powi(3) + lb.powi(3)),
+                )
+            }
+            Shape::ISection { h, b, tf, .. } => {
+                let h0 = h - tf;
+                ([b / 2.0, h / 2.0], tf * b.powi(3) * h0 * h0 / 24.0)
+            }
+            Shape::Channel { h, b, tw, tf, .. } => {
+                // b0 from the web's midline to the flange tip, h0 between
+                // the flanges' midlines; e0 the shear centre's distance
+                // from the web's midline, away from the flanges.
+                let (b0, h0) = (b - tw / 2.0, h - tf);
+                let d = 6.0 * b0 * tf + h0 * tw;
+                let e0 = 3.0 * b0 * b0 * tf / d;
+                let cw = tf * b0.powi(3) * h0 * h0 / 12.0 * (3.0 * b0 * tf + 2.0 * h0 * tw) / d;
+                ([tw / 2.0 - e0, h / 2.0], cw)
+            }
+            Shape::DoubleAngle { b, t, gap, .. } => ([b + gap / 2.0, t / 2.0], 0.0),
+            Shape::StarAngle { .. }
+            | Shape::CrossAngle { .. }
+            | Shape::RectangularHollow { .. }
+            | Shape::CircularHollow { .. }
+            | Shape::RoundBar { .. }
+            | Shape::PolygonalHollow { .. } => (c, 0.0),
+            Shape::General { .. } => return None,
+        })
     }
 
     /// Whether the shape is made of several angles.
@@ -558,6 +647,11 @@ pub struct Properties {
     pub principal_angle: f64,
     /// Torsion constant, m⁴.
     pub it: Option<f64>,
+    /// Shear centre from the lower left of the outline box, m (thin-walled,
+    /// [`Shape::symmetry`] for what it means; none for `general`).
+    pub shear_centre: Option<[f64; 2]>,
+    /// Warping constant C_w, m⁶ (thin-walled; none for `general`).
+    pub warping: Option<f64>,
     /// Elastic modulus about y (iy over the farthest fibre), m³.
     pub wel_y: Option<f64>,
     /// Elastic modulus about z, m³.
@@ -653,6 +747,7 @@ impl Section {
         let elastic = |i: f64, e: [f64; 2]| (!general).then(|| i / reach(e));
         let shear = self.shape.shear_areas(area);
         let gyr = |i: f64| (i / area).sqrt();
+        let sc = self.shape.shear_centre_warping(c);
         Properties {
             area,
             centroid: c,
@@ -665,6 +760,8 @@ impl Section {
             iv,
             principal_angle: alpha,
             it: g.it.or_else(|| self.shape.torsion()),
+            shear_centre: sc.map(|s| s.0),
+            warping: sc.map(|s| s.1),
             wel_y: g.wel_y.or_else(|| elastic(iy, [0.0, 1.0])),
             wel_z: g.wel_z.or_else(|| elastic(iz, [1.0, 0.0])),
             wel_u: elastic(iu, v),

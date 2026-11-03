@@ -649,3 +649,86 @@ fn one_wind_table_per_library() {
     assert_eq!(a.merge(b), vec![WIND_TABLE.to_owned()]);
     assert_eq!(a.wind.unwrap().drag_of("round_bar"), None);
 }
+
+/// Shear centre and warping constant from the midlines (thin-walled, by
+/// hand): an I section C_w = t_f b³ h₀² / 24 at the centroid; a channel of
+/// 10 mm plates, b₀ 75 mm, h₀ 190 mm: e₀ = 3 b₀² t / (6 b₀ t + h₀ t) =
+/// 26.367 mm behind the web's midline, C_w = t b₀³ h₀² / 12 · (3 b₀ + 2 h₀)
+/// / (6 b₀ + h₀) = 1.1997e-8 m⁶; the symmetry each one names.
+#[test]
+fn shear_centre_and_warping() {
+    let i = section(Shape::ISection {
+        h: 0.3,
+        b: 0.2,
+        tw: 0.008,
+        tf: 0.01,
+        r: 0.0,
+    })
+    .properties();
+    close(i.warping.unwrap(), 2.803_333_333e-7, 1e-9);
+    let sc = i.shear_centre.unwrap();
+    close(sc[0], i.centroid[0], 1e-12);
+    close(sc[1], i.centroid[1], 1e-12);
+    let c = section(Shape::Channel {
+        h: 0.2,
+        b: 0.08,
+        tw: 0.01,
+        tf: 0.01,
+        r: 0.0,
+    })
+    .properties();
+    let sc = c.shear_centre.unwrap();
+    close(sc[0], 0.005 - 0.026_367_187_5, 1e-12);
+    close(sc[1], 0.1, 1e-12);
+    close(c.warping.unwrap(), 1.199_734_497e-8, 1e-9);
+    // An angle: at the legs' midlines' crossing, C_w = t³/36 (b'³ + h'³).
+    let a = section(Shape::EqualAngle {
+        h: 0.1,
+        t: 0.01,
+        r: 0.0,
+    })
+    .properties();
+    assert_eq!(a.shear_centre, Some([0.005, 0.005]));
+    close(
+        a.warping.unwrap(),
+        1e-6 / 36.0 * 2.0 * 0.095f64.powi(3),
+        1e-12,
+    );
+    for (shape, sym) in [
+        (Shape::RoundBar { d: 0.02 }, Symmetry::Closed),
+        (
+            Shape::DoubleAngle {
+                h: 0.1,
+                b: 0.1,
+                t: 0.01,
+                r: 0.0,
+                gap: 0.01,
+            },
+            Symmetry::AboutZ,
+        ),
+        (
+            Shape::CrossAngle {
+                h: 0.1,
+                t: 0.01,
+                r: 0.0,
+                gap: 0.01,
+            },
+            Symmetry::Point,
+        ),
+        (Shape::General { h: 0.1, b: 0.1 }, Symmetry::Unknown),
+    ] {
+        assert_eq!(shape.symmetry(), sym);
+    }
+    // Two angles back to back: on the axis of symmetry, at the outstanding
+    // legs' midline.
+    let d = section(Shape::DoubleAngle {
+        h: 0.1,
+        b: 0.08,
+        t: 0.01,
+        r: 0.0,
+        gap: 0.01,
+    })
+    .properties();
+    assert_eq!(d.shear_centre, Some([0.085, 0.005]));
+    assert_eq!(d.warping, Some(0.0));
+}
