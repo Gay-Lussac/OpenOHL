@@ -186,7 +186,7 @@ fn the_section_library_sheet_opens_a_form() {
     std::fs::create_dir_all(&sections).unwrap();
     std::fs::write(sections.join("a.ohlsec"), MATERIALS).unwrap();
     let mut h = harness(&path);
-    menu(&mut h, "Design", "Cross-sections & materials…");
+    menu(&mut h, "Design", "Cross-sections & materials");
     h.state_mut()
         .sheets
         .insert(Panel::SectionsMaterials, Sheet::Library);
@@ -216,7 +216,7 @@ fn materials_are_typed_in_the_library_sheet() {
     let file = sections.join("a.ohlsec");
     std::fs::write(&file, MATERIALS).unwrap();
     let mut h = harness(&path);
-    menu(&mut h, "Design", "Cross-sections & materials…");
+    menu(&mut h, "Design", "Cross-sections & materials");
     h.state_mut()
         .sheets
         .insert(Panel::SectionsMaterials, Sheet::Library);

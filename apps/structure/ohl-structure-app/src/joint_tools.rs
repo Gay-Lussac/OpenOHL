@@ -725,7 +725,7 @@ impl StructureApp {
                         if lib.0.bolts.is_empty() {
                             ui.label(
                                 egui::RichText::new(
-                                    "no bolt library (File › Libraries › Import, Bolt libraries)",
+                                    "no bolt library (File › Import › Bolt libraries)",
                                 )
                                 .weak(),
                             );

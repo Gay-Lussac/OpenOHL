@@ -27,13 +27,13 @@ pub const APP_ICON: &[u8] = include_bytes!("../../../../assets/brand/ohl-structu
 pub enum Icon {
     /// Body › Add a joint.
     AddJoint,
-    /// Body › Member between the two joints.
+    /// Body › Add a member.
     AddMember,
     /// Body › Point on the joint.
     PointOnJoint,
     /// Body › Generators.
     Generator,
-    /// Body › Symmetry.
+    /// The Symmetry tool, Body › Symmetry.
     Symmetry,
     /// Design › Supports.
     Support,
@@ -313,14 +313,13 @@ mod tests {
         h.run();
         h.get_by_label("Body").click();
         h.run();
-        h.get_by_label("Add a joint");
-        h.get_by_label("Generators…");
+        crate::tests::menu_entry(&h, "Add a joint");
+        crate::tests::menu_entry(&h, "Generators");
         for i in [
             Icon::AddJoint,
             Icon::AddMember,
             Icon::PointOnJoint,
             Icon::Generator,
-            Icon::Symmetry,
         ] {
             assert!(icons(&h).iter().any(|n| n == i.name()), "{i:?}");
         }
@@ -329,7 +328,7 @@ mod tests {
         h.run();
         h.get_by_label("Design").click();
         h.run();
-        h.get_by_label("Supports…");
+        crate::tests::menu_entry(&h, "Support the feet (pinned)");
         assert!(icons(&h).iter().any(|n| n == Icon::Support.name()));
     }
 

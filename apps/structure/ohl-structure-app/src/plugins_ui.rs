@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Plugins in OHL-Structure (Plugins › Plugin manager), with `ohl-plugins`
+//! Plugins in OHL-Structure (File › Plugins › Plugin manager), with `ohl-plugins`
 //! as in the line application: the plugins installed for the user and
 //! those of the folders added, each with its version, tier and extension
 //! points, what it does here (or why not, greyed), a tick to turn it off,
@@ -12,7 +12,7 @@
 //! user's plugin directory): a plugin added or turned off in one is so in
 //! the other.
 //!
-//! What applies here: **design-code** plugins (Load cases › Load cases from
+//! What applies here: **design-code** plugins (Loads › Load cases from
 //! a design code…: the plugin's `generate` on a parameter file, its load
 //! cases taken as recipes taking the line's values); **check** plugins are
 //! listed (member and joint code checks come later: nothing to run yet);
@@ -58,7 +58,7 @@ impl Listed {
 /// `Err` why it does not apply (shown greyed).
 pub fn applies(point: &str) -> Result<&'static str, &'static str> {
     match point {
-        ohl_plugins::DESIGN_CODE => Ok("load cases from a design code (Load cases menu)"),
+        ohl_plugins::DESIGN_CODE => Ok("load cases from a design code (Loads menu)"),
         ohl_plugins::CHECK => Err(
             "checks: member and joint code checks will run here; nothing to run yet (the line \
              application runs its clearance checks)",
@@ -484,10 +484,9 @@ impl StructureApp {
             ui.close();
             self.plugins.open_manager();
         }
-        self.code_item(ui);
     }
 
-    /// Load cases from a design code… (Plugins and Load cases menus).
+    /// Load cases from a design code… (the Loads menu).
     pub(crate) fn code_item(&mut self, ui: &mut egui::Ui) {
         let has = self.file.is_some();
         let codes = self.plugins.codes();
@@ -501,7 +500,7 @@ impl StructureApp {
                  taking the line's values",
             )
             .on_disabled_hover_text(if has {
-                "No design-code plugin in use (Plugins › Plugin manager: add the folder of the \
+                "No design-code plugin in use (File › Plugins › Plugin manager: add the folder of the \
                  code plugins)"
             } else {
                 "Open a structure first"

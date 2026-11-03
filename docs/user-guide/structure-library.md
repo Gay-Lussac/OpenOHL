@@ -207,7 +207,7 @@ A member end is given once; the gauges are one per gauge line; a hole is no smal
 **Bolt libraries** (`.ohlb`, format `ohl-bolts`, 2026-11-02; built, in
 active development, not approved yet). The bolts the connections name,
 kept like the cross-sections: `Bolts/` beside the structure files,
-imported and exported in OHL-Structure (File › Libraries). None of a
+imported and exported in OHL-Structure (File › Import and Export). None of a
 standard's values is built in; `libraries/bolts/example-bolts.ohlb`
 holds invented ones. A project keeps its bolt libraries (library kind
 `bolts`): copied in from `Bolts/` in its structure folder when it opens,
@@ -242,7 +242,7 @@ description = ""           # optional
 Refused: an id empty or given twice, a diameter not above 0, a hole
 smaller than the bolt, a size or mass not above 0, an unknown field. A
 bolt two libraries give: the first kept, said. A connection naming a
-bolt no library has: said (File › Libraries and the joint's notes), its
+bolt no library has: said (the Libraries panel and the joint's notes), its
 bolts unknown unless a diameter is typed. The checks do not read the
 libraries yet (stage 4).
 
@@ -354,7 +354,7 @@ moment = "900 kN m"
 - **`section`**: a hollow cross-section of the project's cross-section library ([Cross-section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given: a thickness, or solid), and its material's elasticity and density are taken when not given here. The cross-section's own diameter is not used: the outline gives the diameters.
 - **A polygon's cross-section** at each height: a regular polygon of the outline's width across flats, hollow by the wall; its second moment is the same about every axis through the centre (A·(12 r² + a²)/48 for inradius r and side a, as the cross-section library computes it), its elastic modulus taken at a corner (the smaller).
 
-The structure application edits the pole (**Body › Pole…**, **Design › Pole design…**) and brings a named `.ohlp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
+The structure application edits the pole (**Body › Pole**, **Design › Pole design**) and brings a named `.ohlp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
 
 ### Extensions and leg extensions
 

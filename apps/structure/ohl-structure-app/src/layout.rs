@@ -28,8 +28,9 @@ pub const DOCK_VERSION_KEY: &str = "ohl-structure-dock-version";
 pub const DOCK_VERSION: u32 = 2;
 
 /// The menus of the work, in order: Geometry (level 1), Body (level 2),
-/// Design (level 3), Load cases, Results, Line loads. Each panel belongs
-/// to one (the 3D view and the level to none).
+/// Design (level 3), Loads, Results. Each panel belongs to one (the 3D
+/// view, the Detail view, the Inspector, the To do list and the
+/// Libraries to none: View's main panels).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Area {
     /// Level 1: points, insulators, wire points, sets, the file's fields.
@@ -40,23 +41,21 @@ pub enum Area {
     /// Level 3: supports, sections per member, groups, sections,
     /// materials, the pole's design.
     Design,
-    /// Load-case recipes and the load table.
+    /// Load-case recipes, the load table and the line's values at the
+    /// placed structure (the Loads menu).
     LoadCases,
     /// The finite-element results per case.
     Results,
-    /// The line's values at the placed structure.
-    InTheLine,
 }
 
 impl Area {
     /// Every area, in the order of the menus.
-    pub const ALL: [Area; 6] = [
+    pub const ALL: [Area; 5] = [
         Area::Geometry,
         Area::Body,
         Area::Design,
         Area::LoadCases,
         Area::Results,
-        Area::InTheLine,
     ];
 
     /// Its menu's name.
@@ -65,9 +64,8 @@ impl Area {
             Area::Geometry => "Geometry",
             Area::Body => "Body",
             Area::Design => "Design",
-            Area::LoadCases => "Load cases",
+            Area::LoadCases => "Loads",
             Area::Results => "Results",
-            Area::InTheLine => "Line loads",
         }
     }
 
@@ -79,7 +77,6 @@ impl Area {
             Area::Design => Panel::Supports,
             Area::LoadCases => Panel::LoadRecipes,
             Area::Results => Panel::Results,
-            Area::InTheLine => Panel::InTheLine,
         }
     }
 }
@@ -126,7 +123,7 @@ pub enum Panel {
     /// The line's values at the placed structure.
     InTheLine,
     /// The libraries read and where from, what the structure names but
-    /// none has (File › Libraries).
+    /// none has (File › Import).
     Libraries,
     /// What is selected, with its fields ([`crate::inspector`]).
     Inspector,
@@ -287,10 +284,39 @@ impl Panel {
             | Panel::PoleDesign
             | Panel::JointDetails
             | Panel::MemberDetails => Area::Design,
-            Panel::LoadRecipes | Panel::LoadTable => Area::LoadCases,
+            Panel::LoadRecipes | Panel::LoadTable | Panel::InTheLine => Area::LoadCases,
             Panel::Results => Area::Results,
-            Panel::InTheLine => Area::InTheLine,
         })
+    }
+
+    /// View's main panels, in its order: the views, the Inspector, the
+    /// To do list, the Libraries (the tables are in View › Tables and
+    /// their menus).
+    pub const MAIN: [Panel; 5] = [
+        Panel::View3d,
+        Panel::JointView,
+        Panel::Inspector,
+        Panel::Level,
+        Panel::Libraries,
+    ];
+
+    /// Whether it applies to structure `t` (its kind): the Pole panels
+    /// not to a tower without a pole, Joint and Member details not to a
+    /// pole; why not. A structure of kind "other" shows them all (its
+    /// panels say what they need).
+    pub fn applies(self, t: &ohl_structures::StructureType) -> Result<(), &'static str> {
+        use ohl_structures::structures::StructureKind as K;
+        match self {
+            Panel::Pole | Panel::PoleDesign
+                if ohl_structure_edit::is_tower(t.kind) && t.pole.is_none() =>
+            {
+                Err("A pole's: this structure is a tower (Geometry › Structure kind)")
+            }
+            Panel::JointDetails | Panel::MemberDetails if t.kind == K::Pole => {
+                Err("A tower's: this structure is a pole (Geometry › Structure kind)")
+            }
+            _ => Ok(()),
+        }
     }
 
     /// The panels of `area`, in the order of its menu.
@@ -404,12 +430,7 @@ pub fn default_dock() -> DockState<Panel> {
 /// The leaf a panel opened again goes to: one with a panel of its menu,
 /// else one with any table, else none.
 fn home(dock: &DockState<Panel>, panel: Panel) -> Option<NodePath> {
-    let loads = |p: &Panel| {
-        matches!(
-            p.area(),
-            Some(Area::LoadCases | Area::Results | Area::InTheLine)
-        )
-    };
+    let loads = |p: &Panel| matches!(p.area(), Some(Area::LoadCases | Area::Results));
     // The Detail view's details keep their leaf to themselves.
     let table =
         |p: &Panel| p.area().is_some() && !matches!(p, Panel::JointDetails | Panel::MemberDetails);
@@ -581,19 +602,112 @@ pub fn focused(dock: &mut DockState<Panel>) -> Option<Panel> {
 }
 
 /// A menu (or a submenu) of options to tick: ticking a box never closes
-/// it, only a click outside it or a command (which closes it itself) does
-/// (the same as the line application's).
-pub fn options_menu<'a, R>(
-    ui: &mut egui::Ui,
-    title: impl egui::IntoAtoms<'a>,
-    add: impl FnOnce(&mut egui::Ui) -> R,
-) {
+/// it, only a click outside it or a command (which closes it itself) does.
+/// As OHL-Design's (`ohl_app::menu::options_menu`, kept apart: the
+/// structure application does not depend on the line application): one
+/// taller than [`MENU_HEIGHT`] of the screen when last shown scrolls; the
+/// button's text is kept short ([`MENU_TITLE`] characters), the whole on
+/// hover.
+pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) {
     use egui::containers::menu::{MenuButton, MenuConfig, SubMenuButton, is_in_menu};
     let config = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
-    if is_in_menu(ui) {
-        SubMenuButton::new(title).config(config).ui(ui, add);
+    let max = (ui.ctx().content_rect().height() * MENU_HEIGHT).max(200.0);
+    let key = ui.id().with(("options-menu-height", title));
+    let tall = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(key))
+        .is_some_and(|h| h > max);
+    let body = |ui: &mut egui::Ui| {
+        let (r, height) = if tall {
+            let out = egui::ScrollArea::vertical()
+                .id_salt(("options-menu", title))
+                .max_height(max)
+                .show(ui, add);
+            (out.inner, out.content_size.y)
+        } else {
+            let out = ui.scope(add);
+            (out.inner, out.response.rect.height())
+        };
+        ui.ctx().data_mut(|d| d.insert_temp(key, height));
+        r
+    };
+    let short = shortened(title);
+    let response = if is_in_menu(ui) {
+        SubMenuButton::new(short.as_str())
+            .config(config)
+            .ui(ui, body)
+            .0
     } else {
-        MenuButton::new(title).config(config).ui(ui, add);
+        MenuButton::new(short.as_str())
+            .config(config)
+            .ui(ui, body)
+            .0
+    };
+    if short != title {
+        response.on_hover_text(title);
+    }
+}
+
+/// A tick menu button's text: at most [`MENU_TITLE`] characters, cut with
+/// "…".
+fn shortened(title: &str) -> String {
+    if title.chars().count() <= MENU_TITLE {
+        title.to_owned()
+    } else {
+        let mut s: String = title.chars().take(MENU_TITLE - 1).collect();
+        s.push('…');
+        s
+    }
+}
+
+/// The longest text a tick menu's button shows, characters.
+const MENU_TITLE: usize = 40;
+
+/// The most of the screen's height a tick menu takes (it scrolls beyond).
+const MENU_HEIGHT: f32 = 0.8;
+
+/// Where a panel goes from its tab's right-click menu (as OHL-Design's
+/// pages).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// With the tables (below the 3D view by default).
+    Tables,
+    /// With the Inspector and the To do list, on the right.
+    Right,
+    /// A window of its own (still a panel: dragged back in).
+    Window,
+}
+
+/// Moves `panel` to `place` (its tab's right-click menu); nowhere to go
+/// (no panel there): it stays.
+pub fn move_panel(dock: &mut DockState<Panel>, panel: Panel, place: Place) {
+    let Some(src) = dock.find_tab(&panel) else {
+        return;
+    };
+    match place {
+        Place::Window => {
+            let rect =
+                egui::Rect::from_min_size(egui::pos2(160.0, 120.0), egui::vec2(820.0, 600.0));
+            dock.detach_tab(src, rect);
+        }
+        Place::Tables | Place::Right => {
+            let group = |p: &Panel| match place {
+                Place::Right => matches!(p, Panel::Inspector | Panel::Level),
+                _ => p.area().is_some() && !matches!(p, Panel::JointDetails | Panel::MemberDetails),
+            };
+            let Some(dst) = dock
+                .find_tab_from(|p| *p != panel && group(p))
+                .map(|t| t.node_path())
+            else {
+                return;
+            };
+            if dst != src.node_path() {
+                dock.move_tab(src, (dst, egui_dock::TabInsert::Append));
+            }
+        }
+    }
+    if let Some(path) = dock.find_tab(&panel) {
+        let _ = dock.set_active_tab(path);
     }
 }
 
@@ -603,6 +717,8 @@ pub struct Viewer<'a> {
     pub app: &'a mut StructureApp,
     /// The panels drawn this frame.
     pub drawn: Vec<Panel>,
+    /// Panels to move (their tabs' right-click menus), once drawn.
+    pub moves: Vec<(Panel, Place)>,
 }
 
 impl TabViewer for Viewer<'_> {
@@ -618,6 +734,26 @@ impl TabViewer for Viewer<'_> {
 
     fn closeable(&mut self, _tab: &mut Panel) -> bool {
         true
+    }
+
+    /// Right-click on a tab: where to put the panel (as OHL-Design's
+    /// pages); moved once the dock is drawn.
+    fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Panel, _path: NodePath) {
+        for (place, text) in [
+            (Place::Tables, "Dock with the tables"),
+            (Place::Right, "Dock on the right (with the Inspector)"),
+            (Place::Window, "Float in a window of its own"),
+        ] {
+            if ui.button(text).clicked() {
+                self.moves.push((*tab, place));
+                ui.close();
+            }
+        }
+        ui.label(
+            egui::RichText::new("Or drag its tab anywhere: beside, above or below another panel.")
+                .small()
+                .weak(),
+        );
     }
 
     /// The tables and the view scroll inside themselves; the level, the

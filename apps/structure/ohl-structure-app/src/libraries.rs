@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The libraries of a structure (File › Libraries, the Libraries panel):
+//! The libraries of a structure (File › Import and Export, the Libraries panel):
 //! section libraries (`.ohlsec`), insulator assemblies (`.ohli`), poles
 //! (`.ohlp`), structure models (`.ohlfe`), load-case recipes (`.ohlslc`),
 //! pylon templates (`.ohlpt`) and bolt libraries (`.ohlb`, `Bolts/` beside
@@ -680,7 +680,7 @@ impl StructureApp {
         self.libs.listing.as_ref().map(|l| &l.1)
     }
 
-    /// File › Libraries › Import: `from` (a file or folder) of `kind`;
+    /// File › Import: `from` (a file or folder) of `kind`;
     /// the libraries read again. What was done, or why not (also in a
     /// window when long).
     pub fn import_library(&mut self, kind: LibKind, from: &Path) -> Result<Imported, String> {
@@ -715,7 +715,7 @@ impl StructureApp {
         r
     }
 
-    /// File › Libraries › Export: the structure and its libraries (`which`)
+    /// File › Export: the structure and its libraries (`which`)
     /// into folder `out`.
     pub fn export_libraries(&mut self, which: Which, out: &Path) -> Result<usize, String> {
         let (name, text) = {
@@ -757,90 +757,85 @@ impl StructureApp {
         self.libs.listing = None;
     }
 
-    /// File › Libraries: Import per kind (a file or a folder), Export, the
-    /// panel.
-    pub fn libraries_menu(&mut self, ui: &mut egui::Ui) {
+    /// File › Import's libraries: per kind a file or a folder's files,
+    /// copied into the folder the window reads.
+    pub fn import_library_menus(&mut self, ui: &mut egui::Ui) {
         let has = self.file.as_ref().is_some_and(|f| f.path().is_some());
-        ui.menu_button("Libraries", |ui| {
-            for kind in LibKind::ALL {
-                ui.add_enabled_ui(has, |ui| {
-                    ui.menu_button(format!("Import {}", kind.title().to_lowercase()), |ui| {
-                        let ext = kind.extension();
-                        if ui
-                            .button(format!("A file (.{ext})…"))
-                            .on_hover_text("Copy one file into the folder the window reads")
-                            .clicked()
+        for kind in LibKind::ALL {
+            ui.add_enabled_ui(has, |ui| {
+                ui.menu_button(kind.title(), |ui| {
+                    let ext = kind.extension();
+                    if ui
+                        .button(format!("A file (.{ext})…"))
+                        .on_hover_text("Copy one file into the folder the window reads")
+                        .clicked()
+                    {
+                        ui.close();
+                        if let Some(p) = rfd::FileDialog::new()
+                            .add_filter(kind.title(), &[ext])
+                            .pick_file()
                         {
-                            ui.close();
-                            if let Some(p) = rfd::FileDialog::new()
-                                .add_filter(kind.title(), &[ext])
-                                .pick_file()
-                            {
-                                let _ = self.import_library(kind, &p);
-                            }
+                            let _ = self.import_library(kind, &p);
                         }
-                        if ui
-                            .button("The files of a folder…")
-                            .on_hover_text(format!(
-                                "Copy every .{ext} file of a folder into the folder the window reads"
-                            ))
-                            .clicked()
-                        {
-                            ui.close();
-                            if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                                let _ = self.import_library(kind, &p);
-                            }
-                        }
-                        if let Some(into) = self.folders().map(|f| f.import_into(kind)) {
-                            ui.label(
-                                egui::RichText::new(match into {
-                                    Ok(d) => format!("into {}", d.display()),
-                                    Err(e) => e,
-                                })
-                                .small()
-                                .weak(),
-                            );
-                        }
-                    })
-                    .response
-                    .on_disabled_hover_text("Open (or save) a structure file first");
-                });
-            }
-            ui.separator();
-            for (which, label, tip) in [
-                (
-                    Which::Used,
-                    "Export what it uses…",
-                    "The structure, the cross-sections it names (with their materials), its insulator assemblies, \
-                     pole, model and template, into a folder (structures/, sections/, insulators/…)",
-                ),
-                (
-                    Which::All,
-                    "Export every library…",
-                    "The structure and every library file the window reads, into a folder",
-                ),
-            ] {
-                if ui
-                    .add_enabled(has, egui::Button::new(label))
-                    .on_hover_text(tip)
-                    .clicked()
-                {
-                    ui.close();
-                    if let Some(out) = rfd::FileDialog::new().pick_folder() {
-                        let _ = self.export_libraries(which, &out);
                     }
-                }
-            }
-            ui.separator();
+                    if ui
+                        .button("The files of a folder…")
+                        .on_hover_text(format!(
+                            "Copy every .{ext} file of a folder into the folder the window reads"
+                        ))
+                        .clicked()
+                    {
+                        ui.close();
+                        if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                            let _ = self.import_library(kind, &p);
+                        }
+                    }
+                    if let Some(into) = self.folders().map(|f| f.import_into(kind)) {
+                        ui.label(
+                            egui::RichText::new(match into {
+                                Ok(d) => format!("into {}", d.display()),
+                                Err(e) => e,
+                            })
+                            .small()
+                            .weak(),
+                        );
+                    }
+                })
+                .response
+                .on_disabled_hover_text("Open (or save) a structure file first");
+            });
+        }
+    }
+
+    /// File › Export's libraries: those the structure uses, or every one
+    /// the window reads, into a folder.
+    pub fn export_library_items(&mut self, ui: &mut egui::Ui) {
+        let has = self.file.as_ref().is_some_and(|f| f.path().is_some());
+        for (which, label, tip) in [
+            (
+                Which::Used,
+                "Libraries it uses…",
+                "The structure, the cross-sections it names (with their materials), its insulator assemblies, \
+                 pole, model and template, into a folder (structures/, sections/, insulators/…)",
+            ),
+            (
+                Which::All,
+                "Every library…",
+                "The structure and every library file the window reads, into a folder",
+            ),
+        ] {
             if ui
-                .button("Libraries panel…")
-                .on_hover_text(crate::layout::Panel::Libraries.tip())
+                .add_enabled(has, egui::Button::new(label))
+                .on_hover_text(tip)
+                .on_disabled_hover_text("Open (or save) a structure file first")
                 .clicked()
             {
                 ui.close();
-                self.focus(crate::layout::Panel::Libraries);
+                if let Some(out) = rfd::FileDialog::new().pick_folder() {
+                    let _ = self.export_libraries(which, &out);
+                }
             }
-        });
+        }
     }
 
     /// The Libraries panel: per kind, the files read and where from; what

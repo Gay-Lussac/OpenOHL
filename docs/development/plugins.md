@@ -66,7 +66,7 @@ one settings file, `settings.toml` in that plugin folder
 a temporary file renamed into place), read and written by both: a plugin
 added or turned off in one is so in the other.
 
-What applies in OHL-Structure: `design-code` (Load cases › Load cases
+What applies in OHL-Structure: `design-code` (Loads › Load cases
 from a design code…: its load cases become recipes taking the line's
 values); `check` is listed (member and joint code checks will be a
 structure world later); `io` plugins take the line's export model, not a

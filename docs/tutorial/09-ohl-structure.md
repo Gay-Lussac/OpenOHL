@@ -25,7 +25,7 @@ weather cases ticked ──► line results (forces at each attachment point, un
 3. Hold **Edit** and click **T2** (a suspension structure);
    in its Properties, **Open in OHL-Structure…** opens it with the loads
    the line puts on it (OHL-Structure must be built next to OHL-Design).
-4. In OHL-Structure: **Load cases › Load case editor…** (a window of its
+4. In OHL-Structure: **Loads › Load case editor** (a window of its
    own).
    - **+ Case**; name it *wind from the left* and type a description,
      e.g. *Invented factors for the tutorial*.
@@ -37,7 +37,7 @@ weather cases ticked ──► line results (forces at each attachment point, un
    - **Points (0 off)**: untick one attachment point — its line forces
      are left out (a conductor taken down for works); tick it again.
    - **Mirror wind**: the same case with the wind from the right.
-5. **Load cases › Load table…**: the rows each case makes, one per
+5. **Loads › Load table**: the rows each case makes, one per
    point and axis, marked *line*.
 
 ## What you should see

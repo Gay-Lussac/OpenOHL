@@ -29,7 +29,7 @@ fn text(h: &egui_kittest::Harness<'_, StructureApp>) -> String {
     h.state().file.as_ref().unwrap().text()
 }
 
-/// The Link tool from the Geometry menu: a click on point A1, Escape
+/// The Link tool from Edit › Tools: a click on point A1, Escape
 /// cancels it (the tool stays held), A1 again, then joint L10B — no kind:
 /// refused, not an attach joint (owner decision 2026-10-21) — made an
 /// attach joint, then L10B again: A1 is linked there where it is (its
@@ -41,7 +41,7 @@ fn the_link_tool_links_cancels_and_undoes() {
     let path = copy_of("type-02.ohls", "link-tool");
     let mut h = harness(&path);
     let before = text(&h);
-    menu(&mut h, "Geometry", "Link tool");
+    crate::tests::menu_path(&mut h, &["Edit", "Tools", "Link"]);
     assert!(h.state().link.is_some());
     h.state_mut().link_click(Some(Handle::Point("A1".into())));
     h.run();
@@ -142,7 +142,7 @@ fn joint_kinds_are_set_and_undone() {
     let path = copy_of("type-02.ohls", "joint-kinds");
     let mut h = harness(&path);
     let before = text(&h);
-    menu(&mut h, "Body", "Joints…");
+    menu(&mut h, "Body", "Joints");
     h.get_by_label("Kind");
     h.state_mut()
         .set_joint_kind("L10B", Some(JointKind::Attach));
@@ -180,7 +180,7 @@ fn joint_kinds_are_set_and_undone() {
 fn the_link_tool_shows_the_joint_under_the_pointer() {
     let path = copy_of("type-02.ohls", "link-hover");
     let mut h = harness(&path);
-    menu(&mut h, "Geometry", "Link tool");
+    crate::tests::menu_path(&mut h, &["Edit", "Tools", "Link"]);
     h.state_mut().link_click(Some(Handle::Point("A1".into())));
     h.run();
     h.run();
@@ -220,7 +220,7 @@ fn make_it_a_frame_joint_is_one_undo_step() {
     assert_eq!(text(&h), before);
 }
 
-/// View › Volumes on the strings: a string of type-02 given the example's
+/// View › Display options › Volumes on the strings: a string of type-02 given the example's
 /// invented assembly with shapes, its shapes drawn on it in still air
 /// (placed by the link crate as the line places them); off, none.
 #[test]
@@ -249,7 +249,10 @@ fn the_volumes_on_the_strings_are_drawn_when_ticked() {
     let v = volumes(&mut h);
     assert!(!v.is_empty() && v.iter().all(|m| m.string == "S1"));
     assert!(!h.state().string_volumes, "off by default");
-    menu(&mut h, "View", "Volumes on the strings");
+    crate::tests::menu_path(
+        &mut h,
+        &["View", "Display options", "Volumes on the strings"],
+    );
     assert!(h.state().string_volumes);
     h.run();
     shot(&mut h, "string-volumes.png");

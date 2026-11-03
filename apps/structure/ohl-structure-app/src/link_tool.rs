@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The **Link tool** (Geometry › Link tool, 2026-10-21): click an
+//! The **Link tool** (Edit › Tools › Link, 2026-10-21): click an
 //! attachment point (where a string hangs), then a joint it may be linked
 //! to: the point is linked to that joint where it is, its distance from
 //! the joint kept as its offset (a rigid link, whose moment the structure
@@ -78,7 +78,7 @@ pub fn offset_words(o: [f64; 3]) -> String {
 }
 
 impl StructureApp {
-    /// Geometry › Link tool: held (or let go).
+    /// The Link tool: held (or let go).
     pub fn toggle_link_tool(&mut self) {
         if self.link.take().is_some() {
             self.message = Some(("Link tool let go".into(), false));

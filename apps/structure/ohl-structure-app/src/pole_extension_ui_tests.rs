@@ -40,7 +40,7 @@ fn a_pole_outline_is_edited() {
     let mut h = harness(&path);
     // The named .ohlp: level 3.
     h.get_by_label("Level 3 — full design");
-    menu(&mut h, "Body", "Pole…");
+    menu(&mut h, "Body", "Pole");
     assert_eq!(h.state_mut().focused(), Some(Panel::Pole));
     h.get_by_label("Bring it into this file").click();
     h.run();
@@ -67,7 +67,7 @@ fn a_pole_outline_is_edited() {
         2 + 8
     );
     // Design › Pole: the pole check can read it.
-    menu(&mut h, "Design", "Pole design…");
+    menu(&mut h, "Design", "Pole design");
     assert_eq!(h.state_mut().focused(), Some(Panel::PoleDesign));
     h.get_by_label("The pole check can read the pole (level 3).");
     let t = h.state().file.as_ref().unwrap().structure().clone();
@@ -79,7 +79,7 @@ fn a_pole_outline_is_edited() {
 fn an_extension_gets_its_piece_and_a_leg() {
     let path = copy_of("type-02.ohls", "ext-ui");
     let mut h = harness(&path);
-    menu(&mut h, "Body", "Extensions…");
+    menu(&mut h, "Body", "Extensions");
     assert_eq!(h.state_mut().focused(), Some(Panel::Extensions));
     h.get_by_label("+ Extension").click();
     h.run();

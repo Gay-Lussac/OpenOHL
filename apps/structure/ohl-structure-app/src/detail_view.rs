@@ -22,6 +22,15 @@ use crate::joint_tools::Act;
 use crate::layout::Panel;
 use crate::member_panel::Subject;
 
+/// How to get around the Detail view (Help › Controls).
+pub const CONTROLS: &str = "Opened from the 3D view: the Edit tool on a tower's joint or \
+     member (asked first), or its right-click menu, Open in the Detail view.\n\
+     Close-up: drag to turn, wheel to zoom; Face view: the joint's plane flat.\n\
+     Its toolbar below the drawing: Edit (a bolt, plate or member clicked: its properties \
+     below), Add bolt, Move bolt, Remove bolt, Member end.\n\
+     Escape: from a member back to its joint, else what is picked let go, else the Edit tool \
+     again. ‹ Joint: back to the joint.";
+
 impl StructureApp {
     /// The details of what the Detail view shows brought to the front
     /// below it: Joint details for a joint, Member details for a member.
@@ -255,7 +264,7 @@ impl StructureApp {
                         if lib.0.bolts.is_empty() {
                             ui.label(
                                 egui::RichText::new(
-                                    "no bolt library (File › Libraries › Import, Bolt libraries)",
+                                    "no bolt library (File › Import › Bolt libraries)",
                                 )
                                 .weak(),
                             );

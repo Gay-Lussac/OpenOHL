@@ -158,25 +158,25 @@ pub struct StructureApp {
     pub pole: crate::pole_panel::PoleState,
     /// The Extensions panel (the extension shown in 3D).
     pub ext: crate::extensions_panel::ExtensionsState,
-    /// The Libraries panel and File › Libraries.
+    /// The Libraries panel and File › Import, Export.
     pub libs: crate::libraries::LibrariesState,
     /// The files opened recently (the start page).
     pub recent: crate::start::Recent,
     /// The New structure window.
     pub new_structure: Option<crate::start::NewStructure>,
-    /// The plugins (Plugins menu).
+    /// The plugins (File › Plugins).
     pub plugins: crate::plugins_ui::PluginsState,
     /// The section library's sections typed (Design › Sections &
     /// materials › Section library), their undo and redo.
     pub section_editor: crate::section_editor::SectionEditor,
-    /// The Link tool, held (Geometry › Link tool): [`crate::link_tool`].
+    /// The Link tool, held (Edit › Tools › Link): [`crate::link_tool`].
     pub link: Option<crate::link_tool::LinkTool>,
     /// Where "Insert a joint" puts it on a member: the fraction of its
     /// length from its first joint (the member's menu).
     pub insert_at: f64,
-    /// The rigid links drawn in the 3D view (View › Rigid links).
+    /// The rigid links drawn in the 3D view (View › Display options › Rigid links).
     pub rigid_links: bool,
-    /// The volumes on the strings drawn in the 3D view (View › Volumes on
+    /// The volumes on the strings drawn in the 3D view (View › Display options › Volumes on
     /// the strings; off by default).
     pub string_volumes: bool,
     /// The messages as notices at the bottom right.
@@ -198,9 +198,14 @@ pub struct StructureApp {
     pub joints: crate::joint_panel::JointPanel,
     /// Its tools' windows and the presets ([`crate::joint_tools`]).
     pub joint_tools: crate::joint_tools::JointTools,
-    /// The joints coloured by how complete their details are (View ›
+    /// The joints coloured by how complete their details are (View › Display options ›
     /// Joints by their details; off by default).
     pub joint_colors: bool,
+    /// The usage legend over the 3D view with results shown (View › Display options ›
+    /// Display options › Usage legend; on by default).
+    pub usage_legend: bool,
+    /// File › Export › Export options… is open.
+    pub export_options: bool,
 }
 
 impl StructureApp {
@@ -263,6 +268,8 @@ impl StructureApp {
             joints: Default::default(),
             joint_tools: Default::default(),
             joint_colors: false,
+            usage_legend: true,
+            export_options: false,
         }
     }
 
@@ -392,7 +399,7 @@ impl StructureApp {
         }
     }
 
-    /// Line loads › Read the values again: now.
+    /// Loads › Read the line's values again: now.
     pub fn reload_line_values(&mut self) {
         self.values_seen = None;
         self.poll_line_values();
@@ -515,8 +522,9 @@ impl StructureApp {
         }
     }
 
-    /// The keys: undo, redo, save, save as (not while typing in a field,
-    /// which has its own undo).
+    /// The keys: undo, redo, save, save as, new, open, quit, Delete (not
+    /// while typing in a field, which has its own undo and its own
+    /// Delete).
     fn keys(&mut self, ctx: &egui::Context) {
         if ctx.egui_wants_keyboard_input() {
             return;
@@ -531,6 +539,33 @@ impl StructureApp {
                 i.consume_key(Modifiers::COMMAND, Key::S),
             )
         });
+        let (new, open, quit) = ctx.input_mut(|i| {
+            (
+                i.consume_key(Modifiers::COMMAND, Key::N),
+                i.consume_key(Modifiers::COMMAND, Key::O),
+                i.consume_key(Modifiers::COMMAND, Key::Q),
+            )
+        });
+        if new {
+            self.new_structure_asked();
+        }
+        if open {
+            self.open_asked();
+        }
+        if quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        // Delete (or Backspace): what is selected, asked first (Edit ›
+        // Delete selected…).
+        if !self.selected.is_empty()
+            && self.file.is_some()
+            && ctx.input_mut(|i| {
+                i.consume_key(Modifiers::NONE, Key::Delete)
+                    || i.consume_key(Modifiers::NONE, Key::Backspace)
+            })
+        {
+            self.ask_delete();
+        }
         if self.file.is_some() {
             // Escape: the tool let go (with the Link tool, the point
             // chosen dropped first); 1-9: a slot of the hotbar; E: the
@@ -881,6 +916,12 @@ impl StructureApp {
         self.view.screen_of(p)
     }
 
+    /// Where the 3D view was drawn last (tests).
+    #[cfg(test)]
+    pub fn view_rect(&self) -> Option<egui::Rect> {
+        self.view.rect()
+    }
+
     /// The 3D view's camera (tests).
     #[cfg(test)]
     pub fn view_camera(&self) -> Option<ohl_render::Camera> {
@@ -1004,6 +1045,7 @@ impl eframe::App for StructureApp {
         let mut viewer = crate::layout::Viewer {
             app: self,
             drawn: Vec::new(),
+            moves: Vec::new(),
         };
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
@@ -1013,8 +1055,12 @@ impl eframe::App for StructureApp {
                     .show_leaf_close_all_buttons(false)
                     .show_inside(ui, &mut viewer);
             });
-        self.panels_drawn = viewer.drawn;
+        let (drawn, moves) = (viewer.drawn, viewer.moves);
+        self.panels_drawn = drawn;
         self.dock = dock;
+        for (panel, place) in moves {
+            crate::layout::move_panel(&mut self.dock, panel, place);
+        }
         if let Some(p) = self.focus_request.take() {
             self.focus(p);
         } else if let Some(a) = self.focused().and_then(Panel::area) {
@@ -1167,7 +1213,7 @@ impl StructureApp {
         let Some(f) = &mut self.file else {
             return;
         };
-        self.view.ui(
+        let response = self.view.ui(
             ui,
             self.rs.as_ref(),
             f,
@@ -1186,16 +1232,24 @@ impl StructureApp {
                 volumes: &volumes,
                 joint_colors: &joint_colors,
                 action: &mut action,
-                usage_legend: self.area == Area::Results && self.results.shown().is_some(),
+                usage_legend: self.usage_legend
+                    && self.area == Area::Results
+                    && self.results.shown().is_some(),
                 tool,
             },
         );
         match action {
             Some(crate::view::ViewAction::LinkClick(h)) => self.link_click(h),
             Some(crate::view::ViewAction::Cancel) => self.cancel_link(),
-            Some(crate::view::ViewAction::Link(a)) => self.link_action(a),
             Some(crate::view::ViewAction::ToolClick(h, at)) => self.tool_click(h, at),
             None => {}
+        }
+        // The right-click menu of what was right-clicked
+        // ([`crate::context_menu`]).
+        if let Some(r) = response
+            && let Some(on) = self.view.menu_on.clone()
+        {
+            r.context_menu(|ui| self.view_menu_ui(ui, &on));
         }
         self.follow_link_tool();
         if let Some(rect) = self.view.rect() {

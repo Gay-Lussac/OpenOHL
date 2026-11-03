@@ -681,7 +681,7 @@ impl StructureApp {
                     let mut toggled: Option<String> = None;
                     crate::layout::options_menu(
                         ui,
-                        format!("Points ({} off)", l.off.len()),
+                        &format!("Points ({} off)", l.off.len()),
                         |ui| {
                             ui.label(
                                 egui::RichText::new(

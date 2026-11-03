@@ -115,7 +115,7 @@ fn wait(h: &mut Harness<'static, StructureApp>) {
 fn results_follow_the_extension_chosen() {
     let path = written("col.ohls", COLUMN, "results-ext");
     let mut h = harness(&path);
-    menu(&mut h, "Results", "FE results…");
+    menu(&mut h, "Results", "FE results");
     h.get_by_label("▶ Run").click();
     wait(&mut h);
     let moment = |h: &Harness<'static, StructureApp>| {
@@ -182,7 +182,7 @@ fn the_pole_check_and_the_report() {
     };
     h.state_mut().loads.type_value(&own, own.force);
     h.run();
-    menu(&mut h, "Results", "FE results…");
+    menu(&mut h, "Results", "FE results");
     assert!(!h.state().can_write_report());
     h.get_by_label("▶ Run").click();
     wait(&mut h);

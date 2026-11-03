@@ -1385,7 +1385,7 @@ impl StructureApp {
             });
     }
 
-    /// Load cases › Add a load case (+ Case).
+    /// Loads › Add a load case (+ Case).
     pub fn add_case(&mut self) {
         let Some(f) = &mut self.file else {
             return;
@@ -1396,7 +1396,7 @@ impl StructureApp {
         self.message = Some((format!("added load case \"{name}\""), false));
     }
 
-    /// Load cases › Take the line's load cases as they are: one load case
+    /// Loads › Take the line's load cases: one load case
     /// per line result (a case of that name there already is left as it
     /// is), its line forces at every point, every factor 1, and, on a
     /// structure with members, the wind on the body at the pressure of

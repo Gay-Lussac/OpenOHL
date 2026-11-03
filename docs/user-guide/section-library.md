@@ -224,7 +224,7 @@ no shielding, and the results say so.
 
 ## Typing cross-sections in OHL-Structure
 
-**Design › Cross-sections & materials…**, tab **Cross-section library**, lists the
+**Design › Cross-sections & materials**, tab **Cross-section library**, lists the
 cross-sections of the library the structure reads (`--sections`, else
 `Sections/` beside the structure file; started from the line application,
 the project line's library, which OHL-Design keeps in the project when a
