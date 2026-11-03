@@ -239,6 +239,9 @@ pub struct MagneticFieldWindow {
     profiles: bool,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
+    /// The cuts and places set up by Checks › Electrical › Buildings
+    /// (owner, 2026-11-03), run with the window's own.
+    buildings: Option<crate::field_preset::Preset>,
     /// The points file's text (kept in the project).
     points_text: Option<String>,
     /// The project setting's key and the inputs as last read or written
@@ -338,6 +341,7 @@ impl Default for MagneticFieldWindow {
             profiles: true,
             mean_heights: false,
             points: None,
+            buildings: None,
             points_text: None,
             saved: None,
             case_kept: false,
@@ -426,6 +430,8 @@ struct Stored {
     profiles: Option<bool>,
     /// The points file's name and text.
     points: Option<(String, String)>,
+    /// The buildings' preset (2026-11-03).
+    buildings: Option<crate::field_preset::Preset>,
     piece_length: Option<f64>,
     modelled_within: Option<f64>,
     /// The cut-off as kept since 2026-11-01: 0 the whole line, else the
@@ -516,6 +522,7 @@ impl MagneticFieldWindow {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
             },
+            buildings: self.buildings.clone(),
             piece_length: self.piece_length,
             modelled_within: self.modelled_within,
             modelled: Some(self.modelled_within.unwrap_or(0.0)),
@@ -630,6 +637,7 @@ impl MagneticFieldWindow {
         self.planes = st.planes.unwrap_or(true);
         self.profiles = st.profiles.unwrap_or(true);
         self.mean_heights = st.mean_heights;
+        self.buildings = st.buildings.clone();
         (self.points, self.points_text, self.points_error) = match st.points {
             Some((name, text)) => match magnetic::parse_points(&text) {
                 Ok(p) => (Some((name, p)), Some(text), None),
@@ -693,8 +701,8 @@ impl MagneticFieldWindow {
         self.currents.insert(circuit.to_owned(), (amps, false));
     }
 
-    /// A circuit's current, A (the Buildings (fields) window starts from
-    /// them).
+    /// A circuit's current, A (tests).
+    #[cfg(test)]
     pub fn current_of(&self, circuit: &str) -> Option<f64> {
         self.currents.get(circuit).map(|c| c.0)
     }
@@ -780,8 +788,19 @@ impl MagneticFieldWindow {
         self.limit
     }
 
-    /// Sets the limit, µT (tests).
+    /// Sets the buildings' preset (Checks › Electrical › Buildings).
+    pub fn set_buildings(&mut self, preset: Option<crate::field_preset::Preset>) {
+        self.buildings = preset;
+        self.commit = true;
+    }
+
+    /// The buildings' preset set up (tests).
     #[cfg(test)]
+    pub fn buildings(&self) -> Option<&crate::field_preset::Preset> {
+        self.buildings.as_ref()
+    }
+
+    /// Sets the limit, µT.
     pub fn set_limit(&mut self, limit: Option<f64>) {
         self.limit = limit;
     }
@@ -890,6 +909,7 @@ impl MagneticFieldWindow {
                         step: self.cut_step,
                         label: None,
                     })
+                    .chain(self.buildings.iter().flat_map(|b| b.cut_specs()))
                     .collect()
             },
             // A volume: one along each run of spans following each other
@@ -909,17 +929,30 @@ impl MagneticFieldWindow {
                     .collect(),
                 _ => Vec::new(),
             },
-            levels: crate::field_overlay::shown(&self.levels)
-                .iter()
-                .map(|l| l.value)
-                .collect(),
-            points: if self.planes && self.profiles {
-                self.points
-                    .as_ref()
-                    .map(|p| p.1.clone())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
+            levels: crate::field_preset::with_levels(
+                crate::field_overlay::shown(&self.levels)
+                    .iter()
+                    .map(|l| l.value)
+                    .collect(),
+                self.buildings.as_ref().map(|b| b.levels_ut.as_slice()),
+            ),
+            // The CSV's points with the profiles; the buildings' places
+            // in any 2D run.
+            points: {
+                let mut v = if self.planes && self.profiles {
+                    self.points
+                        .as_ref()
+                        .map(|p| p.1.clone())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                if self.planes
+                    && let Some(b) = &self.buildings
+                {
+                    v.extend(b.points());
+                }
+                v
             },
             limit_ut: self.limit,
         }
@@ -1597,6 +1630,9 @@ impl MagneticFieldWindow {
                     }
                 });
                 ui.end_row();
+                if crate::field_preset::row(ui, &mut self.buildings, self.planes) {
+                    self.commit = true;
+                }
             });
         if let Some(e) = &self.points_error {
             crate::menu::error_label(ui, e.as_str());

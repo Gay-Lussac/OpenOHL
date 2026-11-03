@@ -730,6 +730,8 @@ to the lowest point per cell, and the survey points whose code matches;
 a role the cloud's class scheme (else ASPRS) does not have is an error
 naming it and the scheme; more points than `max-points` an error saying
 so. Without a cloud the roles give none (said).
+`ohl_io::field_input::gather_classes` is the same with the classes given
+instead of the roles (the host's tick lists, 2026-11-03).
 
 **The calls**:
 
@@ -802,9 +804,12 @@ drawing's 3D lines where they cross it
 (`FieldPlan::plugin_json`) to both calls. `ohl plugin
 info` lists the export (`optional exports: field-presets`). In
 OHL-Design: Checks › Electrical › Buildings (fields)… (2026-11-02, [user
-guide](../user-guide/analyses.md#buildings-fields)) runs a plugin in use
-with the export the same way (its points from the project's cloud, no
-survey points), with a field plan template of the project.
+guide](../user-guide/analyses.md#buildings-fields)) calls `field-presets`
+only (2026-11-03): its points from the project's cloud of the classes
+ticked there (`gather_classes`, instead of the manifest's roles) and the
+survey file's points of the codes ticked; it hands the preset's cuts and
+places to the Magnetic field and Electric field windows, which run them.
+`report` and `report-cut` are called by the CLI only.
 
 The test plugin `plugins/tests/field-presets` gives fixed, **invented**
 cuts and points for the synthetic double circuit

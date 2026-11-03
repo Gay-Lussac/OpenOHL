@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Tests: Checks › Electrical › Buildings (fields) (owner, 2026-11-02):
-//! the test plugin's presets run from the window, both fields at its
-//! places, its report written one cut at a time into the folder; a field
-//! plan template made from the window's New, saved beside the line and
-//! handed to the plugin; the setup kept.
+//! Tests: Checks › Electrical › Buildings (fields) (owner, 2026-11-02,
+//! 2026-11-03): the test plugin's presets found from the window (no field
+//! run there), the buildings listed, Set up the field tools handing the
+//! cuts and places to the Magnetic field and Electric field windows with
+//! the field plan's limits; a plan made with New and saved.
 
 use super::*;
 
@@ -49,9 +49,7 @@ fn wait(h: &mut Harness<'_, App>) {
 }
 
 #[test]
-fn buildings_fields_from_a_plugin() {
-    // The synthetic double circuit (its alignment `main`, the test
-    // plugin's cuts on it), copied: the window writes beside it.
+fn buildings_found_and_handed_to_the_field_windows() {
     let dir = std::env::temp_dir().join(format!("ohl-building-fields-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -78,36 +76,12 @@ fn buildings_fields_from_a_plugin() {
         return;
     }
     let r = h.state_mut().ready().unwrap();
-    r.building_fields.show(r.case, |_| Some(1000.0), &r.model);
+    r.building_fields.show(r.case);
     h.run();
-    // The plugin found and its parameters as a form.
     h.get_by_label("Buildings (fields)");
     h.get_by_label("Plugin");
     h.get_by_label("Parameters");
-    run_in(&h, "Buildings (fields)").click();
-    wait(&mut h);
-    let out = dir.join("buildings-fields");
-    {
-        let r = h.state_mut().ready().unwrap();
-        let report = r.building_fields.report().0.unwrap().as_ref().unwrap();
-        assert_eq!(report.preset, "default");
-        let names: Vec<&str> = report.places.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, ["house-A", "house-B"]);
-        assert!(report.places.iter().all(|p| p.b.is_some() && p.e.is_some()));
-        assert_eq!(report.limits, (None, None));
-        assert_eq!(report.out, out);
-    }
-    // One cut at a time, then the rest.
-    for f in ["cut-house-A.txt", "cut-house-B.txt", "summary.txt"] {
-        assert!(out.join(f).is_file(), "{f}");
-    }
-    let summary = std::fs::read_to_string(out.join("summary.txt")).unwrap();
-    assert!(summary.contains("cut reports 2\nplan false\n"), "{summary}");
-    let cut = std::fs::read_to_string(out.join("cut-house-A.txt")).unwrap();
-    assert!(cut.contains("fields 2\nvalues 2\n"), "{cut}");
     // A field plan: New, saved (beside the line file), chosen.
-    h.get_by_label("Setup").click();
-    h.run();
     h.get_by_label("New").click();
     h.run();
     h.get_by_label("Save into the project").click();
@@ -115,30 +89,31 @@ fn buildings_fields_from_a_plugin() {
     h.run();
     assert!(dir.join("field-plans.ohlfp").is_file());
     run_in(&h, "Buildings (fields)").click();
-    {
-        let r = h.state_mut().ready().unwrap();
-        r.building_fields.job.result = None;
-    }
     wait(&mut h);
     {
         let r = h.state_mut().ready().unwrap();
-        let report = r.building_fields.report().0.unwrap().as_ref().unwrap();
-        // The template's limits (the NISV's, as an example).
-        assert_eq!(report.limits, (Some(1.0), Some(5.0)));
+        let found = r.building_fields.found().0.unwrap().as_ref().unwrap();
+        assert_eq!(found.presets[0].name, "default");
+        // Nothing handed over before asked.
+        assert!(r.magnetic_field.buildings().is_none());
     }
-    let summary = std::fs::read_to_string(out.join("summary.txt")).unwrap();
-    assert!(summary.contains("plan true\n"), "{summary}");
-    // The results: the verdict against the plan's limits, one row per
-    // place.
-    assert!(
-        h.query_all_by_label_contains("over a limit")
-            .next()
-            .is_some()
-            || h.query_all_by_label_contains("within the limits")
-                .next()
-                .is_some()
-    );
-    h.get_by_label("house-A");
+    h.get_by_label("Set up the field tools").click();
+    h.run();
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        for p in [r.magnetic_field.buildings(), r.electric_field.buildings()] {
+            let p = p.expect("the preset handed over");
+            let names: Vec<&str> = p.places.iter().map(|q| q.name.as_str()).collect();
+            assert_eq!(names, ["house-A", "house-B"]);
+            assert!(!p.cuts.is_empty());
+        }
+        assert!(r.magnetic_field.open && r.electric_field.open);
+        // The template's limits (the NISV's, as an example).
+        assert_eq!(r.magnetic_field.limit(), Some(1.0));
+        assert_eq!(r.electric_field.limit(), Some(5.0));
+    }
+    assert_eq!(h.query_all_by_label_contains("default: ").count(), 2);
     if let Some(d) = ohl_core::env::var_os("OHL_FIELD_SCREENSHOTS") {
         h.render()
             .unwrap()

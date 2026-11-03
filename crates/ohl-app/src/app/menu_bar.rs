@@ -797,16 +797,14 @@ pub(super) fn menus(
             if ui
                 .button("Buildings (fields)…")
                 .on_hover_text(
-                    "Both fields at the buildings near the line: a plugin with field presets \
-                     finds them from the point cloud's classes and gives the cuts and the places \
-                     of sensitive use; a field plan template gives the limits, the weather per \
-                     system and how the cuts are drawn; the plugin's report goes into a folder",
+                    "The buildings near the line, found by a plugin with field presets from the \
+                     point cloud's classes and the survey codes ticked: their cuts and places of \
+                     sensitive use set up in the Magnetic field and Electric field windows, \
+                     with a field plan template's limits and weather case",
                 )
                 .clicked()
             {
-                let magnetic = &r.magnetic_field;
-                r.building_fields
-                    .show(r.case, |c| magnetic.current_of(c), &r.model);
+                r.building_fields.show(r.case);
                 ui.close();
             }
             if ui

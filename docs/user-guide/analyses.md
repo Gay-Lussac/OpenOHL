@@ -1445,17 +1445,25 @@ plugin's field presets (above).
 ## Electrical: buildings near the line (fields)
 
 <a id="buildings-fields"></a>Checks › Electrical › **Buildings
-(fields)…** (2026-11-02; built, in active development, not approved
-yet): both fields at the buildings near the line, in one run. A plugin
-with field presets ([the building-cuts plugin](#building-cuts), or your
-own) finds the buildings from the point cloud's classes and gives the
-cuts across the line at each of them and the places of sensitive use;
-both fields are computed there; the plugin's report (tables, the cuts'
-drawings and grids, plan files) is written into a folder one cut at a
-time.
+(fields)…** (2026-11-02, reworked 2026-11-03; built, in active
+development, not approved yet): finds the buildings near the line and
+**sets up the field windows** with them; the fields are run there, not
+in this window (owner 2026-11-03). A plugin with field presets ([the
+building-cuts plugin](#building-cuts), or your own) finds the buildings
+and gives the cuts across the line at each of them and the places of
+sensitive use.
 
 - **Scope**: the whole line; the weather case the wires hang in when the
   field plan names none.
+- **Survey data**:
+  - the **point cloud's classes** (those in the cloud, else the class
+    scheme's), each with two ticks: **buildings** and **ground**. Until
+    you tick, the classes of the plugin's roles (its manifest, e.g. the
+    scheme's building and ground classes) are ticked; **The plugin's
+    classes** goes back to them;
+  - the **survey file's codes** (its `code` column), each with the same
+    two ticks; the codes ticked are handed to the plugin with its survey
+    points and set its `building_codes` and `ground_codes`.
 - **Presets**:
   - **Plugin** (those in use with field presets, File › Plugins ›
     Plugin manager…) and its **preset** (empty: its first).
@@ -1464,22 +1472,23 @@ time.
     left out by default with a box to set it; **Reset to the plugin's**
     goes back to its template.
   - **Field plan**: a [field plan template](#field-plan-templates) of the
-    project (library kind `field-plans`): its limits and isolines, the
-    weather case of every wire, of the earth wires and per system (cases
-    of the model), and how the cuts are drawn. **New** opens the
-    template's text (every key with its default) in the window, checked
-    as you type; **Save into the project** keeps it; **Edit** opens the
-    one chosen.
-  - **Currents** per circuit (starting from the Magnetic field window's)
-    and the earth wires' induced currents (through the towers or not).
-    The voltages: each system's nominal (said in the notes).
-- **Model**: the ground (as the field windows) and the folder the report
-  goes into (default: `buildings-fields` beside the project).
+    project (library kind `field-plans`): its limits and weather case go
+    to the field windows. **New** opens the template's text (every key
+    with its default) in the window, checked as you type; **Save into
+    the project** keeps it; **Edit** opens the one chosen.
 
-**Results**: a row per place — building, place, height, B and its
-cycle's largest (µT), E (kV/m), each margin to the plan's limits (red
-over) — and the verdict; **Open the folder** shows the report; the notes
-say what the plugin read and found, the weather per system and what each
-field assumed. The window's setup is kept in the project for the project
-line worked on. Without a point cloud the run is not blocked: a plugin
-finding the buildings from its classes finds none (said).
+**Run** (bottom left) only finds the buildings. **Results**: the
+buildings found — id, area, ground, height, its cuts and places — and the
+notes (what the plugin read and found). **Set up the field tools** hands
+the preset's cuts and places to the **Magnetic field** and **Electric
+field** windows and opens them, with the plan's limits and weather case;
+each window shows them on its *Buildings* row (**Clear** removes them)
+and runs them with its own cuts and points (2D runs; the preset's
+isolines added). Choose the currents, voltages and everything else
+there, and run. The window's setup is kept in the project for the
+project line worked on, the preset in each field window's. Without a
+point cloud the survey codes alone give the buildings (said).
+
+The plugin's own report (tables, drawings, plan files) is written by
+`ohl electrical fields --preset-plugin` ([above](#both-fields)); the
+window no longer writes it.

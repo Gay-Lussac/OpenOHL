@@ -2413,6 +2413,25 @@ impl eframe::App for App {
                 ready
                     .building_fields
                     .ui(&ctx, &ready.model, &self.plugins.field_preset_dirs());
+                // The buildings' cuts and places handed to the field
+                // windows (2026-11-03), run there.
+                if let Some(h) = ready.building_fields.hand_over.take() {
+                    for (w, limit) in [(0, h.limits.0), (1, h.limits.1)] {
+                        if w == 0 {
+                            ready.magnetic_field.set_buildings(Some(h.preset.clone()));
+                            if limit.is_some() {
+                                ready.magnetic_field.set_limit(limit);
+                            }
+                            ready.magnetic_field.show(h.case);
+                        } else {
+                            ready.electric_field.set_buildings(Some(h.preset.clone()));
+                            if limit.is_some() {
+                                ready.electric_field.set_limit(limit);
+                            }
+                            ready.electric_field.show(h.case);
+                        }
+                    }
+                }
                 // A run saved in Performed checks (2026-11-01).
                 for apply in [
                     ready.magnetic_field.apply.take(),

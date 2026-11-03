@@ -179,6 +179,20 @@ not approved yet)**
   results a row per place with its margins. The buildings from the point
   cloud's classes alone: the window hands the plugin no survey points,
   and the building plugin's survey codes are empty by default.
+- **2026-11-03, the window finds, the field windows run** (owner: "the
+  building plugin should offer a tickable list from the survey data
+  classes. same for the ground codes. it should also only offer to find
+  the buildings and then setup the presets for the other field tools. not
+  run them itself"): the point cloud's classes and the survey file's
+  codes as tick lists for the buildings and the ground
+  (`ohl_io::field_input::gather_classes`: the classes ticked instead of
+  the manifest's roles; the codes ticked set the plugin's
+  `building_codes` / `ground_codes`); Run only takes the presets;
+  **Set up the field tools** hands the cuts and places
+  (`crate::field_preset::Preset`) to the Magnetic field and Electric
+  field windows with the plan's limits and weather case, which run them
+  with their own. Currents, ground, report folder and the plugin's
+  report left the window (the CLI keeps the report).
 - **A weather case per system in the CLI** (`--system-case SYSTEM=CASE`,
   `earth` for the wires of no system; the plan's `[weather]`), as the
   field windows already had: each case solved once, each section taken

@@ -2,28 +2,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Checks › Electrical › **Buildings (fields)…** (owner, 2026-11-02: "add
-//! a field in the check window with all relevant presets required"): a
+//! Checks › Electrical › **Buildings (fields)…** (owner, 2026-11-02, and
+//! 2026-11-03: "it should also only offer to find the buildings and then
+//! setup the presets for the other field tools. not run them itself"): a
 //! plugin with field presets (e.g. the example `building-cuts`) finds the
-//! buildings near the line from the point cloud's classes and gives the
-//! cuts and the places of sensitive use; both fields are run there in one
-//! go; a field plan template of the project (`field-plans`,
-//! [`ohl_electrical::field_plan`]) gives the limits and isolines, the
-//! weather case per system and how the cuts are drawn (title, logos,
-//! point classes, a TIN or a drawing along them); the plugin's report is
-//! written into a folder one cut at a time. Every input is kept in the
-//! project (`app.building_fields.<line>`).
+//! buildings near the line from the point cloud's classes ticked here
+//! (and the survey file's codes ticked here) and gives the cuts across the
+//! line and the places of sensitive use; **Set up the field tools** hands
+//! them to the Magnetic field and Electric field windows
+//! ([`crate::field_preset`]) with the field plan template's limits and
+//! weather case, where they are run. Every input is kept in the project
+//! (`app.building_fields.<line>`).
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eframe::egui;
 use ohl_electrical::field_plan::{self, FieldPlan};
-use ohl_electrical::{electric, field_results, magnetic};
 use serde::{Deserialize, Serialize};
 
 use crate::check_help as help;
 use crate::check_ui;
+use crate::field_preset::Preset;
 use crate::job::Job;
 use crate::model::Model;
 
@@ -48,58 +48,57 @@ struct Stored {
     parameters: String,
     /// The field plan template of the project, by file name ("": none).
     plan: String,
-    /// The current per circuit, A.
-    currents: BTreeMap<String, f64>,
-    /// The earth wires' induced currents.
-    earth_wires: bool,
-    /// The towers lead the earth wires' currents into the ground.
-    towers: bool,
-    /// Where the ground comes from.
-    ground: crate::field_ground::FieldGround,
-    /// The folder the report goes into (none: beside the project).
-    out: Option<PathBuf>,
+    /// The point cloud's classes of the buildings (none: the plugin's
+    /// roles, e.g. the scheme's building classes).
+    building_classes: Option<Vec<u8>>,
+    /// The ground's classes (none: the plugin's ground roles).
+    ground_classes: Option<Vec<u8>>,
+    /// The survey file's codes of the buildings.
+    building_codes: Vec<String>,
+    /// The survey file's codes of the ground.
+    ground_codes: Vec<String>,
 }
 
-/// A place of sensitive use and its values.
+/// A building found.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Place {
-    /// Its name (`B007-F2-c1-h4.5`).
-    pub name: String,
-    /// Height above the ground, m.
-    pub height: f64,
-    /// B, µT, and the cycle's largest.
-    pub b: Option<f64>,
-    /// The cycle's largest B, µT.
-    pub b_major: Option<f64>,
-    /// E, kV/m.
-    pub e: Option<f64>,
+pub struct Building {
+    /// Its id.
+    pub id: String,
+    /// Its ground and top, m.
+    pub ground: f64,
+    /// Its top, m.
+    pub top: f64,
+    /// Its area in plan, m².
+    pub area: f64,
+    /// Its cuts.
+    pub cuts: usize,
+    /// Its places of sensitive use.
+    pub places: usize,
 }
 
-impl Place {
-    /// The building of the name (its part before the first `-`).
-    pub fn building(&self) -> &str {
-        self.name.split('-').next().unwrap_or("")
-    }
-}
-
-/// What a run found.
+/// What a search found.
 #[derive(Debug, Clone, Default)]
-pub struct Report {
-    /// The weather case the wires hang in (the others per system in the
-    /// notes).
+pub struct Found {
+    /// The plugin.
+    pub plugin: String,
+    /// Every preset it gave.
+    pub presets: Vec<ohl_plugins::FieldPreset>,
+    /// The weather case the line was solved in.
     pub case: String,
-    /// The plugin's preset run.
-    pub preset: String,
-    /// Every place.
-    pub places: Vec<Place>,
-    /// The limits, µT and kV/m.
-    pub limits: (Option<f64>, Option<f64>),
-    /// The report's files, and the folder.
-    pub files: Vec<String>,
-    /// Where they are.
-    pub out: PathBuf,
     /// What was read, assumed and left out.
     pub notes: Vec<String>,
+}
+
+/// What the window asks of the application: the preset for both field
+/// windows, the plan's limits (µT, kV/m) and weather case (index).
+#[derive(Debug, Clone)]
+pub struct HandOver {
+    /// The preset.
+    pub preset: Preset,
+    /// The limits of the plan.
+    pub limits: (Option<f64>, Option<f64>),
+    /// The weather case to open the windows on.
+    pub case: usize,
 }
 
 /// The Buildings (fields) window.
@@ -119,28 +118,23 @@ pub struct BuildingFieldsWindow {
     pub(crate) save_plan: Option<(String, String)>,
     /// The model has no point cloud (said in the setup).
     cloud_missing: bool,
-    pub(crate) job: Job<Report>,
+    /// The survey file's codes, by its path.
+    codes: Option<(PathBuf, Result<Vec<String>, String>)>,
+    /// The preset handed to the field windows (taken by the app).
+    pub hand_over: Option<HandOver>,
+    pub(crate) job: Job<Found>,
 }
 
 impl BuildingFieldsWindow {
-    /// Opens the window on the case shown; the circuits without a current
-    /// take the Magnetic field window's.
-    pub fn show(&mut self, case: usize, currents: impl Fn(&str) -> Option<f64>, model: &Model) {
+    /// Opens the window on the case shown.
+    pub fn show(&mut self, case: usize) {
         self.open = true;
         self.case = case;
-        for c in magnetic::circuits(&model.line) {
-            let label = c.label();
-            if !self.st.currents.contains_key(&label)
-                && let Some(a) = currents(&label)
-            {
-                self.st.currents.insert(label, a);
-            }
-        }
     }
 
-    /// The last run's report, and whether one runs.
+    /// The last search, and whether one runs.
     #[cfg(test)]
-    pub fn report(&self) -> (Option<&Result<Report, String>>, bool) {
+    pub fn found(&self) -> (Option<&Result<Found, String>>, bool) {
         (self.job.result.as_ref(), self.job.running())
     }
 
@@ -168,7 +162,8 @@ impl BuildingFieldsWindow {
         self.kept = kept;
     }
 
-    /// What the last run was computed from that changed since, in words.
+    /// What the last search was computed from that changed since, in
+    /// words.
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
         matches!(self.job.result, Some(Ok(_)))
             .then(|| self.job.stamp.out_of_date(model, USES))
@@ -208,14 +203,30 @@ impl BuildingFieldsWindow {
             .map_or(Ok(String::new()), |t| t.1.clone())
     }
 
-    /// Starts a run.
+    /// The weather case: the plan's when the model has it, else the one
+    /// chosen.
+    fn case_of(&self, model: &Model, plan: Option<&FieldPlan>) -> usize {
+        plan.and_then(|p| {
+            let n = &p.weather.case;
+            model
+                .cases
+                .iter()
+                .position(|c| !n.is_empty() && &c.case.name == n)
+        })
+        .unwrap_or(self.case)
+    }
+
+    /// Starts a search: the plugin's presets only (no field computed).
     fn start(&mut self, model: &Model, ctx: &egui::Context, plugins: &[(String, PathBuf)]) {
         let Some(plugin) = self.plugin(plugins).cloned() else {
             self.job.result = Some(Err("no plugin with field presets in use".into()));
             return;
         };
         self.st.plugin = plugin.0.clone();
-        let parameters = self.parameters(&plugin);
+        let mut parameters = self.parameters(&plugin);
+        // The survey codes ticked: the plugin's code parameters.
+        parameters = set_list(&parameters, "building_codes", &self.st.building_codes);
+        parameters = set_list(&parameters, "ground_codes", &self.st.ground_codes);
         let plan = match read_plan(model, &self.st.plan) {
             Ok(p) => p,
             Err(e) => {
@@ -223,101 +234,38 @@ impl BuildingFieldsWindow {
                 return;
             }
         };
-        // The weather: the plan's case when the model has it, else the one
-        // chosen; each system its own (the plan's).
-        let case = plan
-            .as_ref()
-            .and_then(|p| {
-                let n = &p.0.weather.case;
-                model
-                    .cases
-                    .iter()
-                    .position(|c| !n.is_empty() && &c.case.name == n)
-            })
-            .unwrap_or(self.case);
+        let case = self.case_of(model, plan.as_ref().map(|p| &p.0));
         let Some(solved) = model.cases.get(case) else {
             self.job.result = Some(Err("no weather case in the model".into()));
             return;
         };
-        let mut per = crate::field_systems::PerSystem::new();
-        if let Some((p, _)) = &plan {
-            for (k, v) in &p.weather.systems {
-                per.insert(k.clone(), (Some(v.clone()), None));
-            }
-            if !p.weather.earth_wires.is_empty() {
-                per.insert(
-                    crate::field_systems::EARTHED.to_owned(),
-                    (Some(p.weather.earth_wires.clone()), None),
-                );
-            }
-        }
-        let missing: Vec<String> = per
-            .values()
-            .filter_map(|(n, _)| n.clone())
-            .filter(|n| !model.cases.iter().any(|c| &c.case.name == n))
-            .collect();
-        if !missing.is_empty() {
-            self.job.result = Some(Err(format!(
-                "the field plan's weather case(s) {} are not among the model's",
-                missing.join(", ")
-            )));
-            return;
-        }
-        let systems = crate::field_systems::plan(model, &per, &solved.case, None);
         let line = model.line.clone();
         let library = model.library.clone();
         let wind = model.wind;
         let unsolved = !solved.solved_for(wind);
         let (mut shapes, mut jumpers) = (solved.shapes.clone(), solved.jumpers.clone());
         let weather = solved.case.clone();
-        let ground_source = crate::field_ground::source(model, &self.st.ground);
         let cloud = model.cloud.clone();
-        let file = model.sources.file.clone();
-        let out = self.out_folder(model);
+        let survey = model.sources.terrain.clone();
         let st = self.st.clone();
-        let line_name = model
-            .session()
-            .map_or_else(|| model.line.name.clone(), |_| model.project_line());
         self.job.start_at(ctx, model.revision(), move || {
-            let mut notes = Vec::new();
             if unsolved {
                 let s = crate::model::Solved::with_wind(&line, &library, weather.clone(), wind);
                 shapes = s.shapes;
                 jumpers = s.jumpers;
             }
-            let (shapes, per_notes) =
-                crate::field_systems::compose(&line, &library, wind, shapes, &systems);
-            notes.extend(per_notes);
-            let (ground, ground_note) = ground_source.read()?;
-            notes.extend(ground_note);
-            let run = Run {
-                line: &line,
-                library: &library,
-                shapes: &shapes,
-                jumpers: &jumpers,
-                weather: &weather,
-                ground: ground.as_deref(),
-                cloud: cloud.as_deref(),
-                file: &file,
-                line_name: &line_name,
-            };
-            let mut report = run.go(&plugin, &parameters, &st, plan.as_ref(), &out)?;
-            report.notes.splice(0..0, notes);
-            Ok(report)
+            find(
+                &plugin,
+                &parameters,
+                &st,
+                &line,
+                &weather,
+                &shapes,
+                &jumpers,
+                cloud.as_deref(),
+                survey.as_deref(),
+            )
         });
-    }
-
-    /// The report's folder: the one chosen, else `buildings-fields` beside
-    /// the project.
-    fn out_folder(&self, model: &Model) -> PathBuf {
-        self.st.out.clone().unwrap_or_else(|| {
-            model
-                .sources
-                .file
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join("buildings-fields")
-        })
     }
 
     /// The window. `plugins`: those in use with field presets (name,
@@ -334,13 +282,11 @@ impl BuildingFieldsWindow {
             Some(
                 "no plugin with field presets in use (File › Plugins › Plugin manager…)".to_owned(),
             )
-        } else if magnetic::circuits(&model.line).is_empty() {
-            Some("no circuit: assign the electrical systems (Line › Electrical systems)".to_owned())
         } else {
             None
         };
         let findings = match &self.job.result {
-            Some(Ok(r)) => Some(r.places.iter().filter(|p| over(p, r.limits)).count()),
+            Some(Ok(f)) => Some(self.chosen(f).map_or(0, |p| p.outlines.len())),
             _ => None,
         };
         help::window(
@@ -365,7 +311,7 @@ impl BuildingFieldsWindow {
                         self.setup_ui(ui, model, plugins);
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
-                        self.results_ui(ui);
+                        self.results_ui(ui, model);
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
@@ -373,8 +319,8 @@ impl BuildingFieldsWindow {
                         ui,
                         &mut self.job,
                         why.clone(),
-                        "Find the buildings by the plugin, run both fields at their cuts and \
-                         places, and write the plugin's report",
+                        "Find the buildings by the plugin: their cuts and places of sensitive \
+                         use, to set up the field windows with (no field is computed here)",
                         Some("the whole line".into()),
                         None,
                         |_| {},
@@ -388,20 +334,28 @@ impl BuildingFieldsWindow {
         }
     }
 
+    /// The preset of `found` chosen ("" its first).
+    fn chosen<'a>(&self, found: &'a Found) -> Option<&'a ohl_plugins::FieldPreset> {
+        if self.st.preset.is_empty() {
+            found.presets.first()
+        } else {
+            found.presets.iter().find(|p| p.name == self.st.preset)
+        }
+    }
+
     fn setup_ui(&mut self, ui: &mut egui::Ui, model: &Model, plugins: &[(String, PathBuf)]) {
-        check_ui::section(ui, 1, "What it checks", None);
+        check_ui::section(ui, 1, "What it does", None);
         help::explain(
             ui,
-            "The magnetic and electric fields at the buildings near the line: a plugin finds \
-             them from the point cloud's classes and gives the cuts across the line and the \
-             places of sensitive use; its report goes into a folder.",
-            "The plugin with field presets reads the points its manifest asks for (the point \
-             cloud's building and ground classes near the line) and the line solved in the \
-             weather case, and gives cuts across the line at each building and points at its \
-             places of sensitive use. Both fields are computed there with the wires as solved \
-             (each system in the field plan's weather case), the levels and limits of the field \
-             plan template; the plugin then writes its report one cut at a time, each drawing \
-             with the plan's title, logos, point classes and TIN or drawing.",
+            "Finds the buildings near the line by a plugin and sets up the Magnetic field and \
+             Electric field windows with their cuts and places of sensitive use; the fields \
+             are run there.",
+            "The plugin with field presets reads the point cloud's classes ticked below (and \
+             the survey file's codes ticked) near the line and the line solved in the weather \
+             case, and gives cuts across the line at each building and points at its places of \
+             sensitive use. Set up the field tools (in the results) hands them to both field \
+             windows, with the field plan template's limits and weather case; each window runs \
+             them with its own cuts and points.",
         );
         ui.separator();
         check_ui::section(ui, 2, "Scope", None);
@@ -413,25 +367,173 @@ impl BuildingFieldsWindow {
         .response
         .on_hover_text("The case the wires hang in when the field plan names none");
         ui.separator();
-        check_ui::section(ui, 3, "Presets", None);
+        check_ui::section(ui, 3, "Survey data", None);
+        self.classes_ui(ui, model, plugins);
+        ui.add_space(4.0);
+        self.codes_ui(ui, model);
+        ui.separator();
+        check_ui::section(ui, 4, "Presets", None);
         self.plugin_ui(ui, plugins);
         ui.add_space(4.0);
         self.plan_ui(ui, model);
-        ui.add_space(4.0);
-        self.currents_ui(ui, model);
-        ui.separator();
-        check_ui::section(ui, 4, "Model", None);
-        crate::field_ground::ui(ui, WINDOW, model, &mut self.st.ground);
-        ui.horizontal(|ui| {
-            ui.label("Report into");
-            let out = self.out_folder(model);
-            ui.label(egui::RichText::new(out.display().to_string()).monospace());
-            if ui.button("Choose…").clicked()
-                && let Some(p) = rfd::FileDialog::new().set_directory(&out).pick_folder()
-            {
-                self.st.out = Some(p);
-            }
+    }
+
+    /// The point cloud's classes, ticked for the buildings and for the
+    /// ground (owner, 2026-11-03: "a tickable list from the survey data
+    /// classes. same for the ground").
+    fn classes_ui(&mut self, ui: &mut egui::Ui, model: &Model, plugins: &[(String, PathBuf)]) {
+        if self.cloud_missing {
+            ui.label(
+                egui::RichText::new(
+                    "No point cloud in the project: the buildings come from the survey codes \
+                     only",
+                )
+                .color(ui.visuals().warn_fg_color),
+            );
+            return;
+        }
+        let table = self
+            .plugin(plugins)
+            .and_then(|p| ohl_plugins::Manifest::load(&p.1).ok())
+            .and_then(|m| m.field_input);
+        let roles = |r: &[String]| -> Vec<u8> {
+            let mut v: Vec<u8> = r
+                .iter()
+                .flat_map(|role| model.scheme.codes_with_role(role))
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        let (role_b, role_g) = table.as_ref().map_or((Vec::new(), Vec::new()), |t| {
+            (roles(&t.roles), roles(&t.ground_roles))
         });
+        let classes = cloud_classes(model);
+        let mut b: BTreeSet<u8> = self
+            .st
+            .building_classes
+            .clone()
+            .unwrap_or(role_b.clone())
+            .into_iter()
+            .collect();
+        let mut g: BTreeSet<u8> = self
+            .st
+            .ground_classes
+            .clone()
+            .unwrap_or(role_g.clone())
+            .into_iter()
+            .collect();
+        let (mut cb, mut cg) = (false, false);
+        egui::Grid::new("building-fields-classes")
+            .striped(true)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                ui.strong("class");
+                ui.strong("buildings");
+                ui.strong("ground");
+                ui.end_row();
+                for (code, name, count) in &classes {
+                    ui.label(format!("{code} {name}"))
+                        .on_hover_text(match count {
+                            Some(n) => format!("{n} points in the cloud"),
+                            None => "in the class scheme".to_owned(),
+                        });
+                    let mut on = b.contains(code);
+                    if ui.checkbox(&mut on, "").changed() {
+                        if on {
+                            b.insert(*code);
+                        } else {
+                            b.remove(code);
+                        }
+                        cb = true;
+                    }
+                    let mut on = g.contains(code);
+                    if ui.checkbox(&mut on, "").changed() {
+                        if on {
+                            g.insert(*code);
+                        } else {
+                            g.remove(code);
+                        }
+                        cg = true;
+                    }
+                    ui.end_row();
+                }
+            });
+        if cb {
+            self.st.building_classes = Some(b.into_iter().collect());
+        }
+        if cg {
+            self.st.ground_classes = Some(g.into_iter().collect());
+        }
+        if (self.st.building_classes.is_some() || self.st.ground_classes.is_some())
+            && ui
+                .small_button("The plugin's classes")
+                .on_hover_text("Back to the classes of the plugin's roles (its manifest)")
+                .clicked()
+        {
+            self.st.building_classes = None;
+            self.st.ground_classes = None;
+        }
+    }
+
+    /// The survey file's codes, ticked for the buildings and the ground.
+    fn codes_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let Some(path) = model.sources.terrain.clone() else {
+            ui.label(egui::RichText::new("No survey file: no survey codes").weak());
+            return;
+        };
+        if self.codes.as_ref().is_none_or(|(p, _)| *p != path) {
+            let codes = std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|t| ohl_terrain::read_points(&t).map_err(|e| e.to_string()))
+                .map(|pts| {
+                    let set: BTreeSet<String> = pts
+                        .into_iter()
+                        .map(|p| p.code)
+                        .filter(|c| !c.is_empty())
+                        .collect();
+                    set.into_iter().collect()
+                });
+            self.codes = Some((path.clone(), codes));
+        }
+        let Some((_, codes)) = &self.codes else {
+            return;
+        };
+        match codes {
+            Err(e) => {
+                crate::menu::error_label(ui, format!("survey file codes: {e}"));
+            }
+            Ok(c) if c.is_empty() => {
+                ui.label(egui::RichText::new("The survey file has no codes").weak());
+            }
+            Ok(codes) => {
+                let codes = codes.clone();
+                egui::Grid::new("building-fields-codes")
+                    .striped(true)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        ui.strong("survey code");
+                        ui.strong("buildings");
+                        ui.strong("ground");
+                        ui.end_row();
+                        for code in &codes {
+                            ui.label(code);
+                            for list in [&mut self.st.building_codes, &mut self.st.ground_codes] {
+                                let mut on = list.contains(code);
+                                if ui.checkbox(&mut on, "").changed() {
+                                    if on {
+                                        list.push(code.clone());
+                                        list.sort();
+                                    } else {
+                                        list.retain(|c| c != code);
+                                    }
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            }
+        }
     }
 
     fn plugin_ui(&mut self, ui: &mut egui::Ui, plugins: &[(String, PathBuf)]) {
@@ -578,156 +680,223 @@ impl BuildingFieldsWindow {
         }
     }
 
-    fn currents_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let circuits = magnetic::circuits(&model.line);
-        egui::Grid::new("building-fields-currents")
-            .striped(true)
-            .spacing(help::GRID_SPACING)
-            .show(ui, |ui| {
-                ui.strong("circuit");
-                ui.strong("current");
-                ui.end_row();
-                for c in &circuits {
-                    let label = c.label();
-                    ui.label(&label);
-                    let a = self.st.currents.entry(label).or_insert(0.0);
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(a)
-                            .range(0.0..=20_000.0)
-                            .speed(10.0)
-                            .suffix(" A"),
-                    );
-                    ui.end_row();
-                }
-            });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.st.earth_wires, "Earth wire currents")
-                .on_hover_text("The earth wires' currents induced by the phases");
-            ui.add_enabled(
-                self.st.earth_wires,
-                egui::Checkbox::new(&mut self.st.towers, "through the towers"),
-            )
-            .on_hover_text(
-                "The earth wires as a network over the line, each structure leading current \
-                 into the ground through its earthing resistance",
-            );
-        });
-    }
-
-    fn results_ui(&mut self, ui: &mut egui::Ui) {
-        let report = match &self.job.result {
+    fn results_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let found = match &self.job.result {
             None => {
-                ui.label(egui::RichText::new("No run yet: Run at the bottom.").weak());
+                ui.label(egui::RichText::new("Not searched yet: Run at the bottom.").weak());
                 return;
             }
             Some(Err(e)) => {
                 crate::menu::error_label(ui, e);
                 return;
             }
-            Some(Ok(r)) => r,
+            Some(Ok(f)) => f.clone(),
         };
-        let n = report
-            .places
-            .iter()
-            .filter(|p| over(p, report.limits))
-            .count();
-        let buildings: std::collections::BTreeSet<&str> =
-            report.places.iter().map(Place::building).collect();
+        let Some(preset) = self.chosen(&found).cloned() else {
+            crate::menu::error_label(
+                ui,
+                format!(
+                    "no preset {} (the plugin gives: {})",
+                    self.st.preset,
+                    found
+                        .presets
+                        .iter()
+                        .map(|p| p.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+            return;
+        };
+        let buildings = buildings_of(&preset);
         check_ui::verdict(
             ui,
-            n > 0,
-            &if report.limits == (None, None) {
-                format!(
-                    "{} places at {} buildings in \"{}\" (no limit: the field plan gives none)",
-                    report.places.len(),
-                    buildings.len(),
-                    report.case
-                )
-            } else if n > 0 {
-                format!(
-                    "✖ {n} place{} over a limit in \"{}\"",
-                    if n == 1 { "" } else { "s" },
-                    report.case
-                )
-            } else {
-                format!(
-                    "✔ Every place within the limits in \"{}\" ({} places at {} buildings)",
-                    report.case,
-                    report.places.len(),
-                    buildings.len()
-                )
-            },
+            false,
+            &format!(
+                "{} building{} near the line in \"{}\": {} cuts, {} places of sensitive use \
+                 (preset {})",
+                buildings.len(),
+                if buildings.len() == 1 { "" } else { "s" },
+                found.case,
+                preset.cuts.len(),
+                preset.points.len(),
+                preset.name
+            ),
             false,
         );
+        let plan = read_plan(model, &self.st.plan).ok().flatten();
         ui.horizontal(|ui| {
-            ui.label(format!(
-                "{} file(s) of preset {} in {}",
-                report.files.len(),
-                report.preset,
-                report.out.display()
-            ));
-            if ui.button("Open the folder").clicked() {
-                let _ = crate::help::open(&report.out);
+            if ui
+                .button("Set up the field tools")
+                .on_hover_text(
+                    "Hand the cuts and places to the Magnetic field and Electric field windows \
+                     (with the field plan's limits and weather case) and open them; run the \
+                     fields there",
+                )
+                .clicked()
+            {
+                self.hand_over = Some(HandOver {
+                    preset: Preset::from_plugin(&found.plugin, &preset),
+                    limits: (
+                        plan.as_ref().and_then(|p| p.0.magnetic.limit()),
+                        plan.as_ref().and_then(|p| p.0.electric.limit()),
+                    ),
+                    case: self.case_of(model, plan.as_ref().map(|p| &p.0)),
+                });
+            }
+            if found.presets.len() > 1 {
+                ui.label("preset");
+                egui::ComboBox::from_id_salt("building-fields-found-preset")
+                    .selected_text(&preset.name)
+                    .show_ui(ui, |ui| {
+                        for p in &found.presets {
+                            ui.selectable_value(&mut self.st.preset, p.name.clone(), &p.name);
+                        }
+                    });
             }
         });
-        check_ui::notes_fold(ui, WINDOW, &report.notes);
+        check_ui::notes_fold(ui, WINDOW, &found.notes);
         use check_ui::{Cell, Col};
-        let (lb, le) = report.limits;
-        let rows: Vec<check_ui::Row> = report
-            .places
+        let rows: Vec<check_ui::Row> = buildings
             .iter()
-            .map(|p| {
-                let worst_b = larger(p.b, p.b_major);
-                let bad_b = lb.is_some_and(|l| worst_b.is_some_and(|b| b > l));
-                let bad_e = le.is_some_and(|l| p.e.is_some_and(|e| e > l));
+            .map(|b| {
                 check_ui::Row::new(
                     vec![
-                        Cell::text(p.building()),
-                        Cell::text(&p.name),
-                        Cell::num(Some(p.height), 1),
-                        Cell::num(p.b, 3).bad(bad_b),
-                        Cell::num(p.b_major, 3).bad(bad_b),
-                        Cell::num(lb.zip(worst_b).map(|(l, b)| l - b), 3).bad(bad_b),
-                        Cell::num(p.e, 4).bad(bad_e),
-                        Cell::num(le.zip(p.e).map(|(l, e)| l - e), 4).bad(bad_e),
+                        Cell::text(&b.id),
+                        Cell::num(Some(b.area), 0),
+                        Cell::num(Some(b.ground), 2),
+                        Cell::num(Some(b.top - b.ground), 1),
+                        Cell::num(Some(b.cuts as f64), 0),
+                        Cell::num(Some(b.places as f64), 0),
                     ],
-                    bad_b || bad_e,
+                    false,
                 )
             })
             .collect();
         check_ui::ResultTable::new(
-            "building-fields-places",
+            "building-fields-buildings",
             vec![
                 Col::text("Building"),
-                Col::text("Place"),
+                Col::num("Area [m²]"),
+                Col::num("Ground [m]"),
                 Col::num("Height [m]"),
-                Col::num("B [µT]"),
-                Col::num("B cycle [µT]").tip("The largest over the cycle"),
-                Col::num("Margin B [µT]").tip("The limit less the larger of B and its cycle's"),
-                Col::num("E [kV/m]"),
-                Col::num("Margin E [kV/m]"),
+                Col::num("Cuts"),
+                Col::num("Places"),
             ],
         )
         .rows(rows)
-        .group_by(&[0])
-        .csv("building-fields-places.csv")
+        .csv("building-fields-buildings.csv")
         .ui(ui);
     }
 }
 
-/// A place over a limit.
-fn over(p: &Place, (lb, le): (Option<f64>, Option<f64>)) -> bool {
-    lb.is_some_and(|l| larger(p.b, p.b_major).is_some_and(|b| b > l))
-        || le.is_some_and(|l| p.e.is_some_and(|e| e > l))
+/// The buildings of a preset: its outlines, with the cuts and places
+/// named after them (a cut's label, a place's name before its first `-`).
+fn buildings_of(p: &ohl_plugins::FieldPreset) -> Vec<Building> {
+    let named = |s: &str, id: &str| s == id || s.split('-').next() == Some(id);
+    let mut out: Vec<Building> = p
+        .outlines
+        .iter()
+        .map(|o| {
+            let ring: Vec<[f64; 2]> = o.ring.as_chunks::<2>().0.to_vec();
+            let area = ring
+                .iter()
+                .zip(ring.iter().cycle().skip(1))
+                .map(|(a, b)| a[0] * b[1] - b[0] * a[1])
+                .sum::<f64>()
+                .abs()
+                / 2.0;
+            Building {
+                id: o.id.clone(),
+                ground: o.ground,
+                top: o.top,
+                area,
+                cuts: p.cuts.iter().filter(|c| named(&c.label, &o.id)).count(),
+                places: p.points.iter().filter(|q| named(&q.name, &o.id)).count(),
+            }
+        })
+        .collect();
+    // A preset without outlines: its cuts by label.
+    if out.is_empty() {
+        let labels: BTreeSet<String> = p.cuts.iter().map(|c| c.label.clone()).collect();
+        out = labels
+            .into_iter()
+            .map(|l| Building {
+                cuts: p.cuts.iter().filter(|c| c.label == l).count(),
+                places: p.points.iter().filter(|q| named(&q.name, &l)).count(),
+                id: l,
+                ground: f64::NAN,
+                top: f64::NAN,
+                area: f64::NAN,
+            })
+            .collect();
+    }
+    out
 }
 
-/// The larger of two values, either missing.
-fn larger(a: Option<f64>, b: Option<f64>) -> Option<f64> {
-    match (a, b) {
-        (Some(a), Some(b)) => Some(a.max(b)),
-        (a, b) => a.or(b),
+/// The point cloud's classes to tick: (code, name, points) of the cloud's
+/// classes, else the class scheme's.
+fn cloud_classes(model: &Model) -> Vec<(u8, String, Option<u64>)> {
+    let mut codes: BTreeSet<u8> = model.class_counts.iter().map(|(c, _)| *c).collect();
+    codes.extend(model.points.iter().map(|p| p.1));
+    if codes.is_empty() {
+        codes.extend(model.scheme.classes.iter().map(|c| c.code));
     }
+    codes
+        .into_iter()
+        .map(|c| {
+            (
+                c,
+                model
+                    .scheme
+                    .class(c)
+                    .map_or_else(|| "unknown".to_owned(), |d| d.name.clone()),
+                model
+                    .class_counts
+                    .iter()
+                    .find(|(k, _)| *k == c)
+                    .map(|(_, n)| *n),
+            )
+        })
+        .collect()
+}
+
+/// `text` (the plugin's parameters, TOML) with `key` set to `list` (a
+/// TOML array of strings) at its top level: its line replaced (also a
+/// line commented out), else added at the top; an empty list leaves the
+/// text as it is.
+fn set_list(text: &str, key: &str, list: &[String]) -> String {
+    if list.is_empty() {
+        return text.to_owned();
+    }
+    let value = format!(
+        "{key} = [{}]",
+        list.iter()
+            .map(|c| format!("{c:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let mut done = false;
+    let mut in_table = false;
+    let mut lines: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with('[') && !t.starts_with("[[") && !t.contains('=') {
+            in_table = true;
+        }
+        let body = t.strip_prefix('#').map_or(t, str::trim);
+        let is_key = body.split_once('=').is_some_and(|(k, _)| k.trim() == key);
+        if !in_table && !done && is_key {
+            lines.push(value.clone());
+            done = true;
+        } else {
+            lines.push(line.to_owned());
+        }
+    }
+    if !done {
+        lines.insert(0, value);
+    }
+    lines.join("\n") + "\n"
 }
 
 /// A new plan's file name not among `names`.
@@ -902,283 +1071,117 @@ fn params_form(ui: &mut egui::Ui, text: &mut String) -> bool {
     changed
 }
 
-/// What a run reads, taken on the UI thread.
-struct Run<'a> {
-    line: &'a ohl_line::Line,
-    library: &'a ohl_cables::Library,
-    shapes: &'a [ohl_line::solve::SectionShape],
-    jumpers: &'a [ohl_line::jumper::JumperShape],
-    weather: &'a ohl_weather::WeatherCase,
-    ground: Option<&'a ohl_terrain::Terrain>,
-    cloud: Option<&'a str>,
-    file: &'a Path,
-    line_name: &'a str,
-}
-
-impl Run<'_> {
-    /// Gathers the plugin's points, takes its preset, runs both fields
-    /// there and has the plugin write its report into `out`.
-    fn go(
-        &self,
-        plugin: &(String, PathBuf),
-        parameters: &str,
-        st: &Stored,
-        plan: Option<&(FieldPlan, String)>,
-        out: &Path,
-    ) -> Result<Report, String> {
-        let (name, dir) = plugin;
-        let mut notes = Vec::new();
-        let host = ohl_plugins::WasmHost::new().map_err(|e| e.to_string())?;
-        let manifest = ohl_plugins::Manifest::load(dir).map_err(|e| e.to_string())?;
-        // The spans in plan and the alignments the host checks against.
-        let at = |id: &str| {
-            self.line
-                .structure(id)
-                .map(|s| [s.position[0], s.position[1]])
-                .ok_or_else(|| format!("no structure {id}"))
-        };
-        let mut spans = Vec::new();
-        for s in ohl_electrical::cross_section::line_spans(self.line) {
-            spans.push(vec![at(&s.from)?, at(&s.to)?]);
-        }
-        let alignments: Vec<(String, f64)> = self
-            .line
-            .alignment_views()
-            .iter()
-            .map(|v| {
-                (
-                    v.id.clone(),
-                    ohl_line::route::plan_length(&v.centreline(self.line)),
-                )
-            })
-            .collect();
-        let cloud = match self.cloud {
-            Some(c) => Some(ohl_pointcloud::open_source(c)?),
-            None => None,
-        };
-        let cloud_ref = cloud
-            .as_deref()
-            .map(|c| c as &dyn ohl_pointcloud::PointSource);
-        // Exit clause: decoding is about 1 s per 10⁷ points.
-        let budget =
-            ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-        let table = manifest.field_input.clone().unwrap_or_default();
-        // The buildings from the point cloud's classes alone (owner,
-        // 2026-11-02: "There are classes for buildings only use those").
-        let gathered = ohl_io::field_input::gather(&table, cloud_ref, &[], &spans, &budget)?;
-        notes.extend(gathered.notes.iter().map(|n| format!("plugin input: {n}")));
-        let model_json = ohl_io::ExportModel::new(
-            self.line,
-            &[(
-                self.weather.name.clone(),
-                self.weather.summary(),
-                self.shapes.to_vec(),
-                self.jumpers.to_vec(),
-            )],
-        )
-        .to_json();
-        let input = ohl_plugins::FieldInput {
-            parameters: parameters.to_owned(),
-            model: model_json,
-            points: gathered.points,
-            ground: gathered.ground,
-        };
-        let presets = host
-            .field_presets(dir, &input, &alignments)
-            .map_err(|e| e.to_string())?;
-        let preset = if st.preset.is_empty() {
-            presets.first()
-        } else {
-            presets.iter().find(|p| p.name == st.preset)
-        }
-        .ok_or_else(|| {
-            format!(
-                "plugin {name}: no preset {} (it gives: {})",
-                st.preset,
-                presets
-                    .iter()
-                    .map(|p| p.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+/// Finds the buildings: gathers the plugin's points (the classes and
+/// codes chosen) and takes its presets.
+#[allow(clippy::too_many_arguments)]
+fn find(
+    plugin: &(String, PathBuf),
+    parameters: &str,
+    st: &Stored,
+    line: &ohl_line::Line,
+    weather: &ohl_weather::WeatherCase,
+    shapes: &[ohl_line::solve::SectionShape],
+    jumpers: &[ohl_line::jumper::JumperShape],
+    cloud: Option<&str>,
+    survey: Option<&Path>,
+) -> Result<Found, String> {
+    let (name, dir) = plugin;
+    let mut notes = Vec::new();
+    let host = ohl_plugins::WasmHost::new().map_err(|e| e.to_string())?;
+    let manifest = ohl_plugins::Manifest::load(dir).map_err(|e| e.to_string())?;
+    let at = |id: &str| {
+        line.structure(id)
+            .map(|s| [s.position[0], s.position[1]])
+            .ok_or_else(|| format!("no structure {id}"))
+    };
+    let mut spans = Vec::new();
+    for s in ohl_electrical::cross_section::line_spans(line) {
+        spans.push(vec![at(&s.from)?, at(&s.to)?]);
+    }
+    let alignments: Vec<(String, f64)> = line
+        .alignment_views()
+        .iter()
+        .map(|v| {
+            (
+                v.id.clone(),
+                ohl_line::route::plan_length(&v.centreline(line)),
             )
-        })?
-        .clone();
-        notes.extend(preset.notes.iter().map(|n| format!("plugin: {n}")));
-        // Both fields at the preset's cuts and places, the plan's levels
-        // and limits added.
-        let plan_levels = |m: bool| {
-            plan.map_or_else(Vec::new, |(p, _)| {
-                if m {
-                    p.magnetic.values()
-                } else {
-                    p.electric.values()
-                }
-            })
-        };
-        let levels = |own: &[f64], m: bool| {
-            let mut l: Vec<f64> = own.iter().copied().chain(plan_levels(m)).collect();
-            l.sort_by(f64::total_cmp);
-            l.dedup();
-            l
-        };
-        let limits = (
-            plan.and_then(|(p, _)| p.magnetic.limit()),
-            plan.and_then(|(p, _)| p.electric.limit()),
-        );
-        let cuts = ohl_io::field_input::preset_cuts(&preset);
-        let points = ohl_io::field_input::preset_points(&preset);
-        let ms = magnetic::Settings {
-            currents: st
-                .currents
-                .iter()
-                .map(|(c, a)| magnetic::CircuitCurrent {
-                    circuit: c.clone(),
-                    amps: *a,
-                    reverse: false,
-                })
-                .collect(),
-            earth_wires: st.earth_wires,
-            towers: st.earth_wires && st.towers,
-            profiles: false,
-            cuts: cuts.clone(),
-            points: points.clone(),
-            levels: levels(&preset.levels_ut, true),
-            limit_ut: limits.0,
-            ..magnetic::Settings::default()
-        };
-        let es = electric::Settings {
-            profiles: false,
-            cuts,
-            points,
-            levels: levels(&preset.levels_kv_m, false),
-            limit_kv_m: limits.1,
-            ..electric::Settings::default()
-        };
-        let height = |x: f64, y: f64| self.ground.and_then(|t| t.height(x, y));
-        let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = self
-            .ground
-            .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
-        let src = ohl_electrical::Sources {
-            line: self.line,
-            library: self.library,
-            shapes: self.shapes,
-            temperature: self.weather.temperature,
-            ground: g,
-            jumpers: self.jumpers,
-        };
-        let m = magnetic::run(&src, &ms, None)?;
-        let e = electric::run(&src, &es, None)?;
-        notes.extend(m.notes.iter().map(|n| format!("magnetic: {n}")));
-        notes.extend(e.notes.iter().map(|n| format!("electric: {n}")));
-        let (case, t) = (&self.weather.name, self.weather.temperature.celsius());
-        let places = m
-            .points
-            .iter()
-            .map(|p| Place {
-                name: p.name.clone(),
-                height: p.height,
-                b: Some(p.b_ut),
-                b_major: Some(p.major_ut),
-                e: e.points.iter().find(|q| q.name == p.name).map(|q| q.e_kv_m),
-            })
-            .collect();
-        let set = serde_json::json!({
-            "format": field_results::SET_FORMAT,
-            "version": field_results::SET_VERSION,
-            "case": {"name": case, "temperature_c": t},
-            "fields": [
-                field_results::magnetic_value(&m, &ms, case, t),
-                field_results::electric_value(&e, &es, case, t),
-            ],
-        });
-        drop((m, e));
-        let (summary, mut docs) = field_results::split_set(set);
-        for d in &mut docs {
-            d["line"] = serde_json::Value::from(self.line_name);
-        }
-        if let Some((p, _)) = plan {
-            notes.extend(self.extras(p, &mut docs, cloud_ref, g, &budget)?);
-        }
-        let cut_texts: Vec<String> = docs.into_iter().map(|d| d.to_string()).collect();
-        let results = summary.to_string();
-        let files = host
-            .field_report(
-                dir,
-                &ohl_plugins::ReportInput {
-                    parameters,
-                    plan: plan.map_or("", |(_, j)| j.as_str()),
-                    preset: &preset,
-                    results: &results,
-                    cuts: &cut_texts,
-                },
-                &mut |_, _| {},
-            )
-            .map_err(|e| e.to_string())?;
-        std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
-        for f in &files {
-            let path = out.join(&f.name);
-            std::fs::write(&path, &f.bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-        }
-        Ok(Report {
-            case: case.clone(),
-            preset: preset.name.clone(),
-            places,
-            limits,
-            files: files.iter().map(|f| f.name.clone()).collect(),
-            out: out.to_path_buf(),
-            notes,
         })
+        .collect();
+    let cloud = match cloud {
+        Some(c) => Some(ohl_pointcloud::open_source(c)?),
+        None => None,
+    };
+    let cloud_ref = cloud
+        .as_deref()
+        .map(|c| c as &dyn ohl_pointcloud::PointSource);
+    // Exit clause: decoding is about 1 s per 10⁷ points.
+    let budget = ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+    let mut table = manifest.field_input.clone().unwrap_or_default();
+    // The survey codes ticked, from the survey file.
+    let mut codes: Vec<String> = st.building_codes.clone();
+    codes.extend(st.ground_codes.iter().cloned());
+    codes.sort();
+    codes.dedup();
+    table.survey_codes = codes;
+    let survey_points = match survey {
+        Some(p) if !table.survey_codes.is_empty() => {
+            let text = std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            ohl_terrain::read_points(&text).map_err(|e| format!("{}: {e}", p.display()))?
+        }
+        _ => Vec::new(),
+    };
+    let chosen = match (&st.building_classes, &st.ground_classes) {
+        (None, None) => None,
+        (b, g) => {
+            let role = |r: &[String]| -> Vec<u8> {
+                let scheme = cloud_ref
+                    .and_then(|c| c.class_scheme())
+                    .and_then(|t| ohl_lidar::ClassScheme::parse(&t).ok())
+                    .unwrap_or_else(ohl_lidar::ClassScheme::asprs);
+                r.iter().flat_map(|x| scheme.codes_with_role(x)).collect()
+            };
+            Some((
+                b.clone().unwrap_or_else(|| role(&table.roles)),
+                g.clone().unwrap_or_else(|| role(&table.ground_roles)),
+            ))
+        }
+    };
+    let gathered = ohl_io::field_input::gather_classes(
+        &table,
+        chosen.as_ref().map(|(b, g)| (b.as_slice(), g.as_slice())),
+        cloud_ref,
+        &survey_points,
+        &spans,
+        &budget,
+    )?;
+    notes.extend(gathered.notes.iter().map(|n| format!("plugin input: {n}")));
+    let model_json = ohl_io::ExportModel::new(
+        line,
+        &[(
+            weather.name.clone(),
+            weather.summary(),
+            shapes.to_vec(),
+            jumpers.to_vec(),
+        )],
+    )
+    .to_json();
+    let input = ohl_plugins::FieldInput {
+        parameters: parameters.to_owned(),
+        model: model_json,
+        points: gathered.points,
+        ground: gathered.ground,
+    };
+    let presets = host
+        .field_presets(dir, &input, &alignments)
+        .map_err(|e| e.to_string())?;
+    for p in &presets {
+        notes.extend(p.notes.iter().map(|n| format!("plugin ({}): {n}", p.name)));
     }
-
-    /// The plan's points and its TIN or drawing along each cut.
-    fn extras(
-        &self,
-        plan: &FieldPlan,
-        docs: &mut [serde_json::Value],
-        cloud: Option<&dyn ohl_pointcloud::PointSource>,
-        ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)>,
-        budget: &ohl_core::budget::Budget,
-    ) -> Result<Vec<String>, String> {
-        use field_plan::Background;
-        use ohl_io::field_cuts::{self, Along};
-        let surface = match plan.cut.background {
-            Background::Tin if !plan.cut.surface.is_empty() => {
-                Some(crate::surfaces::load(self.file, &plan.cut.surface)?)
-            }
-            _ => None,
-        };
-        let drawing = match plan.cut.background {
-            Background::Dxf => Some(
-                ohl_background::Store::open(self.file)
-                    .and_then(|s| s.drawing(&plan.cut.drawing))
-                    .map_err(|e| format!("field plan: drawing {}: {}", plan.cut.drawing, e.0))?,
-            ),
-            _ => None,
-        };
-        let tin = |x: f64, y: f64| match (&surface, ground) {
-            (Some(t), _) => t.height(x, y),
-            (None, Some(g)) => g(x, y),
-            (None, None) => None,
-        };
-        let crossings = |p: &field_cuts::CutPlane| {
-            drawing.as_ref().map_or_else(Vec::new, |d| {
-                d.plane_crossings(p.origin, p.right, p.span, &plan.cut.layers)
-            })
-        };
-        let along = match plan.cut.background {
-            Background::None => Along::Nothing,
-            Background::Tin => Along::Tin(
-                if plan.cut.surface.is_empty() {
-                    "the field's ground"
-                } else {
-                    &plan.cut.surface
-                },
-                &tin,
-            ),
-            Background::Dxf => Along::Dxf(&plan.cut.drawing, &crossings),
-        };
-        let classes: Vec<u8> = plan.cut.classes.iter().map(|c| c.class).collect();
-        let notes = field_cuts::add_extras(docs, cloud, &classes, plan.cut.band, &along, budget)?;
-        Ok(notes.into_iter().map(|n| format!("plan: {n}")).collect())
-    }
+    Ok(Found {
+        plugin: name.clone(),
+        presets,
+        case: weather.name.clone(),
+        notes,
+    })
 }

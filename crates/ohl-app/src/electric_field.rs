@@ -172,6 +172,9 @@ pub struct ElectricFieldWindow {
     stretches: usize,
     /// Points read from a CSV file, and its name.
     points: Option<(String, Vec<GivenPoint>)>,
+    /// The cuts and places set up by Checks › Electrical › Buildings
+    /// (owner, 2026-11-03), run with the window's own.
+    buildings: Option<crate::field_preset::Preset>,
     /// The points file's text (kept in the project).
     points_text: Option<String>,
     /// The project setting's key and the inputs as last read or written
@@ -269,6 +272,7 @@ impl Default for ElectricFieldWindow {
             volume_margin: electric::VOLUME_MARGIN,
             stretches: electric::STRETCHES,
             points: None,
+            buildings: None,
             points_text: None,
             saved: None,
             case_kept: false,
@@ -356,6 +360,8 @@ struct Stored {
     stretches: Option<usize>,
     /// The points file's name and text.
     points: Option<(String, String)>,
+    /// The buildings' preset (2026-11-03).
+    buildings: Option<crate::field_preset::Preset>,
     piece_length: Option<f64>,
     levels: Option<Vec<Level>>,
     fill: Option<bool>,
@@ -442,6 +448,7 @@ impl ElectricFieldWindow {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
             },
+            buildings: self.buildings.clone(),
             piece_length: self.piece_length,
             levels: Some(self.levels.clone()),
             fill: Some(self.fill),
@@ -541,6 +548,7 @@ impl ElectricFieldWindow {
         self.cut_width = st.cut_width.unwrap_or(d.cut_width);
         self.cut_step = st.cut_step.unwrap_or(d.cut_step);
         self.cut_above = st.cut_above.unwrap_or(d.cut_above);
+        self.buildings = st.buildings.clone();
         (self.points, self.points_text, self.points_error) = match st.points {
             Some((name, text)) => match magnetic::parse_points(&text) {
                 Ok(p) => (Some((name, p)), Some(text), None),
@@ -855,8 +863,19 @@ impl ElectricFieldWindow {
         self.limit
     }
 
-    /// Sets the limit, kV/m (tests).
+    /// Sets the buildings' preset (Checks › Electrical › Buildings).
+    pub fn set_buildings(&mut self, preset: Option<crate::field_preset::Preset>) {
+        self.buildings = preset;
+        self.commit = true;
+    }
+
+    /// The buildings' preset set up (tests).
     #[cfg(test)]
+    pub fn buildings(&self) -> Option<&crate::field_preset::Preset> {
+        self.buildings.as_ref()
+    }
+
+    /// Sets the limit, kV/m.
     pub fn set_limit(&mut self, limit: Option<f64>) {
         self.limit = limit;
     }
@@ -943,13 +962,23 @@ impl ElectricFieldWindow {
             step: self.step,
             stations,
             profiles: self.planes && self.profiles,
-            points: if self.planes && self.profiles {
-                self.points
-                    .as_ref()
-                    .map(|p| p.1.clone())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
+            // The CSV's points with the profiles; the buildings' places
+            // in any 2D run.
+            points: {
+                let mut v = if self.planes && self.profiles {
+                    self.points
+                        .as_ref()
+                        .map(|p| p.1.clone())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                if self.planes
+                    && let Some(b) = &self.buildings
+                {
+                    v.extend(b.points());
+                }
+                v
             },
             limit_kv_m: self.limit,
             ground_radius: self.ground_radius,
@@ -983,6 +1012,7 @@ impl ElectricFieldWindow {
                         step: self.cut_step,
                         label: None,
                     })
+                    .chain(self.buildings.iter().flat_map(|b| b.cut_specs()))
                     .collect()
             },
             // A volume: one along each run of spans following each other
@@ -1002,10 +1032,13 @@ impl ElectricFieldWindow {
                     .collect(),
                 _ => Vec::new(),
             },
-            levels: crate::field_overlay::shown(&self.levels)
-                .iter()
-                .map(|l| l.value)
-                .collect(),
+            levels: crate::field_preset::with_levels(
+                crate::field_overlay::shown(&self.levels)
+                    .iter()
+                    .map(|l| l.value)
+                    .collect(),
+                self.buildings.as_ref().map(|b| b.levels_kv_m.as_slice()),
+            ),
             steel: steel.0,
             steel_left_out: steel.1,
         }
@@ -1790,6 +1823,9 @@ impl ElectricFieldWindow {
                     }
                 });
                 ui.end_row();
+                if crate::field_preset::row(ui, &mut self.buildings, self.planes) {
+                    self.commit = true;
+                }
             });
         if let Some(e) = &self.points_error {
             crate::menu::error_label(ui, e.as_str());

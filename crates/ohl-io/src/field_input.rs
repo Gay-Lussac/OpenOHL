@@ -61,6 +61,20 @@ pub fn gather(
     spans: &[Vec<[f64; 2]>],
     budget: &Budget,
 ) -> Result<Gathered, String> {
+    gather_classes(table, None, cloud, survey, spans, budget)
+}
+
+/// [`gather`] with the classes chosen instead of the table's roles
+/// (`chosen`: the points' classes and the ground's; owner 2026-11-03: a
+/// tick list of the point cloud's classes), the survey codes the table's.
+pub fn gather_classes(
+    table: &FieldInputTable,
+    chosen: Option<(&[u8], &[u8])>,
+    cloud: Option<&dyn PointSource>,
+    survey: &[SurveyPoint],
+    spans: &[Vec<[f64; 2]>],
+    budget: &Budget,
+) -> Result<Gathered, String> {
     table.check()?;
     let mut out = Gathered::default();
     let corridor = Corridor::new(spans, table.reach);
@@ -72,15 +86,34 @@ pub fn gather(
             table.max_points, table.reach
         )
     };
-    let wants_cloud = !table.roles.is_empty() || !table.ground_roles.is_empty();
+    let wants_cloud = match chosen {
+        Some((p, g)) => !p.is_empty() || !g.is_empty(),
+        None => !table.roles.is_empty() || !table.ground_roles.is_empty(),
+    };
     match cloud {
         Some(source) if wants_cloud && !corridor.is_empty() => {
             let scheme = source
                 .class_scheme()
                 .and_then(|t| ClassScheme::parse(&t).ok())
                 .unwrap_or_else(ClassScheme::asprs);
-            let points = classes(&scheme, &table.roles, "roles")?;
-            let ground = classes(&scheme, &table.ground_roles, "ground-roles")?;
+            let (points, ground) = match chosen {
+                Some((p, g)) => (p.to_vec(), g.to_vec()),
+                None => (
+                    classes(&scheme, &table.roles, "roles")?,
+                    classes(&scheme, &table.ground_roles, "ground-roles")?,
+                ),
+            };
+            let named = |c: &[u8]| -> Vec<String> { c.iter().map(|k| k.to_string()).collect() };
+            let (roles, ground_roles) = match chosen {
+                Some(_) => (
+                    format!("the classes {}", list(&named(&points))),
+                    format!("classes {}", list(&named(&ground))),
+                ),
+                None => (
+                    format!("the roles {}", list(&table.roles)),
+                    format!("roles {}", list(&table.ground_roles)),
+                ),
+            };
             let mut all: Vec<u8> = points.iter().chain(&ground).copied().collect();
             all.sort_unstable();
             all.dedup();
@@ -118,12 +151,12 @@ pub fn gather(
             }
             out.ground = cells.points().iter().flatten().copied().collect();
             out.notes.push(format!(
-                "{} points of the roles {} and {} ground cells of {} m (roles {}) from {}, within {} m of the spans",
+                "{} points of {} and {} ground cells of {} m ({}) from {}, within {} m of the spans",
                 out.points.len(),
-                list(&table.roles),
+                roles,
                 cells.points().len(),
                 table.ground_cell,
-                list(&table.ground_roles),
+                ground_roles,
                 source.describe(),
                 table.reach
             ));
