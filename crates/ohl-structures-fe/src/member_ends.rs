@@ -436,6 +436,7 @@ pub(crate) fn read_connections(
             holes: holes_of(&c),
             gauges: c.gauges.iter().map(|g| g.si()).collect(),
             edge_distance: c.edge_distance.map(|l| l.si()),
+            rolled_edge: c.rolled_edge,
             end_distance: c.end_distance.map(|l| l.si()),
             pitch: c.pitch.map(|l| l.si()),
             eccentric: c.eccentric,

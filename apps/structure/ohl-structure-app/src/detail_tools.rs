@@ -25,7 +25,9 @@
 //! again. Every action is one undo step.
 
 use eframe::egui;
-use ohl_structure_link::{Arrival, FlatLeg, JointDetail, MemberEnds};
+use ohl_structure_link::{
+    Arrival, BoltRules, FlatLeg, JointDetail, MemberEnds, Snap, breaches, snap,
+};
 
 use crate::joint_tools::Act;
 
@@ -43,14 +45,17 @@ pub enum DetailTool {
     AddBolt,
     /// A bolt clicked: taken away.
     RemoveBolt,
+    /// A bolt dragged: moved, snapped as Add bolt places it.
+    MoveBolt,
     /// A member dragged: where its steel stops, its end's shift.
     MemberEnd,
 }
 
 impl DetailTool {
-    const ALL: [DetailTool; 4] = [
+    const ALL: [DetailTool; 5] = [
         DetailTool::Edit,
         DetailTool::AddBolt,
+        DetailTool::MoveBolt,
         DetailTool::RemoveBolt,
         DetailTool::MemberEnd,
     ];
@@ -60,6 +65,7 @@ impl DetailTool {
             DetailTool::Edit => "Edit",
             DetailTool::AddBolt => "Add bolt",
             DetailTool::RemoveBolt => "Remove bolt",
+            DetailTool::MoveBolt => "Move bolt",
             DetailTool::MemberEnd => "Member end",
         }
     }
@@ -68,7 +74,14 @@ impl DetailTool {
         match self {
             DetailTool::Edit => "Click a bolt or a member: its bolt layout, in the panel",
             DetailTool::AddBolt => {
-                "Click on a member's leg bolted: a bolt there, on its gauge line (along it to 5 mm)"
+                "Click on a member's leg bolted: a bolt there, snapped onto the nearest gauge line \
+                 where the design code's end distance, spacing and edge distance hold; with no \
+                 room there, a new gauge line is offered (you confirm). Bolts that break the code \
+                 are marked red, the clause on hover"
+            }
+            DetailTool::MoveBolt => {
+                "Drag a bolt: it moves, snapped as Add bolt places it (the code's distances kept; \
+                 a new gauge line offered when there is no room)"
             }
             DetailTool::RemoveBolt => "Click a bolt: it goes",
             DetailTool::MemberEnd => {
@@ -92,6 +105,108 @@ pub struct EndDrag {
     pub from: [f64; 2],
     /// Where the pointer is now.
     pub now: [f64; 2],
+    /// The bolt dragged (Move bolt): its place in the end's bolts.
+    pub bolt: Option<usize>,
+}
+
+/// The design code's bolt rules per member end (member, joint), as the
+/// application worked them out for the ends drawn.
+pub type Rules = std::collections::HashMap<(String, String), BoltRules>;
+
+/// The act that places a bolt at `wanted` (along from the work point,
+/// across from the heel; `across_known` false: the view does not show it)
+/// on `a`'s end at `joint`, its other bolts `others` (a bolt moved left
+/// out of them): by the code's rules when
+/// there are some ([`snap`]: on a line, a new line offered, or why not),
+/// else as before (on the nearest gauge line, along to 5 mm).
+pub(crate) fn place(
+    a: &Arrival,
+    joint: &str,
+    rules: Option<&BoltRules>,
+    others: Vec<[f64; 2]>,
+    wanted: [f64; 2],
+    across_known: bool,
+) -> Act {
+    let points_with = |p: [f64; 2]| {
+        let mut pts = others.clone();
+        pts.push(p);
+        pts
+    };
+    let bolts = |n: usize| Some(bolts_of(a, n as u32).value());
+    let Some(r) = rules else {
+        let across = if across_known {
+            snap_across(a, wanted[1])
+        } else {
+            snap_across(a, 0.0)
+        };
+        let pts = points_with([round5mm(wanted[0].max(0.0)), across]);
+        let n = pts.len();
+        return Act::BoltPoints(a.member.clone(), joint.to_owned(), pts, bolts(n));
+    };
+    let mut lines: Vec<f64> = a.gauges.value.clone().unwrap_or_default();
+    lines.extend(others.iter().map(|q| q[1]));
+    let cut = a.cut.value.unwrap_or(0.0);
+    let round = |p: [f64; 2]| [(p[0] * 1e4).round() / 1e4, (p[1] * 1e4).round() / 1e4];
+    match snap(r, &others, &lines, cut, wanted, across_known) {
+        Snap::OnLine(p) => {
+            let pts = points_with(round(p));
+            let n = pts.len();
+            Act::BoltPoints(a.member.clone(), joint.to_owned(), pts, bolts(n))
+        }
+        Snap::NewLine { gauge, at } => {
+            let pts = points_with(round(at));
+            let n = pts.len();
+            Act::OfferLine {
+                member: a.member.clone(),
+                joint: joint.to_owned(),
+                points: pts,
+                bolts: bolts(n),
+                gauge,
+                words: r.words(),
+            }
+        }
+        Snap::Nowhere(why) => Act::Say(
+            format!(
+                "{} at {joint}: no place for the bolt there by {} — {why}",
+                a.member, r.code
+            ),
+            true,
+        ),
+    }
+}
+
+/// Red rings on the bolts of `a` that break `r`, drawn at `at(i)`; the
+/// breaches in words near the pointer `hover`.
+fn mark_breaches(
+    painter: &egui::Painter,
+    a: &Arrival,
+    r: &BoltRules,
+    at: impl Fn(usize) -> Option<egui::Pos2>,
+    radius: f32,
+    hover: Option<egui::Pos2>,
+) {
+    let red = egui::Color32::from_rgb(220, 60, 50);
+    let list = breaches(r, &a.bolt_flat, a.cut.value.unwrap_or(0.0));
+    for b in &list {
+        let Some(p) = at(b.bolt) else {
+            continue;
+        };
+        painter.circle_stroke(p, radius + 3.0, egui::Stroke::new(2.0, red));
+        if hover.is_some_and(|h| h.distance(p) < radius + 6.0) {
+            let words: Vec<&str> = list
+                .iter()
+                .filter(|x| x.bolt == b.bolt)
+                .map(|x| x.what.as_str())
+                .collect();
+            painter.text(
+                p + egui::vec2(radius + 6.0, -radius - 6.0),
+                egui::Align2::LEFT_BOTTOM,
+                format!("{} bolt {}: {}", a.member, b.bolt + 1, words.join("; ")),
+                egui::FontId::proportional(11.0),
+                red,
+            );
+        }
+    }
 }
 
 /// The tool strip; `active`: the tools act in this drawing (not the
@@ -239,6 +354,7 @@ fn round5mm(x: f64) -> f64 {
 
 /// The face view's tool on `response` over the joint `j` seen from
 /// `face` (`fit` as drawn): the act asked, and what to draw over it.
+#[allow(clippy::too_many_arguments)]
 pub fn face_act(
     j: &JointDetail,
     face: &str,
@@ -247,6 +363,7 @@ pub fn face_act(
     tool: DetailTool,
     drag: &mut Option<EndDrag>,
     painter: &egui::Painter,
+    rules: &Rules,
 ) -> Vec<Act> {
     let [r, u, _] = ohl_structure_link::face_axes(face);
     let o = j.position;
@@ -323,6 +440,7 @@ pub fn face_act(
                         joint: j.id.clone(),
                         from: v,
                         now: v,
+                        bolt: None,
                     });
                 }
             }
@@ -358,6 +476,50 @@ pub fn face_act(
                 acts.push(Act::CutShift(d.member.clone(), d.joint.clone(), cut, shift));
             }
         }
+        DetailTool::MoveBolt => {
+            if response.drag_started()
+                && let Some(q) = response.interact_pointer_pos()
+            {
+                let v = fit.back(q);
+                if let Some((ia, ib)) = hit_bolt(v) {
+                    let a = &j.arrivals[ia];
+                    *drag = Some(EndDrag {
+                        member: a.member.clone(),
+                        joint: j.id.clone(),
+                        from: v,
+                        now: v,
+                        bolt: Some(ib),
+                    });
+                }
+            }
+            if let (Some(d), Some(q)) = (drag.as_mut(), pointer) {
+                d.now = fit.back(q);
+                painter.line_segment(
+                    [fit.at(d.from), fit.at(d.now)],
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(90, 150, 230)),
+                );
+            }
+            if response.drag_stopped()
+                && let Some(d) = drag.take()
+                && let Some(ib) = d.bolt
+                && let Some(a) = j.arrivals.iter().find(|a| a.member == d.member)
+                && ib < a.bolt_flat.len()
+            {
+                // The face view shows the bolt's place along the member;
+                // across the leg it keeps its line.
+                let mut others = a.bolt_flat.clone();
+                let old = others.remove(ib);
+                let s = old[0] + along(a, d.now) - along(a, d.from);
+                acts.push(place(
+                    a,
+                    &j.id,
+                    rules.get(&(a.member.clone(), j.id.clone())),
+                    others,
+                    [s, old[1]],
+                    true,
+                ));
+            }
+        }
         _ => {
             if !response.clicked() {
                 return acts;
@@ -378,16 +540,13 @@ pub fn face_act(
                 DetailTool::AddBolt => {
                     if let Some(ia) = hit_member(v) {
                         let a = &j.arrivals[ia];
-                        let s = round5mm(along(a, v).max(0.0));
-                        let across = snap_across(a, 0.0);
-                        let mut pts = a.bolt_flat.clone();
-                        pts.push([s, across]);
-                        let n = pts.len() as u32;
-                        acts.push(Act::BoltPoints(
-                            a.member.clone(),
-                            j.id.clone(),
-                            pts,
-                            Some(bolts_of(a, n).value()),
+                        acts.push(place(
+                            a,
+                            &j.id,
+                            rules.get(&(a.member.clone(), j.id.clone())),
+                            a.bolt_flat.clone(),
+                            [along(a, v).max(0.0), 0.0],
+                            false,
                         ));
                     }
                 }
@@ -407,8 +566,24 @@ pub fn face_act(
                         ));
                     }
                 }
-                DetailTool::MemberEnd => {}
+                DetailTool::MemberEnd | DetailTool::MoveBolt => {}
             }
+        }
+    }
+    // The bolts that break the code, marked.
+    let hover = response.hover_pos();
+    for a in &j.arrivals {
+        if let Some(rl) = rules.get(&(a.member.clone(), j.id.clone())) {
+            let rad =
+                (a.bolts.value.as_ref().map_or(0.008, |b| b.diameter) / 2.0 * fit.scale()) as f32;
+            mark_breaches(
+                painter,
+                a,
+                rl,
+                |i| a.bolt_points.get(i).map(|p| fit.at(to(*p))),
+                rad.max(3.0),
+                hover,
+            );
         }
     }
     acts
@@ -532,6 +707,7 @@ impl MemberFit {
 }
 
 /// The member view's tool: the act asked.
+#[allow(clippy::too_many_arguments)]
 pub fn member_act(
     m: &MemberEnds,
     leg: &FlatLeg,
@@ -540,6 +716,7 @@ pub fn member_act(
     tool: DetailTool,
     drag: &mut Option<EndDrag>,
     painter: &egui::Painter,
+    rules: &Rules,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
     // The end a point along the member is nearer.
@@ -557,6 +734,7 @@ pub fn member_act(
                     joint: j.clone(),
                     from: v,
                     now: v,
+                    bolt: None,
                 });
             }
             if let (Some(d), Some(v)) = (
@@ -588,6 +766,71 @@ pub fn member_act(
                 ));
             }
         }
+        DetailTool::MoveBolt => {
+            // The bolt nearest a point (along the member, across), within
+            // reach: its end and place.
+            let near = |v: [f64; 2]| -> Option<(usize, usize)> {
+                let end = end_at(v[0]);
+                let (_, a) = end_of(end)?;
+                let tol = (8.0 / fit.scale()).max(0.012);
+                a.bolt_flat
+                    .iter()
+                    .enumerate()
+                    .map(|(ib, q)| {
+                        let along = if end == 0 { q[0] } else { m.length - q[0] };
+                        (ib, (along - v[0]).hypot(q[1] - v[1]))
+                    })
+                    .filter(|x| x.1 < tol)
+                    .min_by(|x, y| x.1.total_cmp(&y.1))
+                    .map(|x| (end, x.0))
+            };
+            if response.drag_started()
+                && let Some(v) = response.interact_pointer_pos().and_then(|q| fit.back(q))
+                && let Some((end, ib)) = near(v)
+                && let Some((j, a)) = end_of(end)
+            {
+                *drag = Some(EndDrag {
+                    member: a.member.clone(),
+                    joint: j.clone(),
+                    from: v,
+                    now: v,
+                    bolt: Some(ib),
+                });
+            }
+            if let (Some(d), Some(v)) = (
+                drag.as_mut(),
+                response.interact_pointer_pos().and_then(|q| fit.back(q)),
+            ) {
+                d.now = v;
+                painter.line_segment(
+                    [
+                        egui::pos2(fit.x_of(d.from[0]), fit.y_of(d.from[1])),
+                        egui::pos2(fit.x_of(v[0]), fit.y_of(v[1])),
+                    ],
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(90, 150, 230)),
+                );
+            }
+            if response.drag_stopped()
+                && let Some(d) = drag.take()
+                && let Some(ib) = d.bolt
+            {
+                let end = end_at(d.from[0]);
+                if let Some((j, a)) = end_of(end)
+                    && ib < a.bolt_flat.len()
+                {
+                    let mut others = a.bolt_flat.clone();
+                    others.remove(ib);
+                    acts.push(place(
+                        a,
+                        j,
+                        rules.get(&(a.member.clone(), j.clone())),
+                        others,
+                        [from_joint(end, d.now[0]), d.now[1]],
+                        true,
+                    ));
+                }
+            }
+        }
         _ => {
             if !response.clicked() {
                 return acts;
@@ -604,14 +847,13 @@ pub fn member_act(
                     acts.push(Act::OpenLayout(a.member.clone(), j.clone()));
                 }
                 DetailTool::AddBolt => {
-                    let mut pts = a.bolt_flat.clone();
-                    pts.push([round5mm(from_joint(end, v[0])), snap_across(a, v[1])]);
-                    let n = pts.len() as u32;
-                    acts.push(Act::BoltPoints(
-                        a.member.clone(),
-                        j.clone(),
-                        pts,
-                        Some(bolts_of(a, n).value()),
+                    acts.push(place(
+                        a,
+                        j,
+                        rules.get(&(a.member.clone(), j.clone())),
+                        a.bolt_flat.clone(),
+                        [from_joint(end, v[0]), v[1]],
+                        true,
                     ));
                 }
                 DetailTool::RemoveBolt => {
@@ -638,8 +880,31 @@ pub fn member_act(
                         }
                     }
                 }
-                DetailTool::MemberEnd => {}
+                DetailTool::MemberEnd | DetailTool::MoveBolt => {}
             }
+        }
+    }
+    // The bolts that break the code, marked.
+    let hover = response.hover_pos();
+    for (end, e) in m.ends.iter().enumerate() {
+        let Some((j, a)) = e else {
+            continue;
+        };
+        if let Some(rl) = rules.get(&(a.member.clone(), j.clone())) {
+            let rad = (rl.diameter / 2.0 * fit.scale()) as f32;
+            mark_breaches(
+                painter,
+                a,
+                rl,
+                |i| {
+                    a.bolt_flat.get(i).map(|q| {
+                        let along = if end == 0 { q[0] } else { m.length - q[0] };
+                        egui::pos2(fit.x_of(along), fit.y_of(q[1]))
+                    })
+                },
+                rad.max(3.0),
+                hover,
+            );
         }
     }
     acts

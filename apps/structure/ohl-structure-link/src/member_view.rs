@@ -179,3 +179,30 @@ pub fn member_capacity(
         limit: c.limit,
     })
 }
+
+/// The bolt rules of member `id`'s end at joint `joint` by the design code
+/// of the structure's capacity method
+/// ([`ohl_structures_fe::bolt_rules::rules`]): `force` the member's
+/// largest axial force over the last analysis, N (none: no analysis — the
+/// bolt's shear capacity). None: no model, no such member end, or the
+/// method has no bolt rules.
+pub fn bolt_rules(
+    text: &str,
+    sections: &SectionLibrary,
+    bolts: &BoltLibrary,
+    id: &str,
+    joint: &str,
+    force: Option<f64>,
+) -> Option<ohl_structures_fe::bolt_rules::BoltRules> {
+    let model = Model::from_structure_type_with_bolts(text, sections, bolts, None).ok()?;
+    let idx = model.members.iter().position(|m| m.id == id)?;
+    let m = &model.members[idx];
+    let end = if model.nodes[m.i].id == joint {
+        0
+    } else if model.nodes[m.j].id == joint {
+        1
+    } else {
+        return None;
+    };
+    ohl_structures_fe::bolt_rules::rules(&model, idx, end, force)
+}

@@ -62,6 +62,7 @@
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)
 - [Member capacities by ASCE 10-97](theory/asce10.md)
+- [Steel pole shafts by ASCE/SEI 48-19](theory/asce48.md)
 - [Wind on lattice structures: faces, solidity, shielding](theory/structure-wind.md)
 - [Galloping ellipses and blowout](theory/galloping.md)
 - [Ice shedding: the conductor jump](theory/ice-shedding.md)

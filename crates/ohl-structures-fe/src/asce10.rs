@@ -736,6 +736,61 @@ fn end_check(
     }
 }
 
+/// The minimum end distance, spacing and edge distance of bolts (ASCE
+/// 10-97 4.5), m: bolt diameter `d`, connected thickness `t`, its tensile
+/// strength `fu`, the force one bolt transmits `p` (none: not known — the
+/// force terms left out, said by the caller), a redundant member, a
+/// sheared (or flame-cut) edge rather than a rolled one. Holes are taken
+/// as punched (Eq. 4.5-3 applies; it does not for drilled holes).
+///
+/// - end distance (4.5.1): the largest of 1.2 P/(f_u t), 1.3 d and t + d/2
+///   (Eqs. 4.5-1 to 4.5-3); a redundant member the larger of t + d/2 and
+///   1.2 d (4.5-3, 4.5-4);
+/// - spacing along a line of force (4.5.2): 1.2 P/(f_u t) + 0.6 d (4.5-5);
+/// - edge distance (4.5.3): 0.85 e_min for a rolled edge (4.5-6), 0.85
+///   e_min + 1/16 in. (1.5875 mm) for a sheared one (4.5-7).
+pub fn bolt_minimums(
+    d: f64,
+    t: f64,
+    fu: f64,
+    p: Option<f64>,
+    redundant: bool,
+    sheared: bool,
+) -> [f64; 3] {
+    let force = |p: f64| {
+        if fu > 0.0 && t > 0.0 {
+            1.2 * p / (fu * t)
+        } else {
+            0.0
+        }
+    };
+    let end = if redundant {
+        (t + d / 2.0).max(1.2 * d)
+    } else {
+        p.map_or(0.0, force).max(1.3 * d).max(t + d / 2.0)
+    };
+    let spacing = p.map_or(0.0, force) + 0.6 * d;
+    let edge = 0.85 * end + if sheared { 0.0625 * 0.0254 } else { 0.0 };
+    [end, spacing, edge]
+}
+
+/// The design shear capacity of one bolt at a member end, N (all its
+/// shear planes; as the check takes it: the end's bolts over the
+/// member's, a given capacity, else 0.62 f_ub on the root area), and the
+/// bolts' diameter and count; none without bolts or a capacity.
+pub fn bolt_shear_per_bolt(d: &MemberDesign, end: Option<&EndDesign>) -> Option<(f64, f64, u32)> {
+    let (b, shank, threads_in) = end_bolts(d, end, &mut Vec::new())?;
+    let gross = std::f64::consts::PI * b.diameter.powi(2) / 4.0;
+    let out_given = threads_in == Some(false);
+    let per_plane = match (shank.filter(|_| out_given), b.shear_capacity, b.ultimate) {
+        (Some(v), _, _) => v,
+        (None, Some(v), _) => v,
+        (None, None, Some(fub)) => BOLT_SHEAR * fub * ROOT_AREA * gross,
+        _ => return None,
+    };
+    Some((per_plane * f64::from(b.shear_planes), b.diameter, b.count))
+}
+
 /// Block shear (ASCE 10-97 Eq. 3.10-1): P = 0.60 A_v f_u + A_t f_y, A_v =
 /// t (e + (n − 1) s − (n − ½) d_h) along a bolt line of n bolts (the
 /// bolts shared out over the gauge lines), A_t = t (c − ½ d_h) from the

@@ -471,3 +471,57 @@ fn extensions_of_model_files_are_refused() {
     assert!(e.contains("no extension"), "{e}");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// A hollow steel pole with its yield stress and no capacity given is
+/// checked by ASCE/SEI 48-19 (owner 2026-11-03): a round shaft 400 mm ×
+/// 8 mm (D/t 50: F_a = F_b = F_y, Eqs. 5.2-13, 5.2-15), 10 m above
+/// ground, 10 kN across and 20 kN down at its top: at the ground line P =
+/// 20 kN, M = 100 kN m, V = 10 kN; the compression side's combined stress
+/// √((P/A + Mc/I)² + 3 (2V/A)²) over F_y governs (5.2-21). A given
+/// moment capacity keeps the old check.
+#[test]
+fn a_steel_shaft_by_asce48() {
+    let text = |extra: &str| {
+        format!(
+            "format = \"ohl-pole\"\nversion = 1\nid = \"s\"\nmaterial = \"steel\"\n\
+             length = \"12 m\"\nembedment = \"2 m\"\ntop_diameter = \"400 mm\"\n\
+             ground_diameter = \"400 mm\"\nwall = \"8 mm\"\n{extra}"
+        )
+    };
+    let pole = Pole::parse(&text("yield = \"345 MPa\"\n")).unwrap();
+    assert!(pole.by_code());
+    let loads = [PoleLoad {
+        point: [0.0, 0.0, 10.0],
+        force: [10e3, 0.0, -20e3],
+    }];
+    let c = check_pole(&pole, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    let (d, t) = (0.4f64, 0.008f64);
+    let a = std::f64::consts::PI / 4.0 * (d * d - (d - 2.0 * t).powi(2));
+    let i = std::f64::consts::PI / 64.0 * (d.powi(4) - (d - 2.0 * t).powi(4));
+    let sigma = 20e3 / a + 100e3 * 0.2 / i;
+    let tau = 2.0 * 10e3 / a;
+    let expected = (sigma * sigma + 3.0 * tau * tau).sqrt() / 345e6;
+    assert!(
+        (c.usage - expected).abs() < 1e-9,
+        "{} {expected} {}",
+        c.usage,
+        c.governs
+    );
+    assert!(c.height.abs() < 1e-9);
+    assert!(
+        c.governs
+            .starts_with("ASCE/SEI 48-19 at 0.0 m: compression side"),
+        "{}",
+        c.governs
+    );
+    let given = Pole::parse(&text(
+        "yield = \"345 MPa\"\nmoment_capacity = \"500 kN m\"\n",
+    ))
+    .unwrap();
+    assert!(!given.by_code());
+    let c = check_pole(&given, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    assert!((c.usage - 100e3 / 500e3).abs() < 1e-9);
+    // Neither: refused, naming the yield.
+    let e = Pole::parse(&text("")).unwrap_err();
+    assert!(e.contains("yield"), "{e}");
+}

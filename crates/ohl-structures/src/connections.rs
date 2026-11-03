@@ -21,6 +21,7 @@
 //! pitch = "50 mm"
 //! end_distance = "30 mm"
 //! edge_distance = "25 mm"
+//! # rolled_edge = true  # the leg's edge rolled (none: sheared, on the safe side)
 //! # bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]  # instead of
 //! #   the layout: along the member from the joint, across from the heel
 //! # eccentric = true / restrained = false   # given instead of worked out
@@ -188,6 +189,11 @@ pub struct TypeConnection {
     /// From the bolts to the edge of the leg.
     #[serde(default)]
     pub edge_distance: Option<Length>,
+    /// The leg's edge is rolled (true) or sheared / flame-cut (false); none:
+    /// taken as sheared, the larger minimum edge distance (owner
+    /// 2026-11-03).
+    #[serde(default)]
+    pub rolled_edge: Option<bool>,
     /// Each bolt where it is, instead of the layout: along the member from
     /// the joint, across the bolted leg from the heel.
     #[serde(default)]

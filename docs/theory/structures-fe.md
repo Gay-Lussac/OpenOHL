@@ -270,6 +270,8 @@ from a CSV without a case, keeps factor 1.
 
 **Simplification:** without a modulus \\( E \\) there is no P-Delta amplification at all: the moments are first order (unsafe for a slender pole under vertical load). Exact: the pole's modulus given.
 
+**A hollow steel shaft with its yield stress and no capacity given** is checked by ASCE/SEI 48-19 instead (local buckling of the flats or the tube, combined axial, bending, shear and torsion stresses at each height): [Steel pole shafts by ASCE/SEI 48-19](asce48.md) (2026-11-03).
+
 **Capacity** at height \\( h \\): the table of the pole (linear between heights), else for wood \\( f_b \\) times the section modulus at \\( D(h) \\) (\\( \pi D(h)^3/32 \\) for a solid round pole) with the user's fibre stress \\( f_b \\), else the ground-line moment capacity. Usage: \\( \max_h M(h)/(\phi\\,M_c(h)) \\) — for a tapered wood pole the critical cross-section can lie above the ground line.
 
 **The same check in OHL-Structure** (its FE results and the structure report): the loads are the load table's point rows of the case at the structure's points as written (\\( \mathbf r_i \\) above the feet), the wind pressure \\( p\,\hat{\mathbf w} \\) the sum of the horizontal parts of the case's surface loads on all members (pressure × factor × direction; times the pole's \\( c_d \\) as above) — for a line case, the line's \\( p_s\,\gamma_s \\) (the same pole check as the line's), \\( \phi \\) the case's strength factor. On an extension the pole and its points rise together by `dz`: every \\( \mathbf r_i - h\hat{\mathbf z} \\) about the pole's own ground line is unchanged, and so is the check (the line's pole check takes the points as written too); the piece below the feet is not checked.

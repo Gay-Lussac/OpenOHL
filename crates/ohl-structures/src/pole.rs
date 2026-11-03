@@ -37,6 +37,8 @@
 //! elasticity = "210 GPa"
 //! density = "7850 kg/m3"
 //! drag = 0.8
+//! # yield = "345 MPa"     # steel, hollow, no capacity: ASCE/SEI 48-19
+//! # bend_radius = "20 mm"  # the polygon's inside bend radius (none: sharp)
 //! # fibre_stress = "55 MPa" / moment_capacity = "900 kN m" /
 //! [[pole.capacity]]
 //! height = "0 m"            # above the ground line
@@ -206,6 +208,15 @@ pub struct InlinePole {
     /// Wood: fibre stress (the moment capacity from the taper).
     #[serde(default)]
     pub fibre_stress: Option<Stress>,
+    /// Steel: the specified minimum yield stress — the shaft checked by
+    /// ASCE/SEI 48-19 (a hollow round or polygonal shaft; none: from
+    /// `section`'s material).
+    #[serde(default, rename = "yield")]
+    pub yield_strength: Option<Stress>,
+    /// The inside bend radius of a polygonal shaft's corners (none: sharp,
+    /// on the safe side).
+    #[serde(default)]
+    pub bend_radius: Option<Length>,
     /// Moment capacity at the ground line (e.g. `"900 kN m"`; read by the
     /// pole check).
     #[serde(default)]
@@ -296,10 +307,15 @@ impl InlinePole {
         if self.material.is_none() {
             out.push("pole: no material".into());
         }
-        if self.fibre_stress.is_none() && self.moment_capacity.is_none() && self.capacity.is_empty()
+        if self.fibre_stress.is_none()
+            && self.moment_capacity.is_none()
+            && self.capacity.is_empty()
+            && self.yield_strength.is_none()
+            && self.section.is_none()
         {
             out.push(
-                "pole: no strength (fibre stress, moment capacity or a capacity table)".into(),
+                "pole: no strength (fibre stress, yield stress, moment capacity or a capacity table)"
+                    .into(),
             );
         }
         if self.wall.is_none() && self.section.is_none() {
@@ -353,7 +369,7 @@ impl InlinePole {
         .into_iter()
         .flatten()
         .all(|v| v.si() > 0.0)
-            && [self.fibre_stress, self.elasticity]
+            && [self.fibre_stress, self.elasticity, self.yield_strength]
                 .into_iter()
                 .flatten()
                 .all(|v| v.si() > 0.0)

@@ -104,7 +104,7 @@ pub const MODEL_FILE_VERSION: u32 = 4;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
-const G: f64 = ohl_core::units::STANDARD_GRAVITY;
+pub(crate) const G: f64 = ohl_core::units::STANDARD_GRAVITY;
 
 fn yes() -> bool {
     true

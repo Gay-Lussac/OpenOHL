@@ -175,6 +175,7 @@ gauges = ["30 mm"]        # from the heel along the leg bolted, one per line
 pitch = "50 mm"           # between bolts along a line
 end_distance = "30 mm"    # from the member's end to the first bolt
 edge_distance = "25 mm"
+# rolled_edge = true      # the leg's edge rolled (none: sheared, the larger minimum edge distance)
 # bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]   # instead of the
 #   layout: along the member from the joint, across the leg from the heel
 # eccentric = true        # given instead of worked out (one leg bolted)

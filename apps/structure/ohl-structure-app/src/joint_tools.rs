@@ -9,9 +9,9 @@
 //!   member end), cleared from its cell's menu (right-click: back to the
 //!   member's or worked out);
 //! - the **bolt layout** form (in the panel, above the table): n bolts in one to three gauge lines, their
-//!   pitch, end and edge distances in one go, with how far they reach and
-//!   what does not fit the leg (the minimums the code asks are typed:
-//!   none is built in);
+//!   pitch, end and edge distances in one go, with how far they reach,
+//!   what does not fit the leg and what breaks the design code's minimum
+//!   distances ([`ohl_structure_link::bolt_rules`]);
 //! - a member end's details **copied**: the whole joint to the joints
 //!   like it (mirrors included), one end to both ends of every member of
 //!   its group or class;
@@ -28,12 +28,13 @@ use ohl_structure_edit::connection_edits::{
     self, BoltLayout, CopyEnd, FieldValue, PRESETS_EXTENSION, Preset,
 };
 use ohl_structure_link::{
-    Arrival, BoltedLeg, ConnectionKind, JointDetail, JointDetails, Source, Valued,
+    Arrival, BoltRules, BoltedLeg, ConnectionKind, JointDetail, JointDetails, Source, Valued,
 };
 
 use ohl_structures::connections::MAX_GAUGE_LINES;
 
 use crate::app::StructureApp;
+use crate::detail_tools::Rules;
 use ohl_structure_edit::Handle;
 
 /// What a click in the panel asks.
@@ -85,7 +86,29 @@ pub enum Act {
     CutShift(String, String, f64, f64),
     /// A plate's outline written as drawn.
     PlateOutline(String, Vec<[f64; 3]>),
+    /// A bolt that fits only on a new gauge line: the line offered, to be
+    /// confirmed (the bolts with it, the bolts' kind, the gauge, m, and the
+    /// code's minimums in words).
+    OfferLine {
+        /// Member.
+        member: String,
+        /// Joint.
+        joint: String,
+        /// The end's bolts with the new one.
+        points: Vec<[f64; 2]>,
+        /// The bolts' kind when the end gives none yet.
+        bolts: Option<ohl_structure_edit::connection_edits::FieldValue>,
+        /// The new line's gauge, m.
+        gauge: f64,
+        /// The code's minimums, in words.
+        words: String,
+    },
+    /// Something to say (an error: true).
+    Say(String, bool),
 }
+
+/// A new gauge line offered by the bolt tools, waiting for the user.
+pub type Offer = Act;
 
 /// The bolt layout window's values, millimetres.
 #[derive(Debug, Clone, PartialEq)]
@@ -193,12 +216,122 @@ pub struct JointTools {
     /// The bolt libraries read (`Bolts/` beside the structure), for the
     /// libraries' stamp and folder; what did not read.
     bolts: Option<(u64, PathBuf, BoltLibs)>,
+    /// A new gauge line offered by Add / Move bolt ([`Act::OfferLine`]).
+    pub offer: Option<Offer>,
+    /// The design code's bolt rules per member end, and the state they
+    /// were worked out for (the file, the libraries, the analysis).
+    rules: std::collections::HashMap<(String, String), (u64, Option<BoltRules>)>,
 }
 
 /// The bolt libraries read, and what did not read.
 pub type BoltLibs = std::sync::Arc<(ohl_structures::bolts::BoltLibrary, Vec<String>)>;
 
 impl StructureApp {
+    /// The largest axial force of `member` over the last analysis' cases,
+    /// N (none: no analysis, or the member not in it).
+    pub(crate) fn largest_force(&self, member: &str) -> Option<f64> {
+        let run = self.results.results.as_ref()?.as_ref().ok()?;
+        run.cases
+            .iter()
+            .filter_map(|c| c.fe.as_ref()?.as_ref().ok())
+            .filter_map(|r| r.members.iter().find(|m| m.id == member))
+            .map(|m| m.axial.abs())
+            .reduce(f64::max)
+    }
+
+    /// The design code's bolt rules of the member ends `ends` (member,
+    /// joint), worked out again when the file, the libraries or the
+    /// analysis change.
+    pub(crate) fn bolt_rules_of(&mut self, ends: &[(String, String)]) -> Rules {
+        let mut out = Rules::new();
+        let Some(rev) = self.file.as_ref().map(|f| f.revision()) else {
+            return out;
+        };
+        let bolts = self.bolt_library();
+        for (m, j) in ends {
+            let force = self.largest_force(m);
+            let key = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                (
+                    rev,
+                    self.libs_stamp,
+                    self.results.generation,
+                    force.map(f64::to_bits),
+                )
+                    .hash(&mut h);
+                h.finish()
+            };
+            let cached = self.joint_tools.rules.get(&(m.clone(), j.clone()));
+            let r = match cached {
+                Some((k, r)) if *k == key => r.clone(),
+                _ => {
+                    let f = self.file.as_ref().expect("checked above");
+                    let r = ohl_structure_link::bolt_rules(
+                        f.text_ref(),
+                        &self.loads.sections,
+                        &bolts.0,
+                        m,
+                        j,
+                        force,
+                    );
+                    self.joint_tools
+                        .rules
+                        .insert((m.clone(), j.clone()), (key, r.clone()));
+                    r
+                }
+            };
+            if let Some(r) = r {
+                out.insert((m.clone(), j.clone()), r);
+            }
+        }
+        out
+    }
+
+    /// The window asking to confirm a new gauge line (Add / Move bolt).
+    pub(crate) fn offer_window(&mut self, ctx: &egui::Context, details: &JointDetails) {
+        let Some(Act::OfferLine {
+            member,
+            joint,
+            points,
+            bolts,
+            gauge,
+            words,
+        }) = self.joint_tools.offer.clone()
+        else {
+            return;
+        };
+        let mut answer: Option<bool> = None;
+        egui::Window::new("New gauge line?")
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "{member} at {joint}: the bolt has no room on the gauge lines near where \
+                     it was put. A new gauge line at {:.0} mm from the heel keeps the code's \
+                     distances:",
+                    gauge * 1000.0
+                ));
+                ui.label(egui::RichText::new(&words).small());
+                ui.horizontal(|ui| {
+                    if ui.button("Add the line and the bolt").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        match answer {
+            Some(true) => {
+                self.joint_tools.offer = None;
+                self.apply_joint_acts(vec![Act::BoltPoints(member, joint, points, bolts)], details);
+            }
+            Some(false) => self.joint_tools.offer = None,
+            None => {}
+        }
+    }
+
     /// The presets file of the structure open:
     /// `Connections/connection-presets.ohlcp` next to it.
     pub(crate) fn presets_path(&self) -> Option<PathBuf> {
@@ -469,6 +602,11 @@ impl StructureApp {
                     false,
                 ))
             }
+            act @ Act::OfferLine { .. } => {
+                self.joint_tools.offer = Some(act);
+                None
+            }
+            Act::Say(text, error) => Some((text, error)),
             Act::PlateOutline(id, outline) => {
                 let r = f.edit(&format!("Outline of plate {id}"), |doc, _| {
                     connection_edits::set_plate_outline(doc, &id, &outline)
@@ -498,14 +636,18 @@ impl StructureApp {
         let Some(mut e) = self.joint_tools.layout.take() else {
             return;
         };
+        let rules = self
+            .bolt_rules_of(&[(e.member.clone(), e.joint.clone())])
+            .remove(&(e.member.clone(), e.joint.clone()));
         let mut open = true;
         let mut apply = false;
         ui.group(|ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.strong(format!("Bolt layout — {} at {}", e.member, e.joint))
                     .on_hover_text(
-                        "The bolts of this member end in one go. The minimum distances are the \
-                         design code's: type them (none is built in).",
+                        "The bolts of this member end in one go, checked against the minimum \
+                         distances of the design code of the capacity method (the simple \
+                         check has none).",
                     );
                 if ui.small_button("Close").clicked() {
                     open = false;
@@ -622,6 +764,31 @@ impl StructureApp {
             let misfits = l.misfits(e.leg.map(|w| w / 1000.0));
             for m in &misfits {
                 crate::app::error_label(ui, m.clone());
+            }
+            // The design code's minimums, and what of the layout breaks
+            // them (the bolts laid out as the joints lay them: every second
+            // line staggered by half a pitch; from the steel's end).
+            if let Some(r) = &rules {
+                ui.label(egui::RichText::new(r.words()).small());
+                let lines = l.gauges.len().max(1) as u32;
+                let pts: Vec<[f64; 2]> = (0..l.count)
+                    .map(|k| {
+                        let line = (k % lines) as usize;
+                        let stagger = if line % 2 == 1 { 0.5 } else { 0.0 };
+                        let along = l.end + (f64::from(k / lines) + stagger) * l.pitch;
+                        [along, l.gauges.get(line).copied().unwrap_or(0.0)]
+                    })
+                    .collect();
+                let mut said: Vec<String> = Vec::new();
+                for b in ohl_structure_link::breaches(r, &pts, 0.0) {
+                    let w = format!("bolt {}: {}", b.bolt + 1, b.what);
+                    if !said.contains(&w) {
+                        said.push(w);
+                    }
+                }
+                for w in said {
+                    crate::app::error_label(ui, w);
+                }
             }
             ui.horizontal_wrapped(|ui| {
                 ui.label(format!(

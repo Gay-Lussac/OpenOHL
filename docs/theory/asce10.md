@@ -318,9 +318,35 @@ in the shear plane").
 
 **Not on the safe side** where they govern:
 
-- the minimum end, edge and hole spacing distances (4.5, Eqs. 4.5-1 to
-  4.5-7) are not checked, nor attachment holes (4.6), bolts in tension
-  (4.3.3, 4.3.4), the gusset plate's own bearing or the plate's design.
+- the minimum end, edge and hole spacing distances (4.5) are not part of
+  the member check: OHL-Structure's bolt tools apply them where bolts are
+  placed, and mark the bolts that break them ([below](#minimum-distances-of-bolts));
+  attachment holes (4.6), bolts in tension (4.3.3, 4.3.4), the gusset
+  plate's own bearing and the plate's design are not checked.
+
+### Minimum distances of bolts
+
+`asce10::bolt_minimums`, used through `bolt_rules::rules` by the bolt
+layout form and the Add / Move bolt tools (2026-11-03), with \\( d \\) the
+bolt diameter, \\( t \\) the connected thickness, \\( f_u \\) its tensile
+strength and \\( P \\) the force one bolt transmits:
+
+| Distance | Minimum | Clause |
+|---|---|---|
+| end (hole centre to the steel's end) | \\( \max(1.2P/(f_u t),\ 1.3d,\ t + d/2) \\); redundant members \\( \max(t + d/2,\ 1.2d) \\) | 4.5.1, Eqs. 4.5-1 to 4.5-4 |
+| spacing between holes | \\( 1.2P/(f_u t) + 0.6d \\) | 4.5.2, Eq. 4.5-5 |
+| edge (hole centre to the leg's free edge) | rolled \\( 0.85\,e_{min} \\); sheared or flame-cut \\( 0.85\,e_{min} + 1.6 \\) mm (1/16 in.) | 4.5.3, Eqs. 4.5-6, 4.5-7 |
+
+\\( P \\) is the member's largest axial force over the last analysis
+divided by its bolts at that end; without an analysis the bolt's design
+shear capacity (**conservative**: no bolt carries more); without either the
+force terms are left out (said). **Conservative:** the edge is taken as
+sheared unless the connection says `rolled_edge = true`; holes as punched
+(Eq. 4.5-3 applies; it does not for drilled holes); the spacing is
+checked between any two bolts, also on different gauge lines (the
+standard's is along a line of force). A new gauge line is kept clear of
+the root fillet (\\( t + r + d/2 \\) from the heel: geometry, not a code
+rule).
 
 ## End conditions
 

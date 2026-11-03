@@ -634,3 +634,110 @@ fn the_detail_view_tools_act() {
     assert!(file(&h).plates[0].outline.is_empty() || file(&h).plates[0].outline.len() == 3);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// The bolt tools keep the design code (owner 2026-11-03): H1's end at N2
+/// (two M16 bolts on one line at 30 mm, pitch 50 mm) gets ASCE 10-97's
+/// minimums (no analysis: P its bolts' shear capacity, or not known); a
+/// bolt asked for too near the steel's end is moved to the end distance
+/// on the line; one asked for between the two with no room there is
+/// offered a new gauge line, written only once confirmed; Move bolt is in
+/// the strip.
+#[test]
+fn bolt_tools_keep_the_code() {
+    use crate::joint_panel::Drawn;
+    use crate::joint_tools::Act;
+    let path = copy_of("type-02.ohls", "bolt-rules");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(
+        &tower,
+        format!(
+            "{ANGLES}\n[[connection]]\nmember = \"H1\"\njoint = \"N2\"\n\
+             bolts = {{ count = 2, diameter = \"16 mm\" }}\ngauges = [\"30 mm\"]\n\
+             gauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n"
+        ),
+    )
+    .unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details…");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.state_mut().joints.drawn = Drawn::Face;
+    h.run();
+    h.run();
+    h.get_by_label("Move bolt");
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    let ends = [("H1".to_owned(), "N2".to_owned())];
+    let rules = h.state_mut().bolt_rules_of(&ends);
+    let r = rules.get(&ends[0]).expect("ASCE 10-97 rules").clone();
+    assert_eq!(r.code, "ASCE 10-97");
+    assert!(r.end >= 1.3 * 0.016 - 1e-9 && r.spacing >= 0.6 * 0.016);
+    let a = details
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "H1")
+        .unwrap()
+        .clone();
+    let cut = a.cut.value.unwrap_or(0.0);
+    let gauge = a.bolt_flat[0][1];
+    // Too near the steel's end: on the line at the end distance (or
+    // beyond, past the other bolts).
+    match crate::detail_tools::place(&a, "N2", Some(&r), vec![], [cut, gauge], true) {
+        Act::BoltPoints(_, _, pts, _) => {
+            assert!((pts[0][0] - (cut + r.end)).abs() < 1e-3, "{pts:?}");
+            assert!((pts[0][1] - gauge).abs() < 1e-9);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Between the two bolts (50 mm apart), the spacing 30 mm (a force
+    // per bolt larger than here): no room on the line — a new line
+    // offered.
+    let wide = ohl_structure_link::BoltRules {
+        spacing: 0.03,
+        ..r.clone()
+    };
+    let mid = [(a.bolt_flat[0][0] + a.bolt_flat[1][0]) / 2.0, gauge];
+    let act = crate::detail_tools::place(&a, "N2", Some(&wide), a.bolt_flat.clone(), mid, true);
+    if let Act::OfferLine { points, .. } = &act {
+        assert_eq!(points.len(), 3);
+        h.state_mut().apply_joint_acts(vec![act.clone()], &details);
+        h.run();
+        assert!(h.state().joint_tools.offer.is_some());
+        // Not written before it is confirmed.
+        let c = h
+            .state()
+            .file
+            .as_ref()
+            .unwrap()
+            .structure()
+            .connection("H1", "N2")
+            .cloned();
+        assert!(c.is_some_and(|c| c.bolt_points.is_empty()));
+        h.get_by_label("Add the line and the bolt").click();
+        h.run();
+        h.run();
+        assert!(h.state().joint_tools.offer.is_none());
+        let c = h
+            .state()
+            .file
+            .as_ref()
+            .unwrap()
+            .structure()
+            .connection("H1", "N2")
+            .cloned();
+        assert_eq!(c.unwrap().bolt_points.len(), 3);
+    } else {
+        // A leg too narrow for a second line: said why, nothing written.
+        assert!(matches!(act, Act::Say(_, true)), "{act:?}");
+    }
+    std::fs::remove_dir_all(dir).ok();
+}

@@ -41,7 +41,7 @@ fn pole_levels() {
         p.missing_for_design(),
         [
             "pole: no material",
-            "pole: no strength (fibre stress, moment capacity or a capacity table)",
+            "pole: no strength (fibre stress, yield stress, moment capacity or a capacity table)",
             "pole: no wall thickness (its wall thickness, \"solid\", or a section)"
         ]
     );

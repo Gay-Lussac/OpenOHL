@@ -241,6 +241,8 @@ pub struct EndDesign {
     pub gauges: Vec<f64>,
     /// Edge distance, m.
     pub edge_distance: Option<f64>,
+    /// The leg's edge rolled (none: taken as sheared).
+    pub rolled_edge: Option<bool>,
     /// End distance, m.
     pub end_distance: Option<f64>,
     /// Pitch, m.

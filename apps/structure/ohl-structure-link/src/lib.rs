@@ -60,9 +60,10 @@ pub use joints::{
     PlateDetail, Profile, Similar, Source, Valued, bolt_faces, joint_details, similar_joints,
 };
 pub use member_view::{
-    FlatLeg, Hole, MemberCapacity, MemberEnds, flat_leg, member_capacity, member_ends,
+    FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,
 };
 pub use ohl_structures::connections::{BoltedLeg, ConnectionKind};
+pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
 pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,

@@ -317,6 +317,14 @@ impl StructureApp {
             });
             let leg = ohl_structure_link::flat_leg(&m);
             crate::detail_tools::strip(ui, &mut self.joints.tool, leg.is_some());
+            let ends: Vec<(String, String)> = m
+                .ends
+                .iter()
+                .flatten()
+                .map(|(j, a)| (a.member.clone(), j.clone()))
+                .collect();
+            let rules = self.bolt_rules_of(&ends);
+            rules_caption(ui, &rules);
             let size = ui.available_size().max(egui::vec2(120.0, 120.0));
             let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
@@ -338,9 +346,11 @@ impl StructureApp {
                     self.joints.tool,
                     &mut self.joints.drag,
                     &painter,
+                    &rules,
                 );
                 self.apply_joint_acts(acts, details);
             }
+            self.offer_window(ui.ctx(), details);
             return;
         }
         let id = self
@@ -448,6 +458,12 @@ impl StructureApp {
             Drawn::Face => {
                 let view = ohl_structure_link::face_view(j, &face);
                 paint_face(&painter, rect, &view, ui.visuals().dark_mode);
+                let ends: Vec<(String, String)> = j
+                    .arrivals
+                    .iter()
+                    .map(|a| (a.member.clone(), j.id.clone()))
+                    .collect();
+                let rules = self.bolt_rules_of(&ends);
                 let fit = crate::detail_tools::FaceFit::new(rect, view.bounds);
                 let acts = crate::detail_tools::face_act(
                     j,
@@ -457,10 +473,12 @@ impl StructureApp {
                     self.joints.tool,
                     &mut self.joints.drag,
                     &painter,
+                    &rules,
                 );
                 self.apply_joint_acts(acts, details);
             }
         }
+        self.offer_window(ui.ctx(), details);
     }
 
     /// Asks where, then writes the face view as `ext` (svg, pdf).
@@ -889,4 +907,18 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
     ]
+}
+
+/// The design code's bolt minimums of the ends drawn, one line each (the
+/// bolt tools keep them).
+fn rules_caption(ui: &mut egui::Ui, rules: &crate::detail_tools::Rules) {
+    let mut ends: Vec<_> = rules.iter().collect();
+    ends.sort_by(|x, y| x.0.cmp(y.0));
+    for ((m, j), r) in ends {
+        ui.label(
+            egui::RichText::new(format!("{m} at {j}: {}", r.words()))
+                .small()
+                .weak(),
+        );
+    }
 }

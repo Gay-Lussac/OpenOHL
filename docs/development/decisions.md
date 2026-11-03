@@ -10,6 +10,42 @@ of Parts A, B and C).
 
 ## 2026-11-03
 
+**Steel pole shafts by ASCE/SEI 48-19** (owner, 2026-11-03: "Can you look
+in the code what would apply for pole structures and start implementing
+it", then "What code would be needed for the polygonal or round
+structures?" and the standard given). ASCE 10-97 covers latticed
+structures only (1.1) and has no rule for tubes; a first try with its
+effective widths for polygonal flats (3.9.3, 3.14.1) was dropped for
+ASCE/SEI 48-19, the pole companion. `ohl_structures_fe::asce48`: Table
+5-1's permitted compressive stress of regular polygons (up to 16 sides)
+by w/t·√(F_y/E) and the bend angle, round tubes' F_a and F_b by D/t, the
+combined stress of axial force, bending, shear and torsion (5.2.6), shear
+(5.2.4). The pole check uses it at every height for a hollow steel pole
+with its `yield` and no capacity given (a given capacity keeps the old
+check); new pole fields `yield` and `bend_radius` (none: sharp corners,
+on the safe side), a `[pole]` section's material giving its yield.
+Conservative: sharp corners without a bend radius, the shear of the
+force and of the torsion added at one point. Not yet: the net section
+in tension, slip joints, base plates, anchor bolts, arms, several plies.
+([theory](../theory/asce48.md))
+
+**Bolt tools that keep the design code** (owner, 2026-11-03: "Can the
+tool to add bolts or move them on joints or members actually take the
+codes into account and either snap on existing lines or offer to create
+a new one that respect the norm? … And if the code changes that it adapts
+to the code"; asked: the force per bolt from the analysis, else the bolt's
+capacity; a new line offered and confirmed; the edge taken as sheared).
+`ohl_structures_fe::bolt_rules`: the minimum end distance, spacing and
+edge distance of the capacity method's code (ASCE 10-97 4.5,
+`asce10::bolt_minimums`; the simple check has none — a code added later
+brings its own), the bolts that break them, and where a bolt asked for may
+go (on a gauge line, keeping the distances; else a new line offered, up
+to three; else why not). OHL-Structure: Add bolt and a new **Move bolt**
+place bolts so; a new line is written only when confirmed; the bolts that
+break the code are ringed red with the clause; the member view and the
+bolt layout form show the minimums and the force used. Connections may
+say `rolled_edge = true` (none: sheared, the larger minimum).
+
 **ASCE 10-97: the connection and end-restraint rules brought onto the
 safe side, as the standard says** (owner, 2026-11-03: "Please fix them to
 be on the safe side and according with the code"):

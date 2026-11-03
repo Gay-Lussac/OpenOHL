@@ -655,8 +655,18 @@ view; the close-up has none):
 
 - **Edit**: a bolt or member clicked — the member selected, its bolt
   layout form opened for that end;
-- **Add bolt**: a click on a member's leg bolted — a bolt there, on its
-  nearest gauge line, along it to 5 mm;
+- **Add bolt**: a click on a member's leg bolted — a bolt there, placed
+  by the **design code of the capacity method** (ASCE 10-97: its minimum
+  end distance, spacing and edge distance, 4.5): onto the nearest gauge
+  line, at the place clicked or the nearest place along it that keeps the
+  distances; where that line has no room near the click, a **new gauge
+  line is offered** at the nearest gauge that keeps them (up to three
+  lines) — written only when you confirm ("Add the line and the bolt");
+  where there is no room at all, it says why. With the simple check
+  (no code) the bolt goes on the nearest line, along to 5 mm;
+- **Move bolt**: drag a bolt — it moves and is placed as Add bolt places
+  it (in the face view along the member only; in the member view along
+  and across);
 - **Remove bolt**: a bolt clicked goes;
 - **Member end**: drag a member — along it, where its steel stops; across
   it (in the face view), its end's shift;
@@ -667,6 +677,20 @@ view; the close-up has none):
 A bolt added or taken away turns that end's layout into its bolts'
 places (`bolt_points`); the bolt layout form makes a regular layout
 again. Every action is one undo step.
+
+**The code's distances** (2026-11-03). The member view shows each end's
+minimums in one line above the drawing (`ASCE 10-97: end ≥ 21 mm
+(4.5.1), spacing ≥ 52 mm (4.5.2), edge ≥ 19 mm (4.5.3, Eq. 4.5-7;
+sheared edge) — P 30.2 kN per bolt from the analysis`), the bolt layout
+form the same with what of the layout breaks them, and both views ring
+in red every bolt that breaks one (the clause on hover). The force per
+bolt P is the member's largest axial force over the last analysis
+(Results) shared by its bolts; without an analysis, the bolt's shear
+capacity (on the safe side); without either, the force terms are left
+out (said). The leg's edge is taken as sheared (the larger minimum)
+unless the connection says `rolled_edge = true`. Change the capacity
+method and the tools follow its code (the simple check has none); a
+code added later brings its own minimums.
 
 **How the joint is drawn.** The model's member axes meet at the joint;
 a real joint's legs lie back to back. The drawings shift each bolted

@@ -23,6 +23,9 @@
 //! ground_diameter = "290 mm"     # or ground_circumference (ground line)
 //! wall = "6 mm"                  # or "solid"; optional (none: solid)
 //! fibre_stress = "55 MPa"        # wood: moment capacity from the taper
+//! # yield = "345 MPa"            # steel, hollow, no capacity given: the
+//! #                              #   shaft by ASCE/SEI 48-19 (crate::asce48)
+//! # bend_radius = "20 mm"        # a polygon's inside bend radius (none: sharp)
 //! moment_capacity = "180 kN m"   # or: at the ground line
 //! elasticity = "11 GPa"          # optional: P-Delta amplification
 //! density = "650 kg/m3"          # optional: the pole's weight (P-Delta)
@@ -115,6 +118,10 @@ struct PoleFile {
     wall: Option<PoleWall>,
     #[serde(default)]
     fibre_stress: Option<Stress>,
+    #[serde(default, rename = "yield")]
+    yield_strength: Option<Stress>,
+    #[serde(default)]
+    bend_radius: Option<Length>,
     #[serde(default)]
     moment_capacity: Option<Moment>,
     #[serde(default)]
@@ -150,6 +157,12 @@ pub struct Pole {
     pub wall: Option<f64>,
     /// Wood: fibre stress, Pa.
     pub fibre_stress: Option<f64>,
+    /// Steel: specified minimum yield stress, Pa — a hollow steel shaft
+    /// without a given capacity is checked by ASCE/SEI 48-19
+    /// ([`crate::asce48`]).
+    pub yield_strength: Option<f64>,
+    /// Inside bend radius of a polygonal shaft, m (none: sharp corners).
+    pub bend_radius: Option<f64>,
     /// Moment capacity at the ground line, N·m.
     pub moment_capacity: Option<f64>,
     /// Moment capacity by height above ground: (m, N·m), rising heights.
@@ -200,6 +213,8 @@ impl Pole {
             embedment: f.embedment.si(),
             wall: f.wall.and_then(PoleWall::thickness).map(|w| w.si()),
             fibre_stress: f.fibre_stress.map(|s| s.si()),
+            yield_strength: f.yield_strength.map(|s| s.si()),
+            bend_radius: f.bend_radius.map(|l| l.si()),
             moment_capacity: f.moment_capacity.map(|m| m.0),
             capacity: f
                 .capacity
@@ -257,6 +272,7 @@ impl Pole {
             p.elasticity.map(|e| e.si()),
             p.density.map(|d| d.si()),
         );
+        let mut yield_strength = None;
         if let Some(sid) = &p.section {
             let s = library.section(sid).ok_or_else(|| {
                 bad(format!(
@@ -281,6 +297,7 @@ impl Pole {
             if let Some(m) = library.material_of(s) {
                 elasticity = elasticity.or(Some(m.elasticity));
                 density = density.or(Some(m.density));
+                yield_strength = m.yield_strength;
             }
         }
         let moment_capacity = match &p.moment_capacity {
@@ -314,6 +331,8 @@ impl Pole {
             ground_diameter: ground,
             wall,
             fibre_stress: p.fibre_stress.map(|s| s.si()),
+            yield_strength: p.yield_strength.map(|s| s.si()).or(yield_strength),
+            bend_radius: p.bend_radius.map(|l| l.si()),
             moment_capacity,
             capacity,
             elasticity,
@@ -373,13 +392,41 @@ impl Pole {
         {
             return Err(format!("pole {id}: capacity heights must rise"));
         }
-        if self.fibre_stress.is_none() && self.moment_capacity.is_none() && self.capacity.is_empty()
+        if self.fibre_stress.is_none()
+            && self.moment_capacity.is_none()
+            && self.capacity.is_empty()
+            && !self.by_code()
         {
             return Err(format!(
-                "pole {id}: give fibre_stress, moment_capacity or [[capacity]]"
+                "pole {id}: give fibre_stress, moment_capacity or [[capacity]], or for a hollow \
+                 steel shaft its yield"
             ));
         }
         Ok(())
+    }
+
+    /// Whether the shaft is checked by ASCE/SEI 48-19 ([`crate::asce48`]):
+    /// steel, hollow, its yield stress given, no capacity given (a given
+    /// capacity — a table, a ground-line moment, a fibre stress — is used
+    /// as before).
+    pub fn by_code(&self) -> bool {
+        self.material == PoleMaterial::Steel
+            && self.yield_strength.is_some()
+            && self.wall.is_some()
+            && self.capacity.is_empty()
+            && self.moment_capacity.is_none()
+            && self.fibre_stress.is_none()
+    }
+
+    /// The shaft's cross-section at height `h` (ASCE/SEI 48-19), none
+    /// when it is solid.
+    pub fn shaft_at(&self, h: f64) -> Option<crate::asce48::Shaft> {
+        Some(crate::asce48::Shaft {
+            sides: self.sides,
+            d: self.diameter_at(h),
+            t: self.wall?,
+            bend_radius: self.bend_radius,
+        })
     }
 
     /// Height above ground, m.
@@ -582,6 +629,44 @@ fn moment_at(pole: &Pole, loads: &[PoleLoad], wind: [f64; 2], h: f64) -> ([f64; 
     ([m[0] + mw[0], m[1] + mw[1]], mw)
 }
 
+/// The axial force (compression positive), the horizontal shear and the
+/// torsion at height `h`, N and N·m: the loads above (their vertical and
+/// horizontal parts, the torsion of their horizontal parts about the
+/// axis), the wind on the shaft above, the shaft's own weight above times
+/// `self_weight` (a hollow shaft: its wall's area at each height).
+fn forces_at(
+    pole: &Pole,
+    loads: &[PoleLoad],
+    wind: [f64; 2],
+    h: f64,
+    self_weight: f64,
+) -> (f64, f64, f64) {
+    let (mut p, mut v, mut t) = (0.0, [0.0; 2], 0.0);
+    for l in loads.iter().filter(|l| l.point[2] > h) {
+        p -= l.force[2];
+        v[0] += l.force[0];
+        v[1] += l.force[1];
+        t += l.point[0] * l.force[1] - l.point[1] * l.force[0];
+    }
+    let top = pole.height();
+    if top > h {
+        let n = 64;
+        let dz = (top - h) / n as f64;
+        let (mut q, mut w) = (0.0, 0.0);
+        for k in 0..n {
+            let z = h + (k as f64 + 0.5) * dz;
+            q += pole.drag * pole.diameter_at(z) * dz;
+            if let Some(s) = pole.shaft_at(z) {
+                w += s.area_inertia().0 * dz;
+            }
+        }
+        v[0] += q * wind[0];
+        v[1] += q * wind[1];
+        p += w * pole.density * crate::model::G * self_weight;
+    }
+    (p, v[0].hypot(v[1]), t)
+}
+
 /// Checks a pole under `loads`, `wind` the factored wind pressure on it as
 /// a vector (x, y), Pa, `strength` the load case's strength factor. With
 /// `p_delta` and the pole's elasticity, the moments are amplified by the
@@ -664,19 +749,54 @@ pub fn check_pole_factored(
         },
         _ => 1.0,
     };
-    let mut worst: Option<(f64, f64, f64, f64)> = None;
+    let mut worst: Option<(f64, f64, f64, f64, String)> = None;
     for k in 0..=HEIGHTS {
         let h = pole.height() * k as f64 / HEIGHTS as f64;
         let (m, _) = moment_at(pole, loads, wind, h);
         let moment = m[0].hypot(m[1]) * amplification;
-        let cap = pole.capacity_at(h);
-        let usage = moment / (strength * cap);
+        let (usage, cap, words) = match (pole.by_code(), pole.shaft_at(h), pole.yield_strength) {
+            (true, Some(shaft), Some(fy)) => {
+                // ASCE/SEI 48-19: the axial force, shear and torsion of
+                // the loads above, with the moment.
+                let (p, v, t) = forces_at(pole, loads, wind, h, self_weight);
+                let (u, w) = crate::asce48::usage(&shaft, p, moment, v, t, fy, strength);
+                let (_, i) = shaft.area_inertia();
+                (u, fy * i / shaft.reach(), w)
+            }
+            _ => {
+                let cap = pole.capacity_at(h);
+                (moment / (strength * cap), cap, String::new())
+            }
+        };
         // A usage that is not a number (a capacity of 0) is the worst.
-        if worst.is_none_or(|w| crate::check::usage_order(usage, w.0).is_gt()) {
-            worst = Some((usage, h, moment, cap));
+        if worst
+            .as_ref()
+            .is_none_or(|w| crate::check::usage_order(usage, w.0).is_gt())
+        {
+            worst = Some((usage, h, moment, cap, words));
         }
     }
-    let (usage, height, moment, capacity) = worst.expect("heights checked");
+    let (usage, height, moment, capacity, code) = worst.expect("heights checked");
+    if pole.by_code() {
+        return Ok(PoleCheck {
+            usage,
+            height,
+            moment,
+            capacity,
+            ground_moment,
+            wind_moment: wind_ground[0].hypot(wind_ground[1]),
+            amplification,
+            governs: format!(
+                "ASCE/SEI 48-19 at {height:.1} m: {code} × {strength}; moment {:.1} kN m{}",
+                moment / 1000.0,
+                if amplification != 1.0 {
+                    format!(" (P-Delta × {amplification:.3})")
+                } else {
+                    String::new()
+                }
+            ),
+        });
+    }
     Ok(PoleCheck {
         usage,
         height,
