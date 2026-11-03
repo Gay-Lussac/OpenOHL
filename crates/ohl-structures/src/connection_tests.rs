@@ -58,6 +58,26 @@ fn a_connection_and_a_plate_are_read() {
     );
 }
 
+/// Several plates at one joint, one of them welded onto the leg
+/// (2026-11-03); a plate without a kind is bolted (files before read as
+/// they were); an unknown kind refused.
+#[test]
+fn several_plates_and_a_welded_one_are_read() {
+    use crate::connections::PlateKind;
+    let text = format!(
+        "{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"12 mm\"\nkind = \"welded\"\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G2\"\n"
+    );
+    let t = parse(&text).unwrap();
+    assert_eq!(t.plates.len(), 2);
+    assert_eq!(t.plates[0].kind(), PlateKind::Bolted);
+    assert_eq!(t.plates[0].kind, None);
+    assert_eq!(t.plates[1].kind(), PlateKind::Welded);
+    assert!(t.connection_notes().is_empty());
+    assert!(parse(&text.replace("\"welded\"", "\"glued\"")).is_err());
+}
+
 /// Three gauge lines (a wide leg, owner 2026-11-03), one gauge each.
 #[test]
 fn three_gauge_lines_are_read() {

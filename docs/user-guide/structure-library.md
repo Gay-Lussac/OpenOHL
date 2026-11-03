@@ -194,8 +194,12 @@ id = "G1"                 # unique among the plates, not a member's id
 joint = "N7"
 thickness = "10 mm"
 material = "S355"         # optional
+# kind = "welded"         # bolted onto the joint's leg (default) or welded
+#                         #   (2026-11-03); a joint may have several plates
 # outline = [["0 m", "1 m", "10 m"], …]   # local axes; none: drawn around
-#                                         #   the bolts of the connections onto it
+#                                         #   the bolts of the connections onto it,
+#                                         #   each kept the design code's end and
+#                                         #   edge distances from its edge
 ```
 
 A member end is given once; the gauges are one per gauge line; a hole is no smaller than its bolt; sizes are not below 0. A connection whose member or joint is gone (deleted, or not rebuilt by a generator) is kept and said, not used; deleting a member or joint in OHL-Structure removes its connections and the plates there, and a connection onto them loses its `onto`. A file with connections or plates is version 9 (an older program says it is newer).

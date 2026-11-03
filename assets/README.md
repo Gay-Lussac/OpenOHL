@@ -29,6 +29,7 @@ every file parses.
 | `icons/tools/generator.svg` | OHL-Structure: Body › Generators… |
 | `icons/tools/symmetry.svg` | OHL-Structure: Body › Symmetry ›; symmetry (Joints and Members panels) |
 | `icons/tools/support.svg` | OHL-Structure: Design › Supports… |
+| `icons/tools/add-bolt.svg`, `move-bolt.svg`, `remove-bolt.svg`, `member-end.svg` | OHL-Structure: the Detail view's toolbar (Add bolt, Move bolt, Remove bolt, Member end; its Edit slot uses `edit.svg`) |
 | `icons/tools/add-point.svg`, `two-strings.svg`, `insert-joint.svg` | OHL-Structure's hotbar and inventory: Add point, Two strings to one wire point, Insert a joint on a member (with `add-joint`, `add-member`, `symmetry` there too) |
 
 The other files (the wordmarks, `openohl-mark-plain.svg`,

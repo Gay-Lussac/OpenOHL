@@ -321,8 +321,8 @@ their menu or from View.
   does and its options. The tools: **Select** (a click selects; the
   default), **Edit** (2026-11-02: a joint, member or point clicked
   opens where it is edited — its fields in the Inspector, brought to the
-  front, and its row in its table; a tower's joint also in Joint details
-  and the Detail view), **Move** (drag a joint or point to move it, snapped to the
+  front, and its row in its table; a tower's joint or member, once asked, in
+  the Detail view with its details below — 2026-11-03), **Move** (drag a joint or point to move it, snapped to the
   grid — **snap** in the strip — or onto a joint; one undo step per
   drag), **Add point** (on a joint clicked, else at the top of the stick
   figure), **One string** (below the point clicked; **string length** in
@@ -529,24 +529,40 @@ connections becomes a pole, the message says how many connections and
 plates stay in the file, not shown.
 
 **Design › Joint details…** shows the joint selected last (in the 3D
-view — the Edit tool opens it on the joint clicked —, the Joints table,
-or picked in its list; the Detail view follows the selection even when
-the panel is behind another tab; each joint with how complete
-its details are, in its colour): its tables in the panel, its drawing in
-the **Detail view**, a pane of its own opened on the right of the 3D view
-(View › Detail view shows or hides it; no window over the view):
+view, the Joints table, or picked in its list; the Detail view follows
+the selection even when the panel is behind another tab; each joint with
+how complete its details are, in its colour): its drawing in the
+**Detail view**, a pane of its own opened on the right of the 3D view
+(View › Detail view shows or hides it; no window over the view), and its
+tables in **Joint details below the Detail view** — that leaf holds only
+the Detail view's own details (Joint details, Member details), not the
+tables, loads or results (2026-11-03; a panel kept elsewhere by an older
+arrangement moves there when it is next opened).
+
+The **Edit** tool of the 3D view on a tower's joint or member first asks
+**Open … in the Detail view?** (2026-11-03): **Open the Detail view**
+shows it there with its details in front below it; **Stay** keeps to the
+Inspector (its fields, as for any other object).
 
 - **Close-up**: the members meeting there as their cross-sections (angles
   with their roll, so the leg bolted shows), cut a little beyond the
   joint, the bolts through the leg bolted (red; grey where their layout is
-  partly assumed), the plates (blue; a plate without an outline in the
-  file lies on the leg of the corner member it is bolted to, in the
-  face of the bolts onto it, shaped to the corner: over the corner leg's
-  width where the members' bolts reach along it, and over each member's
-  bolted leg from its first bolt to its last (an end distance beyond
-  each), so that it stays within the corner's shape — assumed, as the
-  IFC export lays it); drag to turn it, scroll to zoom,
-  **Reset view**. Bolts are drawn on angles only.
+  partly assumed), the plates (blue bolted, brown welded; a plate without
+  an outline in the file lies on the leg of the corner member it is
+  bolted or welded to, in the face of the bolts onto it, shaped to the
+  corner: over the corner leg's width where the members' bolts reach
+  along it, over each member's bolted leg from its first bolt to its
+  last, and **round every bolt onto it with the design code's distances
+  kept from its edge** — the end distance along the member, the edge
+  distance across it, the member end's minimums as the bolt tools take
+  them (ASCE 10-97 4.5; with the simple check, the end's own end and
+  edge distances, else 1.5 bolt diameters, assumed) — as the IFC export
+  lays it); drag to turn it, scroll to zoom, **Reset view**. Bolts are
+  drawn on angles only. Every face is drawn in small pieces sorted by
+  their own depth, so the bolts stay in sight from every side (before
+  2026-11-03 a member's long faces could hide the heads when turned).
+  I/H, hollow and polygonal profiles are drawn by their outline (a box
+  before).
 - **Face view**: the joint square to a face (x+, x−, y+, y−, or the plan
   from above; the face most of its members lie in first), as a shop
   drawing: the members' outlines, the gauge lines, the bolts, the end
@@ -607,9 +623,14 @@ out. Each change is one undo step.
   what they bolt onto within 1°, so the mirror joints too — their
   connections replaced, what they bolt onto matched, a plate copied to
   each.
-- **+ Plate**: a gusset plate at the joint (10 mm to start: type its
-  thickness), its material, the members bolted onto it (Onto), 🗑
-  removes it (what bolted onto it: not given any more).
+- **+ Plate** / **+ Welded plate** (2026-11-03): a gusset plate at the
+  joint, bolted or welded onto the joint's leg (10 mm to start: type its
+  thickness); a joint may have several. The plates table gives each
+  one's **kind** (bolted, welded: one undo step), thickness, material
+  and the members bolted onto it (Onto); its id shows its properties
+  above the table; 🗑 removes it (what bolted onto it: not given any
+  more). The members bolt onto a welded plate as onto a bolted one; the
+  checks treat both alike (the plates' own checks are not built yet).
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`
   per name with the fields of a connection but `onto` and `bolt_points`),
@@ -617,7 +638,7 @@ out. Each change is one undo step.
   above the table.
 
 **Design › Member details…** (2026-11-02) shows a tower's member — the
-one selected (the Edit tool opens it on the member clicked) or picked in
+one selected (the Edit tool opens it on the member clicked, once asked) or picked in
 its list — from its own side:
 
 - its **two ends as rows of the connections table** (the joint at each
@@ -637,7 +658,11 @@ its list — from its own side:
   their bolts (orange where their place is partly assumed), each end's
   end distance, pitch and gauge.
 
-The Detail view shows the joint or the member selected last.
+The Detail view shows the joint or the member selected last. A member
+opened from a joint (the Edit tool on it in the face view, or selected)
+has **‹ Joint N2** buttons above it — the joint it came from first, then
+its other end — and **Escape** (the pointer over the Detail view, or the
+Detail view or its details in front) goes back to that joint.
 
 **Where a member lands on the joint** (2026-11-02). By default every
 member's axis runs to the joint's work point — the forces meet there —
@@ -650,11 +675,24 @@ an **eccentricity** the analysis takes into account (the face view draws
 each member's axis dashed, to the work point or beside it). A layout's
 end distance is measured from where the steel stops.
 
-**The Detail view's tools** (a strip above the face view and the member
-view; the close-up has none):
+**The Detail view's tools** (2026-11-03: a toolbar over the bottom of the
+drawing, as the 3D view's hotbar — click a slot to hold its tool — and
+above the drawing the tool held with what a click does, as the 3D view's
+strip; the tools act in the face view and the member view, the close-up
+shows them greyed; Escape goes back to Edit):
 
-- **Edit**: a bolt or member clicked — the member selected, its bolt
-  layout form opened for that end;
+- **Edit**: a **bolt** clicked — its properties at the top of the details
+  below (its place, its kind, the library bolt's values, whether it keeps
+  the code's distances) with the **bolt libraries** to change it (a
+  member end's bolts are of one kind: the bolt chosen is that end's; one
+  undo step), **Bolt layout…** and **Remove this bolt**; it is ringed in
+  the face view. A **plate** clicked — its kind (bolted or welded),
+  thickness, the leg it lies on, the members onto it, the distances its
+  edge keeps from each member's bolts and any bolt nearer its edge than
+  that (an outline given in the file). A **member** clicked (face view) —
+  the member in detail (‹ Joint, Escape: back); in the member view, a
+  click beside the bolts opens that end's bolt layout form. Escape lets
+  go of what was picked;
 - **Add bolt**: a click on a member's leg bolted — a bolt there, placed
   by the **design code of the capacity method** (ASCE 10-97: its minimum
   end distance, spacing and edge distance, 4.5): onto the nearest gauge
@@ -670,9 +708,10 @@ view; the close-up has none):
 - **Remove bolt**: a bolt clicked goes;
 - **Member end**: drag a member — along it, where its steel stops; across
   it (in the face view), its end's shift;
-- **Plate around the bolts** (the face view, when a plate has no outline
-  in the file): the outline it is drawn with written into the file, to
-  be edited.
+- **Plate around the bolts** (above the drawing, when a plate has no
+  outline in the file): the outline it is drawn with — round its bolts
+  with the code's distances kept — written into the file, to be edited;
+  a plate's properties offer the same for that plate alone.
 
 A bolt added or taken away turns that end's layout into its bolts'
 places (`bolt_points`); the bolt layout form makes a regular layout

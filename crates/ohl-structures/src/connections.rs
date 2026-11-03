@@ -35,6 +35,8 @@
 //! joint = "N7"
 //! thickness = "10 mm"
 //! material = "S355"       # optional
+//! kind = "welded"         # bolted (default) or welded onto the joint's
+//! #   leg (2026-11-03); a joint may have several plates
 //! # outline = [["0 m", "0 m", "10 m"], …]   # local axes; none: around
 //! #   the bolts of the connections onto it
 //! ```
@@ -239,7 +241,32 @@ pub fn shift_direction(along: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
     (l > 1e-6).then(|| [u[0] / l, u[1] / l, u[2] / l])
 }
 
-/// A gusset plate at a joint (`[[plate]]`).
+/// How a gusset plate is held on the joint's leg (the members bolt onto
+/// it either way).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlateKind {
+    /// Bolted onto the leg.
+    #[default]
+    Bolted,
+    /// Welded onto the leg.
+    Welded,
+}
+
+impl PlateKind {
+    /// Every kind, in the order offered.
+    pub const ALL: [PlateKind; 2] = [PlateKind::Bolted, PlateKind::Welded];
+
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bolted => "bolted",
+            Self::Welded => "welded",
+        }
+    }
+}
+
+/// A gusset plate at a joint (`[[plate]]`); a joint may have several.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TypePlate {
@@ -255,6 +282,17 @@ pub struct TypePlate {
     /// Its outline in local axes (none: around the bolts onto it).
     #[serde(default)]
     pub outline: Vec<[Length; 3]>,
+    /// Bolted or welded onto the joint's leg (none: bolted; 2026-11-03,
+    /// still structure file version 9 — files without it read as before).
+    #[serde(default)]
+    pub kind: Option<PlateKind>,
+}
+
+impl TypePlate {
+    /// How it is held (bolted when not given).
+    pub fn kind(&self) -> PlateKind {
+        self.kind.unwrap_or_default()
+    }
 }
 
 impl TypeConnection {

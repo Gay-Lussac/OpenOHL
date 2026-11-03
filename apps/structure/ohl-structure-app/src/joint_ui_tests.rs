@@ -228,6 +228,8 @@ fn an_angle_tower_shows_its_bolts() {
     }
     // Stage 3: H1's bolts (the member's) clicked: the bolt layout, its
     // bolts applied at this end — one undo step.
+    h.get_by_label("2 × M16").scroll_to_me();
+    h.run();
     h.get_by_label("2 × M16").click();
     h.run();
     h.get_by_label_contains("Bolt layout — H1 at N2");
@@ -237,6 +239,8 @@ fn an_angle_tower_shows_its_bolts() {
             .save(dir.join("angles-layout.png"))
             .unwrap();
     }
+    h.get_by_label("Apply").scroll_to_me();
+    h.run();
     h.get_by_label("Apply").click();
     h.run();
     let c = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
@@ -262,6 +266,8 @@ fn an_angle_tower_shows_its_bolts() {
     h.run();
     assert!(c(&h).is_none());
     // A plate at the joint: one undo step, listed.
+    h.get_by_label("+ Plate").scroll_to_me();
+    h.run();
     h.get_by_label("+ Plate").click();
     h.run();
     assert_eq!(h.state().file.as_ref().unwrap().structure().plates.len(), 1);
@@ -271,7 +277,7 @@ fn an_angle_tower_shows_its_bolts() {
 
 /// Two legs in the face y = 1 m, a diagonal and a horizontal to the
 /// joint between them; the diagonal's end there given in full.
-const ANGLES: &str = r#"id = "A"
+pub(crate) const ANGLES: &str = r#"id = "A"
 name = "angles"
 kind = "lattice"
 
@@ -379,8 +385,9 @@ fn the_joint_view_follows_the_selection_with_the_panel_hidden() {
 
 /// The Edit tool (owner 2026-11-02: "an edit tool … a click on members
 /// or joints and open the necessary window to edit them"): a member
-/// clicked is selected, the Inspector in front with its fields; a
-/// tower's joint also opens Joint details and the Joint view on it.
+/// clicked is selected, the Inspector in front with its fields; a tower's
+/// joint or member is first asked about (owner 2026-11-03), then opened in
+/// the Detail view with its details in front below it — or not (Stay).
 #[test]
 fn the_edit_tool_opens_where_it_is_edited() {
     use crate::tools::Tool;
@@ -397,17 +404,41 @@ fn the_edit_tool_opens_where_it_is_edited() {
     h.run();
     assert_eq!(h.state().selected, vec![Handle::Member("m155".into())]);
     assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
-    // A tower's member: also Member details and the Detail view.
+    // Asked first; nothing opened before the answer.
+    h.get_by_label_contains("Open member m155 in the Detail view");
+    assert!(!h.state().is_open(Panel::MemberDetails));
+    h.get_by_label("Open the Detail view").click();
+    h.run();
+    h.run();
+    // A tower's member: Member details in front below the Detail view.
     assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
+    assert_eq!(h.state_mut().focused(), Some(Panel::MemberDetails));
+    assert!(h.state().joints.ask_open.is_none());
     assert!(h.get_all_by_label_contains("Member m155").count() >= 2);
+    // Its leaf holds the details only, not the tables, loads or results.
+    let at = h.state().dock.find_tab(&Panel::MemberDetails).unwrap();
+    assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
     h.state_mut()
         .tool_click(Some(Handle::Joint("L9A".into())), None);
     h.run();
+    h.get_by_label("Open the Detail view").click();
+    h.run();
+    h.run();
     assert!(h.state().is_open(Panel::JointDetails) && h.state().is_open(Panel::JointView));
     assert_eq!(h.state().joints.joint.as_deref(), Some("L9A"));
-    assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
+    assert_eq!(h.state_mut().focused(), Some(Panel::JointDetails));
+    let at = h.state().dock.find_tab(&Panel::JointDetails).unwrap();
+    assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
     // The Inspector's heading and the Detail view's.
     assert_eq!(h.get_all_by_label("Joint L9A").count(), 2);
+    // Stay: the Inspector only.
+    h.state_mut()
+        .tool_click(Some(Handle::Joint("L9B".into())), None);
+    h.run();
+    h.get_by_label("Stay").click();
+    h.run();
+    assert!(h.state().joints.ask_open.is_none());
+    assert_eq!(h.state_mut().focused(), Some(Panel::Inspector));
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
@@ -443,6 +474,8 @@ fn member_details_follow_the_bolts_live() {
     h.state_mut().hold_tool(Tool::Edit);
     h.state_mut()
         .tool_click(Some(Handle::Member("D1".into())), None);
+    h.run();
+    h.get_by_label("Open the Detail view").click();
     h.run();
     h.run();
     assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
@@ -556,8 +589,8 @@ fn the_detail_view_tools_act() {
     h.state_mut().joints.drawn = Drawn::Face;
     h.run();
     h.run();
-    h.get_by_label("Add bolt");
-    h.get_by_label("Member end");
+    h.get_by_label("slot: Add bolt");
+    h.get_by_label("slot: Member end");
     let details = h.state_mut().joint_details().unwrap();
     let details = details.as_ref().as_ref().unwrap().clone();
     let file = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
@@ -620,7 +653,7 @@ fn the_detail_view_tools_act() {
     h.state_mut().selected = vec![Handle::Member("D1".into())];
     h.run();
     h.run();
-    h.get_by_label("Remove bolt");
+    h.get_by_label("slot: Remove bolt");
     if let Some(dir) = &shots {
         h.run_steps(4);
         h.render()
@@ -671,7 +704,7 @@ fn bolt_tools_keep_the_code() {
     h.state_mut().joints.drawn = Drawn::Face;
     h.run();
     h.run();
-    h.get_by_label("Move bolt");
+    h.get_by_label("slot: Move bolt");
     let details = h.state_mut().joint_details().unwrap();
     let details = details.as_ref().as_ref().unwrap().clone();
     let ends = [("H1".to_owned(), "N2".to_owned())];
@@ -739,5 +772,121 @@ fn bolt_tools_keep_the_code() {
         // A leg too narrow for a second line: said why, nothing written.
         assert!(matches!(act, Act::Say(_, true)), "{act:?}");
     }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// Getting around the Detail view (owner 2026-11-03): a member opened
+/// from the joint goes back to it (‹ Joint, Escape); a bolt picked with
+/// the Edit tool shows its properties below, its kind changed from the
+/// bolt library (one undo step); several plates at the joint, one welded,
+/// a plate picked shows its kind and its edges.
+#[test]
+fn the_detail_view_goes_back_and_shows_what_is_picked() {
+    use crate::joint_panel::{Drawn, Picked};
+    use crate::joint_tools::Act;
+    use crate::member_panel::Subject;
+    use ohl_structures::connections::PlateKind;
+    let path = copy_of("type-02.ohls", "detail-picked");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details…");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.state_mut().joints.drawn = Drawn::Face;
+    h.run();
+    h.run();
+    let file = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state().file.as_ref().unwrap().structure().clone()
+    };
+    // The details below the Detail view are its own.
+    let at = h.state().dock.find_tab(&Panel::JointDetails).unwrap();
+    assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
+    // The member in detail from the joint, then back: the button.
+    h.state_mut().selected = vec![Handle::Member("D1".into())];
+    h.run();
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Member);
+    assert_eq!(h.state().joints.back.as_deref(), Some("N2"));
+    h.get_by_label("‹ Joint N2").click();
+    h.run();
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Joint);
+    assert_eq!(h.state().joints.joint.as_deref(), Some("N2"));
+    assert_eq!(h.state().selected, vec![Handle::Joint("N2".into())]);
+    // … and Escape (the Detail view's details in front).
+    h.state_mut().selected = vec![Handle::Member("D1".into())];
+    h.run();
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Member);
+    h.key_press(eframe::egui::Key::Escape);
+    h.run();
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Joint);
+    assert_eq!(h.state().joints.joint.as_deref(), Some("N2"));
+    // A bolt picked (the Edit tool's act): its properties below.
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    h.state_mut()
+        .apply_joint_acts(vec![Act::PickBolt("D1".into(), "N2".into(), 1)], &details);
+    h.run();
+    h.run();
+    assert_eq!(h.state_mut().focused(), Some(Panel::JointDetails));
+    h.get_by_label_contains("Bolt 2 of 3 — D1 at N2");
+    h.get_by_label("Bolt of the library");
+    // The bolt library offered: one of its bolts for this end's bolts.
+    h.get_by_value("typed here").click();
+    h.run();
+    h.get_by_label("Example bolt 17 mm (invented)").click();
+    h.run();
+    h.run();
+    let c = file(&h).connection("D1", "N2").cloned().unwrap();
+    let b = c.bolts.unwrap();
+    assert_eq!(b.bolt.as_deref(), Some("X17-example"));
+    assert_eq!(b.count, 3);
+    h.get_by_label("Library bolt");
+    // Escape lets go of the bolt picked.
+    h.key_press(eframe::egui::Key::Escape);
+    h.run();
+    assert!(h.state().joints.picked.is_none());
+    // Two plates at the joint, the second welded: each one undo step.
+    h.get_by_label("+ Plate").scroll_to_me();
+    h.run();
+    h.get_by_label("+ Plate").click();
+    h.run();
+    h.get_by_label("+ Welded plate").scroll_to_me();
+    h.run();
+    h.get_by_label("+ Welded plate").click();
+    h.run();
+    h.run();
+    let t = file(&h);
+    assert_eq!(t.plates.len(), 2);
+    assert_eq!(t.plates[0].kind(), PlateKind::Bolted);
+    assert_eq!(t.plates[1].kind(), PlateKind::Welded);
+    let welded = t.plates[1].id.clone();
+    // The plate just added is picked: its kind, its edges.
+    assert_eq!(h.state().joints.picked, Some(Picked::Plate(welded.clone())));
+    h.get_by_label_contains(&format!("Plate {welded} at joint N2"));
+    h.get_by_label("bolted onto the leg").click();
+    h.run();
+    h.run();
+    assert_eq!(file(&h).plates[1].kind, None);
+    h.get_by_label("Undo").click();
+    h.run();
+    assert_eq!(file(&h).plates[1].kind(), PlateKind::Welded);
     std::fs::remove_dir_all(dir).ok();
 }

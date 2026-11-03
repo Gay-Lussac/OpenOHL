@@ -410,9 +410,12 @@ fn home(dock: &DockState<Panel>, panel: Panel) -> Option<NodePath> {
             Some(Area::LoadCases | Area::Results | Area::InTheLine)
         )
     };
-    let same = |p: &Panel| p.area().is_some() && p.area() == panel.area();
-    let near = |p: &Panel| p.area().is_some() && loads(p) == loads(&panel);
-    let any = |p: &Panel| p.area().is_some();
+    // The Detail view's details keep their leaf to themselves.
+    let table =
+        |p: &Panel| p.area().is_some() && !matches!(p, Panel::JointDetails | Panel::MemberDetails);
+    let same = |p: &Panel| table(p) && p.area() == panel.area();
+    let near = |p: &Panel| table(p) && loads(p) == loads(&panel);
+    let any = |p: &Panel| table(p);
     [
         dock.find_tab_from(same),
         dock.find_tab_from(near),
@@ -456,6 +459,45 @@ pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
                 }
                 _ => dock.push_to_first_leaf(panel),
             },
+            // Joint and Member details below the Detail view, in a leaf
+            // of their own (owner 2026-11-03: the detail view's bottom
+            // panel shows only what belongs to it, not the tables, loads
+            // and results).
+            Panel::JointDetails | Panel::MemberDetails => {
+                let other = if panel == Panel::JointDetails {
+                    Panel::MemberDetails
+                } else {
+                    Panel::JointDetails
+                };
+                let main = |p: &egui_dock::TabPath| p.surface == egui_dock::SurfaceIndex::main();
+                match (
+                    dock.find_tab(&other),
+                    tables.filter(|t| t.surface == egui_dock::SurfaceIndex::main()),
+                    dock.find_tab(&Panel::JointView),
+                ) {
+                    (Some(at), _, _) if details_only(dock, at.node_path()) => {
+                        dock.set_focused_node_and_surface(at.node_path());
+                        dock.push_to_focused_leaf(panel);
+                    }
+                    // Beside the tables, under the Detail view (as wide as
+                    // it, the tables' height).
+                    (_, Some(t), Some(view)) if main(&view) => {
+                        dock.main_surface_mut()
+                            .split_right(t.node, 0.5, vec![panel]);
+                    }
+                    (_, _, Some(view)) if main(&view) => {
+                        dock.main_surface_mut()
+                            .split_below(view.node, 0.55, vec![panel]);
+                    }
+                    _ => match home(dock, panel) {
+                        Some(at) => {
+                            dock.set_focused_node_and_surface(at);
+                            dock.push_to_focused_leaf(panel);
+                        }
+                        None => dock.push_to_first_leaf(panel),
+                    },
+                }
+            }
             // The Inspector and the To do list on the right of the view,
             // together.
             Panel::Level | Panel::Inspector => {
@@ -501,6 +543,29 @@ pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
         let _ = dock.set_active_tab(path);
         dock.set_focused_node_and_surface(path.node_path());
     }
+}
+
+/// Whether the leaf at `at` holds Joint and Member details only (the
+/// Detail view's own details).
+pub fn details_only(dock: &DockState<Panel>, at: NodePath) -> bool {
+    dock.leaf(at).is_ok_and(|l| {
+        l.tabs()
+            .iter()
+            .all(|p| matches!(p, Panel::JointDetails | Panel::MemberDetails))
+    })
+}
+
+/// Joint or Member details open among other panels (an arrangement kept
+/// from before 2026-11-03): moved below the Detail view, alone there.
+pub fn settle_details(dock: &mut DockState<Panel>, panel: Panel) {
+    let Some(at) = dock.find_tab(&panel) else {
+        return;
+    };
+    if details_only(dock, at.node_path()) || dock.find_tab(&Panel::JointView).is_none() {
+        return;
+    }
+    dock.remove_tab(at);
+    open_panel(dock, panel);
 }
 
 /// Closes `panel` if it is open.

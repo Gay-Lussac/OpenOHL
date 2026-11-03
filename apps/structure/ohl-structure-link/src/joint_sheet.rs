@@ -149,7 +149,13 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
         });
         marks.push(Mark::Text {
             at: mid,
-            text: format!("{} · {:.0} mm", p.id, p.thickness * 1000.0),
+            text: match p.kind {
+                ohl_structures::connections::PlateKind::Bolted => {
+                    format!("{} · {:.0} mm", p.id, p.thickness * 1000.0)
+                }
+                // A welded plate said so on the drawing.
+                k => format!("{} · {:.0} mm · {}", p.id, p.thickness * 1000.0, k.as_str()),
+            },
             label: false,
         });
     }

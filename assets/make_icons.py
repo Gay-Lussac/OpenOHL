@@ -15,6 +15,13 @@ def pylon(x, y, h, w):
     return (f'<path d="M{x-w*0.35:.2f} {y}L{x:.2f} {top}L{x+w*0.35:.2f} {y}"/>'
             f'<path d="M{x-w/2:.2f} {top+h*0.28:.2f}H{x+w/2:.2f}M{x-w*0.38:.2f} {top+h*0.52:.2f}H{x+w*0.38:.2f}"/>')
 
+# A bolt's head seen from above: a hexagon round its shank, centre (x, y).
+def HEX(x, y, r=5.6):
+    import math
+    pts = " ".join(f"{x + r * math.cos(math.pi / 3 * k):.2f} {y + r * math.sin(math.pi / 3 * k):.2f}"
+                   for k in range(6))
+    return f'<path d="M{pts}z"/><circle cx="{x}" cy="{y}" r="2.2"/>'
+
 tools = {
  "select": ('<path d="M5 3l13 8-5.5 1.5L15 19l-2.2 1-2.6-6.3L6 17z"/>', "Select"),
  "move": ('<path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>', "Move"),
@@ -57,6 +64,12 @@ tools.update({
  'two-strings': ('<path d="M2.5 4h14"/><path d="M4.5 4 9.5 15M14.5 4 9.5 15" stroke-width="2.2"/><circle cx="9.5" cy="16.5" r="1.5" fill="currentColor"/><path d="M19.5 9v5M17 11.5h5"/>', 'Two strings to one wire point'),
  'insert-joint': ('<circle cx="4" cy="20" r="1.6"/><circle cx="20" cy="4" r="1.6"/><path d="M5.2 18.8 18.8 5.2" stroke-width="2.4"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M19.5 15v5M17 17.5h5"/>', 'Insert a joint on a member'),
  'support': ('<path d="M12 4v8"/><path d="M12 12 7 19h10z"/><path d="M5 21.5h14M6.5 21.5l-1.5 1.5M10 21.5l-1.5 1.5M13.5 21.5 12 23M17 21.5 15.5 23" stroke-width="1.4"/>', 'Support'),
+ # The joint Detail view's tools (2026-11-03): a bolt's hexagonal head seen
+ # from above.
+ 'add-bolt': (HEX(10, 14) + '<path d="M19.5 3v5M17 5.5h5"/>', 'Add bolt'),
+ 'move-bolt': (HEX(12, 12) + '<path d="M19.5 12h3M21 10.5l1.5 1.5-1.5 1.5M4.5 12h-3M3 10.5 1.5 12 3 13.5"/>', 'Move bolt'),
+ 'remove-bolt': (HEX(10, 14) + '<path d="M17 3.5l4.5 4.5M21.5 3.5 17 8"/>', 'Remove bolt'),
+ 'member-end': ('<path d="M3 21 13.5 10.5" stroke-width="2.6"/><path d="M11 8l5 5"/><path d="M16 4.5h4v4M20 4.5l-3.5 3.5" opacity="0.7"/><circle cx="18.5" cy="17.5" r="1.6" fill="currentColor"/>', 'Member end'),
 })
 for k, (b, t) in tools.items():
     tool(k, b, t)
