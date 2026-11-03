@@ -22,6 +22,7 @@ mod clearances;
 mod display_codes;
 mod field_setup;
 mod lidar;
+mod load_case_library;
 mod local_winds;
 mod multi_select;
 mod objects;

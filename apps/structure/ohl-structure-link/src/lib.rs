@@ -537,16 +537,16 @@ pub fn library_recipes(
                     factor: body.factor,
                 });
             }
-            if let Some(w) = weather.iter().find(|w| w.name == lc.weather) {
-                if let Ok(Some(ice)) = lc.structure_ice_at(w, placed) {
-                    own.ice.push(IceLoad {
-                        thickness: Some(ice.thickness),
-                        density: Some(ice.density),
-                        load: None,
-                        members: Pick::All,
-                        factor: lc.vertical,
-                    });
-                }
+            if let Some(w) = weather.iter().find(|w| w.name == lc.weather)
+                && let Ok(Some(ice)) = lc.structure_ice_at(w, placed)
+            {
+                own.ice.push(IceLoad {
+                    thickness: Some(ice.thickness),
+                    density: Some(ice.density),
+                    load: None,
+                    members: Pick::All,
+                    factor: lc.vertical,
+                });
             }
             if let Some(snow) = lc.structure_snow_at(placed)
                 && snow.load() > 0.0

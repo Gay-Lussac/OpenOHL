@@ -361,7 +361,7 @@ fn case_ui(
     );
     let weather = cx.weather.iter().find(|w| w.name == case.weather);
     ui.horizontal(|ui| {
-        ui.label("Weather case");
+        let l = ui.label("Weather case");
         egui::ComboBox::from_id_salt("load-case-weather")
             .selected_text(if weather.is_some() {
                 case.weather.clone()
@@ -383,6 +383,7 @@ fn case_ui(
                 }
             })
             .response
+            .labelled_by(l.id)
             .on_hover_text(
                 "Only the project's weather cases (Line › Criteria › Weather cases): a load \
                  case naming another is refused when the loads are computed",
@@ -633,7 +634,7 @@ fn wires_ui(ui: &mut egui::Ui, case: &mut LoadCase, cx: &FormContext<'_>) -> boo
                     .collect();
                 let header = egui::CollapsingHeader::new(what)
                     .id_salt(("load-case-section", id))
-                    .default_open(removed || !breaks.is_empty());
+                    .default_open(removed || !breaks.is_empty() || ids.len() <= 4);
                 header.show(ui, |ui| {
                     let mut on = removed;
                     if ui
@@ -797,7 +798,7 @@ fn structure_wind_ui(
     let key = |what: &str| format!("{item}:{what}");
     let mut own = case.structure.unwrap_or_default();
     let mode = match own.wind_pressure {
-        Some(p) if p == 0.0 => Pressure::Off,
+        Some(0.0) => Pressure::Off,
         Some(_) => Pressure::Own,
         None => Pressure::Weather,
     };
@@ -1052,7 +1053,7 @@ fn ice_snow_ui(
                     changed = true;
                 }
             }
-            ui.label("ⓘ").on_hover_text(sia);
+            ui.label("(about)").on_hover_text(sia);
         }
     });
     changed

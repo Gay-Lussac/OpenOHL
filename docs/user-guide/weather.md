@@ -157,11 +157,14 @@ same wind, from the memo of solves). Which wind a check takes:
 | Lightning | for clearances | the wires' positions against the shield wires |
 
 The **wire ice** factor is taken by every check with the switch ticked.
-The **structure ice** and the **snow** are kept with the structure and
-not yet taken by a check (the structure loads' load cases will take
-them). The member wind of the usage check (finite elements) and the
-poles' wind are not yet times **wind static**; the wind on a type's wind
-bands is.
+The **structure ice** and the **snow** are taken by the load cases that
+put ice or snow on the structures (Load cases library › Ice and snow on
+the structures: *the structures' local ice*, *Snow on the structures*).
+In Checks › Structure loads the switch means the same as a load case's
+**Use local conditions** (one rule, 2026-11-03): the wind on each
+structure's body — its wind bands, the members of the usage check and a
+pole — is times its **wind static** once ([Use local conditions: one
+rule](loads.md#use-local-conditions-one-rule)).
 
 When no structure gives local conditions, the switch changes nothing
 and nothing is solved again (its hover says so, the notes too). The

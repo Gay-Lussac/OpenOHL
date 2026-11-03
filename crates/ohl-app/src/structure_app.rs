@@ -1051,9 +1051,10 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                 "What the line sends to the placed structures (Open in OHL-Structure… on a \
                  placed structure): the forces of the wires and strings at each attachment \
                  point in each weather case ticked, unfactored. A weather case with wind is \
-                 sent twice, the wind from the left and from the right. The factors are \
-                 given in the structure's load cases (OHL-Structure › Load cases), with the \
-                 loads on the structure itself.",
+                 sent twice, the wind from the left and from the right, for the structure's \
+                 own (extra) load cases. Each structure's set of the Load cases library goes \
+                 too, as its load cases with the library's factors (its Properties › Load \
+                 cases; Line › Criteria › Load cases per structure type).",
             )
             .small()
             .weak(),

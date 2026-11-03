@@ -875,6 +875,38 @@ were read and from where.
 **Arrows** draws the loads of the case shown in the view, ending at
 their point (a member's at its middle), **m per kN** long.
 
+### The line's load cases: the library (2026-11-03)
+
+Owner, 2026-11-03: "The library's cases" (built, in active development,
+not approved yet). A placed structure opened from the line gets **its set
+of the line's load case library** (its own, else its type's, else every
+case; [Per-pylon sets](loads.md#version-4-removed-conductors-several-broken-wires-the-winds-direction-ice-and-snow-on-the-structures))
+as its **load cases**, with the library's factors: each case takes
+
+1. the case's own forces at the attachment points (unfactored) × its
+   vertical, transverse and longitudinal factors;
+2. the structure's self weight × its vertical factor; the wind on the body
+   from the case's direction — any angle (`from = 30.0`, 0° from the
+   right, 90° from ahead) — its pressure on the structures (with
+   `use_local`, × this structure's `wind_static`) × its factor; ice on
+   every member (the case's thickness or this structure's local ice, its
+   density) and snow on every member's plan (q = μ·C_e·C_T·s_k), × the
+   vertical factor;
+3. its strength factor φ.
+
+The Load cases panel lists them first, *From the line's load case
+library* (read here, changed in OHL-Design), then the structure's own
+cases as **extra** load cases — for loads the line's cases do not give.
+The line's values of a library case are taken by that case only (no row
+of its own in the load table). An own case with a library case's name
+makes the library's `<name> (library)`. Older line-values files (version
+4 and before) and lines without a load case library give none: the own
+cases as before. The weather cases ticked in Criteria › Loads for
+structures still come as line results (unfactored, for the own cases),
+to every structure whatever its set; a broken-wire case sent breaks every
+wire it lists, all together, and leaves out its removed conductors
+(`high wind — S1 span 1 broken, S1 span 2 broken — wind from the left`).
+
 ### The line's wind on the structure body
 
 Each line case comes with the wind on the structure's own body as the

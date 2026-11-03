@@ -10,6 +10,44 @@ of Parts A, B and C).
 
 ## 2026-11-03
 
+**Load cases, step 5: the Load cases library as a form, per-pylon sets,
+one rule for the local conditions, OHL-Structure takes the library's
+cases** (owner, 2026-11-03: "design it so that it's easy to understand
+and use for a human (load cases for structure and load cases library)
+the library should be where the load cases are saved then on each pylon
+you should have a load case for structure that can be different per
+structure and composed of cases from the library"; for OHL-Structure the
+owner chose "The library's cases"). Built, in active development, not
+approved yet.
+
+- The Load cases library is a form (weather from the project's list,
+  wind on the wires, wires removed and broken from the line's sections
+  and spans, wind on the structures with a direction or an angle, ice and
+  snow on the structures with SIA 261's coefficients cited, factors, Use
+  local conditions, tags); written with `ohl_loads`' writer at the
+  lowest version needed, saved as one undoable project change; **Fields
+  (expert)** keeps the text editor (comments kept there only).
+- Per-pylon sets in the application: a structure's Properties (as its
+  type or its own ticks; Apply to the other selected), Line › Criteria ›
+  Load cases per structure type, the Structures table's load cases
+  column; each change one command.
+- **One rule for the local conditions**: a check's switch and a case's
+  `use_local` mean the same; the switch sets `use_local` on every case
+  (`ohl_loads::with_local`) and the line goes in as it is, so
+  `ohl_loads` localizes the wires and takes `wind_static` once on every
+  body wind — the wind bands, and now also the usage check's member wind
+  and the poles' wind (step 3 left these out) — never twice (the app's
+  own scaling of the band loads is gone). The window's loads take
+  `add_structure_loads`: the ice and snow rows and the cases' notes are
+  shown.
+- OHL-Structure: a placed structure's load cases are its set of the
+  library with the library's factors (line-values file version 5,
+  `library_cases`), its own recipes extra; the weather cases sent stay
+  line results for every structure, a broken-wire case sent breaks all
+  its wires and leaves its removed conductors out; `WindFrom` takes any
+  angle (a number; old files read), `OwnLoads.snow` puts snow on the
+  members' plan (the rule of `ohl_loads`).
+
 **Load case file version 4: removed conductors, several broken wires,
 the structure wind's direction, ice and snow on the structures, per-pylon
 sets** (step 4 of the approved local-conditions and load-case design, the

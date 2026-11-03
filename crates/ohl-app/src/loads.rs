@@ -662,7 +662,7 @@ impl LoadsPage {
     }
 
     /// The Results tab.
-    fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
+    pub(crate) fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
         let mut go = None;
         if model.sources.load_cases.is_none() {
             ui.label("No load case file yet (Setup › 2 Scope).");

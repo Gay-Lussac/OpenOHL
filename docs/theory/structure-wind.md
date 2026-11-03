@@ -318,6 +318,30 @@ axis) are data for the reports; the allowable loads at the attachments
 own body's ice and snow (unsafe where they do not). Exact: the
 fe or pole check.
 
+**In OHL-Structure** (2026-11-03, a placed structure's cases of the
+line's load case library): the same ice (thickness all round each
+member's outline, its density) and snow (q on each member's plan,
+\\( d\,L\,\sin\varphi \\)) on the members of its model, times the vertical
+factor, and the wind on its body from the case's direction (any angle:
+towards \\( (-\cos\theta, -\sin\theta) \\)) with the same pressure and
+factor — one rule for both applications.
+
+### Local conditions: the wind taken once
+
+With the structures' local conditions (a case's `use_local`, or a check's
+**Use local conditions**, which sets it on every case), the pressure on a
+structure's body is the case's times its `wind_static`
+\\( f_s \\), once:
+
+\\[ q_{body} = f_s\, q_{case}, \\]
+
+on its wind bands, the members of the **fe** check and a pole alike
+(2026-11-03: before, a check's switch scaled the band loads in the
+application while the cases' own `use_local` scaled them in the core —
+two rules, which could have given \\( f_s^2 \\); now one). The wires take
+their spans' local wind and ice by the line's span rule (worst or mean of
+the two structures', [Finite-element wire systems](wirefe.md)).
+
 ## Validation
 
 `benchmarks/structures-fe/member_wind.toml`: an invented square lattice
