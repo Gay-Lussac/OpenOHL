@@ -627,8 +627,11 @@ struct Extras {
     /// TIN lines: name, lines of (offset, elevation).
     tin: Vec<(String, Vec<Vec<P2>>)>,
     /// Drawing crossings: name, (offset, elevation, layer, colour).
-    dxf: Vec<(String, Vec<(f64, f64, String, String)>)>,
+    dxf: Vec<(String, Vec<DrawnCrossing>)>,
 }
+
+/// A drawing's crossing of a cut: offset, elevation, layer, colour.
+type DrawnCrossing = (f64, f64, String, String);
 
 impl Extras {
     fn parse(doc: &Value) -> Self {

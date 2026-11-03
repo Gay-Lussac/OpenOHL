@@ -33,7 +33,7 @@ fn plugin_info_knows_every_world() {
     // (plugin, its world, a line of its details)
     let cases = [
         ("examples/hello-wasm", "plugin", ""),
-        ("examples/geojson", "io-plugin", "format geojson:"),
+        ("examples/geojson", "io-plugin", "format example-geojson:"),
         (
             "examples/esri-grid",
             "terrain-plugin",

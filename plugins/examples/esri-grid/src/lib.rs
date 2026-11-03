@@ -40,10 +40,15 @@ fn read(text: &str) -> Result<Surface, String> {
             .map_err(|e| format!("header {w}: {e}"))?;
         header.insert(w.to_ascii_lowercase(), v);
     }
-    let get = |k: &str| header.get(k).copied().ok_or_else(|| format!("header: no {k}"));
+    let get = |k: &str| {
+        header
+            .get(k)
+            .copied()
+            .ok_or_else(|| format!("header: no {k}"))
+    };
     let (ncols, nrows) = (get("ncols")? as usize, get("nrows")? as usize);
     let cell = get("cellsize")?;
-    if ncols < 2 || nrows < 2 || !(cell > 0.0) {
+    if ncols < 2 || nrows < 2 || cell.is_nan() || cell <= 0.0 {
         return Err("at least 2 × 2 cells of a positive size".into());
     }
     // Cell centres.

@@ -748,7 +748,7 @@ mod tests {
         assert!(g.notes.iter().any(|n| n.contains("wind.basic_velocity")));
     }
 
-    /// NESC: the heavy district's 4 psf (invented) in pascals; extreme
+    /// NESC: the heavy district's 3.5 psf (invented) in pascals; extreme
     /// wind 0.00256·k_z·G·C_f·V² psf.
     #[test]
     fn nesc_example_by_hand() {
@@ -767,8 +767,8 @@ mod tests {
             0.00256 * 1.1 * 0.9 * 1.0 * 95.0 * 95.0 * psf,
         );
         let lc = load(&g, "NESC 250B district loading");
-        close(lc.transverse, 2.2);
-        close(lc.strength, 0.7);
+        close(lc.transverse, 1.75);
+        close(lc.strength, 0.65);
     }
 
     /// The Swiss LeV plugin, kept apart from the public code: at

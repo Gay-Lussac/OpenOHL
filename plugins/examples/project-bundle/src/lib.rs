@@ -58,7 +58,11 @@ impl Guest for Bundle {
         }
         let mut libraries = Vec::new();
         for f in v["libraries"].as_array().into_iter().flatten() {
-            let s = |k: &str| f[k].as_str().map(str::to_owned).ok_or(format!("library file: no {k}"));
+            let s = |k: &str| {
+                f[k].as_str()
+                    .map(str::to_owned)
+                    .ok_or(format!("library file: no {k}"))
+            };
             libraries.push(LibraryFile {
                 kind: s("kind")?,
                 name: s("name")?,

@@ -287,11 +287,11 @@ fn plugins_are_managed_and_give_their_formats() {
             .unwrap()
             .exporters
             .iter()
-            .any(|e| e.id == "geojson" && e.origin == "plugin geojson")
+            .any(|e| e.id == "example-geojson" && e.origin == "plugin geojson")
     };
     assert_eq!(has_geojson(harness.state_mut()), geojson_built);
     if geojson_built {
-        harness.get_by_label_contains("export geojson");
+        harness.get_by_label_contains("export example-geojson");
         // Turned off: its formats go.
         let name = "geojson";
         harness.get_by_label(name).click();

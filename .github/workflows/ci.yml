@@ -73,6 +73,9 @@ jobs:
             plugins/tests/sheet-presets
             plugins/tests/code-old
             plugins/tests/member-capacity
+            plugins/tests/wire-colours
+            plugins/tests/field-presets
+            plugins/examples/building-cuts
       - name: Build test plugins
         shell: bash
         run: |
@@ -85,6 +88,9 @@ jobs:
           (cd plugins/tests/sheet-presets && cargo build --release --target wasm32-wasip2)
           (cd plugins/tests/code-old && cargo build --release --target wasm32-wasip2)
           (cd plugins/tests/member-capacity && cargo build --release --target wasm32-wasip2)
+          (cd plugins/tests/wire-colours && cargo build --release --target wasm32-wasip2)
+          (cd plugins/tests/field-presets && cargo build --release --target wasm32-wasip2)
+          (cd plugins/examples/building-cuts && cargo build --release --target wasm32-wasip2)
           for d in plugins/codes/*/; do [ -f "$d/ohl-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done
       - run: cargo test --workspace --exclude ohl-py --locked
 

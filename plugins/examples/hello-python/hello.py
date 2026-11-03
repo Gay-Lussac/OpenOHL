@@ -13,7 +13,7 @@ import ohl
 
 PLUGIN = {
     "name": "hello-python",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Example Python plugin: prints a span table in US units",
 }
 

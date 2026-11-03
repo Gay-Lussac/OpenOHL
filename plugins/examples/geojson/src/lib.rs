@@ -151,7 +151,9 @@ impl Guest for GeoJson {
     fn formats() -> Vec<Format> {
         vec![
             Format {
-                id: "geojson".into(),
+                // Not "geojson": a plugin format with a built-in one's id
+                // replaces it, and the built-in exporter writes WGS 84.
+                id: "example-geojson".into(),
                 description: "Structures and wires as GeoJSON features (line CRS)".into(),
                 extension: "geojson".into(),
                 direction: Direction::Exporter,
@@ -171,7 +173,7 @@ impl Guest for GeoJson {
         options: Vec<(String, String)>,
     ) -> Result<Vec<u8>, String> {
         match format.as_str() {
-            "geojson" => export(&model, &options),
+            "example-geojson" => export(&model, &options),
             other => Err(format!("unknown format {other}")),
         }
     }

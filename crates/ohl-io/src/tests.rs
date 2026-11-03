@@ -307,9 +307,11 @@ fn plugin_formats_export_and_import() {
     let mut r = Registry::with_builtin();
     assert_eq!(r.add_plugin(&host, &dir).unwrap(), "geojson");
     let m = model();
-    let exporter = r.exporter("geojson").unwrap();
+    let exporter = r.exporter("example-geojson").unwrap();
     assert_eq!(exporter.origin(), "plugin geojson");
     let bytes = exporter.export(&m, &Options::new()).unwrap();
+    // The built-in GeoJSON stays (the example does not replace it).
+    assert_ne!(r.exporter("geojson").unwrap().origin(), "plugin geojson");
     let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let features = doc["features"].as_array().unwrap();
     assert_eq!(

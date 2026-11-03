@@ -102,7 +102,7 @@ extensions   io
 tier         wasm
 sdk          0.3
 entry        plugins/examples/geojson/target/wasm32-wasip2/release/geojson.wasm
-  format geojson: Structures and wires as GeoJSON features (line CRS) (.geojson, exporter)
+  format example-geojson: Structures and wires as GeoJSON features (line CRS) (.geojson, exporter)
   format geojson-structures: Structures from GeoJSON Point features (.geojson, importer)
 ```
 
@@ -121,7 +121,7 @@ extension-points = ["io"]
 - `import-file(format, data, options)` returns a line file (JSON), which the host checks like any line file. When the user gives a line to update, it arrives as option `into` (its JSON).
 - Errors are returned as strings and shown to the user as the format's error.
 
-`plugins/examples/geojson` is a complete example (GeoJSON export of structures and wires; structures imported from GeoJSON points). Its formats appear next to the built-in ones in `ohl formats --plugin plugins/examples/geojson`; see [Import and export](../user-guide/import-export.md).
+`plugins/examples/geojson` is a complete example (GeoJSON export of structures and wires, format `example-geojson` so as not to replace the built-in `geojson`; structures imported from GeoJSON points). Its formats appear next to the built-in ones in `ohl formats --plugin plugins/examples/geojson`; see [Import and export](../user-guide/import-export.md).
 
 ## Terrain plugins
 
@@ -664,8 +664,8 @@ export `member-capacity` (`crates/ohl-plugins/wit/code.wit`: the
 `member-capacity-plugin` world, or `export
 ohl:plugin/member-capacity@0.1.0` beside another world; extension point
 `member-capacity`; additive to 0.3 — a plugin without it loads as
-before). The core has a method of its own (ASCE 10-97, the default) and
-the simple check ([theory](../theory/structures-fe.md#member-capacity-methods));
+before). The core has methods of its own (ASCE 10-97, the default, and
+SIA 263:2013 since 2026-11-03) and the simple check ([theory](../theory/structures-fe.md#member-capacity-methods));
 a plugin adds other codes. **OpenOHL solves and computes the usage, the
 plugin gives the capacities**:
 

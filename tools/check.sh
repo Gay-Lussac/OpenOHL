@@ -72,10 +72,13 @@ if [ -n "${CARGO_TARGET_DIR:-}" ] && [ ! -e "$(dirname "$OUT")/libraries" ]; the
     ln -sfn "$TREE/libraries" "$(dirname "$OUT")/libraries"
 fi
 
-# The plugins the tests load: each built in its own folder (as CI does).
+# The plugins the tests load: each built in its own folder (as CI does),
+# formatted and linted as the workspace is (2026-11-03).
 for d in plugins/examples/* plugins/tests/* plugins/codes/*; do
     [ -f "$d/Cargo.toml" ] || continue
+    (cd "$d" && $C fmt --check) || { echo "plugins-fmt-FAILED $d"; exit 1; }
     (cd "$d" && env -u CARGO_TARGET_DIR $C build -q --release --target wasm32-wasip2) || { echo "plugins-FAILED $d"; exit 1; }
+    (cd "$d" && env -u CARGO_TARGET_DIR $C clippy -q --release --target wasm32-wasip2 -- -D warnings) || { echo "plugins-clippy-FAILED $d"; exit 1; }
 done
 echo plugins-built
 

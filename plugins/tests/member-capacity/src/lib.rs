@@ -70,7 +70,11 @@ impl exports::ohl::plugin::member_capacity::Guest for Capacity {
                     notes.push(format!("partner {p:.0} N"));
                 }
                 let cap = m.fy.map(|fy| m.area * fy);
-                let why = if cap.is_some() { "area × yield" } else { "no yield" };
+                let why = if cap.is_some() {
+                    "area × yield"
+                } else {
+                    "no yield"
+                };
                 MemberResult {
                     compression: cap,
                     compression_governs: why.into(),

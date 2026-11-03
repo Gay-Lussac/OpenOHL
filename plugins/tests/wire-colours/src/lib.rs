@@ -84,7 +84,14 @@ impl exports::ohl::plugin::system_styles::Guest for Colours {
                     };
                 }
                 SystemStyle {
-                    color: Some(if s.voltage_kv >= 300.0 { "#ff0000" } else { "#00ff00" }.into()),
+                    color: Some(
+                        if s.voltage_kv >= 300.0 {
+                            "#ff0000"
+                        } else {
+                            "#00ff00"
+                        }
+                        .into(),
+                    ),
                     phases: s
                         .phases
                         .iter()

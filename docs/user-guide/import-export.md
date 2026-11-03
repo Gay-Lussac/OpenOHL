@@ -131,11 +131,11 @@ ohl import survey.csv --format structures-csv --out new.ohl.json \
 
 ## Formats from plugins
 
-A WebAssembly plugin with the extension point `io` adds formats (see [Writing plugins](../development/plugins.md#file-format-plugins)); `--plugin DIR` loads it for `ohl formats`, `ohl import`, `ohl project import-file` and `ohl line --export`. A plugin format with the id of a built-in one replaces it. The example plugin `plugins/examples/geojson` exports GeoJSON and imports structures from GeoJSON points:
+A WebAssembly plugin with the extension point `io` adds formats (see [Writing plugins](../development/plugins.md#file-format-plugins)); `--plugin DIR` loads it for `ohl formats`, `ohl import`, `ohl project import-file` and `ohl line --export`. A plugin format with the id of a built-in one replaces it. The example plugin `plugins/examples/geojson` exports GeoJSON in the line's coordinate system (format `example-geojson`, beside the built-in `geojson`, which writes WGS 84) and imports structures from GeoJSON points:
 
 ```bash
 (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
-ohl line line.ohl.json --export line.geojson --plugin plugins/examples/geojson
+ohl line line.ohl.json --export example-geojson=line.geojson --plugin plugins/examples/geojson
 ohl import points.geojson --plugin plugins/examples/geojson --format geojson-structures --into line.ohl.json --out moved.ohl.json
 ```
 
