@@ -794,7 +794,7 @@ pub(super) fn structure_cells(
         .get(TableKind::Structures.column("description"))
         .trim()
         .to_owned();
-    form.weather_groups = group_list(c, TableKind::Structures, model, name)?;
+    form.local = local_conditions(c, name)?;
     form.soil_resistivity_ohm_m = opt_num(
         &c.get(TableKind::Structures.column("soil ρ Ω·m")),
         &format!("{name} soil resistivity"),
@@ -839,38 +839,23 @@ pub(super) fn structure_cells(
     Ok(())
 }
 
-/// The weather case groups ticked in a row's "weather groups" cell
-/// (joined with `; `); each one of the case file's groups (checked when
-/// changed: one renamed later stays as it is).
-fn group_list(
-    c: &Cells,
-    kind: TableKind,
-    model: &Model,
-    name: &str,
-) -> Result<Vec<String>, String> {
-    let col = kind.column("weather groups");
-    let list: Vec<String> = c
-        .get(col)
-        .split(';')
-        .map(str::trim)
-        .filter(|g| !g.is_empty())
-        .map(str::to_owned)
-        .collect();
-    if c.changed(col) || c.typed.is_none() {
-        let groups = crate::case_groups::groups(model);
-        if let Some(g) = list.iter().find(|g| !groups.iter().any(|x| &x.name == *g)) {
-            let names: Vec<&str> = groups.iter().map(|x| x.name.as_str()).collect();
-            return Err(format!(
-                "{name}: no weather case group \"{g}\" ({}; Line › Criteria › Weather case groups…)",
-                if names.is_empty() {
-                    "none made yet".to_owned()
-                } else {
-                    format!("the groups: {}", names.join(", "))
-                }
-            ));
-        }
-    }
-    Ok(list)
+/// A structure row's local conditions (owner, 2026-11-03): the wind
+/// factors and the wire ice factor as typed, the structure ice in mm, the
+/// snow on the ground in kN/m², its reference altitude in m (empty: not
+/// given); checked as the line file checks them.
+fn local_conditions(c: &Cells, name: &str) -> Result<ohl_line::local::LocalConditions, String> {
+    let col = |n: &str| TableKind::Structures.column(n);
+    let get = |n: &str| opt_num(&c.get(col(n)), &format!("{name} {n}"));
+    let local = ohl_line::local::LocalConditions {
+        wind_static: get("wind static")?,
+        wind_clearance: get("wind clearance")?,
+        wire_ice: get("wire ice")?,
+        structure_ice: get("structure ice mm")?.map(|mm| mm / 1000.0),
+        snow_ground: get("snow s_k kN/m²")?.map(|k| k * 1000.0),
+        snow_altitude: get("snow h0 m")?,
+    };
+    local.check().map_err(|e| format!("{name}: {e}"))?;
+    Ok(local)
 }
 
 pub(super) fn section_cells(
@@ -881,7 +866,6 @@ pub(super) fn section_cells(
     name: &str,
 ) -> Result<(), String> {
     let is_new = c.typed.is_none();
-    form.weather_groups = group_list(c, TableKind::Sections, model, name)?;
     form.cable = c.get(1).trim().to_owned();
     let calc = c.get(TableKind::Sections.column("calculation"));
     form.calculation = if calc.trim().is_empty() {
@@ -968,6 +952,17 @@ pub(super) fn section_cells(
         let spans = form.points.len().saturating_sub(1);
         form.wind_factors = ohl_line::parse_wind_factors(&c.get(col("local winds")), spans)
             .map_err(|e| format!("{name} local winds: {e}"))?;
+    }
+    // Local ice (owner, 2026-11-03), the same way.
+    if is_new || c.changed(col("local ice")) {
+        if !is_new && c.changed(col("points")) {
+            return Err(format!(
+                "{name}: change the points and the local ice one after the other"
+            ));
+        }
+        let spans = form.points.len().saturating_sub(1);
+        form.ice_factors = ohl_line::parse_ice_factors(&c.get(col("local ice")), spans)
+            .map_err(|e| format!("{name} local ice: {e}"))?;
     }
     let temperature = num(&c.get(col("temp °C")), &format!("{name} temperature"))?;
     if !form.stringing.clipped() {

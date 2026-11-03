@@ -56,6 +56,14 @@ pub const GUIDE: &str = "user-guide/desktop-app";
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Clearance,
+    "clearances",
+    "the wires' swing and sag towards the ground, the LiDAR points and the other wires",
+);
+
 // Exit clause of a check: solving every wind position and reading the
 // points, 900 s and 20 s more per million LiDAR points of the rules'
 // classes (`zone::time_limit`, owner 2026-10-27: the limit scales with
@@ -405,15 +413,6 @@ impl ZoneWindow {
         self.status = (!notes.is_empty()).then(|| (notes.join("\n"), false));
     }
 
-    /// The structure and section overrides ticked (kept in the rule
-    /// file's `[check]`).
-    pub fn overrides(&self) -> crate::case_groups::Overrides {
-        crate::case_groups::Overrides {
-            structures: self.check.structure_override,
-            sections: self.check.section_override,
-        }
-    }
-
     /// The rules as a rule file (those whose distance is set: a
     /// placeholder is never written).
     pub fn rule_set(&self) -> RuleSet {
@@ -478,7 +477,9 @@ impl ZoneWindow {
             self.report = Some(Err("no weather case of the rules is in the model".into()));
             return;
         }
-        let line = model.line.clone();
+        // The line with the local conditions when ticked (the wind for
+        // clearances; kept in the rule file's [check]).
+        let local = crate::local_solve::prepare(&model.line, self.check.local, LOCAL.0);
         let library = model.library.clone();
         let cloud = model.cloud.clone();
         let ground = model.ground_for_checks();
@@ -492,7 +493,6 @@ impl ZoneWindow {
         );
         let zone = self.zone;
         let check = self.check.clone();
-        let filter = self.overrides().filter(model);
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.sections);
         let done = Arc::new(AtomicUsize::new(0));
@@ -507,9 +507,10 @@ impl ZoneWindow {
         self.stamp.started(model.revision());
         self.rules_hash.0 = Some(self.settings_hash());
         std::thread::spawn(move || {
+            let started = Instant::now();
             let surfaces = named.read();
             let r = run(
-                &line,
+                local.line(),
                 &library,
                 zone,
                 &check,
@@ -526,8 +527,12 @@ impl ZoneWindow {
                     read: &progress,
                     points,
                 },
-                &filter,
-            );
+            )
+            .map(|mut rep| {
+                rep.zone.notes.splice(0..0, local.notes());
+                rep
+            });
+            local.finish(LOCAL.1, started.elapsed());
             let _ = tx.send(r);
             ctx.request_repaint();
         });
@@ -712,7 +717,7 @@ impl ZoneWindow {
                 }),
             }
             self.update_estimate(model);
-            run |= help::footer(ui, footer, |ui| self.run_ui(ui));
+            run |= help::footer(ui, footer, |ui| self.run_ui(ui, &model.line));
         });
         out.guide = guide;
         self.open = open;
@@ -1171,7 +1176,7 @@ impl ZoneWindow {
         }
     }
     /// The Run row; true to start a check.
-    fn run_ui(&mut self, ui: &mut egui::Ui) -> bool {
+    fn run_ui(&mut self, ui: &mut egui::Ui, line: &ohl_line::Line) -> bool {
         let mut run = false;
         let mut stop_now = false;
         match &mut self.running {
@@ -1267,13 +1272,9 @@ impl ZoneWindow {
         if stop_now && let Some(r) = self.running.as_mut() {
             r.stopped = true;
         }
-        // The structure and section overrides of the cases (kept in the
-        // rule file's [check]), in the footer as every check window has
-        // them.
-        let mut o = self.overrides();
-        if o.ui(ui) {
-            self.check.structure_override = o.structures;
-            self.check.section_override = o.sections;
+        // Use local conditions (kept in the rule file's [check]), in the
+        // footer as every check window has it.
+        if crate::local_solve::switch(ui, &mut self.check.local, LOCAL.1, LOCAL.0, LOCAL.2, line) {
             self.dirty = true;
         }
         run
@@ -1514,7 +1515,6 @@ fn run(
     surfaces: &[(String, Arc<ohl_terrain::Terrain>)],
     scope: Option<std::collections::BTreeSet<String>>,
     progress: &Progress,
-    filter: &ohl_weather::CaseFilter,
 ) -> Result<Report, String> {
     let surfaces: Vec<(String, &ohl_terrain::Terrain)> = surfaces
         .iter()
@@ -1557,7 +1557,7 @@ fn run(
         scope.as_ref(),
         &budget,
         done,
-        filter,
+        &Default::default(),
     );
     // The time limit reached: said, with what to change.
     result.map_err(|e| {

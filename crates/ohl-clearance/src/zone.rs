@@ -2170,8 +2170,7 @@ mod tests {
             circuits: vec!["North".into(), String::new()],
             method: Some(ohl_line::condition::Method::Fe),
             search_distance: None,
-            structure_override: false,
-            section_override: true,
+            local: true,
             // Routes and alignments chosen (2026-10-27): kept too.
             routes: vec!["north".into()],
             alignments: vec!["A 2".into()],
@@ -2190,7 +2189,7 @@ mod tests {
                  alignments = [\"A 2\"]\ncases = [\"hot*\"]\nsections = [\"S1\"]\n\
                  method = \"fe\"\n\
                  search_distance = \"30 m\"\n\
-                 section_override = true\n"
+                 local = true\n"
             ),
             "{text}"
         );

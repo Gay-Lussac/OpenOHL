@@ -22,6 +22,14 @@ use crate::selection::Selection;
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Strength,
+    "galloping",
+    "the wires' sag and tension sizing the ellipses",
+);
+
 /// One pair of wires by one method.
 #[derive(Debug, Clone)]
 pub struct Row {
@@ -57,8 +65,9 @@ pub struct Report {
 pub struct GallopingWindow {
     /// Shown.
     pub open: bool,
-    /// The structure and section overrides of its case.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the wires with the structures' wind
+    /// for strength and wire ice on their spans.
+    pub local: bool,
     /// The parameter file.
     pub file: Option<PathBuf>,
     /// Weather case (index in the model's cases).
@@ -98,17 +107,36 @@ impl GallopingWindow {
     /// `app.galloping.<line>`, owner, 2026-10-28: the setups kept in the
     /// project).
     pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
-        let json = serde_json::to_string(&self.scope).unwrap_or_default();
+        let json = self.kept_json();
         let mut kept = std::mem::take(&mut self.kept);
         if let check_ui::Step::Load(text) = kept.step(model, ctx, SETTING, "galloping scope", &json)
         {
-            self.scope = text
-                .as_deref()
-                .and_then(|t| serde_json::from_str(t).ok())
+            let value: Option<serde_json::Value> =
+                text.as_deref().and_then(|t| serde_json::from_str(t).ok());
+            self.scope = value
+                .clone()
+                .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default();
-            kept.loaded(serde_json::to_string(&self.scope).unwrap_or_default());
+            // Use local conditions (2026-11-03) beside the scope's keys.
+            self.local = value
+                .as_ref()
+                .and_then(|v| v.get("local"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            kept.loaded(self.kept_json());
         }
         self.kept = kept;
+    }
+
+    /// What is kept: the scope, and `local` when ticked.
+    fn kept_json(&self) -> String {
+        let mut v = serde_json::to_value(&self.scope).unwrap_or_default();
+        if self.local
+            && let Some(o) = v.as_object_mut()
+        {
+            o.insert("local".into(), true.into());
+        }
+        v.to_string()
     }
 
     fn start(&mut self, model: &Model, ctx: &egui::Context) {
@@ -119,20 +147,29 @@ impl GallopingWindow {
         let Some(solved) = model.cases.get(self.case) else {
             return;
         };
-        let line = model.line.clone();
+        // The line with the local conditions when ticked: the case
+        // solved again on it (else the model's solution).
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let shapes = solved.shapes.clone();
         let weather = solved.case.clone();
         let wind = model.wind;
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
-        let filter = self.overrides.filter(model);
         // The scope's sections only (none: the whole line).
         let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
+            let line = local.line();
             let params = GallopingParams::load(&path)?;
-            let mut notes: Vec<String> =
-                failed.iter().map(|f| format!("not solved: {f}")).collect();
+            let mut notes = local.notes();
+            let (mut shapes, failed) = if local.applied() && params.calculation.is_none() {
+                let s = local.solved(&library, weather.clone());
+                (s.shapes, s.failed)
+            } else {
+                (shapes, failed)
+            };
+            notes.extend(failed.iter().map(|f| format!("not solved: {f}")));
             if !params.applies(&case) {
                 notes.push(format!(
                     "the parameters name the cases {:?}; checked in \"{case}\"",
@@ -141,31 +178,21 @@ impl GallopingWindow {
             }
             // The parameters' calculation (2026-11-01): the case solved
             // anew by it.
-            let mut shapes = shapes;
             if params.calculation.is_some() {
-                let l = ohl_clearance::calculation::line_for(&line, params.calculation);
+                let l = ohl_clearance::calculation::line_for(line, params.calculation);
                 let s = crate::model::Solved::with_wind(&l, &library, weather, wind);
                 notes.extend(s.failed.iter().map(|f| format!("not solved: {f}")));
                 shapes = s.shapes;
             }
-            let mut wires = galloping::galloping_wires(&line, &shapes, &library);
-            // The overrides: the spans that do not take the case left out.
-            wires.retain(|w| {
-                keep.as_ref().is_none_or(|k| k.contains(&w.wire.section))
-                    && crate::case_groups::span_takes(
-                        &line,
-                        &filter,
-                        &w.wire.section,
-                        w.wire.span,
-                        &case,
-                    )
-            });
+            let mut wires = galloping::galloping_wires(line, &shapes, &library);
+            wires.retain(|w| keep.as_ref().is_none_or(|k| k.contains(&w.wire.section)));
             // Exit clause: well under a second for any line.
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(300));
             let mut pairs = galloping::check(&params, &wires, &budget)?;
             let short = |p: &galloping::GallopingPair| p.distance - p.required.unwrap_or(0.0);
             pairs.sort_by(|a, b| short(a).total_cmp(&short(b)));
+            local.finish(LOCAL.1, started.elapsed());
             let span = |k: usize| (wires[k].wire.section.clone(), wires[k].wire.span);
             Ok(Report {
                 case,
@@ -387,7 +414,7 @@ impl GallopingWindow {
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     again |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -397,7 +424,14 @@ impl GallopingWindow {
                         Some(scope_words),
                         Some(plan),
                         |ui| {
-                            overrides.ui(ui);
+                            let _ = crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });

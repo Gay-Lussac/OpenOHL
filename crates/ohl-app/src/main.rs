@@ -65,6 +65,7 @@ mod lightning;
 mod line_parameters;
 mod link_tool;
 mod loads;
+mod local_solve;
 mod lod;
 mod magnetic_field;
 mod measure;

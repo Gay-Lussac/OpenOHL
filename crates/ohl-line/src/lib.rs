@@ -2567,6 +2567,35 @@ pub fn parse_wind_factors(text: &str, spans: usize) -> Result<Vec<SpanWind>, Str
     Ok(out)
 }
 
+/// Span factors in words (`2–4: 1.2; 6: 0.7`, spans counted from 1,
+/// runs of equal factors joined).
+fn span_factors_text(factors: &[SpanWind]) -> String {
+    let mut runs: Vec<(usize, usize, f64)> = Vec::new();
+    for w in factors {
+        match runs.last_mut() {
+            Some((_, last, f)) if *last + 1 == w.span && *f == w.factor => *last = w.span,
+            _ => runs.push((w.span, w.span, w.factor)),
+        }
+    }
+    runs.iter()
+        .map(|(a, b, f)| {
+            if a == b {
+                format!("{}: {f}", a + 1)
+            } else {
+                format!("{}–{}: {f}", a + 1, b + 1)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// Local ice as written in words ([`Section::ice_factors_text`]): the
+/// format and limits of [`parse_wind_factors`] (a factor on the case's
+/// ice and wet snow, 1 left out).
+pub fn parse_ice_factors(text: &str, spans: usize) -> Result<Vec<SpanWind>, String> {
+    parse_wind_factors(text, spans)
+}
+
 fn one() -> u32 {
     1
 }
@@ -2923,23 +2952,13 @@ impl Section {
     /// factors joined: `2–4: 1.2; 6: 0.7` (empty: none). Read back by
     /// [`parse_wind_factors`].
     pub fn wind_factors_text(&self) -> String {
-        let mut runs: Vec<(usize, usize, f64)> = Vec::new();
-        for w in &self.wind_factors {
-            match runs.last_mut() {
-                Some((_, last, f)) if *last + 1 == w.span && *f == w.factor => *last = w.span,
-                _ => runs.push((w.span, w.span, w.factor)),
-            }
-        }
-        runs.iter()
-            .map(|(a, b, f)| {
-                if a == b {
-                    format!("{}: {f}", a + 1)
-                } else {
-                    format!("{}–{}: {f}", a + 1, b + 1)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("; ")
+        span_factors_text(&self.wind_factors)
+    }
+
+    /// Its local ice in words, as [`Section::wind_factors_text`]: `2–4:
+    /// 1.5` (empty: none). Read back by [`parse_ice_factors`].
+    pub fn ice_factors_text(&self) -> String {
+        span_factors_text(&self.ice_factors)
     }
 
     /// The section's bundle.

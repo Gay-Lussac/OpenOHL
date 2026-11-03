@@ -2131,6 +2131,47 @@ fn local_winds_are_one_command_each() {
     assert!(s.apply("ana", none).is_err());
 }
 
+/// How the spans take their structures' local conditions (Line ›
+/// Criteria › Calculation options, owner 2026-11-03): one command, kept
+/// in the project (read back), undone and redone; a structure's local
+/// conditions put like any edit of it.
+#[test]
+fn the_span_rule_and_local_conditions_are_commands() {
+    let (path, mut s) = project("local-spans");
+    let mut solver = s.line().solver;
+    assert_eq!(solver.local_spans, ohl_line::local::SpanRule::Worst);
+    solver.local_spans = ohl_line::local::SpanRule::Mean;
+    let command = s.solver_command(solver);
+    s.apply("ben", command).unwrap();
+    assert_eq!(s.line().solver.local_spans, ohl_line::local::SpanRule::Mean);
+    let mut st = s.line().structures[0].clone();
+    st.local.wind_static = Some(1.4);
+    st.local.snow_altitude = Some(800.0);
+    s.apply(
+        "ben",
+        Command::Put {
+            kind: Kind::Structure,
+            id: st.id.clone(),
+            value: serde_json::to_value(&st).unwrap(),
+            ord: None,
+        },
+    )
+    .unwrap();
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line().solver.local_spans, ohl_line::local::SpanRule::Mean);
+    assert_eq!(s.line().structures[0].local.wind_static, Some(1.4));
+    s.undo("ben").unwrap();
+    assert!(s.line().structures[0].local.is_empty());
+    s.undo("ben").unwrap();
+    assert_eq!(
+        s.line().solver.local_spans,
+        ohl_line::local::SpanRule::Worst
+    );
+    s.redo("ben").unwrap();
+    assert_eq!(s.line().solver.local_spans, ohl_line::local::SpanRule::Mean);
+}
+
 /// The in-the-blocks model and a jumper given by its tension (owner
 /// decision 2026-10-25) are edits like any other: one command each,
 /// undone and redone, kept in the project (read back from it).

@@ -339,15 +339,11 @@ impl Scope {
     }
 }
 
-/// The `[check]` of a check's rule file holding its scope and its
-/// structure and section overrides (none when it changes nothing).
-pub fn check_of(
-    scope: &Scope,
-    overrides: crate::case_groups::Overrides,
-) -> Option<ohl_clearance::rules::CheckScope> {
+/// The `[check]` of a check's rule file holding its scope and its **Use
+/// local conditions** (none when it changes nothing).
+pub fn check_of(scope: &Scope, local: bool) -> Option<ohl_clearance::rules::CheckScope> {
     let mut check = ohl_clearance::rules::CheckScope {
-        structure_override: overrides.structures,
-        section_override: overrides.sections,
+        local,
         ..Default::default()
     };
     scope.write_check(&mut check);

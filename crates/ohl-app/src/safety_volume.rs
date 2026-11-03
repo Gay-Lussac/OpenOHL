@@ -54,6 +54,14 @@ pub const MAX_SAVED_TRIANGLES: usize = 2_000_000;
 /// cases).
 const USES: crate::revision::Uses = crate::revision::Uses::LINE;
 
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Clearance,
+    "safety-volume",
+    "the wires' swing building the volumes",
+);
+
 /// The window's settings: what a run uses, saved with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
@@ -524,8 +532,9 @@ enum Part {
 pub struct SafetyVolumeWindow {
     /// Shown (closed: its layer is taken off the views).
     pub open: bool,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the volumes with the structures' wind
+    /// for clearances and wire ice on their spans.
+    pub local: bool,
     /// Weather cases ticked (indices in the model's cases).
     pub cases: Vec<usize>,
     /// The settings.
@@ -556,7 +565,7 @@ impl Default for SafetyVolumeWindow {
     fn default() -> Self {
         Self {
             open: false,
-            overrides: Default::default(),
+            local: false,
             cases: Vec::new(),
             settings: Settings::default(),
             job: Job::default(),
@@ -655,8 +664,11 @@ impl SafetyVolumeWindow {
             return;
         }
         self.saved_stale = None;
-        // By the calculation chosen (2026-11-01; none: each section's own).
-        let line = ohl_clearance::calculation::line_for(&model.line, self.settings.calculation)
+        // The line with the local conditions when ticked (the wind for
+        // clearances), by the calculation chosen (2026-11-01; none: each
+        // section's own).
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
+        let line = ohl_clearance::calculation::line_for(local.line(), self.settings.calculation)
             .into_owned();
         let library = model.library.clone();
         let settings = self.settings.clone();
@@ -672,12 +684,12 @@ impl SafetyVolumeWindow {
                 )
             })
             .collect();
-        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
             // Exit clause: an hour is far beyond what a line needs.
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(3600));
-            let v = ohl_clearance::safety_volume::run(
+            let mut v = ohl_clearance::safety_volume::run(
                 &line,
                 &library,
                 &cases,
@@ -685,8 +697,10 @@ impl SafetyVolumeWindow {
                 settings.steps,
                 &params,
                 &budget,
-                &filter,
+                &Default::default(),
             )?;
+            v.notes.splice(0..0, local.notes());
+            local.finish(LOCAL.1, started.elapsed());
             let colors = v
                 .volumes
                 .iter()
@@ -991,7 +1005,7 @@ impl SafetyVolumeWindow {
                     )
                 };
                 help::footer(ui, WINDOW, |ui| {
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     again |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -1000,7 +1014,14 @@ impl SafetyVolumeWindow {
                         None,
                         Some(plan),
                         |ui| {
-                            overrides.ui(ui);
+                            let _ = crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });
@@ -1028,7 +1049,7 @@ impl SafetyVolumeWindow {
     }
 
     /// The setup as kept in the project: the settings and the cases (by
-    /// name), the overrides (JSON).
+    /// name), Use local conditions (JSON).
     fn stored(&self, model: &Model) -> String {
         let cases: Vec<String> = self
             .cases
@@ -1037,7 +1058,7 @@ impl SafetyVolumeWindow {
             .collect();
         serde_json::json!({
             "settings": self.settings.to_json(&cases),
-            "overrides": [self.overrides.structures, self.overrides.sections],
+            "local": self.local,
         })
         .to_string()
     }
@@ -1059,13 +1080,8 @@ impl SafetyVolumeWindow {
                 self.cases = found;
             }
         }
-        if let Some([a, b]) = v
-            .get("overrides")
-            .and_then(|o| serde_json::from_value::<[bool; 2]>(o.clone()).ok())
-        {
-            self.overrides.structures = a;
-            self.overrides.sections = b;
-        }
+        // Use local conditions (2026-11-03; the old "overrides" ignored).
+        self.local = v.get("local").and_then(Value::as_bool).unwrap_or(false);
     }
 
     /// Reads the setup from the project when not read yet for the line

@@ -11,7 +11,7 @@
 //! rules ([`ohl_clearance::internal`]). Only structures at detail level 2 or 3
 //! (with a body); the others are listed as not checked. The rules are kept
 //! in the project as a rule file (`<model>.internal-rules.ohlr`,
-//! `[[internal_rule]]` tables, the structure and section overrides in its
+//! `[[internal_rule]]` tables, Use local conditions in its
 //! `[check]`); a design-code plugin's preset brings its internal rules.
 //! Run solves each case of the rules in the background; every part is
 //! listed, the nearest first; those too near (else the nearest) are marked
@@ -31,6 +31,14 @@ use crate::selection::Selection;
 
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
+
+/// Its **Use local conditions**: the wind taken, the check's name for
+/// the run times, what the wind is for.
+const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
+    ohl_line::local::Purpose::Clearance,
+    "internal-clearances",
+    "the swing of the strings and jumpers at the structures",
+);
 
 /// A check's answer: the report and the rules it was made with.
 #[derive(Debug, Clone, Default)]
@@ -65,8 +73,9 @@ pub struct InternalClearancesWindow {
     pub rules: Vec<InternalRule>,
     /// What was done last, in words (an error: true).
     pub status: Option<(String, bool)>,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
+    /// **Use local conditions** (owner, 2026-11-03): the swing with the structures' wind
+    /// for clearances and wire ice on their spans (and a group's wind study).
+    pub local: bool,
     /// What it checks: the circuits, routes and sections (owner,
     /// 2026-10-28: the scope of every check window), kept in its rule
     /// file's `[check]`.
@@ -202,7 +211,7 @@ fn views_of(solved: &SolvedCases) -> Vec<internal::SolvedCase<'_>> {
 
 impl InternalClearancesWindow {
     /// Opens the window; the first time, reads the project's rule file
-    /// (its internal rules and overrides), else starts with one rule.
+    /// (its internal rules and Use local conditions), else starts with one rule.
     pub fn show(&mut self, model: &Model) {
         self.open = true;
         if self.loaded {
@@ -215,10 +224,7 @@ impl InternalClearancesWindow {
                 Ok(set) => {
                     self.rules = set.internal_rules;
                     if let Some(c) = set.check {
-                        self.overrides = crate::case_groups::Overrides {
-                            structures: c.structure_override,
-                            sections: c.section_override,
-                        };
+                        self.local = c.local;
                         self.scope = check_ui::Scope::of_check(&c);
                     }
                 }
@@ -255,8 +261,8 @@ impl InternalClearancesWindow {
     pub fn rule_set(&self) -> RuleSet {
         RuleSet {
             name: "Internal clearances".into(),
-            // The scope and the overrides ticked.
-            check: check_ui::check_of(&self.scope, self.overrides),
+            // The scope and Use local conditions.
+            check: check_ui::check_of(&self.scope, self.local),
             checks: vec![PresetCheck::Internal],
             internal_rules: self.rules.clone(),
             ..RuleSet::default()
@@ -304,7 +310,9 @@ impl InternalClearancesWindow {
             ));
             return;
         }
-        let line = model.line.clone();
+        // The line with the local conditions when ticked (the wind for
+        // clearances).
+        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
         let rules = self.rules.clone();
         let bodies = structure_bodies(model);
@@ -313,7 +321,7 @@ impl InternalClearancesWindow {
         let empty = ohl_structures::InsulatorLibrary::default();
         let fits =
             internal::string_fits(&model.line, model.types.as_ref().map_or(&empty, |(_, i)| i));
-        let filter = self.overrides.filter(model);
+        let filter = ohl_weather::CaseFilter::default();
         // The scope's sections only (none: the whole line).
         let keep = self.scope.keeps(&model.line);
         let scoped = move |mut s: crate::model::Solved| {
@@ -322,20 +330,24 @@ impl InternalClearancesWindow {
             }
             s
         };
-        let study = if self.overrides.structures {
+        // A group's wind study (its structure column's pressure) with Use
+        // local conditions ticked; its runs on the line as it is (the
+        // study's pressure in place of the case's, not times the
+        // structures' factors).
+        let study = if self.local {
             wind_study(model, &bodies)
         } else {
             WindStudy::default()
         };
+        let base = (!study.at.is_empty()).then(|| model.line.clone());
         self.job.start_at(ctx, model.revision(), move || {
+            let started = std::time::Instant::now();
+            let line = local.line();
             let mut solved = Vec::new();
-            let mut notes = study.notes.clone();
+            let mut notes = local.notes();
+            notes.extend(study.notes.iter().cloned());
             for case in &cases {
-                let s = scoped(crate::model::Solved::new_memo(
-                    &line,
-                    &library,
-                    case.clone(),
-                ));
+                let s = scoped(local.solved(&library, case.clone()));
                 notes.extend(
                     s.failed
                         .iter()
@@ -348,7 +360,7 @@ impl InternalClearancesWindow {
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
             let mut report =
-                internal::check(&line, &views, &bodies, &fits, &rules, &filter, &budget)?;
+                internal::check(line, &views, &bodies, &fits, &rules, &filter, &budget)?;
             // The wind study's structures (the override): their rows of the
             // group's cases taken from a run at their own wind instead.
             let studied = |st: &str| study.at.values().any(|ids| ids.iter().any(|i| i == st));
@@ -362,7 +374,7 @@ impl InternalClearancesWindow {
                     let mut case = case.clone();
                     case.wind_pressure = ohl_core::units::Stress::from_si(pa);
                     let s = scoped(crate::model::Solved::new_memo(
-                        &line,
+                        base.as_ref().unwrap_or(line),
                         &library,
                         case.clone(),
                     ));
@@ -377,7 +389,7 @@ impl InternalClearancesWindow {
                     .filter(|b| ids.contains(&b.structure))
                     .cloned()
                     .collect();
-                let part = internal::check(&line, &views, &these, &fits, &rules, &filter, &budget)?;
+                let part = internal::check(line, &views, &these, &fits, &rules, &filter, &budget)?;
                 for n in part.notes {
                     if !report.notes.contains(&n) {
                         report.notes.push(n);
@@ -398,6 +410,7 @@ impl InternalClearancesWindow {
                 });
             }
             report.notes.splice(0..0, notes);
+            local.finish(LOCAL.1, started.elapsed());
             Ok(Report { report, rules })
         });
     }
@@ -556,7 +569,7 @@ impl InternalClearancesWindow {
                     }
                 }
                 help::footer(ui, "internal-clearances-window", |ui| {
-                    let overrides = &mut self.overrides;
+                    let local = &mut self.local;
                     run |= check_ui::job_footer(
                         ui,
                         &mut self.job,
@@ -565,7 +578,14 @@ impl InternalClearancesWindow {
                         Some(scope_words),
                         Some(check_ui::scope_plan(&model.line, &self.scope, rule_cases)),
                         |ui| {
-                            changed |= overrides.ui(ui);
+                            changed |= crate::local_solve::switch(
+                                ui,
+                                local,
+                                LOCAL.1,
+                                LOCAL.0,
+                                LOCAL.2,
+                                &model.line,
+                            );
                         },
                     );
                 });
@@ -938,23 +958,20 @@ impl check_ui::RuleRow for InternalRule {
 mod tests {
     use super::*;
 
-    /// The rule file keeps the window's rules and overrides and reads them
+    /// The rule file keeps the window's rules and Use local conditions and reads them
     /// back; the bodies of the typed example line are placed for its
     /// structures with one (detail 2 or 3).
     #[test]
     fn rules_and_bodies() {
         let w = InternalClearancesWindow {
             rules: vec![InternalRule::blank("a")],
-            overrides: crate::case_groups::Overrides {
-                structures: true,
-                sections: false,
-            },
+            local: true,
             ..Default::default()
         };
         let text = w.rule_set().to_toml();
         let back = RuleSet::parse(&text).unwrap();
         assert_eq!(back.internal_rules.len(), 1);
-        assert!(back.check.unwrap().structure_override);
+        assert!(back.check.unwrap().local);
         let m = crate::tests::typed_project("internal-window");
         let bodies = structure_bodies(&m);
         for b in &bodies {

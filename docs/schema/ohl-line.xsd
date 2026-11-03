@@ -299,7 +299,7 @@
               </xs:element>
               <xs:element name="weather_group" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>Its weather case groups, by name (2026-10-25): a check with the structure override takes only its cases in them.</xs:documentation>
+                  <xs:documentation>Its weather case groups, by name (2026-10-25): read and kept, no longer used by the checks since 2026-11-03 (its local conditions instead).</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="name" type="xs:string" use="required"/>
@@ -559,7 +559,7 @@
             <xs:sequence>
               <xs:element name="weather_group" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>Its weather case groups, by name (2026-10-25): a check with the section override takes only its cases in them.</xs:documentation>
+                  <xs:documentation>Its weather case groups, by name (2026-10-25): read and kept, no longer used by the checks since 2026-11-03 (local winds and local ice instead).</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="name" type="xs:string" use="required"/>

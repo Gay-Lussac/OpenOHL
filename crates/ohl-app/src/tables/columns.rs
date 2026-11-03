@@ -59,12 +59,6 @@ pub(super) const STRUCTURES: &[Column] = &[
         "what it is, in words (free text)",
     ),
     (
-        "weather groups",
-        150.0,
-        Yes,
-        "its weather case groups (Line › Criteria › Weather case groups…), ticked: a check with the structure override ticked takes here only its cases in these groups (e.g. a wind study's lower winds); empty: the check's cases",
-    ),
-    (
         "soil ρ Ω·m",
         80.0,
         Yes,
@@ -75,6 +69,44 @@ pub(super) const STRUCTURES: &[Column] = &[
         70.0,
         Yes,
         "the resistance of its earthing (footing) to remote earth, Ω: the current it leads from the earth wires into the ground (Magnetic field, earth wires through the structures); empty: the line's (Line parameters), else 10 Ω assumed",
+    ),
+    // Its local conditions (owner, 2026-11-03), taken by a check with Use
+    // local conditions ticked; empty: the weather cases as written.
+    (
+        "wind static",
+        80.0,
+        Yes,
+        "local conditions: the factor on the weather cases' wind for strength — the wires' wind on its spans in the structure loads, string checks, wire tensions, ice shedding and galloping, and the wind on its own wind bands in the structure loads — with Use local conditions ticked; a span takes the worst (or the mean) of its two structures' (Line › Criteria › Calculation options); empty: 1",
+    ),
+    (
+        "wind clearance",
+        90.0,
+        Yes,
+        "local conditions: the factor on the weather cases' wind for clearances — the swing of the wires, strings and jumpers on its spans in the clearance checks (internal clearances, clearances, distance between conductors, safety volumes, vegetation, lightning) — with Use local conditions ticked; empty: 1",
+    ),
+    (
+        "wire ice",
+        65.0,
+        Yes,
+        "local conditions: the factor on the weather cases' ice (and wet snow) on the wires of its spans, in every check with Use local conditions ticked; empty: 1",
+    ),
+    (
+        "structure ice mm",
+        95.0,
+        Yes,
+        "local conditions: ice on its members, mm (kept with the structure; not yet taken by the structure loads)",
+    ),
+    (
+        "snow s_k kN/m²",
+        95.0,
+        Yes,
+        "local conditions: the snow on the ground there, s_k, kN/m² (given; empty: from h0 by SIA 261 (10) when h0 is given; kept with the structure, not yet taken by a check)",
+    ),
+    (
+        "snow h0 m",
+        75.0,
+        Yes,
+        "local conditions: the reference altitude h0 for SIA 261's snow on the ground (5.2.6), m: its altitude with the regional correction of SIA 261 Annex D",
     ),
 ];
 
@@ -164,16 +196,16 @@ pub(super) const SECTIONS: &[Column] = &[
         "what it is, in words (free text)",
     ),
     (
-        "weather groups",
-        150.0,
-        Yes,
-        "its weather case groups (Line › Criteria › Weather case groups…), ticked: a check with the section override ticked takes on it only its cases in these groups (e.g. the snow load along the line); empty: the check's cases",
-    ),
-    (
         "local winds",
         130.0,
         Yes,
-        "local winds: spans whose wind is the weather case's times a factor, in every case with wind (e.g. 2–4: 1.2; 6: 0.7 — spans counted from 1, a run a–b); empty: the case's wind everywhere. Typed over many rows, each section takes it",
+        "local winds: spans whose wind is the weather case's times a factor, in every case with wind (e.g. 2–4: 1.2; 6: 0.7 — spans counted from 1, a run a–b); empty: the case's wind everywhere (with Use local conditions ticked: its structures'). Typed over many rows, each section takes it",
+    ),
+    (
+        "local ice",
+        110.0,
+        Yes,
+        "local ice: spans whose ice (and wet snow) is the weather case's times a factor, in every case with ice (e.g. 3: 1.5 — the format of local winds); empty: the case's ice (with Use local conditions ticked: its structures' wire ice). Typed over many rows, each section takes it",
     ),
 ];
 

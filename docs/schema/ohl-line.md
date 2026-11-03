@@ -35,7 +35,7 @@ The names are those of the line file:
              height_adjust="0.5"                 <!-- feet 0.5 m above the ground -->
              soil_resistivity_ohm_m="8.5"           <!-- soil resistivity measured here, Ω·m -->
              earthing_resistance_ohm="6.2">         <!-- its earthing (footing), Ω (2026-10-29) -->
-    <weather_group name="…"/>                   <!-- its weather case groups (the structure override) -->
+    <weather_group name="…"/>                   <!-- its weather case groups (kept, no longer used) -->
     <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa) -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
@@ -57,7 +57,7 @@ The names are those of the line file:
   <circuit id="…" name="North" system="…" description="…"/>  <!-- version 7: a circuit; its sections give its name -->
   <section id="S1" cable="…" circuit_name="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">
-    <weather_group name="…"/>                   <!-- its weather case groups (the section override) -->
+    <weather_group name="…"/>                   <!-- its weather case groups (kept, no longer used) -->
     <wind_factor span="2" factor="1.2"/>        <!-- version 9: a local wind, span 0 = the first -->
     <point structure="T1" set="1"/> …
     <stringing kind="tension" horizontal_tension="25000" temperature="15"/>
