@@ -58,6 +58,21 @@ fn a_connection_and_a_plate_are_read() {
     );
 }
 
+/// Three gauge lines (a wide leg, owner 2026-11-03), one gauge each.
+#[test]
+fn three_gauge_lines_are_read() {
+    let three = CONNECTION
+        .replace("gauge_lines = 1", "gauge_lines = 3")
+        .replace(
+            "gauges = [\"30 mm\"]",
+            "gauges = [\"35 mm\", \"80 mm\", \"125 mm\"]",
+        );
+    let t = parse(&format!("{BODY}{three}")).unwrap();
+    let c = t.connection("D1", "N2").unwrap();
+    assert_eq!(c.gauge_lines, Some(3));
+    assert_eq!(c.gauges.len(), 3);
+}
+
 #[test]
 fn wrong_connections_are_refused() {
     for (extra, says) in [
@@ -67,8 +82,8 @@ fn wrong_connections_are_refused() {
             "one gauge per gauge line",
         ),
         (
-            CONNECTION.replace("gauge_lines = 1", "gauge_lines = 3"),
-            "1 or 2",
+            CONNECTION.replace("gauge_lines = 1", "gauge_lines = 4"),
+            "1 to 3",
         ),
         (
             CONNECTION.replace("hole = \"17.5 mm\"", "hole = \"15 mm\""),

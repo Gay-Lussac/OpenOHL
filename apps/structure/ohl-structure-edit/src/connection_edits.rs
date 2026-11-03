@@ -11,7 +11,7 @@
 //! connections or plates.
 
 use ohl_structures::StructureType;
-use ohl_structures::connections::CONNECTIONS_VERSION;
+use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES};
 use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::edits::{array, next_id, raise_version};
@@ -450,7 +450,7 @@ pub struct BoltLayout {
     pub hole: Option<f64>,
     /// Grade.
     pub grade: Option<String>,
-    /// Gauges, one per line (1 or 2), m.
+    /// Gauges, one per line (1 to 3), m.
     pub gauges: Vec<f64>,
     /// Pitch, m.
     pub pitch: f64,
@@ -461,17 +461,18 @@ pub struct BoltLayout {
 }
 
 impl BoltLayout {
-    /// How far along the member the bolts reach from its end, m (the last
-    /// bolt; two lines staggered by half a pitch).
+    /// How far along the member the bolts reach from its end, m (the
+    /// farthest bolt; every second line staggered by half a pitch, as the
+    /// joints lay them out).
     pub fn reach(&self) -> f64 {
         let lines = self.gauges.len().max(1) as u32;
-        let rows = self.count.div_ceil(lines).max(1);
-        let stagger = if lines == 2 && self.count > 1 {
-            self.pitch / 2.0
-        } else {
-            0.0
-        };
-        self.end + f64::from(rows - 1) * self.pitch + stagger
+        let far = (0..self.count.max(1))
+            .map(|k| {
+                let stagger = if (k % lines) % 2 == 1 { 0.5 } else { 0.0 };
+                f64::from(k / lines) + stagger
+            })
+            .fold(0.0, f64::max);
+        self.end + far * self.pitch
     }
 
     /// What does not fit a leg of `width` m (empty: it fits): a gauge
@@ -482,8 +483,8 @@ impl BoltLayout {
         if self.count == 0 {
             out.push("no bolts".into());
         }
-        if !(1..=2).contains(&self.gauges.len()) {
-            out.push("one or two gauge lines".into());
+        if !(1..=MAX_GAUGE_LINES as usize).contains(&self.gauges.len()) {
+            out.push(format!("one to {MAX_GAUGE_LINES} gauge lines"));
         }
         if self.pitch <= self.diameter && self.count > self.gauges.len() as u32 {
             out.push("a pitch no larger than the bolt".into());

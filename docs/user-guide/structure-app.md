@@ -565,8 +565,11 @@ the **Detail view**, a pane of its own opened on the right of the 3D view
   - **worked out** (blue): onto the joint's leg (the members of class
     leg, else those within 30° of vertical; the largest, or the one in
     line for a leg); at an end with a connection, eccentric from one leg
-    bolted (both legs: not) and restrained from two bolts or more into a
-    stiffer member or a plate (one bolt: not) — an end without a
+    bolted (both legs: not); not restrained from one bolt, or from bolts
+    onto a gusset plate only (ASCE 10-97 3.7.4.5). Whether two bolts or
+    more onto a member restrain the end depends on the stiffness of the
+    members at the joint (C3.7.4 (b)): the check works it out and says it
+    in its results; this window leaves it not given — an end without a
     connection keeps the member's flags or the assumptions, as the check
     does; the eccentricity from the gauge and the section;
   - **assumed** (orange): as the checks assume when nothing is given
@@ -588,7 +591,7 @@ out. Each change is one undo step.
   the bolt layout form above the table (no window) — a **bolt of the
   bolt libraries** (its diameter, hole and grade the library's; only its
   id is written) or one typed here, how many, diameter, hole, grade, one or two
-  gauge lines (two staggered by half a pitch) and their gauges, pitch,
+  gauge lines (one to three; every second line staggered by half a pitch) and their gauges, pitch,
   end and edge distance, starting from what the row shows; it says how
   far the bolts reach along the member and what does not fit the leg (a
   gauge beyond the leg less the edge distance, a pitch no larger than the

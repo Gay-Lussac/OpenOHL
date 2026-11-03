@@ -941,6 +941,25 @@ fn connections_are_defined_field_by_field() {
         edge: Some(0.025),
     };
     assert!((l.reach() - 0.13).abs() < 1e-12);
+    // Three gauge lines (wide legs), the middle one staggered by half a
+    // pitch: six bolts in two rows, the farthest the middle line's second,
+    // 30 + 1.5 × 50 mm; a fourth line refused.
+    let three = BoltLayout {
+        count: 6,
+        gauges: vec![0.035, 0.08, 0.125],
+        ..l.clone()
+    };
+    assert!((three.reach() - 0.105).abs() < 1e-12);
+    assert!(three.misfits(Some(0.2)).is_empty());
+    let four = BoltLayout {
+        gauges: vec![0.03, 0.06, 0.09, 0.12],
+        ..three.clone()
+    };
+    assert!(
+        four.misfits(Some(0.2))
+            .iter()
+            .any(|m| m.contains("one to 3 gauge lines"))
+    );
     assert!(l.misfits(Some(0.06)).is_empty());
     assert!(l.misfits(Some(0.05))[0].contains("beyond the leg"));
     ce::set_bolt_layout(&mut doc, "M2", "N2", &l);

@@ -195,7 +195,7 @@ id = "asce10-005"
 title = "Tension: least of net section (one leg, 0.9 fy An), bolt shear, bearing — bolt shear governs"
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
-notes = "2 M16 bolts in 17.5 mm holes, one per section, t = 6 mm, long leg bolted: net 285.9525 kN, shear 2 x 60.17 = 120.34 kN, bearing 2 x 1.5 fu d t = 141.12 kN; 60 kN"
+notes = "2 M16 bolts in 17.5 mm holes (taken as punched: 19.1 mm, 3.10.1), one per section, t = 6 mm, long leg bolted: net 282.8853 kN, shear 2 x 60.17 = 120.34 kN, bearing 2 x 1.5 fu d t = 141.12 kN; 60 kN"
 max_seconds = 1.0
 inputs.model = '''
 [analysis]

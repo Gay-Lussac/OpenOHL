@@ -109,7 +109,8 @@ fn column(kl_r: f64) -> f64 {
     std::f64::consts::PI.powi(2) * 210e9 / (kl_r * kl_r) * 10e-4
 }
 
-/// Two bolts into the leg (20 cm² against 10) at N2 only: restrained
+/// Two bolts into the leg at N2 only (its stiffness I/L five times D1's,
+/// the only member it holds there; ASCE 10-97 C3.7.4 (b)): restrained
 /// there, worked out; the end at N4 (no connection) not restrained,
 /// assumed; eccentric at both (one leg bolted at N2, worked out; N4
 /// assumed). KL/r by curve 5 (one end restrained): 28.6 + 0.762 L/r.
@@ -123,7 +124,10 @@ fn a_connection_at_one_end_only() {
     assert_eq!(e.connected, [false, true]);
     assert_eq!(e.restrained[1].value, Some(true));
     assert_eq!(e.restrained[1].source, Source::WorkedOut);
-    assert_eq!(e.restrained[1].why.as_deref(), Some("2 bolts onto L2"));
+    assert_eq!(
+        e.restrained[1].why.as_deref(),
+        Some("2 bolts onto L2 (I/L 5.00 of those it holds)")
+    );
     assert_eq!(e.restrained[0].source, Source::Assumed);
     assert_eq!(e.restrained[0].value, Some(false));
     assert_eq!(e.eccentric[1].source, Source::WorkedOut);
@@ -147,7 +151,7 @@ fn a_connection_at_one_end_only() {
     );
     assert!(
         c.joints.iter().any(|j| j.starts_with(
-            "N2 eccentric (worked out: one leg bolted), restrained (worked out: 2 bolts onto L2)"
+            "N2 eccentric (worked out: one leg bolted), restrained (worked out: 2 bolts onto L2 (I/L 5.00 of those it holds))"
         )),
         "{:?}",
         c.joints
@@ -203,8 +207,8 @@ fn given_then_the_members_then_worked_out() {
 
 /// One bolt at N2, two at N4 (the member's): the bolt shear at N2, 60 kN,
 /// governs the tension (N4: 120 kN; bearing 1.5 × 510 MPa × 16 mm × 6 mm
-/// = 73.44 kN per bolt; the net section (10 cm² − 17.5 mm × 6 mm) × 355
-/// MPa × 0.9 = 285.9 kN), named by its end.
+/// = 73.44 kN per bolt; the net section (10 cm² − (17.5 + 1.6) mm × 6 mm) ×
+/// 355 MPa × 0.9 = 282.9 kN, holes punched), named by its end.
 #[test]
 fn the_weaker_end_governs() {
     let m = model(
@@ -225,9 +229,10 @@ fn the_weaker_end_governs() {
     assert!((t - 120e3).abs() < 1e-6);
     assert_eq!(what, "bolt shear");
     // Two gauge lines at N2: two holes in its section, the net section
-    // (10 cm² − 2 × 17.5 mm × 6 mm) × 355 MPa × 0.9 = 252.4 kN — above the
-    // bolts, so the shear still governs; the net section itself by hand.
-    let net = (10e-4 - 2.0 * 0.0175 * 0.006) * 355e6 * 0.9;
+    // (10 cm² − 2 × (17.5 + 1.6) mm × 6 mm) × 355 MPa × 0.9 = 246.3 kN (the
+    // holes punched, 3.10.1) — above the bolts, so the shear still governs;
+    // the net section itself by hand.
+    let net = (10e-4 - 2.0 * (0.0175 + 0.0016) * 0.006) * 355e6 * 0.9;
     let m = model(
         "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nbolts = { count = 4, diameter = \"16 mm\" }\ngauge_lines = 2\n",
         &BoltLibrary::default(),
@@ -361,4 +366,38 @@ fn the_bolts_beside_the_file() {
     assert!((e.bolts.unwrap().diameter.unwrap() - 0.017).abs() < 1e-12);
     assert!(e.notes.is_empty());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// ASCE 10-97 3.7.4.5 and C3.7.4: two bolts onto a gusset plate only do
+/// not restrain the end; two bolts onto a member restrain it only when
+/// its stiffness I/L is at least the sum of those it holds there (C3.7.4
+/// (b)): a leg of I_min 80 cm⁴ over 4 m (20 cm³) holds D1 (20 cm⁴ / 5 m =
+/// 4 cm³), but not a D1 of 120 cm⁴ (24 cm³).
+#[test]
+fn restraint_by_plate_and_by_stiffness() {
+    let m = model(
+        "[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G1\"\n\
+         bolts = { count = 3, diameter = \"16 mm\" }\n",
+        &BoltLibrary::default(),
+    );
+    let e = end_conditions(&m, D1);
+    assert_eq!(e.restrained[1].value, Some(false));
+    assert_eq!(e.restrained[1].source, Source::WorkedOut);
+    assert_eq!(
+        e.restrained[1].why.as_deref(),
+        Some("3 bolts onto plate G1 only")
+    );
+    let conn = "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\n\
+                bolts = { count = 2, diameter = \"16 mm\" }\n";
+    let mut m = model(conn, &BoltLibrary::default());
+    assert_eq!(end_conditions(&m, D1).restrained[1].value, Some(true));
+    let d = m.members[D1].section;
+    m.sections[d].i_min = 120e-8;
+    let e = end_conditions(&m, D1);
+    assert_eq!(e.restrained[1].value, Some(false));
+    assert_eq!(
+        e.restrained[1].why.as_deref(),
+        Some("2 bolts onto L2 (I/L 0.83 of those it holds)")
+    );
 }

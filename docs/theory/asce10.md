@@ -43,6 +43,7 @@ this method ([structure analysis](structures-fe.md#member-usage)).
 | ends' eccentricity and restraint | each end's `[[connection]]`, else `end_eccentricity`, `end_restraint` ([below](#end-conditions)) | effective slenderness |
 | \\( w/t \\) | `width_thickness`, else from the angle profile | local buckling |
 | bolts, holes, thickness, plies, connected leg | `bolts`, `thickness`, `plies`, `connected_leg`, or each end's `[[connection]]` | bolt shear, bearing, net section |
+| end distance, pitch, edge distance, gauges | `end_distance`, `spacing`, `edge_distance`, or the connection's `end_distance`, `pitch`, `edge_distance`, `gauges` | block shear |
 
 Every input that is missing is assumed on the safe side and named per
 member in what governs (`[assumed: …]`); the list is
@@ -201,16 +202,15 @@ cross-section's allowable compression, when given, is taken as
 \\( A F_{cr} \\). For other profiles \\( F_{cr} = f_y \\), unless a
 `width_thickness` is given (then the angle's formulas above).
 
-**Not on the safe side** where they govern:
+**Maximum \\( w/t \\)** (3.7.1): an angle's leg may not exceed
+\\( w/t = 25 \\). A leg above it gets the elastic \\( F_{cr} \\) and is said
+beside the slenderness limits (`w/t 31.0 above 25 (3.7.1)`), not refused.
+A root radius missing from the profile makes \\( w \\) larger (said: "w/t
+without a root radius"), on the safe side.
 
-- 3.7.1's maximum \\( w/t \\) of 25 for angles is not checked (a leg above
-  it gets the low elastic \\( F_{cr} \\), but is not flagged as outside the
-  standard);
-- the effective widths of other profiles' elements (3.9.2, 3.9.3: a
-  reduced area for slender plates of tubes, channels, I sections) are not
-  applied;
-- a root radius missing from the profile makes \\( w \\) larger (said:
-  "w/t without a root radius"), which is on the safe side.
+**Not on the safe side** where they govern: the effective widths of other
+profiles' elements (3.9.2, 3.9.3: a reduced area for slender plates of
+tubes, channels, I sections) are not applied.
 
 ### 5. Column curve
 
@@ -231,14 +231,46 @@ N2`).
 
 The tension capacity is the least, at the weaker end, of:
 
-- **net section** (3.10.1, 3.10.2): \\( (A - n_h\,d_h\,t)\,f_y \\), times
+- **net section** (3.10.1, 3.10.2): \\( (A' - n_h\,d_h\,t)\,f_y \\), times
   0.9 for an angle bolted by one leg (3.10.2). \\( n_h \\) is the number of
   holes in one cross-section (`holes`, or from the connection's gauge
-  lines or bolt points, not more than its bolts), \\( d_h \\) the hole
-  diameter (`hole`, else the bolt + 2 mm), \\( t \\) the thickness of the
-  connected leg. Angles bolted in both legs are concentric (3.10.1): no
-  0.9;
+  lines or bolt points, not more than its bolts); \\( t \\) the thickness
+  of the connected leg; \\( A' \\) the gross area, for an unequal angle
+  bolted by its short leg less \\( (b_{long} - b_{short})\,t \\) (3.10.2:
+  its unconnected leg counted no larger than the connected one).
+  Angles bolted in both legs are concentric (3.10.1): no 0.9;
+- **block shear** of an angle bolted by one leg (3.10.2, Eq. 3.10-1,
+  Figure 3.5): \\( P = 0.60\,A_v f_u + A_t f_y \\), with
+  \\( A_v = t\,(e + (n-1)\,s - (n - \tfrac12)\,d_h) \\) the net area in shear
+  along the bolt line (the clear distances from the end to the first hole
+  and between holes: the figure's \\( a + 2b \\) for three bolts) and
+  \\( A_t = t\,(c - \tfrac12 d_h) \\) the net area in tension from the hole to
+  the toe. \\( e \\) is the end distance (`end_distance`), \\( s \\) the pitch
+  (the connection's `pitch`, else the member's `spacing`), \\( n \\) the
+  bolts of one line (the bolts shared out over the gauge lines),
+  \\( c \\) the distance from the line nearest the toe to the toe: the
+  connected leg's width less the largest gauge, else the `edge_distance`
+  (taken to the toe). **Conservative:** the standard asks for it when the
+  bolt pattern's centroid lies outside the angle's centre of gravity; the
+  program checks it always. **Several gauge lines** (up to three): with
+  their gauges known (the connection's `gauges`), the lower of the outer
+  line's block times the number of lines (the bolts sharing the force
+  equally, 4.1) and the block of all lines (shear along the inner line,
+  \\( A_t = t\,(c_{inner} - (k - \tfrac12)\,d_h) \\) from the inner line to
+  the toe across the \\( k \\) lines' holes); without them (only a number of
+  holes in a section, as an import gives), **conservative**: the outer
+  line's block alone carries the whole force (said: "block shear: the
+  outer gauge line alone"). Without an end distance, pitch, edge distance or \\( f_u \\) it
+  is not checked, said ("block shear not checked (no end distance)");
 - **bolt shear** and **bearing** ([Connections](#connections)).
+
+**The hole** \\( d_h \\): the given `hole`, else a standard hole, the bolt +
+1.6 mm (4.1: "holes nominally 1/16 in. (1.6 mm) larger than the bolt
+diameter"); and, since a punched hole counts 1.6 mm larger than its
+nominal diameter (3.10.1, 3.10.2), every hole is taken as punched: + 1.6
+mm (said: "holes punched (+ 1.6 mm)"). **Conservative** for drilled or
+reamed holes, which the standard lets count at their nominal diameter
+(the data do not say how a hole was made).
 
 Without bolts the tension is on the gross section, \\( A f_y \\) (said: "no
 bolts given: connection not checked"). With bolts counted 0 (the holes
@@ -248,19 +280,6 @@ only, the connection elsewhere) only the net section is checked.
 cross-section; the standard's chain rule (3.10.1: deduct the holes of a
 zigzag chain and add \\( s^2/4g \\) per gauge space) can only give a larger
 net width.
-
-**Not on the safe side** where they govern:
-
-- **punched holes**: 3.10.1 takes a punched hole as 1.6 mm larger than its
-  nominal diameter for the net area, and the standard's holes are 1.6 mm
-  larger than the bolt (4.1). The program uses the hole as given, else the
-  bolt + 2 mm — below the bolt + 3.2 mm of a punched standard hole;
-- **block shear** (3.10.2, Eq. 3.10-1: \\( P = 0.60 A_v F_u + A_t F_y \\),
-  required when the bolt pattern's centroid lies outside the angle's
-  centre of gravity) is not checked;
-- **an unequal angle bolted by its short leg**: 3.10.2 takes its
-  unconnected leg as no larger than the connected one; the program uses
-  the whole area.
 
 ## Connections
 
@@ -278,23 +297,27 @@ force equally (4.1).
   \\( V = 0.62 f_{ub} A_e \\), \\( A_e \\) the root area with the threads in
   the shear plane, the gross area with them out (4.3.2).
 - **Bearing** (4.4): the bearing stress on the bolt's diameter times the
-  connected thickness may not exceed \\( 1.5 f_u \\):
-  \\( n \cdot 1.5\,f_u\,d\,t \cdot n_p \\), \\( n_p \\) the plies (profiles side
-  by side).
+  connected thickness may not exceed 1.5 times \\( f_u \\) "of the
+  connected part or the bolt" — the lower of the two:
+  \\( n \cdot 1.5\,\min(f_u, f_{ub})\,d\,t \cdot n_p \\), \\( n_p \\) the plies
+  (profiles side by side). Without the bolt's \\( f_{ub} \\) the member's
+  \\( f_u \\) alone, said ("bearing on the member's f_u (the bolt's not
+  given)").
 
-**Assumptions:** the root area is taken as 0.75 of the gross area
-(`ROOT_AREA`); threads given out of the shear plane with only
-\\( f_{ub} \\), or with no capacity for it, are taken as in the plane (said:
-"bolt shear as with the threads in the shear plane").
+**The root area** with the threads in the shear plane, when the bolt
+gives no shear capacity: **conservative**, 0.6 of the gross area
+(`ROOT_AREA`). The root diameter of a 60° thread is \\( d_3 = d - 1.2269\,P \\)
+(the basic profile's height \\( H = \tfrac{\sqrt3}{2} P \\); \\( d_3 = d -
+\tfrac{17}{12} H \\)); 0.6 of the gross area is \\( d_3 = 0.775\,d \\), a pitch of
+\\( d/5.4 \\) — coarser than the threads of the bolts in towers, so the
+real root area is larger and the bolt shear higher. A bolt's own
+`shear_capacity` (or a library bolt's) gives the real value. Threads
+given out of the shear plane with only \\( f_{ub} \\), or with no capacity
+for it, are taken as in the plane (said: "bolt shear as with the threads
+in the shear plane").
 
 **Not on the safe side** where they govern:
 
-- the root area of 0.75 of the gross is an assumption: a thread whose root
-  area is smaller gives a smaller shear capacity (check against the bolt's
-  thread standard, or give `shear_capacity`);
-- 4.4 limits bearing by \\( f_u \\) of the connected part *or the bolt*;
-  the program uses the member's \\( f_u \\) only (a bolt of lower tensile
-  strength than the member, e.g. a low grade, would govern);
 - the minimum end, edge and hole spacing distances (4.5, Eqs. 4.5-1 to
   4.5-7) are not checked, nor attachment holes (4.6), bolts in tension
   (4.3.3, 4.3.4), the gusset plate's own bearing or the plate's design.
@@ -314,13 +337,24 @@ the curves' none / one end / both ends. Decided per end in this order:
    - one leg bolted → eccentric, both legs → concentric. Basis: C3.7.4,
      "normal framing eccentricity" of an angle bolted by one leg; 3.10.1,
      angles bolted in both legs are concentrically loaded;
-   - two bolts or more onto a member of larger cross-section area, or onto
-     a plate → restrained; one bolt → not restrained. Basis: 3.7.4.5, a
-     single bolt never restrains; a multiple-bolt connection to a member
-     able to resist the joint's rotation partly restrains. The member it
-     bolts onto: as given, else the joint's leg (the members of class leg,
-     else those within 30° of vertical; the largest, or for a leg the one
-     in line);
+   - one bolt → not restrained (3.7.4.5: "a single bolt connection …
+     shall not be considered as furnishing restraint");
+   - two bolts or more onto a **gusset plate** only → not restrained
+     (3.7.4.5: a multiple-bolt connection made only on a gusset plate,
+     without also being framed to the restraining member, does not
+     restrain; C3.7.4 (c));
+   - two bolts or more onto a **member** → restrained when that member is
+     stiff enough (C3.7.4 (a), (b); `member_ends::restrains`): its
+     stiffness \\( I/L \\) at least the sum of the \\( I/L \\) of the members it
+     restrains at that joint — every member whose end bolts onto it there
+     (given, or worked out as below), not counting its own continuation in
+     line (a leg's other panel). \\( I \\) is each member's minor principal
+     second moment (for the restraining member its least, on the safe
+     side), \\( L \\) its length. What governs gives the ratio: `restrained
+     (worked out: 2 bolts onto L2 (I/L 5.00 of those it holds))`.
+     The member it bolts onto: as given, else the joint's leg (the members
+     of class leg, else those within 30° of vertical; the largest, or for
+     a leg the one in line);
 4. **assumed** otherwise: eccentric, not restrained (said per end:
    `eccentric at N4`, `not restrained at N4`; both ends: `both ends
    eccentric`, `no end restraint`).
@@ -332,15 +366,14 @@ largest \\( KL/r \\).
 
 **Not on the safe side** where they govern:
 
-- **a plate**: 3.7.4.5 says a multiple-bolt connection made only on a
-  gusset plate, without also being framed to the restraining member, does
-  *not* restrain (also C3.7.4 (c)); the program takes two bolts onto a
-  plate as restrained;
-- **"larger area" for stiffer**: C3.7.4 (b) asks that the restraining
-  member's stiffness \\( I/L \\) in the plane equal or exceed the sum of
-  those of the members it restrains, and notes that a joint whose members
-  can all buckle together restrains none of them; the program compares
-  cross-section areas of one member against one;
+- C3.7.4 notes that a joint whose members can all buckle at the same time
+  restrains none of them; the program does not compare the members'
+  critical load cases (the restraint is decided once per model, not per
+  load case);
+- \\( I/L \\) is taken with each member's minor principal \\( I \\), not in the
+  plane of the stress, which the data do not say;
+- a gusset plate that is also framed to the restraining member (3.7.4.5's
+  exception) is not recognised: give `restrained = true` at the end;
 - the eccentricity's size (the gauge) is shown, not used: the curves only
   know eccentric or not, and C3.7.4's condition that the bolt pattern's
   centroid lie between the heel and the connected leg's centreline is not
@@ -358,8 +391,11 @@ said in what governs (`[assumed: …]`):
 | end restraint | none |
 | crossing partner | unbraced out of plane |
 | root radius of an angle | 0 (w larger) |
-| connected leg | one leg (× 0.9) |
-| hole | bolt + 2 mm (see [Tension](#tension): not enough for a punched hole) |
+| connected leg | one leg (× 0.9); an unequal angle's short leg |
+| hole | a standard hole, bolt + 1.6 mm (4.1) |
+| how holes are made | punched: + 1.6 mm in the net section and block shear (3.10.1) |
+| bolt's tensile strength | bearing on the member's \\( f_u \\) |
+| block shear data | not checked, said |
 | holes per section | 1 |
 | bolt threads | in the shear plane |
 | twisting | free to warp (K_t 1); built-ups' warping left out |
@@ -373,7 +409,6 @@ Unsafe where one of them governs; the standard's clause is the reference.
   ratios); 3.7.4.4: \\( K' \\) for forces varying along the member.
 - 3.8: lipped angles (no lipped profile in the library).
 - 3.9.2, 3.9.3: effective widths of other profiles' elements.
-- 3.10.2: block shear; the short-leg rule for unequal angles.
 - 3.10.4, 3.10.5: threaded rods, anchor bolts, guys.
 - 3.11: stitch bolts of built-up members (each angle buckling between
   them).
@@ -395,6 +430,7 @@ Unsafe where one of them governs; the standard's clause is the reference.
   column curve, tension by net section, bolt shear and bearing against
   values computed by hand from the formulas above
   ([list](../validation/textbook.md#member-capacities-by-asce-10-97-benchmarksstructures-feasce10toml)).
+- Unit tests (`asce10::tests::connection_rules_by_hand`): holes, the short-leg rule, block shear, bearing on the bolt's f_u, the root area and the w/t limit on an invented unequal angle by hand; (`member_ends_tests::restraint_by_plate_and_by_stiffness`) a plate alone and the I/L rule.
 - Unit tests (`asce10::tests`): the standard's own Examples 15 and 16
   (Appendix B: \\( r_t \\), \\( r_{tf} \\), \\( KL/r \\), \\( F_a \\)); which
   profile takes which clause; the crossing diagonal; the end conditions

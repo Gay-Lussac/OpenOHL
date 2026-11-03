@@ -128,7 +128,7 @@ tower program's connection data is not built. How it works: [OHL-Structure
 › Joint details](../user-guide/structure-app.md#joint-details-towers).
 
 - Edit any connection in the table; the close-up and the face view follow.
-- **Bolt layout helper:** n bolts in one or two gauge lines; pitch and
+- **Bolt layout helper:** n bolts in one to three gauge lines; pitch and
   distances from the minimums the code gives. The values come from the
   standard's text supplied by the owner, not typed from memory; until
   then the user types them.
@@ -149,7 +149,7 @@ Built as 4.1 and 4.2 below, but: worked out only at an end with a
 `[[connection]]` (an end without one keeps the member's flags and the
 assumptions, so a tower without connection data computes as before);
 bearing without the end and edge distances (the standard's rules for
-them to come from its text); two gauge lines' holes in one section
+them to come from its text); the gauge lines' holes in one section
 (staggering not counted). The rules are in the core
 (`ohl_structures_fe::member_ends`) and the Joint details table shows
 them; how it works: [theory](../theory/asce10.md).
@@ -160,8 +160,9 @@ values were worked out from the joints and which assumed.
 1. **ASCE 10-97 slenderness curves** (in the core today). End
    eccentricity and end restraint are worked out per end:
    - one leg bolted → eccentric at that end;
-   - two or more bolts into a stiffer member (or a plate held by one) →
-     partly restrained.
+   - two or more bolts into a member stiff enough (its I/L at least the
+     sum of the members it holds there, ASCE 10-97 C3.7.4 (b)) → partly
+     restrained; onto a gusset plate only → not (3.7.4.5; 2026-11-03).
 
    Today they are flags per member, the same at both ends, and missing
    flags take the conservative curve. Expected effect: bracing that today

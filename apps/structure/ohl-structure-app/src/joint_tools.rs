@@ -8,7 +8,7 @@
 //! - every value of the connections table edited in place (given at that
 //!   member end), cleared from its cell's menu (right-click: back to the
 //!   member's or worked out);
-//! - the **bolt layout** form (in the panel, above the table): n bolts in one or two gauge lines, their
+//! - the **bolt layout** form (in the panel, above the table): n bolts in one to three gauge lines, their
 //!   pitch, end and edge distances in one go, with how far they reach and
 //!   what does not fit the leg (the minimums the code asks are typed:
 //!   none is built in);
@@ -30,6 +30,8 @@ use ohl_structure_edit::connection_edits::{
 use ohl_structure_link::{
     Arrival, BoltedLeg, ConnectionKind, JointDetail, JointDetails, Source, Valued,
 };
+
+use ohl_structures::connections::MAX_GAUGE_LINES;
 
 use crate::app::StructureApp;
 use ohl_structure_edit::Handle;
@@ -105,7 +107,7 @@ pub struct LayoutEdit {
     /// Gauge lines.
     pub lines: u32,
     /// Gauges, mm.
-    pub gauges: [f64; 2],
+    pub gauges: [f64; 3],
     /// Pitch, mm.
     pub pitch: f64,
     /// End distance, mm.
@@ -126,7 +128,7 @@ impl LayoutEdit {
             diameter: mm(self.diameter),
             hole: (self.hole > 0.0).then(|| mm(self.hole)),
             grade: Some(self.grade.clone()).filter(|g| !g.trim().is_empty()),
-            gauges: self.gauges[..self.lines.clamp(1, 2) as usize]
+            gauges: self.gauges[..self.lines.clamp(1, MAX_GAUGE_LINES) as usize]
                 .iter()
                 .map(|g| mm(*g))
                 .collect(),
@@ -159,7 +161,7 @@ impl LayoutEdit {
             diameter: b.map_or(16.0, |b| mm(b.diameter)),
             hole: b.and_then(|b| b.hole).map_or(0.0, mm),
             grade: b.and_then(|b| b.grade.clone()).unwrap_or_default(),
-            lines: a.gauge_lines.value.unwrap_or(1).clamp(1, 2),
+            lines: a.gauge_lines.value.unwrap_or(1).clamp(1, MAX_GAUGE_LINES),
             gauges: [
                 gauges
                     .first()
@@ -167,6 +169,9 @@ impl LayoutEdit {
                 gauges
                     .get(1)
                     .map_or(leg.map_or(60.0, |w| w * 2.0 / 3.0), |g| mm(*g)),
+                gauges
+                    .get(2)
+                    .map_or(leg.map_or(90.0, |w| w * 4.0 / 5.0), |g| mm(*g)),
             ],
             pitch: a.pitch.value.map_or(50.0, mm),
             end: a.end_distance.value.map_or(30.0, mm),
@@ -585,13 +590,18 @@ impl StructureApp {
                 ui.label("Gauge lines");
                 ui.radio_value(&mut e.lines, 1, "1");
                 ui.radio_value(&mut e.lines, 2, "2")
-                    .on_hover_text("Staggered by half a pitch");
-                let [mut g1, mut g2] = e.gauges;
+                    .on_hover_text("The second staggered by half a pitch");
+                ui.radio_value(&mut e.lines, 3, "3")
+                    .on_hover_text("The middle one staggered by half a pitch");
+                let [mut g1, mut g2, mut g3] = e.gauges;
                 num(ui, "gauge", &mut g1, "From the heel along the leg bolted");
-                if e.lines == 2 {
+                if e.lines >= 2 {
                     num(ui, "and", &mut g2, "From the heel along the leg bolted");
                 }
-                e.gauges = [g1, g2];
+                if e.lines >= 3 {
+                    num(ui, "and", &mut g3, "From the heel along the leg bolted");
+                }
+                e.gauges = [g1, g2, g3];
             });
             ui.horizontal_wrapped(|ui| {
                 num(ui, "Pitch", &mut e.pitch, "Between bolts along a line");
@@ -1170,7 +1180,7 @@ fn row(
         }
     });
     // Gauge lines.
-    let lines: Vec<String> = vec!["1".into(), "2".into()];
+    let lines: Vec<String> = (1..=MAX_GAUGE_LINES).map(|n| n.to_string()).collect();
     if let Some(v) = choice(
         ui,
         ("lines", m, jid),

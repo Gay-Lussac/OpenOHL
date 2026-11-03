@@ -16,7 +16,7 @@
 //! leg = "long"            # the angle's leg bolted: long, short, both, none
 //! bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm", grade = "8.8" }
 //! # or a bolt of a library: bolts = { count = 2, bolt = "M16-8.8" }
-//! gauge_lines = 1
+//! gauge_lines = 1        # 1 to 3
 //! gauges = ["30 mm"]      # from the heel along the bolted leg, per line
 //! pitch = "50 mm"
 //! end_distance = "30 mm"
@@ -57,6 +57,10 @@ use ohl_core::units::Length;
 use serde::Deserialize;
 
 use crate::structures::StructureType;
+
+/// The most gauge lines a connection may have (bolt rows along the leg;
+/// three on wide legs, owner 2026-11-03).
+pub const MAX_GAUGE_LINES: u32 = 3;
 
 /// The file version that brings connections and plates.
 pub const CONNECTIONS_VERSION: u32 = 9;
@@ -169,7 +173,7 @@ pub struct TypeConnection {
     /// Its bolts.
     #[serde(default)]
     pub bolts: Option<ConnectionBolts>,
-    /// Gauge lines: 1 or 2.
+    /// Gauge lines: 1 to [`MAX_GAUGE_LINES`].
     #[serde(default)]
     pub gauge_lines: Option<u32>,
     /// The gauge of each line, from the heel along the bolted leg.
@@ -330,8 +334,8 @@ impl StructureType {
                 }
             }
             if let Some(n) = c.gauge_lines {
-                if !(1..=2).contains(&n) {
-                    return Err(format!("{at}: gauge_lines 1 or 2"));
+                if !(1..=MAX_GAUGE_LINES).contains(&n) {
+                    return Err(format!("{at}: gauge_lines 1 to {MAX_GAUGE_LINES}"));
                 }
                 if !c.gauges.is_empty() && c.gauges.len() != n as usize {
                     return Err(format!("{at}: one gauge per gauge line"));

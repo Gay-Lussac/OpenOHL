@@ -670,7 +670,10 @@ fn condition(
         a.restrained = match c.and_then(|c| c.restrained) {
             Some(r) => Valued::of(r, Given),
             None => match a.bolts.value.as_ref().filter(|_| a.bolts.known()) {
-                Some(b) => member_ends::restrained_from_bolts(b.count, onto_plate)
+                // Onto a gusset plate only: never restrained (ASCE 10-97
+                // 3.7.4.5); onto a member: the check's stiffness rule.
+                Some(b) if onto_plate && b.count >= 2 => Valued::of(false, WorkedOut),
+                Some(b) => member_ends::restrained_from_bolts(b.count, false)
                     .map_or(Valued::none(), |r| Valued::of(r, WorkedOut)),
                 None => Valued::none(),
             },
@@ -1035,12 +1038,9 @@ fn place_bolts(
             .map(|k| {
                 let line = (k % lines) as usize;
                 let row = (k / lines) as f64;
-                // Two lines staggered by half a pitch.
-                let stagger = if lines == 2 && line == 1 {
-                    pitch / 2.0
-                } else {
-                    0.0
-                };
+                // Every second line staggered by half a pitch (two lines:
+                // the second; three: the middle one).
+                let stagger = if line % 2 == 1 { pitch / 2.0 } else { 0.0 };
                 // From the steel's end, where the member stops.
                 [cut + end + row * pitch + stagger, gauges[line]]
             })

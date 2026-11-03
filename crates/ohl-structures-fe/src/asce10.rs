@@ -36,8 +36,13 @@
 //!   bearing.
 //!
 //! Tension: the least of the net section (A − holes·d_hole·t)·f_y, × 0.9
-//! for an angle bolted by one leg; the bolts' shear (count × shear planes
-//! × each one's shear capacity); bearing (count × 1.5 f_u d t × plies).
+//! for an angle bolted by one leg (3.10.1, 3.10.2; the holes taken as
+//! punched, + 1.6 mm; an unequal angle bolted by its short leg with its
+//! long leg counted as the short one); block shear of an angle bolted by
+//! one leg (Eq. 3.10-1); the bolts' shear (count × shear planes × each
+//! one's shear capacity, 4.3.2); bearing (count × 1.5 f_u d t × plies, f_u
+//! the lower of the member's and the bolt's, 4.4). An angle's w/t above
+//! 25 is said (3.7.1).
 //!
 //! **At each end** (2026-11-02, stage 4.1 and 4.2 of the joint details):
 //! the ends' eccentricity and restraint are each end's
@@ -61,9 +66,10 @@
 //! **Missing data are assumed on the safe side and said per member**
 //! (`[assumed: …]` in what governs): length ratios 1 (or `k`), both ends
 //! eccentric, no end restraint, the leg's flat width from the profile
-//! without a root radius when it has none, one leg bolted, a hole 2 mm
-//! larger than the bolt, one hole per section, the bolts' threads in the
-//! shear plane (0.62 f_ub on 0.75 of the gross area) when only their
+//! without a root radius when it has none, one leg bolted (an unequal
+//! angle's short leg), a standard hole (the bolt + 1.6 mm), the holes
+//! punched, one hole per section, the bolts' threads in the shear plane
+//! (0.62 f_ub on 0.6 of the gross area) when only their
 //! strength is given (with the threads given out of the plane but no
 //! capacity for it: as with them in). Without bolts, the connection is not checked and
 //! the tension is on the gross section (said so). Local buckling is
@@ -78,13 +84,27 @@ use crate::model::{Member, Model, Section};
 /// The method's name in files and results.
 pub const NAME: &str = "asce10-97";
 
-/// A hole this much larger than its bolt when not given, m.
-const HOLE_CLEARANCE: f64 = 0.002;
+/// A standard hole is this much larger than its bolt (ASCE 10-97 4.1:
+/// 1/16 in.), m — the hole when not given.
+const STANDARD_HOLE: f64 = 0.0016;
 
-/// Bolt shear stress over the bolt's ultimate strength (threads in the
-/// shear plane: on the root area, taken as this share of the gross).
+/// A punched hole is taken this much larger than its nominal diameter in
+/// the net section and block shear (3.10.1, 3.10.2: 1/16 in.), m; holes
+/// are taken as punched (drilled holes are not told apart).
+const PUNCHED: f64 = 0.0016;
+
+/// Bolt shear stress over the bolt's ultimate strength (4.3.2), on the
+/// root area with the threads in the shear plane.
 const BOLT_SHEAR: f64 = 0.62;
-const ROOT_AREA: f64 = 0.75;
+
+/// The root area over the gross area when the bolt gives no shear
+/// capacity: 0.6, the root of a 60° thread (d₃ = d − 1.2269 P) of pitch up
+/// to d/5.4 — on the safe side for usual bolts; a bolt's own shear
+/// capacity gives the real value.
+const ROOT_AREA: f64 = 0.6;
+
+/// The largest w/t of an angle's leg (3.7.1).
+const MAX_W_T: f64 = 25.0;
 
 /// The capacities of one member and what they rest on.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -362,6 +382,15 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
         }
         _ => None,
     };
+    if let (Some(w), Some(_)) = (w_t, legs)
+        && w > MAX_W_T
+    {
+        let over = format!("w/t {w:.1} above {MAX_W_T:.0} (3.7.1)");
+        out.limit = Some(match out.limit.take() {
+            Some(l) => format!("{l}; {over}"),
+            None => over,
+        });
+    }
     let fcr = match s.compression {
         // A given allowable compression before buckling replaces A·F_cr.
         Some(c) => c / a,
@@ -591,7 +620,17 @@ fn end_check(
                 }
             };
             shear = per_plane.map(|v| f64::from(b.count) * f64::from(b.shear_planes) * v);
-            match (s.ultimate, thickness) {
+            // Bearing (4.4): 1.5 f_u of the connected part or of the bolt,
+            // the lower.
+            let fu = match (s.ultimate, b.ultimate) {
+                (Some(m), Some(bolt)) => Some(m.min(bolt)),
+                (Some(m), None) => {
+                    conn.push("bearing on the member's f_u (the bolt's not given)".into());
+                    Some(m)
+                }
+                (None, _) => None,
+            };
+            match (fu, thickness) {
                 (Some(fu), Some(t)) => {
                     bearing = Some(f64::from(b.count) * 1.5 * fu * b.diameter * t * plies);
                 }
@@ -602,26 +641,75 @@ fn end_check(
     }
     let connected_leg = end.and_then(|e| e.leg).or(d.connected_leg);
     let mut notes = Vec::new();
+    // The angle's legs (long, short), m.
+    let angle = s.profile.as_ref().and_then(|p| match p.shape {
+        ohl_sections::Shape::EqualAngle { h, .. } => Some((h, h)),
+        ohl_sections::Shape::UnequalAngle { h, b, .. } => Some((h.max(b), h.min(b))),
+        _ => None,
+    });
+    let unequal = angle.is_some_and(|(l, s)| l > s);
     let mut tension = match (bolts, thickness) {
         (None, _) => (a * fy, "gross section, no holes".to_owned()),
         (Some((b, _, _)), Some(t)) => {
+            // The hole: given, else a standard hole (4.1); taken as punched
+            // (3.10.1).
             let hole = b.hole.unwrap_or_else(|| {
-                notes.push("hole 2 mm larger than the bolt".into());
-                b.diameter + HOLE_CLEARANCE
-            });
+                notes.push("standard hole (bolt + 1.6 mm)".into());
+                b.diameter + STANDARD_HOLE
+            }) + PUNCHED;
+            notes.push("holes punched (+ 1.6 mm)".into());
             let holes = f64::from(b.holes.unwrap_or_else(|| {
                 notes.push("one hole per section".into());
                 1
             }));
-            let one_leg = match connected_leg {
-                Some(c) => c.one_leg(),
+            let leg = match connected_leg {
+                Some(c) => c,
                 None => {
-                    notes.push("one leg bolted".into());
-                    true
+                    notes.push(if unequal {
+                        "one leg bolted, the short one".into()
+                    } else {
+                        "one leg bolted".into()
+                    });
+                    if unequal {
+                        ConnectedLeg::Short
+                    } else {
+                        ConnectedLeg::Long
+                    }
                 }
             };
-            let net = (a - holes * hole * t).max(0.0) * fy * if one_leg { 0.9 } else { 1.0 };
-            (net, "net section".to_owned())
+            // An unequal angle bolted by its short leg: its other leg no
+            // larger than the connected one (3.10.2).
+            let gross = match (leg, angle) {
+                (ConnectedLeg::Short, Some((long, short))) if long > short => {
+                    a - (long - short) * t
+                }
+                _ => a,
+            };
+            let one_leg = leg.one_leg();
+            let net = (gross - holes * hole * t).max(0.0) * fy * if one_leg { 0.9 } else { 1.0 };
+            let mut net = (net, "net section".to_owned());
+            // Block shear of an angle bolted by one leg (3.10.2, Eq.
+            // 3.10-1, Figure 3.5): checked whatever the bolt pattern's
+            // centroid, on the safe side.
+            if let (true, Some((long, short))) = (one_leg && b.count > 0, angle) {
+                let width = if leg == ConnectedLeg::Short {
+                    short
+                } else {
+                    long
+                };
+                match block_shear(d, end, &b, hole, t, width, fy, s.ultimate) {
+                    Ok((p, said)) => {
+                        if p < net.0 {
+                            net = (p, "block shear".to_owned());
+                            if let Some(w) = said {
+                                notes.push(w.into());
+                            }
+                        }
+                    }
+                    Err(why) => notes.push(format!("block shear not checked ({why})")),
+                }
+            }
+            net
         }
         (Some(_), None) => {
             notes.push("net section not checked (no thickness)".into());
@@ -645,6 +733,66 @@ fn end_check(
         tension,
         conn,
         tension_notes: notes,
+    }
+}
+
+/// Block shear (ASCE 10-97 Eq. 3.10-1): P = 0.60 A_v f_u + A_t f_y, A_v =
+/// t (e + (n − 1) s − (n − ½) d_h) along a bolt line of n bolts (the
+/// bolts shared out over the gauge lines), A_t = t (c − ½ d_h) from the
+/// line nearest the toe to the toe. The end distance and pitch from the
+/// end's connection, else the member's; the distance to the toe from the
+/// connection's gauges (the leg's width less the largest), else the edge
+/// distance (taken to the toe). Several gauge lines: with their gauges,
+/// the least of the outer line's block times the lines (the bolts sharing
+/// the force equally, 4.1) and the block of all lines (A_t from the inner
+/// line to the toe, less the other lines' holes); without them, the outer
+/// line's block alone carrying the whole force (on the safe side; said in
+/// the second value). Err: what is missing.
+#[allow(clippy::too_many_arguments)]
+fn block_shear(
+    d: &MemberDesign,
+    end: Option<&EndDesign>,
+    b: &Bolts,
+    hole: f64,
+    t: f64,
+    width: f64,
+    fy: f64,
+    fu: Option<f64>,
+) -> Result<(f64, Option<&'static str>), &'static str> {
+    let fu = fu.ok_or("no ultimate strength")?;
+    let e = end
+        .and_then(|e| e.end_distance)
+        .or(d.end_distance)
+        .ok_or("no end distance")?;
+    let lines = b.holes.unwrap_or(1).max(1);
+    let n = b.count.div_ceil(lines).max(1);
+    let pitch = if n > 1 {
+        end.and_then(|e| e.pitch).or(d.spacing).ok_or("no pitch")?
+    } else {
+        0.0
+    };
+    let gauges = end.map(|e| e.gauges.as_slice()).filter(|g| !g.is_empty());
+    let toe = match gauges {
+        Some(g) => width - g.iter().copied().fold(f64::MIN, f64::max),
+        None => end
+            .and_then(|e| e.edge_distance)
+            .or(d.edge_distance)
+            .ok_or("no edge distance")?,
+    };
+    let n = f64::from(n);
+    let av = (t * (e + (n - 1.0) * pitch - (n - 0.5) * hole)).max(0.0);
+    let block = |c: f64, holes: f64| 0.60 * av * fu + (t * (c - holes * hole)).max(0.0) * fy;
+    let outer = block(toe, 0.5);
+    if lines == 1 {
+        return Ok((outer, None));
+    }
+    match gauges.filter(|g| g.len() == lines as usize) {
+        Some(g) => {
+            let inner = g.iter().copied().fold(f64::MAX, f64::min);
+            let all = block(width - inner, f64::from(lines) - 0.5);
+            Ok((all.min(outer * f64::from(lines)), None))
+        }
+        None => Ok((outer, Some("block shear: the outer gauge line alone"))),
     }
 }
 
@@ -730,7 +878,8 @@ mod tests {
         m.members[1].design.thickness = Some(0.006);
         m.members[1].design.connected_leg = Some(crate::design::ConnectedLeg::Both);
         let holes = capacity(&m, 1, None);
-        let net = (10e-4 - 0.0175 * 0.006) * 355e6;
+        // The given hole taken as punched: + 1.6 mm (3.10.1).
+        let net = (10e-4 - (0.0175 + 0.0016) * 0.006) * 355e6;
         assert!(
             (holes.tension.as_ref().unwrap().0 - net).abs() < 1e-6,
             "{holes:?}"
@@ -861,6 +1010,113 @@ mod tests {
             c.compression_assumed
                 .iter()
                 .any(|a| a.contains("torsional buckling not checked"))
+        );
+    }
+
+    /// The connection rules of ASCE 10-97 by hand, on an unequal angle
+    /// 100 × 60 × 8 mm (no root radius; f_y 355, f_u 510 MPa) bolted by
+    /// its short leg with three M16 bolts (pitch 50 mm, end distance 20
+    /// mm, 25 mm to the toe, no hole given):
+    /// - the hole: standard (16 + 1.6) taken as punched, + 1.6: 19.2 mm;
+    /// - the area: the long leg counted as 60 mm (3.10.2): A − 40 × 8 mm²;
+    /// - net section: (1216 − 320 − 19.2 × 8) mm² × 355 × 0.9 = 237.2 kN;
+    /// - block shear (Eq. 3.10-1): A_v = 8 (20 + 2 × 50 − 2.5 × 19.2) =
+    ///   576 mm², A_t = 8 (25 − 9.6) = 123.2 mm², P = 0.6 × 576 × 510 +
+    ///   123.2 × 355 = 219.99 kN;
+    /// - bearing on the bolt's f_u when lower (4.4): 3 × 1.5 × 300 × 16 ×
+    ///   8 = 172.8 kN;
+    /// - bolt shear from f_ub alone on 0.6 of the gross area: 3 × 0.62 ×
+    ///   300 × 0.6 × 201.06 = 67.31 kN;
+    /// - a leg of w/t above 25 said (3.7.1).
+    #[test]
+    fn connection_rules_by_hand() {
+        use crate::design::{Bolts, ConnectedLeg};
+        use crate::model::{Member, MemberKind, Node, Section};
+        let p = ohl_sections::Section {
+            id: "L".into(),
+            name: String::new(),
+            description: String::new(),
+            shape: ohl_sections::Shape::UnequalAngle {
+                h: 0.1,
+                b: 0.06,
+                t: 0.008,
+                r: 0.0,
+            },
+            material: None,
+            given: ohl_sections::Given::default(),
+        };
+        let q = p.properties();
+        let mut s = Section::elastic("s", E, q.area, q.iy);
+        s.iz = q.iz;
+        s.i_min = q.iv;
+        s.yield_strength = Some(355e6);
+        s.ultimate = Some(510e6);
+        s.profile = Some(p);
+        let mut m = Model {
+            sections: vec![s],
+            ..Model::default()
+        };
+        m.nodes = vec![
+            Node::pinned("a", [0.0, 0.0, 0.0]),
+            Node::pinned("b", [0.0, 0.0, 2.0]),
+        ];
+        let mut b = Member::new("b", MemberKind::Truss, 0, 1, 0);
+        b.design.connected_leg = Some(ConnectedLeg::Short);
+        b.design.end_distance = Some(0.02);
+        b.design.spacing = Some(0.05);
+        b.design.edge_distance = Some(0.025);
+        b.design.bolts = Some(Bolts {
+            diameter: 0.016,
+            hole: None,
+            count: 3,
+            shear_planes: 1,
+            shear_capacity: None,
+            ultimate: Some(300e6),
+            holes: Some(1),
+        });
+        m.members = vec![b];
+        let c = capacity(&m, 0, None);
+        let gross = std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+        let shear = 3.0 * 0.62 * 300e6 * 0.6 * gross;
+        let (t, what) = c.tension.clone().unwrap();
+        assert!((t - shear).abs() < 1e-6, "{c:?}");
+        assert_eq!(what, "bolt shear");
+        // The bolts strong: bearing on the bolt's f_u, then block shear.
+        m.members[0].design.bolts.as_mut().unwrap().shear_capacity = Some(1e6);
+        let (t, what) = capacity(&m, 0, None).tension.unwrap();
+        assert!((t - 3.0 * 1.5 * 300e6 * 0.016 * 0.008).abs() < 1e-6, "{t}");
+        assert_eq!(what, "bearing");
+        m.members[0].design.bolts.as_mut().unwrap().ultimate = Some(800e6);
+        let c = capacity(&m, 0, None);
+        let (t, what) = c.tension.clone().unwrap();
+        let block = 0.6 * 576e-6 * 510e6 + 123.2e-6 * 355e6;
+        assert!((t - block).abs() < 1e-3, "{c:?}");
+        assert_eq!(what, "block shear");
+        // Without the block shear's data: the net section, short leg.
+        m.members[0].design.end_distance = None;
+        let c = capacity(&m, 0, None);
+        let net = (q.area - 0.04 * 0.008 - 0.0192 * 0.008) * 355e6 * 0.9;
+        let (t, what) = c.tension.clone().unwrap();
+        assert!((t - net).abs() < 1e-3, "{c:?}");
+        assert_eq!(what, "net section");
+        for n in [
+            "standard hole",
+            "holes punched",
+            "block shear not checked (no end distance)",
+        ] {
+            assert!(
+                c.tension_assumed.iter().any(|a| a.contains(n)),
+                "{n}: {c:?}"
+            );
+        }
+        // w/t: (100 − 8)/8 = 11.5 within 25; a 4 mm leg, 23, too; 3 mm, 31.
+        assert!(c.limit.is_none());
+        m.members[0].design.width_thickness = Some(31.0);
+        assert!(
+            capacity(&m, 0, None)
+                .limit
+                .unwrap()
+                .contains("w/t 31.0 above 25 (3.7.1)")
         );
     }
 

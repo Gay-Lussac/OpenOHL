@@ -13,8 +13,10 @@
 //!    other end's given value leaves);
 //! 3. **worked out** at an end with a `[[connection]]`, from what it (or
 //!    the member) gives: one leg bolted → eccentric, both legs → not; two
-//!    bolts or more onto a stiffer member (a larger area) or a plate →
-//!    restrained, one bolt → not;
+//!    bolts or more onto a member whose stiffness I/L is at least the sum
+//!    of those it restrains at the joint ([`restrains`], ASCE 10-97
+//!    C3.7.4 (b)) → restrained; one bolt, or bolts onto a gusset plate only
+//!    (3.7.4.5, C3.7.4 (c)) → not;
 //! 4. **assumed** as the check assumes without data: eccentric, not
 //!    restrained (on the safe side).
 //!
@@ -93,8 +95,10 @@ pub fn eccentric_from_leg(leg: ConnectedLeg) -> Option<bool> {
     }
 }
 
-/// Restrained from the bolts: two or more onto something stiffer yes, one
-/// (or none) no; none: no rule (two or more onto nothing stiffer).
+/// Restrained from the bolts: two or more onto something stiff enough
+/// ([`restrains`]) yes, one (or none) no; none: no rule (two or more onto
+/// nothing stiff enough). Bolts onto a gusset plate only never restrain
+/// (ASCE 10-97 3.7.4.5): pass `false`.
 pub fn restrained_from_bolts(count: u32, onto_stiffer: bool) -> Option<bool> {
     if count <= 1 {
         Some(false)
@@ -176,6 +180,47 @@ pub(crate) fn arriving(model: &Model, node: usize) -> Vec<(usize, Arriving)> {
         .collect()
 }
 
+/// Whether member `k` restrains the members bolted onto it at node `node`
+/// (ASCE 10-97 C3.7.4 (b)): its stiffness I/L at least the sum of theirs —
+/// every member at the joint whose end bolts onto `k` (given, else
+/// worked out: [`onto`]), but not `k`'s continuation in line (a leg's
+/// splice). I is each member's minor principal second moment: the
+/// restraining member's least, on the safe side; L its length. With the
+/// stiffness ratio, for the words.
+pub fn restrains(model: &Model, k: usize, node: usize) -> (bool, f64) {
+    let stiffness = |j: usize| {
+        let m = &model.members[j];
+        let l = model.length(m);
+        if l > 0.0 {
+            model.sections[m.section].i_min / l
+        } else {
+            0.0
+        }
+    };
+    let all = arriving(model, node);
+    let Some(dk) = all.iter().find(|(j, _)| *j == k).map(|(_, a)| a.direction) else {
+        return (false, 0.0);
+    };
+    let restrained: f64 = all
+        .iter()
+        .filter(|(j, a)| {
+            let in_line =
+                (0..3).map(|i| a.direction[i] * dk[i]).sum::<f64>() < -30f64.to_radians().cos();
+            let m = &model.members[*j];
+            let end = if m.i == node { 0 } else { 1 };
+            *j != k
+                && !in_line
+                && matches!(onto(model, *j, end), Some((Onto::Member(o), _)) if o == k)
+        })
+        .map(|(j, _)| stiffness(*j))
+        .sum();
+    if restrained <= 0.0 {
+        return (false, 0.0);
+    }
+    let ratio = stiffness(k) / restrained;
+    (ratio >= 1.0, ratio)
+}
+
 /// What end `end` (0 at its first joint, 1 at its second) of member
 /// `idx` bolts onto: given, else the joint's leg ([`joint_leg`]), worked
 /// out (true: given).
@@ -201,7 +246,6 @@ pub fn onto(model: &Model, idx: usize, end: usize) -> Option<(Onto, bool)> {
 pub fn end_conditions(model: &Model, idx: usize) -> EndConditions {
     let m = &model.members[idx];
     let d = &m.design;
-    let own_area = model.sections[m.section].area;
     let mut given_ecc = [None, None];
     let mut given_res = [None, None];
     let mut worked_ecc: [Option<(bool, String)>; 2] = [None, None];
@@ -225,23 +269,36 @@ pub fn end_conditions(model: &Model, idx: usize) -> EndConditions {
         let count = c.bolts.map(|b| b.count).or(d.bolts.map(|b| b.count));
         if let Some(n) = count {
             let onto = onto(model, idx, end).map(|o| o.0);
+            let node = if end == 0 { m.i } else { m.j };
             let (stiffer, what) = match &onto {
-                Some(Onto::Plate { id, .. }) => (true, format!("plate {id}")),
-                Some(Onto::Member(k)) => (
-                    model.sections[model.members[*k].section].area > own_area,
-                    model.members[*k].id.clone(),
-                ),
+                // A gusset plate alone never restrains (3.7.4.5).
+                Some(Onto::Plate { id, .. }) => (false, format!("plate {id} only")),
+                Some(Onto::Member(k)) => {
+                    let (yes, ratio) = restrains(model, *k, node);
+                    (
+                        yes,
+                        format!(
+                            "{} (I/L {ratio:.2} of those it holds)",
+                            model.members[*k].id
+                        ),
+                    )
+                }
                 Some(Onto::Other(o)) => (false, o.clone()),
                 None => (false, String::new()),
             };
-            worked_res[end] = restrained_from_bolts(n, stiffer).map(|v| {
-                let why = match (n, v) {
-                    (0, _) => "no bolts".to_owned(),
-                    (1, _) => "one bolt".to_owned(),
-                    _ => format!("{n} bolts onto {what}"),
+            worked_res[end] =
+                if n >= 2 && matches!(onto, Some(Onto::Plate { .. }) | Some(Onto::Member(_))) {
+                    Some((stiffer, format!("{n} bolts onto {what}")))
+                } else {
+                    restrained_from_bolts(n, stiffer).map(|v| {
+                        let why = match (n, v) {
+                            (0, _) => "no bolts".to_owned(),
+                            (1, _) => "one bolt".to_owned(),
+                            _ => format!("{n} bolts onto {what}"),
+                        };
+                        (v, why)
+                    })
                 };
-                (v, why)
-            });
         }
     }
     let (eccentric, eccentricity) = resolve(given_ecc, d.end_eccentricity, worked_ecc, true);
@@ -377,6 +434,7 @@ pub(crate) fn read_connections(
             kind: c.kind,
             leg: c.leg.map(connected_leg),
             holes: holes_of(&c),
+            gauges: c.gauges.iter().map(|g| g.si()).collect(),
             edge_distance: c.edge_distance.map(|l| l.si()),
             end_distance: c.end_distance.map(|l| l.si()),
             pitch: c.pitch.map(|l| l.si()),

@@ -170,7 +170,7 @@ bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm", grade = "8.8",
           shear_planes = 1, threads_in_shear = false }
 # or a bolt of a bolt library (its diameter, hole and grade; what is typed
 # here overrides it): bolts = { count = 2, bolt = "M16-8.8" }
-gauge_lines = 1           # 1 or 2
+gauge_lines = 1           # 1 to 3 (bolt rows along the leg; wide legs)
 gauges = ["30 mm"]        # from the heel along the leg bolted, one per line
 pitch = "50 mm"           # between bolts along a line
 end_distance = "30 mm"    # from the member's end to the first bolt
@@ -179,7 +179,7 @@ edge_distance = "25 mm"
 #   layout: along the member from the joint, across the leg from the heel
 # eccentric = true        # given instead of worked out (one leg bolted)
 # restrained = false      # given instead of worked out (two bolts or more
-#                         #   into a stiffer member or a plate)
+#                         #   onto a member stiff enough; never a plate alone)
 # eccentricity = "20 mm"  # given instead of worked out (gauge and section)
 # cut = "40 mm"           # where the steel stops from the work point (none:
 #                         #   worked out so it fits); the axis still runs to it

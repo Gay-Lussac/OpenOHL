@@ -237,6 +237,8 @@ pub struct EndDesign {
     /// Holes in one cross-section, from the layout (gauge lines, bolt
     /// points).
     pub holes: Option<u32>,
+    /// Gauges of its bolt lines from the heel along the leg bolted, m.
+    pub gauges: Vec<f64>,
     /// Edge distance, m.
     pub edge_distance: Option<f64>,
     /// End distance, m.

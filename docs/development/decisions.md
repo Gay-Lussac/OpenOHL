@@ -10,6 +10,48 @@ of Parts A, B and C).
 
 ## 2026-11-03
 
+**ASCE 10-97: the connection and end-restraint rules brought onto the
+safe side, as the standard says** (owner, 2026-11-03: "Please fix them to
+be on the safe side and according with the code"):
+
+- two bolts or more onto a **gusset plate only** no longer restrain the
+  end (3.7.4.5, C3.7.4 (c));
+- two bolts or more onto a **member** restrain the end only when its
+  stiffness I/L is at least the sum of those it restrains at the joint
+  (C3.7.4 (b); minor principal I, the restraining member's least), no
+  longer when its area is larger; the ratio is said;
+- **holes**: a standard hole (the bolt + 1.6 mm, 4.1) when none is given,
+  and every hole taken as punched, + 1.6 mm in the net section and block
+  shear (3.10.1) — was the bolt + 2 mm, given holes as they were;
+- **block shear** of an angle bolted by one leg (3.10.2, Eq. 3.10-1) is
+  checked, always (the standard: when the bolt pattern's centroid lies
+  outside the angle's centre of gravity);
+  several gauge lines with their gauges: the least of the outer line's
+  block times the lines (equal shares, 4.1) and the block of all lines;
+  without gauges, the outer line alone (said);
+- **up to three gauge lines** in a connection (owner, 2026-11-03: "On big
+  profiles up to 3 lines might be needed"; was 1 or 2): the file check,
+  OHL-Structure's bolt layout (every second line staggered by half a
+  pitch) and the checks;
+- an **unequal angle bolted by its short leg** counts its other leg no
+  larger than the connected one (3.10.2); one with no leg given is taken
+  as bolted by its short leg;
+- **bearing** on the lower f_u of the member and the bolt (4.4);
+- the **root area** of a bolt with only its f_ub is 0.6 of the gross
+  area (was 0.75), a 60° thread of pitch up to d/5.4;
+- an angle's **w/t above 25** is said (3.7.1).
+
+Results change (a real line's 73 towers, locally, against the commit
+before: compression unchanged, no connections in that import; tension
+lower for 31,833 of 161,937 members, median −1.0 % — the holes —, at
+most −33 % where block shear governs; tower maxima unchanged for 61 of
+72 towers, up to +2 % for 10, one +49 % from block shear of a member
+whose two holes per section come without gauges). Tension capacities fall where the net section, block
+shear or bearing governs, and members that were taken as restrained onto
+a plate or a member of larger area may lose it. The structure application
+shows a plate connection as not restrained; onto a member it leaves the
+restraint not given (the check works it out).
+
 **ASCE 10-97: the whole calculation on its own theory page; one constant
 corrected** (owner, 2026-11-03: "make sure the theory is complete for this
 code's calculation in the docs based on the asce 10 97 we can not just
