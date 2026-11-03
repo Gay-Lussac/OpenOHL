@@ -720,7 +720,7 @@ pub fn usage_with_sections(
                                 analyses.fe(t, structure, &factored, &r.case, case, &mut notes)
                             }),
                             type_def.and_then(|t| {
-                                analyses.pole(t, &factored, &r.case, case, &mut notes)
+                                analyses.pole(t, structure, &factored, &r.case, case, &mut notes)
                             }),
                         )
                     } else {
@@ -743,7 +743,14 @@ pub fn usage_with_sections(
                                 analyses.fe(t, structure, &factored, &r.case, case, &mut each_notes)
                             }));
                             let p = mark(type_def.and_then(|t| {
-                                analyses.pole(t, &factored, &r.case, case, &mut each_notes)
+                                analyses.pole(
+                                    t,
+                                    structure,
+                                    &factored,
+                                    &r.case,
+                                    case,
+                                    &mut each_notes,
+                                )
                             }));
                             approximate |= f.as_ref().is_some_and(|c| c.approximate);
                             fe = worse(fe, f);

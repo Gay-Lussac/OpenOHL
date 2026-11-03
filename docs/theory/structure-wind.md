@@ -202,6 +202,122 @@ force, the far ones none.
   an angle's open side as if filled. **Simplification:** the faces'
   solidity ratios and the shielding stay those of the bare members.
 
+## Direction, ice and snow on the structure (2026-11-03)
+
+Implemented in `crates/ohl-loads/src/options.rs` (`WindDirection`,
+`StructureOptions`, `IceOn`, `SnowOn`, `snow_load`),
+`crates/ohl-loads/src/analysis.rs` (`body_weights`, `pole_ice`, the
+**fe** and **pole** checks) and `crates/ohl-loads/src/body.rs`
+(`add_structure_loads`), from a load case's `[case.structure]` table
+(file version 4, [Load cases](../user-guide/loads.md#version-4-removed-conductors-several-broken-wires-the-winds-direction-ice-and-snow-on-the-structures)).
+Built, in active development (not approved yet).
+
+### The wind's direction
+
+The structure's axes: \\( x \\) to the right of the line looking ahead,
+\\( y \\) ahead, \\( z \\) up. A load case gives where the wind on the
+structure bodies comes **from** as an angle \\( \theta \\): 0° from the
+right, counted towards ahead (90° from ahead, 180° from the left, 270°
+from behind); the names `right`, `ahead`, `left`, `back` are 0°, 90°,
+180°, 270°, as OHL-Structure's wind on the body. It blows towards
+
+\\[ \hat{\mathbf w} = (-\cos\theta,\; -\sin\theta,\; 0). \\]
+
+Without a direction the wind blows across the line from the side of the
+wind on the wires, as before. The wires keep that side: the direction is
+the structure bodies' only.
+
+- **Member wind (fe check):** the force of [Member force](#member-force)
+  for \\( \hat{\mathbf w} \\), faces and shielding found for it — exact
+  within that model.
+- **Pole:** the pressure as a vector \\( q\,\hat{\mathbf w} \\) on the
+  shaft (the pole is round or polygonal: its area is the same from every
+  side; **Simplification:** a polygon's drag taken the same from every
+  side).
+- **Wind bands:** a band holds one area \\( A \\), the one a wind across
+  the line meets, and a drag \\( c \\). A wind from another direction
+  takes the same area: \\( \mathbf F = q\,c\,A\,\hat{\mathbf w} \\), so a
+  wind from ahead gives a longitudinal load of \\( q c A \\).
+  **Simplification, not on the safe side:** a structure usually shows
+  more area along the line (its crossarms seen in full, the body's other
+  face) — the longitudinal load is then too low; and at an angle the
+  force is taken along the wind, not by the components of each face.
+  Exact: a band area per direction (not in the type format yet), or the
+  member wind of a level 3 structure.
+
+### Ice on the structure
+
+A radial thickness \\( t \\) (the case's, or each structure's local
+`structure_ice`) of density \\( \rho \\) (the case's `ice_density`, else
+the weather case's; without either the case is refused — no density is
+assumed).
+
+- **Members (fe check):** on every member with a profile from the
+  cross-section library, the ice all round its outline of perimeter
+  \\( P \\) (the outline's outer edge: an angle's inside faces too):
+  \\[ w = \rho\, g\, (P\,t + \pi t^2) \quad \text{per metre}, \\]
+  half of each member's at each end, down, times the load case's
+  vertical factor; the member \\( 2t \\) wider for the member wind, as
+  OHL-Structure's ice in a load recipe.
+  **Conservative:** the ice all round the outline, inside an angle's legs
+  too, and the iced outline not rounded (owner 2026-10-25, the rule of
+  OHL-Structure).
+  **Simplification, not on the safe side:** members without a profile
+  (sections given by their values only) take no ice, and gusset plates
+  and bolts none (the notes count the members left out). Exact: every
+  member's outline, the plates.
+- **Pole:** the shaft above the ground, cut in 8 pieces of equal height,
+  each \\( \rho\, g\, (\pi D t + \pi t^2) \\) per metre with \\( D \\) its
+  diameter at the piece's middle, as vertical loads on the axis; the wind
+  on the iced pole is the pressure times \\( (D_{top} + 2t)/D_{top} \\).
+  **Conservative:** that factor, the largest ratio along the pole (at the
+  top, the smallest diameter), for the whole shaft.
+  **Simplification, not on the safe side:** a polygonal shaft's perimeter
+  taken as \\( \pi D \\) (a polygon's is larger by its corners).
+- **Wind bands only (level 1 and 2 types):** no surface to put the ice
+  on: none counted, the notes name the structures. **Not on the safe
+  side.** Exact: a type with members or a pole.
+
+### Snow on the structure
+
+The snow load on a horizontal surface by SIA 261:2014 (9):
+
+\\[ q_k = \mu\, C_e\, C_T\, s_k, \\]
+
+\\( s_k \\) the snow on the ground at the structure (its local
+`snow_ground`, or by SIA 261 (10) from its reference altitude
+`snow_altitude`, see [Finite-element wire systems](wirefe.md)); none where
+neither is given (said). Defaults: \\( \mu = 0.8 \\) (SIA 261 5.3.4, the
+coefficient where the snow cannot slide off), \\( C_e = 1.0 \\) (5.2.4,
+normal exposure), \\( C_T = 1.0 \\) (5.2.5); each may be given.
+
+- **Members (fe check):** on every member with a profile, \\( q_k \\)
+  times its plan — the profile's width seen from above times the member's
+  length projected on the ground (\\( d\,L\,\sin\varphi \\), \\( \varphi \\)
+  its angle to the vertical: a leg none, a horizontal its full length) —
+  half at each end, down, times the vertical factor.
+  **Assumption:** μ = 0.8 is the standard's value for roofs where the snow
+  cannot slide; a pylon is not a roof — taken for its horizontal
+  surfaces, the owner's choice, to be confirmed by the engineer.
+  **Conservative:** the snow on every member's plan, the inclined ones too
+  (snow slides off a steep member), overlapping members counted twice.
+  **Simplification, not on the safe side:** snow bridging between members
+  (a crossarm's plan bracing filled, a platform) not counted, nor on
+  plates; members without a profile none.
+- **Pole:** none (no horizontal surface but its top; said).
+- **Wind bands only:** none (no plan area; said, not on the safe side).
+
+### Where these loads go
+
+The **fe** and **pole** checks take them on their members and shaft. The
+loads listed per structure ("ice on the structure", "snow on the
+structure": the same weights, down, at their centroid on the structure's
+axis) are data for the reports; the allowable loads at the attachments
+(Method 2, load trees) take no load without a point, as the wind bands:
+**Simplification:** the type's allowable loads are taken to allow for its
+own body's ice and snow (unsafe where they do not). Exact: the
+fe or pole check.
+
 ## Validation
 
 `benchmarks/structures-fe/member_wind.toml`: an invented square lattice

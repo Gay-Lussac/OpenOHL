@@ -37,6 +37,7 @@ The names are those of the line file:
              earthing_resistance_ohm="6.2">         <!-- its earthing (footing), Ω (2026-10-29) -->
     <weather_group name="…"/>                   <!-- its weather case groups (the structure override) -->
     <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa) -->
+    <load_case name="…"/>                       <!-- its load cases (2026-11-03); none: its type's, else every case -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" length="…" angle_deg="…" direction_deg="…" weight="…" wind_area="…"
@@ -108,6 +109,7 @@ The names are those of the line file:
   <structure_loads condition="creep">           <!-- Criteria › Loads for structures; default as strung, no weather case -->
     <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->
     <broken_case name="…"/>                     <!-- version 9: a load case with a broken wire, its weather case with the wire broken -->
+    <type_cases type="…"><case name="…"/></type_cases>  <!-- a structure type's default load cases (2026-11-03) -->
   </structure_loads>
   <electrical soil_resistivity_ohm_m="100" earthing_resistance_ohm="10" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
 </line>

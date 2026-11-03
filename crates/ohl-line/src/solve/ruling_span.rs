@@ -367,6 +367,7 @@ pub(super) fn solve_rs(
         span_points: Vec::new(),
         spacers: Vec::new(),
         broken: None,
+        broken_spans: Vec::new(),
     })
 }
 

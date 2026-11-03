@@ -91,6 +91,61 @@ What is solved: in the case's weather and condition, the section with the wire o
 
 The case's factors apply as to any case. A file is written at version 3 only when a case has a broken wire (the Load cases library raises it, a design-code plugin writes it so); older programs refuse it as "newer". In the Load cases library page the field `broken` is offered as `{ section = …, span = … }`.
 
+### Version 4: removed conductors, several broken wires, the wind's direction, ice and snow on the structures
+
+Built, in active development, not approved yet (owner 2026-11-03; the computation and the file, from the command line and the Structure loads page; the form in the Load cases library comes later). A file is written at version 4 only when a case uses one of these values; older programs refuse it as "newer", and versions 1 to 3 read as before.
+
+```toml
+format = "ohl-load-cases"
+version = 4
+
+[[case]]
+name = "stringing at T7"
+weather = "strong wind"
+wind_from = "left"          # the wires' wind side in this case (default: the weather case's)
+use_local = true            # take the structures' local conditions
+
+[case.structure]
+direction = 90              # the wind on the structure bodies: "right", "left", "ahead", "back" or degrees
+ice = true                  # the structures' local ice; or a thickness, "20 mm"
+ice_density = "900 kg/m³"   # default: the weather case's
+snow = true                 # snow on the structures from their snow on the ground
+snow_shape = 0.8            # μ (default 0.8)
+snow_exposure = 1.0         # C_e (default 1.0)
+snow_thermal = 1.0          # C_T (default 1.0)
+
+[[case.removed]]            # a conductor not there in this case (several allowed)
+section = "S3"
+set = 2                     # optional check
+
+[[case.broken]]             # several broken wires, broken together
+section = "S1"
+span = 2
+[[case.broken]]
+section = "S1"
+span = 3
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `wind_from` | the weather case's | `"left"` or `"right"`: the side the wind on the wires comes from in this case. Only meaningful when the weather case has wind: in a case without wind it has no effect, and the case's notes say so. |
+| `use_local` | false | The case takes the structures' local conditions ([Line file](line-file.md)): the wires solved with each span's local wind and ice for strength (from its two structures' `wind_static` and `wire_ice`, the worst or the mean as the line says), the wind on each structure body times its `wind_static`. |
+| `[[case.removed]]` | none | **Removed conductors** (owner: "a removed conductor option and broken is only used for actually broke cables"): a construction state, e.g. a tension mast with some phases not yet strung. The section's wire is absent in that case: all its spans are left out of the solve, its loads on every structure are 0; the other sections solve as usual. Jumpers with an end on its wire points only (or on its span points) and spacers on it are left out too. `set`: a check that one of the section's points is of that set. A section not in the line, or removed twice, or both removed and broken, is refused. |
+| `[[case.broken]]` | none | **Broken wires** (actual breaks): several per case; all the spans listed are broken **together**, in one solve per section — two spans of one section broken: both gone in that solve, a point between two broken spans then holds no wire (its strings hang under their own weight). `span = "every"` keeps its meaning (each span of that section in turn, the envelope and each break on its own as above), the other broken wires broken in each of those solves; it may not be combined with another broken span of the same section, nor given twice in a case (refused: give them in separate cases). The version-3 single `[case.broken]` table still reads as one broken wire. |
+| `direction` | the wires' side | Where the wind on the structure bodies comes **from**, looking ahead along the line: `"right"` (0°), `"ahead"` (90°), `"left"` (180°), `"back"` (270°), or an angle in degrees, 0° from the right counted towards ahead — the structure's axes are x to the right of the line, y ahead, so the wind blows towards (−cos θ, −sin θ). The names are those of OHL-Structure's wind on the body. The wires keep their side (`wind_from`): a wind along the line on the wires is not modelled. |
+| `ice` | none | Ice on the structure bodies: `true`, each structure's local ice (`structure_ice` of its local conditions; none where it gives none), or a radial thickness for every structure. |
+| `ice_density` | the weather case's | kg/m³. Without it and without the weather case's `ice_density` the case is refused when computed — no density is made up. |
+| `snow` | false | Snow on the structures' horizontal surfaces: q = μ · C_e · C_T · s_k (SIA 261:2014 (9)), s_k each structure's snow on the ground (its local `snow_ground`, or SIA 261 (10) from its `snow_altitude`); none where it gives neither (the notes list them). |
+| `snow_shape`, `snow_exposure`, `snow_thermal` | 0.8, 1.0, 1.0 | μ, C_e and C_T: μ = 0.8 is SIA 261 5.3.4's coefficient where the snow cannot slide off, taken for a pylon's horizontal surfaces as an assumption; C_e = 1.0 normal exposure (5.2.4), C_T = 1.0 (5.2.5). Give them only with `snow = true`. |
+
+**Where the wind on the bodies blows from another direction:** the wind bands give one area, the one a wind across the line meets; a wind from another direction takes that same area, its force along the direction it blows (|F| = q · c · A), so a wind from ahead gives a longitudinal load. This is an approximation and **not on the safe side** where the structure shows more area along the line (its crossarms seen in full). The member wind of the **fe** check and the wind on a pole follow the direction exactly as their own models do ([theory](../theory/structure-wind.md#direction-ice-and-snow-on-the-structure-2026-11-03)).
+
+**Where the ice and snow go:** on the members of the structure's model (members with a profile from the cross-section library; the **fe** check, ice all round each member's outline and snow on each member's plan), on a pole's shaft (ice; no snow on a pole), each times the vertical factor; and listed per structure as loads without a point, "ice on the structure" and "snow on the structure", down at the weights' centroid. A type with only wind bands or attachment points gives no surface: the ice and snow are then not counted, and the case's notes name those structures (not on the safe side). The allowable loads at the attachments (Method 2) take no load without a point — as the wind bands. Every assumption is in the [theory](../theory/structure-wind.md#direction-ice-and-snow-on-the-structure-2026-11-03).
+
+**Per-pylon load case sets** (owner: "on each pylon you should have a load case for structure that can be different per structure and composed of cases from the library"): a structure may list the cases of the line's load case library it takes (line file `load_cases`), a structure type a default for its structures (`structure_loads.type_load_cases`); a structure listing none takes its type's, else every case. A structure's loads are computed only in its cases: in another case it has none (the notes list it). A name not in the library is said in the notes when the loads are computed (the library may change after the line was written). The form for these lists comes with the Load cases library's form.
+
+**Notes.** Each case's notes say what was assumed: the wires' wind side, the local conditions, the conductors removed (and the jumpers and spacers left out with them), the wires broken, the structures not in its set, the direction of the wind on the bodies, the ice and snow and where they were not counted. `ohl line … --load-cases` prints them under each case.
+
 Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.ohllc` only shows the format.
 
 In a project, the load case files are kept in the project like the other libraries (Line › Criteria › Load cases library edits them).

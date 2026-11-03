@@ -105,6 +105,7 @@ fn without_component(
         soil_resistivity_ohm_m: None,
         earthing_resistance_ohm: None,
         local: Default::default(),
+        load_cases: Vec::new(),
         id: String::new(),
         position: [0.0; 3],
         orientation_deg: 0.0,
