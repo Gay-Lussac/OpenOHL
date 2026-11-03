@@ -3414,17 +3414,6 @@ mod tests {
     /// A run of spans goes on past another line's spans listed among its
     /// own (a crossing line placed along the route between them), and
     /// follows the right branch where two spans leave one structure.
-    /// A run of spans goes on past another line's spans listed among its
-    /// own (a crossing line placed along the route between them), and
-    /// follows the right branch where two spans leave one structure.
-    #[test]
-    #[ignore]
-    fn tmp_real_run() {
-        let line: ohl_line::Line = serde_json::from_str(&std::fs::read_to_string("line.json").unwrap()).unwrap();
-        let spans = line_spans(&line);
-        eprintln!("RUN {:?}", run_spans(&spans, "T16", "A23"));
-    }
-
     #[test]
     fn runs_skip_spans_listed_in_between() {
         let span = |a: &str, b: &str| LineSpan {
