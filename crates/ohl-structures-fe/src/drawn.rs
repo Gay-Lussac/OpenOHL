@@ -327,9 +327,7 @@ pub fn outline(shape: &Shape) -> Vec<[f64; 2]> {
         Shape::DoubleAngle { .. }
         | Shape::StarAngle { .. }
         | Shape::CrossAngle { .. }
-        | Shape::DoubleChannel { .. } => {
-            shape.built_up_outline().unwrap_or_default()
-        }
+        | Shape::DoubleChannel { .. } => shape.built_up_outline().unwrap_or_default(),
     };
     let c = centroid(&poly);
     poly.iter().map(|p| [p[0] - c[0], p[1] - c[1]]).collect()
