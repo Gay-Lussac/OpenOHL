@@ -58,9 +58,10 @@ fn a_connection_and_a_plate_are_read() {
     );
 }
 
-/// Several plates at one joint, one of them welded onto the leg
-/// (2026-11-03); a plate without a kind is bolted (files before read as
-/// they were); an unknown kind refused.
+/// Several plates at one joint, one of them of the 2026-11-03 kind
+/// `welded` (then: welded onto the leg; since 2026-11-04 read as a plate
+/// of the joint's welded plate, said); a plate without a kind is bolted;
+/// an unknown kind refused.
 #[test]
 fn several_plates_and_a_welded_one_are_read() {
     use crate::connections::PlateKind;
@@ -74,8 +75,43 @@ fn several_plates_and_a_welded_one_are_read() {
     assert_eq!(t.plates[0].kind(), PlateKind::Bolted);
     assert_eq!(t.plates[0].kind, None);
     assert_eq!(t.plates[1].kind(), PlateKind::Welded);
-    assert!(t.connection_notes().is_empty());
+    // Alone of its kind: a plate, said.
+    assert_eq!(t.welded_assemblies("N2").len(), 2);
+    let notes = t.connection_notes();
+    assert!(
+        notes.len() == 1 && notes[0].contains("G2") && notes[0].contains("read as a plate"),
+        "{notes:?}"
+    );
     assert!(parse(&text.replace("\"welded\"", "\"glued\"")).is_err());
+}
+
+/// A welded plate (owner 2026-11-04): plates welded to each other
+/// (`welded_to`, read both ways, through others too) are one assembly; a
+/// plate welded to none of its joint is said, to itself refused.
+#[test]
+fn plates_welded_together_are_one_assembly() {
+    let text = format!(
+        "{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\nwelded_to = [\"G1\"]\n\
+         [[plate]]\nid = \"G3\"\njoint = \"N2\"\nthickness = \"10 mm\"\nwelded_to = [\"G2\"]\n\
+         [[plate]]\nid = \"G4\"\njoint = \"N2\"\nthickness = \"10 mm\"\n"
+    );
+    let t = parse(&text).unwrap();
+    assert_eq!(
+        t.welded_assemblies("N2"),
+        vec![
+            vec!["G1".to_owned(), "G2".to_owned(), "G3".to_owned()],
+            vec!["G4".to_owned()]
+        ]
+    );
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    let t = parse(&text.replace("welded_to = [\"G2\"]", "welded_to = [\"G7\"]")).unwrap();
+    assert!(t.connection_notes()[0].contains("welded to G7"));
+    assert!(parse(&text.replace("welded_to = [\"G2\"]", "welded_to = [\"G3\"]")).is_err());
 }
 
 /// Three gauge lines (a wide leg, owner 2026-11-03), one gauge each.

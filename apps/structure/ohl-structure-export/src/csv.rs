@@ -363,6 +363,7 @@ fn plates(s: &ExportStructure) -> String {
             "material",
             "outline_m",
             "kind",
+            "welded_to",
         ],
         s.plates
             .iter()
@@ -378,6 +379,7 @@ fn plates(s: &ExportStructure) -> String {
                         .collect::<Vec<_>>()
                         .join(";"),
                     p.kind.map(|k| k.as_str().to_owned()).unwrap_or_default(),
+                    p.welded_to.join(";"),
                 ]
             })
             .collect(),

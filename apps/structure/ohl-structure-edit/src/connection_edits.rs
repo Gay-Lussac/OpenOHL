@@ -6,12 +6,14 @@
 //! 2026-11-02, stage 3 of the joint details): a field of a member end
 //! given or cleared, a member end's connection copied to others (the
 //! similar joints, a member group or class), cleared, saved as a preset
-//! or a preset applied; plates added, changed, removed. Each a function
+//! or a preset applied; plates added, changed, removed, welded together
+//! (a welded plate, 2026-11-04: [`set_welded_to`], [`make_welded_plates`]).
+//! Each a function
 //! on the file's text; the file is raised to version 9 when it holds
 //! connections or plates.
 
 use ohl_structures::StructureType;
-use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES, PlateKind};
+use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES};
 use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::edits::{array, next_id, raise_version};
@@ -322,6 +324,21 @@ pub fn copy_ends(doc: &mut DocumentMut, t: &StructureType, ends: &[CopyEnd]) -> 
         }
         tidy(doc);
     }
+    // The copied plates welded as their sources were (at the same target
+    // joint).
+    for ((src, joint), new) in &plates {
+        let Some(p) = t.plates.iter().find(|p| &p.id == src) else {
+            continue;
+        };
+        let to: Vec<String> = p
+            .welded_to
+            .iter()
+            .filter_map(|o| plates.get(&(o.clone(), joint.clone())).cloned())
+            .collect();
+        if !to.is_empty() {
+            let _ = set_welded_to(doc, new, &to);
+        }
+    }
     given
 }
 
@@ -364,15 +381,9 @@ fn plate_ids(doc: &DocumentMut) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Adds a plate at `joint`, `thickness` m thick, bolted or welded onto the
-/// joint's leg (a joint may have several); its id (`G1`, `G2`…).
-pub fn add_plate(
-    doc: &mut DocumentMut,
-    t: &StructureType,
-    joint: &str,
-    thickness: f64,
-    kind: PlateKind,
-) -> String {
+/// Adds a plate at `joint`, `thickness` m thick (a joint may have
+/// several); its id (`G1`, `G2`…).
+pub fn add_plate(doc: &mut DocumentMut, t: &StructureType, joint: &str, thickness: f64) -> String {
     let taken: Vec<String> = t
         .plates
         .iter()
@@ -386,17 +397,15 @@ pub fn add_plate(
     x.insert("id", toml_edit::value(id.clone()));
     x.insert("joint", toml_edit::value(joint));
     x.insert("thickness", Item::Value(mm(thickness)));
-    if kind != PlateKind::default() {
-        x.insert("kind", toml_edit::value(kind.as_str()));
-    }
     array(doc, "plate").push(x);
     raise_version(doc, i64::from(CONNECTIONS_VERSION));
     id
 }
 
-/// A plate's kind: bolted (the default, written as no key) or welded onto
-/// the joint's leg.
-pub fn set_plate_kind(doc: &mut DocumentMut, id: &str, kind: PlateKind) -> Result<(), String> {
+/// The plates plate `id` is welded to (`welded_to`; empty: the key
+/// removed). The 2026-11-03 `kind` is dropped: the welding is now the
+/// plates' own relation ([`ohl_structures::StructureType::welded_assemblies`]).
+pub fn set_welded_to(doc: &mut DocumentMut, id: &str, to: &[String]) -> Result<(), String> {
     let t = doc
         .get_mut("plate")
         .and_then(Item::as_array_of_tables_mut)
@@ -405,12 +414,149 @@ pub fn set_plate_kind(doc: &mut DocumentMut, id: &str, kind: PlateKind) -> Resul
                 .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
         })
         .ok_or_else(|| format!("no plate {id}"))?;
-    if kind == PlateKind::default() {
-        t.remove("kind");
+    if to.iter().any(|x| x == id) {
+        return Err(format!("plate {id}: not welded to itself"));
+    }
+    t.remove("kind");
+    if to.is_empty() {
+        t.remove("welded_to");
     } else {
-        t.insert("kind", toml_edit::value(kind.as_str()));
+        let mut a = toml_edit::Array::new();
+        for x in to {
+            a.push(x.as_str());
+        }
+        t.insert("welded_to", Item::Value(Value::Array(a)));
     }
     Ok(())
+}
+
+/// Plates `a` and `b` (of one joint) welded to each other (`on`) or not:
+/// written as `a`'s `welded_to` (taken off both when not). The joint's
+/// plates of the 2026-11-03 `kind = "welded"` are first written as what
+/// they are read as (each welded to the one before it), their kind
+/// dropped.
+pub fn weld_pair(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    a: &str,
+    b: &str,
+    on: bool,
+) -> Result<(), String> {
+    let (Some(pa), Some(pb)) = (
+        t.plates.iter().find(|p| p.id == a),
+        t.plates.iter().find(|p| p.id == b),
+    ) else {
+        return Err(format!("no plates {a} and {b}"));
+    };
+    if a == b || pa.joint != pb.joint {
+        return Err(format!(
+            "plates {a} and {b}: two plates of one joint are welded to each other"
+        ));
+    }
+    let given = |id: &str| -> Vec<String> {
+        t.plates
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.welded_to.clone())
+            .unwrap_or_default()
+    };
+    let mut lists: std::collections::BTreeMap<String, Vec<String>> = t
+        .plates
+        .iter()
+        .filter(|p| p.joint == pa.joint)
+        .map(|p| (p.id.clone(), given(&p.id)))
+        .collect();
+    // The 2026-11-03 kind as it is read.
+    let legacy: Vec<&str> = t
+        .plates
+        .iter()
+        .filter(|p| {
+            p.joint == pa.joint && p.kind() == ohl_structures::connections::PlateKind::Welded
+        })
+        .map(|p| p.id.as_str())
+        .collect();
+    for w in legacy.windows(2) {
+        let l = lists.entry(w[1].to_owned()).or_default();
+        if !l.iter().any(|x| x == w[0]) {
+            l.push(w[0].to_owned());
+        }
+    }
+    if on {
+        let related = lists.get(a).is_some_and(|l| l.iter().any(|x| x == b))
+            || lists.get(b).is_some_and(|l| l.iter().any(|x| x == a));
+        if !related {
+            lists.entry(a.to_owned()).or_default().push(b.to_owned());
+        }
+    } else {
+        for (x, y) in [(a, b), (b, a)] {
+            if let Some(l) = lists.get_mut(x) {
+                l.retain(|o| o != y);
+            }
+        }
+    }
+    for (id, l) in &lists {
+        let before = given(id);
+        let was_legacy = legacy.contains(&id.as_str());
+        if *l != before || was_legacy {
+            set_welded_to(doc, id, l)?;
+        }
+    }
+    Ok(())
+}
+
+/// A welded plate at `joint` (owner 2026-11-04: "multiple plates are
+/// welded to be able to reach every member bolts that come on the
+/// joint"): the joint's plates replaced by one plate per group of
+/// `groups` (members lying in one plane, `ohl_structure_link::welded_plan`),
+/// `thickness` m thick, each welded to the ones before it, each member of
+/// a group bolted onto its plate (`onto`; its other fields kept). The
+/// plates' outlines are left to be worked out round their bolts (the
+/// code's edge distances kept). The new plates' ids.
+pub fn make_welded_plates(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    joint: &str,
+    groups: &[Vec<String>],
+    thickness: f64,
+) -> Vec<String> {
+    for p in t.plates.iter().filter(|p| p.joint == joint) {
+        remove_plate(doc, &p.id);
+    }
+    // Ids not taken by the plates kept or the members.
+    let mut taken: Vec<String> = t
+        .plates
+        .iter()
+        .filter(|p| p.joint != joint)
+        .map(|p| p.id.clone())
+        .chain(t.members.iter().map(|m| m.id.clone()))
+        .collect();
+    let like = t.plates.first().map_or("G1", |p| p.id.as_str()).to_owned();
+    let mut ids: Vec<String> = Vec::new();
+    for g in groups {
+        let id = next_id(taken.iter().map(String::as_str), &like);
+        taken.push(id.clone());
+        let mut x = Table::new();
+        x.insert("id", toml_edit::value(id.clone()));
+        x.insert("joint", toml_edit::value(joint));
+        x.insert("thickness", Item::Value(mm(thickness)));
+        if !ids.is_empty() {
+            let mut a = toml_edit::Array::new();
+            for w in &ids {
+                a.push(w.as_str());
+            }
+            x.insert("welded_to", Item::Value(Value::Array(a)));
+        }
+        array(doc, "plate").push(x);
+        for m in g {
+            find_or_make(doc, m, joint).insert("onto", toml_edit::value(id.clone()));
+        }
+        ids.push(id);
+    }
+    if !ids.is_empty() {
+        raise_version(doc, i64::from(CONNECTIONS_VERSION));
+    }
+    tidy(doc);
+    ids
 }
 
 /// A plate's thickness (m) or material (empty: none).
@@ -444,10 +590,23 @@ pub fn set_plate(
     Ok(())
 }
 
-/// Removes plate `id`; the connections onto it lose their `onto`.
+/// Removes plate `id`; the connections onto it lose their `onto`, the
+/// plates welded to it no longer name it.
 pub fn remove_plate(doc: &mut DocumentMut, id: &str) {
     if let Some(a) = doc.get_mut("plate").and_then(Item::as_array_of_tables_mut) {
         a.retain(|t| t.get("id").and_then(Item::as_str) != Some(id));
+        for t in a.iter_mut() {
+            let empty = match t.get_mut("welded_to").and_then(Item::as_array_mut) {
+                Some(w) => {
+                    w.retain(|v| v.as_str() != Some(id));
+                    w.is_empty()
+                }
+                None => false,
+            };
+            if empty {
+                t.remove("welded_to");
+            }
+        }
         if a.is_empty() {
             doc.remove("plate");
         }

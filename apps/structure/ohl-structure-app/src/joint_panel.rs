@@ -86,6 +86,9 @@ pub struct JointPanel {
     /// The Edit tool's question: open this joint or member in the Detail
     /// view?
     pub ask_open: Option<Handle>,
+    /// The close-up's pieces and mesh kept between frames
+    /// ([`crate::close_up::CloseUpCache`]).
+    pub close_up: crate::close_up::CloseUpCache,
 }
 
 /// What the Detail view's Edit tool picked.
@@ -282,7 +285,13 @@ impl StructureApp {
         let Some(t) = t else {
             return;
         };
-        let mut acts = crate::joint_tools::joint_bar(ui, details, j, &mut self.buffers);
+        let mut acts = flat_notes(ui, &t, j);
+        acts.extend(crate::joint_tools::joint_bar(
+            ui,
+            details,
+            j,
+            &mut self.buffers,
+        ));
         let presets = self.presets();
         acts.extend(crate::joint_tools::table(
             ui,
@@ -354,6 +363,18 @@ impl StructureApp {
                 }
                 ui.strong(format!("Member {}", m.member));
             });
+            // Its roll, turned here too (2026-11-04).
+            let t = self.file.as_ref().map(|f| f.structure_arc());
+            if let Some(t) = t {
+                let ends = crate::roll_ui::flat_ends(details, &m.member);
+                let roll = crate::roll_ui::roll_of(&t, &m.member);
+                if let Some(r) = crate::roll_ui::roll_control(ui, &m.member, roll, &ends) {
+                    self.apply_joint_acts(
+                        vec![crate::joint_tools::Act::Roll(m.member.clone(), r)],
+                        details,
+                    );
+                }
+            }
             let leg = ohl_structure_link::flat_leg(&m);
             crate::detail_tools::strip(ui, self.joints.tool, leg.is_some());
             let ends: Vec<(String, String)> = m
@@ -501,7 +522,9 @@ impl StructureApp {
                     let s = ui.input(|i| i.smooth_scroll_delta.y);
                     self.joints.zoom = (self.joints.zoom + s * 0.002).clamp(-1.5, 2.5);
                 }
-                crate::close_up::paint(&painter, rect, j, &self.joints, ui.visuals().dark_mode);
+                let key = self.joints.details.as_ref().map_or((0, 0), |d| d.0);
+                let dark = ui.visuals().dark_mode;
+                crate::close_up::paint(&painter, rect, j, &mut self.joints, key, dark);
             }
             Drawn::Face => {
                 let view = ohl_structure_link::face_view(j, &face);
@@ -602,6 +625,63 @@ impl StructureApp {
     }
 }
 
+/// The members whose leg bolted does not lie flat on what it bolts onto,
+/// each with a one-click fix (its roll turned so it does; owner
+/// 2026-11-04), and the notes on the member ends.
+fn flat_notes(
+    ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
+    j: &JointDetail,
+) -> Vec<crate::joint_tools::Act> {
+    let mut acts = Vec::new();
+    for a in &j.arrivals {
+        if let Some(f) = a.flat
+            && f.off > ohl_structure_link::FLAT_OFF
+            && let Some(o) = a.onto.value.as_ref()
+        {
+            let what = if j.plates.iter().any(|p| &p.id == o) {
+                "plate"
+            } else {
+                "leg of"
+            };
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    format!(
+                        "{}: {}{} bolted face {:.0}° off the {what} {o} — turn it",
+                        j.id,
+                        a.member,
+                        a.profile
+                            .as_ref()
+                            .map_or(String::new(), |p| format!(" ({})", p.section)),
+                        f.off
+                    ),
+                );
+                if ui
+                    .small_button("Turn it flat")
+                    .on_hover_text(format!(
+                        "Its roll turned by {:+.1}° so its leg bolted lies flat on {o} (one undo \
+                         step; its other end follows, and its axes for the analysis)",
+                        f.turn.to_degrees()
+                    ))
+                    .clicked()
+                {
+                    let roll = crate::roll_ui::roll_of(t, &a.member) + f.turn;
+                    acts.push(crate::joint_tools::Act::Roll(a.member.clone(), roll));
+                }
+            });
+        }
+        for n in a.notes.iter().filter(|n| !n.ends_with("— turn it")) {
+            ui.label(
+                egui::RichText::new(format!("{}: {n}", a.member))
+                    .small()
+                    .weak(),
+            );
+        }
+    }
+    acts
+}
+
 fn kind_words(k: ohl_structures::structures::StructureKind) -> &'static str {
     use ohl_structures::structures::StructureKind as K;
     match k {
@@ -694,6 +774,7 @@ fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: boo
                     LineKind::Edge => egui::Stroke::new(0.8, ink),
                     LineKind::Gauge | LineKind::Dimension => egui::Stroke::new(0.7, grey),
                     LineKind::Axis => egui::Stroke::new(0.9, egui::Color32::from_rgb(90, 150, 230)),
+                    LineKind::Weld => egui::Stroke::new(3.0, egui::Color32::from_rgb(215, 70, 50)),
                     LineKind::Plate => {
                         egui::Stroke::new(1.4, egui::Color32::from_rgb(70, 140, 210))
                     }

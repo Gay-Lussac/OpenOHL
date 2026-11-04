@@ -1145,6 +1145,16 @@ fn connections_and_plates_as_csv() {
     );
     assert!(get("plates.csv").unwrap().contains("G1,N1,0.01,,"));
     assert!(get("connections.csv").is_some());
+    // A plate welded to it (2026-11-04: a welded plate is several plates
+    // welded together): its welded_to column.
+    let welded = format!(
+        "{text}[[plate]]\nid = \"G2\"\njoint = \"N1\"\nthickness = \"10 mm\"\nwelded_to = [\"G1\"]\n"
+    );
+    let s = structure(&welded, &library, &Default::default(), None).unwrap();
+    let t = csv::tables(&s);
+    let plates = &t.iter().find(|(x, _)| *x == "plates.csv").unwrap().1;
+    assert!(plates.starts_with("id,joint,thickness_m,material,outline_m,kind,welded_to"));
+    assert!(plates.contains("\nG2,N1,0.01,,,,G1"), "{plates}");
     let none = structure(SHAPES, &library, &Default::default(), None).unwrap();
     assert!(
         csv::tables(&none)
@@ -1417,4 +1427,24 @@ fn no_connections_no_change() {
         assert_eq!(text, ifc::ifc(&before, &o).unwrap());
         assert!(!text.contains("IFCMECHANICALFASTENER"));
     }
+}
+
+/// A welded plate in IFC (2026-11-04): each of its plates an `IfcPlate`
+/// with the plates it is welded together with (`OHL_Plate.WeldedTo`).
+#[test]
+fn a_welded_plate_in_ifc() {
+    let text = format!(
+        "{TOWER}{TOWER_JOINT}\n[[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+         welded_to = [\"G1\"]\n\n[[connection]]\nmember = \"L2\"\njoint = \"N2\"\nonto = \"G2\"\n"
+    );
+    let library = example_library();
+    let s = structure(&text, &library, &example_bolts(), None).unwrap();
+    assert!(
+        s.joint_plates.iter().all(|p| p.assembly == ["G1", "G2"]),
+        "{:?}",
+        s.joint_plates
+    );
+    let ifc = ifc::ifc(&s, &IfcOptions::default()).unwrap();
+    assert!(ifc.contains("'WeldedTo'"), "no WeldedTo");
+    assert!(ifc.contains("IFCLABEL('G1')") && ifc.contains("IFCLABEL('G2')"));
 }

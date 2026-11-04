@@ -14,7 +14,6 @@ use eframe::egui;
 use ohl_structure_edit::Handle;
 use ohl_structure_edit::connection_edits::FieldValue;
 use ohl_structure_link::JointDetails;
-use ohl_structures::connections::PlateKind;
 
 use crate::app::StructureApp;
 use crate::joint_panel::Picked;
@@ -24,7 +23,8 @@ use crate::member_panel::Subject;
 
 /// How to get around the Detail view (Help › Controls).
 pub const CONTROLS: &str = "Opened from the 3D view: the Edit tool on a tower's joint or \
-     member (asked first), or its right-click menu, Open in the Detail view.\n\
+     member (asked first, unless the Detail view is shown), or its right-click menu, Open in the \
+     Detail view.\n\
      Close-up: drag to turn, wheel to zoom; Face view: the joint's plane flat.\n\
      Its toolbar below the drawing: Edit (a bolt, plate or member clicked: its properties \
      below), Add bolt, Move bolt, Remove bolt, Member end.\n\
@@ -404,8 +404,9 @@ impl StructureApp {
     }
 }
 
-/// A plate's properties: its kind, thickness and material, what it lies
-/// on, the edge distances it keeps from its bolts and what breaks them.
+/// A plate's properties: the plates it is welded to, its thickness and
+/// material, what it lies on, the edge distances it keeps from its bolts
+/// and what breaks them.
 fn plate_box(ui: &mut egui::Ui, details: &JointDetails, id: &str) -> Option<Vec<Act>> {
     let (j, p) = details
         .joints
@@ -421,12 +422,14 @@ fn plate_box(ui: &mut egui::Ui, details: &JointDetails, id: &str) -> Option<Vec<
             }
         });
         ui.horizontal_wrapped(|ui| {
-            let mut kind = p.kind;
-            for k in PlateKind::ALL {
-                ui.radio_value(&mut kind, k, format!("{} onto the leg", k.as_str()));
-            }
-            if kind != p.kind {
-                acts.push(Act::PlateKind(id.to_owned(), kind));
+            ui.label("welded to");
+            acts.extend(crate::joint_tools::welded_to_menu(ui, j, p));
+            if p.assembly.len() > 1 {
+                ui.label(format!("one welded plate: {}", p.assembly.join(" + ")))
+                    .on_hover_text(
+                        "Several plates welded together so that every member bolting at the \
+                         joint reaches one; the seams drawn where they meet",
+                    );
             }
             ui.label("thickness");
             let mut t = p.thickness * 1000.0;

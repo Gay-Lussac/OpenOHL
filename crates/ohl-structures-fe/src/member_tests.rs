@@ -234,6 +234,11 @@ fn orientation_turns_the_bending_axis() {
     }
     let both = model("y+z+", "400 cm4") + "reference = [0, 0, 1]\n";
     assert!(Model::parse(&both).unwrap_err().contains("not both"));
+    // A roll turns the legs further (a correction, 2026-11-04): y+z+
+    // turned a quarter is z+y-, its bending axes with it.
+    let rolled = model("y+z+", "400 cm4") + "roll = \"90 deg\"\n";
+    let w = tip(&rolled);
+    assert!(close(w, -pl3 / 400e-8, 1e-9), "{w}");
 }
 
 /// A frame portal (two columns, a beam) under its own weight, with

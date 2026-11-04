@@ -388,6 +388,10 @@ fn the_joint_view_follows_the_selection_with_the_panel_hidden() {
 /// clicked is selected, the Inspector in front with its fields; a tower's
 /// joint or member is first asked about (owner 2026-11-03), then opened in
 /// the Detail view with its details in front below it — or not (Stay).
+/// The Detail view shown already: not asked again, the joint or member
+/// shown at once, its details in front (owner 2026-11-04: "if i click with
+/// edit and the detailed view is already open it should not ask to open
+/// it again but just show the joint directly or member").
 #[test]
 fn the_edit_tool_opens_where_it_is_edited() {
     use crate::tools::Tool;
@@ -418,11 +422,17 @@ fn the_edit_tool_opens_where_it_is_edited() {
     // Its leaf holds the details only, not the tables, loads or results.
     let at = h.state().dock.find_tab(&Panel::MemberDetails).unwrap();
     assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
+    // The Detail view shown: a joint clicked is shown there at once.
+    assert!(crate::layout::is_shown(&h.state().dock, Panel::JointView));
     h.state_mut()
         .tool_click(Some(Handle::Joint("L9A".into())), None);
     h.run();
-    h.get_by_label("Open the Detail view").click();
-    h.run();
+    assert!(h.state().joints.ask_open.is_none());
+    assert_eq!(
+        h.query_all_by_label("Open the Detail view").count(),
+        0,
+        "not asked again"
+    );
     h.run();
     assert!(h.state().is_open(Panel::JointDetails) && h.state().is_open(Panel::JointView));
     assert_eq!(h.state().joints.joint.as_deref(), Some("L9A"));
@@ -431,9 +441,21 @@ fn the_edit_tool_opens_where_it_is_edited() {
     assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
     // The Inspector's heading and the Detail view's.
     assert_eq!(h.get_all_by_label("Joint L9A").count(), 2);
-    // Stay: the Inspector only.
+    // … and a member: Member details in front, not asked.
+    h.state_mut()
+        .tool_click(Some(Handle::Member("m155".into())), None);
+    h.run();
+    h.run();
+    assert!(h.state().joints.ask_open.is_none());
+    assert_eq!(h.state().joints.member.as_deref(), Some("m155"));
+    assert_eq!(h.state_mut().focused(), Some(Panel::MemberDetails));
+    // The Detail view closed: asked again. Stay: the Inspector only.
+    crate::layout::close_panel(&mut h.state_mut().dock, Panel::JointView);
+    h.run();
     h.state_mut()
         .tool_click(Some(Handle::Joint("L9B".into())), None);
+    h.run();
+    assert!(h.state().joints.ask_open.is_some());
     h.run();
     h.get_by_label("Stay").click();
     h.run();
@@ -778,14 +800,14 @@ fn bolt_tools_keep_the_code() {
 /// Getting around the Detail view (owner 2026-11-03): a member opened
 /// from the joint goes back to it (‹ Joint, Escape); a bolt picked with
 /// the Edit tool shows its properties below, its kind changed from the
-/// bolt library (one undo step); several plates at the joint, one welded,
-/// a plate picked shows its kind and its edges.
+/// bolt library (one undo step); several plates at the joint, welded
+/// together (2026-11-04: a welded plate is several plates welded
+/// together), a plate picked shows what it is welded to and its edges.
 #[test]
 fn the_detail_view_goes_back_and_shows_what_is_picked() {
     use crate::joint_panel::{Drawn, Picked};
     use crate::joint_tools::Act;
     use crate::member_panel::Subject;
-    use ohl_structures::connections::PlateKind;
     let path = copy_of("type-02.ohls", "detail-picked");
     let dir = path.parent().unwrap().to_path_buf();
     std::fs::create_dir_all(dir.join("Sections")).unwrap();
@@ -863,30 +885,153 @@ fn the_detail_view_goes_back_and_shows_what_is_picked() {
     h.key_press(eframe::egui::Key::Escape);
     h.run();
     assert!(h.state().joints.picked.is_none());
-    // Two plates at the joint, the second welded: each one undo step.
-    h.get_by_label("+ Plate").scroll_to_me();
+    // Two plates at the joint: each one undo step.
+    for _ in 0..2 {
+        h.get_by_label("+ Plate").scroll_to_me();
+        h.run();
+        h.get_by_label("+ Plate").click();
+        h.run();
+        h.run();
+    }
+    let t = file(&h);
+    assert_eq!(t.plates.len(), 2);
+    let (first, second) = (t.plates[0].id.clone(), t.plates[1].id.clone());
+    // The plate just added is picked: what it is welded to, its edges.
+    assert_eq!(h.state().joints.picked, Some(Picked::Plate(second.clone())));
+    h.get_by_label_contains(&format!("Plate {second} at joint N2"));
+    // Welded to the first (its Welded to menu, a box per other plate; the
+    // menu stays open on a tick): one welded plate.
+    h.get_all_by_label("not welded").next().unwrap().click();
     h.run();
-    h.get_by_label("+ Plate").click();
-    h.run();
-    h.get_by_label("+ Welded plate").scroll_to_me();
-    h.run();
-    h.get_by_label("+ Welded plate").click();
+    h.get_all_by_role(eframe::egui::accesskit::Role::CheckBox)
+        .find(|n| {
+            n.accesskit_node()
+                .label()
+                .is_some_and(|l| l == first || l == second)
+        })
+        .expect("a box per other plate")
+        .click();
     h.run();
     h.run();
     let t = file(&h);
-    assert_eq!(t.plates.len(), 2);
-    assert_eq!(t.plates[0].kind(), PlateKind::Bolted);
-    assert_eq!(t.plates[1].kind(), PlateKind::Welded);
-    let welded = t.plates[1].id.clone();
-    // The plate just added is picked: its kind, its edges.
-    assert_eq!(h.state().joints.picked, Some(Picked::Plate(welded.clone())));
-    h.get_by_label_contains(&format!("Plate {welded} at joint N2"));
-    h.get_by_label("bolted onto the leg").click();
-    h.run();
-    h.run();
-    assert_eq!(file(&h).plates[1].kind, None);
+    assert_eq!(t.welded_assemblies("N2").len(), 1, "{:?}", t.plates);
+    assert!(h.get_all_by_label_contains("one welded plate").count() >= 1);
     h.get_by_label("Undo").click();
     h.run();
-    assert_eq!(file(&h).plates[1].kind(), PlateKind::Welded);
+    assert_eq!(file(&h).welded_assemblies("N2").len(), 2);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// A member's roll (owner 2026-11-04: "i need to have a correction angle
+/// for the members to rotate them on their axis as one face need to come
+/// in contact with the plates"): its buttons in Member details write the
+/// member's `roll` (one undo step each), Lay flat turns it onto what it
+/// bolts onto; Joint details names a member lying off what it bolts onto
+/// and turns it flat in one click.
+#[test]
+fn the_roll_buttons_turn_a_member_and_undo() {
+    use crate::member_panel::Subject;
+    let path = copy_of("type-02.ohls", "member-roll");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Member details");
+    h.state_mut().selected = vec![Handle::Member("D1".into())];
+    h.run();
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Member);
+    let roll = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>, m: &str| {
+        let t = h.state().file.as_ref().unwrap().structure();
+        ohl_structure_edit::member_roll(t.members.iter().find(|x| x.id == m).unwrap()).to_degrees()
+    };
+    let text = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state().file.as_ref().unwrap().text_ref().to_owned()
+    };
+    assert_eq!(roll(&h, "D1"), 0.0);
+    // A quarter turn on, then a half turn: the file's roll.
+    h.get_all_by_label("+90°").next().unwrap().click();
+    h.run();
+    h.run();
+    assert!((roll(&h, "D1") - 90.0).abs() < 1e-9);
+    assert!(text(&h).contains("roll = \"90 deg\""), "{}", text(&h));
+    h.get_all_by_label("180°").next().unwrap().click();
+    h.run();
+    h.run();
+    assert!((roll(&h, "D1") + 90.0).abs() < 1e-9, "{}", roll(&h, "D1"));
+    // Undone one step at a time.
+    h.get_by_label("Undo").click();
+    h.run();
+    assert!((roll(&h, "D1") - 90.0).abs() < 1e-9);
+    h.get_by_label("Undo").click();
+    h.run();
+    h.run();
+    assert_eq!(roll(&h, "D1"), 0.0);
+    assert!(!text(&h).contains("roll ="));
+    // Lay flat: its leg bolted on the face of what it bolts onto.
+    let off = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>, m: &str| {
+        let d = h.state_mut().joint_details().unwrap();
+        let d = d.as_ref().as_ref().unwrap();
+        d.joint("N2")
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == m)
+            .and_then(|a| a.flat)
+            .map(|f| f.off)
+    };
+    h.get_all_by_label("+90°").next().unwrap().click();
+    h.run();
+    h.run();
+    let before = off(&mut h, "D1").expect("D1 bolts onto the leg");
+    h.get_all_by_label("Lay flat").next().unwrap().click();
+    h.run();
+    h.run();
+    let after = off(&mut h, "D1").unwrap();
+    assert!(after < 0.5, "{before}° off before, {after}° after");
+    // Joint details: D1 turned a quarter off is named, Turn it flat lays
+    // it flat again (one undo step).
+    h.get_all_by_label("+90°").next().unwrap().click();
+    h.run();
+    h.run();
+    assert!(off(&mut h, "D1").unwrap() > 80.0);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run();
+    h.run();
+    h.get_by_label_contains("N2: D1 (");
+    let turned = roll(&h, "D1");
+    let fix = h.get_all_by_label("Turn it flat").count();
+    assert!(fix >= 1);
+    // The fix of D1: the first row named D1.
+    let d = h.state_mut().joint_details().unwrap();
+    let first_off = d
+        .as_ref()
+        .as_ref()
+        .unwrap()
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.flat.is_some_and(|f| f.off > ohl_structure_link::FLAT_OFF))
+        .map(|a| a.member.clone())
+        .unwrap();
+    h.get_all_by_label("Turn it flat").next().unwrap().click();
+    h.run();
+    h.run();
+    assert!(off(&mut h, &first_off).unwrap() < 0.5);
+    if first_off == "D1" {
+        assert!((roll(&h, "D1") - turned).abs() > 45.0);
+    }
+    h.get_by_label("Undo").click();
+    h.run();
+    assert!(off(&mut h, &first_off).unwrap() > ohl_structure_link::FLAT_OFF);
     std::fs::remove_dir_all(dir).ok();
 }

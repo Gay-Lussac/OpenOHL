@@ -969,13 +969,7 @@ fn connections_are_defined_field_by_field() {
     assert_eq!(c.gauge_lines, Some(1));
     // On a plate; copied to the other end (N3) with the plate.
     let t = read(&doc);
-    let g = ce::add_plate(
-        &mut doc,
-        &t,
-        "N2",
-        0.01,
-        ohl_structures::connections::PlateKind::Welded,
-    );
+    let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
     ce::set_connection_field(
         &mut doc,
         "M2",
@@ -1005,11 +999,7 @@ fn connections_are_defined_field_by_field() {
     assert_ne!(copy, g);
     let copied = t.plates.iter().find(|p| p.id == copy).unwrap();
     assert_eq!(copied.joint, "N3");
-    // Welded, as the plate copied.
-    assert_eq!(
-        copied.kind(),
-        ohl_structures::connections::PlateKind::Welded
-    );
+    assert!(copied.welded_to.is_empty());
     assert!(
         t.connection_notes().is_empty(),
         "{:?}",
@@ -1036,12 +1026,7 @@ fn connections_are_defined_field_by_field() {
     let p = t.plates.iter().find(|p| p.id == g).unwrap();
     assert!((p.thickness.si() - 0.012).abs() < 1e-12);
     assert_eq!(p.material.as_deref(), Some("S355"));
-    // Back to bolted: the key goes (the default).
-    ce::set_plate_kind(&mut doc, &g, ohl_structures::connections::PlateKind::Bolted).unwrap();
-    let t = read(&doc);
-    let p = t.plates.iter().find(|p| p.id == g).unwrap();
-    assert_eq!(p.kind, None);
-    assert!(ce::set_plate_kind(&mut doc, "nope", Default::default()).is_err());
+    assert!(ce::set_welded_to(&mut doc, "nope", &[]).is_err());
     ce::remove_plate(&mut doc, &g);
     let t = read(&doc);
     assert!(t.connection("M2", "N2").unwrap().onto.is_none());
@@ -1151,7 +1136,7 @@ fn bolt_points_and_plate_outlines_are_written() {
     ce::set_bolt_points(&mut doc, "M2", "N2", &[], None);
     assert!(read(&doc).connection("M2", "N2").is_none());
     let t = read(&doc);
-    let g = ce::add_plate(&mut doc, &t, "N2", 0.01, Default::default());
+    let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
     assert!(ce::set_plate_outline(&mut doc, &g, &[[0.0, 0.0, 30.0]]).is_err());
     ce::set_plate_outline(
         &mut doc,
@@ -1180,4 +1165,128 @@ fn bolt_points_and_plate_outlines_are_written() {
             .abs()
             < 1e-12
     );
+}
+
+/// Plates welded to each other (owner 2026-11-04: a welded plate is
+/// several plates welded together): a pair welded and unwelded, the
+/// 2026-11-03 `kind = "welded"` written as what it is read as, a plate
+/// removed taken out of the others' `welded_to`; a welded plate made for
+/// the members of a joint, each onto its plate, the plates welded together
+/// (one edit), the joint's old plates replaced.
+#[test]
+fn plates_are_welded_together() {
+    use crate::connection_edits as ce;
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    let t = read(&doc);
+    let g1 = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let t = read(&doc);
+    let g2 = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let t = read(&doc);
+    let g3 = ce::add_plate(&mut doc, &t, "N3", 0.01);
+    let t = read(&doc);
+    ce::weld_pair(&mut doc, &t, &g2, &g1, true).unwrap();
+    let t = read(&doc);
+    assert_eq!(t.plates[1].welded_to, vec![g1.clone()]);
+    assert_eq!(
+        t.welded_assemblies("N2"),
+        vec![vec![g1.clone(), g2.clone()]]
+    );
+    // Welded again from the other side: nothing more written.
+    let t = read(&doc);
+    ce::weld_pair(&mut doc, &t, &g1, &g2, true).unwrap();
+    assert!(read(&doc).plates[0].welded_to.is_empty());
+    // Plates of two joints are not welded.
+    let t = read(&doc);
+    assert!(ce::weld_pair(&mut doc, &t, &g1, &g3, true).is_err());
+    let t = read(&doc);
+    ce::weld_pair(&mut doc, &t, &g1, &g2, false).unwrap();
+    let t = read(&doc);
+    assert!(t.plates.iter().all(|p| p.welded_to.is_empty()));
+    assert_eq!(t.welded_assemblies("N2").len(), 2);
+    // The old kind: both welded plates read as one welded plate, written
+    // as such on the first change (the kind dropped).
+    let text = doc.to_string().replace(
+        &format!("[[plate]]\nid = \"{g2}\""),
+        &format!(
+            "[[plate]]\nid = \"G9\"\njoint = \"N2\"\nthickness = \"8 mm\"\nkind = \"welded\"\n\n\
+             [[plate]]\nid = \"{g2}\"\nkind = \"welded\""
+        ),
+    );
+    let mut doc: DocumentMut = text.parse().unwrap();
+    let t = read(&doc);
+    assert!(
+        t.welded_assemblies("N2")
+            .iter()
+            .any(|a| a.contains(&g2) && a.contains(&"G9".to_owned())),
+        "{:?}",
+        t.welded_assemblies("N2")
+    );
+    assert!(
+        t.connection_notes()
+            .iter()
+            .any(|n| n.contains("kind = \"welded\""))
+    );
+    ce::weld_pair(&mut doc, &t, &g1, &g2, true).unwrap();
+    let t = read(&doc);
+    assert!(t.plates.iter().all(|p| p.kind.is_none()), "{doc}");
+    assert_eq!(t.welded_assemblies("N2").len(), 1);
+    // Removed: no longer named by the others.
+    ce::remove_plate(&mut doc, "G9");
+    let t = read(&doc);
+    assert!(
+        t.plates
+            .iter()
+            .all(|p| !p.welded_to.contains(&"G9".to_owned()))
+    );
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    // A welded plate made: the joint's plates replaced, M1 and M2 each
+    // onto its own, the second welded to the first.
+    let t = read(&doc);
+    let ids = ce::make_welded_plates(
+        &mut doc,
+        &t,
+        "N2",
+        &[vec!["M1".to_owned()], vec!["M2".to_owned()]],
+        0.012,
+    );
+    let t = read(&doc);
+    assert_eq!(ids.len(), 2);
+    let here: Vec<_> = t.plates.iter().filter(|p| p.joint == "N2").collect();
+    assert_eq!(here.len(), 2);
+    assert_eq!(here[1].welded_to, vec![ids[0].clone()]);
+    assert!((here[0].thickness.si() - 0.012).abs() < 1e-12);
+    assert_eq!(
+        t.connection("M1", "N2").unwrap().onto.as_ref(),
+        Some(&ids[0])
+    );
+    assert_eq!(
+        t.connection("M2", "N2").unwrap().onto.as_ref(),
+        Some(&ids[1])
+    );
+    assert_eq!(t.welded_assemblies("N2"), vec![ids.clone()]);
+    // The plate of N3 kept.
+    assert!(t.plates.iter().any(|p| p.id == g3));
+}
+
+/// A member's roll (owner 2026-11-04: its correction angle about its
+/// axis): written in degrees within ±180°, removed at 0, read back.
+#[test]
+fn a_member_roll_is_written_in_degrees() {
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    crate::set_member_roll(&mut doc, "M2", std::f64::consts::FRAC_PI_2);
+    let t = read(&doc);
+    let m = t.members.iter().find(|m| m.id == "M2").unwrap();
+    assert!(doc.to_string().contains("roll = \"90 deg\""), "{doc}");
+    assert!((crate::member_roll(m) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    // Three quarters on: −90°.
+    crate::set_member_roll(&mut doc, "M2", 1.5 * std::f64::consts::PI);
+    assert!(doc.to_string().contains("roll = \"-90 deg\""), "{doc}");
+    crate::set_member_roll(&mut doc, "M2", 0.0);
+    assert!(!doc.to_string().contains("roll"));
+    let t = read(&doc);
+    assert_eq!(crate::member_roll(&t.members[1]), 0.0);
 }

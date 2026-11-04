@@ -8,6 +8,65 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-04
+
+**The Detail view: smooth close-up, Edit without asking again, welded
+plates, a member's roll, gauge lines from the holes** (owner,
+2026-11-04). Built, in active development, not approved yet.
+
+- **The close-up smooth again** ("the joint view is a bit laggy now on
+  structures. but the bolts are good."): the pieces the faces are cut
+  into (so the bolts stay in sight) are cut once per joint and file
+  change, finely within 20 mm of a bolt only and growing with the
+  distance beyond, at most 40 000; a turn sorts them again, a frame
+  without a change reuses the mesh. Measured (release build, a joint of
+  four angles, 25 bolts and a plate): 113 000 triangles and 16 ms every
+  frame before; 34 000 pieces, 3.5 ms a turning frame, 0.4 ms a still
+  one after (the two-member joint: 6.1 ms before, 1.7 and 0.1 ms after).
+  The bolts' visibility kept (the test's heads hidden under 0.5 % of the
+  samples: 0.3 %).
+- **Edit with the Detail view shown** ("if i click with edit and the
+  detailed view is already open it should not ask to open it again but
+  just show the joint directly or member"): the question only when the
+  Detail view is not shown (closed, or behind another tab).
+- **A welded plate** ("the 'welded plate' should just mean that multiple
+  plates are welded to be able to reach every member bolts that come on
+  the joint"): no longer a kind of plate welded onto the leg but several
+  plates welded together — `[[plate]] welded_to = [...]` (read both
+  ways and through others; still structure file version 9, added before
+  the next release). Files of 2026-11-03 with `kind = "welded"` read those
+  plates of a joint as one welded plate (one alone: a plate), said, and
+  are written as `welded_to` at the next welding change. **Make a welded
+  plate for every member**: a plate per plane the members arriving lie
+  in with the leg, each member onto its plate, each plate round its
+  members' bolts with the code's edge distances in the plate
+  (`bolt_rules::rules_in`), welded to the others; the seams drawn where
+  the plates meet (close-up, face view), `plates.csv` `welded_to`, IFC
+  `OHL_Plate.WeldedTo`. Chosen: a relation between plates rather than a
+  `[[plate_group]]` table — nothing new to name, a plate stays the unit
+  members bolt onto, an assembly is what the relation joins. Open: the
+  welds' own data (size, length) and checks, the plates' checks.
+- **A member's roll** ("i need to have a correction angle for the
+  members to rotate them on their axis as one face need to come in
+  contact with the plates so usually flat. some of the representation
+  automatically built from the import seem wrong in that regard."): the
+  member's existing `roll`, now allowed with an `orientation` (a turn
+  after it; before, refused); OHL-Structure's **Roll** (degrees, −90°,
+  +90°, 180°, **Lay flat**: the smallest turn that lays the leg bolted
+  flat on the plate or the leg's flange it bolts onto) in Member
+  details, the Detail view and the Inspector; Joint details names a
+  member more than 5° off with **Turn it flat**. The roll turns the
+  member's axes for the analysis too (its bending axes, member wind,
+  exports): the finite-element model reads it as before.
+- **Gauge lines from the holes** ("check if the xml import can import the
+  bolt lines amount too"): a tower program's export gives the holes in
+  one section, not the gauge lines (the importer writes `holes`); an end
+  without gauge lines given takes them from the holes — one leg bolted, a
+  line per hole; both legs, half per leg; one to three — worked out and
+  said (staggered bolts would make fewer lines: give them then). The
+  ASCE 10-97 block shear already takes the holes as the lines (one leg
+  bolted), unchanged.
+
 ## 2026-11-03
 
 **Load cases, step 5: the Load cases library as a form, per-pylon sets,

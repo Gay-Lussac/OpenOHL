@@ -46,6 +46,7 @@ mod joints_tests;
 mod member_view;
 mod run;
 mod volumes;
+mod welds;
 
 pub use export::{
     ExportBolt, ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
@@ -56,8 +57,9 @@ pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
 };
 pub use joints::{
-    Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, JointDetail, JointDetails,
-    PlateDetail, Profile, Similar, Source, Valued, bolt_faces, joint_details, similar_joints,
+    Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, FLAT_OFF, JointDetail,
+    JointDetails, PlateDetail, Profile, Similar, Source, Valued, bolt_faces, joint_details,
+    similar_joints,
 };
 pub use member_view::{
     FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,
@@ -69,6 +71,7 @@ pub use run::{
     analyse_structure, cases_to_run, has_model,
 };
 pub use volumes::{VolumeMesh, string_volumes};
+pub use welds::{Flat, PlannedPlate, Weld, flat_roll, joint_legs, seam, welded_plan};
 
 use std::collections::HashMap;
 use std::path::Path;

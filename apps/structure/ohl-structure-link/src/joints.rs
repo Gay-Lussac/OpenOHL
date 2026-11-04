@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use ohl_sections::{SectionLibrary, Shape};
-use ohl_structures::connections::{BoltedLeg, ConnectionKind, PlateKind, TypeConnection};
+use ohl_structures::connections::{BoltedLeg, ConnectionKind, MAX_GAUGE_LINES, TypeConnection};
 use ohl_structures::{LibraryItem, StructureType};
 use ohl_structures_fe::design::{ConnectedLeg, MemberClass, MemberDesign};
 use ohl_structures_fe::member_ends::{self, connected_leg};
@@ -227,6 +227,10 @@ pub struct Arrival {
     pub bolt_flat: Vec<[f64; 2]>,
     /// A modelling member (`check = false`).
     pub modelling: bool,
+    /// Its leg bolted against the face it bolts onto (a plate's, a leg's
+    /// flange): how far off and the roll that lays it flat (none: not an
+    /// angle, or nothing to lie on; owner 2026-11-04).
+    pub flat: Option<crate::welds::Flat>,
     /// Notes on it ("one end eccentric, which not said"…).
     pub notes: Vec<String>,
 }
@@ -270,8 +274,16 @@ pub struct PlateDetail {
     pub outline_given: bool,
     /// The members bolted onto it.
     pub members: Vec<String>,
-    /// Bolted or welded onto the joint's leg.
-    pub kind: PlateKind,
+    /// The plates it is welded to directly (given on either plate, or both
+    /// of the 2026-11-03 kind `welded`).
+    pub welded_to: Vec<String>,
+    /// Its welded plate: the plates welded together with it at the joint,
+    /// itself among them, in the file's order (alone: itself only; owner
+    /// 2026-11-04, [`ohl_structures::StructureType::welded_assemblies`]).
+    pub assembly: Vec<String>,
+    /// The seams where it meets the plates of its assembly listed after
+    /// it (each seam once), drawn as welds.
+    pub welds: Vec<crate::welds::Weld>,
     /// The joint's leg it lies on (none: no angle leg found; it then lies
     /// through the work point).
     pub leg: Option<String>,
@@ -446,6 +458,7 @@ pub fn joint_details(
                 shift: (0.0, None),
                 bolt_flat: Vec::new(),
                 modelling: design.is_some_and(|(_, _, check)| !check),
+                flat: None,
                 notes: Vec::new(),
             });
         }
@@ -481,6 +494,21 @@ pub fn joint_details(
             if level3 {
                 place_bolts(a, at, c, &snapshot, &seats);
                 a.grip = grip(a, &snapshot, &plates_here);
+                a.flat = flat_of(a, &snapshot, &seats);
+                if let Some(f) = a.flat
+                    && f.off > FLAT_OFF
+                    && let Some(o) = a.onto.value.as_ref()
+                {
+                    let what = if seats.contains_key(o) {
+                        "plate"
+                    } else {
+                        "leg of"
+                    };
+                    a.notes.push(format!(
+                        "{}: bolted face {:.0}° off the {what} {o} — turn it",
+                        a.member, f.off
+                    ));
+                }
             }
         }
         // The code's minimums of each member end onto a plate (its bolts'
@@ -488,7 +516,7 @@ pub fn joint_details(
         // side), for the plates' edges.
         // A plate's edges by the plate's own thickness and steel (owner
         // 2026-11-03; its material's ultimate strength, else the member's).
-        let plates = plates_here
+        let mut plates: Vec<PlateDetail> = plates_here
             .iter()
             .map(|p| {
                 let fu = p
@@ -510,6 +538,7 @@ pub fn joint_details(
                 plate(p, at, &arrivals, seats.get(&p.id), &rules)
             })
             .collect();
+        weld_plates(&mut plates, &t.welded_assemblies(&n.id), &plates_here);
         let completeness = completeness(&arrivals, level3);
         joints.push(JointDetail {
             id: n.id.clone(),
@@ -633,9 +662,32 @@ fn condition(
     let count = a.bolts.value.as_ref().map_or(0, |b| b.count);
     // The layout.
     let points_given = c.is_some_and(|c| !c.bolt_points.is_empty());
+    // The holes in one cross-section of the member's design data (a tower
+    // program's export gives those, not the lines: owner 2026-11-04): one
+    // leg bolted, a line per hole; both legs, half of them per leg.
+    let from_holes = design
+        .and_then(|d| d.bolts)
+        .and_then(|b| b.holes)
+        .filter(|h| *h > 0)
+        .map(|h| {
+            let per_leg = if a.leg.value == Some(BoltedLeg::Both) {
+                h.div_ceil(2)
+            } else {
+                h
+            };
+            (h, per_leg.clamp(1, MAX_GAUGE_LINES))
+        });
     a.gauge_lines = match c.and_then(|c| c.gauge_lines) {
         Some(n) => Valued::of(n, Given),
         None if points_given => Valued::of(1, WorkedOut),
+        None if count > 0 && from_holes.is_some() => {
+            let (h, n) = from_holes.expect("checked");
+            a.notes.push(format!(
+                "gauge lines: {n} from the {h} hole(s) in one section of the member's design \
+                 data (staggered bolts would make it fewer: give gauge_lines then)"
+            ));
+            Valued::of(n, WorkedOut)
+        }
         None if count > 0 => Valued::of(1, Assumed),
         None => Valued::none(),
     };
@@ -920,6 +972,94 @@ fn plate_seats(
         );
     }
     out
+}
+
+/// How far off a leg bolted may lie from the face it bolts onto before
+/// Joint details says so, degrees.
+pub const FLAT_OFF: f64 = 5.0;
+
+/// How `a`'s leg bolted lies against what it bolts onto: a plate's face
+/// (its seat's normal) or the flange of the member it bolts onto that it
+/// can lie on — the one whose face runs most nearly along `a` (a turn of
+/// `a` about its axis never lays it on a flange across it), of two alike
+/// the nearer ([`crate::welds::flat_roll`]). None: not an angle, or onto
+/// nothing drawn.
+fn flat_of(a: &Arrival, all: &[Arrival], seats: &PlateSeats) -> Option<crate::welds::Flat> {
+    let p = a.profile.as_ref()?;
+    p.angle?;
+    let onto = a.onto.value.as_ref()?;
+    if let Some(s) = seats.get(onto) {
+        return crate::welds::flat_roll(p.axes, a.leg_y, s.normal);
+    }
+    let q = all.iter().find(|b| &b.member == onto)?.profile.as_ref()?;
+    q.angle?;
+    let across = |n: [f64; 3]| (dot(n, p.axes[0]).abs() * 1e3).round();
+    [q.axes[1], q.axes[2]]
+        .into_iter()
+        .filter_map(|n| crate::welds::flat_roll(p.axes, a.leg_y, n).map(|f| (across(n), f)))
+        .min_by(|x, y| x.0.total_cmp(&y.0).then(x.1.off.total_cmp(&y.1.off)))
+        .map(|x| x.1)
+}
+
+/// Each plate's welded plate (its assembly at the joint) and the seams
+/// where it meets the others of it; two plates welded to each other
+/// (given, or both of the 2026-11-03 kind `welded`) that do not meet are
+/// said.
+fn weld_plates(
+    plates: &mut [PlateDetail],
+    assemblies: &[Vec<String>],
+    given: &[&ohl_structures::connections::TypePlate],
+) {
+    use ohl_structures::connections::PlateKind;
+    for p in plates.iter_mut() {
+        if let Some(a) = assemblies.iter().find(|a| a.contains(&p.id)) {
+            p.assembly = a.clone();
+        }
+    }
+    let direct = |x: &str, y: &str| {
+        let of = |id: &str| given.iter().find(|p| p.id == id);
+        match (of(x), of(y)) {
+            (Some(a), Some(b)) => {
+                a.welded_to.iter().any(|o| o == y)
+                    || b.welded_to.iter().any(|o| o == x)
+                    || (a.kind() == PlateKind::Welded && b.kind() == PlateKind::Welded)
+            }
+            _ => false,
+        }
+    };
+    for i in 0..plates.len() {
+        for k in 0..plates.len() {
+            if i != k && direct(&plates[i].id, &plates[k].id) {
+                let id = plates[k].id.clone();
+                plates[i].welded_to.push(id);
+            }
+        }
+    }
+    for i in 0..plates.len() {
+        for k in i + 1..plates.len() {
+            if !plates[i].assembly.contains(&plates[k].id) {
+                continue;
+            }
+            let tol = plates[i].thickness.max(plates[k].thickness) + 0.005;
+            match crate::welds::seam(&plates[i].outline, &plates[k].outline, tol) {
+                Some((ends, sides)) => {
+                    let with = plates[k].id.clone();
+                    plates[i]
+                        .welds
+                        .push(crate::welds::Weld { with, ends, sides });
+                }
+                None if direct(&plates[i].id, &plates[k].id) => {
+                    let note = format!(
+                        "plate {}: welded to {}, but the two do not meet (parallel, or their \
+                         outlines apart)",
+                        plates[i].id, plates[k].id
+                    );
+                    plates[i].notes.push(note);
+                }
+                None => {}
+            }
+        }
+    }
 }
 
 /// The shift that seats `a`'s leg bolted on the face of the member it
@@ -1326,7 +1466,9 @@ fn plate(
             outline,
             outline_given: true,
             members,
-            kind: p.kind(),
+            welded_to: Vec::new(),
+            assembly: vec![p.id.clone()],
+            welds: Vec::new(),
             leg: on_leg,
             edges,
             notes,
@@ -1398,7 +1540,9 @@ fn plate(
         outline,
         outline_given: false,
         members,
-        kind: p.kind(),
+        welded_to: Vec::new(),
+        assembly: vec![p.id.clone()],
+        welds: Vec::new(),
         leg: on_leg,
         edges,
         notes,

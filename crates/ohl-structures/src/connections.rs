@@ -35,11 +35,25 @@
 //! joint = "N7"
 //! thickness = "10 mm"
 //! material = "S355"       # optional
-//! kind = "welded"         # bolted (default) or welded onto the joint's
-//! #   leg (2026-11-03); a joint may have several plates
 //! # outline = [["0 m", "0 m", "10 m"], …]   # local axes; none: around
 //! #   the bolts of the connections onto it
+//!
+//! [[plate]]
+//! id = "G2"
+//! joint = "N7"
+//! thickness = "10 mm"
+//! welded_to = ["G1"]      # welded to these plates of the same joint: one
+//! #   welded plate (an assembly) reaching every member bolted there
 //! ```
+//!
+//! A **welded plate** is several plates welded together so that every
+//! member bolting onto the joint reaches one of them (owner 2026-11-04).
+//! The relation is given on either plate (`welded_to`) and read both ways;
+//! the plates joined by it, directly or through others, are one assembly
+//! ([`StructureType::welded_assemblies`]). Files of 2026-11-03 gave a
+//! plate `kind = "welded"` (then: welded onto the joint's leg): still
+//! read, the joint's plates of that kind taken as one welded assembly
+//! (one alone: a plate), said by [`StructureType::connection_notes`].
 //!
 //! What a connection does not give is taken from the member's
 //! `[member.design]` (the same at both ends) by the structure
@@ -241,8 +255,10 @@ pub fn shift_direction(along: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
     (l > 1e-6).then(|| [u[0] / l, u[1] / l, u[2] / l])
 }
 
-/// How a gusset plate is held on the joint's leg (the members bolt onto
-/// it either way).
+/// How a gusset plate was held on the joint's leg (2026-11-03), still read:
+/// since 2026-11-04 the joint's plates of kind `welded` are read as one
+/// welded assembly ([`TypePlate::welded_to`]) and the kind is no longer
+/// written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlateKind {
@@ -282,10 +298,17 @@ pub struct TypePlate {
     /// Its outline in local axes (none: around the bolts onto it).
     #[serde(default)]
     pub outline: Vec<[Length; 3]>,
-    /// Bolted or welded onto the joint's leg (none: bolted; 2026-11-03,
-    /// still structure file version 9 — files without it read as before).
+    /// Bolted or welded onto the joint's leg (2026-11-03; none: bolted).
+    /// Read only: `welded` plates of a joint form one welded assembly
+    /// (2026-11-04, [`StructureType::welded_assemblies`]).
     #[serde(default)]
     pub kind: Option<PlateKind>,
+    /// The plates of the same joint it is welded to (2026-11-04, still
+    /// structure file version 9: one welded plate made of several, so that
+    /// every member bolted at the joint reaches one); given on either
+    /// plate, read both ways.
+    #[serde(default)]
+    pub welded_to: Vec<String>,
 }
 
 impl TypePlate {
@@ -308,6 +331,53 @@ impl StructureType {
         self.connections
             .iter()
             .find(|c| c.member == member && c.joint == joint)
+    }
+
+    /// The welded assemblies at `joint`: the plates joined by `welded_to`
+    /// (either way, directly or through others; only plates of that joint),
+    /// and the joint's plates of the 2026-11-03 `kind = "welded"` together;
+    /// each in the file's order, a plate welded to none alone. Every plate
+    /// of the joint is in exactly one.
+    pub fn welded_assemblies(&self, joint: &str) -> Vec<Vec<String>> {
+        let here: Vec<&TypePlate> = self.plates.iter().filter(|p| p.joint == joint).collect();
+        let n = here.len();
+        let mut root: Vec<usize> = (0..n).collect();
+        fn find(root: &mut [usize], i: usize) -> usize {
+            let mut i = i;
+            while root[i] != i {
+                root[i] = root[root[i]];
+                i = root[i];
+            }
+            i
+        }
+        let join = |root: &mut Vec<usize>, a: usize, b: usize| {
+            let (ra, rb) = (find(root, a), find(root, b));
+            if ra != rb {
+                root[ra.max(rb)] = ra.min(rb);
+            }
+        };
+        let welded: Vec<usize> = (0..n)
+            .filter(|&i| here[i].kind() == PlateKind::Welded)
+            .collect();
+        for w in welded.windows(2) {
+            join(&mut root, w[0], w[1]);
+        }
+        for (i, p) in here.iter().enumerate() {
+            for o in &p.welded_to {
+                if let Some(k) = here.iter().position(|q| &q.id == o) {
+                    join(&mut root, i, k);
+                }
+            }
+        }
+        let mut out: Vec<(usize, Vec<String>)> = Vec::new();
+        for (i, p) in here.iter().enumerate() {
+            let r = find(&mut root, i);
+            match out.iter_mut().find(|x| x.0 == r) {
+                Some(x) => x.1.push(p.id.clone()),
+                None => out.push((r, vec![p.id.clone()])),
+            }
+        }
+        out.into_iter().map(|x| x.1).collect()
     }
 
     /// The connections and plates whose references lead nowhere (kept,
@@ -343,6 +413,38 @@ impl StructureType {
                     "plate {}: no joint {} (kept, not used)",
                     p.id, p.joint
                 ));
+            }
+            for o in &p.welded_to {
+                if !self.plates.iter().any(|q| &q.id == o && q.joint == p.joint) {
+                    out.push(format!(
+                        "plate {}: welded to {o}: no plate of joint {} (kept, not used)",
+                        p.id, p.joint
+                    ));
+                }
+            }
+            if p.kind() == PlateKind::Welded {
+                let with: Vec<String> = self
+                    .welded_assemblies(&p.joint)
+                    .into_iter()
+                    .find(|a| a.contains(&p.id))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|x| x != &p.id)
+                    .collect();
+                out.push(if with.is_empty() {
+                    format!(
+                        "plate {}: kind = \"welded\" (welded onto the leg, 2026-11-03) read as a \
+                         plate; a welded plate is now several plates welded together (welded_to)",
+                        p.id
+                    )
+                } else {
+                    format!(
+                        "plate {}: kind = \"welded\" (welded onto the leg, 2026-11-03) read as \
+                         welded to {} (one welded plate)",
+                        p.id,
+                        with.join(", ")
+                    )
+                });
             }
         }
         out
@@ -412,6 +514,9 @@ impl StructureType {
             }
             if p.thickness.si() <= 0.0 {
                 return Err(format!("plate {}: a thickness above 0", p.id));
+            }
+            if p.welded_to.contains(&p.id) {
+                return Err(format!("plate {}: welded to itself", p.id));
             }
         }
         Ok(())

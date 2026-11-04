@@ -256,21 +256,22 @@ fn a_plate_keeps_the_codes_distances_from_its_bolts() {
     );
 }
 
-/// Two plates at one joint, the second welded (2026-11-03): each drawn
-/// round its own members' bolts, its kind kept.
+/// Two plates at one joint, welded together (owner 2026-11-04: a welded
+/// plate is several plates welded together): each drawn round its own
+/// members' bolts, both of one welded plate; the face view says so.
 #[test]
-fn a_joint_takes_two_plates_one_welded() {
-    use ohl_structures::connections::PlateKind;
+fn a_joint_takes_two_plates_welded_together() {
     let text = format!(
         "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
-         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\nkind = \"welded\"\n",
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\nwelded_to = [\"G1\"]\n",
         AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G2\"")
     );
     let d = joint_details(&text, &library(), &Default::default()).unwrap();
     let n2 = d.joint("N2").unwrap();
     assert_eq!(n2.plates.len(), 2);
-    assert_eq!(n2.plates[0].kind, PlateKind::Bolted);
-    assert_eq!(n2.plates[1].kind, PlateKind::Welded);
+    assert_eq!(n2.plates[0].assembly, ["G1", "G2"]);
+    assert_eq!(n2.plates[1].welded_to, ["G1"]);
+    assert_eq!(n2.plates[0].welded_to, ["G2"]);
     assert_eq!(n2.plates[1].members, ["D1"]);
     assert!(n2.plates[0].members.is_empty());
     let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
@@ -281,8 +282,170 @@ fn a_joint_takes_two_plates_one_welded() {
     let v = crate::face_view(n2, &crate::faces_of(n2)[0]);
     assert!(v.marks.iter().any(|m| matches!(
         m,
-        crate::Mark::Text { text, .. } if text.contains("G2") && text.contains("welded")
+        crate::Mark::Text { text, .. } if text.contains("G2") && text.contains("welded to G1")
     )));
+}
+
+/// A second diagonal in the face x = 0 to the joint N2 (its own bolts).
+const OTHER_FACE: &str = r#"
+[[node]]
+id = "N5"
+point = ["0 m", "5 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "UA-83x52x6"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+"#;
+
+/// "Make a welded plate for every member" (owner 2026-11-04: "the
+/// 'welded plate' should just mean that multiple plates are welded to be
+/// able to reach every member bolts that come on the joint"): a plate per
+/// face the members arrive in (D1 in y = 1, D2 in x = 0), welded
+/// together; written as the edit writes it, every member's bolts lie on
+/// its plate with the design code's end and edge distances in the plate
+/// kept, and the two plates meet along a weld.
+#[test]
+fn a_welded_plate_reaches_every_members_bolts() {
+    let text = format!("{TOWER}{OTHER_FACE}");
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let (plan, left) = crate::welded_plan(d.joint("N2").unwrap());
+    assert!(left.is_empty(), "{left:?}");
+    let groups: Vec<Vec<String>> = plan.iter().map(|p| p.members.clone()).collect();
+    assert_eq!(groups, [vec!["D1".to_owned()], vec!["D2".to_owned()]]);
+    // As ohl_structure_edit::connection_edits::make_welded_plates writes it.
+    let mut welded = text.clone();
+    for (k, g) in groups.iter().enumerate() {
+        welded.push_str(&format!(
+            "\n[[plate]]\nid = \"G{}\"\njoint = \"N2\"\nthickness = \"10 mm\"\n{}",
+            k + 1,
+            if k > 0 { "welded_to = [\"G1\"]\n" } else { "" }
+        ));
+        for m in g {
+            welded.push_str(&format!(
+                "\n[[connection]]\nmember = \"{m}\"\njoint = \"N2\"\nonto = \"G{}\"\n",
+                k + 1
+            ));
+        }
+    }
+    let d = joint_details(&welded, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    assert_eq!(n2.plates.len(), 2);
+    for (k, g) in groups.iter().enumerate() {
+        let p = &n2.plates[k];
+        assert_eq!(p.assembly, ["G1", "G2"]);
+        assert!(p.notes.is_empty(), "{:?}", p.notes);
+        for m in g {
+            let a = n2.arrivals.iter().find(|a| &a.member == m).unwrap();
+            assert_eq!(a.onto.value.as_deref(), Some(p.id.as_str()));
+            assert!(!a.bolt_points.is_empty(), "{m}: no bolts");
+            let r = crate::bolt_rules(&welded, &library(), &Default::default(), m, "N2", None)
+                .expect("the code's rules");
+            let least = r.edge.min(r.end);
+            for b in &a.bolt_points {
+                assert!(
+                    inside(&p.outline, a.bolt_axis, *b),
+                    "{m}: a bolt off {}",
+                    p.id
+                );
+                let e = from_edge(&p.outline, a.bolt_axis, *b);
+                assert!(e >= least - 1e-6, "{m} on {}: {e} < {least}", p.id);
+            }
+        }
+    }
+    // Where they meet: a weld seam, along the leg.
+    let w = &n2.plates[0].welds;
+    assert_eq!(w.len(), 1, "{:?}", n2.plates[0].notes);
+    assert_eq!(w[0].with, "G2");
+    let leg = n2.arrivals.iter().find(|a| a.member == "L1").unwrap();
+    let s = [
+        w[0].ends[1][0] - w[0].ends[0][0],
+        w[0].ends[1][1] - w[0].ends[0][1],
+        w[0].ends[1][2] - w[0].ends[0][2],
+    ];
+    let l = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt();
+    let cos: f64 = (0..3).map(|k| s[k] / l * leg.direction[k]).sum();
+    assert!(l > 0.05 && cos.abs() > 0.99, "seam {l} m, {cos}");
+}
+
+/// The gauge lines from the holes in one section of the member's design
+/// data (owner 2026-11-04: a tower program's export gives the holes, not
+/// the lines): one leg bolted, a line per hole; both legs, half of them
+/// per leg; at most three; none: one, assumed.
+#[test]
+fn the_gauge_lines_come_from_the_holes() {
+    let lines = |bolts: &str, leg: &str| {
+        let text = TOWER.replace(
+            "design = { class = \"bracing\", bolts = { diameter = \"16 mm\", count = 1 } }",
+            &format!("design = {{ class = \"bracing\", {leg}bolts = {{ {bolts} }} }}"),
+        );
+        let d = joint_details(&text, &library(), &Default::default()).unwrap();
+        let a = d
+            .joint("N2")
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == "D1")
+            .unwrap()
+            .clone();
+        (a.gauge_lines.value, a.gauge_lines.source, a.notes)
+    };
+    let (n, s, notes) = lines("diameter = \"16 mm\", count = 4, holes = 2", "");
+    assert_eq!((n, s), (Some(2), Source::WorkedOut));
+    assert!(
+        notes.iter().any(|x| x.contains("from the 2 hole(s)")),
+        "{notes:?}"
+    );
+    let (n, s, _) = lines(
+        "diameter = \"16 mm\", count = 4, holes = 4",
+        "connected_leg = \"both\", ",
+    );
+    assert_eq!((n, s), (Some(2), Source::WorkedOut));
+    let (n, _, _) = lines("diameter = \"16 mm\", count = 6, holes = 5", "");
+    assert_eq!(n, Some(3));
+    let (n, s, _) = lines("diameter = \"16 mm\", count = 4", "");
+    assert_eq!((n, s), (Some(1), Source::Assumed));
+}
+
+/// A member a quarter turn off what it bolts onto (owner 2026-11-04:
+/// "some of the representation automatically built from the import seem
+/// wrong in that regard"): Joint details says so, and its roll turned by
+/// the turn found lays it flat. The diagonal D1 bolted by its long leg
+/// lies with that leg across the face (the section's default axes): a
+/// quarter turn off the leg's flange in the face.
+#[test]
+fn a_member_a_quarter_turn_off_is_said_and_laid_flat() {
+    let at = |roll: f64| {
+        let text = format!("{TOWER}roll = \"{roll} deg\"\n{AT_N2}");
+        let d = joint_details(&text, &library(), &Default::default()).unwrap();
+        d.joint("N2")
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == "D1")
+            .unwrap()
+            .clone()
+    };
+    let off = at(0.0);
+    let f = off.flat.expect("onto the leg's flange");
+    assert!((f.off - 90.0).abs() < 1.0, "{f:?}");
+    assert!((f.turn.abs() - std::f64::consts::FRAC_PI_2).abs() < 1e-6);
+    assert!(
+        off.notes.iter().any(|n| n.contains("bolted face 90° off")),
+        "{:?}",
+        off.notes
+    );
+    // Turned: flat, nothing said; its bolts square through the flange.
+    let flat = at(f.turn.to_degrees());
+    let g = flat.flat.unwrap();
+    assert!(g.off < 0.5, "{g:?}");
+    assert!(!flat.notes.iter().any(|n| n.contains("turn it")));
+    assert!(flat.bolt_axis[1].abs() > 0.999, "{:?}", flat.bolt_axis);
+    // Half a turn more: flat too (the outstanding leg the other way).
+    let other = at(f.turn.to_degrees() + 180.0).flat.unwrap();
+    assert!(other.off < 0.5, "{other:?}");
 }
 
 /// Whether `q` lies inside the convex `outline` seen along `n`.

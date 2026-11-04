@@ -208,6 +208,16 @@ impl StructureApp {
             return;
         };
         ui.heading(format!("Member {id}"));
+        // Its ends against what they bolt onto (a tower's, for Lay flat).
+        let ends = if ohl_structure_edit::is_tower(t.kind) && m.section.is_some() {
+            match self.joint_details().as_deref() {
+                Some(Ok(d)) => crate::roll_ui::flat_ends(d, id),
+                _ => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        let roll = crate::roll_ui::roll_of(t, id);
         let Some(f) = &mut self.file else {
             return;
         };
@@ -301,6 +311,21 @@ impl StructureApp {
                     }
                 });
                 ui.end_row();
+                // The roll, its correction angle about its axis (2026-11-04).
+                if m.section.is_some() {
+                    ui.label("roll").on_hover_text(
+                        "Turns the member about its axis (after its orientation); its axes \
+                         for the analysis turn with it",
+                    );
+                    ui.vertical(|ui| {
+                        if let Some(r) = crate::roll_ui::roll_control(ui, id, roll, &ends) {
+                            f.edit(&format!("Roll of {id}"), |doc, _| {
+                                edit::set_member_roll(doc, id, r)
+                            });
+                        }
+                    });
+                    ui.end_row();
+                }
                 // Design data (2026-10-27): shown, edited in the file
                 // (editing here: not yet).
                 ui.label("design data").on_hover_text(

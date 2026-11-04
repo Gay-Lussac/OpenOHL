@@ -589,6 +589,13 @@ pub fn settle_details(dock: &mut DockState<Panel>, panel: Panel) {
     open_panel(dock, panel);
 }
 
+/// Whether `panel` is shown: open and the tab in front of its leaf (not
+/// behind another tab).
+pub fn is_shown(dock: &DockState<Panel>, panel: Panel) -> bool {
+    dock.find_tab(&panel)
+        .is_some_and(|at| dock.leaf(at.node_path()).is_ok_and(|l| l.active == at.tab))
+}
+
 /// Closes `panel` if it is open.
 pub fn close_panel(dock: &mut DockState<Panel>, panel: Panel) {
     if let Some(path) = dock.find_tab(&panel) {
