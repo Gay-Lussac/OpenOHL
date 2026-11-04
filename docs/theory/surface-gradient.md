@@ -305,13 +305,8 @@ in a source that could be read (to add).
   1974, doi:[10.1109/TPAS.1974.293898](https://doi.org/10.1109/TPAS.1974.293898)
   — the charge simulation method (bibliographic data verified in
   Crossref, 2026-11-04).
-- G. Markt and B. Mengele — the bundle conductor and the bundle's
-  gradient named after them (the *Österreich-Lexikon*, 1995, as
-  Austria-Forum gives it: the "Markt–Mengele" bundle conductor named
-  after G. Markt and his colleague B. Mengele; the bundle filed by
-  G. Markt as Austrian patent 121 704 on 13 January 1930, as the Inzing
-  village chronicle's article on him, 1988, states). Their original
-  publication of the formula has not been read yet: the formula is
+- G. Markt and B. Mengele — the bundle formula that bears their names.
+  Their original publication has not been read yet: the formula is
   derived on this page instead, and its primary source is still to be
   added.
 - hvlbuzz (above): *HVLBuzz 2.0*, M. Kefeder, G. Bräunlich, J. Winiger,
