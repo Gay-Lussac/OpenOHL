@@ -480,7 +480,7 @@ pub fn placed_values_with(
 ///   unfactored, × its vertical, transverse and longitudinal factors;
 /// - **self weight** × its vertical factor;
 /// - **wind on the body** from the case's direction (any angle,
-///   [`WindFrom::from_degrees`]), its pressure on the structure
+///   [`ohl_structure_loads::WindFrom::from_degrees`]), its pressure on the structure
 ///   (with `use_local` × the structure's `wind_static`,
 ///   [`CaseLoads::structure_wind_at`]) × its factor;
 /// - **ice** on every member (`ohl_loads::LoadCase::structure_ice_at`:
