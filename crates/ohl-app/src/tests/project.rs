@@ -569,7 +569,20 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
     harness.get_by_label("phase 1").click();
     harness.run();
     harness.get_by_label("phase 2").click();
-    harness.run();
+    // The second line is read in the background: step until it is shown
+    // (a fixed number of runs flaked under a loaded machine).
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        if harness.state_mut().ready().unwrap().model.other_lines.len() == 2 {
+            break;
+        }
+        assert!(
+            started.elapsed().as_secs() < 60,
+            "the second line not shown in 60 s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     {
         let r = harness.state_mut().ready().unwrap();
         assert_eq!(r.model.other_lines.len(), 2);
