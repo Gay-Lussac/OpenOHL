@@ -702,12 +702,35 @@ out. Each change is one undo step.
   undo step; its hover lists the plates it will make). The thickness is
   the largest of the joint's plates, at least 10 mm. Two plates of a
   welded plate that do not meet are said. The members bolt onto the
-  plates of a welded plate as onto any plate; the checks treat them
-  alike (the plates' and welds' own checks are not built yet). A file of
+  plates of a welded plate as onto any plate. A file of
   2026-11-03 with `kind = "welded"` plates (then: welded onto the leg)
   reads those plates of a joint as one welded plate (one alone: a plate),
   said under the table, and written as `welded_to` at the next welding
   change.
+- **Welds** (2026-11-04): under the plates table a row per pair of
+  plates welded to each other — its **kind** (fillet, full penetration),
+  its **size a** (the fillet's throat, mm; empty: not given, the weld not
+  checked) and its **length** (mm; empty: the seam's length where the
+  plates meet, shown in grey as worked out — one side; give the whole
+  length, both sides together, when welded on both). Each change is one
+  undo step, written as `[[plate.weld]]`; a plate's box (a plate picked)
+  has its own welds' rows. The seam's label (`a6 × 220`) is drawn in the
+  close-up and the face view.
+- **Plate checks** (2026-11-04): after a run (Results › Run), Joint
+  details lists the joint's plate checks — per plate each member's bolts
+  in it and each weld — with the usage in the case shown, the largest
+  over the cases and its case, and what governs with its clause;
+  **Each check in case …** opens every check and what was assumed (in a
+  scroll box). The 3D view's results mark each joint with plates by its
+  worst usage, as the members (orange from 90 %, red above 100 %), and
+  the structure report has a table of them. By the structure's capacity
+  method: ASCE 10-97 (bearing 4.4, block shear Eq. 3.10-1 applied to the
+  plate, net section 3.10.1, distances 4.5; no weld rule in the standard:
+  welds not checked, said) or SIA 263 (bearing (76), net and block shear
+  (82), (83), sections (38), (39), Table 17's distances, fillet welds
+  (87), (88)); the simple check checks neither. A plate in compression:
+  plate buckling not checked. Every assumption is on the theory page
+  [Gusset plates and their welds](../theory/joint-plates.md).
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`
   per name with the fields of a connection but `onto` and `bolt_points`),

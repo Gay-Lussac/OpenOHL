@@ -265,10 +265,10 @@ pub fn report_html(input: &ReportInput) -> String {
         let _ = writeln!(
             h,
             "<tr><td>{}</td><td class=\"n {}\">{}</td><td>{}</td><td>{}</td></tr>",
-            if s.check == "members" {
-                "members (finite elements)"
-            } else {
-                "pole"
+            match s.check {
+                "members" => "members (finite elements)",
+                "plates" => "plates and welds",
+                _ => "pole",
             },
             class(s.usage),
             pct(s.usage),
@@ -343,6 +343,52 @@ pub fn report_html(input: &ReportInput) -> String {
             );
         }
         h.push_str("</table>\n");
+
+        // Plates and welds (2026-11-04): each part's largest usage over the
+        // cases, with what governs and its clause.
+        if solved.iter().any(|(_, r)| !r.plates.is_empty()) {
+            h.push_str(
+                "<h2>Plates and welds — largest usage over the cases</h2>\n<table><tr>\
+                 <th>Joint</th><th>Plate</th><th>Part</th><th>Usage</th><th>Governing case</th>\
+                 <th>Force kN</th><th>What governs</th></tr>\n",
+            );
+            let parts = &solved[0].1.plates;
+            for (k, p) in parts.iter().enumerate() {
+                let mut best: Option<(f64, &str, f64, &str)> = None;
+                for (case, r) in &solved {
+                    if let Some(x) = r.plates.get(k)
+                        && let Some(u) = x.usage
+                        && best.is_none_or(|b| u > b.0)
+                    {
+                        best = Some((u, case, x.force, x.governs.as_str()));
+                    }
+                }
+                let (u, case, force, governs) = match best {
+                    Some((u, c, f, g)) => (Some(u), c, f, g),
+                    None => (None, "", p.force, p.governs.as_str()),
+                };
+                let _ = writeln!(
+                    h,
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td class=\"n {}\">{}</td><td>{}</td>\
+                     <td class=\"n\">{}</td><td>{}</td></tr>",
+                    esc(&p.joint),
+                    esc(&p.plate),
+                    esc(&p.part.words()),
+                    class(u),
+                    pct(u),
+                    esc(case),
+                    kn(force),
+                    esc(governs)
+                );
+            }
+            h.push_str(
+                "</table>\n<p class=\"note\">Per member bolting onto a plate: bearing, block \
+                 shear, the plate's sections and its end and edge distances; per weld: the \
+                 resultant of the member forces on the plates it holds (on the safe side) \
+                 against the weld's resistance. A plate in compression: plate buckling not \
+                 checked. The theory page on joint plates says every assumption.</p>\n",
+            );
+        }
 
         // Reactions.
         h.push_str(

@@ -40,6 +40,7 @@ pub mod links;
 pub mod member_ends;
 pub mod model;
 pub mod offsets;
+pub mod plates;
 pub mod pole;
 pub mod sia263;
 pub mod sia265;

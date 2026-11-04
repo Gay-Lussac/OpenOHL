@@ -244,6 +244,13 @@ impl ResultsTab {
         for m in &r.members {
             s.polyline(&[at(m.ends[0]), at(m.ends[1])], usage_colour(m.usage), 3.0);
         }
+        // The joints with plates: coloured by their plates' and welds'
+        // worst usage, as the members (2026-11-04).
+        for (j, u) in ohl_structure_link::joint_plate_usage(&r.plates) {
+            if let Some(k) = r.joints.iter().position(|x| x.id == j) {
+                s.point(at(k), usage_colour(Some(u)), 9.0);
+            }
+        }
         if self.reactions {
             let largest = r
                 .reactions

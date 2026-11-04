@@ -13,8 +13,8 @@
 //! connections or plates.
 
 use ohl_structures::StructureType;
-use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES};
-use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
+use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES, WeldKind};
+use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::edits::{array, next_id, raise_version};
 
@@ -338,6 +338,39 @@ pub fn copy_ends(doc: &mut DocumentMut, t: &StructureType, ends: &[CopyEnd]) -> 
         if !to.is_empty() {
             let _ = set_welded_to(doc, new, &to);
         }
+        // Its welds with their size and length (2026-11-04).
+        for w in &p.welds {
+            let Some(o) = plates.get(&(w.to.clone(), joint.clone())) else {
+                continue;
+            };
+            let Some(x) = doc
+                .get_mut("plate")
+                .and_then(Item::as_array_of_tables_mut)
+                .and_then(|a| {
+                    a.iter_mut()
+                        .find(|t| t.get("id").and_then(Item::as_str) == Some(new.as_str()))
+                })
+            else {
+                continue;
+            };
+            if x.get("weld").and_then(Item::as_array_of_tables).is_none() {
+                x.insert("weld", Item::ArrayOfTables(ArrayOfTables::new()));
+            }
+            let mut e = Table::new();
+            e.insert("to", toml_edit::value(o.clone()));
+            if let Some(v) = w.size {
+                e.insert("size", Item::Value(mm(v.si())));
+            }
+            if let Some(v) = w.length {
+                e.insert("length", Item::Value(mm(v.si())));
+            }
+            if let Some(k) = w.kind {
+                e.insert("kind", toml_edit::value(k.as_str()));
+            }
+            if let Some(a) = x.get_mut("weld").and_then(Item::as_array_of_tables_mut) {
+                a.push(e);
+            }
+        }
     }
     given
 }
@@ -483,7 +516,8 @@ pub fn weld_pair(
     }
     if on {
         let related = lists.get(a).is_some_and(|l| l.iter().any(|x| x == b))
-            || lists.get(b).is_some_and(|l| l.iter().any(|x| x == a));
+            || lists.get(b).is_some_and(|l| l.iter().any(|x| x == a))
+            || t.weld_between(a, b).is_some();
         if !related {
             lists.entry(a.to_owned()).or_default().push(b.to_owned());
         }
@@ -501,6 +535,159 @@ pub fn weld_pair(
             set_welded_to(doc, id, l)?;
         }
     }
+    if !on {
+        drop_weld(doc, a, b);
+        drop_weld(doc, b, a);
+    }
+    Ok(())
+}
+
+/// The `[[plate.weld]]` of plate `id` to `to` taken out.
+fn drop_weld(doc: &mut DocumentMut, id: &str, to: &str) {
+    let Some(t) = doc
+        .get_mut("plate")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+        })
+    else {
+        return;
+    };
+    let empty = match t.get_mut("weld").and_then(Item::as_array_of_tables_mut) {
+        Some(w) => {
+            w.retain(|x| x.get("to").and_then(Item::as_str) != Some(to));
+            w.is_empty()
+        }
+        None => false,
+    };
+    if empty {
+        t.remove("weld");
+    }
+}
+
+/// What a weld edit changes: each field `Some` to set it (`Some(None)`
+/// clears a size or a length), `None` to keep it.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct WeldEdit {
+    /// The fillet's throat a, m.
+    pub size: Option<Option<f64>>,
+    /// Its length, m (cleared: the seam's).
+    pub length: Option<Option<f64>>,
+    /// Its kind.
+    pub kind: Option<WeldKind>,
+}
+
+/// The weld between plates `a` and `b` of one joint given its size,
+/// length or kind (2026-11-04, `[[plate.weld]]`, still version 9): written
+/// on the plate that already holds it (its `[[plate.weld]]`, else the one
+/// whose `welded_to` names the other, else `a`); the pair welded if it was
+/// not, the other's name taken out of that plate's `welded_to` (the weld
+/// now says it). A size or length above 0.
+pub fn set_weld(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    a: &str,
+    b: &str,
+    edit: WeldEdit,
+) -> Result<(), String> {
+    let (Some(pa), Some(pb)) = (
+        t.plates.iter().find(|p| p.id == a),
+        t.plates.iter().find(|p| p.id == b),
+    ) else {
+        return Err(format!("no plates {a} and {b}"));
+    };
+    if a == b || pa.joint != pb.joint {
+        return Err(format!(
+            "plates {a} and {b}: two plates of one joint are welded to each other"
+        ));
+    }
+    for v in [edit.size, edit.length].into_iter().flatten().flatten() {
+        if v.is_nan() || v <= 0.0 {
+            return Err("a weld's size and length above 0".into());
+        }
+    }
+    let (holder, other) = if pb.welds.iter().any(|w| w.to == a) {
+        (b, a)
+    } else if pa.welds.iter().any(|w| w.to == b) {
+        (a, b)
+    } else if pb.welded_to.iter().any(|x| x == a) && !pa.welded_to.iter().any(|x| x == b) {
+        (b, a)
+    } else {
+        (a, b)
+    };
+    // The plates' old kind written as it is read first (as welding does).
+    if t.plates
+        .iter()
+        .any(|p| p.joint == pa.joint && p.kind() == ohl_structures::connections::PlateKind::Welded)
+    {
+        weld_pair(doc, t, a, b, true)?;
+    }
+    let plates = doc
+        .get_mut("plate")
+        .and_then(Item::as_array_of_tables_mut)
+        .ok_or_else(|| "no plates".to_owned())?;
+    for p in plates.iter_mut() {
+        let id = p.get("id").and_then(Item::as_str).unwrap_or("").to_owned();
+        if id != holder && id != other {
+            continue;
+        }
+        let name = if id == holder { other } else { holder };
+        let empty = match p.get_mut("welded_to").and_then(Item::as_array_mut) {
+            Some(w) => {
+                w.retain(|v| v.as_str() != Some(name));
+                w.is_empty()
+            }
+            None => false,
+        };
+        if empty {
+            p.remove("welded_to");
+        }
+    }
+    let p = plates
+        .iter_mut()
+        .find(|p| p.get("id").and_then(Item::as_str) == Some(holder))
+        .ok_or_else(|| format!("no plate {holder}"))?;
+    if p.get("weld").and_then(Item::as_array_of_tables).is_none() {
+        p.insert("weld", Item::ArrayOfTables(ArrayOfTables::new()));
+    }
+    let welds = p
+        .get_mut("weld")
+        .and_then(Item::as_array_of_tables_mut)
+        .expect("made above");
+    if !welds
+        .iter()
+        .any(|w| w.get("to").and_then(Item::as_str) == Some(other))
+    {
+        let mut w = Table::new();
+        w.insert("to", toml_edit::value(other));
+        welds.push(w);
+    }
+    let w = welds
+        .iter_mut()
+        .find(|w| w.get("to").and_then(Item::as_str) == Some(other))
+        .expect("pushed above");
+    for (key, v) in [("size", edit.size), ("length", edit.length)] {
+        match v {
+            Some(Some(x)) => {
+                w.insert(key, Item::Value(mm(x)));
+            }
+            Some(None) => {
+                w.remove(key);
+            }
+            None => {}
+        }
+    }
+    match edit.kind {
+        Some(WeldKind::Fillet) => {
+            w.remove("kind");
+        }
+        Some(k) => {
+            w.insert("kind", toml_edit::value(k.as_str()));
+        }
+        None => {}
+    }
+    raise_version(doc, i64::from(CONNECTIONS_VERSION));
     Ok(())
 }
 
@@ -605,6 +792,16 @@ pub fn remove_plate(doc: &mut DocumentMut, id: &str) {
             };
             if empty {
                 t.remove("welded_to");
+            }
+            let empty = match t.get_mut("weld").and_then(Item::as_array_of_tables_mut) {
+                Some(w) => {
+                    w.retain(|x| x.get("to").and_then(Item::as_str) != Some(id));
+                    w.is_empty()
+                }
+                None => false,
+            };
+            if empty {
+                t.remove("weld");
             }
         }
         if a.is_empty() {

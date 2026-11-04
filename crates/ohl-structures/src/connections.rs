@@ -44,6 +44,12 @@
 //! thickness = "10 mm"
 //! welded_to = ["G1"]      # welded to these plates of the same joint: one
 //! #   welded plate (an assembly) reaching every member bolted there
+//!
+//! [[plate.weld]]          # a weld of this plate to another (2026-11-04,
+//! to = "G1"               #   still version 9): welds it to G1 as welded_to
+//! size = "6 mm"           #   does; the fillet's throat a (SIA 263 6.3.2.6)
+//! length = "220 mm"       # none: the seam's length from the geometry
+//! kind = "fillet"         # fillet (default) or full_penetration
 //! ```
 //!
 //! A **welded plate** is several plates welded together so that every
@@ -282,6 +288,70 @@ impl PlateKind {
     }
 }
 
+/// How two plates are welded (`[[plate.weld]] kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeldKind {
+    /// A fillet weld (the default): its size is the throat a.
+    #[default]
+    Fillet,
+    /// A full penetration butt weld: as strong as the weaker plate (SIA
+    /// 263 6.3.3.4), not checked.
+    FullPenetration,
+}
+
+impl WeldKind {
+    /// Every kind, in the order offered.
+    pub const ALL: [WeldKind; 2] = [WeldKind::Fillet, WeldKind::FullPenetration];
+
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fillet => "fillet",
+            Self::FullPenetration => "full_penetration",
+        }
+    }
+
+    /// In words, for the tables.
+    pub fn words(self) -> &'static str {
+        match self {
+            Self::Fillet => "fillet",
+            Self::FullPenetration => "full penetration",
+        }
+    }
+}
+
+/// A weld of a plate to another plate of its joint (`[[plate.weld]]`,
+/// 2026-11-04, still structure file version 9): it welds the two as
+/// `welded_to` does, with its size and length. A pair welded by
+/// `welded_to` alone has no size: not checked (said).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeWeld {
+    /// The other plate.
+    pub to: String,
+    /// The fillet's throat a (SIA 263 6.3.2.6, Figure 34: the height of
+    /// the triangle inscribed in the weld's section); none: not given,
+    /// the weld not checked.
+    #[serde(default)]
+    pub size: Option<Length>,
+    /// Its length (the whole length welded, both sides together when
+    /// welded on both; none: the seam's length where the two plates meet,
+    /// worked out from the geometry, one side).
+    #[serde(default)]
+    pub length: Option<Length>,
+    /// Fillet (none) or full penetration.
+    #[serde(default)]
+    pub kind: Option<WeldKind>,
+}
+
+impl TypeWeld {
+    /// Its kind (fillet when not given).
+    pub fn kind(&self) -> WeldKind {
+        self.kind.unwrap_or_default()
+    }
+}
+
 /// A gusset plate at a joint (`[[plate]]`); a joint may have several.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -309,12 +379,33 @@ pub struct TypePlate {
     /// plate, read both ways.
     #[serde(default)]
     pub welded_to: Vec<String>,
+    /// Its welds to other plates of the joint with their size and length
+    /// (`[[plate.weld]]`, 2026-11-04, still version 9); each welds the two
+    /// as `welded_to` does.
+    #[serde(default, rename = "weld")]
+    pub welds: Vec<TypeWeld>,
 }
 
 impl TypePlate {
     /// How it is held (bolted when not given).
     pub fn kind(&self) -> PlateKind {
         self.kind.unwrap_or_default()
+    }
+
+    /// The plates it names as welded to it: `welded_to` and its welds'
+    /// `to`, each once.
+    pub fn welded_ids(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for x in self
+            .welded_to
+            .iter()
+            .chain(self.welds.iter().map(|w| &w.to))
+        {
+            if !out.contains(&x.as_str()) {
+                out.push(x.as_str());
+            }
+        }
+        out
     }
 }
 
@@ -331,6 +422,21 @@ impl StructureType {
         self.connections
             .iter()
             .find(|c| c.member == member && c.joint == joint)
+    }
+
+    /// The weld between plates `a` and `b` given with its data
+    /// (`[[plate.weld]]` on either), if any.
+    pub fn weld_between(&self, a: &str, b: &str) -> Option<&TypeWeld> {
+        self.plates.iter().find_map(|p| {
+            let other = if p.id == a {
+                b
+            } else if p.id == b {
+                a
+            } else {
+                return None;
+            };
+            p.welds.iter().find(|w| w.to == other)
+        })
     }
 
     /// The welded assemblies at `joint`: the plates joined by `welded_to`
@@ -363,8 +469,8 @@ impl StructureType {
             join(&mut root, w[0], w[1]);
         }
         for (i, p) in here.iter().enumerate() {
-            for o in &p.welded_to {
-                if let Some(k) = here.iter().position(|q| &q.id == o) {
+            for o in p.welded_ids() {
+                if let Some(k) = here.iter().position(|q| q.id == o) {
                     join(&mut root, i, k);
                 }
             }
@@ -414,8 +520,8 @@ impl StructureType {
                     p.id, p.joint
                 ));
             }
-            for o in &p.welded_to {
-                if !self.plates.iter().any(|q| &q.id == o && q.joint == p.joint) {
+            for o in p.welded_ids() {
+                if !self.plates.iter().any(|q| q.id == o && q.joint == p.joint) {
                     out.push(format!(
                         "plate {}: welded to {o}: no plate of joint {} (kept, not used)",
                         p.id, p.joint
@@ -515,8 +621,36 @@ impl StructureType {
             if p.thickness.si() <= 0.0 {
                 return Err(format!("plate {}: a thickness above 0", p.id));
             }
-            if p.welded_to.contains(&p.id) {
+            if p.welded_ids().contains(&p.id.as_str()) {
                 return Err(format!("plate {}: welded to itself", p.id));
+            }
+            for (k, w) in p.welds.iter().enumerate() {
+                if w.size.is_some_and(|v| v.si() <= 0.0) || w.length.is_some_and(|v| v.si() <= 0.0)
+                {
+                    return Err(format!(
+                        "plate {}: the weld to {}: a size and a length above 0",
+                        p.id, w.to
+                    ));
+                }
+                if p.welds[..k].iter().any(|x| x.to == w.to) {
+                    return Err(format!("plate {}: the weld to {} given twice", p.id, w.to));
+                }
+            }
+        }
+        // A weld given on both plates.
+        for p in &self.plates {
+            for w in &p.welds {
+                if self
+                    .plates
+                    .iter()
+                    .any(|q| q.id == w.to && q.welds.iter().any(|x| x.to == p.id))
+                    && p.id < w.to
+                {
+                    return Err(format!(
+                        "plates {} and {}: their weld given on both (give it on one)",
+                        p.id, w.to
+                    ));
+                }
             }
         }
         Ok(())

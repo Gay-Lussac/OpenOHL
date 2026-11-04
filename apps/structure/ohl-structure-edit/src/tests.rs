@@ -1167,6 +1167,96 @@ fn bolt_points_and_plate_outlines_are_written() {
     );
 }
 
+/// A weld's size, length and kind (2026-11-04, `[[plate.weld]]`, still
+/// version 9): written on the plate whose `welded_to` named the other
+/// (the name moved into the weld), read back with the file's round trip;
+/// cleared; the kind written only when not a fillet; unwelding and
+/// removing a plate take the weld out; a size of 0 refused.
+#[test]
+fn a_weld_gets_its_size_and_length() {
+    use crate::connection_edits::{self as ce, WeldEdit};
+    use ohl_structures::connections::WeldKind;
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    let t = read(&doc);
+    let g1 = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let t = read(&doc);
+    let g2 = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let t = read(&doc);
+    let g3 = ce::add_plate(&mut doc, &t, "N2", 0.01);
+    let t = read(&doc);
+    ce::weld_pair(&mut doc, &t, &g2, &g1, true).unwrap();
+    let t = read(&doc);
+    let edit = WeldEdit {
+        size: Some(Some(0.006)),
+        length: Some(Some(0.22)),
+        ..WeldEdit::default()
+    };
+    ce::set_weld(&mut doc, &t, &g1, &g2, edit).unwrap();
+    let text = doc.to_string();
+    assert!(
+        text.contains(&format!(
+            "id = \"{g2}\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\n[[plate.weld]]\nto = \
+             \"{g1}\"\nsize = \"6 mm\"\nlength = \"220 mm\""
+        )),
+        "{text}"
+    );
+    // Round trip: parsed from the text written.
+    let doc2: DocumentMut = text.parse().unwrap();
+    let t = read(&doc2);
+    assert!(t.plates[1].welded_to.is_empty(), "moved into the weld");
+    let w = t.weld_between(&g1, &g2).unwrap();
+    assert!((w.size.unwrap().si() - 0.006).abs() < 1e-12);
+    assert!((w.length.unwrap().si() - 0.22).abs() < 1e-12);
+    assert_eq!(w.kind, None);
+    assert_eq!(t.welded_assemblies("N2")[0], vec![g1.clone(), g2.clone()]);
+    // A plate after it keeps its own data (the weld stays with G2).
+    assert!(t.plates[2].welds.is_empty() && t.plates[2].id == g3);
+    // The length cleared (the seam's), the kind full penetration.
+    let edit = WeldEdit {
+        length: Some(None),
+        kind: Some(WeldKind::FullPenetration),
+        ..WeldEdit::default()
+    };
+    ce::set_weld(&mut doc, &t, &g2, &g1, edit).unwrap();
+    let t = read(&doc);
+    let w = t.weld_between(&g1, &g2).unwrap();
+    assert!(w.length.is_none() && w.size.is_some());
+    assert_eq!(w.kind(), WeldKind::FullPenetration);
+    // A new weld welds the pair.
+    let edit = WeldEdit {
+        size: Some(Some(0.005)),
+        ..WeldEdit::default()
+    };
+    ce::set_weld(&mut doc, &t, &g3, &g2, edit).unwrap();
+    let t = read(&doc);
+    assert_eq!(t.welded_assemblies("N2").len(), 1);
+    assert!(
+        ce::set_weld(
+            &mut doc,
+            &t,
+            &g3,
+            &g2,
+            WeldEdit {
+                size: Some(Some(0.0)),
+                ..WeldEdit::default()
+            }
+        )
+        .is_err()
+    );
+    // Unwelded: the weld gone; a plate removed: its welds gone.
+    ce::weld_pair(&mut doc, &t, &g1, &g2, false).unwrap();
+    let t = read(&doc);
+    assert!(t.weld_between(&g1, &g2).is_none());
+    ce::remove_plate(&mut doc, &g2);
+    let t = read(&doc);
+    assert!(t.plates.iter().all(|p| p.welds.is_empty()), "{doc}");
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+}
+
 /// Plates welded to each other (owner 2026-11-04: a welded plate is
 /// several plates welded together): a pair welded and unwelded, the
 /// 2026-11-03 `kind = "welded"` written as what it is read as, a plate

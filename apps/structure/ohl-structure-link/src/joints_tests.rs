@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::joints::{Completeness, Source, joint_details};
 use crate::{BoltedLeg, ConnectionKind, SectionLibrary};
 
-fn library() -> SectionLibrary {
+pub(crate) fn library() -> SectionLibrary {
     SectionLibrary::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../libraries/sections/example-sections.ohlsec"),
@@ -19,7 +19,7 @@ fn library() -> SectionLibrary {
 }
 
 /// A leg in two members in the face y = 1 m and a diagonal to its middle.
-const TOWER: &str = r#"id = "T"
+pub(crate) const TOWER: &str = r#"id = "T"
 name = "t"
 kind = "lattice"
 
@@ -287,7 +287,7 @@ fn a_joint_takes_two_plates_welded_together() {
 }
 
 /// A second diagonal in the face x = 0 to the joint N2 (its own bolts).
-const OTHER_FACE: &str = r#"
+pub(crate) const OTHER_FACE: &str = r#"
 [[node]]
 id = "N5"
 point = ["0 m", "5 m", "0 m"]

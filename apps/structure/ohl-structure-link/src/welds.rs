@@ -21,7 +21,8 @@ use crate::joints::{Arrival, JointDetail};
 
 /// Where two plates of a welded assembly meet: the seam's two ends
 /// (structure's axes, m) and, from the seam, the directions into each
-/// plate (in its plane; the weld's fillet lies between them).
+/// plate (in its plane; the weld's fillet lies between them); with the
+/// weld's data when the file gives them (`[[plate.weld]]`, 2026-11-04).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Weld {
     /// The other plate.
@@ -30,6 +31,46 @@ pub struct Weld {
     pub ends: [[f64; 3]; 2],
     /// From the seam into this plate and into the other one, unit.
     pub sides: [[f64; 3]; 2],
+    /// Fillet (the default) or full penetration.
+    pub kind: ohl_structures::connections::WeldKind,
+    /// The fillet's throat a, m (none: not given — not checked).
+    pub size: Option<f64>,
+    /// Its length given, m (none: the seam's, [`Weld::seam_length`]).
+    pub length: Option<f64>,
+}
+
+impl Weld {
+    /// The seam's length, m.
+    pub fn seam_length(&self) -> f64 {
+        norm(sub(self.ends[1], self.ends[0]))
+    }
+
+    /// Its length: given, else the seam's, m.
+    pub fn length(&self) -> f64 {
+        self.length.unwrap_or_else(|| self.seam_length())
+    }
+
+    /// The angle between the two plates at the seam, degrees.
+    pub fn angle(&self) -> f64 {
+        dot(self.sides[0], self.sides[1])
+            .clamp(-1.0, 1.0)
+            .acos()
+            .to_degrees()
+    }
+
+    /// Its label on the drawings: "a6 × 220" (the throat and the length,
+    /// mm; "a6" with the seam's length), "full pen.", none without a size.
+    pub fn label(&self) -> Option<String> {
+        use ohl_structures::connections::WeldKind;
+        if self.kind == WeldKind::FullPenetration {
+            return Some("full pen.".into());
+        }
+        let a = self.size?;
+        Some(match self.length {
+            Some(l) => format!("a{:.0} × {:.0}", a * 1000.0, l * 1000.0),
+            None => format!("a{:.0}", a * 1000.0),
+        })
+    }
 }
 
 /// The unit normal of a flat polygon (none: degenerate).

@@ -44,6 +44,9 @@ mod joints;
 #[cfg(test)]
 mod joints_tests;
 mod member_view;
+mod plate_checks;
+#[cfg(test)]
+mod plate_checks_tests;
 mod run;
 mod volumes;
 mod welds;
@@ -64,8 +67,11 @@ pub use joints::{
 pub use member_view::{
     FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,
 };
-pub use ohl_structures::connections::{BoltedLeg, ConnectionKind};
+pub use ohl_structures::connections::{BoltedLeg, ConnectionKind, WeldKind};
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
+pub use plate_checks::{
+    PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_usage,
+};
 pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,
@@ -1030,6 +1036,10 @@ pub struct CaseResult {
     /// joint, 2026-10-21): the points at an offset only, in the order of
     /// the load table.
     pub points: Vec<PointMoment>,
+    /// The plates' and welds' checks (2026-11-04, [`plate_usage`]): per
+    /// plate, each member's bolts in it and each weld; empty without
+    /// plates (or a model of its own file).
+    pub plates: Vec<PlateUsage>,
 }
 
 /// The moment of an attachment point's offset in one case: r × F at its
@@ -1077,6 +1087,19 @@ impl CaseResult {
         self.members
             .iter()
             .filter(|m| m.usage.is_some())
+            .max_by(|a, b| {
+                ohl_structures_fe::check::usage_order(
+                    a.usage.unwrap_or(0.0),
+                    b.usage.unwrap_or(0.0),
+                )
+            })
+    }
+
+    /// The plate check using most (a usage that is not a number first).
+    pub fn governing_plate(&self) -> Option<&PlateUsage> {
+        self.plates
+            .iter()
+            .filter(|p| p.usage.is_some())
             .max_by(|a, b| {
                 ohl_structures_fe::check::usage_order(
                     a.usage.unwrap_or(0.0),
@@ -1359,6 +1382,7 @@ fn analyse_one(
         took,
         notes,
         points,
+        plates: Vec::new(),
     })
 }
 

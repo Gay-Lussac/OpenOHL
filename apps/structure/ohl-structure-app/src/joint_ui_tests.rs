@@ -1063,3 +1063,102 @@ fn the_roll_buttons_turn_a_member_and_undo() {
     assert!(off(&mut h, &first_off).unwrap() > ohl_structure_link::FLAT_OFF);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// The plates' and welds' checks in Joint details (owner 2026-11-04: "add
+/// weld size and length and the plate checks"): a gusset plate G1 at N2
+/// with D1 and H1 bolted onto it and a plate G2 welded to it (in its
+/// plane: they do not meet, the weld is said not checked); its weld row
+/// takes a size (one undo step, `[[plate.weld]]`); a run (Results › Run)
+/// checks the plates per case, and Joint details shows each part's usage
+/// with what governs (its clause), each check in a box.
+#[test]
+fn joint_details_show_the_plate_checks() {
+    use std::time::{Duration, Instant};
+    let path = copy_of("type-02.ohls", "plate-checks");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("plates.ohls");
+    std::fs::write(
+        &tower,
+        format!(
+            "{}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+             \n[[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"8 mm\"\nwelded_to = [\"G1\"]\n\
+             \n[[connection]]\nmember = \"H1\"\njoint = \"N2\"\nonto = \"G1\"\n\
+             bolts = {{ count = 2, diameter = \"16 mm\" }}\ngauges = [\"30 mm\"]\n\
+             gauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n\
+             \n[[load]]\nnode = \"N5\"\nforce = [\"10 kN\", \"0 kN\", \"-5 kN\"]\n",
+            ANGLES.replace("onto = \"L1\"", "onto = \"G1\"")
+        ),
+    )
+    .unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run();
+    h.run();
+    // The weld row: G1 – G2, no size yet.
+    h.get_by_label("G1 – G2");
+    h.get_by_label("Size a mm");
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    h.state_mut().apply_joint_acts(
+        vec![crate::joint_tools::Act::WeldData(
+            "G1".into(),
+            "G2".into(),
+            ohl_structure_edit::connection_edits::WeldEdit {
+                size: Some(Some(0.005)),
+                ..Default::default()
+            },
+        )],
+        &details,
+    );
+    h.run();
+    let t = h.state().file.as_ref().unwrap().structure().clone();
+    let w = t.weld_between("G1", "G2").expect("the weld written");
+    assert!((w.size.unwrap().si() - 0.005).abs() < 1e-12);
+    // Results › Run: the plates checked with the members.
+    menu(&mut h, "Results", "FE results");
+    h.get_by_label("▶ Run").click();
+    let started = Instant::now();
+    loop {
+        h.step();
+        if !h.state().results.running() {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(60), "no result");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    h.run();
+    let r = h.state().results.shown().expect("solved").clone();
+    assert!(
+        r.plates.iter().any(|p| p.joint == "N2"
+            && p.part == ohl_structure_link::PlatePart::Member("D1".into())
+            && p.usage.is_some()),
+        "{:?}",
+        r.plates
+    );
+    // Joint details: each part's usage and what governs, with its clause.
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run();
+    h.run();
+    h.get_by_label("Plate checks (the last run)");
+    h.get_by_label("D1's bolts");
+    h.get_by_label("weld to G2");
+    assert!(h.get_all_by_label_contains("ASCE 10-97").count() >= 1);
+    h.get_by_label_contains("Each check in case").click();
+    h.run();
+    assert!(h.get_all_by_label_contains("bearing on the plate").count() >= 1);
+    assert!(
+        h.get_all_by_label_contains("do not meet (parallel, or apart)")
+            .count()
+            >= 1
+    );
+    std::fs::remove_dir_all(dir).ok();
+}

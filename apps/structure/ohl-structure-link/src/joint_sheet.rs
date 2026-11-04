@@ -178,6 +178,16 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
                 closed: false,
                 kind: LineKind::Weld,
             });
+            // Its size (and length given) beside it: "a6 × 220"
+            // (2026-11-04).
+            if let Some(text) = w.label() {
+                let [a, b] = w.ends.map(to);
+                marks.push(Mark::Text {
+                    at: [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0],
+                    text,
+                    label: false,
+                });
+            }
         }
     }
     for a in &d.arrivals {

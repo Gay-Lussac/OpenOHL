@@ -114,6 +114,62 @@ fn plates_welded_together_are_one_assembly() {
     assert!(parse(&text.replace("welded_to = [\"G2\"]", "welded_to = [\"G3\"]")).is_err());
 }
 
+/// A weld with its size and length (`[[plate.weld]]`, 2026-11-04, still
+/// version 9): it welds the two plates as `welded_to` does, its data
+/// read; the kind fillet by default; a size of 0, a weld given twice or
+/// on both plates refused; a file with `welded_to` alone reads as before
+/// (no weld data).
+#[test]
+fn welds_carry_their_size_and_length() {
+    use crate::connections::WeldKind;
+    let text = format!(
+        "{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate.weld]]\nto = \"G1\"\nsize = \"6 mm\"\nlength = \"220 mm\"\n\
+         [[plate]]\nid = \"G3\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate.weld]]\nto = \"G2\"\nkind = \"full_penetration\"\n"
+    );
+    let t = parse(&text).unwrap();
+    assert_eq!(
+        t.welded_assemblies("N2"),
+        vec![vec!["G1".to_owned(), "G2".to_owned(), "G3".to_owned()]]
+    );
+    let w = t.weld_between("G1", "G2").unwrap();
+    assert!((w.size.unwrap().si() - 0.006).abs() < 1e-12);
+    assert!((w.length.unwrap().si() - 0.220).abs() < 1e-12);
+    assert_eq!(w.kind(), WeldKind::Fillet);
+    let w = t.weld_between("G3", "G2").unwrap();
+    assert_eq!(w.kind(), WeldKind::FullPenetration);
+    assert!(w.size.is_none() && w.length.is_none());
+    assert!(t.weld_between("G1", "G3").is_none());
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    assert!(parse(&text.replace("size = \"6 mm\"", "size = \"0 mm\"")).is_err());
+    let twice = text.replace(
+        "kind = \"full_penetration\"\n",
+        "kind = \"full_penetration\"\n[[plate.weld]]\nto = \"G2\"\n",
+    );
+    assert!(parse(&twice).unwrap_err().contains("given twice"));
+    let both = text.replacen(
+        "thickness = \"10 mm\"\n[[plate]]\nid = \"G2\"",
+        "thickness = \"10 mm\"\n[[plate.weld]]\nto = \"G2\"\n[[plate]]\nid = \"G2\"",
+        1,
+    );
+    assert!(parse(&both).unwrap_err().contains("on both"), "{both}");
+    // welded_to alone: welded, no weld data.
+    let old = format!(
+        "{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\nwelded_to = [\"G1\"]\n"
+    );
+    let t = parse(&old).unwrap();
+    assert_eq!(t.welded_assemblies("N2").len(), 1);
+    assert!(t.weld_between("G1", "G2").is_none());
+    assert!(t.plates.iter().all(|p| p.welds.is_empty()));
+}
+
 /// Three gauge lines (a wide leg, owner 2026-11-03), one gauge each.
 #[test]
 fn three_gauge_lines_are_read() {

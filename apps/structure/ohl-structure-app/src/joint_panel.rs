@@ -247,8 +247,9 @@ impl StructureApp {
             egui::RichText::new(
                 "The ASCE 10-97 check takes from this table each end's eccentric and restrained \
                  (as shown) and its bolts, holes and leg bolted for the bolt shear, bearing and \
-                 net section, the weaker end governing; not yet the distances, the plates' own \
-                 checks or the eccentricity. An end without a connection is checked from the \
+                 net section, the weaker end governing. The plates and their welds are checked \
+                 per case with the analysis (Results › Run): below, under Plate checks. An end \
+                 without a connection is checked from the \
                  member's design data, as before. Values in a connection override the member's \
                  design data at that end.",
             )
@@ -288,6 +289,7 @@ impl StructureApp {
         let mut acts = flat_notes(ui, &t, j);
         acts.extend(crate::joint_tools::joint_bar(
             ui,
+            &t,
             details,
             j,
             &mut self.buffers,
@@ -314,8 +316,127 @@ impl StructureApp {
             .weak(),
         );
         self.apply_joint_acts(acts, details);
+        self.plate_results_ui(ui, &chosen);
         for n in &details.notes {
             ui.label(egui::RichText::new(n).small().weak());
+        }
+    }
+
+    /// The plates' and welds' checks at joint `joint` from the last run
+    /// (2026-11-04): per plate part its usage in the case shown, its
+    /// largest over the cases with that case and what governs (with its
+    /// clause); each check and what was assumed in a scroll box.
+    pub(crate) fn plate_results_ui(&self, ui: &mut egui::Ui, joint: &str) {
+        let Some(run) = self.results.run() else {
+            return;
+        };
+        let solved: Vec<(&str, &ohl_structure_link::CaseResult)> = run
+            .cases
+            .iter()
+            .filter_map(|c| Some((c.name.as_str(), c.fe.as_ref()?.as_ref().ok()?)))
+            .collect();
+        let Some((_, first)) = solved.first() else {
+            return;
+        };
+        // The same parts in every case, in the same order.
+        let here: Vec<usize> = first
+            .plates
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.joint == joint)
+            .map(|(k, _)| k)
+            .collect();
+        if here.is_empty() {
+            return;
+        }
+        let shown = self.results.shown();
+        let shown_name = run
+            .cases
+            .get(self.results.shown)
+            .map_or("", |c| c.name.as_str());
+        ui.add_space(6.0);
+        ui.strong("Plate checks (the last run)");
+        let colour = |u: Option<f64>| {
+            let [r, g, b, _] = crate::results_tab::usage_colour(u);
+            egui::Color32::from_rgb(r, g, b)
+        };
+        let pct = |u: Option<f64>| u.map_or("—".to_owned(), |u| format!("{:.0} %", u * 100.0));
+        egui::Grid::new("joint-plate-checks")
+            .striped(true)
+            .show(ui, |ui| {
+                for h in [
+                    "Plate",
+                    "Part",
+                    &format!("Case {shown_name}"),
+                    "Largest",
+                    "In case",
+                    "What governs",
+                ] {
+                    ui.strong(h);
+                }
+                ui.end_row();
+                for &k in &here {
+                    let p = &first.plates[k];
+                    let now = shown.and_then(|r| r.plates.get(k));
+                    let mut best: Option<(f64, &str, &str)> = None;
+                    for (case, r) in &solved {
+                        if let Some(x) = r.plates.get(k)
+                            && let Some(u) = x.usage
+                            && best.is_none_or(|b| ohl_structure_link::usage_order(u, b.0).is_gt())
+                        {
+                            best = Some((u, case, x.governs.as_str()));
+                        }
+                    }
+                    ui.label(&p.plate);
+                    ui.label(p.part.words());
+                    let u = now.and_then(|x| x.usage);
+                    ui.colored_label(colour(u), pct(u));
+                    let b = best.map(|b| b.0);
+                    ui.colored_label(colour(b), pct(b));
+                    ui.label(best.map_or("", |b| b.1));
+                    ui.label(
+                        egui::RichText::new(best.map_or(
+                            now.map_or(p.governs.as_str(), |x| x.governs.as_str()),
+                            |b| b.2,
+                        ))
+                        .small(),
+                    );
+                    ui.end_row();
+                }
+            });
+        if let Some(r) = shown {
+            egui::CollapsingHeader::new(format!("Each check in case {shown_name}"))
+                .id_salt("joint-plate-checks-each")
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("joint-plate-checks-scroll")
+                        .max_height(220.0)
+                        .show(ui, |ui| {
+                            for &k in &here {
+                                let Some(p) = r.plates.get(k) else {
+                                    continue;
+                                };
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} {} — {:.1} kN",
+                                        p.plate,
+                                        p.part.words(),
+                                        p.force / 1000.0
+                                    ))
+                                    .strong(),
+                                );
+                                for (what, u) in &p.checks {
+                                    ui.colored_label(
+                                        colour(Some(*u)),
+                                        format!("{} {what}", pct(Some(*u))),
+                                    );
+                                }
+                                for n in &p.notes {
+                                    ui.label(egui::RichText::new(n).small().weak());
+                                }
+                            }
+                        });
+                });
         }
     }
 

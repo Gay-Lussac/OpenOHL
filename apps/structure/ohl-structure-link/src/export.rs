@@ -303,6 +303,9 @@ pub struct ExportPlate {
     /// The plates welded together with it into one welded plate, itself
     /// among them (alone: itself only; 2026-11-04).
     pub assembly: Vec<String>,
+    /// Its welds to the plates of its assembly listed after it (each seam
+    /// once), with their size and length (2026-11-04).
+    pub welds: Vec<crate::welds::Weld>,
 }
 
 fn add3(a: [f64; 3], b: [f64; 3], k: f64) -> [f64; 3] {
@@ -460,6 +463,7 @@ pub fn export_joints(
                 outline_given: p.outline_given,
                 members: p.members.clone(),
                 assembly: p.assembly.clone(),
+                welds: p.welds.clone(),
             });
         }
     }
