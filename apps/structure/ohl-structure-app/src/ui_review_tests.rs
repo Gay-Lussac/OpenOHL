@@ -184,6 +184,44 @@ fn the_start_page_lists_recent_files_and_the_example() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
+/// A row double-clicked in a table (2026-11-04): the 3D view centred on
+/// it and nearer — a member at its middle, its length in view; a joint a
+/// few metres away; the direction looked from kept.
+#[test]
+fn a_row_double_clicked_zooms_the_view_on_it() {
+    let path = copy_of("type-02.ohls", "review-zoom");
+    let mut h = harness(&path);
+    let Some(before) = h.state().view_camera() else {
+        return; // no GPU: no view
+    };
+    let (id, a, b) = {
+        let f = h.state().file.as_ref().unwrap();
+        let t = f.structure_arc();
+        let g = ohl_structure_edit::geometry(&t, &Default::default());
+        let m = g.members.first().expect("a member").clone();
+        (m.0, m.1, m.2)
+    };
+    let ask = |h: &mut Harness<'static, StructureApp>, handle: ohl_structure_edit::Handle| {
+        h.ctx.data_mut(|d| {
+            d.insert_temp(egui::Id::new("structure-table-zoom"), Some(handle));
+        });
+        h.run();
+        h.state().view_camera().unwrap()
+    };
+    let c = ask(&mut h, ohl_structure_edit::Handle::Member(id));
+    let mid = [0, 1, 2].map(|k| 0.5 * (a[k] + b[k]));
+    assert!(
+        (0..3).all(|k| (c.target[k] - mid[k]).abs() < 1e-9),
+        "{:?} {mid:?}",
+        c.target
+    );
+    assert!(c.distance < before.distance, "nearer");
+    assert_eq!((c.yaw, c.pitch), (before.yaw, before.pitch));
+    let j = h.state().file.as_ref().unwrap().structure_arc().nodes[0].clone();
+    let c = ask(&mut h, ohl_structure_edit::Handle::Joint(j.id.clone()));
+    assert!((c.distance - 3.0).abs() < 1e-9, "a joint: 3 m away");
+}
+
 /// The 3D view's buttons: Front looks along +y, Side along -x, Top from
 /// above (parallel), Iso and Fit as the view opens.
 #[test]

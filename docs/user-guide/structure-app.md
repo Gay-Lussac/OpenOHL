@@ -322,7 +322,11 @@ their menu or from View.
   view writes its joint, offset and length in magenta — and, after a run, its
   moment in the case shown) or member, Shift + click selects another; a
   right-click opens the menu of what is under the pointer, or of the
-  selection ([above](#the-window)). The view's notes are written in the
+  selection ([above](#the-window)). A **double-click on a row's name** in
+  the tables on the left (joints, members, points, wire points) also
+  turns the 3D view onto it (2026-11-04): centred on the joint or point,
+  a few metres away, or on the member with its length in view; the
+  direction looked from stays. The view's notes are written in the
   colour of what they are about, without a box. A click never moves anything: a joint or point
   moves only with the **Move** tool held (below). A drag elsewhere turns
   the view, a right-drag pans, the wheel zooms. The buttons at the top

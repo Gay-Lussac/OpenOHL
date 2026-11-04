@@ -130,8 +130,22 @@ fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
     }
 }
 
+/// The row double-clicked last, for the 3D view to zoom on
+/// ([`take_zoom`]).
+fn zoom_id() -> egui::Id {
+    egui::Id::new("structure-table-zoom")
+}
+
+/// The row double-clicked since the last call, if any: the 3D view zooms
+/// on it (owner 2026-11-04).
+pub(crate) fn take_zoom(ctx: &egui::Context) -> Option<Handle> {
+    ctx.data_mut(|d| d.remove_temp::<Option<Handle>>(zoom_id()))
+        .flatten()
+}
+
 /// A row's name: picks it (Shift + click: picks another, or drops it);
-/// brought into view when asked.
+/// a double-click also zooms the 3D view on it; brought into view when
+/// asked.
 pub(crate) fn row(
     ui: &mut egui::Ui,
     selected: &mut Vec<Handle>,
@@ -139,7 +153,15 @@ pub(crate) fn row(
     h: Handle,
     text: &str,
 ) -> egui::Response {
-    let r = ui.selectable_label(selected.contains(&h), text);
+    let r = ui
+        .selectable_label(selected.contains(&h), text)
+        .on_hover_text(
+            "Click: pick it · Shift + click: pick another · double-click: zoom the 3D view on it",
+        );
+    if r.double_clicked() {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(zoom_id(), Some(h.clone())));
+    }
     if r.clicked() {
         if ui.input(|i| i.modifiers.shift) {
             match selected.iter().position(|x| *x == h) {

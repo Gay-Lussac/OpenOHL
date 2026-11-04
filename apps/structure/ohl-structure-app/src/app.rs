@@ -1176,6 +1176,20 @@ impl StructureApp {
         if std::mem::take(&mut self.view_fit) {
             self.view.fit();
         }
+        // A row double-clicked in a table: the view on it.
+        if let Some(h) = crate::tables::take_zoom(ui.ctx()) {
+            let ends = match &h {
+                ohl_structure_edit::geometry::Handle::Member(id) => {
+                    g.members.iter().find(|m| &m.0 == id).map(|m| (m.1, m.2))
+                }
+                other => ohl_structure_edit::geometry::position(&g, other).map(|p| (p, p)),
+            };
+            if let Some((a, b)) = ends {
+                let min = [0, 1, 2].map(|k| a[k].min(b[k]));
+                let max = [0, 1, 2].map(|k| a[k].max(b[k]));
+                self.view.zoom_on(min, max);
+            }
+        }
         let drawn = self.view.overlay_key();
         let overlay = match self.area {
             Area::LoadCases => self.loads.overlay(&g, drawn),

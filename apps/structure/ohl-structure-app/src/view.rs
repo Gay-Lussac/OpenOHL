@@ -158,6 +158,9 @@ pub struct View {
     pub link_hover: Option<String>,
     /// A standard view asked for (a button), turned to on the next frame.
     pub standard: Option<Standard>,
+    /// A box to zoom on (its lowest and highest corners), on the next
+    /// frame: a row double-clicked in a table ([`View::zoom_on`]).
+    zoom: Option<([f64; 3], [f64; 3])>,
 }
 
 /// What the view needs to draw and edit.
@@ -217,6 +220,14 @@ impl View {
     /// The whole structure in view on the next frame.
     pub fn fit(&mut self) {
         self.camera = None;
+    }
+
+    /// The view centred on the box from `min` to `max` on the next frame,
+    /// near enough to fill it (owner 2026-11-04: "if i double click on a
+    /// member or a joint i would like the view to zoom on that point"); the
+    /// direction looked from kept.
+    pub fn zoom_on(&mut self, min: [f64; 3], max: [f64; 3]) {
+        self.zoom = Some((min, max));
     }
 
     /// Where the view was drawn last.
@@ -279,6 +290,12 @@ impl View {
         });
         if let Some(s) = self.standard.take() {
             s.apply(camera);
+        }
+        if let Some((min, max)) = self.zoom.take() {
+            let b = Bounds { min, max };
+            camera.target = b.centre();
+            // A joint: a few metres away; a member: its length in view.
+            camera.distance = (b.radius() * 2.6).max(3.0);
         }
         let size = [f64::from(rect.width()), f64::from(rect.height())];
         let local = |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)];
