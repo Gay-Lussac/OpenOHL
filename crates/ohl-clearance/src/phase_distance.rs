@@ -942,7 +942,12 @@ pub(crate) mod tests {
 
     /// The default settings (the conductors are at the low level).
     fn low() -> PhaseDistanceSettings {
-        PhaseDistanceSettings::default()
+        // Stations every 1 m (the default until 2026-11-04): the hand
+        // values below are at a station exactly.
+        PhaseDistanceSettings {
+            spacing: 1.0,
+            ..PhaseDistanceSettings::default()
+        }
     }
 
     fn run(c: &[Conductor], s: &PhaseDistanceSettings) -> Vec<PhaseDistancePair> {
