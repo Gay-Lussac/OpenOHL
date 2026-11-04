@@ -194,13 +194,22 @@ id = "G1"                 # unique among the plates, not a member's id
 joint = "N7"
 thickness = "10 mm"
 material = "S355"         # optional
-# kind = "welded"         # bolted onto the joint's leg (default) or welded
-#                         #   (2026-11-03); a joint may have several plates
 # outline = [["0 m", "1 m", "10 m"], …]   # local axes; none: drawn around
 #                                         #   the bolts of the connections onto it,
 #                                         #   each kept the design code's end and
 #                                         #   edge distances from its edge
+
+[[plate]]                 # a joint may have several plates
+id = "G2"
+joint = "N7"
+thickness = "10 mm"
+welded_to = ["G1"]        # welded to these plates of the same joint
+#                         #   (2026-11-04): one welded plate
 ```
+
+**A welded plate** (2026-11-04, still version 9) is several plates welded together so that every member bolting onto the joint reaches one of them. `welded_to` names the plates of the same joint a plate is welded to; it is read both ways (given on either plate) and through others (G3 welded to G2, G2 to G1: one welded plate of three). A plate welded to itself is refused; one welded to a plate not at its joint is said, not used. Files of 2026-11-03 gave a plate `kind = "welded"` (then: welded onto the joint's leg): still read, the joint's plates of that kind taken as one welded plate (one alone: a plain plate), said; OHL-Structure writes them as `welded_to` (the kind dropped) at the next welding change, and no longer writes `kind`.
+
+**A member's roll** (2026-11-04): `roll = "90 deg"` on a `[[member]]` turns its cross-section about its axis — with an `orientation`, after it (a correction; before 2026-11-04 the two together were refused) — and so its local axes for the analysis (its bending axes, the member wind, the exports). OHL-Structure writes it from its **Roll** control (degrees, within ±180°; removed at 0).
 
 A member end is given once; the gauges are one per gauge line; a hole is no smaller than its bolt; sizes are not below 0. A connection whose member or joint is gone (deleted, or not rebuilt by a generator) is kept and said, not used; deleting a member or joint in OHL-Structure removes its connections and the plates there, and a connection onto them loses its `onto`. A file with connections or plates is version 9 (an older program says it is newer).
 

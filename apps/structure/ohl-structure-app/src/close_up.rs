@@ -3,24 +3,62 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The joint's close-up in the Detail view: the members as prisms of
-//! their profile, the plates, the bolts (head, shank, nut), turned by
-//! dragging and zoomed by scrolling.
+//! their profile, the plates (a welded assembly's seams too), the bolts
+//! (head, shank, nut), turned by dragging and zoomed by scrolling.
 //!
 //! Drawn far to near (a painter's list), with no depth buffer. Until
 //! 2026-11-03 each face was one polygon sorted by its middle's depth: a
 //! member's side face runs from the joint to the drawing's reach, so its
 //! middle lies far from the bolts on it, and turned so that the member's
 //! far end comes nearer, the whole face sorted in front of the bolts'
-//! heads and covered them — the bolts "disappeared" at some angles. Now
-//! every face is cut into small triangles (about 40 % of the smallest
-//! bolt's diameter near the joint, coarser beyond the bolts), each sorted
-//! by its own depth, so a head is compared with the steel right under it;
-//! the triangles go into one mesh, in order, with the faces' edges drawn
-//! after each of their triangles.
+//! heads and covered them — the bolts "disappeared" at some angles. Since
+//! then every face is cut into small triangles, each sorted by its own
+//! depth, so a head is compared with the steel right under it.
+//!
+//! Smooth again (owner 2026-11-04: "the joint view is a bit laggy now …
+//! but the bolts are good"): the pieces are cut **once** per joint and
+//! file revision ([`CloseUpCache`]), in the structure's axes (a turn of
+//! the view does not change them), finely only near the bolts — a piece's
+//! size grows with its distance from the nearest bolt
+//! ([`pieces_with`]) — and never more than [`MAX_PIECES`]; a turn sorts
+//! them again (one key per piece), and the mesh drawn is kept until the
+//! view, the size of the pane or the file changes.
+
+use std::sync::Arc;
 
 use eframe::egui;
 use ohl_structure_link::{BoltPart, JointDetail, Source};
-use ohl_structures::connections::PlateKind;
+
+/// The most pieces a close-up is cut into: beyond it the finest size is
+/// made coarser until it fits (a joint with very many bolts).
+pub const MAX_PIECES: usize = 40_000;
+
+/// How fast a piece may grow with its distance from the nearest bolt
+/// beyond [`NEAR`]: its edges at most `fine + GROWTH × distance` (and
+/// `coarse`).
+const GROWTH: f64 = 0.5;
+
+/// How far round a bolt the pieces stay at the finest size, m (a head
+/// and its nut with some room).
+const NEAR: f64 = 0.02;
+
+/// A piece of the close-up, view-independent: a triangle in the
+/// structure's axes from the joint (m), its colour, its face's normal (none:
+/// drawn unshaded, a plate), which of its edges (`p[k]` to `p[k + 1]`) are
+/// a face's edges, and the bolt part it belongs to.
+#[derive(Debug, Clone, Copy)]
+pub struct Piece {
+    /// Its corners.
+    pub p: [[f64; 3]; 3],
+    /// Its colour before shading (rgb) and its alpha.
+    pub base: [u8; 4],
+    /// Its face's unit normal (none: not shaded).
+    pub normal: Option<[f64; 3]>,
+    /// Its edges drawn.
+    pub edges: [bool; 3],
+    /// The part of a bolt it is (none: steel, a plate, a weld).
+    pub bolt: Option<BoltPart>,
+}
 
 /// A triangle of the close-up in view space (x right, y up, z towards the
 /// viewer: larger is nearer, m from the joint), its colour, which of its
@@ -47,85 +85,85 @@ impl Tri {
     }
 }
 
-/// The view: turned `yaw` about z, tilted `pitch` (radians).
-fn view_of(yaw: f32, pitch: f32) -> impl Fn([f64; 3], [f64; 3]) -> [f64; 3] {
-    let (cy, sy) = (f64::from(yaw).cos(), f64::from(yaw).sin());
-    let (cp, sp) = (f64::from(pitch + 0.35).cos(), f64::from(pitch + 0.35).sin());
-    // Seen from the front (−y), turned and tilted: x right, z up.
-    move |o: [f64; 3], p: [f64; 3]| {
-        let d = [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
-        let x = d[0] * cy + d[1] * sy;
-        let y = -d[0] * sy + d[1] * cy;
-        let up = d[2] * cp - y * sp;
-        let depth = d[2] * sp + y * cp;
-        [x, up, depth]
-    }
+/// The view's rotation, turned `yaw` about z and tilted `pitch` (radians):
+/// its rows are the view's x (right), up and depth (towards the viewer)
+/// in the structure's axes. Seen from the front (−y), z up.
+fn rotation(yaw: f32, pitch: f32) -> [[f64; 3]; 3] {
+    let (sy, cy) = f64::from(yaw).sin_cos();
+    let (sp, cp) = f64::from(pitch + 0.35).sin_cos();
+    [
+        [cy, sy, 0.0],
+        [sp * sy, -sp * cy, cp],
+        [-cp * sy, cp * cy, sp],
+    ]
 }
 
-/// The close-up's triangles, far to near: each face cut to pieces of at
-/// most `fine` m within the bolts' reach of the joint, `coarse` beyond.
-pub fn triangles_with(
-    j: &JointDetail,
-    yaw: f32,
-    pitch: f32,
-    dark: bool,
-    fine: f64,
-    coarse: f64,
-) -> Vec<Tri> {
+fn turn(r: &[[f64; 3]; 3], d: [f64; 3]) -> [f64; 3] {
+    [dot(r[0], d), dot(r[1], d), dot(r[2], d)]
+}
+
+/// The light, from the viewer's upper right, in the view's axes.
+const LIGHT: [f64; 3] = [0.35, 0.55, 0.75];
+
+/// The close-up's pieces of joint `j`, cut to at most `fine` m at the
+/// bolts, growing with the distance from the nearest bolt up to `coarse`.
+pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<Piece> {
     let reach = ohl_structure_link::reach(j);
-    let view = view_of(yaw, pitch);
-    let at = |p: [f64; 3]| view(j.position, p);
-    // Within the bolts (and 5 cm more) of the joint: fine.
-    let near = j
+    let o = j.position;
+    let rel = |p: [f64; 3]| sub(p, o);
+    let bolts: Vec<[f64; 3]> = j
         .arrivals
         .iter()
         .flat_map(|a| a.bolt_points.iter())
-        .map(|q| norm(sub(*q, j.position)))
-        .fold(0.15f64, f64::max)
-        + 0.05;
+        .map(|q| rel(*q))
+        .collect();
+    // A lower bound of a triangle's distance to the nearest bolt: from its
+    // middle, less its corners' reach from there.
     let size = move |p: &[[f64; 3]; 3]| {
-        if p.iter().any(|q| norm(*q) < near) {
-            fine
-        } else {
-            coarse
+        if bolts.is_empty() {
+            return coarse;
         }
+        let c = [
+            (p[0][0] + p[1][0] + p[2][0]) / 3.0,
+            (p[0][1] + p[1][1] + p[2][1]) / 3.0,
+            (p[0][2] + p[1][2] + p[2][2]) / 3.0,
+        ];
+        let r = p.iter().map(|q| norm(sub(*q, c))).fold(0.0, f64::max);
+        let d = bolts
+            .iter()
+            .map(|b| norm(sub(*b, c)))
+            .fold(f64::INFINITY, f64::min);
+        (fine + GROWTH * (d - r - NEAR).max(0.0)).min(coarse)
     };
-    let light = [0.35, 0.55, 0.75];
-    let shade = |base: [f64; 3], alpha: u8, poly: &[[f64; 3]]| -> Option<egui::Color32> {
+    let normal_of = |poly: &[[f64; 3]]| -> Option<[f64; 3]> {
         let n = cross(sub(poly[1], poly[0]), sub(poly[poly.len() - 1], poly[0]));
         let l = norm(n);
-        if l < 1e-15 {
-            return None;
-        }
-        let s = 0.45 + 0.55 * (dot(n, light) / l).abs();
-        Some(egui::Color32::from_rgba_unmultiplied(
-            (base[0] * s) as u8,
-            (base[1] * s) as u8,
-            (base[2] * s) as u8,
-            alpha,
-        ))
+        (l >= 1e-15).then(|| scale3(n, 1.0 / l))
     };
-    let mut out: Vec<Tri> = Vec::new();
-    let mut add =
-        |tris: Vec<([[f64; 3]; 3], [bool; 3])>, color: egui::Color32, bolt: Option<BoltPart>| {
-            for (p, edges) in tris {
-                split(
-                    Tri {
-                        p,
-                        color,
-                        edges,
-                        bolt,
-                    },
-                    &size,
-                    &mut out,
-                    0,
-                );
-            }
-        };
-    let steel = if dark {
-        [150.0, 165.0, 185.0]
+    let mut out: Vec<Piece> = Vec::new();
+    let mut add = |tris: Vec<([[f64; 3]; 3], [bool; 3])>,
+                   base: [u8; 4],
+                   normal: Option<[f64; 3]>,
+                   bolt: Option<BoltPart>| {
+        for (p, edges) in tris {
+            split(
+                Piece {
+                    p,
+                    base,
+                    normal,
+                    edges,
+                    bolt,
+                },
+                &size,
+                &mut out,
+                0,
+            );
+        }
+    };
+    let steel: [u8; 4] = if dark {
+        [150, 165, 185, 255]
     } else {
-        [120.0, 135.0, 155.0]
+        [120, 135, 155, 255]
     };
     for a in &j.arrivals {
         let length = a.length.min(reach);
@@ -133,13 +171,9 @@ pub fn triangles_with(
             continue;
         };
         let corner = |sd: f64, q: [f64; 2]| {
-            at(std::array::from_fn(|i| {
-                j.position[i]
-                    + a.offset[i]
-                    + a.direction[i] * sd
-                    + p.axes[1][i] * q[0]
-                    + p.axes[2][i] * q[1]
-            }))
+            std::array::from_fn(|i| {
+                a.offset[i] + a.direction[i] * sd + p.axes[1][i] * q[0] + p.axes[2][i] * q[1]
+            })
         };
         let start = a.cut.value.unwrap_or(0.0).min(length);
         let near: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(start, *q)).collect();
@@ -151,15 +185,15 @@ pub fn triangles_with(
         for i in 0..n {
             let i2 = (i + 1) % n;
             let quad = [near[i], near[i2], far[i2], far[i]];
-            if let Some(c) = shade(steel, 255, &quad) {
-                add(fan(&quad), c, None);
+            if let Some(nv) = normal_of(&quad) {
+                add(fan(&quad), steel, Some(nv), None);
             }
         }
         // The ends: the profile's outline, cut into triangles (an angle's
         // L, a channel, an I…).
         let caps = ear_clip(&p.outline);
         for ends in [&near, &far] {
-            if let Some(c) = shade(steel, 255, ends) {
+            if let Some(nv) = normal_of(ends) {
                 let tris = caps
                     .iter()
                     .map(|t| {
@@ -170,7 +204,7 @@ pub fn triangles_with(
                         )
                     })
                     .collect();
-                add(tris, c, None);
+                add(tris, steel, Some(nv), None);
             }
         }
     }
@@ -178,14 +212,29 @@ pub fn triangles_with(
         if pl.outline.len() < 3 {
             continue;
         }
-        let poly: Vec<[f64; 3]> = pl.outline.iter().map(|q| at(*q)).collect();
-        let base = match pl.kind {
-            PlateKind::Bolted => [70.0, 140.0, 210.0],
-            PlateKind::Welded => [200.0, 135.0, 75.0],
+        let poly: Vec<[f64; 3]> = pl.outline.iter().map(|q| rel(*q)).collect();
+        // A plate on its own blue; welded with others (an assembly) amber.
+        let base = if pl.assembly.len() > 1 {
+            [200, 135, 75, 150]
+        } else {
+            [70, 140, 210, 150]
         };
-        let c =
-            egui::Color32::from_rgba_unmultiplied(base[0] as u8, base[1] as u8, base[2] as u8, 150);
-        add(fan(&poly), c, None);
+        add(fan(&poly), base, None, None);
+        // Its weld seams: a fillet along each, between the two plates.
+        for w in &pl.welds {
+            let [s0, s1] = w.ends.map(rel);
+            let leg = (pl.thickness * 0.8).max(0.004);
+            let [da, db] = w.sides;
+            let quad = [
+                add3(s0, scale3(da, leg)),
+                add3(s1, scale3(da, leg)),
+                add3(s1, scale3(db, leg)),
+                add3(s0, scale3(db, leg)),
+            ];
+            if let Some(nv) = normal_of(&quad) {
+                add(fan(&quad), [215, 70, 50, 255], Some(nv), None);
+            }
+        }
     }
     // The bolts: head, shank and nut, shaded as the members (zinc; orange
     // where their layout is partly assumed).
@@ -193,39 +242,155 @@ pub fn triangles_with(
         let Some(b) = &a.bolts.value else { continue };
         let assumed = a.gauges.source == Source::Assumed || a.pitch.source == Source::Assumed;
         let base = if assumed {
-            [235.0, 170.0, 60.0]
+            [235, 170, 60, 255]
         } else {
-            [200.0, 202.0, 196.0]
+            [200, 202, 196, 255]
         };
         for p in &a.bolt_points {
             for (poly, part) in
                 ohl_structure_link::bolt_faces(*p, a.bolt_axis, b.diameter, a.grip, b.drawn)
             {
-                let poly: Vec<[f64; 3]> = poly.iter().map(|q| at(*q)).collect();
-                if let Some(c) = shade(base, 255, &poly) {
-                    add(fan(&poly), c, Some(part));
+                let poly: Vec<[f64; 3]> = poly.iter().map(|q| rel(*q)).collect();
+                if let Some(nv) = normal_of(&poly) {
+                    add(fan(&poly), base, Some(nv), Some(part));
                 }
             }
         }
     }
-    // Far first (the larger depth is nearer the viewer: drawn last).
-    out.sort_by(|a, b| a.depth().total_cmp(&b.depth()));
     out
 }
 
-/// The close-up's triangles, far to near, cut as finely as the bolts need.
-pub fn triangles(j: &JointDetail, yaw: f32, pitch: f32, dark: bool) -> Vec<Tri> {
+/// The finest size of the close-up of `j`: 40 % of its smallest bolt's
+/// diameter (4 to 10 mm).
+fn fine_of(j: &JointDetail) -> f64 {
     let d = j
         .arrivals
         .iter()
         .filter_map(|a| a.bolts.value.as_ref().map(|b| b.diameter))
         .fold(f64::INFINITY, f64::min);
-    let fine = if d.is_finite() {
+    if d.is_finite() {
         (0.4 * d).clamp(0.004, 0.01)
     } else {
         0.01
-    };
-    triangles_with(j, yaw, pitch, dark, fine, 0.04)
+    }
+}
+
+/// The close-up's pieces, cut as finely as the bolts need, never more
+/// than [`MAX_PIECES`] (the finest size made coarser until they fit).
+pub fn pieces(j: &JointDetail, dark: bool) -> Vec<Piece> {
+    let mut fine = fine_of(j);
+    loop {
+        let out = pieces_with(j, dark, fine, 0.04);
+        if out.len() <= MAX_PIECES || fine >= 0.04 {
+            return out;
+        }
+        fine *= 1.5;
+    }
+}
+
+/// The pieces seen turned `yaw` and tilted `pitch`: in view space,
+/// shaded, sorted far to near.
+pub fn project(pieces: &[Piece], yaw: f32, pitch: f32) -> Vec<Tri> {
+    let r = rotation(yaw, pitch);
+    // The light in the structure's axes (the rotation's transpose).
+    let light: [f64; 3] = std::array::from_fn(|i| (0..3).map(|k| r[k][i] * LIGHT[k]).sum());
+    let mut out: Vec<Tri> = pieces
+        .iter()
+        .map(|p| {
+            let color = match p.normal {
+                Some(n) => {
+                    let s = 0.45 + 0.55 * dot(n, light).abs();
+                    egui::Color32::from_rgba_unmultiplied(
+                        (f64::from(p.base[0]) * s) as u8,
+                        (f64::from(p.base[1]) * s) as u8,
+                        (f64::from(p.base[2]) * s) as u8,
+                        p.base[3],
+                    )
+                }
+                None => egui::Color32::from_rgba_unmultiplied(
+                    p.base[0], p.base[1], p.base[2], p.base[3],
+                ),
+            };
+            Tri {
+                p: p.p.map(|q| turn(&r, q)),
+                color,
+                edges: p.edges,
+                bolt: p.bolt,
+            }
+        })
+        .collect();
+    // Far first (the larger depth is nearer the viewer: drawn last); one
+    // key per piece.
+    out.sort_unstable_by(|a, b| a.depth().total_cmp(&b.depth()));
+    out
+}
+
+/// The close-up's triangles, far to near: cut to pieces of `fine` m at
+/// the bolts, growing with the distance from them up to `coarse`.
+#[cfg(test)]
+pub fn triangles_with(
+    j: &JointDetail,
+    yaw: f32,
+    pitch: f32,
+    dark: bool,
+    fine: f64,
+    coarse: f64,
+) -> Vec<Tri> {
+    project(&pieces_with(j, dark, fine, coarse), yaw, pitch)
+}
+
+/// The close-up's triangles, far to near, cut as finely as the bolts need.
+#[cfg(test)]
+pub fn triangles(j: &JointDetail, yaw: f32, pitch: f32, dark: bool) -> Vec<Tri> {
+    project(&pieces(j, dark), yaw, pitch)
+}
+
+/// What the close-up keeps between frames: its pieces, cut once per
+/// joint, file revision, libraries and theme; the mesh drawn, kept while
+/// the view and the pane stay the same.
+#[derive(Default)]
+pub struct CloseUpCache {
+    /// The pieces and what they were cut for: (file revision, libraries
+    /// stamp), the joint, dark.
+    built: Option<(CutKey, Arc<Vec<Piece>>)>,
+    /// The mesh drawn and the view it was drawn for.
+    drawn: Option<(ViewKey, Arc<egui::Mesh>)>,
+    /// How often the pieces were cut (the tests: once per joint).
+    pub builds: usize,
+    /// How often they were sorted (a turn, a zoom, a pane resized).
+    pub sorts: usize,
+}
+
+/// What the pieces were cut for: (file revision, libraries stamp), the
+/// joint, dark.
+type CutKey = ((u64, u64), String, bool);
+
+/// The view a mesh was drawn for: the cut's key, turn, tilt, zoom and
+/// the pane's rectangle (as bits: the same frame to frame).
+type ViewKey = (CutKey, [u32; 7]);
+
+impl CloseUpCache {
+    /// The pieces of `j`, cut again only when `key`, the joint or the
+    /// theme changed.
+    pub fn pieces(&mut self, key: (u64, u64), j: &JointDetail, dark: bool) -> Arc<Vec<Piece>> {
+        let k = (key, j.id.clone(), dark);
+        if let Some((have, p)) = &self.built
+            && *have == k
+        {
+            return p.clone();
+        }
+        let p = Arc::new(pieces(j, dark));
+        self.builds += 1;
+        self.built = Some((k, p.clone()));
+        self.drawn = None;
+        p
+    }
+
+    /// How many pieces the joint shown is cut into.
+    #[cfg(test)]
+    pub fn count(&self) -> usize {
+        self.built.as_ref().map_or(0, |b| b.1.len())
+    }
 }
 
 /// A convex polygon as a fan of triangles, its own edges marked.
@@ -243,7 +408,7 @@ fn fan(poly: &[[f64; 3]]) -> Vec<([[f64; 3]; 3], [bool; 3])> {
 
 /// `t` cut in halves across its longest edge until each piece's edges are
 /// no longer than `size` of it.
-fn split(t: Tri, size: &dyn Fn(&[[f64; 3]; 3]) -> f64, out: &mut Vec<Tri>, depth: u32) {
+fn split(t: Piece, size: &dyn Fn(&[[f64; 3]; 3]) -> f64, out: &mut Vec<Piece>, depth: u32) {
     let len = |k: usize| norm(sub(t.p[(k + 1) % 3], t.p[k]));
     let (i, longest) = (0..3)
         .map(|k| (k, len(k)))
@@ -261,7 +426,7 @@ fn split(t: Tri, size: &dyn Fn(&[[f64; 3]; 3]) -> f64, out: &mut Vec<Tri>, depth
     ];
     let e = t.edges;
     split(
-        Tri {
+        Piece {
             p: [a, m, o],
             edges: [e[i], false, e[(i + 2) % 3]],
             ..t
@@ -271,7 +436,7 @@ fn split(t: Tri, size: &dyn Fn(&[[f64; 3]; 3]) -> f64, out: &mut Vec<Tri>, depth
         depth + 1,
     );
     split(
-        Tri {
+        Piece {
             p: [m, b, o],
             edges: [e[i], e[(i + 1) % 3], false],
             ..t
@@ -342,51 +507,48 @@ pub fn ear_clip(poly: &[[f64; 2]]) -> Vec<[usize; 3]> {
     out
 }
 
-/// The close-up painted into `rect`: the triangles in one mesh, far to
-/// near, each face's edges after its triangles; the members without a
-/// profile as lines; the members' names at their cut ends.
+/// The close-up painted into `rect`: the pieces (cut once, [`CloseUpCache`])
+/// sorted for the view in one mesh, far to near, each face's edges after
+/// its triangles — the mesh kept while the view and the pane stay the
+/// same; the members without a profile as lines; the members' names at
+/// their cut ends. `key`: the file revision and libraries the details are
+/// of.
 pub fn paint(
     painter: &egui::Painter,
     rect: egui::Rect,
     j: &JointDetail,
-    s: &crate::joint_panel::JointPanel,
+    s: &mut crate::joint_panel::JointPanel,
+    key: (u64, u64),
     dark: bool,
 ) {
     let reach = ohl_structure_link::reach(j);
     let k = f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(s.zoom).exp();
     let to = |q: [f64; 3]| rect.center() + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32);
-    let edge = egui::Color32::from_black_alpha(140);
-    let mut mesh = egui::Mesh::default();
-    let line = |mesh: &mut egui::Mesh, a: egui::Pos2, b: egui::Pos2| {
-        let d = b - a;
-        let l = d.length();
-        if l < 1e-3 {
-            return;
+    let pieces = s.close_up.pieces(key, j, dark);
+    let view: ViewKey = (
+        (key, j.id.clone(), dark),
+        [
+            s.yaw.to_bits(),
+            s.pitch.to_bits(),
+            s.zoom.to_bits(),
+            rect.min.x.to_bits(),
+            rect.min.y.to_bits(),
+            rect.max.x.to_bits(),
+            rect.max.y.to_bits(),
+        ],
+    );
+    let mesh = match &s.close_up.drawn {
+        Some((v, m)) if *v == view => m.clone(),
+        _ => {
+            let m = Arc::new(mesh_of(&project(&pieces, s.yaw, s.pitch), &to));
+            s.close_up.sorts += 1;
+            s.close_up.drawn = Some((view, m.clone()));
+            m
         }
-        let n = egui::vec2(-d.y, d.x) / l * 0.35;
-        let i = mesh.vertices.len() as u32;
-        for p in [a + n, a - n, b - n, b + n] {
-            mesh.colored_vertex(p, edge);
-        }
-        mesh.add_triangle(i, i + 1, i + 2);
-        mesh.add_triangle(i, i + 2, i + 3);
     };
-    for t in triangles(j, s.yaw, s.pitch, dark) {
-        let pts = t.p.map(to);
-        let i = mesh.vertices.len() as u32;
-        for p in pts {
-            mesh.colored_vertex(p, t.color);
-        }
-        mesh.add_triangle(i, i + 1, i + 2);
-        for e in 0..3 {
-            if t.edges[e] {
-                line(&mut mesh, pts[e], pts[(e + 1) % 3]);
-            }
-        }
-    }
-    painter.add(egui::Shape::mesh(mesh));
-    let view = view_of(s.yaw, s.pitch);
-    let at = |p: [f64; 3]| to(view(j.position, p));
+    painter.add(egui::Shape::Mesh(mesh));
+    let r = rotation(s.yaw, s.pitch);
+    let at = |p: [f64; 3]| to(turn(&r, sub(p, j.position)));
     // Members without a profile: lines.
     for a in j.arrivals.iter().filter(|a| a.profile.is_none()) {
         let far = add3(j.position, scale3(a.direction, a.length.min(reach)));
@@ -419,6 +581,47 @@ pub fn paint(
         egui::FontId::proportional(11.0),
         text,
     );
+}
+
+/// The triangles `tris` (in order) as one mesh on the screen (`to`), each
+/// face's edges as thin quads after its triangle.
+fn mesh_of(tris: &[Tri], to: &dyn Fn([f64; 3]) -> egui::Pos2) -> egui::Mesh {
+    let edge = egui::Color32::from_black_alpha(140);
+    let mut mesh = egui::Mesh::default();
+    let edges: usize = tris
+        .iter()
+        .map(|t| t.edges.iter().filter(|e| **e).count())
+        .sum();
+    mesh.reserve_vertices(3 * tris.len() + 4 * edges);
+    mesh.reserve_triangles(tris.len() + 2 * edges);
+    let line = |mesh: &mut egui::Mesh, a: egui::Pos2, b: egui::Pos2| {
+        let d = b - a;
+        let l = d.length();
+        if l < 1e-3 {
+            return;
+        }
+        let n = egui::vec2(-d.y, d.x) / l * 0.35;
+        let i = mesh.vertices.len() as u32;
+        for p in [a + n, a - n, b - n, b + n] {
+            mesh.colored_vertex(p, edge);
+        }
+        mesh.add_triangle(i, i + 1, i + 2);
+        mesh.add_triangle(i, i + 2, i + 3);
+    };
+    for t in tris {
+        let pts = t.p.map(to);
+        let i = mesh.vertices.len() as u32;
+        for p in pts {
+            mesh.colored_vertex(p, t.color);
+        }
+        mesh.add_triangle(i, i + 1, i + 2);
+        for e in 0..3 {
+            if t.edges[e] {
+                line(&mut mesh, pts[e], pts[(e + 1) % 3]);
+            }
+        }
+    }
+    mesh
 }
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -555,5 +758,149 @@ mod tests {
             (now as f64) < 0.005 * n as f64,
             "{now} of {n} head samples hidden (whole faces: {old} of {n_old})"
         );
+    }
+}
+
+#[cfg(test)]
+mod timing {
+    /// A heavier joint: every member bolted, a plate with three members.
+    pub(crate) fn heavy() -> String {
+        let mut t = crate::joint_ui_tests::ANGLES.replace(
+            "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"",
+            "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G1\"",
+        );
+        t.push_str(
+            "\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+             \n[[connection]]\nmember = \"H1\"\njoint = \"N2\"\nonto = \"G1\"\n\
+             bolts = { count = 6, diameter = \"16 mm\" }\ngauge_lines = 2\n\
+             pitch = \"50 mm\"\nend_distance = \"30 mm\"\n\
+             \n[[connection]]\nmember = \"L2\"\njoint = \"N2\"\nonto = \"L1\"\n\
+             bolts = { count = 8, diameter = \"12 mm\" }\ngauge_lines = 2\n\
+             pitch = \"40 mm\"\nend_distance = \"25 mm\"\n",
+        );
+        t
+    }
+
+    fn frame(
+        ctx: &eframe::egui::Context,
+        j: &ohl_structure_link::JointDetail,
+        panel: &mut crate::joint_panel::JointPanel,
+        key: (u64, u64),
+    ) {
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            let rect = eframe::egui::Rect::from_min_size(
+                eframe::egui::pos2(0.0, 0.0),
+                eframe::egui::vec2(800.0, 600.0),
+            );
+            super::paint(ui.painter(), rect, j, panel, key, false);
+        });
+        out.textures_delta.clear();
+    }
+
+    /// The close-up stays smooth (owner 2026-11-04: "the joint view is a
+    /// bit laggy now"): its pieces are bounded ([`super::MAX_PIECES`]) and
+    /// far fewer than when every face was cut finely all over, cut once
+    /// per joint and file revision, sorted again only when the view turns
+    /// (frames without a change reuse the mesh) — timings are left to
+    /// `close_up_timing`, run by hand.
+    #[test]
+    fn the_close_up_is_cut_once_and_bounded() {
+        let lib = ohl_structure_link::section_library(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../libraries/sections/example-sections.ohlsec"),
+        )
+        .unwrap();
+        let d = ohl_structure_link::joint_details(&heavy(), &lib, &Default::default()).unwrap();
+        let j = d.joint("N2").unwrap();
+        let fine = super::fine_of(j);
+        let all_fine = super::pieces_with(j, false, fine, fine).len();
+        let ctx = eframe::egui::Context::default();
+        let mut panel = crate::joint_panel::JointPanel::default();
+        for _ in 0..5 {
+            frame(&ctx, j, &mut panel, (1, 0));
+        }
+        let n = panel.close_up.count();
+        assert!(n <= super::MAX_PIECES, "{n} pieces");
+        assert!(
+            3 * n < all_fine,
+            "{n} pieces, {all_fine} cut finely all over"
+        );
+        assert_eq!((panel.close_up.builds, panel.close_up.sorts), (1, 1));
+        // Turned: sorted again, not cut again.
+        panel.yaw = 0.7;
+        frame(&ctx, j, &mut panel, (1, 0));
+        frame(&ctx, j, &mut panel, (1, 0));
+        assert_eq!((panel.close_up.builds, panel.close_up.sorts), (1, 2));
+        // The file changed (a new revision): cut again.
+        frame(&ctx, j, &mut panel, (2, 0));
+        assert_eq!((panel.close_up.builds, panel.close_up.sorts), (2, 3));
+    }
+
+    #[test]
+    #[ignore = "timing, run by hand"]
+    fn close_up_timing() {
+        let lib = ohl_structure_link::section_library(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../libraries/sections/example-sections.ohlsec"),
+        )
+        .unwrap();
+        for (name, text) in [
+            ("angles", crate::joint_ui_tests::ANGLES.to_owned()),
+            ("heavy", heavy()),
+        ] {
+            let d = ohl_structure_link::joint_details(&text, &lib, &Default::default()).unwrap();
+            let j = d.joint("N2").unwrap();
+            let n = 20;
+            let t0 = std::time::Instant::now();
+            let mut count = 0;
+            for k in 0..n {
+                count = super::triangles(j, k as f32 * 0.1, 0.2, false).len();
+            }
+            let dt = t0.elapsed().as_secs_f64() * 1000.0 / n as f64;
+            eprintln!("{name}: {count} triangles, {dt:.2} ms per frame (triangles only)");
+            // A whole frame: painted and tessellated, turned each frame.
+            let ctx = eframe::egui::Context::default();
+            let mut panel = crate::joint_panel::JointPanel::default();
+            let t0 = std::time::Instant::now();
+            for k in 0..n {
+                panel.yaw = k as f32 * 0.1;
+                let mut out = ctx.run_ui(Default::default(), |ui| {
+                    let rect = eframe::egui::Rect::from_min_size(
+                        eframe::egui::pos2(0.0, 0.0),
+                        eframe::egui::vec2(800.0, 600.0),
+                    );
+                    super::paint(ui.painter(), rect, j, &mut panel, (0, 0), false);
+                });
+                out.textures_delta.clear();
+                let _ = ctx.tessellate(out.shapes, 1.0);
+            }
+            let dt = t0.elapsed().as_secs_f64() * 1000.0 / n as f64;
+            eprintln!("{name}: {dt:.2} ms per frame turning (paint + tessellate)");
+            // Frames without a turn (hover, another panel): the mesh kept.
+            let t0 = std::time::Instant::now();
+            for _ in 0..n {
+                let mut out = ctx.run_ui(Default::default(), |ui| {
+                    let rect = eframe::egui::Rect::from_min_size(
+                        eframe::egui::pos2(0.0, 0.0),
+                        eframe::egui::vec2(800.0, 600.0),
+                    );
+                    super::paint(ui.painter(), rect, j, &mut panel, (0, 0), false);
+                });
+                out.textures_delta.clear();
+                let _ = ctx.tessellate(out.shapes, 1.0);
+            }
+            let dt = t0.elapsed().as_secs_f64() * 1000.0 / n as f64;
+            eprintln!(
+                "{name}: {dt:.2} ms per frame still (paint + tessellate; {} cut, {} sorted)",
+                panel.close_up.builds, panel.close_up.sorts
+            );
+            let t0 = std::time::Instant::now();
+            let p = super::pieces(j, false);
+            eprintln!(
+                "{name}: cut once in {:.2} ms ({} pieces)",
+                t0.elapsed().as_secs_f64() * 1000.0,
+                p.len()
+            );
+        }
     }
 }

@@ -29,6 +29,8 @@ pub enum LineKind {
     /// A member's axis, where its force runs (to the work point, or beside
     /// it by its end's shift).
     Axis,
+    /// A weld seam where two plates of a welded plate meet (2026-11-04).
+    Weld,
 }
 
 /// One mark of the face view, metres in the view's plane (x right, y up).
@@ -149,15 +151,34 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
         });
         marks.push(Mark::Text {
             at: mid,
-            text: match p.kind {
-                ohl_structures::connections::PlateKind::Bolted => {
-                    format!("{} · {:.0} mm", p.id, p.thickness * 1000.0)
-                }
-                // A welded plate said so on the drawing.
-                k => format!("{} · {:.0} mm · {}", p.id, p.thickness * 1000.0, k.as_str()),
+            text: if p.assembly.len() > 1 {
+                // A plate of a welded plate said so on the drawing.
+                format!(
+                    "{} · {:.0} mm · welded to {}",
+                    p.id,
+                    p.thickness * 1000.0,
+                    p.assembly
+                        .iter()
+                        .filter(|x| **x != p.id)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                format!("{} · {:.0} mm", p.id, p.thickness * 1000.0)
             },
             label: false,
         });
+    }
+    // The welds where the plates of a welded plate meet.
+    for p in &d.plates {
+        for w in &p.welds {
+            marks.push(Mark::Line {
+                points: w.ends.iter().map(|q| to(*q)).collect(),
+                closed: false,
+                kind: LineKind::Weld,
+            });
+        }
     }
     for a in &d.arrivals {
         let length = a.length.min(cut);
@@ -430,6 +451,7 @@ pub fn face_sheet(v: &FaceView) -> Drawing {
                     LineKind::Edge => Pen::new(black, 0.18),
                     LineKind::Gauge => Pen::new(grey, 0.18).dashed("4 1 1 1"),
                     LineKind::Plate => Pen::new(Color(0, 90, 160), 0.3),
+                    LineKind::Weld => Pen::new(Color(200, 50, 30), 0.6),
                     LineKind::Dimension => Pen::new(grey, 0.13),
                     LineKind::Axis => Pen::new(Color(60, 120, 200), 0.18).dashed("6 1.5 1 1.5"),
                 };

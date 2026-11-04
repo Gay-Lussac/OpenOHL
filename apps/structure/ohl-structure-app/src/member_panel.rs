@@ -173,6 +173,15 @@ impl StructureApp {
             );
             return;
         }
+        // Its roll, the correction angle about its axis (2026-11-04).
+        let ends = crate::roll_ui::flat_ends(details, &chosen);
+        let roll = crate::roll_ui::roll_of(&t, &chosen);
+        if let Some(r) = crate::roll_ui::roll_control(ui, &chosen, roll, &ends) {
+            self.apply_joint_acts(
+                vec![crate::joint_tools::Act::Roll(chosen.clone(), r)],
+                details,
+            );
+        }
         // What the Detail view's Edit tool picked (a bolt).
         self.picked_box(ui, details);
         self.capacity_box(ui, &chosen);

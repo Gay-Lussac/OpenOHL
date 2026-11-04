@@ -246,9 +246,10 @@ it; its details (Joint details, Member details) sit in a leaf of their
 own below it. The 3D view's Edit tool asks before it opens a tower's joint
 or member there. A member opened from a joint goes back to it (‹ Joint,
 Escape). The Edit tool on a bolt shows its properties below with the bolt
-libraries to change the end's bolts; on a plate, its kind, edges and the
-bolts too near its edge. Several plates per joint, bolted or welded onto
-the leg (`[[plate]] kind`); a plate drawn without an outline keeps the
+libraries to change the end's bolts; on a plate, what it is welded to, its edges and the
+bolts too near its edge. Several plates per joint (2026-11-03: bolted or welded onto
+the leg, `[[plate]] kind`; since 2026-11-04 a welded plate is several
+plates welded together, below); a plate drawn without an outline keeps the
 code's end and edge distances in the plate (`bolt_rules::rules_in`:
 the plate's thickness and its material's ultimate strength, else the
 member's; the member end's force and bolts) round every bolt onto it. The close-up
@@ -256,6 +257,39 @@ is drawn in small pieces sorted by their own depth (whole faces sorted by
 their middles hid the bolts at some angles). Open: the plates' own checks, a weld's own data (size, length).
 
 How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#joint-details-towers).
+
+> **Owner:**
+
+### Welded plates, a member's roll, a smooth close-up — built 2026-11-04
+
+(Owner, 2026-11-04.) Built, in active development, not approved yet:
+
+- **A welded plate is several plates welded together** so that every
+  member bolting onto the joint reaches one ("the 'welded plate' should
+  just mean that multiple plates are welded to be able to reach every
+  member bolts that come on the joint"): `[[plate]] welded_to`, read both
+  ways; the plates joined are one welded plate, the seams drawn where they
+  meet. The 2026-11-03 `kind = "welded"` (welded onto the leg) is read as
+  plates of one welded plate. **Make a welded plate for every member**: a
+  plate per plane of the members arriving (with the joint's leg), each
+  round its members' bolts with the code's end and edge distances in the
+  plate, welded together.
+- **A member's roll** ("a correction angle for the members to rotate
+  them on their axis as one face need to come in contact with the
+  plates"): Roll, ±90°, 180°, Lay flat in Member details, the Detail view
+  and the Inspector; a member whose leg bolted lies more than 5° off what
+  it bolts onto is named in Joint details, **Turn it flat**. The roll
+  turns the member's axes for the analysis too.
+- **Gauge lines from the holes** in one section of the member's design
+  data where no connection gives them (a tower program's export).
+- **The close-up** cut once per joint and file change, finely near the
+  bolts only, sorted again only when turned: smooth on towers again.
+- The Edit tool no longer asks "Open in the Detail view?" when the
+  Detail view is shown.
+
+Open: the welds' own data (size, length) and checks; the plates' checks;
+a roll that suits both ends of a member bolted onto differently turned
+faces (Lay flat takes the end lying off; the other end is then said).
 
 > **Owner:**
 

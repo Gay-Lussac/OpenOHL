@@ -512,6 +512,37 @@ pub fn set_member_kind(doc: &mut DocumentMut, id: &str, kind: &str) {
     }
 }
 
+/// The roll a member's file gives (`roll`: text with a unit, else a
+/// number in radians), radians; none or unreadable: 0.
+pub fn member_roll(m: &ohl_structures::structures::TypeMember) -> f64 {
+    m.roll
+        .clone()
+        .and_then(|v| v.try_into::<ohl_core::units::Angle>().ok())
+        .map_or(0.0, |a| a.radians())
+}
+
+/// The roll of member `id` (owner 2026-11-04: "a correction angle for the
+/// members to rotate them on their axis"), radians: written in degrees
+/// (`roll = "90 deg"`, to 0.01°, within ±180°), removed at 0. It turns the
+/// member's cross-section about its axis — after its `orientation` when
+/// it has one — and so its axes for the analysis too.
+pub fn set_member_roll(doc: &mut DocumentMut, id: &str, roll: f64) {
+    let mut deg = roll.to_degrees() % 360.0;
+    if deg > 180.0 {
+        deg -= 360.0;
+    } else if deg <= -180.0 {
+        deg += 360.0;
+    }
+    let deg = (deg * 100.0).round() / 100.0;
+    if let Some(e) = entry(doc, "member", "id", id) {
+        if deg == 0.0 {
+            e.remove("roll");
+        } else {
+            e.insert("roll", toml_edit::value(format!("{deg} deg")));
+        }
+    }
+}
+
 /// The effective length factor of member `id` (none: the default).
 pub fn set_member_k(doc: &mut DocumentMut, id: &str, k: Option<f64>) {
     if let Some(e) = entry(doc, "member", "id", id) {

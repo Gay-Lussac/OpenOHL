@@ -300,6 +300,9 @@ pub struct ExportPlate {
     pub outline_given: bool,
     /// The members bolted onto it.
     pub members: Vec<String>,
+    /// The plates welded together with it into one welded plate, itself
+    /// among them (alone: itself only; 2026-11-04).
+    pub assembly: Vec<String>,
 }
 
 fn add3(a: [f64; 3], b: [f64; 3], k: f64) -> [f64; 3] {
@@ -456,6 +459,7 @@ pub fn export_joints(
                 normal,
                 outline_given: p.outline_given,
                 members: p.members.clone(),
+                assembly: p.assembly.clone(),
             });
         }
     }

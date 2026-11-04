@@ -1261,7 +1261,7 @@ fn plate(
             if ifc4 { ",.NOTDEFINED." } else { "" }
         ),
     );
-    let values = [
+    let mut values = vec![
         ("Joint", label(&p.joint)),
         (
             "Thickness",
@@ -1273,6 +1273,16 @@ fn plate(
             format!("IFCBOOLEAN(.{}.)", if p.outline_given { "T" } else { "F" }),
         ),
     ];
+    // A plate of a welded plate: the plates it is welded together with.
+    let others: Vec<&str> = p
+        .assembly
+        .iter()
+        .map(String::as_str)
+        .filter(|x| *x != p.id)
+        .collect();
+    if !others.is_empty() {
+        values.push(("WeldedTo", label(&others.join(", "))));
+    }
     properties(f, oh, &key, std::slice::from_ref(&e), "OHL_Plate", &values);
     e
 }

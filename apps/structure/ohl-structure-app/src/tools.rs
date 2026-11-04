@@ -664,7 +664,11 @@ impl StructureApp {
     /// The Edit tool on `h`: selected, its fields in the Inspector (in
     /// front), its table's row shown; a tower's joint or member: asked
     /// first whether to open it in the Detail view, its details below it
-    /// (owner 2026-11-03; [`StructureApp::detail_question`]).
+    /// (owner 2026-11-03; [`StructureApp::detail_question`]) — not asked
+    /// when the Detail view is shown already: it shows the joint or member
+    /// at once, its details in front below it (owner 2026-11-04: "if i
+    /// click with edit and the detailed view is already open it should not
+    /// ask to open it again").
     pub fn edit_clicked(&mut self, h: Handle) {
         self.selected = vec![h.clone()];
         self.scroll_to = Some(h.clone());
@@ -672,6 +676,15 @@ impl StructureApp {
             .file
             .as_ref()
             .is_some_and(|f| ohl_structure_edit::is_tower(f.structure().kind));
+        if tower
+            && matches!(h, Handle::Joint(_) | Handle::Member(_))
+            && crate::layout::is_shown(&self.dock, crate::layout::Panel::JointView)
+        {
+            self.joints.ask_open = None;
+            self.open_in_detail(h.clone());
+            self.message = Some((format!("Edit {}: the Detail view", h.describe()), false));
+            return;
+        }
         self.focus(crate::layout::Panel::Inspector);
         if tower && matches!(h, Handle::Joint(_) | Handle::Member(_)) {
             self.joints.ask_open = Some(h.clone());

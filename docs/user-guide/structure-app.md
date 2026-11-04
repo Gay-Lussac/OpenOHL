@@ -336,7 +336,8 @@ their menu or from View.
   default), **Edit** (2026-11-02: a joint, member or point clicked
   opens where it is edited — its fields in the Inspector, brought to the
   front, and its row in its table; a tower's joint or member, once asked, in
-  the Detail view with its details below — 2026-11-03), **Move** (drag a joint or point to move it, snapped to the
+  the Detail view with its details below — 2026-11-03; with the Detail
+  view shown already, there at once, not asked — 2026-11-04), **Move** (drag a joint or point to move it, snapped to the
   grid — **snap** in the strip — or onto a joint; one undo step per
   drag), **Add a point** (on a joint clicked, else at the top of the stick
   figure), **One string below the point** (below the point clicked; **string length** in
@@ -559,14 +560,18 @@ arrangement moves there when it is next opened).
 The **Edit** tool of the 3D view on a tower's joint or member first asks
 **Open … in the Detail view?** (2026-11-03): **Open the Detail view**
 shows it there with its details in front below it; **Stay** keeps to the
-Inspector (its fields, as for any other object).
+Inspector (its fields, as for any other object). When the Detail view is
+shown already (open and not behind another tab), it is not asked again:
+the joint or member clicked is shown there at once, its details in front
+below it (2026-11-04).
 
 - **Close-up**: the members meeting there as their cross-sections (angles
   with their roll, so the leg bolted shows), cut a little beyond the
   joint, the bolts through the leg bolted (red; grey where their layout is
-  partly assumed), the plates (blue bolted, brown welded; a plate without
-  an outline in the file lies on the leg of the corner member it is
-  bolted or welded to, in the face of the bolts onto it, shaped to the
+  partly assumed), the plates (blue; the plates of a **welded plate**
+  amber, their **weld seams** red where they meet; a plate without
+  an outline in the file lies on the leg of the corner member, in the
+  face of the bolts onto it, shaped to the
   corner: over the corner leg's width where the members' bolts reach
   along it, over each member's bolted leg from its first bolt to its
   last, and **round every bolt onto it with the design code's distances
@@ -578,7 +583,12 @@ Inspector (its fields, as for any other object).
   lays it); drag to turn it, scroll to zoom, **Reset view**. Bolts are
   drawn on angles only. Every face is drawn in small pieces sorted by
   their own depth, so the bolts stay in sight from every side (before
-  2026-11-03 a member's long faces could hide the heads when turned).
+  2026-11-03 a member's long faces could hide the heads when turned);
+  since 2026-11-04 the pieces are cut once per joint and file change —
+  finely round the bolts only, growing with the distance from them, at
+  most 40 000 — and only sorted again when the view turns, so turning
+  stays smooth (measured on a joint of 4 members, 25 bolts and a plate:
+  16 ms a frame before, 3.5 ms turning and 0.4 ms still after).
   I/H, hollow and polygonal profiles are drawn by their outline (a box
   before).
 - **Face view**: the joint square to a face (x+, x−, y+, y−, or the plan
@@ -612,6 +622,21 @@ Inspector (its fields, as for any other object).
     end distance of one and a half bolt diameters);
   - **not given** (—).
 
+  The **gauge lines** of an end without a connection giving them come
+  from the **holes in one section** of the member's design data (what a
+  tower program's export gives, 2026-11-04): one leg bolted, a line per
+  hole; both legs bolted, half of them per leg (rounded up); one to three
+  lines, worked out, said below the table. Bolts staggered between two
+  lines put fewer holes in one section than there are lines: give the
+  gauge lines at the end then. No holes given: one line, assumed.
+
+  Above the table, a member whose **leg bolted does not lie flat** on
+  what it bolts onto (more than 5° off the plate's face or the flange of
+  the leg) is named — "N2: D1 (UA-83x52x6) bolted face 90° off the leg of
+  L1 — turn it" — with **Turn it flat**: its roll turned by the smallest
+  turn that lays it flat (one undo step; see **Roll** below). The other
+  notes on the member ends follow.
+
 **Defining the joints** (stage 3, 2026-11-02). Every value of the
 connections table is edited in place and given at that member end: a
 list (held, onto — the members meeting there and the joint's plates —,
@@ -641,14 +666,33 @@ out. Each change is one undo step.
   what they bolt onto within 1°, so the mirror joints too — their
   connections replaced, what they bolt onto matched, a plate copied to
   each.
-- **+ Plate** / **+ Welded plate** (2026-11-03): a gusset plate at the
-  joint, bolted or welded onto the joint's leg (10 mm to start: type its
-  thickness); a joint may have several. The plates table gives each
-  one's **kind** (bolted, welded: one undo step), thickness, material
-  and the members bolted onto it (Onto); its id shows its properties
-  above the table; 🗑 removes it (what bolted onto it: not given any
-  more). The members bolt onto a welded plate as onto a bolted one; the
-  checks treat both alike (the plates' own checks are not built yet).
+- **+ Plate** (2026-11-03): a gusset plate at the joint, on the joint's
+  leg (10 mm to start: type its thickness); a joint may have several.
+  The plates table gives each one's **Welded to** (a menu with a box per
+  other plate of the joint — it stays open on a tick; each tick one undo
+  step), thickness, material and the members bolted onto it (Onto); its
+  id shows its properties above the table; 🗑 removes it (what bolted
+  onto it: not given any more; the plates welded to it no longer name
+  it).
+- A **welded plate** (2026-11-04) is several plates **welded together**
+  so that every member bolting onto the joint reaches one of them — not a
+  plate of its own kind. **Make a welded plate for every member** builds
+  it: one plate per plane the members arriving lie in with the joint's
+  leg (within 10°; the legs themselves, modelling members, members held
+  otherwise than bolted and splices in line with the leg left out, said),
+  each member bolted onto the plate of its plane, each plate welded to
+  the ones before it, the plates' outlines worked out round their bolts
+  with the design code's end and edge distances in the plate (as for any
+  plate without an outline); the joint's plates before are replaced (one
+  undo step; its hover lists the plates it will make). The thickness is
+  the largest of the joint's plates, at least 10 mm. Two plates of a
+  welded plate that do not meet are said. The members bolt onto the
+  plates of a welded plate as onto any plate; the checks treat them
+  alike (the plates' and welds' own checks are not built yet). A file of
+  2026-11-03 with `kind = "welded"` plates (then: welded onto the leg)
+  reads those plates of a joint as one welded plate (one alone: a plate),
+  said under the table, and written as `welded_to` at the next welding
+  change.
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`
   per name with the fields of a connection but `onto` and `bolt_points`),
@@ -659,6 +703,20 @@ out. Each change is one undo step.
 one selected (the Edit tool opens it on the member clicked, once asked) or picked in
 its list — from its own side:
 
+- its **Roll** (2026-11-04: "a correction angle for the members to
+  rotate them on their axis as one face need to come in contact with the
+  plates"): the degrees typed (Enter), **−90°**, **+90°**, **180°** and
+  **Lay flat** — the smallest turn that lays its leg bolted flat on the
+  plate or the flange of the leg it bolts onto (at the end lying more
+  than 5° off, else the first; a further 180° turns the outstanding leg
+  the other way; its hover gives each end's angle off). Each one undo
+  step, written as the member's `roll` (with an `orientation`, a turn
+  after it). The same control is in the Detail view above a member and
+  in the member's Inspector. **The roll turns the member's axes for the
+  analysis too**: its bending axes (y, z) and so its stiffness in a
+  frame, its member wind and the exports; a truss's axial force does not
+  change. Members brought in from another program sometimes lie a
+  quarter turn off: Joint details names them;
 - its **two ends as rows of the connections table** (the joint at each
   end first): the same `[[connection]]` data the joints show and edit, so
   bolts, gauges, pitch, holes set here are the joint's, and the reverse;
@@ -704,8 +762,9 @@ shows them greyed; Escape goes back to Edit):
   the code's distances) with the **bolt libraries** to change it (a
   member end's bolts are of one kind: the bolt chosen is that end's; one
   undo step), **Bolt layout…** and **Remove this bolt**; it is ringed in
-  the face view. A **plate** clicked — its kind (bolted or welded),
-  thickness, the leg it lies on, the members onto it, the distances its
+  the face view. A **plate** clicked — what it is welded to (its Welded
+  to menu) and the welded plate it belongs to, its thickness, the leg it
+  lies on, the members onto it, the distances its
   edge keeps from each member's bolts and any bolt nearer its edge than
   that (an outline given in the file). A **member** clicked (face view) —
   the member in detail (‹ Joint, Escape: back); in the member view, a
@@ -1202,7 +1261,7 @@ them, the IFC2x3 one too. Per joint an assembly named after the joint
 holds its bolts (each with its diameter, its length under the head, a
 head, a shank and a nut; property set `OHL_Fastener`: joint, member,
 end, grip, hole, grade, library bolt) and its plates (the outline
-extruded by the thickness; `OHL_Plate`). They are where the **Joint
+extruded by the thickness; `OHL_Plate`, with `WeldedTo` for a plate of a welded plate). They are where the **Joint
 view** draws them: a member bolted onto a leg or a plate is **seated** — its solid
 moved across so that its leg lies on the leg it bolts onto, as in the
 drawings — when its bolted ends agree on that shift; otherwise its solid

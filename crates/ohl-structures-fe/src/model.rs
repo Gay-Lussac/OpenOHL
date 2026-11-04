@@ -62,8 +62,9 @@
 //! # bending = true          # tension: also bends and twists, as a frame (version 3)
 //! # check = false           # not design-checked: a modelling member (version 3)
 //! reference = [0, 0, 1]     # frame: a direction in the local x–y plane
-//! roll = "0 deg"            # frame: turns the local y, z about x
-//! # orientation = "x+y-"    # instead: an angle's legs (local y, z) towards x+, y−
+//! roll = "0 deg"            # turns the local y, z about x (the section turned)
+//! # orientation = "x+y-"    # instead of reference: an angle's legs (local y, z)
+//! #                         # towards x+, y−; a roll then turns them further
 //! k = 1.0                   # effective length factor (buckling)
 //! # lk = "2.4 m"            # effective length instead of k × length
 //! # capacity_tension = "180 kN"      # instead of the section's capacity
@@ -506,7 +507,8 @@ pub struct Member {
     /// A direction in the local x–y plane (frames; none: global z, or
     /// global x for a vertical member).
     pub reference: Option<[f64; 3]>,
-    /// Roll of the local y, z axes about x, radians.
+    /// Roll of the local y, z axes about x, radians (with an `orientation`:
+    /// after it, a correction; 2026-11-04).
     pub roll: f64,
     /// Effective length factor for buckling.
     pub k: f64,
@@ -912,10 +914,12 @@ impl Model {
             let reference = match &m.orientation {
                 None => m.reference,
                 Some(o) => {
-                    if m.reference.is_some() || m.roll.si() != 0.0 {
-                        return Err(format!(
-                            "{what}: orientation, or reference and roll (not both)"
-                        ));
+                    // A roll turns the legs further (a correction, owner
+                    // 2026-11-04: "a correction angle for the members to
+                    // rotate them on their axis"); a reference is the
+                    // orientation's own.
+                    if m.reference.is_some() {
+                        return Err(format!("{what}: orientation or reference (not both)"));
                     }
                     let d = sub(nodes[j].point, nodes[i].point);
                     let l = norm(d);

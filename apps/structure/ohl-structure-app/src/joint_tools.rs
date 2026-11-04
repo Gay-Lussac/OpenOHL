@@ -31,7 +31,7 @@ use ohl_structure_link::{
     Arrival, BoltRules, BoltedLeg, ConnectionKind, JointDetail, JointDetails, Source, Valued,
 };
 
-use ohl_structures::connections::{MAX_GAUGE_LINES, PlateKind};
+use ohl_structures::connections::MAX_GAUGE_LINES;
 
 use crate::app::StructureApp;
 use crate::detail_tools::Rules;
@@ -64,10 +64,16 @@ pub enum Act {
     OpenPreset(String, String),
     /// A preset applied to a member end.
     ApplyPreset(String, String, String),
-    /// A plate added at a joint, bolted or welded onto its leg.
-    AddPlate(String, PlateKind),
-    /// A plate's kind changed.
-    PlateKind(String, PlateKind),
+    /// A plate added at a joint.
+    AddPlate(String),
+    /// Two plates of a joint welded to each other (true) or not
+    /// (2026-11-04: a welded plate is several plates welded together).
+    Weld(String, String, bool),
+    /// A welded plate made at a joint: a plate per plane of the members
+    /// arriving, welded together, every member bolted onto one.
+    WeldedPlate(String),
+    /// A member's roll, radians (owner 2026-11-04: its correction angle).
+    Roll(String, f64),
     /// A bolt picked with the Detail view's Edit tool: its properties
     /// below (member, joint, its place among the end's bolts).
     PickBolt(String, String, usize),
@@ -528,25 +534,91 @@ impl StructureApp {
                     None => Some((format!("no preset {name}"), true)),
                 }
             }
-            Act::AddPlate(joint, kind) => {
+            Act::AddPlate(joint) => {
                 let id = f.edit(&format!("Plate at {joint}"), |doc, t| {
-                    connection_edits::add_plate(doc, t, &joint, 0.010, kind)
+                    connection_edits::add_plate(doc, t, &joint, 0.010)
                 });
                 self.joints.picked = Some(crate::joint_panel::Picked::Plate(id.clone()));
                 Some((
                     format!(
-                        "plate {id} at {joint} ({} onto the leg), 10 mm thick: type its thickness; \
-                         members bolt onto it with Onto",
-                        kind.as_str()
+                        "plate {id} at {joint}, 10 mm thick: type its thickness; members bolt \
+                         onto it with Onto"
                     ),
                     false,
                 ))
             }
-            Act::PlateKind(id, kind) => {
-                let r = f.edit(&format!("Plate {id} {}", kind.as_str()), |doc, _| {
-                    connection_edits::set_plate_kind(doc, &id, kind)
+            Act::Weld(a, b, on) => {
+                let r = f.edit(&format!("Plates {a} and {b} welded"), |doc, t| {
+                    connection_edits::weld_pair(doc, t, &a, &b, on)
                 });
-                r.err().map(|e| (e, true))
+                Some(match r {
+                    Ok(()) if on => (format!("plates {a} and {b}: welded together"), false),
+                    Ok(()) => (format!("plates {a} and {b}: no longer welded"), false),
+                    Err(e) => (e, true),
+                })
+            }
+            Act::WeldedPlate(joint) => match details.joint(&joint) {
+                Some(j) => {
+                    let (plan, left) = ohl_structure_link::welded_plan(j);
+                    if plan.is_empty() {
+                        Some((
+                            format!(
+                                "joint {joint}: no member bolting onto the joint's leg{}",
+                                if left.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" ({})", left.join("; "))
+                                }
+                            ),
+                            true,
+                        ))
+                    } else {
+                        let groups: Vec<Vec<String>> =
+                            plan.iter().map(|p| p.members.clone()).collect();
+                        let thickness = j
+                            .plates
+                            .iter()
+                            .map(|p| p.thickness)
+                            .fold(0.010f64, f64::max);
+                        let ids = f.edit(&format!("Welded plate at {joint}"), |doc, t| {
+                            connection_edits::make_welded_plates(doc, t, &joint, &groups, thickness)
+                        });
+                        let what: Vec<String> = ids
+                            .iter()
+                            .zip(&groups)
+                            .map(|(id, g)| format!("{id} ({})", g.join(", ")))
+                            .collect();
+                        Some((
+                            format!(
+                                "joint {joint}: a welded plate of {} plate(s) {:.0} mm, welded \
+                                 together: {}{}",
+                                ids.len(),
+                                thickness * 1000.0,
+                                what.join(", "),
+                                if left.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("; {}", left.join("; "))
+                                }
+                            ),
+                            false,
+                        ))
+                    }
+                }
+                None => Some((format!("no joint {joint}"), true)),
+            },
+            Act::Roll(member, roll) => {
+                f.edit(&format!("Roll of {member}"), |doc, _| {
+                    ohl_structure_edit::edits::set_member_roll(doc, &member, roll)
+                });
+                Some((
+                    format!(
+                        "{member}: roll {:.1}° (its cross-section turned about its axis, its \
+                         axes for the analysis too)",
+                        roll.to_degrees()
+                    ),
+                    false,
+                ))
             }
             Act::PickBolt(member, joint, index) => {
                 self.joints.picked = Some(crate::joint_panel::Picked::Bolt {
@@ -1578,22 +1650,32 @@ pub fn joint_bar(
         if ui
             .button("+ Plate")
             .on_hover_text(
-                "A gusset plate bolted onto this joint's leg (10 mm to start: type its thickness); \
-                 a joint may have several",
+                "A gusset plate on this joint's leg (10 mm to start: type its thickness); a joint \
+                 may have several, welded together with Welded to",
             )
             .clicked()
         {
-            acts.push(Act::AddPlate(j.id.clone(), PlateKind::Bolted));
+            acts.push(Act::AddPlate(j.id.clone()));
         }
-        if ui
-            .button("+ Welded plate")
-            .on_hover_text(
-                "A gusset plate welded onto this joint's leg (10 mm to start); the members bolt \
-                 onto it as onto a bolted one",
+        let (plan, _) = ohl_structure_link::welded_plan(j);
+        let r = ui
+            .add_enabled(
+                !plan.is_empty(),
+                egui::Button::new("Make a welded plate for every member"),
             )
-            .clicked()
-        {
-            acts.push(Act::AddPlate(j.id.clone(), PlateKind::Welded));
+            .on_hover_text(format!(
+                "The joint's plates replaced by a welded plate: one plate per plane the members \
+                 arriving lie in with the leg, welded together, each member bolted onto its plate \
+                 — {} — each plate round its members' bolts with the design code's end and edge \
+                 distances in the plate. One undo step.",
+                plan.iter()
+                    .map(|p| p.members.join(" + "))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ))
+            .on_disabled_hover_text("No member bolting onto the joint's leg here");
+        if r.clicked() {
+            acts.push(Act::WeldedPlate(j.id.clone()));
         }
     });
     if !j.plates.is_empty() {
@@ -1602,7 +1684,7 @@ pub fn joint_bar(
             .show(ui, |ui| {
                 for h in [
                     "Plate",
-                    "Kind",
+                    "Welded to",
                     "Thickness mm",
                     "Material",
                     "Members onto it",
@@ -1619,19 +1701,7 @@ pub fn joint_bar(
                     {
                         acts.push(Act::PickPlate(p.id.clone()));
                     }
-                    let mut kind = p.kind;
-                    egui::ComboBox::from_id_salt(("plate-kind", &p.id))
-                        .selected_text(kind.as_str())
-                        .show_ui(ui, |ui| {
-                            for k in PlateKind::ALL {
-                                ui.selectable_value(&mut kind, k, k.as_str());
-                            }
-                        })
-                        .response
-                        .on_hover_text("Bolted or welded onto the joint's leg");
-                    if kind != p.kind {
-                        acts.push(Act::PlateKind(p.id.clone(), kind));
-                    }
+                    acts.extend(welded_to_menu(ui, j, p));
                     let v = Valued {
                         value: Some(p.thickness),
                         source: Source::Given,
@@ -1667,5 +1737,46 @@ pub fn joint_bar(
                 }
             });
     }
+    acts
+}
+
+/// A plate's Welded to: an options menu (it stays open on a tick) with a
+/// box per other plate of the joint, ticked when the two are welded to
+/// each other; what was ticked or unticked.
+pub fn welded_to_menu(
+    ui: &mut egui::Ui,
+    j: &JointDetail,
+    p: &ohl_structure_link::PlateDetail,
+) -> Vec<Act> {
+    let mut acts = Vec::new();
+    let others: Vec<&ohl_structure_link::PlateDetail> =
+        j.plates.iter().filter(|q| q.id != p.id).collect();
+    let title = if p.welded_to.is_empty() {
+        "not welded".to_owned()
+    } else {
+        p.welded_to.join(", ")
+    };
+    if others.is_empty() {
+        ui.label("—").on_hover_text("No other plate at the joint");
+        return acts;
+    }
+    ui.push_id(("welded-to", &p.id), |ui| {
+        crate::layout::options_menu(ui, &title, |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Welded to (one welded plate: several plates welded together so that every \
+                     member bolting here reaches one)",
+                )
+                .small()
+                .weak(),
+            );
+            for q in &others {
+                let mut on = p.welded_to.contains(&q.id);
+                if ui.checkbox(&mut on, q.id.as_str()).changed() {
+                    acts.push(Act::Weld(p.id.clone(), q.id.clone(), on));
+                }
+            }
+        });
+    });
     acts
 }
