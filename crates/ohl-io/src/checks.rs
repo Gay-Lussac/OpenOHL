@@ -176,7 +176,9 @@ fn evaluator<'a>(
 
 /// The distance between conductors under unequal wind: measured here on
 /// the line solved at `levels` ([`unequal_wind::levels`]), required by
-/// the plugin of `check` with `values` and `choices`.
+/// the plugin of `check` with `values` and `choices`; the pairs measured
+/// counted in `progress`.
+#[allow(clippy::too_many_arguments)]
 pub fn unequal_wind(
     host: &WasmHost,
     check: &PluginCheck,
