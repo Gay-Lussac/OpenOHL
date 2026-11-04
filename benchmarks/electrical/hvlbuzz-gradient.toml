@@ -1,0 +1,189 @@
+# The conductor surface gradients against hvlbuzz (owner, 2026-11-04: "only
+# for the 2D cuts for the noise"; "please cite properly hvlbuzz in the
+# theory for the validation as it's open source and they have been of
+# great help to me before for the understanding").
+#
+# Reference: hvlbuzz — "HVLBuzz 2.0" by Michael Kefeder, Gerhard Bräunlich
+# and Joel Winiger (the authors its Cargo.toml names), © FKH
+# (https://fkh.ch); https://gitlab.com/fkh-ch/emc; documentation
+# https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html; GNU General Public
+# License version 3. Built 2026-10-29 from its repository and run
+# 2026-11-04 on its project files in benchmarks/electrical/hvlbuzz/ with
+# "n_contour" set: 360 — its charge simulation (360 charges), the largest
+# gradient over its contour points averaged over the bundle; 2 — the
+# bundle's charge shared by its subconductors, |q|/(2 pi eps0 r) times
+# 1 + (n - 1) r/R (Markt–Mengele). Its bundle tables are kept beside the
+# project files (_bundle_n360.csv, _bundle_n2.csv; its default 12 charges:
+# _bundle_n12.csv, for the record); reference_hvlbuzz.py (`gradient`)
+# writes these cases.
+#
+# Tolerances: the average maximum 2e-4 (the program's 8 charges at 0.3 r
+# against hvlbuzz's 360: within 1e-4); Markt–Mengele 1e-3 (the same
+# formula, each program's bundle charge: within 5e-4); with 64 charges
+# (electrical-072, -073) the average maximum 2e-5 (within 1e-5: both
+# simulations converged). The potential error between collocation points
+# below 1e-4 of the largest voltage.
+
+[[case]]
+id = "electrical-066"
+title = "One 380 kV circuit, flat, two-conductor bundles: the conductor surface gradients against hvlbuzz"
+calculation = "electrical.surface_gradient_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its bundle table: n_contour 360 (its charge simulation, the average maximum) and 2 (Markt–Mengele); benchmarks/electrical/hvlbuzz/A-flat-380kV_bundle_n360.csv, _n2.csv"
+[case.inputs]
+[[case.inputs.systems]]
+subconductors = 2
+spacing = 0.4
+diameter = 0.0318
+kv = 380
+bundle_angle = 0
+phases = [[-9, 20], [0, 20], [9, 20]]
+[case.expected]
+avg_max_kv_cm_00 = { value = 14.8716532, rel_tol = 0.0002 }
+markt_mengele_kv_cm_00 = { value = 14.91222808, rel_tol = 0.001 }
+avg_max_kv_cm_01 = { value = 16.18763928, rel_tol = 0.0002 }
+markt_mengele_kv_cm_01 = { value = 16.22855426, rel_tol = 0.001 }
+avg_max_kv_cm_02 = { value = 14.8716532, rel_tol = 0.0002 }
+markt_mengele_kv_cm_02 = { value = 14.91222808, rel_tol = 0.001 }
+potential_error = { value = 0, abs_tol = 1e-4 }
+
+[[case]]
+id = "electrical-067"
+title = "A 110 kV double circuit, phases one above another: the conductor surface gradients against hvlbuzz"
+calculation = "electrical.surface_gradient_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its bundle table: n_contour 360 (its charge simulation, the average maximum) and 2 (Markt–Mengele); benchmarks/electrical/hvlbuzz/B-double-110kV_bundle_n360.csv, _n2.csv"
+[case.inputs]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+bundle_angle = 0
+phases = [[5, 22], [5, 27], [5, 32]]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+bundle_angle = 0
+phases = [[-5, 22], [-5, 27], [-5, 32]]
+[case.expected]
+avg_max_kv_cm_00 = { value = 7.19287444, rel_tol = 0.0002 }
+markt_mengele_kv_cm_00 = { value = 7.154781319, rel_tol = 0.001 }
+avg_max_kv_cm_01 = { value = 7.836424417, rel_tol = 0.0002 }
+markt_mengele_kv_cm_01 = { value = 7.832723763, rel_tol = 0.001 }
+avg_max_kv_cm_02 = { value = 6.970683111, rel_tol = 0.0002 }
+markt_mengele_kv_cm_02 = { value = 6.929541372, rel_tol = 0.001 }
+avg_max_kv_cm_03 = { value = 7.192874445, rel_tol = 0.0002 }
+markt_mengele_kv_cm_03 = { value = 7.154781319, rel_tol = 0.001 }
+avg_max_kv_cm_04 = { value = 7.836424417, rel_tol = 0.0002 }
+markt_mengele_kv_cm_04 = { value = 7.832723763, rel_tol = 0.001 }
+avg_max_kv_cm_05 = { value = 6.970683112, rel_tol = 0.0002 }
+markt_mengele_kv_cm_05 = { value = 6.929541372, rel_tol = 0.001 }
+potential_error = { value = 0, abs_tol = 1e-4 }
+
+[[case]]
+id = "electrical-068"
+title = "The 110 kV double circuit with an earth wire (at earth potential): the conductor surface gradients against hvlbuzz"
+calculation = "electrical.surface_gradient_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its bundle table: n_contour 360 (its charge simulation, the average maximum) and 2 (Markt–Mengele); benchmarks/electrical/hvlbuzz/C-double-110kV-earthwire_bundle_n360.csv, _n2.csv"
+[case.inputs]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+bundle_angle = 0
+phases = [[5, 22], [5, 27], [5, 32]]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+bundle_angle = 0
+phases = [[-5, 22], [-5, 27], [-5, 32]]
+[[case.inputs.earth_wires]]
+x = 0
+y = 38
+diameter = 0.016
+[case.expected]
+avg_max_kv_cm_00 = { value = 7.155529305, rel_tol = 0.0002 }
+markt_mengele_kv_cm_00 = { value = 7.117719476, rel_tol = 0.001 }
+avg_max_kv_cm_01 = { value = 7.811819875, rel_tol = 0.0002 }
+markt_mengele_kv_cm_01 = { value = 7.808435717, rel_tol = 0.001 }
+avg_max_kv_cm_02 = { value = 7.148067407, rel_tol = 0.0002 }
+markt_mengele_kv_cm_02 = { value = 7.111256724, rel_tol = 0.001 }
+avg_max_kv_cm_03 = { value = 7.155529308, rel_tol = 0.0002 }
+markt_mengele_kv_cm_03 = { value = 7.117719476, rel_tol = 0.001 }
+avg_max_kv_cm_04 = { value = 7.811819875, rel_tol = 0.0002 }
+markt_mengele_kv_cm_04 = { value = 7.808435717, rel_tol = 0.001 }
+avg_max_kv_cm_05 = { value = 7.148067392, rel_tol = 0.0002 }
+markt_mengele_kv_cm_05 = { value = 7.111256724, rel_tol = 0.001 }
+avg_max_kv_cm_06 = { value = 2.08858367, rel_tol = 0.0002 }
+markt_mengele_kv_cm_06 = { value = 2.073819843, rel_tol = 0.001 }
+potential_error = { value = 0, abs_tol = 1e-4 }
+
+[[case]]
+id = "electrical-072"
+title = "One 380 kV circuit, flat, two-conductor bundles, 64 charges per subconductor: the conductor surface gradients against hvlbuzz"
+calculation = "electrical.surface_gradient_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its bundle table: n_contour 360 (its charge simulation, the average maximum) and 2 (Markt–Mengele); benchmarks/electrical/hvlbuzz/A-flat-380kV_bundle_n360.csv, _n2.csv"
+[case.inputs]
+charges = 64
+[[case.inputs.systems]]
+subconductors = 2
+spacing = 0.4
+diameter = 0.0318
+kv = 380
+bundle_angle = 0
+phases = [[-9, 20], [0, 20], [9, 20]]
+[case.expected]
+avg_max_kv_cm_00 = { value = 14.8716532, rel_tol = 2e-05 }
+markt_mengele_kv_cm_00 = { value = 14.91222808, rel_tol = 0.001 }
+avg_max_kv_cm_01 = { value = 16.18763928, rel_tol = 2e-05 }
+markt_mengele_kv_cm_01 = { value = 16.22855426, rel_tol = 0.001 }
+avg_max_kv_cm_02 = { value = 14.8716532, rel_tol = 2e-05 }
+markt_mengele_kv_cm_02 = { value = 14.91222808, rel_tol = 0.001 }
+potential_error = { value = 0, abs_tol = 1e-4 }
+
+[[case]]
+id = "electrical-073"
+title = "The 110 kV double circuit with an earth wire, 64 charges per subconductor: the conductor surface gradients against hvlbuzz"
+calculation = "electrical.surface_gradient_2d"
+reference = "hvlbuzz 2.0 (FKH, gitlab.com/fkh-ch/emc), its bundle table: n_contour 360 (its charge simulation, the average maximum) and 2 (Markt–Mengele); benchmarks/electrical/hvlbuzz/C-double-110kV-earthwire_bundle_n360.csv, _n2.csv"
+[case.inputs]
+charges = 64
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+bundle_angle = 0
+phases = [[5, 22], [5, 27], [5, 32]]
+[[case.inputs.systems]]
+subconductors = 1
+spacing = 0.0
+diameter = 0.0281
+kv = 110
+bundle_angle = 0
+phases = [[-5, 22], [-5, 27], [-5, 32]]
+[[case.inputs.earth_wires]]
+x = 0
+y = 38
+diameter = 0.016
+[case.expected]
+avg_max_kv_cm_00 = { value = 7.155529305, rel_tol = 2e-05 }
+markt_mengele_kv_cm_00 = { value = 7.117719476, rel_tol = 0.001 }
+avg_max_kv_cm_01 = { value = 7.811819875, rel_tol = 2e-05 }
+markt_mengele_kv_cm_01 = { value = 7.808435717, rel_tol = 0.001 }
+avg_max_kv_cm_02 = { value = 7.148067407, rel_tol = 2e-05 }
+markt_mengele_kv_cm_02 = { value = 7.111256724, rel_tol = 0.001 }
+avg_max_kv_cm_03 = { value = 7.155529308, rel_tol = 2e-05 }
+markt_mengele_kv_cm_03 = { value = 7.117719476, rel_tol = 0.001 }
+avg_max_kv_cm_04 = { value = 7.811819875, rel_tol = 2e-05 }
+markt_mengele_kv_cm_04 = { value = 7.808435717, rel_tol = 0.001 }
+avg_max_kv_cm_05 = { value = 7.148067392, rel_tol = 2e-05 }
+markt_mengele_kv_cm_05 = { value = 7.111256724, rel_tol = 0.001 }
+avg_max_kv_cm_06 = { value = 2.08858367, rel_tol = 2e-05 }
+markt_mengele_kv_cm_06 = { value = 2.073819843, rel_tol = 0.001 }
+potential_error = { value = 0, abs_tol = 1e-4 }
+

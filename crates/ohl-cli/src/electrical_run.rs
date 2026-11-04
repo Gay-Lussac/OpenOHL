@@ -42,6 +42,64 @@ pub enum ElectricalCommand {
     /// profiles, cuts, volumes and points, over the same ground; one JSON
     /// set of results and one report of a --preset-plugin.
     Fields(Box<FieldsArgs>),
+    /// Conductor surface gradient (kV/cm rms) in 2D cross-sections
+    /// (2026-11-04; 2D only): a charge simulation of every subconductor
+    /// over level, perfectly conducting ground — per span at its lowest
+    /// point and at both ends (or the --profile places), per bundle the
+    /// average maximum (what corona noise formulas take), the maximum and
+    /// Markt–Mengele's value beside them.
+    Gradient(Box<GradientArgs>),
+}
+
+/// `ohl electrical gradient`.
+#[derive(Args)]
+pub struct GradientArgs {
+    #[command(flatten)]
+    pub model: ModelArgs,
+    /// Weather case file (.ohlwc) holding the case the wires hang in.
+    #[arg(long)]
+    pub weather: Option<PathBuf>,
+    /// The weather case the wires hang in (default: still air at
+    /// --temperature; the noise is usually assessed at the largest sag or
+    /// an average case — choose it).
+    #[arg(long, requires = "weather")]
+    pub case: Option<String>,
+    /// Conductor temperature without --case, °C.
+    #[arg(long, default_value_t = 40.0)]
+    pub temperature: f64,
+    /// A circuit's voltage between phases: CIRCUIT=KV (CIRCUIT: its name or
+    /// its system's id, `*` every circuit). Repeatable; default: the
+    /// system's nominal voltage, said (noise is usually assessed at the
+    /// highest operating voltage: give it).
+    #[arg(long, value_name = "CIRCUIT=KV")]
+    pub voltage: Vec<String>,
+    /// A cross-section: FROM:TO (a span's structures) at its lowest point,
+    /// or FROM:TO@FRACTION (0–1 of the span from the first along the
+    /// line). Repeatable; default every span at its lowest point.
+    #[arg(long, value_name = "FROM:TO[@FRACTION]")]
+    pub profile: Vec<String>,
+    /// Not at the spans' ends (by default each span also at both
+    /// structures: the first cross-section every wire reaches).
+    #[arg(long)]
+    pub no_ends: bool,
+    /// Line charges per subconductor (default 8: within 0.05 % of 64 on
+    /// the benchmarks, 0.01 % on line cross-sections; more: a little
+    /// closer, slower — a cross-section takes milliseconds either way).
+    #[arg(long, default_value_t = ohl_electrical::surface_gradient::CHARGES)]
+    pub charges: usize,
+    /// Terrain file for the ground (default: the project's surface of the
+    /// checks or point cloud, else straight between the structures' feet).
+    #[arg(long, conflicts_with = "surface")]
+    pub terrain: Option<PathBuf>,
+    /// A terrain surface of the project file for the ground.
+    #[arg(long)]
+    pub surface: Option<String>,
+    /// Print every subconductor (default: a row per bundle).
+    #[arg(long)]
+    pub subconductors: bool,
+    /// Write every subconductor as CSV here.
+    #[arg(long)]
+    pub csv: Option<PathBuf>,
 }
 
 /// What both fields take (`ohl electrical magnetic`, `electric`,
@@ -432,7 +490,136 @@ pub fn run(command: ElectricalCommand) -> Result<(), String> {
         ElectricalCommand::Magnetic(a) => magnetic(&a),
         ElectricalCommand::Electric(a) => electric(&a),
         ElectricalCommand::Fields(a) => fields(&a),
+        ElectricalCommand::Gradient(a) => gradient(&a),
     }
+}
+
+/// `ohl electrical gradient`: the conductor surface gradients of the 2D
+/// cross-sections asked.
+fn gradient(a: &GradientArgs) -> Result<(), String> {
+    use ohl_electrical::surface_gradient::{self, Settings};
+    let (mut line, library) = load(&a.model)?;
+    let case = match &a.weather {
+        Some(path) => {
+            let set = ohl_weather::WeatherCases::load(path)?;
+            line.set_weather_cases(&set.cases);
+            let name = a
+                .case
+                .as_ref()
+                .ok_or("--weather: give --case (the case the wires hang in)")?;
+            set.select(std::slice::from_ref(name), &[])?
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("no weather case {name}"))?
+        }
+        None => {
+            ohl_weather::WeatherCase::still("still air", Temperature::from_celsius(a.temperature))
+        }
+    };
+    let mut voltages = Vec::new();
+    for v in &a.voltage {
+        let (circuit, kv) = v
+            .split_once('=')
+            .ok_or_else(|| format!("--voltage {v}: CIRCUIT=KV"))?;
+        voltages.push(ohl_electrical::electric::CircuitVoltage {
+            circuit: circuit.trim().to_owned(),
+            kv: kv
+                .trim()
+                .parse()
+                .map_err(|_| format!("--voltage {v}: {kv} is not a number of kV"))?,
+        });
+    }
+    let mut stations = Vec::new();
+    for p in &a.profile {
+        let (from, to, fraction) = span_at(p, "--profile")?;
+        stations.push(ohl_electrical::magnetic::StationSpec { from, to, fraction });
+    }
+    let settings = Settings {
+        voltages,
+        stations,
+        ends: !a.no_ends,
+        charges: a.charges.max(1),
+        ..Default::default()
+    };
+    let s = solve(line, library, case, &Vec::new());
+    let terrain = match (&a.terrain, &a.surface) {
+        (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
+        (None, Some(name)) => {
+            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
+            let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
+            Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
+        }
+        (None, None) => project_ground(&a.model.file, &s.line, 30.0, false)?,
+    };
+    let height = ground_of(&terrain);
+    let ground: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = terrain
+        .as_ref()
+        .map(|_| &height as &(dyn Fn(f64, f64) -> Option<f64> + Sync));
+    let src = ohl_electrical::Sources {
+        line: &s.line,
+        library: &s.library,
+        shapes: &s.shapes,
+        temperature: s.case.temperature,
+        ground,
+        jumpers: &[],
+    };
+    let g = surface_gradient::run(&src, &settings)?;
+    println!(
+        "Conductor surface gradient of {} in \"{}\" ({:.1} °C): 2D, {} line charges per subconductor, kV/cm rms",
+        s.line.name,
+        s.case.name,
+        s.case.temperature.celsius(),
+        g.charges
+    );
+    for n in &g.notes {
+        println!("  note: {n}");
+    }
+    for c in &g.cuts {
+        println!(
+            "{}–{} at {:.1} m ({}); potential error {:.0e}",
+            c.from, c.to, c.at, c.place, c.potential_error
+        );
+        println!(
+            "  {:<12} {:<14} {:<6} {:>9} {:>3} {:>11} {:>9} {:>9}",
+            "section", "circuit", "phase", "kV earth", "n", "avg max", "max", "M–M"
+        );
+        for b in &c.bundles {
+            println!(
+                "  {:<12} {:<14} {:<6} {:>9.2} {:>3} {:>11.3} {:>9.3} {:>9.3}",
+                b.section,
+                if b.circuit.is_empty() {
+                    "earth wire"
+                } else {
+                    &b.circuit
+                },
+                b.phase,
+                b.kv,
+                b.count,
+                b.average_max_kv_cm,
+                b.max_kv_cm,
+                b.markt_mengele_kv_cm
+            );
+            if a.subconductors {
+                for (k, sc) in b.subconductors.iter().enumerate() {
+                    println!(
+                        "      {}: at {:.3} m, {:.3} m high: max {:.3} kV/cm at {:.0}°, mean {:.3}",
+                        k + 1,
+                        sc.offset,
+                        sc.height,
+                        sc.max_kv_cm,
+                        sc.angle_deg,
+                        sc.mean_kv_cm
+                    );
+                }
+            }
+        }
+    }
+    if let Some(path) = &a.csv {
+        std::fs::write(path, surface_gradient::csv(&g))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("written: {}", path.display());
+    }
+    Ok(())
 }
 
 fn parameters(a: &ParametersArgs) -> Result<(), String> {

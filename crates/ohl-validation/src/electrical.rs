@@ -23,6 +23,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(Magnetic2d));
     registry.register(Box::new(Fields2d));
     registry.register(Box::new(LightningCut));
+    registry.register(Box::new(SurfaceGradient2d));
+    registry.register(Box::new(CylinderGradient));
 }
 
 /// `electrical.lightning_cut`: one phase in one cross-section of the
@@ -218,6 +220,211 @@ impl Calculation for Fields2d {
         }
         out.insert("e_max_v_m".into(), e_max);
         out.insert("b_max_ut".into(), b_max);
+        Ok(out)
+    }
+}
+
+/// `electrical.surface_gradient_2d`: the conductor surface gradient of a
+/// cross-section by the program's charge simulation
+/// ([`ohl_electrical::surface_gradient`]), from inputs as hvlbuzz (FKH)
+/// takes them (`systems`, `earth_wires` as `electrical.fields_2d`;
+/// optional `charges`, line charges per subconductor, default the
+/// program's). Outputs per bundle k (the systems' phases in order, then
+/// the earth wires; `_00`, `_01`, …), kV/cm rms: `avg_max_kv_cm_k` (the
+/// mean over its subconductors of each one's largest gradient),
+/// `max_kv_cm_k` (the largest), `markt_mengele_kv_cm_k` (Markt–Mengele's
+/// from the bundle's charge of the equivalent wires,
+/// [`ohl_electrical::electric::charges`]); and `potential_error` (the
+/// simulation's largest potential error between collocation points, a
+/// share of the largest voltage).
+struct SurfaceGradient2d;
+
+impl Calculation for SurfaceGradient2d {
+    fn id(&self) -> &'static str {
+        "electrical.surface_gradient_2d"
+    }
+
+    fn description(&self) -> &'static str {
+        "Conductor surface gradient of a cross-section (2D charge simulation), inputs as hvlbuzz takes them"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use nalgebra::Complex;
+        use ohl_electrical::electric::charges;
+        use ohl_electrical::surface_gradient::{
+            CHARGES, Cylinder, PLACEMENT, markt_mengele, solve, surface_gradient,
+        };
+        let n = if inputs.contains_key("charges") {
+            float(inputs, "charges")? as usize
+        } else {
+            CHARGES
+        };
+        // Per bundle: its cylinders' range, subconductor count, radius,
+        // bundle radius.
+        let mut bundles: Vec<(std::ops::Range<usize>, u32, f64, f64)> = Vec::new();
+        let mut cyl = Vec::new();
+        let mut wires = Vec::new();
+        let mut volts = Vec::new();
+        for t in tables(inputs, "systems")? {
+            let nb = number(t, "subconductors")?.max(1.0) as usize;
+            let spacing = number(t, "spacing")?;
+            let d = number(t, "diameter")?;
+            let kv = number(t, "kv")?;
+            let beta = if t.contains_key("bundle_angle") {
+                number(t, "bundle_angle")?.to_radians()
+            } else {
+                0.0
+            };
+            let phases = t
+                .get("phases")
+                .and_then(|v| v.as_array())
+                .ok_or("input \"phases\": a list of [x, y]")?;
+            let np = phases.len().max(1) as f64;
+            let rb = if nb > 1 {
+                spacing / 2.0 / (PI / nb as f64).sin()
+            } else {
+                0.0
+            };
+            for (k, ph) in phases.iter().enumerate() {
+                let xy = numbers(Some(ph), "phase", 2)?;
+                let v = Complex::from_polar(kv * 1e3 / 3f64.sqrt(), -2.0 * PI * k as f64 / np);
+                let start = cyl.len();
+                for i in 0..nb {
+                    let a = beta + 2.0 * PI * i as f64 / nb as f64;
+                    cyl.push(Cylinder {
+                        y: xy[0] + rb * a.cos(),
+                        z: xy[1] + rb * a.sin(),
+                        radius: d / 2.0,
+                        volts: v,
+                    });
+                }
+                bundles.push((start..cyl.len(), nb as u32, d / 2.0, rb));
+                let (_, radius) = matrices::bundle(nb as u32, Some(spacing), d / 2.0, d / 2.0);
+                wires.push(Wire {
+                    across: xy[0],
+                    height: xy[1],
+                    gmr: radius,
+                    radius,
+                    resistance: 0.0,
+                });
+                volts.push(v);
+            }
+        }
+        if let Some(list) = inputs.get("earth_wires").and_then(|v| v.as_array()) {
+            for e in list {
+                let t = e.as_table().ok_or("earth_wires: tables")?;
+                let r = number(t, "diameter")? / 2.0;
+                let (x, y) = (number(t, "x")?, number(t, "y")?);
+                let start = cyl.len();
+                cyl.push(Cylinder {
+                    y: x,
+                    z: y,
+                    radius: r,
+                    volts: Complex::new(0.0, 0.0),
+                });
+                bundles.push((start..cyl.len(), 1, r, 0.0));
+                wires.push(Wire {
+                    across: x,
+                    height: y,
+                    gmr: r,
+                    radius: r,
+                    resistance: 0.0,
+                });
+                volts.push(Complex::new(0.0, 0.0));
+            }
+        }
+        let sol = solve(&cyl, n, true, PLACEMENT).ok_or("the charge simulation is singular")?;
+        let q = charges(&wires, &volts).ok_or("the potential coefficients are singular")?;
+        let vmax = volts.iter().map(|v| v.norm()).fold(0.0, f64::max);
+        let mut out = Outputs::new();
+        for (k, ((range, nb, r, rb), qk)) in bundles.iter().zip(&q).enumerate() {
+            let maxima: Vec<f64> = range
+                .clone()
+                .map(|j| surface_gradient(std::slice::from_ref(&sol), j, 360).0 / 1e5)
+                .collect();
+            out.insert(
+                format!("avg_max_kv_cm_{k:02}"),
+                maxima.iter().sum::<f64>() / maxima.len() as f64,
+            );
+            out.insert(
+                format!("max_kv_cm_{k:02}"),
+                maxima.iter().copied().fold(0.0, f64::max),
+            );
+            out.insert(
+                format!("markt_mengele_kv_cm_{k:02}"),
+                markt_mengele(qk.norm(), *nb, *r, *rb) / 1e5,
+            );
+        }
+        out.insert(
+            "potential_error".into(),
+            if vmax > 0.0 {
+                sol.potential_error() / vmax
+            } else {
+                0.0
+            },
+        );
+        Ok(out)
+    }
+}
+
+/// `electrical.cylinder_gradient`: the largest surface gradient of a
+/// smooth cylinder (radius `radius`, m) at `kv` to earth (kV) whose centre
+/// is `height` (m) above a perfectly conducting plane — or, with
+/// `opposite = 1`, of one of two cylinders at ±`kv` in free space whose
+/// centres are 2 × `height` apart — by the program's charge simulation
+/// (optional `charges`, default the program's). Outputs: `e_max_kv_cm`
+/// (largest), `e_min_kv_cm` (smallest round it), `angle_deg` (of the
+/// largest, from the horizontal), `potential_error` (a share of `kv`).
+struct CylinderGradient;
+
+impl Calculation for CylinderGradient {
+    fn id(&self) -> &'static str {
+        "electrical.cylinder_gradient"
+    }
+
+    fn description(&self) -> &'static str {
+        "Surface gradient of a cylinder over a conducting plane, or of two at opposite voltages (charge simulation)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use nalgebra::Complex;
+        use ohl_electrical::surface_gradient::{
+            CHARGES, Cylinder, PLACEMENT, solve, surface_gradient,
+        };
+        let n = if inputs.contains_key("charges") {
+            float(inputs, "charges")? as usize
+        } else {
+            CHARGES
+        };
+        let h = float(inputs, "height")?;
+        let r = float(inputs, "radius")?;
+        let v = float(inputs, "kv")? * 1e3;
+        let opposite = inputs.contains_key("opposite") && float(inputs, "opposite")? != 0.0;
+        let mut cyl = vec![Cylinder {
+            y: 0.0,
+            z: h,
+            radius: r,
+            volts: Complex::new(v, 0.0),
+        }];
+        if opposite {
+            cyl.push(Cylinder {
+                y: 0.0,
+                z: -h,
+                radius: r,
+                volts: Complex::new(-v, 0.0),
+            });
+        }
+        let sol =
+            solve(&cyl, n, !opposite, PLACEMENT).ok_or("the charge simulation is singular")?;
+        let (max, angle, _) = surface_gradient(std::slice::from_ref(&sol), 0, 360);
+        let min = (0..360)
+            .map(|i| sol.surface_field(0, 2.0 * PI * i as f64 / 360.0).0.norm())
+            .fold(f64::INFINITY, f64::min);
+        let mut out = Outputs::new();
+        out.insert("e_max_kv_cm".into(), max / 1e5);
+        out.insert("e_min_kv_cm".into(), min / 1e5);
+        out.insert("angle_deg".into(), angle);
+        out.insert("potential_error".into(), sol.potential_error() / v.abs());
         Ok(out)
     }
 }

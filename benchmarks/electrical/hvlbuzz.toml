@@ -1,7 +1,9 @@
 # The 2D fields against hvlbuzz (owner, 2026-10-29: "for the electric and
 # magnetic fields you can probably use hvlbuzz … it's only 2D but at least
-# this can be validated"). hvlbuzz 2.0 (FKH, Switzerland;
-# https://gitlab.com/fkh-ch/emc, GPL-3.0-or-later) is an independent
+# this can be validated"). hvlbuzz 2.0 (M. Kefeder, G. Bräunlich,
+# J. Winiger; © FKH, Switzerland; https://gitlab.com/fkh-ch/emc;
+# https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html; GNU GPL version 3;
+# see reference_hvlbuzz.py) is an independent
 # program: its electric field from a charge simulation with 12 line charges
 # round every subconductor, its magnetic field by Biot–Savart. Its project
 # files are in benchmarks/electrical/hvlbuzz/ with the profiles it wrote

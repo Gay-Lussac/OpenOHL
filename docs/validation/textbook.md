@@ -341,8 +341,10 @@ program's charges, \( q = P^{-1} V \) with a bundle as its equivalent
 wire, and line charges with their images) and the magnetic flux density
 (its 2D model, subconductor by subconductor) on a profile 1 m above the
 ground, ±50 m every 5 m, from inputs as hvlbuzz takes them. Reference:
-**hvlbuzz 2.0** (FKH, Switzerland; [gitlab.com/fkh-ch/emc](https://gitlab.com/fkh-ch/emc),
-GPL-3.0-or-later), an independent program — a charge simulation with 12
+**hvlbuzz — *HVLBuzz 2.0* by Michael Kefeder, Gerhard Bräunlich and Joel Winiger (the authors its `Cargo.toml` names), © FKH, Switzerland ([fkh.ch](https://fkh.ch)); source [gitlab.com/fkh-ch/emc](https://gitlab.com/fkh-ch/emc); documentation [fkh-ch.gitlab.io/emc/hvlbuzz/index.html](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html); GNU General Public License version 3** (its `LICENSE` file and README badge; built from its repository on
+2026-10-29), an independent, open-source program — used here with thanks
+to its authors and FKH, whose program helped the owner understand these
+calculations — a charge simulation with 12
 line charges round every subconductor, Biot–Savart — run on the project
 files in `benchmarks/electrical/hvlbuzz/` (2026-10-29; its profiles kept
 beside them, `reference_hvlbuzz.py` writes the cases; induced currents in
@@ -361,6 +363,42 @@ example double circuit at the middle of T1–T2, hvlbuzz's project and
 profile in `benchmarks/electrical/hvlbuzz/D-example-double-circuit-T1-T2*`
 — within 0.2 % at every point; the 3D profile's largest value within 2 %
 (0.6–0.8 %: the 2D/3D methods differ).
+
+### The conductor surface gradient (`benchmarks/electrical/gradient.toml`, `hvlbuzz-gradient.toml`)
+
+Calculations `electrical.cylinder_gradient` (a cylinder over a
+conducting plane, or two at opposite voltages in free space) and
+`electrical.surface_gradient_2d` (a cross-section, inputs as hvlbuzz
+takes them): the [conductor surface gradient](../theory/surface-gradient.md)
+by the program's charge simulation (8 line charges at 0.3 r in every
+subconductor by default), 2026-11-04.
+
+**Exact closed forms** (`reference_gradient.py`, no OpenOHL code): the
+cylinder over the plane as one line charge at \( d = \sqrt{h^2 - r^2} \)
+and its image (bipolar coordinates), the largest and smallest surface
+gradient and where.
+
+| Case | Geometry | Agreement | Tolerance |
+|---|---|---|---|
+| electrical-069 | 31.8 mm wire at 20 m, 231 kV | largest +6.5e-5, smallest −1.6e-5, at −90° | 0.1 % |
+| electrical-070 | 0.5 m cylinder at 2 m, 100 kV | +2.2e-4, +4.2e-6 | 0.1 % |
+| electrical-071 | two 0.1 m cylinders 0.6 m apart, ±10 kV, free space | +3.0e-4, −3.6e-5 | 0.1 % |
+
+**Against hvlbuzz** (the reference above; its bundle tables of
+2026-11-04 in `benchmarks/electrical/hvlbuzz/*_bundle_n*.csv`,
+`reference_hvlbuzz.py gradient` writes the cases): its charge simulation
+with 360 charges (`n_contour` 360, the average maximum) and its
+Markt–Mengele path (`n_contour` 2) on the three cross-sections above.
+
+| Case | Cross-section | Agreement | Tolerance |
+|---|---|---|---|
+| electrical-066 | A, 380 kV, two-conductor bundles | average maximum +8.3e-5; Markt–Mengele −2.4e-4 to −4.8e-4 (each program's bundle charge) | 2e-4; 1e-3 |
+| electrical-067 | B, 110 kV double circuit | +3.4e-5 to +5.6e-5; Markt–Mengele within 1e-6 | the same |
+| electrical-068 | C, B with an earth wire | +3.4e-5 to +6.9e-5 (the earth wire too); within 2e-6 | the same |
+| electrical-072, -073 | A and C with 64 charges | +3.9e-6 on every wire | 2e-5 |
+
+Every case also checks the simulation's potential error between the
+collocation points (below 1e-4 of the largest voltage).
 
 ### Lightning shielding (`benchmarks/electrical/lightning.toml`)
 

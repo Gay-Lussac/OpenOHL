@@ -462,6 +462,12 @@ solved once.
 - **Volumes** are lattices in a box over a run of ticked spans that
   follow each other (one volume, no seam at the structures).
 
+**The conductor surface gradient** (the field at a subconductor's
+surface, for the corona noise; 2026-11-04, 2D only) is a calculation of
+its own, a charge simulation round every subconductor: [Conductor surface
+gradient](surface-gradient.md). The charges above (one per bundle) give
+the field away from the wires, not at their surface.
+
 ## The choices and why
 
 | Choice | Why | Effect on the result |
@@ -484,7 +490,9 @@ circuit the symmetry of a profile, the field proportional to the voltage,
 isolines' and surfaces' distance off their levels; the earthed bar
 (0.4 %); the V-valley (above).
 
-**Against hvlbuzz** (FKH, an independent program; 2026-10-29): the 2D
+**Against hvlbuzz** (hvlbuzz — *HVLBuzz 2.0* by Michael Kefeder, Gerhard Bräunlich and Joel Winiger (the authors its `Cargo.toml` names), © FKH, Switzerland ([fkh.ch](https://fkh.ch)); source [gitlab.com/fkh-ch/emc](https://gitlab.com/fkh-ch/emc); documentation [fkh-ch.gitlab.io/emc/hvlbuzz/index.html](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html); GNU General Public License version 3; an independent, open-source
+program, built from its repository on 2026-10-29 — thanks to its authors
+and FKH, see [Conductor surface gradient](surface-gradient.md#validation)): the 2D
 charges and field on three cross-sections, 1 m above the ground — within
 0.12 % on 380 kV bundles (one charge per bundle at its centre against
 hvlbuzz's twelve round every subconductor), 0.003 % on single wires, with

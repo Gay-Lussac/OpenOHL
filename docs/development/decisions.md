@@ -10,6 +10,39 @@ of Parts A, B and C).
 
 ## 2026-11-04
 
+**The conductor surface gradient, 2D only** (owner, 2026-11-04: "yes go
+ahead with 1-4 but only for the 2D cuts for the noise do not apply it in
+3D as these are different usage. also please cite properly hvlbuzz in
+the theory for the validation as it's open source and they have been of
+great help to me before for the understanding"). Built, in active
+development, not approved yet.
+
+- **2D only.** A charge simulation in the 2D cross-sections (per span at
+  its lowest point and both ends, or the places asked); the 3D electric
+  field and the 2D field values are not changed (the field keeps one
+  charge per bundle: exact enough away from the wires, 7 % low at a
+  two-conductor bundle's surface).
+- **The placement measured, not taken over:** the charges at
+  \( r/k \), \( k = 1 + 2\sin(\pi/n) \) (the placement first suggested,
+  hvlbuzz's) leave a ripple of some 0.3 % between the collocation points
+  that does not fall with more charges; at 0.3 r it falls as
+  \( 0.3^n \). **8 charges** by the owner's rule: the smallest count
+  within 0.05 % of 64 on every benchmark (cross-sections within 0.01 %,
+  closed forms 0.03 %); a setting.
+- **The average maximum** per bundle (what the noise formulas take), the
+  maximum and Markt–Mengele's value beside them; kV/cm rms.
+- **Validated** on exact closed forms and against hvlbuzz (its
+  `n_contour` 360 and 2 paths run 2026-11-04 on the three benchmark
+  cross-sections; within 1e-4 by default, 3.9e-6 with 64 charges);
+  `electrical-066…073` (236 cases). hvlbuzz cited with its authors as its
+  `Cargo.toml` names them, FKH, its repository, documentation and
+  licence (GNU GPL version 3 — the earlier "GPL-3.0-or-later" corrected:
+  the project states version 3, no "or later"), with the owner's thanks,
+  in the theory, the validation page and the benchmark files.
+- Markt and Mengele's original publication not found in a readable
+  source: the formula derived in the theory page instead, the source to
+  add. No published worked example found yet.
+
 **A circuit's current in the line; the Thermal rating in four pages; one
 step from a current to the clearance** (owner, 2026-11-04: "go ahead
 with 1-3 and also review the thermal menu as all the others in the app

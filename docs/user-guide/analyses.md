@@ -1438,6 +1438,41 @@ out of date when the line or the ground changes; the views then draw
 faded. Not modelled: the structures, trees, buildings and people (earthed
 objects lower the field beside them and raise it at their tops).
 
+**Conductor surface gradient** (*built 2026-11-04, 2D only, in active
+development, not approved yet*; the owner: "only for the 2D cuts for the
+noise do not apply it in 3D"). With a 2D run (cuts and profiles),
+**Surface gradient** (on by default; the hover says what it does) also
+computes the field at the conductors' surfaces — the corona noise
+methods' input — at the profiles' spans: each at its lowest point and at
+both ends (at the structures, the first cross-section every wire
+reaches). A charge simulation of every subconductor over level,
+perfectly conducting ground (8 line charges in each, the field at 360
+points round it; some milliseconds per cross-section; it changes no field
+value). The results under **Conductor surface gradient, 2D**: per
+cross-section and bundle (earth wires too) the **average maximum** (the
+mean of the subconductors' largest gradients — what the noise formulas
+take), the **maximum** and **Markt–Mengele**'s value as a cross-check,
+kV/cm **rms** (peak √2 times); **Export CSV…** per subconductor (its
+largest gradient, where round it, its mean). Saved with the run in
+Performed checks. Give the circuits' highest operating voltage: the
+nominal is taken otherwise (said), not conservative for noise. Method,
+convergence, validation (closed forms, hvlbuzz) and what is left out:
+[Conductor surface gradient](../theory/surface-gradient.md). Not in 3D.
+
+```sh
+ohl electrical gradient LINE.ohl.json|PROJECT.ohl [--voltage CIRCUIT=KV]… \
+    [--profile FROM:TO[@FRACTION]]… [--no-ends] [--charges N] \
+    [--weather FILE --case NAME] [--terrain FILE | --surface NAME] \
+    [--subconductors] [--csv FILE]
+```
+
+prints per cross-section (span, station, lowest/start/end/given, the
+simulation's potential error) a row per bundle — section, circuit,
+phase, kV to earth, subconductors, average maximum, maximum,
+Markt–Mengele — and with `--subconductors` each subconductor's largest
+gradient, its angle (from the horizontal, 90° the top) and mean; `--csv`
+writes every subconductor.
+
 **On the command line:** `ohl electrical electric LINE.ohl.json|PROJECT.ohl`
 with the voltages, profiles, points, cuts and volumes as options
 (`ohl electrical electric --help`); as for the magnetic field, cuts are
