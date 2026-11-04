@@ -993,7 +993,7 @@ enum Line {
 pub struct ResultTable<'a> {
     id: &'a str,
     cols: Vec<Col>,
-    rows: Vec<Row>,
+    rows: std::borrow::Cow<'a, [Row]>,
     filter: bool,
     groups: Vec<usize>,
     csv: Option<&'a str>,
@@ -1025,7 +1025,7 @@ impl<'a> ResultTable<'a> {
         Self {
             id,
             cols,
-            rows: Vec::new(),
+            rows: std::borrow::Cow::Borrowed(&[]),
             filter: true,
             groups: Vec::new(),
             csv: None,
@@ -1036,7 +1036,14 @@ impl<'a> ResultTable<'a> {
 
     /// Its rows.
     pub fn rows(mut self, rows: Vec<Row>) -> Self {
-        self.rows = rows;
+        self.rows = std::borrow::Cow::Owned(rows);
+        self
+    }
+
+    /// Its rows, kept by the window from frame to frame (built once per
+    /// run: thousands of rows are not made again every frame).
+    pub fn rows_ref(mut self, rows: &'a [Row]) -> Self {
+        self.rows = std::borrow::Cow::Borrowed(rows);
         self
     }
 

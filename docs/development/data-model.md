@@ -2904,7 +2904,13 @@ the wind) — both checks since 2026-11-01 also `calculation` when the
 window's *Wires by* is set (as the vegetation's); each pair adds `pressure` (the wind on each conductor, Pa)
 and `side` (`left` / `right`) and `wires` (the two conductors' points
 as measured, each at its wind, to draw the pair), its sag, l_k and
-length below 0.
+length below 0, its `k` none (written `[null, null]`: serde_json writes
+a NaN so). A pair's numbers `null` are read as none (NaN; `sag`, `lk`,
+`beta`, `k`, `c` — 2026-11-04: before, such a report was refused when
+opened again, so unequal wind reports could not be reopened). A run
+again is compared with the saved pairs by case, the two spans and the
+two conductors (circuit and phase; before 2026-11-04 by case and spans
+only, which merged a span's phase pairs).
 
 The vegetation check (`check` `ohl.vegetation`, title "Vegetation and
 danger trees", 2026-10-20; `ohl-app` `vegetation::saved`) keeps as

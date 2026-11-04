@@ -278,7 +278,12 @@ and the side — only that span's pair, on top of the view; the pair's
 sections are drawn in the result's weather case (as above), the case
 shown for the line stays as it is and nothing is solved (a saved run keeps the
 pair's conductors to draw them too). Values, saved runs
-and CSV as above. How it is measured: [the core's
+and CSV as above: **Save** keeps the run in the library of performed
+checks, and opened again from there it shows its pairs on its Results
+tab with its weather case, wind step and share set again; **Run** runs
+it again with them and compares it with the saved run, as for the
+distance in the span. (Runs saved before 2026-11-04 could not be opened
+again: they open now.) How it is measured: [the core's
 part](../development/phase-distance-check.md#under-unequal-wind).
 ## The library of performed checks
 

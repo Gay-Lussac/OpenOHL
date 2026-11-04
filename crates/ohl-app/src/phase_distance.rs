@@ -149,14 +149,19 @@ pub struct Row {
     /// The worst station is within [`NEAR_CLAMP`] of a clamp.
     pub at_clamp: bool,
     /// Local sag of each, m.
+    #[serde(deserialize_with = "nan::pair")]
     pub sag: [f64; 2],
     /// l_k of each, m.
+    #[serde(deserialize_with = "nan::pair")]
     pub lk: [f64; 2],
     /// System angle, degrees.
+    #[serde(deserialize_with = "nan::one")]
     pub beta: f64,
-    /// k of each.
+    /// k of each (none under unequal wind: NaN, written `null`).
+    #[serde(deserialize_with = "nan::pair")]
     pub k: [f64; 2],
     /// C after the altitude, m.
+    #[serde(deserialize_with = "nan::one")]
     pub c: f64,
     /// The rule applied (e.g. "2.2.1"; "2.2.4 (phase spacers)").
     #[serde(default)]
@@ -173,15 +178,34 @@ pub struct Row {
     pub wires: Vec<Vec<[f64; 3]>>,
 }
 
+/// A number not given (NaN) is written `null` in JSON (serde_json's way)
+/// and read back as NaN. (A saved unequal wind report, whose k is none,
+/// could not be opened again before 2026-11-04: `null` was refused.)
+mod nan {
+    use serde::{Deserialize, Deserializer};
+
+    /// A number; `null`: NaN.
+    pub fn one<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+        Ok(Option::<f64>::deserialize(d)?.unwrap_or(f64::NAN))
+    }
+
+    /// Two numbers; each `null`: NaN.
+    pub fn pair<'de, D: Deserializer<'de>>(d: D) -> Result<[f64; 2], D::Error> {
+        let [a, b] = <[Option<f64>; 2]>::deserialize(d)?;
+        Ok([a.unwrap_or(f64::NAN), b.unwrap_or(f64::NAN)])
+    }
+}
+
 impl Row {
     /// d − z, m.
     pub fn margin(&self) -> f64 {
         self.distance - self.required
     }
 
-    /// The pair in its case, to compare runs.
-    fn key(&self) -> (String, [(String, usize); 2]) {
-        (self.case.clone(), self.span.clone())
+    /// The pair in its case, to compare runs: its spans and its two
+    /// conductors (a span's phases are pairs of the same spans).
+    fn key(&self) -> PairKey {
+        (self.case.clone(), self.span.clone(), self.what.clone())
     }
 }
 
@@ -311,7 +335,7 @@ impl Change {
 }
 
 /// A pair, in its case.
-type PairKey = (String, [(String, usize); 2]);
+type PairKey = (String, [(String, usize); 2], [String; 2]);
 
 /// A run compared with a saved report: each pair's change, and the saved
 /// pairs below z that are no more (their spans gone).
@@ -470,6 +494,9 @@ pub struct PhaseDistanceWindow {
     pub(crate) job: Job<Report>,
     /// Under unequal wind, the run under way: how far it is.
     progress: Option<Arc<UnequalProgress>>,
+    /// The results table's rows, for (the run, compared or not, the rows
+    /// kept): built once, not every frame (2026-11-04).
+    pub(crate) table: Option<((u64, bool, usize), Vec<check_ui::Row>)>,
     /// The setup kept in the project ([`SETTING`]).
     kept: check_ui::Kept,
 }
@@ -559,6 +586,7 @@ impl PhaseDistanceWindow {
             since: None,
             job: Job::default(),
             progress: None,
+            table: None,
             kept: Default::default(),
         }
     }
@@ -1354,6 +1382,11 @@ impl PhaseDistanceWindow {
             params,
             state: Some(r.state.clone()),
         }));
+        // Shown on its Results tab (as a run that came), its line's
+        // state since computed anew (another report may have been shown).
+        self.job.generation += 1;
+        self.since = None;
+        self.save_error = None;
         self.loaded = Some(r.clone());
         self.open = true;
         Ok(())
@@ -2354,6 +2387,69 @@ impl PhaseDistanceWindow {
             });
     }
 
+    /// The results table's rows of `report` (built once per run, kept in
+    /// `table`).
+    fn table_rows(&self, report: &Report) -> Vec<check_ui::Row> {
+        use check_ui::Cell;
+        let unequal = self.kind == Kind::UnequalWind;
+        report
+            .rows
+            .iter()
+            .map(|r| {
+                let mut cells = vec![
+                    Cell::text(&r.case),
+                    Cell::span(&r.span[0].0, r.span[0].1),
+                    Cell::text(&r.what[0]),
+                    Cell::span(&r.span[1].0, r.span[1].1),
+                    Cell::text(&r.what[1]),
+                    Cell::text(match (unequal, r.same_system) {
+                        (false, true) => "C₁",
+                        (false, false) => "C₂",
+                        (true, true) => "C₃",
+                        (true, false) => "C₄",
+                    }),
+                    Cell::sorted(format!("{:.0}", r.kv), r.kv),
+                    Cell::num(Some(r.distance), 2).bad(r.margin() < 0.0),
+                    Cell::num(Some(r.required), 2),
+                    Cell::num(Some(r.margin()), 2).bad(r.margin() < 0.0),
+                ];
+                if unequal {
+                    let [pa, pb] = r.pressure.unwrap_or([f64::NAN; 2]);
+                    cells.extend([
+                        Cell::sorted(format!("{pa:.0} / {pb:.0}"), pa),
+                        Cell::text(r.side.as_deref().unwrap_or("—")),
+                        Cell::sorted(format!("{:.0}", r.beta), r.beta),
+                    ]);
+                } else {
+                    cells.extend([
+                        Cell::sorted(format!("{:.0}", r.length_below), r.length_below),
+                        Cell::sorted(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]), r.sag[0]),
+                        Cell::sorted(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]), r.lk[0]),
+                        Cell::sorted(format!("{:.0}", r.beta), r.beta),
+                        Cell::sorted(format!("{:.2} / {:.2}", r.k[0], r.k[1]), r.k[0]),
+                        Cell::num(Some(r.c), 2),
+                    ]);
+                }
+                let mut note = Vec::new();
+                if r.at_clamp {
+                    note.push("at a clamp (f ≈ 0)");
+                }
+                if !r.same_span {
+                    note.push("nearby span");
+                }
+                cells.extend([Cell::text(&r.rule), Cell::text(note.join(", "))]);
+                if let Some(c) = &self.comparison {
+                    let change = c.changes.get(&r.key()).copied();
+                    cells.push(
+                        Cell::text(change.map_or("", Change::text))
+                            .bad(matches!(change, Some(Change::New | Change::Worse))),
+                    );
+                }
+                check_ui::Row::new(cells, r.margin() < 0.0)
+            })
+            .collect()
+    }
+
     fn results_ui(&mut self, ui: &mut egui::Ui, out: &mut Out) {
         let report = match &self.job.result {
             None => {
@@ -2417,7 +2513,7 @@ impl PhaseDistanceWindow {
                 .weak(),
             );
         });
-        use check_ui::{Cell, Col};
+        use check_ui::Col;
         let mut cols = vec![
             Col::text("Case"),
             Col::text("Span"),
@@ -2453,62 +2549,19 @@ impl PhaseDistanceWindow {
         if self.comparison.is_some() {
             cols.push(Col::text("vs saved"));
         }
-        let rows: Vec<check_ui::Row> = report
-            .rows
-            .iter()
-            .map(|r| {
-                let mut cells = vec![
-                    Cell::text(&r.case),
-                    Cell::span(&r.span[0].0, r.span[0].1),
-                    Cell::text(&r.what[0]),
-                    Cell::span(&r.span[1].0, r.span[1].1),
-                    Cell::text(&r.what[1]),
-                    Cell::text(match (unequal, r.same_system) {
-                        (false, true) => "C₁",
-                        (false, false) => "C₂",
-                        (true, true) => "C₃",
-                        (true, false) => "C₄",
-                    }),
-                    Cell::sorted(format!("{:.0}", r.kv), r.kv),
-                    Cell::num(Some(r.distance), 2).bad(r.margin() < 0.0),
-                    Cell::num(Some(r.required), 2),
-                    Cell::num(Some(r.margin()), 2).bad(r.margin() < 0.0),
-                ];
-                if unequal {
-                    let [pa, pb] = r.pressure.unwrap_or([f64::NAN; 2]);
-                    cells.extend([
-                        Cell::sorted(format!("{pa:.0} / {pb:.0}"), pa),
-                        Cell::text(r.side.as_deref().unwrap_or("—")),
-                        Cell::sorted(format!("{:.0}", r.beta), r.beta),
-                    ]);
-                } else {
-                    cells.extend([
-                        Cell::sorted(format!("{:.0}", r.length_below), r.length_below),
-                        Cell::sorted(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]), r.sag[0]),
-                        Cell::sorted(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]), r.lk[0]),
-                        Cell::sorted(format!("{:.0}", r.beta), r.beta),
-                        Cell::sorted(format!("{:.2} / {:.2}", r.k[0], r.k[1]), r.k[0]),
-                        Cell::num(Some(r.c), 2),
-                    ]);
-                }
-                let mut note = Vec::new();
-                if r.at_clamp {
-                    note.push("at a clamp (f ≈ 0)");
-                }
-                if !r.same_span {
-                    note.push("nearby span");
-                }
-                cells.extend([Cell::text(&r.rule), Cell::text(note.join(", "))]);
-                if let Some(c) = &self.comparison {
-                    let change = c.changes.get(&r.key()).copied();
-                    cells.push(
-                        Cell::text(change.map_or("", Change::text))
-                            .bad(matches!(change, Some(Change::New | Change::Worse))),
-                    );
-                }
-                check_ui::Row::new(cells, r.margin() < 0.0)
-            })
-            .collect();
+        // The table's rows built once per run (and comparison, and save):
+        // thousands of pairs made again every frame cost 30 ms a frame
+        // on a long line (2026-11-04).
+        let key = (
+            self.job.generation,
+            self.comparison.is_some(),
+            report.rows.len(),
+        );
+        if self.table.as_ref().is_none_or(|(k, _)| *k != key) {
+            let rows = self.table_rows(report);
+            self.table = Some((key, rows));
+        }
+        let rows = self.table.as_ref().map_or(&[][..], |(_, r)| &r[..]);
         let id = format!("{}-rows", self.kind.page());
         let csv_name = if unequal {
             "unequal-wind-table.csv"
@@ -2516,7 +2569,7 @@ impl PhaseDistanceWindow {
             "phase-distance-table.csv"
         };
         if let Some(k) = check_ui::ResultTable::new(&id, cols)
-            .rows(rows)
+            .rows_ref(rows)
             .group_by(&[0, 1, if unequal { 13 } else { 16 }])
             .csv(csv_name)
             .full_csv(

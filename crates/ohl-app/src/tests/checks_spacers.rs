@@ -304,6 +304,164 @@ fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
     assert!(v.measure.is_none() && v.measure_wires.is_empty());
 }
 
+/// The distance under unequal wind saved in Performed checks and opened
+/// again (owner, 2026-11-04: "once it's saved in the report library, i
+/// can't open it again"): its rows shown on its Results tab, its wind step
+/// and share restored, a row clicked draws its pair as saved; Run runs it
+/// again with them and compares with the saved report.
+#[test]
+fn an_unequal_wind_report_opens_again() {
+    use crate::phase_distance::{Saved, UNEQUAL_WIND_CHECK_ID};
+    let model = synthetic_project("unequal-wind-report");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    if !lev_plugin(&mut harness) {
+        return;
+    }
+    let run = |h: &mut Harness<'_, App>| {
+        let started = std::time::Instant::now();
+        loop {
+            h.step();
+            let r = h.state_mut().ready().unwrap();
+            if let (Some(rep), false) = r.unequal_wind.report() {
+                assert!(rep.is_ok(), "{rep:?}");
+                break;
+            }
+            assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        h.run();
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.unequal_wind.show(&r.model);
+        r.unequal_wind.wind_step = 1000.0;
+        r.unequal_wind.low_share = 0.7;
+        let ctx = egui::Context::default();
+        r.unequal_wind.start(&r.model, &ctx);
+    }
+    run(&mut harness);
+    // The synthetic line's pairs are far from z: each made 0.5 m above it
+    // so that the report keeps them (within 1 m of z) as a real line's.
+    {
+        let w = &mut harness.state_mut().ready().unwrap().unequal_wind;
+        if let Some(Ok(rep)) = &mut w.job.result {
+            for x in &mut rep.rows {
+                x.required = x.distance - 0.5;
+            }
+        }
+        w.table = None;
+    }
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+    let saved = {
+        let r = harness.state_mut().ready().unwrap();
+        let reports = r.model.editing.as_ref().unwrap().session.reports();
+        assert_eq!(reports.len(), 1);
+        reports[0].clone()
+    };
+    assert_eq!(saved.check, UNEQUAL_WIND_CHECK_ID);
+    assert_eq!(saved.parameters["wind_step_pa"].as_f64(), Some(1000.0));
+    let kept: Saved = serde_json::from_value(saved.results.clone()).expect("readable results");
+    assert!(!kept.rows.is_empty(), "the synthetic line has pairs near z");
+    assert!(
+        kept.rows.iter().all(|x| x.wires.len() == 2),
+        "drawn as saved"
+    );
+    // The window closed and set otherwise; the run forgotten.
+    {
+        let w = &mut harness.state_mut().ready().unwrap().unequal_wind;
+        w.open = false;
+        w.wind_step = 50.0;
+        w.low_share = 0.9;
+        w.loaded = None;
+        w.job.result = None;
+    }
+    harness.run();
+    // Opened from the library.
+    harness.state_mut().ready().unwrap().check_library.show();
+    harness.run();
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .check_library
+        .select(&saved.id);
+    harness.run();
+    harness.get_by_label("Open").click();
+    harness.run();
+    let first = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(!r.status.as_ref().is_some_and(|s| s.1), "{:?}", r.status);
+        let w = &r.unequal_wind;
+        assert!(w.open);
+        assert_eq!(
+            w.loaded.as_ref().map(|x| x.id.as_str()),
+            Some(saved.id.as_str())
+        );
+        assert_eq!((w.wind_step, w.low_share), (1000.0, 0.7), "parameters");
+        let rep = w.report().0.unwrap().as_ref().unwrap();
+        assert_eq!(rep.rows.len(), kept.rows.len());
+        assert_eq!(rep.rows[0].distance, kept.rows[0].distance);
+        assert!(rep.rows[0].k[0].is_nan(), "no k under unequal wind");
+        rep.rows[0].clone()
+    };
+    assert_eq!(
+        crate::check_ui::current_tab(&harness.ctx, "unequal-wind-page"),
+        crate::check_ui::Tab::Results
+    );
+    harness.state_mut().ready().unwrap().check_library.open = false;
+    crate::check_ui::set_only_violations(&harness.ctx, "unequal-wind-page-rows", false);
+    harness.run();
+    // The table's rows built once, not every frame (owner, 2026-11-04:
+    // "laggy when the results are shown").
+    let built = |h: &mut Harness<'_, App>| {
+        let w = &h.state_mut().ready().unwrap().unequal_wind;
+        w.table.as_ref().map(|(_, rows)| rows.as_ptr())
+    };
+    let before = built(&mut harness);
+    assert!(before.is_some(), "the table shown");
+    for _ in 0..3 {
+        harness.step();
+    }
+    assert_eq!(built(&mut harness), before, "rows made again in a frame");
+    // Its rows shown; one clicked draws its pair as saved.
+    let label = format!("{} span {}", first.span[0].0, first.span[0].1 + 1);
+    harness
+        .query_all_by_label(&label)
+        .next()
+        .expect("the row shown")
+        .scroll_to_me();
+    harness.run();
+    harness.query_all_by_label(&label).next().unwrap().click();
+    harness.run();
+    {
+        let v = &harness.state_mut().ready().unwrap().view3d;
+        assert_eq!(v.measure.as_ref().map(|m| [m.0, m.1]), Some(first.at));
+        assert_eq!(v.measure_wires.len(), 2);
+    }
+    // Run again: with its parameters, compared with the saved report.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let ctx = egui::Context::default();
+        r.unequal_wind.start(&r.model, &ctx);
+    }
+    run(&mut harness);
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let rep = r.unequal_wind.report().0.unwrap().as_ref().unwrap();
+    assert_eq!(rep.params.wind_step_pa, Some(1000.0));
+    assert_eq!(rep.params.low_share, Some(0.7));
+    let c = r.unequal_wind.comparison.as_ref().expect("compared");
+    assert!(c.changes.is_empty() && c.gone == 0, "{}", c.summary());
+    harness
+        .get_by_label_contains("Compared with the saved report")
+        .hover();
+}
+
 /// Checks › LeV/OLEI › Distance between conductors (the menu the LeV
 /// plugin defines; none without it): the window opens with the
 /// shipped LeV values, checks the ticked case in the background (pairs
