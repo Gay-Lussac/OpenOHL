@@ -583,6 +583,7 @@ whichever section passes through `from`.
 | `System.kind` | `ac` / `dc` | — | default `ac` | — |
 | `System.voltage_kv` | f64 | kV | AC: between phases (rms); DC: pole to earth | — |
 | `System.frequency_hz` | f64? | Hz | AC frequency | — |
+| `System.current_a` | f64? | A | operating current, rms per phase (DC: per pole), shared by a bundle's subconductors; ≥ 0 (validated); none: not given. Line file **13** (2026-11-04), written only when a system has one (`Line::to_json`, else 12 or older, `BEFORE_CURRENT_VERSION`); OHL XML attribute `current_a` of `<system>`. `Line::section_currents` (per section via its conductor path's system), `Line::system_current`. The default of `ohl_thermal::sections::Current::Line` and of the magnetic field's circuits not given a current (`magnetic::run`, a note says so) | — |
 | `System.phases` | `[SystemPhase]` | — | phases (AC) or poles (DC) | — |
 | `System.color` | string? | — | colour when wires are drawn by system | — |
 | `SystemPhase.label` | string | — | matched with `Section.phase_label` | — |
@@ -745,7 +746,9 @@ syntax)}], `volumes` [`VolumeSpec` {`from`,
 `to`, `width`, `above`, `step`}], `levels` (µT, ascending; display
 only). `thermal_currents` gives the circuits' thermal ratings (the
 least over a circuit's sections of bundle × ampacity, in an ambient case
-and at a temperature given). Results `MagneticField`: `currents`
+and at a temperature given). A circuit given no current takes its
+system's operating current (`System.current_a`, 2026-11-04; a note says
+so), else 0 A. Results `MagneticField`: `currents`
 [`CurrentUsed`], `earth_wires` [`EarthWireCurrent` {`section`, `from`,
 `to`, `frequency_hz`, `amps`, `angle_deg`}], `profiles` [`Profile`
 {`from`, `to`, `at` m, `span_length`, `along_line` m, `points`, `max_ut`,
@@ -780,6 +783,23 @@ axis), `height` (above the ground), `b_ut` (rms of the vector), `major_ut`
 (the cycle's largest), `margin_ut` (limit − B)}, `notes`; `csv` writes
 them (since 2026-10-31 a last column `label`, a cut's label on its rows;
 the electric field's CSV the same). Methods: [Magnetic field](../theory/magnetic-field.md).
+
+**Thermal rating at a current** (`ohl_thermal`, 2026-11-04):
+`sections::section_temperatures(line, library, method, ambient,
+Current::{Line | Given(A)}, only)` → `[SectionHeat {section, cable,
+bundle, current: Result<A per phase, why>, cases: [Result<HeatBalance,
+why>] per ambient case}]` (the subconductor's steady temperature at
+current / bundle; earthed sections none; `hottest()`, `in_case(k)`);
+`limit::clearance_at(line, library, base, rules, targets, [(section,
+°C)], budget, progress)` → `[SectionCheck {section, cable, temperature,
+result: Result<Option<Governing>, why>}]` (the least margin over the
+requirements, met or not; `passes()`), the same solve and check as
+`limit::clearance_limits_of`. `Governing` gained `target` (the point on
+the ground or the point cloud), `margin()`, `met()`. Not stored: the
+window's results and the CLI's CSV (`ohl thermal clearance-check`:
+`section, cable, current_a, bundle, temperature_c, ambient_case, status
+(pass / fail / no_current / not_checked / error), rule, span, measure,
+clearance_m, required_m, margin_m`).
 
 <a id="field-results-json"></a>**Field results JSON** (2026-10-31;
 derived, written by `ohl electrical magnetic|electric|fields --json` and

@@ -961,6 +961,7 @@ fn write_system(out: &mut String, s: &System) {
         kind,
         voltage_kv,
         frequency_hz,
+        current_a,
         phases,
         color,
         fields,
@@ -974,6 +975,7 @@ fn write_system(out: &mut String, s: &System) {
     attr(out, "kind", &enum_name(kind));
     attr(out, "voltage_kv", &num(*voltage_kv));
     opt_num(out, "frequency_hz", *frequency_hz);
+    opt_num(out, "current_a", *current_a);
     if let Some(c) = color {
         attr(out, "color", c);
     }
@@ -2119,6 +2121,7 @@ fn read_system(e: &Element) -> Result<System, String> {
             "kind",
             "voltage_kv",
             "frequency_hz",
+            "current_a",
             "color",
             "description",
         ],
@@ -2138,6 +2141,7 @@ fn read_system(e: &Element) -> Result<System, String> {
         kind,
         voltage_kv: number(e, "voltage_kv")?,
         frequency_hz: optional(e, "frequency_hz")?,
+        current_a: optional(e, "current_a")?,
         color: owned(e, "color"),
         phases: e
             .children_named("phase")

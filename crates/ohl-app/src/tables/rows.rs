@@ -488,6 +488,7 @@ impl TableKind {
                         s.description.clone(),
                         s.owner.clone(),
                         s.number.clone(),
+                        s.current_a.map_or(String::new(), |v| f(v, 1)),
                     ],
                 })
                 .collect(),

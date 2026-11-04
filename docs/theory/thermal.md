@@ -239,6 +239,15 @@ long one with LiDAR points; the budget counts every solution
 (`limit::default_budget`) and stops after 30 minutes; the desktop app can
 cancel. The ampacity at the limit then follows per ambient case.
 
+**The clearance at a current** (2026-11-04, `limit::clearance_at`) is the
+same solve and check at one temperature per section: the steady
+temperature of [the heat balance](#heat-balance) at the section's current
+(per phase, shared equally by a bundle's subconductors — **assumed**, as
+in a symmetric bundle of equal subconductors), in the hottest
+ambient case or the one chosen; no new method. **Conservative:** the
+hottest ambient case of each section by default, and the steady
+temperature (a current carried long enough for the conductor to settle).
+
 ## Validation
 
 `benchmarks/thermal/ratings.toml`:

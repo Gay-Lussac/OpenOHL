@@ -415,6 +415,8 @@ fn rich_line() -> Line {
     if let Some(sys) = line.systems.first_mut() {
         sys.owner = "Utility".into();
         sys.number = "C12".into();
+        // Its operating current (line file 13, 2026-11-04).
+        sys.current_a = Some(640.0);
     }
     // The strings added here: their lengths and directions from where
     // their wire points are.

@@ -128,6 +128,20 @@ pub struct Governing {
     pub temperature: f64,
     /// Where on the wire.
     pub at: [f64; 3],
+    /// Where on the target (the ground, a point).
+    pub target: [f64; 3],
+}
+
+impl Governing {
+    /// Clearance found minus clearance required, m (negative: fails).
+    pub fn margin(&self) -> f64 {
+        self.clearance - self.required
+    }
+
+    /// Whether the clearance is met.
+    pub fn met(&self) -> bool {
+        self.clearance >= self.required
+    }
 }
 
 /// The limit of one section.
@@ -197,6 +211,19 @@ impl Search<'_, '_> {
         run: &mut Run,
         solves: &mut u32,
     ) -> Result<Option<Governing>, String> {
+        Ok(self.least(section, t, run, solves)?.filter(|g| !g.met()))
+    }
+
+    /// Solves `section` at `t` °C and checks it: the clearance with the
+    /// least margin over its requirement (met or not; `None`: nothing of
+    /// this section was checked).
+    fn least(
+        &mut self,
+        section: &ohl_line::Section,
+        t: f64,
+        run: &mut Run,
+        solves: &mut u32,
+    ) -> Result<Option<Governing>, String> {
         run.step().map_err(|e| e.to_string())?;
         *solves += 1;
         let mut case = self.base.clone();
@@ -230,14 +257,8 @@ impl Search<'_, '_> {
                     let (Some(h), Some(req)) = (hit, required) else {
                         continue;
                     };
-                    if h.distance >= req {
-                        continue;
-                    }
-                    let short = req - h.distance;
-                    if worst
-                        .as_ref()
-                        .is_none_or(|g| short > g.required - g.clearance)
-                    {
+                    let margin = h.distance - req;
+                    if worst.as_ref().is_none_or(|g| margin < g.margin()) {
                         worst = Some(Governing {
                             rule: self.rules[c.rule].name.clone(),
                             span: c.wires[w].span,
@@ -246,6 +267,7 @@ impl Search<'_, '_> {
                             required: req,
                             temperature: t,
                             at: h.wire,
+                            target: h.target,
                         });
                     }
                 }
@@ -344,39 +366,7 @@ pub fn clearance_limits_of(
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Vec<SectionLimit>, String> {
     options.validate()?;
-    let (rules, classes) = chosen_rules(rules, targets.point_classes, &base.name);
-    if rules.is_empty() {
-        return Err(format!(
-            "no ground or point clearance rule applies to weather case \"{}\"",
-            base.name
-        ));
-    }
-    // A ground rule naming a surface not given would be skipped (no
-    // ground) and the limit found without it: refused instead.
-    for r in &rules {
-        if let (Target::Ground, Some(name)) = (&r.target, &r.surface)
-            && !targets.surfaces.iter().any(|(n, _)| n == name)
-        {
-            return Err(format!(
-                "ground rule \"{}\": no terrain surface \"{name}\" (the project holds none of that name, or it could not be read)",
-                r.name
-            ));
-        }
-    }
-    let voltages = ohl_clearance::voltages_of(line)?;
-    for r in &rules {
-        r.check_voltages(&voltages, &[])?;
-    }
-    let mut search = Search {
-        line,
-        library,
-        base,
-        rules,
-        classes,
-        voltages,
-        targets,
-        checked_any: false,
-    };
+    let mut search = Search::new(line, library, base, rules, targets)?;
     let mut run = budget.start();
     let sections: Vec<&ohl_line::Section> = line
         .sections
@@ -389,14 +379,145 @@ pub fn clearance_limits_of(
         progress(k, n);
         let limit = search.section(section, options, &mut run);
         if !search.checked_any && limit.result.is_ok() {
-            return Err(
-                "no clearance could be checked: the rules need a terrain surface or points".into(),
-            );
+            return Err(NOTHING_CHECKED.into());
         }
         out.push(limit);
     }
     progress(n, n);
     Ok(out)
+}
+
+/// Why a search or check found nothing to check.
+const NOTHING_CHECKED: &str =
+    "no clearance could be checked: the rules need a terrain surface or points";
+
+/// The clearance check of one section at one conductor temperature
+/// ([`clearance_at`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionCheck {
+    /// Section id.
+    pub section: String,
+    /// Its cable.
+    pub cable: String,
+    /// The conductor temperature it was solved at, °C.
+    pub temperature: f64,
+    /// The clearance with the least margin over its requirement (met or
+    /// not; `None`: no rule checked anything of this section), or why the
+    /// section could not be solved or checked.
+    pub result: Result<Option<Governing>, String>,
+}
+
+impl SectionCheck {
+    /// Whether every clearance is met (`None`: an error, or nothing
+    /// checked).
+    pub fn passes(&self) -> Option<bool> {
+        match &self.result {
+            Ok(Some(g)) => Some(g.met()),
+            _ => None,
+        }
+    }
+}
+
+/// Exit clauses of [`clearance_at`] for `sections` sections: one solution
+/// each (plus slack), and 30 minutes.
+pub fn check_budget(sections: usize) -> Budget {
+    Budget::new()
+        .max_iterations(sections as u64 + 10)
+        .time_limit(Duration::from_secs(1800))
+}
+
+/// The clearance check of each section of `temperatures` (section id,
+/// conductor temperature °C; in the line's order of the sections) at that
+/// temperature: solved once in weather case `base` with only its
+/// temperature changed, checked by the ground and point `rules` that
+/// apply to `base` — the very solve and check of the
+/// [clearance-limit search](clearance_limits), at one temperature (the
+/// one a current gives, [`crate::sections::section_temperatures`]).
+/// `progress` hears (sections done, sections). Fails as the search does.
+#[allow(clippy::too_many_arguments)]
+pub fn clearance_at(
+    line: &Line,
+    library: &Library,
+    base: &WeatherCase,
+    rules: &[Rule],
+    targets: &mut Targets,
+    temperatures: &[(String, f64)],
+    budget: &Budget,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<Vec<SectionCheck>, String> {
+    let mut search = Search::new(line, library, base, rules, targets)?;
+    let mut run = budget.start();
+    let n = temperatures.len();
+    let mut out = Vec::with_capacity(n);
+    for (k, (id, t)) in temperatures.iter().enumerate() {
+        progress(k, n);
+        let Some(section) = line.sections.iter().find(|s| &s.id == id) else {
+            return Err(format!("no section {id}"));
+        };
+        let mut solves = 0;
+        let result = if t.is_finite() {
+            search.least(section, *t, &mut run, &mut solves)
+        } else {
+            Err(format!("conductor temperature {t} °C"))
+        };
+        if !search.checked_any && result.is_ok() {
+            return Err(NOTHING_CHECKED.into());
+        }
+        out.push(SectionCheck {
+            section: id.clone(),
+            cable: section.cable.clone(),
+            temperature: *t,
+            result,
+        });
+    }
+    progress(n, n);
+    Ok(out)
+}
+
+impl<'s, 'a> Search<'s, 'a> {
+    /// The rules of `rules` checked in `base` (ground and point rules
+    /// applying to it), the surfaces they name, the voltages they need.
+    fn new(
+        line: &'s Line,
+        library: &'s Library,
+        base: &'s WeatherCase,
+        rules: &[Rule],
+        targets: &'s mut Targets<'a>,
+    ) -> Result<Self, String> {
+        let (rules, classes) = chosen_rules(rules, targets.point_classes, &base.name);
+        if rules.is_empty() {
+            return Err(format!(
+                "no ground or point clearance rule applies to weather case \"{}\"",
+                base.name
+            ));
+        }
+        // A ground rule naming a surface not given would be skipped (no
+        // ground) and the limit found without it: refused instead.
+        for r in &rules {
+            if let (Target::Ground, Some(name)) = (&r.target, &r.surface)
+                && !targets.surfaces.iter().any(|(n, _)| n == name)
+            {
+                return Err(format!(
+                    "ground rule \"{}\": no terrain surface \"{name}\" (the project holds none of that name, or it could not be read)",
+                    r.name
+                ));
+            }
+        }
+        let voltages = ohl_clearance::voltages_of(line)?;
+        for r in &rules {
+            r.check_voltages(&voltages, &[])?;
+        }
+        Ok(Search {
+            line,
+            library,
+            base,
+            rules,
+            classes,
+            voltages,
+            targets,
+            checked_any: false,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -532,6 +653,71 @@ mod tests {
         )
         .unwrap();
         assert!(out.iter().any(|s| s.result.is_err()));
+    }
+
+    /// The check at one temperature per section: the same solve and
+    /// check as the search — met just below the limit found, missed just
+    /// above it, with the least margin and where.
+    #[test]
+    fn the_check_at_a_temperature_agrees_with_the_search() {
+        let options = LimitOptions::default();
+        let (line, library, terrain) = example();
+        let s2 = limits(5.0, &options)
+            .into_iter()
+            .find(|s| s.section == "S2")
+            .unwrap();
+        let Ok(Limit::At(t)) = s2.result else {
+            panic!("{s2:?}");
+        };
+        let base = WeatherCase::still("hot", Temperature::from_celsius(15.0));
+        let rules = RuleSet::ground(5.0).rules;
+        let mut targets = Targets {
+            ground: Some(&terrain),
+            surfaces: &[],
+            point_classes: &[],
+            points: None,
+        };
+        let at = |targets: &mut Targets, t: f64| {
+            let temps = vec![("S1".to_owned(), 15.0), ("S2".to_owned(), t)];
+            let mut calls = 0;
+            let out = clearance_at(
+                &line,
+                &library,
+                &base,
+                &rules,
+                targets,
+                &temps,
+                &check_budget(2),
+                &mut |_, _| calls += 1,
+            )
+            .unwrap();
+            assert_eq!(calls, 3);
+            out
+        };
+        let below = at(&mut targets, t);
+        assert_eq!(below.len(), 2);
+        assert_eq!(below[1].section, "S2");
+        assert_eq!(below[1].temperature, t);
+        assert_eq!(below[1].passes(), Some(true));
+        let g = below[1].result.as_ref().unwrap().as_ref().unwrap();
+        assert!(g.margin() >= 0.0 && g.margin() < 0.5, "{g:?}");
+        assert_eq!(g.span, 1);
+        assert!(g.target[2] < g.at[2]);
+        let above = at(&mut targets, t + options.tolerance + 0.1);
+        assert_eq!(above[1].passes(), Some(false));
+        // A section not in the line is said.
+        let e = clearance_at(
+            &line,
+            &library,
+            &base,
+            &rules,
+            &mut targets,
+            &[("nope".to_owned(), 50.0)],
+            &check_budget(1),
+            &mut |_, _| {},
+        )
+        .unwrap_err();
+        assert!(e.contains("nope"));
     }
 
     #[test]

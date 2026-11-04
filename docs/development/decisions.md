@@ -10,6 +10,57 @@ of Parts A, B and C).
 
 ## 2026-11-04
 
+**A circuit's current in the line; the Thermal rating in four pages; one
+step from a current to the clearance** (owner, 2026-11-04: "go ahead
+with 1-3 and also review the thermal menu as all the others in the app
+with a setup and result and explanations of the workings (maybe also
+separate the 4 things that work in 4 sub menus)"). Built, in active
+development, not approved yet.
+
+- **The operating current lives on the electrical system**
+  (`System.current_a`, A rms per phase; line file **version 13**, written
+  only when a system has one, older files read unchanged; OHL XML
+  attribute `current_a`), not on the circuit object: every phase section
+  has a system (through its conductor path) while circuit objects are
+  optional and absent from older files; the voltage, the frequency and
+  the phase angles the magnetic field and the line parameters use are
+  already the system's; and the magnetic field's circuits are (circuit
+  name, system), named by either. A system feeding branches of different
+  currents is given by its end points in the Magnetic field (as before).
+  Edited in Line › Electrical systems (column **A**, one command); ≥ 0,
+  refused otherwise.
+- **It is the default, never a second input**: the Temperature, Step
+  change and Clearance pages take it unless a current is typed there; the
+  Magnetic field (window and `ohl electrical magnetic`) takes it for a
+  circuit given none (a note says so), a current given still overriding
+  it. The window keeps only the currents typed (the 0 A it wrote for
+  every circuit shown before is no longer read as typed).
+- **A bundle shares the phase current equally** among its subconductors
+  (assumed, said in the theory); the Ampacity page now gives the phase's
+  ampacity (bundle × subconductor; the subconductor's on hover).
+- **Thermal rating: four pages** at the window's top — Ampacity,
+  Temperature at a current, Step change, Clearance — each with Setup
+  (1 What it checks with *How it is computed* and its drawings — a new
+  one for the step of current —, 2 Scope, 3 What to compute, 4 Model where
+  it has settings) and Results (the shared table). Ampacity, Temperature
+  and Step change compute as the setup changes (no Run; the footer says
+  so and how long); the Clearance page runs on Run, with the out-of-date
+  banner (the model, or its own inputs: current, ambient cases, method,
+  weather case, range).
+- **The clearance at a current** is the clearance-limit search's own
+  solve and check at one temperature per section
+  (`ohl_thermal::limit::clearance_at`, sharing its preparation): the
+  steady temperature at the current in the hottest ambient case (by
+  default, on the safe side) or one chosen. Per section: pass or fail,
+  the least clearance against its requirement and where. Its clearances
+  (failing ones, else the least margins) and the search's governing
+  clearances are drawn in the views like the other checks' marks. On the
+  command line a separate subcommand, **`ohl thermal clearance-check`**,
+  rather than a `--current` switch on `clearance-limit`: the two answer
+  different questions and take different options (no range, step or
+  tolerance here); they share every other option.
+- No thermal formula changed; no plugin touched.
+
 **A weld's size and length; the plate checks** (owner, 2026-11-04: "add
 weld size and length and the plate checks"). Built, in active
 development, not approved yet.

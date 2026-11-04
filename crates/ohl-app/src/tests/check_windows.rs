@@ -66,6 +66,8 @@ fn a_check_window_docks_as_a_panel_and_floats_again() {
     {
         let r = h.state_mut().ready().unwrap();
         r.thermal.show(&r.model);
+        // The page with a Run (the others compute at once).
+        r.thermal.page = crate::thermal::Page::Clearance;
     }
     h.run();
     let tab = Tab::Tool(Panel::Thermal);

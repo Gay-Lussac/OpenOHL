@@ -25,6 +25,11 @@ pub enum ThermalCommand {
     /// and point clearances are met, and the ampacity at it per ambient
     /// case.
     ClearanceLimit(Box<LimitArgs>),
+    /// Per section, the conductor temperature at a current (given, or the
+    /// systems' operating currents of the line file) in the hottest of the
+    /// ambient cases, the section solved at it and checked by the ground
+    /// and point clearance rules: pass or fail, the least clearance.
+    ClearanceCheck(Box<CheckArgs>),
 }
 
 /// Arguments of `ohl thermal ampacity`.
@@ -81,9 +86,10 @@ pub struct AmpacityArgs {
     csv: Option<PathBuf>,
 }
 
-/// Arguments of `ohl thermal clearance-limit`.
+/// What the clearance commands check against, and how (shared by
+/// `clearance-limit` and `clearance-check`).
 #[derive(Args)]
-pub struct LimitArgs {
+pub struct TargetArgs {
     /// Line file (.ohl.json) or project file (.ohl).
     file: PathBuf,
     /// Wire library (default: the shipped libraries/cables).
@@ -103,7 +109,9 @@ pub struct LimitArgs {
     /// The base weather case, by name.
     #[arg(long, requires = "weather")]
     case: Option<String>,
-    /// Ambient cases (.ohlta) for the ampacities at the limits.
+    /// Ambient cases (.ohlta): the ampacities at the limits
+    /// (clearance-limit); the conductor temperature at the current
+    /// (clearance-check, required there).
     #[arg(long)]
     ambient: Option<PathBuf>,
     /// Ambient case, by name (repeatable; default: all).
@@ -142,6 +150,16 @@ pub struct LimitArgs {
     /// Thin the LiDAR ground points: lowest point per cell of this size, m.
     #[arg(long)]
     thin: Option<f64>,
+    /// Write one row per section as CSV.
+    #[arg(long)]
+    csv: Option<PathBuf>,
+}
+
+/// Arguments of `ohl thermal clearance-limit`.
+#[derive(Args)]
+pub struct LimitArgs {
+    #[command(flatten)]
+    targets: TargetArgs,
     /// Lowest conductor temperature tried, °C.
     #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
     min_temp: f64,
@@ -154,9 +172,18 @@ pub struct LimitArgs {
     /// Resolution of the limit, °C.
     #[arg(long, default_value_t = 0.5)]
     tolerance: f64,
-    /// Write one row per section as CSV.
+}
+
+/// Arguments of `ohl thermal clearance-check`.
+#[derive(Args)]
+pub struct CheckArgs {
+    #[command(flatten)]
+    targets: TargetArgs,
+    /// Current, A rms per phase, in every phase section (shared by a
+    /// bundle's subconductors); default: each section's system's operating
+    /// current from the line file (`current_a`).
     #[arg(long)]
-    csv: Option<PathBuf>,
+    current: Option<f64>,
 }
 
 /// Runs a thermal command.
@@ -164,6 +191,7 @@ pub fn run(command: ThermalCommand) -> Result<(), String> {
     match command {
         ThermalCommand::Ampacity(a) => ampacity(&a),
         ThermalCommand::ClearanceLimit(a) => clearance_limit(&a),
+        ThermalCommand::ClearanceCheck(a) => clearance_check(&a),
     }
 }
 
@@ -318,15 +346,19 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
-    let method = Method::parse(&a.method)?;
-    let options = LimitOptions {
-        min_temperature: a.min_temp,
-        max_temperature: a.max_temp,
-        scan_step: a.step,
-        tolerance: a.tolerance,
-    };
-    options.validate()?;
+/// What a clearance command works on: the line, the wires, the base
+/// weather case, the ambient cases and what the rules check against.
+struct Inputs {
+    line: ohl_line::Line,
+    library: ohl_cables::Library,
+    base: ohl_weather::WeatherCase,
+    ambient: Vec<Ambient>,
+    prepared: crate::clearance_run::Prepared,
+}
+
+/// The [`Inputs`] `a` asks for; the base case without `--weather` is
+/// still air at `still` °C (its temperature is replaced).
+fn prepare(a: &TargetArgs, still: f64) -> Result<Inputs, String> {
     let mut line = crate::project::load_line(&a.file)?;
     let insulators = a
         .insulators
@@ -364,7 +396,7 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
         }
         None => ohl_weather::WeatherCase::still(
             "thermal limit",
-            ohl_core::units::Temperature::from_celsius(a.min_temp),
+            ohl_core::units::Temperature::from_celsius(still),
         ),
     };
     let ambient: Vec<Ambient> = match &a.ambient {
@@ -391,6 +423,45 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
             project: crate::project::is_project(&a.file).then_some(a.file.as_path()),
         },
     )?;
+    Ok(Inputs {
+        line,
+        library,
+        base,
+        ambient,
+        prepared,
+    })
+}
+
+/// "Rule span 2 vertical 4.99 m < 5.00 m".
+fn governing_words(g: &ohl_thermal::limit::Governing) -> String {
+    format!(
+        "{} span {} {} {:.2} m {} {:.2} m",
+        g.rule,
+        g.span + 1,
+        g.measure,
+        g.clearance,
+        if g.met() { "≥" } else { "<" },
+        g.required
+    )
+}
+
+fn clearance_limit(l: &LimitArgs) -> Result<(), String> {
+    let a = &l.targets;
+    let method = Method::parse(&a.method)?;
+    let options = LimitOptions {
+        min_temperature: l.min_temp,
+        max_temperature: l.max_temp,
+        scan_step: l.step,
+        tolerance: l.tolerance,
+    };
+    options.validate()?;
+    let Inputs {
+        line,
+        library,
+        base,
+        ambient,
+        prepared,
+    } = prepare(a, l.min_temp)?;
     let surfaces: Vec<(String, &ohl_terrain::Terrain)> = prepared
         .surfaces
         .iter()
@@ -444,15 +515,7 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
             Err(e) => (None, format!("error: {e}")),
         };
         let governing = s.governing.as_ref().map_or(String::new(), |g| {
-            format!(
-                "{} span {} {} {:.2} m < {:.2} m at {:.1} °C",
-                g.rule,
-                g.span + 1,
-                g.measure,
-                g.clearance,
-                g.required,
-                g.temperature
-            )
+            format!("{} at {:.1} °C", governing_words(g), g.temperature)
         });
         let head = format!(
             "  {:<12} {:<20} {:<18} {governing}",
@@ -526,6 +589,163 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// `ohl thermal clearance-check`: per section the steady temperature at
+/// the current (the hottest of the ambient cases), the section solved at
+/// it in the base case, checked by the ground and point rules — the solve
+/// and check of `clearance-limit`, at one temperature.
+fn clearance_check(c: &CheckArgs) -> Result<(), String> {
+    let a = &c.targets;
+    let method = Method::parse(&a.method)?;
+    if a.ambient.is_none() {
+        return Err(
+            "--ambient: the ambient cases (.ohlta) the temperature at the current is found in"
+                .into(),
+        );
+    }
+    let current = match c.current {
+        Some(i) if !(i.is_finite() && i >= 0.0) => {
+            return Err(format!("--current {i}: a current ≥ 0 A"));
+        }
+        Some(i) => ohl_thermal::sections::Current::Given(i),
+        None => ohl_thermal::sections::Current::Line,
+    };
+    let Inputs {
+        line,
+        library,
+        base,
+        ambient,
+        prepared,
+    } = prepare(a, 15.0)?;
+    let heats = ohl_thermal::sections::section_temperatures(
+        &line, &library, method, &ambient, current, None,
+    );
+    // The sections with a temperature, at the hottest case's.
+    let temps: Vec<(String, f64)> = heats
+        .iter()
+        .filter_map(|h| h.hottest().map(|(_, t)| (h.section.clone(), t)))
+        .collect();
+    if temps.is_empty() {
+        let why = heats
+            .iter()
+            .find_map(|h| h.current.as_ref().err().cloned())
+            .unwrap_or_else(|| "no section".into());
+        return Err(format!(
+            "no section has a temperature at the current ({why}): give --current A or the systems' operating currents in the line file"
+        ));
+    }
+    let surfaces: Vec<(String, &ohl_terrain::Terrain)> = prepared
+        .surfaces
+        .iter()
+        .map(|(n, t)| (n.clone(), t))
+        .collect();
+    let mut feed = |_: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+        prepared.feed_points(visit);
+        Ok(())
+    };
+    let mut targets = Targets {
+        ground: prepared.ground.as_ref(),
+        surfaces: &surfaces,
+        point_classes: prepared.point_classes(),
+        points: Some(&mut feed),
+    };
+    let started = std::time::Instant::now();
+    let checks = ohl_thermal::limit::clearance_at(
+        &line,
+        &library,
+        &base,
+        prepared.rules(),
+        &mut targets,
+        &temps,
+        &ohl_thermal::limit::check_budget(temps.len()),
+        &mut |_, _| {},
+    )?;
+    println!(
+        "clearance at the current of {} sections ({}; the hottest of {} ambient cases; base case \"{}\"; {:.1?}):",
+        heats.len(),
+        method.title(),
+        ambient.len(),
+        base.name,
+        started.elapsed()
+    );
+    let mut csv = "section,cable,current_a,bundle,temperature_c,ambient_case,status,rule,span,measure,clearance_m,required_m,margin_m\n".to_owned();
+    let (mut passed, mut failed) = (0, 0);
+    for h in &heats {
+        let check = checks.iter().find(|k| k.section == h.section);
+        let (case, temp) = match h.hottest() {
+            Some((k, t)) => (ambient[k].name.clone(), Some(t)),
+            None => (String::new(), None),
+        };
+        let (status, words, g) = match (check, &h.current) {
+            (_, Err(e)) => ("no_current", e.clone(), None),
+            (None, Ok(_)) => (
+                "error",
+                h.cases
+                    .iter()
+                    .find_map(|r| r.as_ref().err().cloned())
+                    .unwrap_or_default(),
+                None,
+            ),
+            (Some(k), Ok(_)) => match &k.result {
+                Ok(Some(g)) if g.met() => ("pass", governing_words(g), Some(g)),
+                Ok(Some(g)) => ("fail", governing_words(g), Some(g)),
+                Ok(None) => ("not_checked", "nothing of it checked".into(), None),
+                Err(e) => ("error", e.clone(), None),
+            },
+        };
+        match status {
+            "pass" => passed += 1,
+            "fail" => failed += 1,
+            _ => {}
+        }
+        let head = format!(
+            "  {:<12} {:<20} {:>8} {:>9} {:<5} {}",
+            h.section,
+            h.cable,
+            h.current
+                .as_ref()
+                .map_or("—".into(), |i| format!("{i:.0} A")),
+            temp.map_or("—".into(), |t| format!("{t:.1} °C")),
+            match status {
+                "pass" => "pass",
+                "fail" => "FAIL",
+                _ => "—",
+            },
+            words
+        );
+        println!("{}", head.trim_end());
+        let _ = write!(
+            csv,
+            "{},{},{},{},{},{},{status},",
+            csv_field(&h.section),
+            csv_field(&h.cable),
+            h.current.as_ref().map_or(String::new(), |i| format!("{i}")),
+            h.bundle,
+            temp.map_or(String::new(), |t| format!("{t:.2}")),
+            csv_field(&case),
+        );
+        match g {
+            Some(g) => {
+                let _ = writeln!(
+                    csv,
+                    "{},{},{},{:.3},{:.3},{:.3}",
+                    csv_field(&g.rule),
+                    g.span + 1,
+                    g.measure,
+                    g.clearance,
+                    g.required,
+                    g.margin()
+                );
+            }
+            None => csv.push_str(",,,,,\n"),
+        }
+    }
+    println!("{passed} pass, {failed} fail");
+    if let Some(path) = &a.csv {
+        write_csv(path, &csv)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -562,12 +782,11 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
-    #[test]
-    fn clearance_limit_of_the_example_line() {
+    /// The example line on its survey with a 5 m ground clearance, the
+    /// base case "max temperature", every ambient case, CIGRE TB 601.
+    fn targets(csv: Option<PathBuf>) -> TargetArgs {
         let ex = root().join("examples/synthetic-line");
-        let out =
-            std::env::temp_dir().join(format!("ohl-thermal-limit-{}.csv", std::process::id()));
-        clearance_limit(&LimitArgs {
+        TargetArgs {
             file: ex.join("synthetic-line.ohl.json"),
             library: Some(root().join("libraries/cables")),
             structures: None,
@@ -575,7 +794,7 @@ mod tests {
             weather: Some(ex.join("weather-cases.ohlwc")),
             case: Some("max temperature".into()),
             ambient: Some(ex.join("thermal-ambient.ohlta")),
-            ambient_case: vec!["winter night".into()],
+            ambient_case: Vec::new(),
             method: "cigre601".into(),
             rules: None,
             clearance: Some(5.0),
@@ -587,34 +806,106 @@ mod tests {
             corridor: 60.0,
             max_edge: 50.0,
             thin: None,
+            csv,
+        }
+    }
+
+    fn limit_args(targets: TargetArgs) -> LimitArgs {
+        LimitArgs {
+            targets,
             min_temp: 0.0,
             max_temp: 120.0,
             step: 10.0,
             tolerance: 0.5,
-            csv: Some(out.clone()),
-        })
-        .unwrap();
-        let csv = std::fs::read_to_string(&out).unwrap();
-        let _ = std::fs::remove_file(&out);
-        let s2: Vec<&str> = csv
-            .lines()
-            .find(|l| l.starts_with("S2,"))
+        }
+    }
+
+    /// The CSV row of section `id`.
+    fn row(csv: &str, id: &str) -> Vec<String> {
+        csv.lines()
+            .find(|l| l.starts_with(&format!("{id},")))
             .unwrap()
             .split(',')
-            .collect();
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn clearance_limit_of_the_example_line() {
+        let out =
+            std::env::temp_dir().join(format!("ohl-thermal-limit-{}.csv", std::process::id()));
+        let mut t = targets(Some(out.clone()));
+        t.ambient_case = vec!["winter night".into()];
+        clearance_limit(&limit_args(t)).unwrap();
+        let csv = std::fs::read_to_string(&out).unwrap();
+        let _ = std::fs::remove_file(&out);
+        let s2 = row(&csv, "S2");
         assert_eq!(s2[3], "limited");
         let t: f64 = s2[2].parse().unwrap();
         assert!((15.0..80.0).contains(&t), "{t}");
-        assert_eq!((s2[5], s2[6]), ("2", "vertical"));
+        assert_eq!((s2[5].as_str(), s2[6].as_str()), ("2", "vertical"));
         let amps: f64 = s2[9].parse().unwrap();
         assert!((500.0..2000.0).contains(&amps), "{amps}");
+    }
+
+    /// `clearance-check`: a small current keeps S2 cool and passing, a
+    /// large one heats it past its clearance-limited temperature and fails
+    /// it; the systems' operating current of the line file is the default;
+    /// without any current, refused.
+    #[test]
+    fn clearance_check_at_a_current() {
+        let dir = std::env::temp_dir().join(format!("ohl-thermal-check-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("check.csv");
+        let check = |current: Option<f64>, file: Option<PathBuf>| {
+            let mut t = targets(Some(out.clone()));
+            if let Some(f) = file {
+                t.file = f;
+            }
+            clearance_check(&CheckArgs {
+                targets: t,
+                current,
+            })
+            .map(|()| std::fs::read_to_string(&out).unwrap())
+        };
+        // The limit search's S2 limit, for comparison.
+        let limits = dir.join("limit.csv");
+        clearance_limit(&limit_args(targets(Some(limits.clone())))).unwrap();
+        let limit: f64 = row(&std::fs::read_to_string(&limits).unwrap(), "S2")[2]
+            .parse()
+            .unwrap();
+        let cool = check(Some(100.0), None).unwrap();
+        let s2 = row(&cool, "S2");
+        let t: f64 = s2[4].parse().unwrap();
+        assert!(t < limit, "{t} {limit}");
+        assert_eq!(s2[6], "pass");
+        assert_eq!((s2[8].as_str(), s2[9].as_str()), ("2", "vertical"));
+        let hot = check(Some(1500.0), None).unwrap();
+        let s2 = row(&hot, "S2");
+        let t: f64 = s2[4].parse().unwrap();
+        assert!(t > limit, "{t} {limit}");
+        assert_eq!(s2[6], "fail");
+        let margin: f64 = s2[12].parse().unwrap();
+        assert!(margin < 0.0, "{margin}");
+        // No current anywhere: refused, saying how to give one.
+        let e = check(None, None).unwrap_err();
+        assert!(e.contains("--current"), "{e}");
+        // The line's operating current is the default: the same as given.
+        let mut line =
+            ohl_line::Line::load(&root().join("examples/synthetic-line/synthetic-line.ohl.json"))
+                .unwrap();
+        line.systems[0].current_a = Some(1500.0);
+        let file = dir.join("with-current.ohl.json");
+        std::fs::write(&file, line.to_json()).unwrap();
+        let from_line = check(None, Some(file)).unwrap();
+        assert_eq!(row(&from_line, "S2"), row(&hot, "S2"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_surface_a_line_file_cannot_hold_is_reported() {
         // A ground rule naming a terrain surface, the line read from a line
         // file (no project, so no surfaces): refused, not passed.
-        let ex = root().join("examples/synthetic-line");
         let rules =
             std::env::temp_dir().join(format!("ohl-thermal-surface-{}.ohlr", std::process::id()));
         std::fs::write(
@@ -624,32 +915,13 @@ mod tests {
              surface = \"design TIN\"\n",
         )
         .unwrap();
-        let r = clearance_limit(&LimitArgs {
-            file: ex.join("synthetic-line.ohl.json"),
-            library: Some(root().join("libraries/cables")),
-            structures: None,
-            insulators: Some(root().join("libraries/insulators")),
-            weather: None,
-            case: None,
-            ambient: None,
-            ambient_case: Vec::new(),
-            method: "cigre601".into(),
-            rules: Some(rules.clone()),
-            clearance: None,
-            terrain: Some(ex.join("synthetic-survey.csv")),
-            lidar: None,
-            pointcloud: None,
-            lidar_classes: None,
-            ground_role: "ground".into(),
-            corridor: 60.0,
-            max_edge: 50.0,
-            thin: None,
-            min_temp: 0.0,
-            max_temp: 120.0,
-            step: 10.0,
-            tolerance: 0.5,
-            csv: None,
-        });
+        let mut t = targets(None);
+        t.weather = None;
+        t.case = None;
+        t.ambient = None;
+        t.rules = Some(rules.clone());
+        t.clearance = None;
+        let r = clearance_limit(&limit_args(t));
         let _ = std::fs::remove_file(&rules);
         let e = r.unwrap_err();
         assert!(e.contains("design TIN") && e.contains("Ground"), "{e}");

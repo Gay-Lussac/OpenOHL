@@ -146,36 +146,126 @@ clearance, requirement, then one ampacity column per ambient case.
 Wire-to-wire rules are not part of this check. A long line with LiDAR takes
 up to about a second per section and limit.
 
+### The clearance at a current
+
+```bash
+cd examples/synthetic-line
+ohl thermal clearance-check synthetic-line.ohl.json --terrain synthetic-survey.csv \
+    --clearance 5 --weather weather-cases.ohlwc --case "max temperature" \
+    --ambient thermal-ambient.ohlta --method cigre601 --current 1500 --csv check.csv
+```
+
+```
+clearance at the current of 3 sections (CIGRE TB 601; the hottest of 3 ambient cases; base case "max temperature"; 209.1ms):
+  S1           acsr-drake-26-7        1500 A  196.9 °C pass  ground span 2 vertical 6.00 m ≥ 5.00 m
+  S2           acsr-drake-26-7        1500 A  196.9 °C FAIL  ground span 2 vertical 1.92 m < 5.00 m
+  S3           acsr-drake-26-7        1500 A  196.9 °C pass  ground span 1 vertical 10.84 m ≥ 5.00 m
+2 pass, 1 fail
+```
+
+One step from a current to the clearance (2026-11-04): per section, the
+steady conductor temperature at the current — `--current A` (rms per
+phase, shared by a bundle's subconductors), or without it each section's
+system's **operating current** from the line file (`current_a`, see
+[Electrical systems](line-file.md#electrical-systems)) — in the hottest of
+the ambient cases (`--ambient`, required; `--ambient-case` to choose
+some); the section solved at that temperature in the base weather case
+and checked by the ground and point rules, exactly as `clearance-limit`
+solves and checks each temperature it tries. The options are those of
+`clearance-limit` without the search's (`--min-temp`, `--max-temp`,
+`--step`, `--tolerance`). Earth wires carry no operating current and are
+left out. The CSV has one row per section: current, bundle, temperature,
+the ambient case, `pass` / `fail` (or `no_current`, `not_checked`,
+`error`), the rule, span and measure of the least clearance, the
+clearance, the requirement and the margin (clearance − requirement).
+
 ## Desktop application
 
-**Checks › Thermal rating…** opens a window in the check windows'
-sections (2026-10-31):
+**Checks › Thermal rating…** opens a window of **four pages**, chosen at
+its top (owner, 2026-11-04: each a check window of its own, with its
+**Setup** and **Results** tabs and its footer):
 
-- **1 What it checks** — in short, and *How it is computed* with two
-  drawings: the heat balance (Joule and solar heat in, convection and
-  radiation out) and the span sagging down to the clearance rule as it
-  heats.
-- **2 Scope** — the **circuits, routes and sections** rated and searched
-  (the same tick menus as the other checks: fewer sections, a shorter
-  search); the **ambient cases**: the project's `.ohlta` file (next to a
-  line file) is taken at once, *Choose…* for another, each case in a few
-  words below; the **weather case heated**.
-- **3 What to compute** — **Method** and **maximum temperature**: the
-  table shows at once the ampacity of every section in scope in every
-  ambient case (hover a value for the heat terms); the **range** the
-  clearance limit is searched in.
-- **4 Model**, folded — the search's **scan step** and **tolerance**
-  (about range/step + log₂(step/tolerance) solves per section).
+| Page | What it computes | When |
+|---|---|---|
+| **Ampacity** | the current each section may carry at a maximum conductor temperature, per ambient case | at once |
+| **Temperature at a current** | the steady conductor temperature of each section at its circuit's current, per ambient case | at once |
+| **Step change** | the conductor temperature over time after the current steps from one value to another | at once |
+| **Clearance** | the highest temperature the ground and point clearances allow, or the clearances at the temperature the current gives | on **Run** |
 
-**Run** (the window's footer, bottom left; greyed, with the reason,
-without a rule file or a section in scope) runs the clearance-limited
-temperature search in the background with a progress bar (**Stop** stops
-it), using the rule file chosen under Checks › Wire clearances and the
-ground and LiDAR points of the checks. Before Run, the footer says what
-it will search and about how long, from the last search ("clearance limit
-of 3 sections — about 4 s (from the last search)"). The table gains the
-limit per section, the governing span and the ampacity at the limit per
-ambient case. A row clicked selects its section's spans and brings the
-views to them (2026-10-31).
+Each page's Setup has the check windows' sections:
+
+- **1 What it checks** — in short, and *How it is computed* with its
+  drawings (the heat balance; the step of current; the span sagging down
+  to the clearance rule as it heats).
+- **2 Scope** — the **circuits, routes and sections** (the same tick
+  menus as the other checks, shared by the four pages); the **ambient
+  cases**: the project's `.ohlta` file (next to a line file) is taken at
+  once, *Choose…* for another, each case in a few words below; on the
+  Clearance page the **weather case heated**.
+- **3 What to compute** — the page's own inputs (below), every one with
+  its effect on the results on hover.
+- **4 Model**, folded, where a page has modelling settings: the Step
+  change's **time step**, the clearance limit's **scan step** and
+  **tolerance** — with the time of the last run on hover.
+
+**The current.** The Temperature, Step change and Clearance pages take
+the circuits' current either from the line — **each circuit's operating
+current**, the system's `current_a` (Line › Electrical systems, column
+**A**: nothing typed twice) — or **typed** in the window (A rms per
+phase, every phase section in scope). A bundle shares it equally among
+its subconductors. A section whose system gives no current, or an earth
+wire, has no result (said on hover).
+
+**Ampacity** — Method (IEEE 738-2012, CIGRE TB 601 or TB 207) and the
+**maximum temperature**: the table shows per section its wire type, its
+bundle and the ampacity per phase in every ambient case (hover a value for
+one subconductor's current and the heat terms).
+
+**Temperature at a current** — Method and the current: per section the
+current, the steady temperature in each ambient case (the heat terms on
+hover) and the hottest.
+
+**Step change** — Method, one **ambient case**, the current **from**
+(before the step, steady) and **to** (the current, from the line or
+typed), the **duration** and a table row **every** so many seconds: one
+curve per wire type, bundle and current (sections alike heat alike), each
+said in a line — the temperature before, after the duration, steady, and
+when it reaches the Ampacity page's maximum temperature —, plotted
+(temperature over time, the maximum temperature dashed, the values under
+the pointer on hover) and listed (values above the maximum temperature in
+the error colour; Export CSV).
+
+**Clearance** — **Find** *the clearance limit* or *the clearance at the
+current*:
+
+- *The clearance limit*: the **range** searched (and Model: scan step,
+  tolerance). Run searches each section's clearance-limited temperature
+  in the background: the table gives per section the limit, the
+  governing clearance just above it and the ampacity at the limit per
+  ambient case.
+- *The clearance at the current*: Method, the current and the **ambient
+  case** — *the hottest of each section* (the default) or one. Run
+  solves each section once at its temperature and checks it: the table
+  gives per section the current, the ambient case and temperature, the
+  least clearance against its requirement, the margin, **pass** or
+  **fail** and the governing rule, span and measure (*Only violations*
+  on by default), with a verdict line above it.
+
+The rules are the ground and point rules of the rule file chosen under
+Checks › Wire clearances, against the ground and LiDAR points of the
+checks. **Run** (the footer, bottom left; greyed with the reason without
+a rule file, a section in scope or, at the current, an ambient case file)
+runs in the background with a progress bar (**Stop** stops it). Before
+Run the footer says what it will do and about how long, from the last
+run ("clearance limit of 3 sections — about 4 s (from the last
+search)"). The clearances found are **drawn in the views** (a red line
+from the wire to the ground or point; at the current the failing ones,
+else the least margins) while the window is open, dimmed when the result
+is out of date; a changed model, current, ambient case, method, weather
+case or range shows the *Out of date* banner with *Run again*.
+
+The other pages compute as the setup changes (well under a millisecond
+per section; the footer says how long the last took). A row clicked in a
+section's table selects its spans and brings the views to them.
 
 Nothing in the model changes.

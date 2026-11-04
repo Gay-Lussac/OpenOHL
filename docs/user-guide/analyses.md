@@ -847,7 +847,10 @@ longer in the line falls back to the default.
   flow, *along the line* (from the line's first structure to its last) or
   *against it* (every phase turned by 180°). The phases are balanced at
   their systems' phase angles (L1 0°, L2 −120°, L3 +120° unless the
-  system gives others). Run stays greyed until a circuit has a current.
+  system gives others). By default a circuit's current is its system's
+  **operating current** (Line › Electrical systems, column A; 2026-11-04),
+  said *the line's* beside it; a current typed here overrides it (a
+  button brings the line's back).
   **Given** *the circuit* (one current) or *at its end points*
   (2026-10-29): the current in at each end (negative: out), one end
   ticked *the rest*; every section's current follows (branches
@@ -1102,7 +1105,9 @@ there, 0.007 kV/m over the real valley floor).
 circuit's thermal rating (the least over its sections of the bundle's
 ampacity at `--max-temp` in the ambient case; see [Thermal
 rating](../theory/thermal.md)) — the ambient case and the temperature are
-yours to give; `--current` then overrides single circuits. `--profile`
+yours to give; `--current` then overrides single circuits. A circuit
+given none takes its system's operating current from the line file
+(`current_a`, 2026-11-04; said in the notes), else 0 A. `--profile`
 without `@` takes the span's lowest point; none: every span's.
 `--grid` adds a grid on a horizontal plane over a span (to draw isolines
 elsewhere). `--cut` computes a vertical cut across the line **at a

@@ -106,8 +106,9 @@ fn display_options_stay_open_while_ticking() {
 }
 
 /// Checks › Thermal rating: the ambient cases next to the model, an
-/// ampacity per section and case; the clearance-limited temperature in the
-/// background with the rule file next to the model.
+/// ampacity per section and case (Ampacity page); the clearance-limited
+/// temperature in the background with the rule file next to the model
+/// (Clearance page).
 #[test]
 fn thermal_rating_window() {
     let model = synthetic();
@@ -124,10 +125,13 @@ fn thermal_rating_window() {
         assert!(r.thermal.open);
         assert!(matches!(&r.thermal.ambient, Some(Ok(set)) if set.cases.len() == 3));
     }
-    // The ampacities at once, in the Results tab.
+    // The ampacities at once, in the Ampacity page's Results tab.
     harness.get_by_label("Results").click();
     harness.run();
     harness.get_by_label("summer noon at 80 °C [A]");
+    // The clearance limit: the Clearance page's Run.
+    harness.state_mut().ready().unwrap().thermal.page = crate::thermal::Page::Clearance;
+    harness.run();
     harness.get_by_label("Run").click();
     harness.step();
     run_until(&mut harness, |a| {
