@@ -1360,3 +1360,191 @@ fn wire_tools_benchmark() {
         w.unwrap().label()
     );
 }
+
+/// The window of a distance between conductors check.
+fn pd_window(
+    app: &mut App,
+    kind: crate::phase_distance::Kind,
+) -> &mut crate::phase_distance::PhaseDistanceWindow {
+    let r = app.ready().unwrap();
+    match kind {
+        crate::phase_distance::Kind::Span => &mut r.phase_distance,
+        crate::phase_distance::Kind::UnequalWind => &mut r.unequal_wind,
+    }
+}
+
+/// The frame time of the distance between conductors windows (in the
+/// span and under unequal wind; owner, 2026-11-04: "the unequal wind test
+/// results are a bit laggy"): each check run on the project of
+/// `OHL_BENCH_FILE` (else the synthetic line) with the check plugin of
+/// the private plugin list, then frames timed with the window closed, on
+/// its Results tab and with the worst pair picked (the 3D view turned a
+/// little every frame, as a drag does). Prints the median and slowest
+/// frame of each, and the repaint asked by an idle frame.
+///
+/// ```bash
+/// OHL_BENCH_FILE=copy.ohl OHL_BENCH_STEP=50 \
+///   cargo test --release -p ohl-app check_results_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn check_results_benchmark() {
+    use crate::phase_distance::Kind;
+    use egui_kittest::kittest::Queryable;
+    if !gpu() {
+        return;
+    }
+    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let Some(dir) = ohl_core::env::private_plugin(&root) else {
+        eprintln!("skipping: no private plugin");
+        return;
+    };
+    let step: f64 = ohl_core::env::var("OHL_BENCH_STEP")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(crate::phase_distance::DEFAULT_WIND_STEP);
+    let frames: usize = ohl_core::env::var("OHL_BENCH_FRAMES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+    let model = from_env().unwrap_or_else(synthetic);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .with_max_steps(10_000)
+        .wgpu()
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.step();
+    {
+        let app = h.state_mut();
+        app.plugins = crate::plugins::Plugins::load(None, None);
+        app.plugins.folders = vec![dir];
+        app.plugins.refresh();
+    }
+    h.step();
+    h.state_mut().show_tab(Tab::View3d);
+    set_look(h.state_mut(), Look::Near3d(600.0));
+    let time = |h: &mut Harness<'_, App>, what: &str| {
+        for _ in 0..5 {
+            h.step();
+        }
+        h.step();
+        let idle = h
+            .output()
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map_or(Duration::MAX, |v| v.repaint_delay);
+        let mut times = Vec::new();
+        for k in 0..frames {
+            nudge(h.state_mut(), Tab::View3d, k);
+            let t = Instant::now();
+            h.step();
+            times.push(t.elapsed().as_secs_f64() * 1e3);
+        }
+        let max = times.iter().copied().fold(0.0, f64::max);
+        println!(
+            "  {what:<34} frame {:>7.2} ms (max {max:>7.2}), {} shapes, idle repaint {}",
+            median(&mut times),
+            h.output().shapes.len(),
+            if idle == Duration::MAX {
+                "none".to_owned()
+            } else {
+                format!("after {idle:?}")
+            }
+        );
+    };
+    for kind in [Kind::Span, Kind::UnequalWind] {
+        println!("{}:", kind.title());
+        time(&mut h, "window closed");
+        {
+            let ctx = h.ctx.clone();
+            let r = h.state_mut().ready().unwrap();
+            let model = &r.model;
+            let w = match kind {
+                Kind::Span => &mut r.phase_distance,
+                Kind::UnequalWind => &mut r.unequal_wind,
+            };
+            w.show(model);
+            w.wind_step = step;
+            assert!(w.check().is_ok(), "{:?}", w.check().err());
+            w.start(model, &ctx);
+        }
+        let started = Instant::now();
+        loop {
+            h.step();
+            if let (Some(rep), false) = pd_window(h.state_mut(), kind).report() {
+                let rep = rep.as_ref().expect("a report");
+                let points: usize = rep
+                    .rows
+                    .iter()
+                    .map(|r| r.wires.iter().map(Vec::len).sum::<usize>())
+                    .sum();
+                println!(
+                    "  ran in {:.1?}: {} pairs, {} rows, {points} wire points kept",
+                    started.elapsed(),
+                    rep.pairs,
+                    rep.rows.len()
+                );
+                break;
+            }
+            assert!(started.elapsed().as_secs() < 1500, "no report in 25 min");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let page = match kind {
+            Kind::Span => "phase-distance-page",
+            Kind::UnequalWind => "unequal-wind-page",
+        };
+        crate::check_ui::set_only_violations(&h.ctx, &format!("{page}-rows"), false);
+        time(&mut h, "Results tab");
+        let clicked = h
+            .query_all_by_label_contains("worst d − z")
+            .next()
+            .map(|node| node.click())
+            .is_some();
+        if clicked {
+            let t = Instant::now();
+            h.step();
+            h.step();
+            println!("  the click's two frames {:.1?}", t.elapsed());
+            time(&mut h, "the worst pair picked");
+        }
+        // Saved in Performed checks, the library open, the report opened
+        // again from it.
+        let saved = h
+            .query_all_by_label("Save")
+            .next()
+            .map(|n| n.click())
+            .is_some();
+        h.step();
+        h.step();
+        let report = h
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .session()
+            .and_then(|s| s.reports().into_iter().find(|r| r.check == kind.check_id()));
+        if let (true, Some(r)) = (saved, report) {
+            println!(
+                "  saved: {} kB of JSON",
+                serde_json::to_string(&r).map_or(0, |t| t.len() / 1000)
+            );
+            pd_window(h.state_mut(), kind).open = false;
+            h.state_mut().ready().unwrap().check_library.show();
+            time(&mut h, "Performed checks open");
+            let t = Instant::now();
+            let loaded = {
+                let r2 = h.state_mut().ready().unwrap();
+                let model = &r2.model;
+                match kind {
+                    Kind::Span => r2.phase_distance.load(&r, model),
+                    Kind::UnequalWind => r2.unequal_wind.load(&r, model),
+                }
+            };
+            println!("  opened again in {:.1?}: {loaded:?}", t.elapsed());
+            h.state_mut().ready().unwrap().check_library.open = false;
+            time(&mut h, "the saved report shown");
+        }
+        pd_window(h.state_mut(), kind).open = false;
+        h.step();
+    }
+}

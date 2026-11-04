@@ -307,6 +307,26 @@ fn to_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
     p.distance(a + t * ab)
 }
 
+/// The points of a polyline on the screen less than a pixel from the last
+/// kept left out (the last point always kept): what a long wire drawn as
+/// an overlay needs at most (display only).
+pub(crate) fn thin_on_screen(points: impl Iterator<Item = egui::Pos2>) -> Vec<egui::Pos2> {
+    let mut out: Vec<egui::Pos2> = Vec::new();
+    let mut last = None;
+    for p in points {
+        last = Some(p);
+        if out.last().is_none_or(|q| q.distance_sq(p) >= 1.0) {
+            out.push(p);
+        }
+    }
+    if let (Some(p), Some(q)) = (last, out.last())
+        && *q != p
+    {
+        out.push(p);
+    }
+    out
+}
+
 /// Points along each edge of a cut's outline (long edges are drawn
 /// between their points in front of the eye).
 const OUTLINE_SAMPLES: u32 = 24;
@@ -1691,11 +1711,17 @@ impl View3d {
                 egui::Color32::from_rgb(255, 110, 220)
             };
             let shown: Vec<Option<egui::Pos2>> = points.iter().map(|p| screen(*p)).collect();
-            for (w, c) in [(4.5, egui::Color32::from_black_alpha(170)), (2.0, colour)] {
-                for pair in shown.windows(2) {
-                    if let [Some(a), Some(b)] = pair {
-                        painter.line_segment([*a, *b], egui::Stroke::new(w, c));
-                    }
+            // Each run in view one polyline, its points less than a pixel
+            // apart on the screen left out (display only: the points
+            // measured stay as they are; 2026-11-04, a shape per segment
+            // before).
+            for run in shown.split(Option::is_none) {
+                let line = thin_on_screen(run.iter().flatten().copied());
+                if line.len() < 2 {
+                    continue;
+                }
+                for (w, c) in [(4.5, egui::Color32::from_black_alpha(170)), (2.0, colour)] {
+                    painter.add(egui::Shape::line(line.clone(), egui::Stroke::new(w, c)));
                 }
             }
             if let Some(Some(mid)) = shown.get(shown.len() / 2) {
@@ -1807,5 +1833,24 @@ impl View3d {
             );
         }
         used
+    }
+}
+
+#[cfg(test)]
+mod thin_tests {
+    use super::thin_on_screen;
+    use eframe::egui::pos2;
+
+    /// A wire of 10 000 points across 100 px: about 100 kept, its ends
+    /// kept; a short one as it is.
+    #[test]
+    fn a_long_wire_is_drawn_with_a_point_per_pixel() {
+        let many = (0..10_000).map(|k| pos2(k as f32 * 0.01, 5.0));
+        let kept = thin_on_screen(many);
+        assert!(kept.len() <= 102, "{}", kept.len());
+        assert_eq!(kept[0], pos2(0.0, 5.0));
+        assert_eq!(*kept.last().unwrap(), pos2(99.99, 5.0));
+        let few = [pos2(0.0, 0.0), pos2(10.0, 0.0), pos2(20.0, 5.0)];
+        assert_eq!(thin_on_screen(few.into_iter()), few.to_vec());
     }
 }

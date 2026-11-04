@@ -357,14 +357,18 @@ impl Ready {
     pub(crate) fn check_library_out(&mut self, out: crate::check_library::Out) {
         if let Some(r) = out.open {
             match r.check.as_str() {
+                // Why one does not open: said in the status bar (it was
+                // only logged before 2026-11-04), as for the other checks.
                 crate::phase_distance::CHECK_ID => {
                     if let Err(e) = self.phase_distance.load(&r, &self.model) {
-                        self.model.log.push(e);
+                        self.model.log.push(e.clone());
+                        self.status = Some((e, true));
                     }
                 }
                 crate::phase_distance::UNEQUAL_WIND_CHECK_ID => {
                     if let Err(e) = self.unequal_wind.load(&r, &self.model) {
-                        self.model.log.push(e);
+                        self.model.log.push(e.clone());
+                        self.status = Some((e, true));
                     }
                 }
                 crate::vegetation::CHECK_ID => {
