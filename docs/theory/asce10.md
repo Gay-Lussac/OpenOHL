@@ -138,7 +138,7 @@ the fillets left out), as in Timoshenko & Gere, *Theory of Elastic
 Stability* (2nd ed., 1961), which the standard's commentary names for
 them (C3.5):
 
-| Shape | Shear centre | \\( C_w \\) |
+| Shape | Shear centre | Warping constant \\( C_w \\) |
 |---|---|---|
 | angle, legs \\( b', h' \\) along their midlines | where the legs' midlines cross | \\( t^3 (b'^3 + h'^3)/36 \\) |
 | I or H, \\( h_0 = h - t_f \\) | the centroid | \\( t_f b^3 h_0^2 / 24 \\) |
@@ -160,7 +160,7 @@ matters most for stocky members; a joint that holds the end against
 turning helps slender ones. The standard expresses both as an effective
 slenderness (3.7.4.2, 3.7.4.3; `effective_slenderness`):
 
-| \\( L/r \\) | Ends | \\( KL/r \\) | Eq. |
+| Slenderness \\( L/r \\) | Ends | Effective slenderness \\( KL/r \\) | Eq. |
 |---|---|---|---|
 | ≤ 120 | concentric at both ends | \\( L/r \\) | 3.7-5 |
 | ≤ 120 | eccentric at one end | \\( 30 + 0.75\,L/r \\) | 3.7-6 |
