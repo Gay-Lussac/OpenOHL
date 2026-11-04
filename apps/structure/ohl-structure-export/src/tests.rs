@@ -950,6 +950,41 @@ fn the_structure_report_of_a_lattice_structure() {
     assert!(r.summary[0].starts_with("members: "), "{:?}", r.summary);
 }
 
+/// The report with plates (2026-11-04): the plates and welds checked per
+/// case, their largest usage per part, in the usage per check and their
+/// own table.
+#[test]
+fn the_structure_report_shows_the_plate_checks() {
+    let text = format!(
+        "{TOWER}{TOWER_JOINT}\n[[load]]\nnode = \"N2\"\nforce = [\"5 kN\", \"0 kN\", \"-20 kN\"]\n"
+    );
+    let library = example_library();
+    let (table, recipes) = own_load_table(&text, &library).unwrap();
+    let r = report::from_text(&report::FromText {
+        text: &text,
+        file: "type.ohls",
+        dir: None,
+        sections: &library,
+        sections_from: "example",
+        table: &table,
+        recipes: &recipes,
+        extension: None,
+        case: None,
+        incomplete: &[],
+        software: "x",
+        date: None,
+    })
+    .unwrap();
+    for shown in [
+        "plates and welds</td>",
+        "<h2>Plates and welds — largest usage over the cases</h2>",
+        "D2&#39;s bolts",
+        "ASCE 10-97 4.4",
+    ] {
+        assert!(r.html.contains(shown), "{shown}");
+    }
+}
+
 /// The report of the example pole structure with one case of its own:
 /// the pole, its check per case and the governing case.
 #[test]
@@ -1153,8 +1188,23 @@ fn connections_and_plates_as_csv() {
     let s = structure(&welded, &library, &Default::default(), None).unwrap();
     let t = csv::tables(&s);
     let plates = &t.iter().find(|(x, _)| *x == "plates.csv").unwrap().1;
-    assert!(plates.starts_with("id,joint,thickness_m,material,outline_m,kind,welded_to"));
-    assert!(plates.contains("\nG2,N1,0.01,,,,G1"), "{plates}");
+    assert!(plates.starts_with(
+        "id,joint,thickness_m,material,outline_m,kind,welded_to,weld_to,weld_kind,weld_size_m,\
+         weld_length_m"
+    ));
+    assert!(plates.contains("\nG2,N1,0.01,,,,G1,,,,"), "{plates}");
+    // A weld with its size and length (`[[plate.weld]]`, 2026-11-04).
+    let sized = format!(
+        "{text}[[plate]]\nid = \"G2\"\njoint = \"N1\"\nthickness = \"10 mm\"\n\
+         [[plate.weld]]\nto = \"G1\"\nsize = \"6 mm\"\nlength = \"220 mm\"\n"
+    );
+    let s = structure(&sized, &library, &Default::default(), None).unwrap();
+    let t = csv::tables(&s);
+    let plates = &t.iter().find(|(x, _)| *x == "plates.csv").unwrap().1;
+    assert!(
+        plates.contains("\nG2,N1,0.01,,,,,G1,fillet,0.006,0.22"),
+        "{plates}"
+    );
     let none = structure(SHAPES, &library, &Default::default(), None).unwrap();
     assert!(
         csv::tables(&none)
@@ -1447,4 +1497,25 @@ fn a_welded_plate_in_ifc() {
     let ifc = ifc::ifc(&s, &IfcOptions::default()).unwrap();
     assert!(ifc.contains("'WeldedTo'"), "no WeldedTo");
     assert!(ifc.contains("IFCLABEL('G1')") && ifc.contains("IFCLABEL('G2')"));
+    // With the weld's size (`[[plate.weld]]`), G2 in the face x = 0 (a
+    // diagonal D3 onto it, L2 no longer), meeting G1 along the leg: its
+    // seam in OHL_Plate.Welds.
+    let sized = format!(
+        "{}\n[[node]]\nid = \"N6\"\npoint = [\"0 m\", \"5 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"D3\"\nnodes = [\"N6\", \"N2\"]\nsection = \"UA-83x52x6\"\n\
+         \n[[connection]]\nmember = \"D3\"\njoint = \"N2\"\nonto = \"G2\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n",
+        text.replace(
+            "welded_to = [\"G1\"]\n",
+            "[[plate.weld]]\nto = \"G1\"\nsize = \"6 mm\"\n",
+        )
+        .replace(
+            "member = \"L2\"\njoint = \"N2\"\nonto = \"G2\"\n",
+            "member = \"L2\"\njoint = \"N2\"\n"
+        )
+    );
+    let s = structure(&sized, &library, &example_bolts(), None).unwrap();
+    let ifc = ifc::ifc(&s, &IfcOptions::default()).unwrap();
+    assert!(ifc.contains("'Welds'"), "no Welds");
+    assert!(ifc.contains("fillet a 6 mm"), "no weld size");
 }

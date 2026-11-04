@@ -1283,6 +1283,25 @@ fn plate(
     if !others.is_empty() {
         values.push(("WeldedTo", label(&others.join(", "))));
     }
+    // Its welds with their size and length (2026-11-04): "G2: fillet a 6
+    // mm, 220 mm".
+    if !p.welds.is_empty() {
+        let words: Vec<String> = p
+            .welds
+            .iter()
+            .map(|w| {
+                let size = w
+                    .size
+                    .map_or("no size".to_owned(), |a| format!("a {:.0} mm", a * 1000.0));
+                let length = match w.length {
+                    Some(l) => format!("{:.0} mm", l * 1000.0),
+                    None => format!("{:.0} mm (the seam)", w.seam_length() * 1000.0),
+                };
+                format!("{}: {} {size}, {length}", w.with, w.kind.words())
+            })
+            .collect();
+        values.push(("Welds", label(&words.join("; "))));
+    }
     properties(f, oh, &key, std::slice::from_ref(&e), "OHL_Plate", &values);
     e
 }

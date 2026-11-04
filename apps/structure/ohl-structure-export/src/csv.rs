@@ -364,6 +364,10 @@ fn plates(s: &ExportStructure) -> String {
             "outline_m",
             "kind",
             "welded_to",
+            "weld_to",
+            "weld_kind",
+            "weld_size_m",
+            "weld_length_m",
         ],
         s.plates
             .iter()
@@ -380,6 +384,28 @@ fn plates(s: &ExportStructure) -> String {
                         .join(";"),
                     p.kind.map(|k| k.as_str().to_owned()).unwrap_or_default(),
                     p.welded_to.join(";"),
+                    // Its welds (`[[plate.weld]]`, 2026-11-04), one per
+                    // `;`-separated place, empty where not given.
+                    p.welds
+                        .iter()
+                        .map(|w| w.to.clone())
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                    p.welds
+                        .iter()
+                        .map(|w| w.kind().as_str().to_owned())
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                    p.welds
+                        .iter()
+                        .map(|w| w.size.map(|v| num(v.si())).unwrap_or_default())
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                    p.welds
+                        .iter()
+                        .map(|w| w.length.map(|v| num(v.si())).unwrap_or_default())
+                        .collect::<Vec<_>>()
+                        .join(";"),
                 ]
             })
             .collect(),

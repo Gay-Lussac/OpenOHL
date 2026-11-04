@@ -321,8 +321,9 @@ in the shear plane").
 - the minimum end, edge and hole spacing distances (4.5) are not part of
   the member check: OHL-Structure's bolt tools apply them where bolts are
   placed, and mark the bolts that break them ([below](#minimum-distances-of-bolts));
-  attachment holes (4.6), bolts in tension (4.3.3, 4.3.4), the gusset
-  plate's own bearing and the plate's design are not checked.
+  attachment holes (4.6) and bolts in tension (4.3.3, 4.3.4) are not
+  checked. The gusset plates' own bearing, block shear, net section and
+  distances are checked per case since 2026-11-04 ([below](#plates-and-welds)).
 
 ### Minimum distances of bolts
 
@@ -426,6 +427,18 @@ said in what governs (`[assumed: …]`):
 | bolt threads | in the shear plane |
 | twisting | free to warp (K_t 1); built-ups' warping left out |
 | bolts | connection not checked, gross section in tension |
+
+## Plates and welds
+
+The gusset plates (2026-11-04) are checked per case with the analysis'
+member forces ([Gusset plates and their welds](joint-plates.md)): per
+member bolting onto a plate its bearing on the plate (4.4), the plate's
+block shear by Eq. 3.10-1 (stated for angles: applied to the plate's
+block, said), its net section in tension (3.10.1) and its end and edge
+distances (4.5.1, 4.5.3). **ASCE 10-97 gives no weld resistance** (5.2.5
+leaves welding procedures to AWS D1.1): welds are not checked under it,
+said. A plate in compression: plate buckling not checked (no rule in the
+standard).
 
 ## Not covered by the program
 

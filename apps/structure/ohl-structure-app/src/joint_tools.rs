@@ -69,6 +69,13 @@ pub enum Act {
     /// Two plates of a joint welded to each other (true) or not
     /// (2026-11-04: a welded plate is several plates welded together).
     Weld(String, String, bool),
+    /// A weld's size, length or kind (plates `a` and `b`; 2026-11-04,
+    /// `[[plate.weld]]`).
+    WeldData(
+        String,
+        String,
+        ohl_structure_edit::connection_edits::WeldEdit,
+    ),
     /// A welded plate made at a joint: a plate per plane of the members
     /// arriving, welded together, every member bolted onto one.
     WeldedPlate(String),
@@ -556,6 +563,12 @@ impl StructureApp {
                     Ok(()) => (format!("plates {a} and {b}: no longer welded"), false),
                     Err(e) => (e, true),
                 })
+            }
+            Act::WeldData(a, b, edit) => {
+                let r = f.edit(&format!("Weld {a}–{b}"), |doc, t| {
+                    connection_edits::set_weld(doc, t, &a, &b, edit)
+                });
+                r.err().map(|e| (e, true))
             }
             Act::WeldedPlate(joint) => match details.joint(&joint) {
                 Some(j) => {
@@ -1618,9 +1631,10 @@ fn row(
     });
 }
 
-/// The joint's own tools: the joints like it, its plates.
+/// The joint's own tools: the joints like it, its plates and their welds.
 pub fn joint_bar(
     ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
     details: &JointDetails,
     j: &JointDetail,
     buffers: &mut std::collections::HashMap<String, String>,
@@ -1736,7 +1750,144 @@ pub fn joint_bar(
                     ui.end_row();
                 }
             });
+        acts.extend(weld_rows(ui, t, j, None, buffers));
     }
+    acts
+}
+
+/// The welds of joint `j` (only those of plate `only`, when given): a row
+/// per pair of plates welded to each other with the weld's kind, size
+/// (the fillet's throat a) and length (none: the seam's, shown as worked
+/// out); each change one undo step (2026-11-04, `[[plate.weld]]`).
+pub fn weld_rows(
+    ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
+    j: &JointDetail,
+    only: Option<&str>,
+    buffers: &mut std::collections::HashMap<String, String>,
+) -> Vec<Act> {
+    use ohl_structure_edit::connection_edits::WeldEdit;
+    use ohl_structures::connections::WeldKind;
+    let mut acts = Vec::new();
+    let mut pairs: Vec<(&str, &str)> = Vec::new();
+    for (i, p) in j.plates.iter().enumerate() {
+        for q in &p.welded_to {
+            let k = j.plates.iter().position(|x| &x.id == q);
+            if k.is_some_and(|k| k > i) && only.is_none_or(|o| o == p.id || o == q.as_str()) {
+                pairs.push((p.id.as_str(), q.as_str()));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        return acts;
+    }
+    let seam = |a: &str, b: &str| {
+        j.plates
+            .iter()
+            .flat_map(|p| p.welds.iter().map(move |w| (p.id.as_str(), w)))
+            .find(|(p, w)| (*p == a && w.with == b) || (*p == b && w.with == a))
+            .map(|(_, w)| w.seam_length())
+    };
+    ui.push_id(("welds", only), |ui| {
+        egui::Grid::new("joint-welds").striped(true).show(ui, |ui| {
+            for h in ["Weld", "Kind", "Size a mm", "Length mm", ""] {
+                ui.strong(h);
+            }
+            ui.end_row();
+            for (a, b) in pairs {
+                let w = t.weld_between(a, b);
+                ui.label(format!("{a} – {b}"));
+                let kind = w.map(|w| w.kind()).unwrap_or_default();
+                let mut k = kind;
+                egui::ComboBox::from_id_salt(("weld-kind", a, b))
+                    .selected_text(k.words())
+                    .show_ui(ui, |ui| {
+                        for x in WeldKind::ALL {
+                            ui.selectable_value(&mut k, x, x.words());
+                        }
+                    });
+                if k != kind {
+                    acts.push(Act::WeldData(
+                        a.to_owned(),
+                        b.to_owned(),
+                        WeldEdit {
+                            kind: Some(k),
+                            ..WeldEdit::default()
+                        },
+                    ));
+                }
+                let size = Valued {
+                    value: w.and_then(|w| w.size).map(|v| v.si()),
+                    source: if w.is_some_and(|w| w.size.is_some()) {
+                        Source::Given
+                    } else {
+                        Source::Missing
+                    },
+                };
+                if let Some(v) = length_cell(
+                    ui,
+                    buffers,
+                    format!("weld-a-{a}-{b}"),
+                    &size,
+                    "The fillet's throat a (SIA 263 6.3.2.6); empty: not given, the weld not \
+                     checked",
+                ) {
+                    acts.push(Act::WeldData(
+                        a.to_owned(),
+                        b.to_owned(),
+                        WeldEdit {
+                            size: Some(v),
+                            ..WeldEdit::default()
+                        },
+                    ));
+                }
+                let given = w.and_then(|w| w.length).map(|v| v.si());
+                let length = match (given, seam(a, b)) {
+                    (Some(l), _) => Valued {
+                        value: Some(l),
+                        source: Source::Given,
+                    },
+                    (None, Some(s)) => Valued {
+                        value: Some(s),
+                        source: Source::WorkedOut,
+                    },
+                    (None, None) => Valued {
+                        value: None,
+                        source: Source::Missing,
+                    },
+                };
+                if let Some(v) = length_cell(
+                    ui,
+                    buffers,
+                    format!("weld-l-{a}-{b}"),
+                    &length,
+                    "Its whole length (both sides together when welded on both); not given: \
+                     the seam's length where the plates meet, one side",
+                ) {
+                    acts.push(Act::WeldData(
+                        a.to_owned(),
+                        b.to_owned(),
+                        WeldEdit {
+                            length: Some(v),
+                            ..WeldEdit::default()
+                        },
+                    ));
+                }
+                ui.label(
+                    egui::RichText::new(match (seam(a, b), w.and_then(|w| w.size)) {
+                        (None, _) => "the plates do not meet: no seam".to_owned(),
+                        (Some(_), None) if kind == WeldKind::Fillet => {
+                            "no size: not checked".to_owned()
+                        }
+                        (Some(s), _) => format!("seam {:.0} mm", s * 1000.0),
+                    })
+                    .small()
+                    .weak(),
+                );
+                ui.end_row();
+            }
+        });
+    });
     acts
 }
 

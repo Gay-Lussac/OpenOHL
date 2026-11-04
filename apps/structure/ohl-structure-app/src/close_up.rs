@@ -573,6 +573,21 @@ pub fn paint(
             text,
         );
     }
+    // The welds' sizes at their seams' middles (2026-11-04).
+    for pl in &j.plates {
+        for w in &pl.welds {
+            if let Some(label) = w.label() {
+                let mid = scale3(add3(w.ends[0], w.ends[1]), 0.5);
+                painter.text(
+                    at(mid) + egui::vec2(4.0, -4.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    label,
+                    egui::FontId::proportional(11.0),
+                    egui::Color32::from_rgb(215, 70, 50),
+                );
+            }
+        }
+    }
     painter.circle_filled(at(j.position), 3.0, text);
     painter.text(
         rect.left_top() + egui::vec2(6.0, 6.0),

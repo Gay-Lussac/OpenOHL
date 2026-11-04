@@ -205,9 +205,17 @@ joint = "N7"
 thickness = "10 mm"
 welded_to = ["G1"]        # welded to these plates of the same joint
 #                         #   (2026-11-04): one welded plate
+
+[[plate.weld]]            # a weld with its data (2026-11-04): welds G2
+to = "G1"                 #   to G1 as welded_to does
+size = "6 mm"             # the fillet's throat a (SIA 263 6.3.2.6)
+length = "220 mm"         # none: the seam's length (one side)
+kind = "fillet"           # fillet (default) or full_penetration
 ```
 
 **A welded plate** (2026-11-04, still version 9) is several plates welded together so that every member bolting onto the joint reaches one of them. `welded_to` names the plates of the same joint a plate is welded to; it is read both ways (given on either plate) and through others (G3 welded to G2, G2 to G1: one welded plate of three). A plate welded to itself is refused; one welded to a plate not at its joint is said, not used. Files of 2026-11-03 gave a plate `kind = "welded"` (then: welded onto the joint's leg): still read, the joint's plates of that kind taken as one welded plate (one alone: a plain plate), said; OHL-Structure writes them as `welded_to` (the kind dropped) at the next welding change, and no longer writes `kind`.
+
+**A weld's size and length** (2026-11-04, still version 9): a `[[plate.weld]]` under a plate welds it to the plate `to` (as `welded_to` does) with the weld's `size` — the fillet's **throat a**, as SIA 263 6.3.2.6 defines it (the height of the triangle inscribed in the weld's section) —, its `length` (the whole length welded, both sides together when welded on both; none: the seam's length where the two plates meet, worked out from their outlines, one side) and its `kind` (`fillet`, the default, or `full_penetration`). A weld is given on one of its two plates (on both: refused), once (twice: refused); a size or length of 0 is refused. A pair welded by `welded_to` alone has no size: the weld is not checked (said). OHL-Structure checks the plates and welds per case with the analysis ([theory](../theory/joint-plates.md)).
 
 **A member's roll** (2026-11-04): `roll = "90 deg"` on a `[[member]]` turns its cross-section about its axis — with an `orientation`, after it (a correction; before 2026-11-04 the two together were refused) — and so its local axes for the analysis (its bending axes, the member wind, the exports). OHL-Structure writes it from its **Roll** control (degrees, within ±180°; removed at 0).
 

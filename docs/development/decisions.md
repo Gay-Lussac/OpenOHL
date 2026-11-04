@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-11-04
 
+**A weld's size and length; the plate checks** (owner, 2026-11-04: "add
+weld size and length and the plate checks"). Built, in active
+development, not approved yet.
+
+- **Weld data**: `[[plate.weld]] to, size, length, kind` under a plate
+  (still structure file version 9, added before the next release); the
+  size is the fillet's **throat a** — chosen because SIA 263, the one
+  standard here with a weld rule, defines the weld by it (6.3.2.6) —;
+  no length: the seam's from the geometry, one side (on the safe side);
+  `welded_to` alone still read (no size: not checked, said).
+- **Plate checks** per case with the analysis, by the capacity method,
+  each formula read from the standards' documents: ASCE 10-97 bearing
+  (4.4), block shear by Eq. 3.10-1 applied to the plate (the standard
+  states it for angles: said), net section (3.10.1), distances (4.5);
+  SIA 263 bearing (76), net and block shear (82), (83), sections (38),
+  (39), Table 17, fillet welds (87), (88). **ASCE 10-97 has no weld rule**
+  (5.2.5 refers to AWS D1.1): welds not checked under it, none invented.
+  Neither standard gives a gusset plate's buckling or effective width:
+  "plate buckling not checked"; the width the bolt group's plus the
+  minimum edge distances (on the safe side, no Whitmore spread). A weld
+  carries the larger resultant of the member forces on either side of it
+  (on the safe side); its moment about the seam is not taken (not on the
+  safe side, said). Results with the FE results (`CaseResult::plates`),
+  in Joint details, the 3D view's joint marks and the structure report
+  ([theory](../theory/joint-plates.md)).
+
 **The structures' local ice in every iced case taking the local
 conditions; the wind study a structure's local condition** (owner,
 2026-11-04: "yes apply local ice too, and make the wind study local").

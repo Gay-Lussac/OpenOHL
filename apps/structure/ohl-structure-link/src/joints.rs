@@ -1020,8 +1020,8 @@ fn weld_plates(
         let of = |id: &str| given.iter().find(|p| p.id == id);
         match (of(x), of(y)) {
             (Some(a), Some(b)) => {
-                a.welded_to.iter().any(|o| o == y)
-                    || b.welded_to.iter().any(|o| o == x)
+                a.welded_ids().contains(&y)
+                    || b.welded_ids().contains(&x)
                     || (a.kind() == PlateKind::Welded && b.kind() == PlateKind::Welded)
             }
             _ => false,
@@ -1044,9 +1044,15 @@ fn weld_plates(
             match crate::welds::seam(&plates[i].outline, &plates[k].outline, tol) {
                 Some((ends, sides)) => {
                     let with = plates[k].id.clone();
-                    plates[i]
-                        .welds
-                        .push(crate::welds::Weld { with, ends, sides });
+                    let data = weld_data(given, &plates[i].id, &with);
+                    plates[i].welds.push(crate::welds::Weld {
+                        with,
+                        ends,
+                        sides,
+                        kind: data.map(|w| w.kind()).unwrap_or_default(),
+                        size: data.and_then(|w| w.size).map(|v| v.si()),
+                        length: data.and_then(|w| w.length).map(|v| v.si()),
+                    });
                 }
                 None if direct(&plates[i].id, &plates[k].id) => {
                     let note = format!(
@@ -1060,6 +1066,25 @@ fn weld_plates(
             }
         }
     }
+}
+
+/// The weld between plates `x` and `y` given with its data
+/// (`[[plate.weld]]` on either of `given`).
+fn weld_data<'a>(
+    given: &[&'a ohl_structures::connections::TypePlate],
+    x: &str,
+    y: &str,
+) -> Option<&'a ohl_structures::connections::TypeWeld> {
+    given.iter().find_map(|p| {
+        let other = if p.id == x {
+            y
+        } else if p.id == y {
+            x
+        } else {
+            return None;
+        };
+        p.welds.iter().find(|w| w.to == other)
+    })
 }
 
 /// The shift that seats `a`'s leg bolted on the face of the member it
@@ -1329,7 +1354,7 @@ fn keep(
 
 /// The directions a bolt of `a` keeps its distances in, in the plate's
 /// plane: along the member and across it.
-fn keep_axes(a: &Arrival) -> ([f64; 3], [f64; 3]) {
+pub(crate) fn keep_axes(a: &Arrival) -> ([f64; 3], [f64; 3]) {
     let n = a.bolt_axis;
     let along = sub(a.direction, scale(n, dot(a.direction, n)));
     let along = scale(along, 1.0 / norm(along).max(1e-12));

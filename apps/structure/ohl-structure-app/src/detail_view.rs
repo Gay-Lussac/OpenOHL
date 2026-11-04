@@ -192,7 +192,13 @@ impl StructureApp {
                 joint,
                 index,
             } => self.bolt_box(ui, details, member, joint, *index),
-            Picked::Plate(id) => plate_box(ui, details, id),
+            Picked::Plate(id) => {
+                let t = self.file.as_ref().map(|f| f.structure_arc());
+                match t {
+                    Some(t) => plate_box(ui, &t, details, id, &mut self.buffers),
+                    None => None,
+                }
+            }
         };
         match acts {
             Some(acts) => self.apply_joint_acts(acts, details),
@@ -407,7 +413,13 @@ impl StructureApp {
 /// A plate's properties: the plates it is welded to, its thickness and
 /// material, what it lies on, the edge distances it keeps from its bolts
 /// and what breaks them.
-fn plate_box(ui: &mut egui::Ui, details: &JointDetails, id: &str) -> Option<Vec<Act>> {
+fn plate_box(
+    ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
+    details: &JointDetails,
+    id: &str,
+    buffers: &mut std::collections::HashMap<String, String>,
+) -> Option<Vec<Act>> {
     let (j, p) = details
         .joints
         .iter()
@@ -446,6 +458,8 @@ fn plate_box(ui: &mut egui::Ui, details: &JointDetails, id: &str) -> Option<Vec<
                 acts.push(Act::Plate(id.to_owned(), Some(t / 1000.0), None));
             }
         });
+        // Its welds with their size and length (2026-11-04).
+        acts.extend(crate::joint_tools::weld_rows(ui, t, j, Some(id), buffers));
         ui.label(format!(
             "{} · lies on {} · members onto it: {}",
             p.material.as_deref().unwrap_or("material not given"),

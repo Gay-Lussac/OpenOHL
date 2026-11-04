@@ -154,7 +154,20 @@ impl StructureCase {
     /// The largest usage of the case over its checks (an error: infinite).
     pub fn usage(&self) -> Option<f64> {
         let fe = match &self.fe {
-            Some(Ok(r)) => r.governing().and_then(|g| g.usage),
+            Some(Ok(r)) => {
+                let m = r.governing().and_then(|g| g.usage);
+                let p = r.governing_plate().and_then(|g| g.usage);
+                match (m, p) {
+                    (Some(a), Some(b)) => {
+                        Some(if ohl_structures_fe::check::usage_order(b, a).is_gt() {
+                            b
+                        } else {
+                            a
+                        })
+                    }
+                    (a, b) => a.or(b),
+                }
+            }
             Some(Err(_)) => Some(f64::INFINITY),
             None => None,
         };
@@ -173,7 +186,8 @@ impl StructureCase {
 /// A check over every case: its largest usage and the case governing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckSummary {
-    /// The check: `members` (finite elements) or `pole`.
+    /// The check: `members` (finite elements), `plates` (the plates and
+    /// welds at the joints) or `pole`.
     pub check: &'static str,
     /// The largest usage (none: no case gives one).
     pub usage: Option<f64>,
@@ -232,6 +246,39 @@ impl StructureRun {
                     }
                     Some(Err(e)) => s.failed.push((c.name.clone(), e.clone())),
                     None => {}
+                }
+            }
+            out.push(s);
+        }
+        // The plates and welds (2026-11-04): with the finite-element
+        // results.
+        if self
+            .cases
+            .iter()
+            .any(|c| matches!(&c.fe, Some(Ok(r)) if !r.plates.is_empty()))
+        {
+            let mut s = CheckSummary {
+                check: "plates",
+                usage: None,
+                case: String::new(),
+                governs: String::new(),
+                failed: Vec::new(),
+            };
+            for c in &self.cases {
+                if let Some(Ok(r)) = &c.fe
+                    && let Some(g) = r.governing_plate()
+                    && let Some(u) = g.usage
+                    && s.usage.is_none_or(|w| u > w)
+                {
+                    s.usage = Some(u);
+                    s.case = c.name.clone();
+                    s.governs = format!(
+                        "joint {} plate {}, {} ({})",
+                        g.joint,
+                        g.plate,
+                        g.part.words(),
+                        g.governs
+                    );
                 }
             }
             out.push(s);
@@ -733,6 +780,35 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         (Some(e), None) => e.members.iter().map(|m| m.id.clone()).collect(),
         _ => Vec::new(),
     };
+    // The plates' and welds' checks (2026-11-04): planned once, checked
+    // per case with its member forces (a structure of its own members).
+    let plans = match (&model, &t.model) {
+        (Some(_), None) if !t.plates.is_empty() => {
+            let beside;
+            let bolts = match (input.bolts, input.dir) {
+                (Some(b), _) => b,
+                (None, Some(dir)) => {
+                    beside = BoltLibrary::beside(dir).0;
+                    &beside
+                }
+                (None, None) => {
+                    beside = BoltLibrary::default();
+                    &beside
+                }
+            };
+            match crate::plate_plans(input.text, input.sections, bolts) {
+                Ok(p) => {
+                    run.notes.extend(p.notes.iter().cloned());
+                    Some(p)
+                }
+                Err(e) => {
+                    run.notes.push(format!("plates: not checked ({e})"));
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
     // The cases on the cores, in their order (2026-10-26: each case on
     // its own, the same results whichever thread solves it).
     let cases = input.cases;
@@ -757,6 +833,10 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             };
             analyse_one(m, input.table, c, &extra, budget).map(|mut r| {
                 r.notes.extend(notes);
+                if let Some(p) = plans.as_ref().filter(|p| !p.is_empty()) {
+                    let axial = r.members.iter().map(|m| (m.id.clone(), m.axial)).collect();
+                    r.plates = crate::plate_usage(p, &axial, c.strength);
+                }
                 r
             })
         });

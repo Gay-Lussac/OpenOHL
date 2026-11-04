@@ -254,7 +254,8 @@ code's end and edge distances in the plate (`bolt_rules::rules_in`:
 the plate's thickness and its material's ultimate strength, else the
 member's; the member end's force and bolts) round every bolt onto it. The close-up
 is drawn in small pieces sorted by their own depth (whole faces sorted by
-their middles hid the bolts at some angles). Open: the plates' own checks, a weld's own data (size, length).
+their middles hid the bolts at some angles). The plates' own checks and a weld's own data
+(size, length): built 2026-11-04, below.
 
 How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#joint-details-towers).
 
@@ -287,9 +288,42 @@ How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#j
 - The Edit tool no longer asks "Open in the Detail view?" when the
   Detail view is shown.
 
-Open: the welds' own data (size, length) and checks; the plates' checks;
-a roll that suits both ends of a member bolted onto differently turned
-faces (Lay flat takes the end lying off; the other end is then said).
+Open: a roll that suits both ends of a member bolted onto differently
+turned faces (Lay flat takes the end lying off; the other end is then
+said).
+
+> **Owner:**
+
+### Weld size and length, the plate checks — built 2026-11-04
+
+(Owner, 2026-11-04: "add weld size and length and the plate checks".)
+Built, in active development, not approved yet:
+
+- **A weld's data**: `[[plate.weld]] to = "G1", size = "6 mm", length =
+  "220 mm", kind = "fillet"` (still structure file version 9). The size
+  is the fillet's **throat a** (SIA 263 6.3.2.6); no length: the seam's
+  from the geometry (one side); `welded_to` alone still read (a weld
+  without a size: not checked, said). The plates table and a plate's box
+  have a row per welded pair (kind, size, length; each change one undo
+  step); the seam's label (`a6 × 220`) in the close-up and the face view;
+  `plates.csv` weld columns, IFC `OHL_Plate.Welds`.
+- **The plate checks**, per case with the analysis (Results › Run), by
+  the structure's capacity method ([theory](../theory/joint-plates.md)):
+  per member bolting onto a plate its bearing on the plate, the plate's
+  block shear round the bolt group, its section across the group and its
+  end and edge distances; per fillet weld (SIA 263 6.3.2, (87) and (88))
+  the resultant of the member forces on the plates it holds (on the safe
+  side). ASCE 10-97 gives no weld rule (5.2.5: AWS D1.1): welds not
+  checked under it, said; the simple check checks neither. A plate in
+  compression: plate buckling not checked. Joint details lists each
+  part's usage (the case shown and the largest), what governs with its
+  clause, each check in a box; the 3D view marks the joints by their
+  plates' worst usage (orange, red); the structure report has a table.
+
+Open: the moment of a weld's force about its seam (not taken: not on the
+safe side); tearing paths of a bolt group towards a plate's side edge; a
+frame member's end shear and moments in the plate checks; a gusset
+plate's buckling (neither standard gives a rule).
 
 > **Owner:**
 
