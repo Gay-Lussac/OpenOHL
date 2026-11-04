@@ -106,6 +106,17 @@ pub enum Act {
     CutShift(String, String, f64, f64),
     /// A plate's outline written as drawn.
     PlateOutline(String, Vec<[f64; 3]>),
+    /// A plate's outline corrected by hand (its corners, the plate moved;
+    /// none: taken out, drawn round its bolts again), `what` the undo
+    /// step's name.
+    Outline {
+        /// The plate.
+        id: String,
+        /// The outline, structure's axes, m; none: automatic.
+        outline: Option<Vec<[f64; 3]>>,
+        /// The undo step.
+        what: String,
+    },
     /// A bolt that fits only on a new gauge line: the line offered, to be
     /// confirmed (the bolts with it, the bolts' kind, the gauge, m, and the
     /// code's minimums in words).
@@ -733,6 +744,20 @@ impl StructureApp {
                     Err(e) => (e, true),
                 })
             }
+            Act::Outline { id, outline, what } => {
+                let r = f.edit(&what, |doc, _| match &outline {
+                    Some(o) => connection_edits::set_plate_outline(doc, &id, o),
+                    None => connection_edits::clear_plate_outline(doc, &id),
+                });
+                Some(match r {
+                    Ok(()) if outline.is_none() => (
+                        format!("plate {id}: drawn round its bolts again (its outline worked out)"),
+                        false,
+                    ),
+                    Ok(()) => (format!("plate {id}: {}", what.to_lowercase()), false),
+                    Err(e) => (e, true),
+                })
+            }
         };
         if message.is_some() {
             self.message = message;
@@ -1131,7 +1156,7 @@ fn typed_mm(s: &str) -> Option<f64> {
 }
 
 /// A length typed in mm that may be negative (a shift).
-fn typed_mm_signed(s: &str) -> Option<f64> {
+pub(crate) fn typed_mm_signed(s: &str) -> Option<f64> {
     let s = s.trim();
     if let Ok(v) = s.parse::<f64>() {
         return v.is_finite().then_some(v / 1000.0);

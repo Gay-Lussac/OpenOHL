@@ -54,6 +54,7 @@ mod load_cases_tab;
 mod member_panel;
 mod menus;
 mod notices;
+mod plate_outline_ui;
 mod plugins_ui;
 mod pole_panel;
 mod results_tab;

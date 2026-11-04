@@ -230,8 +230,9 @@ impl StructureApp {
             } => self.bolt_box(ui, details, member, joint, *index),
             Picked::Plate(id) => {
                 let t = self.file.as_ref().map(|f| f.structure_arc());
+                let usage = self.plate_usage_rows(id);
                 match t {
-                    Some(t) => plate_box(ui, &t, details, id, &mut self.buffers),
+                    Some(t) => plate_box(ui, &t, details, id, &mut self.buffers, &usage),
                     None => None,
                 }
             }
@@ -241,6 +242,36 @@ impl StructureApp {
             None => self.joints.picked = None,
         }
         ui.add_space(4.0);
+    }
+
+    /// Plate `id`'s checks of the last run: per part its largest usage
+    /// over the cases, that case and what governs (none: no run).
+    fn plate_usage_rows(&self, id: &str) -> Vec<crate::plate_outline_ui::UsageRow> {
+        let Some(run) = self.results.run() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<crate::plate_outline_ui::UsageRow> = Vec::new();
+        for c in &run.cases {
+            let Some(Ok(r)) = c.fe.as_ref() else {
+                continue;
+            };
+            for x in r.plates.iter().filter(|x| x.plate == id) {
+                let part = x.part.words();
+                match rows.iter_mut().find(|row| row.0 == part) {
+                    Some(row) => {
+                        if let Some(u) = x.usage
+                            && row
+                                .1
+                                .is_none_or(|b| ohl_structure_link::usage_order(u, b).is_gt())
+                        {
+                            *row = (part, Some(u), c.name.clone(), x.governs.clone());
+                        }
+                    }
+                    None => rows.push((part, x.usage, c.name.clone(), x.governs.clone())),
+                }
+            }
+        }
+        rows
     }
 
     /// A bolt's properties, its kind changed from the bolt libraries; none:
@@ -455,6 +486,7 @@ fn plate_box(
     details: &JointDetails,
     id: &str,
     buffers: &mut std::collections::HashMap<String, String>,
+    usage: &[crate::plate_outline_ui::UsageRow],
 ) -> Option<Vec<Act>> {
     let (j, p) = details
         .joints
@@ -510,30 +542,11 @@ fn plate_box(
                 p.members.join(", ")
             }
         ));
-        ui.label(
-            egui::RichText::new(if p.outline_given {
-                "Its outline is given in the file."
-            } else {
-                "Its outline is worked out: round its bolts with the distances below, the legs \
-                 bolted and the corner it lies on."
-            })
-            .small(),
-        );
-        for e in &p.edges {
-            ui.label(egui::RichText::new(e).small().weak());
-        }
-        for n in &p.notes {
-            crate::app::error_label(ui, n.clone());
-        }
-        if !p.outline_given
-            && p.outline.len() >= 3
-            && ui
-                .button("Write this outline into the file")
-                .on_hover_text("The outline drawn, to be edited (one undo step)")
-                .clicked()
-        {
-            acts.push(Act::PlateOutline(id.to_owned(), p.outline.clone()));
-        }
+        // Its outline corrected by hand, its edges and checks
+        // (2026-11-04).
+        acts.extend(crate::plate_outline_ui::outline_section(
+            ui, j, p, buffers, usage,
+        ));
     });
     (!close).then_some(acts)
 }
