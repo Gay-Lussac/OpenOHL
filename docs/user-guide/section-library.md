@@ -68,6 +68,7 @@ the heel of an angle, the back of a channel's web at its bottom flange.
 | `double_angle` | `h`, `b`, `t`, `r`, `gap`, `back` | two angles back to back: the legs back to back along z, `gap` apart, the other legs along y pointing away from each other at the bottom |
 | `star_angle` | `h`, `b`, `t`, `r`, `gap` | two angles heel to heel in a star, the second turned 180°: legs `h` along ±z, `b` along ±y, the backs `gap` apart both ways |
 | `cross_angle` | `h`, `t`, `r`, `gap` | four equal angles heel to heel round a point: a cross of double legs, the backs `gap` apart both ways |
+| `double_channel` | `h`, `b`, `tw`, `tf`, `r`, `gap` | two channels of the `channel` dimensions back to back (2026-11-04; built, in active development, not approved yet): webs along z, `gap` apart (required, 0 when they touch), flanges pointing away from each other — symmetric about both axes; each channel's own properties for buckling between the stitch bolts, the torsion the two channels' sum, the warping left out (on the safe side) |
 
 `r` (root radius, the fillets between the plates) may be left out (0). A
 dimension a shape does not take is an error ("b is not a dimension of

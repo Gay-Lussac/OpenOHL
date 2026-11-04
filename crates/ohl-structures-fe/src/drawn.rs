@@ -324,7 +324,10 @@ pub fn outline(shape: &Shape) -> Vec<[f64; 2]> {
                 .collect()
         }
         // Built-up: the outer edge, the space between the angles filled.
-        Shape::DoubleAngle { .. } | Shape::StarAngle { .. } | Shape::CrossAngle { .. } => {
+        Shape::DoubleAngle { .. }
+        | Shape::StarAngle { .. }
+        | Shape::CrossAngle { .. }
+        | Shape::DoubleChannel { .. } => {
             shape.built_up_outline().unwrap_or_default()
         }
     };

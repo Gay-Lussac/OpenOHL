@@ -82,6 +82,21 @@ fn dimensions(shape: &ohl_sections::Shape) -> Vec<(String, f64)> {
             named(&[("h", h), ("b", b), ("t", t), ("r", r), ("gap", gap)])
         }
         S::CrossAngle { h, t, r, gap } => named(&[("h", h), ("t", t), ("r", r), ("gap", gap)]),
+        S::DoubleChannel {
+            h,
+            b,
+            tw,
+            tf,
+            r,
+            gap,
+        } => named(&[
+            ("h", h),
+            ("b", b),
+            ("tw", tw),
+            ("tf", tf),
+            ("r", r),
+            ("gap", gap),
+        ]),
     }
 }
 

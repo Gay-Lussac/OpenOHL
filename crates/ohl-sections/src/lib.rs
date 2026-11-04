@@ -51,13 +51,17 @@
 //! | `double_angle` (two back to back) | `h`, `b`, `t`, `r`, `gap`, `back` |
 //! | `star_angle` (two in a star) | `h`, `b`, `t`, `r`, `gap` |
 //! | `cross_angle` (four in a cross) | `h`, `t`, `r`, `gap` |
+//! | `double_channel` (two back to back) | `h`, `b`, `tw`, `tf`, `r`, `gap` |
 //!
 //! `r` (root radius) is optional, default 0. The built-up shapes are made
 //! of angles of legs `h` and `b` (`b` left out: equal legs) and thickness
 //! `t`; `gap` (required, 0 or above) is the space between the angles'
 //! backs — a filler or gusset plate's thickness, 0 when they touch; `back`
 //! (`"long"` or `"short"`, required for unequal legs) says which legs of a
-//! `double_angle` lie back to back.
+//! `double_angle` lie back to back. A `double_channel` (2026-11-04) is two
+//! channels of the `channel` dimensions with their webs back to back,
+//! `gap` apart (a gusset plate's thickness), their flanges pointing away
+//! from each other.
 //!
 //! Torsion and warping (for torsional and torsional-flexural buckling):
 //! the shear centre and the warping constant are computed from the plates'
@@ -224,6 +228,23 @@ pub enum Shape {
         /// Between the backs.
         gap: f64,
     },
+    /// Two channels back to back (2026-11-04): their webs along z, `gap`
+    /// apart along y, their flanges `b` pointing away from each other
+    /// along −y and +y (a ][ seen end on).
+    DoubleChannel {
+        /// Height.
+        h: f64,
+        /// Each channel's flange width.
+        b: f64,
+        /// Web thickness.
+        tw: f64,
+        /// Flange thickness.
+        tf: f64,
+        /// Root radius.
+        r: f64,
+        /// Between the two webs.
+        gap: f64,
+    },
 }
 
 /// What a shape's symmetry makes of its buckling in compression (the
@@ -265,11 +286,13 @@ impl Shape {
             Shape::DoubleAngle { .. } => "double_angle",
             Shape::StarAngle { .. } => "star_angle",
             Shape::CrossAngle { .. } => "cross_angle",
+            Shape::DoubleChannel { .. } => "double_channel",
         }
     }
 
-    /// The angle a built-up shape is made of, turned as its parts lie in
-    /// the section (a `double_angle`'s leg `h` along z), and how many;
+    /// The angle (or channel) a built-up shape is made of, turned as its
+    /// parts lie in the section (a `double_angle`'s leg `h` along z), and
+    /// how many;
     /// none for the other shapes. Its properties (each angle's own minor
     /// radius of gyration, for its buckling between the stitch bolts):
     /// [`Section::part_properties`].
@@ -286,6 +309,9 @@ impl Shape {
                 Some((angle(h, b, t, r), 2))
             }
             Shape::CrossAngle { h, t, r, .. } => Some((Shape::EqualAngle { h, t, r }, 4)),
+            Shape::DoubleChannel {
+                h, b, tw, tf, r, ..
+            } => Some((Shape::Channel { h, b, tw, tf, r }, 2)),
             _ => None,
         }
     }
@@ -294,7 +320,8 @@ impl Shape {
     pub fn symmetry(&self) -> Symmetry {
         match self {
             Shape::EqualAngle { .. } | Shape::UnequalAngle { .. } => Symmetry::Angle,
-            Shape::ISection { .. } => Symmetry::Double,
+            // Two channels back to back: symmetric about both axes, open.
+            Shape::ISection { .. } | Shape::DoubleChannel { .. } => Symmetry::Double,
             Shape::Channel { .. } => Symmetry::AboutY,
             Shape::DoubleAngle { .. } => Symmetry::AboutZ,
             Shape::StarAngle { .. } | Shape::CrossAngle { .. } => Symmetry::Point,
@@ -342,6 +369,7 @@ impl Shape {
             Shape::DoubleAngle { b, t, gap, .. } => ([b + gap / 2.0, t / 2.0], 0.0),
             Shape::StarAngle { .. }
             | Shape::CrossAngle { .. }
+            | Shape::DoubleChannel { .. }
             | Shape::RectangularHollow { .. }
             | Shape::CircularHollow { .. }
             | Shape::RoundBar { .. }
@@ -418,6 +446,27 @@ impl Shape {
                 .map(|p| [p[0] + c, p[1] + c])
                 .collect()
             }
+            Shape::DoubleChannel {
+                h, b, tw, tf, gap, ..
+            } => {
+                // An I: the webs and the gap between them as one.
+                let w = 2.0 * b + gap;
+                let (y0, y1) = (b - tw, b + gap + tw);
+                vec![
+                    [0.0, 0.0],
+                    [w, 0.0],
+                    [w, tf],
+                    [y1, tf],
+                    [y1, h - tf],
+                    [w, h - tf],
+                    [w, h],
+                    [0.0, h],
+                    [0.0, h - tf],
+                    [y0, h - tf],
+                    [y0, tf],
+                    [0.0, tf],
+                ]
+            }
             _ => return None,
         })
     }
@@ -493,6 +542,29 @@ impl Shape {
                     turned_angle(&mut o, heel, s, h, h, t, r);
                 }
             }
+            Shape::DoubleChannel {
+                h,
+                b,
+                tw,
+                tf,
+                r,
+                gap,
+            } => {
+                // The first channel's flanges towards −y, the second's
+                // towards +y.
+                let w = 2.0 * b + gap;
+                let (y0, y1) = (b - tw, b + gap + tw);
+                o.rect(y0, 0.0, b, h);
+                o.rect(0.0, 0.0, y0, tf);
+                o.rect(0.0, h - tf, y0, h);
+                o.fillet([y0, tf], r, [-1.0, 1.0]);
+                o.fillet([y0, h - tf], r, [-1.0, -1.0]);
+                o.rect(b + gap, 0.0, y1, h);
+                o.rect(y1, 0.0, w, tf);
+                o.rect(y1, h - tf, w, h);
+                o.fillet([y1, tf], r, [1.0, 1.0]);
+                o.fillet([y1, h - tf], r, [1.0, -1.0]);
+            }
         }
         o
     }
@@ -523,8 +595,11 @@ impl Shape {
                 4.0 * am * am * t / p
             }
             Shape::General { .. } => return None,
-            Shape::DoubleAngle { .. } | Shape::StarAngle { .. } | Shape::CrossAngle { .. } => {
-                // The angles joined only at points (the stitch bolts): the
+            Shape::DoubleAngle { .. }
+            | Shape::StarAngle { .. }
+            | Shape::CrossAngle { .. }
+            | Shape::DoubleChannel { .. } => {
+                // The parts joined only at points (the stitch bolts): the
                 // sum of theirs.
                 let (part, n) = self.part()?;
                 f64::from(n) * part.torsion()?
@@ -548,8 +623,11 @@ impl Shape {
             }
             Shape::RoundBar { .. } => [ROUND_BAR_SHEAR * area; 2],
             Shape::General { .. } => return None,
-            Shape::DoubleAngle { .. } | Shape::StarAngle { .. } | Shape::CrossAngle { .. } => {
-                // The parts' legs along y and z stay along y and z.
+            Shape::DoubleAngle { .. }
+            | Shape::StarAngle { .. }
+            | Shape::CrossAngle { .. }
+            | Shape::DoubleChannel { .. } => {
+                // The parts' plates along y and z stay along y and z.
                 let (part, n) = self.part()?;
                 let [y, z] = part.shear_areas(area / f64::from(n))?;
                 [f64::from(n) * y, f64::from(n) * z]
@@ -1013,11 +1091,12 @@ impl SectionFile {
             "double_angle" => &["h", "b", "t", "r", "gap", "back"],
             "star_angle" => &["h", "b", "t", "r", "gap"],
             "cross_angle" => &["h", "t", "r", "gap"],
+            "double_channel" => &["h", "b", "tw", "tf", "r", "gap"],
             other => {
                 return Err(format!(
                     "shape \"{other}\" unknown (equal_angle, unequal_angle, channel, i_section, \
                      rectangular_hollow, circular_hollow, round_bar, polygonal_hollow, general, \
-                     double_angle, star_angle, cross_angle)"
+                     double_angle, star_angle, cross_angle, double_channel)"
                 ));
             }
         };
@@ -1074,13 +1153,23 @@ impl SectionFile {
                     Shape::UnequalAngle { h, b, t, r }
                 }
             }
-            "channel" | "i_section" => {
+            "channel" | "i_section" | "double_channel" => {
                 let (h, b, tw, tf, r) = (get("h")?, get("b")?, get("tw")?, get("tf")?, get("r")?);
                 fits(
                     h - 2.0 * tf >= 2.0 * r,
                     "h - 2 tf must leave room for both root radii",
                 )?;
-                if shape_name == "channel" {
+                if shape_name == "double_channel" {
+                    fits(tw + r <= b, "tw + r must not exceed b")?;
+                    Shape::DoubleChannel {
+                        h,
+                        b,
+                        tw,
+                        tf,
+                        r,
+                        gap: get("gap")?,
+                    }
+                } else if shape_name == "channel" {
                     fits(tw + r <= b, "tw + r must not exceed b")?;
                     Shape::Channel { h, b, tw, tf, r }
                 } else {

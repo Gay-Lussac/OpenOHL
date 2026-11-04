@@ -239,6 +239,17 @@ fn plates(shape: &ohl_sections::Shape) -> Option<Plates> {
                 (h - tf, tw, K_INTERNAL, 1.0),
             ],
         },
+        // Two channels back to back: each one's plates.
+        S::DoubleChannel { h, b, tw, tf, .. } => Plates {
+            class: vec![
+                Element::Outstand(b / tf),
+                Element::Internal((h - 2.0 * tf) / tw),
+            ],
+            effective: vec![
+                (b - tw / 2.0, tf, K_OUTSTAND, 4.0),
+                (h - tf, tw, K_INTERNAL, 2.0),
+            ],
+        },
         S::RectangularHollow { h, b, t } => Plates {
             // Table 5a: b less 1.5 t at each side.
             class: vec![Element::Internal((h.max(b) - 3.0 * t) / t)],

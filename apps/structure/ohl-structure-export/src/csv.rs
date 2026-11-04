@@ -64,6 +64,21 @@ fn dimensions(shape: &Shape) -> String {
             d(&[("h", h), ("b", b), ("t", t), ("r", r), ("gap", gap)])
         }
         Shape::CrossAngle { h, t, r, gap } => d(&[("h", h), ("t", t), ("r", r), ("gap", gap)]),
+        Shape::DoubleChannel {
+            h,
+            b,
+            tw,
+            tf,
+            r,
+            gap,
+        } => d(&[
+            ("h", h),
+            ("b", b),
+            ("tw", tw),
+            ("tf", tf),
+            ("r", r),
+            ("gap", gap),
+        ]),
     }
 }
 

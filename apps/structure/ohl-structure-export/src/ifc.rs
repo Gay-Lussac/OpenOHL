@@ -223,7 +223,8 @@ fn profile_kind(shape: &Shape, schema: Schema) -> Option<Profile> {
         Shape::General { .. }
         | Shape::DoubleAngle { .. }
         | Shape::StarAngle { .. }
-        | Shape::CrossAngle { .. } => return None,
+        | Shape::CrossAngle { .. }
+        | Shape::DoubleChannel { .. } => return None,
     })
 }
 

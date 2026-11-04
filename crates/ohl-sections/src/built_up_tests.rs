@@ -307,3 +307,72 @@ fn built_up_outlines_for_drawings() {
     }
     assert!(Shape::EqualAngle { h, t, r }.built_up_outline().is_none());
 }
+
+/// Two channels back to back (2026-11-04), an invented UAP-like channel
+/// (h 300, b 100, tw 9.5, tf 16 mm, no root radius), webs 10 mm apart:
+/// A = 2 A1; the centroid in the middle; Iy = 2 I1y (the channels' axes
+/// on the section's); Iz = 2 (I1z + A1 (g/2 + c)²) with c the channel's
+/// centroid from its web's back; symmetric about both axes (iyz 0); It
+/// twice the channel's; each part a channel; the outline an I, the gap
+/// filled; read from a file.
+#[test]
+fn double_channel_by_parallel_axes() {
+    let (h, b, tw, tf, gap) = (0.300, 0.100, 0.0095, 0.016, 0.010);
+    let one = section(Shape::Channel {
+        h,
+        b,
+        tw,
+        tf,
+        r: 0.0,
+    })
+    .properties();
+    let shape = Shape::DoubleChannel {
+        h,
+        b,
+        tw,
+        tf,
+        r: 0.0,
+        gap,
+    };
+    let s = section(shape.clone());
+    let p = s.properties();
+    let c = one.centroid[0];
+    close(p.area, 2.0 * one.area, 1e-12);
+    close(p.centroid[0], b + gap / 2.0, 1e-12);
+    close(p.centroid[1], h / 2.0, 1e-12);
+    close(p.width, 2.0 * b + gap, 1e-12);
+    close(p.iy, 2.0 * one.iy, 1e-10);
+    let d = gap / 2.0 + c;
+    close(p.iz, 2.0 * (one.iz + one.area * d * d), 1e-10);
+    assert_eq!(p.iyz, 0.0);
+    close(p.it.unwrap(), 2.0 * one.it.unwrap(), 1e-12);
+    assert_eq!(shape.symmetry(), crate::Symmetry::Double);
+    let (part, n) = shape.part().unwrap();
+    assert_eq!(n, 2);
+    assert!(matches!(part, Shape::Channel { .. }));
+    let o = shape.built_up_outline().unwrap();
+    assert_eq!(o.len(), 12);
+    // Its area: the two channels and the gap between the webs filled.
+    let shoelace: f64 = (0..o.len())
+        .map(|k| {
+            let (a, b) = (o[k], o[(k + 1) % o.len()]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f64>()
+        / 2.0;
+    close(shoelace, 2.0 * one.area + gap * h, 1e-12);
+    let s = SectionLibrary::parse(
+        "[[section]]\nid = \"2-UAP300\"\nshape = \"double_channel\"\nh = \"300 mm\"\n\
+         b = \"100 mm\"\ntw = \"9.5 mm\"\ntf = \"16 mm\"\ngap = \"10 mm\"",
+    )
+    .unwrap();
+    assert_eq!(s.sections[0].shape, shape);
+    assert!(
+        SectionLibrary::parse(
+            "[[section]]\nid = \"X\"\nshape = \"double_channel\"\nh = \"300 mm\"\n\
+             b = \"100 mm\"\ntw = \"9.5 mm\"\ntf = \"16 mm\""
+        )
+        .is_err(),
+        "gap required"
+    );
+}

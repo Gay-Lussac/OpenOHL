@@ -246,7 +246,8 @@ pub fn parametric(shape: &Shape) -> Option<(&'static str, String)> {
         | Shape::General { .. }
         | Shape::DoubleAngle { .. }
         | Shape::StarAngle { .. }
-        | Shape::CrossAngle { .. } => return None,
+        | Shape::CrossAngle { .. }
+        | Shape::DoubleChannel { .. } => return None,
     })
 }
 

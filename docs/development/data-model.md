@@ -1866,6 +1866,9 @@ outstanding ones; `Shape::part()` the angle and how many,
 `Section::part_properties()` one angle's own properties (its minor radius
 of gyration, for buckling between the stitch bolts),
 `Shape::built_up_outline()` the outer edge for drawings (the gap filled).
+Since 2026-11-04 also `double_channel` (`Shape::DoubleChannel { h, b, tw,
+tf, r, gap }`: two channels back to back, webs `gap` apart; `part()` a
+channel and 2; symmetry `Double`; its outline an I with the gap filled).
 The format stays version 1 (a program built before refuses the new
 shapes, naming them). `Section::properties()` computes area,
 centroid, second moments about the geometric and principal axes, torsion

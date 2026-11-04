@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 /// The shape names a `drag` key may take (the section shapes).
-pub const SHAPE_NAMES: [&str; 12] = [
+pub const SHAPE_NAMES: [&str; 13] = [
     "equal_angle",
     "unequal_angle",
     "channel",
@@ -44,6 +44,7 @@ pub const SHAPE_NAMES: [&str; 12] = [
     "double_angle",
     "star_angle",
     "cross_angle",
+    "double_channel",
 ];
 
 /// A factor by solidity ratio, linear between the points; none outside
