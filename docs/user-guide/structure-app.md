@@ -802,9 +802,8 @@ shows them greyed; Escape goes back to Edit):
   undo step), **Bolt layout…** and **Remove this bolt**; it is ringed in
   the face view. A **plate** clicked — what it is welded to (its Welded
   to menu) and the welded plate it belongs to, its thickness, the leg it
-  lies on, the members onto it, the distances its
-  edge keeps from each member's bolts and any bolt nearer its edge than
-  that (an outline given in the file). A **member** clicked (face view) —
+  lies on, the members onto it, and its **Plate details / outline**
+  (below). A **member** clicked (face view) —
   the member in detail (‹ Joint, Escape: back); in the member view, a
   click beside the bolts opens that end's bolt layout form. Escape lets
   go of what was picked;
@@ -827,6 +826,46 @@ shows them greyed; Escape goes back to Edit):
   outline in the file): the outline it is drawn with — round its bolts
   with the code's distances kept — written into the file, to be edited;
   a plate's properties offer the same for that plate alone.
+
+**A plate corrected by hand** (2026-11-04; built, in active development,
+not approved yet). When the automatic outline round the bolts does not
+fit — a plate on the wrong side of a flange, a corner that clashes with
+another member, an outline the shop wants simpler — a plate picked with
+**Edit** shows **Plate details / outline** in its box:
+
+- **Start from the automatic outline** (a plate without an outline in the
+  file): the outline drawn round its bolts copied into the file as the
+  plate's corners, to be edited (one undo step). From then on the plate
+  keeps these corners and their plane whatever the bolts do.
+  **Back to automatic** takes the outline out again: drawn round its
+  bolts with the code's distances, in the plane of the members bolted
+  onto it (one undo step).
+- **The corners** in the plate's own plane, in mm: **u** along the
+  joint's leg the plate lies on (else the first member bolted onto it),
+  **v** square to it in the plane; 0, 0 is the work point laid square onto
+  the plate (the box says how far the work point lies off the plate's
+  plane). Each value typed and left (Enter, Tab or a click elsewhere)
+  moves that corner in the plane; **🗑** takes a corner away (three stay
+  at least); **+ corner** adds one midway between the selected corner
+  (click its number) and the next, else between the last and the first.
+  Each change is one undo step, written as the plate's `outline` in the
+  same plane.
+- **Plane offset** and **Move the plate**: every corner moved square to
+  the plate's plane by the millimetres given (positive along the normal
+  whose largest component points along +x, +y or +z), e.g. onto the
+  other side of a flange; one undo step.
+- Beside them the **edge distances** the plate keeps from each member's
+  bolts and, in red, every bolt now nearer its edge than that, so a
+  corrected outline shows at once whether it still keeps the code's
+  distances; after a run its **checks** (each part's largest usage over
+  the cases, that case and what governs). An outline changed after the
+  run is checked again at the next run.
+- In the **face view**, with Edit and such a plate picked, its corners
+  are **handles**: a corner dragged moves in the plate's plane (the point
+  of the plane seen under the pointer; one undo step on release). A plate
+  seen more than about 45° off square in the face shown says so instead:
+  its corners are dragged in a face more square to it, or typed in its
+  box.
 
 A bolt added or taken away turns that end's layout into its bolts'
 places (`bolt_points`); the bolt layout form makes a regular layout

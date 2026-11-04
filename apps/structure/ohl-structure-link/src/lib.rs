@@ -47,6 +47,7 @@ mod member_view;
 mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
+mod plate_frame;
 mod run;
 mod volumes;
 mod welds;
@@ -72,6 +73,7 @@ pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap}
 pub use plate_checks::{
     PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_usage,
 };
+pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
 pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,

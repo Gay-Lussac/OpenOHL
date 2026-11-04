@@ -327,6 +327,31 @@ plate's buckling (neither standard gives a rule).
 
 > **Owner:**
 
+### A plate corrected by hand — built 2026-11-04
+
+(Owner, 2026-11-04: "the user should be able to access the gusset plate
+details if needed to correct some of the joint in case the automatic
+sizing fails".) Built, in active development, not approved yet: a plate
+picked in the Detail view shows **Plate details / outline** — its corners
+as u, v (mm) in its own plane (`ohl_structure_link::PlateFrame`: n the
+outline's normal, its largest component positive so that it stays the
+same however the corners are edited; u along the joint's leg it lies on,
+else its first member; v = n × u; the origin the work point laid onto the
+plane), each typed, added (+ corner, midway) or taken away (three kept);
+**Start from the automatic outline** / **Back to automatic** (the
+`outline` written / taken out, `connection_edits::clear_plate_outline`);
+the plate moved square to its plane (a plane offset); its edge distances,
+the bolts too near its edge and its checks of the last run beside them.
+In the face view its corners are dragged in the plate's plane (the view's
+ray met with the plane), only where the plate is seen within about 45° of
+square. Each change one undo step; the file format is unchanged (the 3D
+`outline` of `[[plate]]`).
+
+Open: snapping a corner to a bolt's minimum distance; corners dragged in
+the close-up.
+
+> **Owner:**
+
 ### Bolt library — built 2026-11-02
 
 "A bolt library could be nice to have too so that it can be easily

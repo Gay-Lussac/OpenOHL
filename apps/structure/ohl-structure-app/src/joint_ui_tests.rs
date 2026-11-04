@@ -1162,3 +1162,155 @@ fn joint_details_show_the_plate_checks() {
     );
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// A gusset plate corrected by hand (owner 2026-11-04: "the user should be
+/// able to access the gusset plate details if needed to correct some of
+/// the joint in case the automatic sizing fails"): G1 at N2 picked, its
+/// automatic outline copied into the file; a corner's u typed in the
+/// corner table moves it in the plate's plane (one undo step, undone);
+/// the + corner button adds one; the plate moved square to its plane;
+/// Back to automatic takes the outline out again.
+#[test]
+fn a_plate_outline_is_corrected_by_hand() {
+    use crate::joint_panel::Drawn;
+    use crate::joint_tools::Act;
+    use ohl_structure_link::PlateFrame;
+    let path = copy_of("type-02.ohls", "plate-outline");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(
+        &tower,
+        format!(
+            "{}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+             [[connection]]\nmember = \"H1\"\njoint = \"N2\"\nonto = \"G1\"\n\
+             bolts = {{ count = 2, diameter = \"16 mm\" }}\ngauges = [\"30 mm\"]\n\
+             gauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n",
+            ANGLES.replace("onto = \"L1\"", "onto = \"G1\"")
+        ),
+    )
+    .unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.state_mut().joints.drawn = Drawn::Face;
+    h.run();
+    h.run();
+    let file = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state().file.as_ref().unwrap().structure().clone()
+    };
+    let plate = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        let d = h.state_mut().joint_details().unwrap();
+        let d = d.as_ref().as_ref().unwrap();
+        let j = d.joint("N2").unwrap().clone();
+        let p = j.plates[0].clone();
+        (j, p)
+    };
+    // G1 picked (the Edit tool's act): its outline section.
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    h.state_mut()
+        .apply_joint_acts(vec![Act::PickPlate("G1".into())], &details);
+    h.run();
+    h.run();
+    h.get_by_label("Plate details / outline");
+    h.get_by_label_contains("Edge distances it keeps");
+    assert!(file(&h).plates[0].outline.is_empty());
+    // Start from the automatic outline: written into the file.
+    let (_, auto) = plate(&mut h);
+    assert!(!auto.outline_given && auto.outline.len() >= 3);
+    h.get_by_label("Start from the automatic outline")
+        .scroll_to_me();
+    h.run();
+    h.get_by_label("Start from the automatic outline").click();
+    h.run();
+    h.run();
+    assert_eq!(file(&h).plates[0].outline.len(), auto.outline.len());
+    let (j, given) = plate(&mut h);
+    assert!(given.outline_given);
+    let frame = PlateFrame::of(&j, &given).unwrap();
+    let corners = frame.corners(&given.outline);
+    // Corner 1's u typed: 25 mm less.
+    let steps = h.state().file.as_ref().unwrap().undo_steps();
+    let shown = format!("{:.1}", corners[0][0] * 1000.0);
+    let new_u = corners[0][0] * 1000.0 - 25.0;
+    h.query_all_by_value(&shown).next().unwrap().focus();
+    h.run();
+    h.key_press_modifiers(eframe::egui::Modifiers::COMMAND, eframe::egui::Key::A);
+    h.run();
+    h.query_all_by_value(&shown)
+        .next()
+        .unwrap()
+        .type_text(&format!("{new_u:.1}"));
+    h.run();
+    h.key_press(eframe::egui::Key::Enter);
+    h.run();
+    h.run();
+    assert_eq!(h.state().file.as_ref().unwrap().undo_steps(), steps + 1);
+    let (j2, edited) = plate(&mut h);
+    let f2 = PlateFrame::of(&j2, &edited).unwrap();
+    let c2 = f2.corners(&edited.outline);
+    assert!((c2[0][0] * 1000.0 - new_u).abs() < 0.2, "{c2:?}");
+    assert!((c2[0][1] - corners[0][1]).abs() < 2e-4);
+    // In the same plane.
+    let n = frame.n;
+    for q in &edited.outline {
+        let d = [
+            q[0] - given.outline[0][0],
+            q[1] - given.outline[0][1],
+            q[2] - given.outline[0][2],
+        ];
+        assert!((d[0] * n[0] + d[1] * n[1] + d[2] * n[2]).abs() < 2e-4);
+    }
+    // Undo: the corner back.
+    h.state_mut().undo();
+    h.run();
+    h.run();
+    let (_, back) = plate(&mut h);
+    for (a, b) in back.outline.iter().zip(&given.outline) {
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() < 1e-9);
+        }
+    }
+    // + corner: one more.
+    h.get_by_label("+ corner").click();
+    h.run();
+    h.run();
+    assert_eq!(file(&h).plates[0].outline.len(), given.outline.len() + 1);
+    // The plate moved 12 mm square to its plane (the act Move the plate
+    // makes): the work point 12 mm nearer.
+    let (j3, p3) = plate(&mut h);
+    let f3 = PlateFrame::of(&j3, &p3).unwrap();
+    let moved = ohl_structure_link::offset_outline(&p3.outline, f3.n, 0.012);
+    h.state_mut().apply_joint_acts(
+        vec![Act::Outline {
+            id: "G1".into(),
+            outline: Some(moved),
+            what: "Plate G1 moved".into(),
+        }],
+        &details,
+    );
+    h.run();
+    let (j4, p4) = plate(&mut h);
+    let f4 = PlateFrame::of(&j4, &p4).unwrap();
+    assert!((f3.work_point - f4.work_point - 0.012).abs() < 2e-4);
+    // Back to automatic: the outline out of the file (one undo step).
+    h.get_by_label("Back to automatic").scroll_to_me();
+    h.run();
+    h.get_by_label("Back to automatic").click();
+    h.run();
+    h.run();
+    assert!(file(&h).plates[0].outline.is_empty());
+    let (_, again) = plate(&mut h);
+    assert!(!again.outline_given && again.outline.len() >= 3);
+    h.state_mut().undo();
+    h.run();
+    assert_eq!(file(&h).plates[0].outline.len(), given.outline.len() + 1);
+    std::fs::remove_dir_all(dir).ok();
+}

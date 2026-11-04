@@ -1106,3 +1106,18 @@ pub fn set_plate_outline(
     t.insert("outline", Item::Value(Value::Array(a)));
     Ok(())
 }
+
+/// Plate `id`'s outline taken out of the file: drawn round its bolts
+/// again (the code's end and edge distances kept).
+pub fn clear_plate_outline(doc: &mut DocumentMut, id: &str) -> Result<(), String> {
+    let t = doc
+        .get_mut("plate")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+        })
+        .ok_or_else(|| format!("no plate {id}"))?;
+    t.remove("outline");
+    Ok(())
+}

@@ -99,7 +99,8 @@ impl DetailTool {
         match self {
             DetailTool::Edit => {
                 "Click a bolt: its properties below, with the bolt library to change it; a plate: \
-                 its kind, thickness and edges below; a member: the member in detail (‹ Joint or \
+                 its kind, thickness, outline and edges below (a plate with its outline in the \
+                 file: its corners dragged in the face view, in the plate's plane); a member: the member in detail (‹ Joint or \
                  Escape: back to the joint)"
             }
             DetailTool::AddBolt => {

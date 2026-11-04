@@ -89,6 +89,9 @@ pub struct JointPanel {
     /// The close-up's pieces and mesh kept between frames
     /// ([`crate::close_up::CloseUpCache`]).
     pub close_up: crate::close_up::CloseUpCache,
+    /// A plate's corner being dragged in the face view
+    /// ([`crate::plate_outline_ui::corner_handles`]).
+    pub corner: Option<crate::plate_outline_ui::CornerDrag>,
 }
 
 /// What the Detail view's Edit tool picked.
@@ -657,7 +660,22 @@ impl StructureApp {
                     .collect();
                 let rules = self.bolt_rules_of(&ends);
                 let fit = crate::detail_tools::FaceFit::new(rect, view.bounds);
-                let acts = crate::detail_tools::face_act(
+                // A picked plate's corners, dragged in its plane.
+                let picked = match &self.joints.picked {
+                    Some(Picked::Plate(id)) => Some(id.as_str()),
+                    _ => None,
+                };
+                let corner_acts = crate::plate_outline_ui::corner_handles(
+                    j,
+                    picked,
+                    &face,
+                    &fit,
+                    &response,
+                    self.joints.tool,
+                    &mut self.joints.corner,
+                    &painter,
+                );
+                let mut acts = crate::detail_tools::face_act(
                     j,
                     &face,
                     &fit,
@@ -667,6 +685,7 @@ impl StructureApp {
                     &painter,
                     &rules,
                 );
+                acts.extend(corner_acts);
                 // The bolt picked with Edit, ringed.
                 if let Some(Picked::Bolt {
                     member,
