@@ -35,6 +35,7 @@ use ohl_structures::connections::MAX_GAUGE_LINES;
 
 use crate::app::StructureApp;
 use crate::detail_tools::Rules;
+use crate::joint_sketch as sketch;
 use ohl_structure_edit::Handle;
 
 /// What a click in the panel asks.
@@ -1317,31 +1318,21 @@ pub fn rows_table(
                         ),
                         ("Leg", "The angle's leg bolted"),
                         ("Bolts", "Count × diameter, grade (click: the bolt layout)"),
-                        ("Lines", "Gauge lines"),
-                        (
-                            "Gauge mm",
-                            "From the heel along the leg bolted (the first line)",
-                        ),
-                        ("Pitch mm", "Between bolts along a line"),
-                        ("End mm", "From the member's end to the first bolt"),
-                        ("Edge mm", "From the bolts to the leg's edge"),
+                        // The values drawn in "What the values mean"
+                        // (2026-11-04): the same names and hover texts.
+                        (sketch::LINES.header, sketch::LINES.tip),
+                        (sketch::GAUGE.header, sketch::GAUGE.tip),
+                        (sketch::PITCH.header, sketch::PITCH.tip),
+                        (sketch::END.header, sketch::END.tip),
+                        (sketch::EDGE.header, sketch::EDGE.tip),
                         ("Eccentric", "Loaded off its axis (one leg bolted)"),
                         (
                             "Restrained",
                             "Held against turning (two bolts or more into a stiffer member)",
                         ),
-                        ("e mm", "The eccentricity: the gauge line from the centroid"),
-                        (
-                            "Stops mm",
-                            "Where the member's steel stops, from the work point (worked out so \
-                             it fits; its axis still runs to the work point)",
-                        ),
-                        (
-                            "Shift mm",
-                            "The end moved sideways to fit (towards what it bolts onto: +): its \
-                             force passes beside the work point — an eccentricity the analysis \
-                             takes",
-                        ),
+                        (sketch::ECC.header, sketch::ECC.tip),
+                        (sketch::STOPS.header, sketch::STOPS.tip),
+                        (sketch::SHIFT.header, sketch::SHIFT.tip),
                         ("", ""),
                     ] {
                         ui.strong(h).on_hover_text(tip);
@@ -1760,11 +1751,29 @@ pub fn joint_bar(
                     ) {
                         acts.push(Act::Plate(p.id.clone(), None, Some(text)));
                     }
-                    ui.label(if p.members.is_empty() {
-                        "—".to_owned()
+                    if p.outline.len() < 3 {
+                        // Nothing bolted onto it, no outline given
+                        // (2026-11-04): nothing drawn, no bolt clamps it.
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            format!("none: {}", ohl_structure_link::NO_OUTLINE),
+                        )
+                        .on_hover_text(
+                            "Set a member end's Onto to this plate (the connections table \
+                             below): the plate is then drawn round its bolts, and their grip \
+                             takes its thickness",
+                        );
                     } else {
-                        p.members.join(", ")
-                    });
+                        ui.label(if p.members.is_empty() {
+                            "—".to_owned()
+                        } else {
+                            p.members.join(", ")
+                        })
+                        .on_hover_text(format!(
+                            "Their bolts clamp the plate: {:.0} mm of their grip",
+                            p.thickness * 1000.0
+                        ));
+                    }
                     if ui
                         .small_button("🗑")
                         .on_hover_text("Remove the plate")

@@ -606,6 +606,21 @@ at once, the Detail view in front, its details in front on the left
   16 ms a frame before, 3.5 ms turning and 0.4 ms still after).
   I/H, hollow and polygonal profiles are drawn by their outline (a box
   before).
+  **A plate is drawn as a solid of its thickness** (2026-11-04; built, in
+  active development, not approved yet — before, a film in the face of
+  the bolts, hidden under the member's leg and behind the corner's, so a
+  plate never showed while the bolts through it got longer): its outline
+  in the face of the bolts onto it, the plate running through its
+  thickness away from the members bolted onto it — into the room they
+  were moved out by — its id and thickness written on it ("G1 · 10 mm"),
+  and the pointer over it says its thickness, material and the members
+  whose bolts clamp it (the face view too). A plate with **no member
+  bolted onto it and no outline in the file** has nothing to be drawn
+  round: its row in the plates table and its box say "no member bolted
+  onto it: no outline to draw", and no bolt clamps it (before, a small
+  disc at the work point, inside the leg's steel). Set a member end's
+  **Onto** to it: it is drawn round that member's bolts, and their grip
+  takes its thickness.
 - **Face view**: the joint square to a face (x+, x−, y+, y−, or the plan
   from above; the face most of its members lie in first), as a shop
   drawing: the members' outlines, the gauge lines, the bolts, the end
@@ -613,6 +628,45 @@ at once, the Detail view in front, its details in front on the left
   a label per member (its id, cross-section, bolts). **Save as SVG…** /
   **Save as PDF…** put it on an A4 sheet at the largest of 1:2, 1:5,
   1:10, 1:20, 1:50 that fits.
+- **What the values mean** (2026-11-04; built, in active development, not
+  approved yet), a folding section right above the connections table
+  (open the first time; then it stays open or folded as you leave
+  it): the leg bolted of an angle seen flat, each value of the table
+  dimensioned and named as its column is — the hover of a name says what
+  it is, in the same words as the column's hover. With a bolt picked
+  (Edit in the Detail view), that member end's values are written beside
+  the names. As wide as the panel (narrower than 480 points: scrolled).
+
+  ![The bolted leg of an angle seen flat, from its heel to its edge: the
+  gauge from the heel to the gauge line, the edge distance from it to the
+  leg's edge, the pitch between bolts, the end distance from the last bolt
+  to the member's end, the eccentricity e from the axis (the centroid
+  line) to the gauge line, where the steel stops from the work point, and
+  the shift of the axis beside the work point towards what the member
+  bolts onto; a second gauge line
+  faint](../images/joint-details/joint-values.svg)
+
+  - **Lines**: the gauge lines, rows of bolts along the leg, each at its
+    own gauge from the heel (one to three; every second line staggered
+    by half a pitch).
+  - **Gauge mm**: across the leg bolted, from its **heel** (the angle's
+    corner) to the gauge line (the first line).
+  - **Pitch mm**: along a gauge line, from one bolt to the next.
+  - **End dist. mm**: along the member, from the **member's end** (where
+    its steel stops) to the first bolt.
+  - **Edge dist. mm**: across the leg, from the gauge line (the outer
+    one) to the **leg's edge** (its toe).
+  - **Ecc. e mm**: the eccentricity, across the leg, from the member's
+    **axis** (its centroid line) to the gauge line.
+  - **Steel stops mm**: along the axis, from the **work point** to the
+    member's end (worked out so it fits); the axis still runs to the work
+    point.
+  - **Shift mm**: the member's end moved sideways to fit (+ towards what
+    it bolts onto): its axis, and its force, pass beside the work point —
+    an eccentricity the analysis takes.
+
+  The columns were **End mm**, **Edge mm**, **e mm** and **Stops mm**
+  before 2026-11-04 (the same values).
 - **The connections table**, one row per member end: the member (click:
   select it), its end (i or j), class, the face it lies in, its angle to
   the member it bolts onto (or the joint's leg), how it is held, onto
@@ -784,7 +838,7 @@ Detail view or its details in front) goes back to that joint.
 **Where a member lands on the joint** (2026-11-02). By default every
 member's axis runs to the joint's work point — the forces meet there —
 and its **steel stops** where it fits: before the outstanding leg of the
-angle it bolts onto, in the face they bolt in (worked out; **Stops mm**
+angle it bolts onto, in the face they bolt in (worked out; **Steel stops mm**
 in the table gives another). A member end can be **shifted sideways**
 (**Shift mm**, + towards what it bolts onto) so it fits on a gusset plate
 or beside another member: its force then passes beside the work point,

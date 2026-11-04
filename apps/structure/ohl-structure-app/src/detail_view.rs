@@ -536,7 +536,12 @@ fn plate_box(
                 .map_or("no angle leg (through the work point)".into(), |l| format!(
                     "the leg {l}"
                 )),
-            if p.members.is_empty() {
+            if p.members.is_empty() && p.outline.len() < 3 {
+                format!(
+                    "none: {} (set a member end's Onto to {id})",
+                    ohl_structure_link::NO_OUTLINE
+                )
+            } else if p.members.is_empty() {
                 "none yet (a member's Onto)".to_owned()
             } else {
                 p.members.join(", ")

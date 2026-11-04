@@ -352,6 +352,57 @@ the close-up.
 
 > **Owner:**
 
+### What the values mean; a plate in a grip drawn — built 2026-11-04
+
+(Owner, 2026-11-04: "with gauge, pitch, End, EDGE, e, stops, it's hard
+to understand exactly what does what on a joint can you make it clearer ?
+like make an explanatory illustration"; "also the plate thickness never
+shows … the bolts get longer but without a plate".) Built, in active
+development, not approved yet:
+
+- **What the values mean**: a folding section above the connections
+  table (`ohl-structure-app` `joint_sketch`): the leg bolted of an angle
+  seen flat — heel, leg's edge (toe), the member's end where the steel
+  stops, the axis (centroid line, dashed) running past it to beside the
+  work point, the gauge line with three bolts, a second gauge line faint,
+  what it bolts onto through the work point — and a dimension per value:
+  Gauge (heel → gauge line), Pitch (bolt → bolt), End dist. (member's end
+  → first bolt), Edge dist. (gauge line → leg's edge), Ecc. e (axis →
+  gauge line), Steel stops (work point → member's end along the axis),
+  Shift (the axis beside the work point, + towards what it bolts onto),
+  Lines (the second line). One list of terms (`joint_sketch::TERMS`: the
+  column's header, the drawing's name, the hover text) feeds the table's
+  headers and the drawing, so they say the same. Theme colours from egui's
+  visuals; scaled to the panel (labels keep their size, at least 480
+  points: narrower scrolls); a test lays it out with egui's fonts at
+  several widths and finds no label over another or over a bolt. The
+  values of the member end whose bolt is picked are written beside the
+  names. The user guide's image (`docs/images/joint-details/joint-values.svg`)
+  is written from the same drawing (`joint_sketch::svg`, a test keeps it
+  in step; `OHL_WRITE_DOCS_SVG=1` writes it again). The headers became
+  **End dist. mm**, **Edge dist. mm**, **Ecc. e mm**, **Steel stops mm**
+  (were End mm, Edge mm, e mm, Stops mm); the file format is unchanged.
+- **A plate in a grip, drawn**: a member end onto a plate always had the
+  plate's thickness in its bolts' grip (`joints::grip`) and was moved out
+  by it from the joint's leg (`seat`), but the close-up drew the plate as
+  a translucent film in the face of the bolts — the face the member's leg
+  lies on — so it lay under that leg and behind the corner's flange, seen
+  from almost nowhere: the bolts got longer, no plate showed. Now
+  `PlateDetail::through` (the outline's normal turned against the bolts'
+  axis of the members onto it, as the IFC export extrudes it) and the
+  close-up draws the plate as a shaded solid from its outline through its
+  thickness, filling the room the member was moved out by; its id and
+  thickness are written on it, and the pointer over it (close-up and face
+  view) says its thickness, material and the members whose bolts clamp
+  it. A plate with nothing bolted onto it and no outline given used to
+  get a 3 cm disc round the work point (inside the leg's steel); it now
+  has no outline (`NO_OUTLINE`, said in its plates-table row, its box and
+  its `notes`), and no grip takes it — a grip takes only the plate its
+  own member end bolts onto. Tests: `a_plate_in_a_grip_has_an_outline_and_its_thickness`
+  (link), `the_values_are_drawn_and_a_plate_in_a_grip_is_drawn` (app).
+
+> **Owner:**
+
 ### Bolt library — built 2026-11-02
 
 "A bolt library could be nice to have too so that it can be easily

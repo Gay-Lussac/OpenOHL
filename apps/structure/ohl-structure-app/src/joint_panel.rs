@@ -298,6 +298,44 @@ impl StructureApp {
             &mut self.buffers,
         ));
         let presets = self.presets();
+        // What the table's values mean, drawn (owner 2026-11-04); with
+        // the values of the member end whose bolt is picked.
+        let shown = match &self.joints.picked {
+            Some(Picked::Bolt { member, joint, .. }) if *joint == j.id => j
+                .arrivals
+                .iter()
+                .find(|a| &a.member == member)
+                .map(|a| crate::joint_sketch::Shown::of(a, &j.id)),
+            _ => None,
+        };
+        egui::CollapsingHeader::new("What the values mean")
+            .id_salt("joint-values-sketch")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(match &shown {
+                        Some(s) => format!(
+                            "The leg bolted of an angle seen flat, with the values of {} (the \
+                             bolt picked); hover a name: what it is.",
+                            s.end.as_deref().unwrap_or("")
+                        ),
+                        None => "The leg bolted of an angle seen flat; hover a name: what it is. \
+                                 Pick a bolt with Edit in the Detail view: its member end's \
+                                 values written here."
+                            .to_owned(),
+                    })
+                    .small()
+                    .weak(),
+                );
+                // As wide as the panel; narrower than the drawing's
+                // smallest: scrolled.
+                let width = ui.available_width();
+                egui::ScrollArea::horizontal()
+                    .id_salt("joint-values-sketch-scroll")
+                    .show(ui, |ui| {
+                        crate::joint_sketch::show(ui, &shown.clone().unwrap_or_default(), width);
+                    });
+            });
         acts.extend(crate::joint_tools::table(
             ui,
             &t,
@@ -649,6 +687,15 @@ impl StructureApp {
                 let key = self.joints.details.as_ref().map_or((0, 0), |d| d.0);
                 let dark = ui.visuals().dark_mode;
                 crate::close_up::paint(&painter, rect, j, &mut self.joints, key, dark);
+                // A plate under the pointer: its thickness and more.
+                if let Some(pos) = response.hover_pos()
+                    && !response.dragged()
+                    && let Some(p) = crate::close_up::plate_at(j, &self.joints, rect, pos)
+                {
+                    response
+                        .clone()
+                        .on_hover_text_at_pointer(crate::close_up::plate_hover(p));
+                }
             }
             Drawn::Face => {
                 let view = ohl_structure_link::face_view(j, &face);
@@ -660,6 +707,37 @@ impl StructureApp {
                     .collect();
                 let rules = self.bolt_rules_of(&ends);
                 let fit = crate::detail_tools::FaceFit::new(rect, view.bounds);
+                // A plate under the pointer: its thickness and more (the
+                // nearest to the viewer first).
+                if let Some(pos) = response.hover_pos() {
+                    let [r, u, toward] = ohl_structure_link::face_axes(&face);
+                    let rel = |q: &[f64; 3]| -> [f64; 3] {
+                        std::array::from_fn(|k| q[k] - j.position[k])
+                    };
+                    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+                    let hit = j
+                        .plates
+                        .iter()
+                        .filter(|p| {
+                            let pts: Vec<egui::Pos2> = p
+                                .outline
+                                .iter()
+                                .map(|q| fit.at([dot(rel(q), r), dot(rel(q), u)]))
+                                .collect();
+                            pts.len() >= 3 && crate::close_up::inside_2d(&pts, pos)
+                        })
+                        .max_by(|a, b| {
+                            let d = |p: &ohl_structure_link::PlateDetail| {
+                                dot(rel(&p.outline[0]), toward)
+                            };
+                            d(a).total_cmp(&d(b))
+                        });
+                    if let Some(p) = hit {
+                        response
+                            .clone()
+                            .on_hover_text_at_pointer(crate::close_up::plate_hover(p));
+                    }
+                }
                 // A picked plate's corners, dragged in its plane.
                 let picked = match &self.joints.picked {
                     Some(Picked::Plate(id)) => Some(id.as_str()),

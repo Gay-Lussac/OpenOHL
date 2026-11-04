@@ -1314,3 +1314,146 @@ fn a_plate_outline_is_corrected_by_hand() {
     assert_eq!(file(&h).plates[0].outline.len(), given.outline.len() + 1);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// What the values mean, drawn above the connections table, its columns
+/// named as in the drawing; a plate added with "+ Plate" says it has no
+/// outline until a member bolts onto it; D1 bolted onto it, its bolts
+/// clamp the plate and the plate is drawn as a solid of its thickness,
+/// its thickness on hover (owner 2026-11-04: "the plate thickness never
+/// shows … the bolts get longer but without a plate").
+#[test]
+fn the_values_are_drawn_and_a_plate_in_a_grip_is_drawn() {
+    use crate::joint_tools::Act;
+    use ohl_structure_edit::connection_edits::FieldValue;
+    let path = copy_of("type-02.ohls", "joint-values");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run();
+    h.run();
+    // The drawing, open the first time, and the columns named as in it.
+    h.get_by_label("What the values mean");
+    for t in crate::joint_sketch::TERMS {
+        h.get_by_label(t.header);
+    }
+    for old in ["End mm", "Edge mm", "e mm", "Stops mm"] {
+        assert!(h.query_by_label(old).is_none(), "{old}");
+    }
+    // A bolt of D1 picked: its values written in the drawing.
+    h.state_mut().joints.picked = Some(crate::joint_panel::Picked::Bolt {
+        member: "D1".into(),
+        joint: "N2".into(),
+        index: 0,
+    });
+    h.run();
+    h.get_by_label_contains("with the values of D1 at N2");
+    if let Some(dir) = &shots {
+        for (theme, name) in [
+            (eframe::egui::Theme::Light, "joint-values-light.png"),
+            (eframe::egui::Theme::Dark, "joint-values-dark.png"),
+        ] {
+            h.ctx.set_theme(theme);
+            h.run_steps(4);
+            h.render().unwrap().save(dir.join(name)).unwrap();
+        }
+        h.ctx.set_theme(eframe::egui::Theme::Dark);
+        h.run();
+    }
+    h.state_mut().joints.picked = None;
+    h.run();
+    // + Plate: nothing bolted onto it, no outline, said.
+    h.get_by_label("+ Plate").scroll_to_me();
+    h.run();
+    h.get_by_label("+ Plate").click();
+    h.run();
+    assert!(
+        h.get_all_by_label_contains(ohl_structure_link::NO_OUTLINE)
+            .next()
+            .is_some()
+    );
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    let id = details.joint("N2").unwrap().plates[0].id.clone();
+    assert!(details.joint("N2").unwrap().plates[0].outline.is_empty());
+    // D1 bolted onto it: its bolts clamp the plate, the plate drawn.
+    h.state_mut().apply_joint_acts(
+        vec![Act::Field {
+            member: "D1".into(),
+            joint: "N2".into(),
+            field: "onto",
+            value: Some(FieldValue::Word(id.clone())),
+        }],
+        &details,
+    );
+    h.run();
+    h.run();
+    assert!(
+        h.query_all_by_label_contains(ohl_structure_link::NO_OUTLINE)
+            .next()
+            .is_none()
+    );
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap().clone();
+    let j = details.joint("N2").unwrap();
+    let p = &j.plates[0];
+    let d1 = j.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert!((d1.grip[1] - p.thickness).abs() < 1e-12, "{:?}", d1.grip);
+    assert!(p.outline.len() >= 3 && p.members == ["D1"]);
+    // The close-up: the plate a solid, from the bolts' face through its
+    // thickness.
+    let through = p.through.unwrap();
+    let blue = [70, 140, 210, 255];
+    let depth: Vec<f64> = crate::close_up::pieces(j, false)
+        .iter()
+        .filter(|x| x.base == blue)
+        .flat_map(|x| x.p)
+        .map(|q| {
+            (0..3)
+                .map(|k| (q[k] + j.position[k] - p.outline[0][k]) * through[k])
+                .sum::<f64>()
+        })
+        .collect();
+    let lo = depth.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = depth.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        lo.abs() < 1e-9 && (hi - p.thickness).abs() < 1e-9,
+        "{lo} {hi}"
+    );
+    // Its thickness in the plates table and on hover in the close-up.
+    h.get_by_label("Thickness mm");
+    let rect = h.state().joints.view_rect.expect("the Detail view drawn");
+    let at = (0..60)
+        .flat_map(|i| (0..60).map(move |k| (i, k)))
+        .map(|(i, k)| {
+            rect.min
+                + eframe::egui::vec2(
+                    rect.width() * i as f32 / 60.0,
+                    rect.height() * k as f32 / 60.0,
+                )
+        })
+        .find(|q| crate::close_up::plate_at(j, &h.state().joints, rect, *q).is_some())
+        .expect("the plate under some point of the close-up");
+    h.hover_at(at);
+    h.run();
+    h.run();
+    h.get_by_label_contains(&format!("Plate {id}: 10 mm thick"));
+    if let Some(dir) = &shots {
+        h.run_steps(2);
+        h.render()
+            .unwrap()
+            .save(dir.join("joint-plate-close-up.png"))
+            .unwrap();
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
