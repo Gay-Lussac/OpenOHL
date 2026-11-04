@@ -68,7 +68,12 @@ const CHECKS: &[Check] = &[
     },
     Check {
         name: "thermal",
-        open: |r, _| r.thermal.show(&r.model),
+        // Its Clearance page: the one with a Run (the others compute at
+        // once).
+        open: |r, _| {
+            r.thermal.show(&r.model);
+            r.thermal.page = crate::thermal::Page::Clearance;
+        },
         started: |r| r.thermal.running() || r.thermal.limits.is_some(),
     },
     Check {

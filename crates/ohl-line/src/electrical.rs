@@ -104,6 +104,15 @@ pub struct System {
     /// AC frequency, Hz (e.g. 50, 16.7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_hz: Option<f64>,
+    /// Operating current, A rms in each phase (DC: each pole), when the
+    /// line file gives one (line file version 13, 2026-11-04; roadmap
+    /// "Operating data per system"): the default current of its circuits
+    /// in the Thermal rating (the temperature at a current, the clearance
+    /// at that temperature) and the Magnetic field, where a value given
+    /// there overrides it. Shared by the subconductors of a bundle. None:
+    /// not given (nothing changes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_a: Option<f64>,
     /// Phases (AC) or poles (DC).
     pub phases: Vec<SystemPhase>,
     /// Display colour (`#rrggbb`) when wires are coloured by system;
@@ -166,6 +175,11 @@ impl System {
         }
         if self.phases.is_empty() {
             return Err(format!("system {id}: needs at least one phase or pole"));
+        }
+        if let Some(i) = self.current_a.filter(|i| !(i.is_finite() && *i >= 0.0)) {
+            return Err(format!(
+                "system {id}: operating current {i} A must be a number of A ≥ 0"
+            ));
         }
         if let Some(c) = self.color.as_deref().filter(|c| !crate::is_hex_color(c)) {
             return Err(format!("system {id}: colour \"{c}\" is not #rrggbb"));
@@ -815,6 +829,32 @@ impl Line {
         Ok(out)
     }
 
+    /// The operating current of every section whose system gives one
+    /// ([`System::current_a`]), A rms per phase (by section id; earthed
+    /// sections and systems without a current left out; none when the
+    /// systems cannot be assigned).
+    pub fn section_currents(&self) -> BTreeMap<String, f64> {
+        let Ok(phases) = self.section_phases() else {
+            return BTreeMap::new();
+        };
+        phases
+            .into_iter()
+            .filter_map(|(id, a)| {
+                let (k, _) = a?;
+                self.systems[k].current_a.map(|i| (id, i))
+            })
+            .collect()
+    }
+
+    /// The operating current of system `id`, A (none: not given, or no
+    /// such system).
+    pub fn system_current(&self, id: &str) -> Option<f64> {
+        self.systems
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.current_a)
+    }
+
     /// The potential of every section (by id): `None` for earthed
     /// sections. See [`Line::section_phases`].
     pub fn potentials(&self) -> Result<BTreeMap<String, Option<Potential>>, LineError> {
@@ -935,6 +975,7 @@ mod tests {
             kind,
             voltage_kv: kv,
             frequency_hz: None,
+            current_a: None,
             color: None,
             phases: labels
                 .iter()
@@ -1070,5 +1111,29 @@ mod tests {
         s.phases[0].polarity = Some(2);
         assert!(s.validate().is_err());
         assert!(system(SystemKind::Ac, 0.0, &["L1"]).validate().is_err());
+        // An operating current: ≥ 0 A (0 is allowed: a circuit switched
+        // off); negative or not a number refused.
+        s = system(SystemKind::Ac, 220.0, &["L1", "L2", "L3"]);
+        s.current_a = Some(0.0);
+        assert!(s.validate().is_ok());
+        s.current_a = Some(-5.0);
+        assert!(s.validate().unwrap_err().contains("operating current"));
+        s.current_a = Some(f64::NAN);
+        assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn each_section_takes_its_systems_current() {
+        let mut line = example();
+        // None given: no current anywhere.
+        assert!(line.section_currents().is_empty());
+        line.systems[0].current_a = Some(900.0);
+        let c = line.section_currents();
+        // S3 carries S1's phase through the jumper: the same system.
+        assert_eq!(c.get("S1"), Some(&900.0));
+        assert_eq!(c.get("S2"), Some(&900.0));
+        assert_eq!(c.get("S3"), Some(&900.0));
+        assert_eq!(line.system_current("ex220"), Some(900.0));
+        assert_eq!(line.system_current("nope"), None);
     }
 }

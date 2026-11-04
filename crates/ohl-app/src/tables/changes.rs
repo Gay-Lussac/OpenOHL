@@ -1270,6 +1270,13 @@ pub(super) fn system_cells(
     };
     s.voltage_kv = num(&c.get(3), &format!("{name} voltage"))?;
     s.frequency_hz = opt_num(&c.get(4), &format!("{name} frequency"))?;
+    s.current_a = opt_num(
+        &c.get(TableKind::Systems.column("A")),
+        &format!("{name} operating current"),
+    )?;
+    if let Some(i) = s.current_a.filter(|i| *i < 0.0) {
+        return Err(format!("{name} operating current: {i} A — a current ≥ 0 A"));
+    }
     let labels: Vec<String> = c
         .get(5)
         .split([' ', ','])

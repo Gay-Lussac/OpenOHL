@@ -35,7 +35,10 @@
 //!   time constant of line conductors is several minutes), one iteration
 //!   per step;
 //! - [`limit`]: the highest conductor temperature at which a line still
-//!   meets its clearances, per section.
+//!   meets its clearances, per section; and the clearance check at one
+//!   temperature per section ([`limit::clearance_at`]);
+//! - [`sections`]: each section's steady temperature for the current its
+//!   circuit carries (given, or its system's operating current).
 //!
 //! Ambient conditions come from `.ohlta` files ([`ambient`]).
 
@@ -43,6 +46,7 @@ pub mod ambient;
 pub mod cigre;
 pub mod ieee738;
 pub mod limit;
+pub mod sections;
 pub mod solar;
 
 use std::fmt;

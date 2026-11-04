@@ -312,6 +312,7 @@ The electrical model is kept apart from the physical wires: a **system** is a gr
 | `kind` | no (`ac`) | `ac` or `dc`. |
 | `voltage_kv` | yes | AC: nominal voltage between phases (rms). DC: pole voltage to earth. |
 | `frequency_hz` | no | AC frequency (50, 60, 16.7…). Systems of different frequencies are not synchronous. |
+| `current_a` | no | Version 13 (2026-11-04): the **operating current**, A rms in each phase (DC: each pole), shared by a bundle's subconductors; ≥ 0. The default current of its circuits in Checks › Thermal rating (*Temperature at a current*, *Step change*, *Clearance at the current*; `ohl thermal clearance-check`) and in the Magnetic field (window and `ohl electrical magnetic`), where a current given there overrides it. Without it nothing changes. Edited in Line › Electrical systems, column **A**. A line without one is written at its older version. |
 | `color` | no | Display colour `#rrggbb` when wires are coloured by system (default: by the system's place in the line). |
 | `phases` | yes | `label` (matched with the sections' `phase_label`); AC `angle_deg` (default evenly spread: 0°, −120°, +120°; two phases 0°, 180°); DC `polarity` +1, −1 or 0 (default in that order); `code`, the phase's line code when wires are drawn by system (`-` solid, else its dots and dashes repeated, e.g. `.-`; default `-`, `.-`, `.--` by place). |
 

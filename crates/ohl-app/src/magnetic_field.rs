@@ -588,7 +588,14 @@ impl MagneticFieldWindow {
             self.case = k;
             self.case_kept = true;
         }
-        self.currents = st.currents;
+        // A current of 0 A along the line was written for every circuit
+        // shown before the systems had an operating current (2026-11-04):
+        // left out, so that the circuit takes its system's (none: 0 A).
+        self.currents = st
+            .currents
+            .into_iter()
+            .filter(|(_, v)| *v != (0.0, false))
+            .collect();
         self.ends = st.ends;
         self.earth_wires = st.earth_wires;
         self.towers = st.towers.unwrap_or(d.towers);
@@ -705,6 +712,19 @@ impl MagneticFieldWindow {
     #[cfg(test)]
     pub fn current_of(&self, circuit: &str) -> Option<f64> {
         self.currents.get(circuit).map(|c| c.0)
+    }
+
+    /// A circuit's current as the window shows it, A: its own, else its
+    /// system's operating current, else 0 (tests).
+    #[cfg(test)]
+    pub fn shown_current(&self, model: &Model, circuit: &str) -> f64 {
+        self.current_of(circuit).unwrap_or_else(|| {
+            magnetic::circuits(&model.line)
+                .iter()
+                .find(|c| c.label() == circuit)
+                .and_then(|c| model.line.system_current(&c.system))
+                .unwrap_or(0.0)
+        })
     }
 
     /// Ticks span `k` only (tests).
@@ -1417,7 +1437,10 @@ impl MagneticFieldWindow {
                         );
                     if by_ends && !self.ends.contains_key(&label) {
                         // In at the first end, the rest out at the others.
-                        let amps = self.currents.get(&label).map_or(0.0, |c| c.0);
+                        let amps = self.currents.get(&label).map_or_else(
+                            || model.line.system_current(&c.system).unwrap_or(0.0),
+                            |c| c.0,
+                        );
                         let mut list: Vec<(String, Option<f64>)> =
                             points.iter().map(|p| (p.clone(), Some(0.0))).collect();
                         if let Some(first) = list.first_mut() {
@@ -1480,19 +1503,49 @@ impl MagneticFieldWindow {
                         ui.end_row();
                         continue;
                     }
-                    let entry = self.currents.entry(label.clone()).or_insert((0.0, false));
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut entry.0)
-                            .range(0.0..=100_000.0)
-                            .speed(5.0)
-                            .suffix(" A"),
-                    )
-                    .on_hover_text(
-                        "rms, each phase; balanced phases at the system's phase angles \
-                         (L1 0°, L2 −120°, L3 +120° unless the system gives others)",
-                    );
-                    let mut along = !entry.1;
+                    // Its system's operating current (Line › Electrical
+                    // systems, 2026-11-04) is the default; a value given
+                    // here overrides it (kept only once changed).
+                    let line_amps = model.line.system_current(&c.system);
+                    let given = self.currents.get(&label).copied();
+                    let default = (line_amps.unwrap_or(0.0), false);
+                    let mut value = given.unwrap_or(default);
+                    let mut back = false;
+                    ui.horizontal(|ui| {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut value.0)
+                                .range(0.0..=100_000.0)
+                                .speed(5.0)
+                                .suffix(" A"),
+                        )
+                        .on_hover_text(
+                            "rms, each phase; balanced phases at the system's phase angles \
+                             (L1 0°, L2 −120°, L3 +120° unless the system gives others). The \
+                             field grows in proportion. By default the system's operating \
+                             current (Line › Electrical systems, column A); a value typed here \
+                             overrides it for this window",
+                        );
+                        match (given, line_amps) {
+                            (None, Some(_)) => {
+                                ui.label(egui::RichText::new("the line's").small().weak())
+                                    .on_hover_text(
+                                        "The system's operating current from the line \
+                                         (Line › Electrical systems, column A)",
+                                    );
+                            }
+                            (Some(g), Some(i)) if g.0 != i => {
+                                back = ui
+                                    .small_button("↺")
+                                    .on_hover_text(format!(
+                                        "Back to the system's operating current, {i} A"
+                                    ))
+                                    .clicked();
+                            }
+                            _ => {}
+                        }
+                    });
+                    let mut along = !value.1;
                     egui::ComboBox::from_id_salt(("magnetic-field-dir", &label))
                         .selected_text(if along {
                             "along the line"
@@ -1509,7 +1562,12 @@ impl MagneticFieldWindow {
                              to its last) or against it — every phase turned by 180°. Which \
                              combination governs is the ordinance's question",
                         );
-                    entry.1 = !along;
+                    value.1 = !along;
+                    if back {
+                        self.currents.remove(&label);
+                    } else if Some(value) != given && (given.is_some() || value != default) {
+                        self.currents.insert(label.clone(), value);
+                    }
                     ui.end_row();
                 }
             });

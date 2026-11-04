@@ -133,6 +133,41 @@ const SHOTS: &[Shot] = &[
         open: |r| r.thermal.show(&r.model),
         done: None,
     },
+    // Its other pages (owner, 2026-11-04): at a typed current.
+    Shot {
+        name: "thermal-temperature",
+        title: "Thermal rating",
+        open: |r| {
+            r.thermal.show(&r.model);
+            r.thermal.page = crate::thermal::Page::Temperature;
+            r.thermal.current = Some(900.0);
+        },
+        done: None,
+    },
+    Shot {
+        name: "thermal-step",
+        title: "Thermal rating",
+        open: |r| {
+            r.thermal.show(&r.model);
+            r.thermal.page = crate::thermal::Page::Step;
+            r.thermal.current = Some(1200.0);
+        },
+        done: None,
+    },
+    Shot {
+        name: "thermal-clearance",
+        title: "Thermal rating",
+        open: |r| {
+            r.thermal.show(&r.model);
+            r.thermal.page = crate::thermal::Page::Clearance;
+            r.thermal.mode = crate::thermal::ClearanceMode::AtCurrent;
+            r.thermal.current = Some(900.0);
+        },
+        done: Some(|r| {
+            r.thermal.poll();
+            !r.thermal.running() && r.thermal.checks.is_some()
+        }),
+    },
     Shot {
         name: "performed-checks",
         title: "Performed checks",

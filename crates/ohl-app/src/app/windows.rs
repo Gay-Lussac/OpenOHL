@@ -794,10 +794,29 @@ pub(super) fn tool_windows(
     }
     crate::project_lines::window(ctx, r);
     crate::working_tree::window(ctx, r);
-    if let Some(spans) =
-        crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref())
-    {
+    let out = crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
+    if let Some(spans) = out.go {
         r.go_to_all(spans);
+    }
+    // The clearances the Clearance page found, drawn while it is open (as
+    // the other checks' marks), off once it is closed.
+    if let Some(marks) = out.marks {
+        use crate::app::MarksFrom;
+        use crate::scene::Layer;
+        if marks.is_empty() {
+            if r.marks_from == MarksFrom::Thermal {
+                r.plan.marks.clear();
+                r.view3d.marks.clear();
+                r.profile.marks.clear();
+                r.view3d.dirty.insert(Layer::Clearances);
+            }
+        } else {
+            r.marks_from = MarksFrom::Thermal;
+            r.plan.marks = marks.iter().map(|m| m.0).collect();
+            r.profile.marks.clone_from(&marks);
+            r.view3d.marks = marks;
+            r.view3d.dirty.insert(Layer::Clearances);
+        }
     }
     r.bom.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);

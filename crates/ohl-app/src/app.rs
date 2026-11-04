@@ -174,6 +174,9 @@ pub enum MarksFrom {
     Strings,
     /// The internal clearances (the parts too near, else the nearest).
     Internal,
+    /// Thermal rating › Clearance (the clearances failing just above the
+    /// limits, or those at the current).
+    Thermal,
 }
 
 /// What is shown once the model is loaded.

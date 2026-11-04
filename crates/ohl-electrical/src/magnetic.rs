@@ -1097,7 +1097,18 @@ impl Currents {
             }
         }
         for c in &all {
-            if !by_key.contains_key(c) {
+            if by_key.contains_key(c) {
+                continue;
+            }
+            // Not given: its system's operating current from the line
+            // file, when it has one (2026-11-04).
+            if let Some(i) = line.system_current(&c.system) {
+                by_key.insert(c.clone(), (i, 1.0));
+                notes.push(format!(
+                    "circuit {}: its system's operating current from the line, {i} A along the line",
+                    c.label()
+                ));
+            } else {
                 notes.push(format!(
                     "circuit {}: no current given, 0 A taken",
                     c.label()

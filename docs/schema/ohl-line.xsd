@@ -548,6 +548,8 @@
             <xs:attribute name="kind" type="ohl:systemKind" default="ac"/>
             <xs:attribute name="voltage_kv" type="xs:double" use="required"/>
             <xs:attribute name="frequency_hz" type="xs:double"/>
+            <!-- Operating current, A rms per phase (version 13, 2026-11-04). -->
+            <xs:attribute name="current_a" type="xs:double"/>
             <xs:attribute name="color" type="xs:string"/>
           </xs:complexType>
         </xs:element>

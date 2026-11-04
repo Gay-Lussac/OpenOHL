@@ -33,6 +33,7 @@ mod string_builder;
 mod strings_colours;
 mod strings_picking;
 mod structures_menus;
+mod thermal_pages;
 mod tutorial;
 mod types_drawings;
 mod ui_review;

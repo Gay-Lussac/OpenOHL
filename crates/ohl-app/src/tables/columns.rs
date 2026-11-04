@@ -752,6 +752,12 @@ pub(super) const SYSTEMS: &[Column] = &[
         Yes,
         "its number in the owner's register (free text; the phase plan's table of circuits)",
     ),
+    (
+        "A",
+        70.0,
+        Yes,
+        "operating current, A rms in each phase (shared by a bundle's subconductors; empty: none): its circuits' current by default in Checks › Thermal rating (the temperature at a current, the clearance at it) and in the Magnetic field, where a current typed there overrides it",
+    ),
 ];
 
 pub(super) const ALIGNMENTS: &[Column] = &[

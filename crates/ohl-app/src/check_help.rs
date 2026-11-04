@@ -1164,6 +1164,67 @@ pub fn heat_balance(ui: &mut egui::Ui) {
     );
 }
 
+/// A step of current (Thermal rating › Step change): the current steps up
+/// at t = 0; the conductor temperature rises from the steady temperature
+/// before the step towards the steady temperature after it, slowed by the
+/// conductor's heat capacity.
+pub fn step_change(ui: &mut egui::Ui) {
+    let (p, r, ink) = canvas_of(
+        ui,
+        egui::vec2(180.0, 90.0),
+        "drawing: step change",
+        "The current steps from I₀ to I₁ at t = 0; the temperature rises from the steady T₀ \
+         towards the steady T₁, about two thirds of the way in one time constant (some \
+         minutes for line conductors), heat capacity slowing it.",
+    );
+    let (left, right) = (r.left() + 16.0, r.right() - 8.0);
+    let (top, bottom) = (r.top() + 12.0, r.bottom() - 12.0);
+    p.line_segment(
+        [egui::pos2(left, bottom), egui::pos2(right, bottom)],
+        egui::Stroke::new(1.0, ink.line),
+    );
+    p.line_segment(
+        [egui::pos2(left, bottom), egui::pos2(left, top)],
+        egui::Stroke::new(1.0, ink.line),
+    );
+    // The current: a step (faint).
+    let step_x = left + 18.0;
+    p.add(egui::Shape::line(
+        vec![
+            egui::pos2(left, bottom - 10.0),
+            egui::pos2(step_x, bottom - 10.0),
+            egui::pos2(step_x, bottom - 26.0),
+            egui::pos2(right, bottom - 26.0),
+        ],
+        egui::Stroke::new(1.0, ink.faint),
+    ));
+    text(&p, egui::pos2(right - 12.0, bottom - 32.0), "I", ink.faint);
+    // The temperature: from T₀ towards T₁.
+    let (t0, t1) = (bottom - 34.0, top + 6.0);
+    dashed(&p, egui::pos2(step_x, t1), egui::pos2(right, t1), ink.key);
+    text(&p, egui::pos2(right - 16.0, t1 + 7.0), "T₁", ink.key);
+    let curve: Vec<egui::Pos2> = (0..=40)
+        .map(|k| {
+            let x = step_x + (right - step_x) * k as f32 / 40.0;
+            let tau = (right - step_x) / 4.0;
+            let y = t1 + (t0 - t1) * (-(x - step_x) / tau).exp();
+            egui::pos2(x, y)
+        })
+        .collect();
+    p.line_segment(
+        [egui::pos2(left, t0), egui::pos2(step_x, t0)],
+        egui::Stroke::new(1.5, ink.wire),
+    );
+    p.add(egui::Shape::line(curve, egui::Stroke::new(1.5, ink.wire)));
+    text(&p, egui::pos2(left + 2.0, t0 - 7.0), "T₀", ink.wire);
+    text(
+        &p,
+        egui::pos2(step_x - 4.0, bottom + 6.0),
+        "t = 0",
+        ink.faint,
+    );
+}
+
 /// The clearance-limited temperature (Thermal rating): the span sags as
 /// the wire heats; the limit is the temperature at which its lowest point
 /// reaches the clearance the rules ask above the ground.

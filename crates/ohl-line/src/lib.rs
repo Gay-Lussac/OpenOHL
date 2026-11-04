@@ -69,7 +69,10 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 12 adds the torus among a string's own
+/// Latest line file version: 13 adds a system's operating current
+/// (`current_a`, [`electrical::System::current_a`]; owner 2026-11-04),
+/// written only by a line with one (else 12 or older, [`Line::to_json`]);
+/// 12 adds the torus among a string's own
 /// volumes (`kind = "torus"`, `tube`: a grading ring; owner 2026-10-31),
 /// written only by a line with one (else 11 or older, [`Line::to_json`]);
 /// 11 adds the line's electrical settings
@@ -101,7 +104,11 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 12;
+pub const LINE_FILE_VERSION: u32 = 13;
+
+/// The version before the systems' operating current: what a line
+/// without one is written as (when it has a torus).
+const BEFORE_CURRENT_VERSION: u32 = 12;
 
 /// The version before the torus: what a line without one is written as
 /// (when it has electrical settings).
@@ -3467,7 +3474,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 12 with a torus among a
+    /// line, so an older program still reads it: 13 with a system's
+    /// operating current, else 12 with a torus among a
     /// string's own volumes, else 11 with electrical
     /// settings other than the defaults or a soil resistivity at a structure, else 10 with the simplified
     /// in-the-blocks model or a jumper given by its tension, else 9 with
@@ -3491,8 +3499,10 @@ impl Line {
                     .any(|y| y.kind == ohl_structures::ShapeKind::Torus)
             })
         });
+        let current = self.systems.iter().any(|s| s.current_a.is_some());
         let written = match (sheaves, winds, shapes) {
-            _ if torus => LINE_FILE_VERSION,
+            _ if current => LINE_FILE_VERSION,
+            _ if torus => BEFORE_CURRENT_VERSION,
             _ if !self.electrical.is_default()
                 || self.structures.iter().any(|s| {
                     s.soil_resistivity_ohm_m.is_some() || s.earthing_resistance_ohm.is_some()

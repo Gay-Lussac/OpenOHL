@@ -151,7 +151,9 @@ pub struct FieldCommonArgs {
 pub struct MagneticOptions {
     /// A circuit's current: CIRCUIT=AMPS, or CIRCUIT=AMPS:reverse for a
     /// load flow against the line's direction (CIRCUIT: its name or its
-    /// system's id, `*` every circuit). Repeatable.
+    /// system's id, `*` every circuit). Repeatable. A circuit given none
+    /// takes its system's operating current from the line file
+    /// (`current_a`), else 0 A.
     #[arg(long, value_name = "CIRCUIT=A[:reverse]")]
     pub current: Vec<String>,
     /// A current at a circuit's end point: CIRCUIT@STRUCTURE=A (into the
@@ -1192,9 +1194,12 @@ fn currents(
             },
         });
     }
-    if currents.is_empty() && ends.is_empty() {
+    // The systems' operating currents in the line file are the default
+    // (2026-11-04): only a line without any needs them given.
+    if currents.is_empty() && ends.is_empty() && line.systems.iter().all(|s| s.current_a.is_none())
+    {
         return Err(
-            "give the currents: --current CIRCUIT=A, --end CIRCUIT@STRUCTURE=A (or --thermal)"
+            "give the currents: --current CIRCUIT=A, --end CIRCUIT@STRUCTURE=A (or --thermal), or the systems' operating currents in the line file"
                 .into(),
         );
     }

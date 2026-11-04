@@ -100,6 +100,42 @@ fn symmetric_profile_and_default_stations() {
     assert!((p.at - 150.0).abs() < 20.0, "{}", p.at);
 }
 
+/// A system's operating current in the line file (2026-11-04) is its
+/// circuits' current when none is given; a current given overrides it.
+#[test]
+fn the_systems_current_is_the_default() {
+    let (mut line, library) = example();
+    let given = Settings {
+        currents: both(800.0, false),
+        ..Settings::default()
+    };
+    let by_hand = field(&line, &library, &given);
+    // Nothing given, nothing in the line: no field.
+    let none = field(&line, &library, &Settings::default());
+    assert!(none.profiles[0].max_ut < 1e-9);
+    for s in &mut line.systems {
+        s.current_a = Some(800.0);
+    }
+    let from_line = field(&line, &library, &Settings::default());
+    let (a, b) = (by_hand.profiles[0].max_ut, from_line.profiles[0].max_ut);
+    assert!((a - b).abs() < 1e-9 * a, "{a} {b}");
+    assert!(
+        from_line
+            .notes
+            .iter()
+            .any(|n| n.contains("operating current from the line")),
+        "{:?}",
+        from_line.notes
+    );
+    // A current given still overrides the line's.
+    let half = Settings {
+        currents: both(400.0, false),
+        ..Settings::default()
+    };
+    let over = field(&line, &library, &half);
+    assert!((over.profiles[0].max_ut - a / 2.0).abs() < 1e-6 * a);
+}
+
 /// Reversing one circuit's load flow (or its phase order) changes the
 /// field: with the same phasing on both sides and the same direction the
 /// two circuits add far away; one reversed, they cancel far away.
