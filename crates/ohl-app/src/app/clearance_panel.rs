@@ -535,6 +535,11 @@ pub(crate) fn internal_clearances_out(r: &mut Ready, out: crate::internal_cleara
     if let Some(target) = out.go {
         r.go_to(target);
     }
+    // The weather case groups' wind study copied into the structures'
+    // local conditions (one undoable change, 2026-11-04).
+    if let Some(study) = out.convert {
+        convert_group_study(r, &study);
+    }
     if let Some((plugin, p)) = out.plugin_preset
         && let Some(wc) = &p.weather
         && let Err(e) = crate::rule_editor::preset_cases(r, &plugin, &p.name, &p.weather_text, wc)
@@ -1311,5 +1316,39 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
             cam.distance = cam.distance.min(80.0);
         }
         r.plan.centre_on(f.at);
+    }
+}
+
+/// Copies the weather case groups' wind study columns into the
+/// structures' local `wind_study` (owner 2026-11-04: "make the wind study
+/// local"): the groups' least pressure and cases into the Internal
+/// clearances check where it gives none (its rule file saved), then one
+/// command (undone as one); what was done in the status.
+pub(crate) fn convert_group_study(r: &mut Ready, study: &crate::internal_clearances::GroupStudy) {
+    match study.command(&r.model.line) {
+        Ok(Some((what, command))) => {
+            let said = what.clone();
+            // The check's settings first (kept in the project's rule
+            // file), so that one Undo takes the structures' values back.
+            if r.internal_clearances.take_group_study(study) {
+                r.internal_clearances.save(&mut r.model);
+            }
+            if !r.perform(crate::edit::Action::Command { what, command }) {
+                return;
+            }
+            let mut text = said;
+            for n in &study.notes {
+                text.push_str("; ");
+                text.push_str(n);
+            }
+            r.status = Some((text, false));
+        }
+        Ok(None) => {
+            r.status = Some((
+                "the structures already give the groups' wind study: nothing to copy".into(),
+                false,
+            ));
+        }
+        Err(e) => r.status = Some((e, true)),
     }
 }

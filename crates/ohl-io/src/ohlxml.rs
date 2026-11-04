@@ -447,6 +447,7 @@ fn write_structure(out: &mut String, s: &Structure) {
             ("structure_ice_m", local.structure_ice),
             ("snow_ground_pa", local.snow_ground),
             ("snow_altitude_m", local.snow_altitude),
+            ("wind_study_pa", local.wind_study),
         ] {
             if let Some(v) = v {
                 attr(out, name, &num(v));
@@ -1730,6 +1731,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                         "structure_ice_m",
                         "snow_ground_pa",
                         "snow_altitude_m",
+                        "wind_study_pa",
                     ],
                     &[],
                 )?;
@@ -1740,6 +1742,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     structure_ice: optional(l, "structure_ice_m")?,
                     snow_ground: optional(l, "snow_ground_pa")?,
                     snow_altitude: optional(l, "snow_altitude_m")?,
+                    wind_study: optional(l, "wind_study_pa")?,
                 };
                 local.check().map_err(|m| format!("structure {id}: {m}"))?;
                 local

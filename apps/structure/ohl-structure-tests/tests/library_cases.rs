@@ -154,3 +154,51 @@ fn wind_from_reads_names_and_angles() {
     let back = ohl_structure_loads::StructureLoadCases::parse(&a.to_toml()).unwrap();
     assert_eq!(back, a);
 }
+
+/// The structure's local ice in OHL-Structure (owner 2026-11-04: "yes
+/// apply local ice too"): a library case taking the local conditions on
+/// an INVENTED iced weather case (10 mm, 900 kg/m³) puts T2's local ice
+/// (20 mm) on its members, said in the case's description; the same case
+/// without the local conditions puts none.
+#[test]
+fn a_case_taking_the_local_conditions_puts_the_local_ice_on_the_members() {
+    let (mut line, library, mut weather) = example();
+    let mut iced = weather
+        .iter()
+        .find(|w| w.name == "everyday")
+        .unwrap()
+        .clone();
+    iced.name = "INVENTED ice".into();
+    iced.ice_thickness = ohl_core::units::Length::from_si(0.01);
+    iced.ice_density = Some(ohl_core::units::Density::from_si(900.0));
+    weather.push(iced);
+    line.structures
+        .iter_mut()
+        .find(|s| s.id == "T2")
+        .unwrap()
+        .local
+        .structure_ice = Some(0.02);
+    let plain = ohl_loads::LoadCase::from_weather("INVENTED ice");
+    let local = ohl_loads::LoadCase {
+        name: "local".into(),
+        use_local: true,
+        ..plain.clone()
+    };
+    let budget = ohl_wirefe::default_fe_budget();
+    let loads =
+        ohl_loads::structure_loads(&line, &library, &weather, &[plain, local], &budget).unwrap();
+    let recipes = library_recipes(&loads, &weather, &line, "T2");
+    let ice = |k: usize| recipes[k].structure.as_ref().unwrap().ice.clone();
+    assert!(ice(0).is_empty());
+    let on = ice(1);
+    assert_eq!(on.len(), 1);
+    assert_eq!(on[0].thickness, Some(0.02));
+    assert_eq!(on[0].density, Some(900.0));
+    assert!(
+        recipes[1]
+            .description
+            .contains("the structure's local ice, 20 mm"),
+        "{}",
+        recipes[1].description
+    );
+}

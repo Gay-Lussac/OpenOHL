@@ -108,6 +108,12 @@ pub(super) const STRUCTURES: &[Column] = &[
         Yes,
         "local conditions: the reference altitude h0 for SIA 261's snow on the ground (5.2.6), m: its altitude with the regional correction of SIA 261 Annex D",
     ),
+    (
+        "wind study Pa",
+        85.0,
+        Yes,
+        "local conditions: the wind pressure a wind study gives at this structure for the conductors' distances to it, Pa: Internal clearances with Use local conditions ticked checks it in the wind study's cases at this pressure (raised to the check's least) in place of the case's; empty: none",
+    ),
     // Its load case set (owner, 2026-11-03): edited in its Properties
     // (several selected: Apply to the others) and per type in Line ›
     // Criteria › Load cases per structure type.

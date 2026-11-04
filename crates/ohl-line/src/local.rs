@@ -40,6 +40,15 @@ pub struct LocalConditions {
     /// altitude with the regional correction of SIA 261 Annex D.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snow_altitude: Option<f64>,
+    /// The wind pressure a wind study gives at this structure for the
+    /// conductors' distances to it, Pa (owner 2026-11-04: "make the wind
+    /// study local"): with **Use local conditions** ticked, Internal
+    /// clearances checks the structure in the wind study's cases at this
+    /// pressure (raised to the check's least, `[check] wind_study_min`)
+    /// in place of the case's. Before, a weather case group's
+    /// `structure_wind` column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wind_study: Option<f64>,
 }
 
 impl LocalConditions {
@@ -49,7 +58,7 @@ impl LocalConditions {
     }
 
     /// Its values are sane: factors and the ice 0 or more, the snow 0 or
-    /// more, the altitude a number.
+    /// more, the altitude a number, the wind study above 0.
     pub fn check(&self) -> Result<(), String> {
         for (name, v) in [
             ("wind_static", self.wind_static),
@@ -66,6 +75,9 @@ impl LocalConditions {
         }
         if self.snow_altitude.is_some_and(|h| !h.is_finite()) {
             return Err("local snow_altitude: a number".into());
+        }
+        if self.wind_study.is_some_and(|p| !(p.is_finite() && p > 0.0)) {
+            return Err("local wind_study: a pressure above 0 Pa".into());
         }
         Ok(())
     }
@@ -262,6 +274,24 @@ mod tests {
             }
             .check()
             .is_err()
+        );
+        for p in [0.0, -300.0, f64::NAN] {
+            assert!(
+                LocalConditions {
+                    wind_study: Some(p),
+                    ..Default::default()
+                }
+                .check()
+                .is_err()
+            );
+        }
+        assert!(
+            LocalConditions {
+                wind_study: Some(450.0),
+                ..Default::default()
+            }
+            .check()
+            .is_ok()
         );
     }
 }

@@ -58,6 +58,9 @@ pub struct Out {
     pub marks: Option<Vec<[f64; 3]>>,
     /// A design-code plugin's preset loaded (its plugin, the preset).
     pub plugin_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
+    /// The weather case groups' wind study to copy into the structures'
+    /// local conditions (one undoable command; [`GroupStudy::command`]).
+    pub convert: Option<GroupStudy>,
 }
 
 /// The Internal clearances window.
@@ -74,8 +77,17 @@ pub struct InternalClearancesWindow {
     /// What was done last, in words (an error: true).
     pub status: Option<(String, bool)>,
     /// **Use local conditions** (owner, 2026-11-03): the swing with the structures' wind
-    /// for clearances and wire ice on their spans (and a group's wind study).
+    /// for clearances and wire ice on their spans, and their wind study
+    /// (2026-11-04).
     pub local: bool,
+    /// The least pressure of a structure's wind study, Pa (`[check]
+    /// wind_study_min`).
+    pub wind_study_min: Option<f64>,
+    /// The cases taking the wind study (`[check] wind_study_cases`;
+    /// empty: every case of the rules with wind).
+    pub wind_study_cases: Vec<String>,
+    /// The cases' field as typed.
+    study_cases_text: Option<String>,
     /// What it checks: the circuits, routes and sections (owner,
     /// 2026-10-28: the scope of every check window), kept in its rule
     /// file's `[check]`.
@@ -106,62 +118,208 @@ pub fn project_file(model: &Model) -> PathBuf {
     dir.join(format!("{stem}.internal-rules.ohlr"))
 }
 
-/// A wind study's winds (ESTI 240 Art. 33, owner 2026-10-25): the cases of
-/// the groups that take a structure column's pressure, and per pressure
-/// (its bits) the structures with a body that have it.
+/// A wind study's winds (ESTI 240 Art. 33; owner 2026-11-04: "make the
+/// wind study local"): the cases that take the structures' wind study,
+/// and per pressure (its bits) the structures with a body that have one.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WindStudy {
     /// The cases solved again at the structures' own wind.
     pub cases: std::collections::BTreeSet<String>,
     /// Per pressure, Pa (as `f64::to_bits`), the structures.
     pub at: std::collections::BTreeMap<u64, Vec<String>>,
-    /// Values taken at a group's least pressure, values not read.
+    /// Values taken at the least pressure.
     pub notes: Vec<String>,
 }
 
-/// The wind study of the model's case groups and structures with a body:
-/// a group with `structure_wind` names the structure column; a structure
-/// with a value there is checked in the group's cases at that pressure
-/// (raised to the group's least, said); without a value, at the case's.
-pub fn wind_study(model: &Model, bodies: &[StructureBody]) -> WindStudy {
+/// The wind study of `line`'s structures with a body (`bodies`) in the
+/// check's weather cases `cases`, with **Use local conditions** ticked
+/// (owner 2026-11-04): a structure whose local conditions give a
+/// `wind_study` is checked, in each case with wind (a pressure above 0)
+/// that `check` lets take it
+/// ([`ohl_clearance::rules::CheckScope::takes_wind_study`]), at that pressure in place of the case's — raised
+/// to the check's least (`wind_study_min`, said); a structure without one,
+/// at the case's. Nothing when no structure with a body gives one.
+pub fn wind_study(
+    line: &ohl_line::Line,
+    bodies: &[StructureBody],
+    cases: &[ohl_weather::WeatherCase],
+    check: &ohl_clearance::rules::CheckScope,
+) -> WindStudy {
     let mut out = WindStudy::default();
-    for g in crate::case_groups::groups(model) {
-        if g.structure_wind.is_empty() {
+    for st in &line.structures {
+        let Some(v) = st.local.wind_study else {
+            continue;
+        };
+        if !bodies.iter().any(|b| b.structure == st.id) {
             continue;
         }
-        let mut any = false;
-        for st in &model.line.structures {
-            if !bodies.iter().any(|b| b.structure == st.id) {
-                continue;
-            }
-            let Some(text) = st
-                .fields
-                .get(&g.structure_wind)
-                .filter(|t| !t.trim().is_empty())
-            else {
-                continue;
-            };
-            let Some((pa, warn)) = g.structure_pressure(text) else {
+        let pa = match check.wind_study_min {
+            Some(min) if v < min => {
                 out.notes.push(format!(
-                    "{}: wind study \"{text}\" is not a pressure: the case's wind taken",
+                    "{}: wind study {v} Pa below the least {min} Pa: taken at {min} Pa",
                     st.id
                 ));
-                continue;
-            };
-            if let Some(w) = warn {
-                out.notes.push(format!("{}: {w}", st.id));
+                min
             }
-            let ids = out.at.entry(pa.to_bits()).or_default();
-            if !ids.contains(&st.id) {
-                ids.push(st.id.clone());
-            }
-            any = true;
-        }
-        if any {
-            out.cases.extend(g.cases.iter().cloned());
-        }
+            _ => v,
+        };
+        out.at.entry(pa.to_bits()).or_default().push(st.id.clone());
+    }
+    if out.at.is_empty() {
+        return WindStudy::default();
+    }
+    out.cases = cases
+        .iter()
+        .filter(|c| c.wind_pressure.si() > 0.0 && check.takes_wind_study(&c.name))
+        .map(|c| c.name.clone())
+        .collect();
+    if out.cases.is_empty() {
+        let n: usize = out.at.values().map(Vec::len).sum();
+        return WindStudy {
+            notes: vec![format!(
+                "wind study at {n} structure(s) not taken: no weather case of the rules with \
+                 wind{}",
+                if check.wind_study_cases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" among {}", check.wind_study_cases.join(", "))
+                }
+            )],
+            ..WindStudy::default()
+        };
     }
     out
+}
+
+/// The weather case groups' wind study columns (2026-10-25, replaced by
+/// the structures' local `wind_study` on 2026-11-04) as the conversion
+/// takes them: per structure the pressure of its value in a group's
+/// column, the groups' least (the largest of theirs: on the safe side,
+/// more wind, more swing) and their cases.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GroupStudy {
+    /// Per structure (by id), the pressure, Pa.
+    pub values: Vec<(String, f64)>,
+    /// The least pressure (none: no group gives one).
+    pub min: Option<f64>,
+    /// The groups' cases, by name.
+    pub cases: Vec<String>,
+    /// What was not taken, or chosen, in words.
+    pub notes: Vec<String>,
+}
+
+impl GroupStudy {
+    /// The groups' wind study on `line`: every group with a
+    /// `structure_wind` column, every structure with a value there that
+    /// reads as a pressure above 0 (as the check read it: Pa, with or
+    /// without the unit); two groups giving a structure different values:
+    /// the larger (said).
+    pub fn of(line: &ohl_line::Line, groups: &[ohl_weather::CaseGroup]) -> Self {
+        let mut out = Self::default();
+        for g in groups.iter().filter(|g| !g.structure_wind.is_empty()) {
+            if let Some(m) = g.structure_wind_min.map(ohl_core::units::Stress::si) {
+                out.min = Some(out.min.map_or(m, |o: f64| o.max(m)));
+            }
+            for c in &g.cases {
+                if !out.cases.contains(c) {
+                    out.cases.push(c.clone());
+                }
+            }
+            for st in &line.structures {
+                let Some(text) = st
+                    .fields
+                    .get(&g.structure_wind)
+                    .filter(|t| !t.trim().is_empty())
+                else {
+                    continue;
+                };
+                let Some(v) = ohl_weather::CaseGroup::structure_value(text) else {
+                    out.notes.push(format!(
+                        "{}: \"{text}\" in {} is not a pressure: not taken",
+                        st.id, g.structure_wind
+                    ));
+                    continue;
+                };
+                match out.values.iter_mut().find(|(id, _)| *id == st.id) {
+                    Some((_, old)) if *old != v => {
+                        out.notes.push(format!(
+                            "{}: {old} Pa and {v} Pa in two groups' columns: {} Pa taken (the \
+                             larger)",
+                            st.id,
+                            old.max(v)
+                        ));
+                        *old = old.max(v);
+                    }
+                    Some(_) => {}
+                    None => out.values.push((st.id.clone(), v)),
+                }
+            }
+        }
+        out
+    }
+
+    /// The structures whose local `wind_study` differs from the groups'
+    /// value (the conversion would change them).
+    pub fn pending<'a>(&'a self, line: &'a ohl_line::Line) -> impl Iterator<Item = &'a str> + 'a {
+        self.values.iter().filter_map(|(id, v)| {
+            (line.structure(id)?.local.wind_study != Some(*v)).then_some(id.as_str())
+        })
+    }
+
+    /// The conversion as one command (undone as one): each structure
+    /// pending takes the groups' value as its local `wind_study`; the
+    /// plugin's column is kept (the plugin's data). None: nothing to
+    /// change.
+    pub fn command(
+        &self,
+        line: &ohl_line::Line,
+    ) -> Result<Option<(String, ohl_session::Command)>, String> {
+        let mut commands = Vec::new();
+        let mut ids = Vec::new();
+        for id in self.pending(line) {
+            let Some(mut st) = line.structure(id).cloned() else {
+                continue;
+            };
+            st.local.wind_study = self.values.iter().find(|(s, _)| s == id).map(|(_, v)| *v);
+            commands.push(ohl_session::Command::Put {
+                kind: ohl_session::Kind::Structure,
+                id: st.id.clone(),
+                value: serde_json::to_value(&st).map_err(|e| e.to_string())?,
+                ord: None,
+            });
+            ids.push(id.to_owned());
+        }
+        if commands.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some((
+            format!(
+                "the weather case groups' wind study copied into the local conditions of {} \
+                 structure(s): {}",
+                ids.len(),
+                ids.join(", ")
+            ),
+            ohl_session::Command::Batch { commands },
+        )))
+    }
+}
+
+/// The groups still giving a wind study column, in words: no longer read
+/// (2026-11-04); none without.
+pub fn group_study_note(groups: &[ohl_weather::CaseGroup]) -> Option<String> {
+    let named: Vec<String> = groups
+        .iter()
+        .filter(|g| !g.structure_wind.is_empty())
+        .map(|g| format!("\"{}\" ({})", g.name, g.structure_wind))
+        .collect();
+    (!named.is_empty()).then(|| {
+        format!(
+            "weather case group(s) {} give a wind study column: no longer read (2026-11-04) — \
+             a structure's wind study is its local wind_study (Structures table › wind study \
+             Pa); Copy into the structures (Setup › 4 Wind study) takes the columns' values",
+            named.join(", ")
+        )
+    })
 }
 
 /// The bodies of the line's structures at detail level 2 or 3, placed in
@@ -226,6 +384,8 @@ impl InternalClearancesWindow {
                     if let Some(c) = set.check {
                         self.local = c.local;
                         self.scope = check_ui::Scope::of_check(&c);
+                        self.wind_study_min = c.wind_study_min;
+                        self.wind_study_cases = c.wind_study_cases;
                     }
                 }
                 Err(e) => self.status = Some((e, true)),
@@ -259,10 +419,13 @@ impl InternalClearancesWindow {
 
     /// The rules as a rule file.
     pub fn rule_set(&self) -> RuleSet {
+        // The scope, Use local conditions and the wind study.
+        let mut check = check_ui::check_of(&self.scope, self.local).unwrap_or_default();
+        check.wind_study_min = self.wind_study_min;
+        check.wind_study_cases = self.wind_study_cases.clone();
         RuleSet {
             name: "Internal clearances".into(),
-            // The scope and Use local conditions.
-            check: check_ui::check_of(&self.scope, self.local),
+            check: Some(check).filter(|c| !c.is_empty()),
             checks: vec![PresetCheck::Internal],
             internal_rules: self.rules.clone(),
             ..RuleSet::default()
@@ -330,15 +493,30 @@ impl InternalClearancesWindow {
             }
             s
         };
-        // A group's wind study (its structure column's pressure) with Use
-        // local conditions ticked; its runs on the line as it is (the
-        // study's pressure in place of the case's, not times the
-        // structures' factors).
-        let study = if self.local {
-            wind_study(model, &bodies)
+        // The structures' wind study (owner 2026-11-04) with Use local
+        // conditions ticked; its runs on the line as it is (the study's
+        // pressure in place of the case's, not times the structures'
+        // factors for clearances).
+        let check = self.rule_set().check.unwrap_or_default();
+        let mut study = if self.local {
+            wind_study(&model.line, &bodies, &cases, &check)
         } else {
             WindStudy::default()
         };
+        let studies = model
+            .line
+            .structures
+            .iter()
+            .filter(|s| s.local.wind_study.is_some())
+            .count();
+        if !self.local && studies > 0 {
+            study.notes.push(format!(
+                "wind study of {studies} structure(s) not taken: Use local conditions unticked"
+            ));
+        }
+        study
+            .notes
+            .extend(group_study_note(&crate::case_groups::groups(model)));
         let base = (!study.at.is_empty()).then(|| model.line.clone());
         self.job.start_at(ctx, model.revision(), move || {
             let started = std::time::Instant::now();
@@ -361,8 +539,8 @@ impl InternalClearancesWindow {
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
             let mut report =
                 internal::check(line, &views, &bodies, &fits, &rules, &filter, &budget)?;
-            // The wind study's structures (the override): their rows of the
-            // group's cases taken from a run at their own wind instead.
+            // The wind study's structures: their rows of the study's cases
+            // taken from a run at their own wind instead.
             let studied = |st: &str| study.at.values().any(|ids| ids.iter().any(|i| i == st));
             report
                 .rows
@@ -554,6 +732,9 @@ impl InternalClearancesWindow {
                         ui.separator();
                         check_ui::section(ui, 3, "Rules", None);
                         changed |= self.rules_ui(ui, model, presets, &mut out);
+                        ui.separator();
+                        check_ui::section(ui, 4, "Wind study", None);
+                        changed |= self.study_ui(ui, model, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
                                 crate::menu::error_label(ui, text.as_str());
@@ -600,6 +781,138 @@ impl InternalClearancesWindow {
         }
         out.marks = self.marks_change();
         out
+    }
+
+    /// The wind study (owner 2026-11-04: "make the wind study local"): the
+    /// least pressure and the cases taking it, kept in the rule file's
+    /// `[check]`; the weather case groups' old columns offered to copy into
+    /// the structures; whether a setting changed.
+    fn study_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) -> bool {
+        let mut changed = false;
+        help::explain(
+            ui,
+            "With Use local conditions ticked: a structure with a wind study (Structures table › \
+             wind study Pa) is checked at its pressure in the cases below.",
+            "A wind study may give a structure another wind than the weather case for the \
+             conductors' distances to it. With Use local conditions ticked, each structure with \
+             a body whose local conditions give a wind study is checked, in every weather case \
+             of the rules with wind that is listed here (none listed: every one), a second time \
+             at the study's pressure in place of the case's — its rows in those cases are that \
+             run's, marked \"(wind study … Pa)\". A pressure below the least is taken at the \
+             least. The structures without one keep the case's wind (times their wind factor \
+             for clearances).",
+        );
+        let studies = model
+            .line
+            .structures
+            .iter()
+            .filter(|s| s.local.wind_study.is_some())
+            .count();
+        ui.label(
+            egui::RichText::new(format!(
+                "{studies} structure(s) give a wind study{}",
+                if self.local || studies == 0 {
+                    ""
+                } else {
+                    " — not taken: Use local conditions unticked"
+                }
+            ))
+            .small()
+            .weak(),
+        );
+        ui.horizontal(|ui| {
+            let mut has = self.wind_study_min.is_some();
+            if ui
+                .checkbox(&mut has, "Least pressure")
+                .on_hover_text(
+                    "A wind study's pressure below it is taken at it (a design code's bound); \
+                     unticked: none",
+                )
+                .changed()
+            {
+                self.wind_study_min = has.then_some(self.wind_study_min.unwrap_or(300.0));
+                changed = true;
+            }
+            if let Some(p) = &mut self.wind_study_min {
+                let r = crate::style::field(
+                    ui,
+                    egui::DragValue::new(p)
+                        .range(1.0..=10_000.0)
+                        .speed(5.0)
+                        .suffix(" Pa"),
+                );
+                changed |= r.drag_stopped() || r.lost_focus();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Cases").on_hover_text(
+                "The weather cases taking the wind study, by name (* and ? wildcards, comma \
+                 separated); empty: every case of the rules with wind",
+            );
+            let text = self
+                .study_cases_text
+                .get_or_insert_with(|| self.wind_study_cases.join(", "));
+            let r = ui.add(
+                egui::TextEdit::singleline(text)
+                    .hint_text("every case with wind")
+                    .desired_width(260.0),
+            );
+            if r.lost_focus() {
+                let list: Vec<String> = text
+                    .split(',')
+                    .map(|c| c.trim().to_owned())
+                    .filter(|c| !c.is_empty())
+                    .collect();
+                if list != self.wind_study_cases {
+                    self.wind_study_cases = list;
+                    changed = true;
+                }
+                self.study_cases_text = None;
+            }
+        });
+        // The weather case groups' columns of before (2026-10-25): offered
+        // once to copy into the structures.
+        let groups = crate::case_groups::groups(model);
+        if let Some(note) = group_study_note(&groups) {
+            let study = GroupStudy::of(&model.line, &groups);
+            let pending = study.pending(&model.line).count();
+            ui.label(
+                egui::RichText::new(note)
+                    .small()
+                    .color(ui.visuals().warn_fg_color),
+            );
+            if pending > 0
+                && ui
+                    .button(format!("Copy into the structures ({pending})"))
+                    .on_hover_text(
+                        "Each structure's value in the groups' wind study column becomes its \
+                         local wind study (one change, undone with Undo; the plugin's column is \
+                         kept); the groups' least pressure and cases become this check's when \
+                         it gives none",
+                    )
+                    .clicked()
+            {
+                out.convert = Some(study);
+            }
+        }
+        changed
+    }
+
+    /// Takes the groups' least pressure and cases where this check gives
+    /// none (after their wind study was copied into the structures);
+    /// whether anything changed.
+    pub fn take_group_study(&mut self, study: &GroupStudy) -> bool {
+        let mut changed = false;
+        if self.wind_study_min.is_none() && study.min.is_some() {
+            self.wind_study_min = study.min;
+            changed = true;
+        }
+        if self.wind_study_cases.is_empty() && !study.cases.is_empty() {
+            self.wind_study_cases.clone_from(&study.cases);
+            self.study_cases_text = None;
+            changed = true;
+        }
+        changed
     }
 
     /// The rules in the shared rule table (owner, 2026-10-28): one row
@@ -981,13 +1294,10 @@ mod tests {
         }
     }
 
-    /// A wind study (ESTI 240 Art. 33): a structure with a value in the
-    /// group's column is checked in the group's cases at that pressure, a
-    /// value under the group's least raised to it (said); one without a
-    /// value, or of a group without the column, stays at the case's wind.
-    #[test]
-    fn wind_study_per_structure() {
-        let mut m = crate::tests::typed_project("internal-wind-study");
+    /// The weather case file of the old wind study (2026-10-25): a group
+    /// "short" with the column `p.wind_study` and a least of 300 Pa.
+    /// INVENTED.
+    pub(super) fn old_groups(m: &mut Model) {
         let dir = m.sources.file.parent().unwrap().to_path_buf();
         let weather = dir.join("cases.ohlwc");
         std::fs::write(
@@ -1001,17 +1311,51 @@ mod tests {
         )
         .unwrap();
         m.sources.weather = Some(weather);
+    }
+
+    /// A wind study as a local condition (owner 2026-11-04: "make the wind
+    /// study local"; ESTI 240 Art. 33): a structure with a body and a
+    /// `wind_study` is checked in the cases with wind at that pressure, a
+    /// value under the check's least raised to it (said); the cases
+    /// without wind, or not listed, do not take it; without any structure
+    /// giving one, nothing.
+    #[test]
+    fn wind_study_per_structure() {
+        let mut m = crate::tests::typed_project("internal-wind-study");
         let bodies = structure_bodies(&m);
         assert!(bodies.len() >= 2, "the typed line has bodies");
         let (a, b) = (bodies[0].structure.clone(), bodies[1].structure.clone());
+        let cases: Vec<ohl_weather::WeatherCase> = {
+            let mut w = ohl_weather::WeatherCase::still(
+                "wind",
+                ohl_core::units::Temperature::from_celsius(10.0),
+            );
+            w.wind_pressure = ohl_core::units::Stress::from_si(650.0);
+            vec![
+                w,
+                ohl_weather::WeatherCase::still(
+                    "rest",
+                    ohl_core::units::Temperature::from_celsius(10.0),
+                ),
+            ]
+        };
+        let check = ohl_clearance::rules::CheckScope {
+            local: true,
+            wind_study_min: Some(300.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            wind_study(&m.line, &bodies, &cases, &check),
+            WindStudy::default()
+        );
         for st in &mut m.line.structures {
             if st.id == a {
-                st.fields.insert("p.wind_study".into(), "450 Pa".into());
+                st.local.wind_study = Some(450.0);
             } else if st.id == b {
-                st.fields.insert("p.wind_study".into(), "200".into());
+                st.local.wind_study = Some(200.0);
             }
         }
-        let s = wind_study(&m, &bodies);
+        let s = wind_study(&m.line, &bodies, &cases, &check);
         assert_eq!(s.cases.iter().collect::<Vec<_>>(), ["wind"]);
         assert_eq!(s.at.get(&450f64.to_bits()), Some(&vec![a]));
         assert_eq!(s.at.get(&300f64.to_bits()), Some(&vec![b.clone()]));
@@ -1023,6 +1367,53 @@ mod tests {
             "{:?}",
             s.notes
         );
+        // Only the cases listed: none with wind among them, nothing.
+        let listed = ohl_clearance::rules::CheckScope {
+            wind_study_cases: vec!["rest".into()],
+            ..check
+        };
+        let none = wind_study(&m.line, &bodies, &cases, &listed);
+        assert!(none.at.is_empty() && none.cases.is_empty());
+        assert!(none.notes[0].contains("not taken"), "{:?}", none.notes);
+    }
+
+    /// The old columns read for the conversion: each structure's value in
+    /// the group's column, the least and the cases; the structures whose
+    /// local wind study differs are pending; the note says the groups'
+    /// columns are no longer read.
+    #[test]
+    fn the_groups_wind_study_as_read_for_the_conversion() {
+        let mut m = crate::tests::typed_project("internal-wind-groups");
+        old_groups(&mut m);
+        let ids: Vec<String> = m.line.structures.iter().map(|s| s.id.clone()).collect();
+        m.line.structures[0]
+            .fields
+            .insert("p.wind_study".into(), "450 Pa".into());
+        m.line.structures[1]
+            .fields
+            .insert("p.wind_study".into(), "high".into());
+        let groups = crate::case_groups::groups(&m);
+        let study = GroupStudy::of(&m.line, &groups);
+        assert_eq!(study.values, [(ids[0].clone(), 450.0)]);
+        assert_eq!(study.min, Some(300.0));
+        assert_eq!(study.cases, ["wind"]);
+        assert!(
+            study.notes[0].contains("not a pressure"),
+            "{:?}",
+            study.notes
+        );
+        assert_eq!(
+            study.pending(&m.line).collect::<Vec<_>>(),
+            [ids[0].as_str()]
+        );
+        assert!(
+            group_study_note(&groups)
+                .unwrap()
+                .contains("no longer read")
+        );
+        m.line.structures[0].local.wind_study = Some(450.0);
+        assert_eq!(study.pending(&m.line).count(), 0);
+        assert!(study.command(&m.line).unwrap().is_none());
     }
 }
 
@@ -1076,5 +1467,127 @@ mod app_tests {
         h.run();
         let r = h.state_mut().ready().unwrap();
         assert!(r.view3d.marks.is_empty());
+    }
+
+    /// Runs the window's check on `h`'s model; its report.
+    fn run(h: &mut Harness<'_, crate::app::App>, local: bool) -> InternalReport {
+        let ctx = h.ctx.clone();
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.internal_clearances.show(&r.model);
+            let mut rule = InternalRule::blank("invented 50 m");
+            rule.distance = ohl_clearance::Requirement::Fixed(50.0);
+            r.internal_clearances.rules = vec![rule];
+            r.internal_clearances.local = local;
+            r.internal_clearances.job.result = None;
+            let w = &mut r.internal_clearances;
+            w.start(&r.model, &ctx);
+        }
+        let started = std::time::Instant::now();
+        loop {
+            h.step();
+            let r = h.state_mut().ready().unwrap();
+            if let Some(res) = &r.internal_clearances.job.result {
+                return res.as_ref().unwrap().report.clone();
+            }
+            assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    /// A structure's wind study (owner 2026-11-04: "make the wind study
+    /// local"): with Use local conditions ticked, its rows in the cases with
+    /// wind are of a run at its pressure, marked; unticked, none (said).
+    #[test]
+    fn the_wind_study_is_taken_with_the_switch_only() {
+        let mut model = crate::tests::typed_project("internal-study-run");
+        let bodies = structure_bodies(&model);
+        let id = bodies[0].structure.clone();
+        model
+            .line
+            .structures
+            .iter_mut()
+            .find(|s| s.id == id)
+            .unwrap()
+            .local
+            .wind_study = Some(450.0);
+        let windy = model.cases.iter().any(|c| c.case.wind_pressure.si() > 0.0);
+        assert!(windy, "the example has a case with wind");
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| crate::app::App::with_model(model, None));
+        h.run();
+        let ticked = run(&mut h, true);
+        let studied: Vec<_> = ticked
+            .rows
+            .iter()
+            .filter(|r| r.case.ends_with("(wind study 450 Pa)"))
+            .collect();
+        assert!(!studied.is_empty());
+        assert!(studied.iter().all(|r| r.structure == id));
+        let unticked = run(&mut h, false);
+        assert!(!unticked.rows.iter().any(|r| r.case.contains("wind study")));
+        assert!(
+            unticked
+                .notes
+                .iter()
+                .any(|n| n.contains("wind study of 1 structure(s) not taken")),
+            "{:?}",
+            unticked.notes
+        );
+    }
+
+    /// The conversion (2026-11-04): the groups' column values copied into
+    /// the structures' local wind study as one change, the groups' least
+    /// and cases into the check; undone at once.
+    #[test]
+    fn the_conversion_copies_the_values_and_is_undone() {
+        let mut model = crate::tests::typed_project("internal-study-convert");
+        super::tests::old_groups(&mut model);
+        let (a, b) = (
+            model.line.structures[0].id.clone(),
+            model.line.structures[1].id.clone(),
+        );
+        model.line.structures[0]
+            .fields
+            .insert("p.wind_study".into(), "450 Pa".into());
+        model.line.structures[1]
+            .fields
+            .insert("p.wind_study".into(), "200".into());
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| crate::app::App::with_model(model, None));
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        r.internal_clearances.show(&r.model);
+        let groups = crate::case_groups::groups(&r.model);
+        let study = GroupStudy::of(&r.model.line, &groups);
+        crate::app::clearance_panel::convert_group_study(r, &study);
+        let at =
+            |r: &crate::app::Ready, id: &str| r.model.line.structure(id).unwrap().local.wind_study;
+        assert_eq!(at(r, &a), Some(450.0));
+        assert_eq!(at(r, &b), Some(200.0));
+        // The plugin's column kept.
+        assert!(
+            r.model
+                .line
+                .structure(&a)
+                .unwrap()
+                .fields
+                .contains_key("p.wind_study")
+        );
+        assert_eq!(r.internal_clearances.wind_study_min, Some(300.0));
+        assert_eq!(r.internal_clearances.wind_study_cases, ["wind"]);
+        assert!(r.status.as_ref().unwrap().0.contains("2 structure(s)"));
+        // Nothing left to copy.
+        assert_eq!(
+            GroupStudy::of(&r.model.line, &groups)
+                .pending(&r.model.line)
+                .count(),
+            0
+        );
+        r.model.undo().unwrap();
+        assert_eq!(at(r, &a), None);
+        assert_eq!(at(r, &b), None);
     }
 }

@@ -484,7 +484,9 @@ pub fn placed_values_with(
 ///   (with `use_local` × the structure's `wind_static`,
 ///   [`CaseLoads::structure_wind_at`]) × its factor;
 /// - **ice** on every member (`ohl_loads::LoadCase::structure_ice_at`:
-///   the thickness, or the structure's local ice, and its density) and
+///   the thickness, or the structure's local ice — also when the case
+///   takes the local conditions, gives no ice of its own and its weather
+///   case has ice —, and its density) and
 ///   **snow** on every member's plan (q = μ·C_e·C_T·s_k,
 ///   `ohl_loads::LoadCase::structure_snow_at`), × the vertical factor;
 /// - its strength factor.
@@ -540,6 +542,15 @@ pub fn library_recipes(
             if let Some(w) = weather.iter().find(|w| w.name == lc.weather)
                 && let Ok(Some(ice)) = lc.structure_ice_at(w, placed)
             {
+                if lc.takes_local_ice(w) {
+                    about.push(format!(
+                        "the structure's local ice, {:.0} mm (the case takes the local \
+                         conditions and weather case \"{}\" has ice)",
+                        ice.thickness * 1000.0,
+                        w.name
+                    ));
+                    r.description = about.join("\n");
+                }
                 own.ice.push(IceLoad {
                     thickness: Some(ice.thickness),
                     density: Some(ice.density),

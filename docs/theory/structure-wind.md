@@ -248,7 +248,8 @@ the structure bodies' only.
 ### Ice on the structure
 
 A radial thickness \\( t \\) (the case's, or each structure's local
-`structure_ice`) of density \\( \rho \\) (the case's `ice_density`, else
+`structure_ice` — also, without ice of the case's own, in a case taking
+the local conditions whose weather case has ice, 2026-11-04) of density \\( \rho \\) (the case's `ice_density`, else
 the weather case's; without either the case is refused — no density is
 assumed).
 

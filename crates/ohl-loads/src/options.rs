@@ -178,13 +178,21 @@ impl<'de> Deserialize<'de> for WindDirection {
 /// The ice on the structure bodies of a load case (`[case.structure]
 /// ice`, version 4): `true` — each structure's local ice
 /// ([`ohl_line::local::LocalConditions::structure_ice`]; none where it
-/// gives none) — or a thickness for every structure.
+/// gives none) —, a thickness for every structure, or `false` (also
+/// written `"none"`, 2026-11-04): no ice on the structures, even where the
+/// case takes the local conditions. Not given: none, except that a case
+/// taking the local conditions whose weather case has ice puts each
+/// structure's local ice on it (owner 2026-11-04: "yes apply local ice
+/// too"; [`crate::LoadCase::structure_ice_at`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StructureIce {
     /// Each structure's local `structure_ice`.
     Local,
     /// This radial thickness on every structure, m.
     Thickness(f64),
+    /// No ice on the structures (`ice = false` or `ice = "none"`), the
+    /// local ice not taken either.
+    NoIce,
 }
 
 impl<'de> Deserialize<'de> for StructureIce {
@@ -193,14 +201,22 @@ impl<'de> Deserialize<'de> for StructureIce {
         #[serde(untagged)]
         enum Raw {
             Flag(bool),
+            Text(String),
             Thickness(ohl_core::units::Length),
         }
         match Raw::deserialize(d)? {
             Raw::Flag(true) => Ok(Self::Local),
-            Raw::Flag(false) => Err(serde::de::Error::custom(
-                "ice = false: leave ice out instead (true: the structures' local ice, or a \
-                 thickness)",
-            )),
+            Raw::Flag(false) => Ok(Self::NoIce),
+            Raw::Text(t) if t.trim() == "none" => Ok(Self::NoIce),
+            Raw::Text(t) => t
+                .parse::<ohl_core::units::Length>()
+                .map(|l| Self::Thickness(ohl_core::units::Quantity::si(l)))
+                .map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "ice \"{t}\": true (the structures' local ice), a thickness, or false \
+                         (\"none\": no ice on the structures)"
+                    ))
+                }),
             Raw::Thickness(t) => Ok(Self::Thickness(ohl_core::units::Quantity::si(t))),
         }
     }
@@ -232,7 +248,8 @@ pub fn snow_load(s_k: f64, shape: f64, exposure: f64, thermal: f64) -> f64 {
 /// ```toml
 /// [case.structure]
 /// direction = 90          # "left", "right", "ahead", "back" or degrees
-/// ice = true              # the structures' local ice; or "20 mm"
+/// ice = true              # the structures' local ice; or "20 mm"; or
+///                         # false: none (not even the local ice)
 /// ice_density = "900 kg/m³"   # default: the weather case's
 /// snow = true             # the structures' snow on the ground
 /// snow_shape = 0.8        # μ (default 0.8, SIA 261 5.3.4)
@@ -244,10 +261,12 @@ pub struct StructureOptions {
     /// Where the wind on the bodies comes from (none: the side of the
     /// wires' wind, [`crate::LoadCase::wind_from`] or the weather case's).
     pub direction: Option<WindDirection>,
-    /// Ice on the structures (none: no ice on them).
+    /// Ice on the structures (none: no ice on them, except each
+    /// structure's local ice where the case takes the local conditions and
+    /// its weather case has ice, [`crate::LoadCase::structure_ice_at`]).
     pub ice: Option<StructureIce>,
     /// The ice's density, kg/m³ (none: the weather case's; refused when
-    /// it gives none).
+    /// it gives none and ice is put on a structure).
     pub ice_density: Option<f64>,
     /// Snow on the structures' horizontal surfaces, from their snow on
     /// the ground ([`ohl_line::local::LocalConditions::snow`]).
@@ -275,7 +294,9 @@ impl StructureOptions {
 
     /// Checks the values: a direction a number, the ice 0 or more, the
     /// density above 0, the snow coefficients 0 or more and only with
-    /// `snow`, the density only with ice.
+    /// `snow`, the density not with `ice = false` (without `ice` it is
+    /// the density of the local ice a case taking the local conditions
+    /// puts on the structures).
     pub fn check(&self) -> Result<(), String> {
         if let Some(WindDirection::Angle(a)) = self.direction
             && !a.is_finite()
@@ -288,8 +309,8 @@ impl StructureOptions {
             return Err(format!("structure ice {t} m (0 or more)"));
         }
         if let Some(r) = self.ice_density {
-            if self.ice.is_none() {
-                return Err("structure ice_density without ice".into());
+            if self.ice == Some(StructureIce::NoIce) {
+                return Err("structure ice_density with ice = false".into());
             }
             if !(r.is_finite() && r > 0.0) {
                 return Err(format!("structure ice_density {r} kg/m³ (above 0)"));

@@ -2177,6 +2177,7 @@ mod tests {
             // The weather cases run (2026-10-28): kept too.
             cases: vec!["hot*".into()],
             sections: vec!["S1".into()],
+            ..Default::default()
         };
         let set = to_rule_set("Window rules", &zone, &wind, &scope, &rows);
         assert_eq!(set.rules.len(), 4);

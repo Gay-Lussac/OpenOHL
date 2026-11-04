@@ -95,6 +95,13 @@
 //!   `ohl zones` ignore it. `sections` (2026-10-28, ids, default none:
 //!   every section): the sections the desktop wire tension, string and
 //!   internal clearance checks take (with the circuits and routes).
+//!   `wind_study_min` (2026-11-04, a pressure, default none) and
+//!   `wind_study_cases` (names with `*` `?`, default none: every case of
+//!   the rules with wind): the internal clearance check's wind study —
+//!   with `local`, a structure's `local.wind_study` replaces the wind of
+//!   those cases there, raised to the least (owner 2026-11-04: "make the
+//!   wind study local"; before, the weather case groups' `structure_wind`
+//!   and `structure_wind_min`).
 //!
 //! ## Clearances by voltage
 //!
@@ -835,6 +842,10 @@ struct RawCheck {
     cases: Vec<String>,
     #[serde(default)]
     sections: Vec<String>,
+    #[serde(default)]
+    wind_study_min: Option<Stress>,
+    #[serde(default)]
+    wind_study_cases: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1291,6 +1302,17 @@ pub struct CheckScope {
     /// The sections checked, by id (owner, 2026-10-28: the scope of every
     /// check window); empty: every section (of the circuits and routes).
     pub sections: Vec<String>,
+    /// The least wind pressure a structure's wind study gives in the
+    /// internal clearance check, Pa (owner 2026-11-04: "make the wind
+    /// study local"; a design code's bound, before a weather case group's
+    /// `structure_wind_min`): a structure's `local.wind_study` below it is
+    /// taken at it, said. None: no least.
+    pub wind_study_min: Option<f64>,
+    /// The weather cases that take the structures' wind study in the
+    /// internal clearance check, by name (`*` `?` wildcards; before, a
+    /// weather case group's cases); empty: every case of the rules with
+    /// wind.
+    pub wind_study_cases: Vec<String>,
 }
 
 impl CheckScope {
@@ -1305,6 +1327,18 @@ impl CheckScope {
             && self.method.is_none()
             && self.search_distance.is_none()
             && !self.local
+            && self.wind_study_min.is_none()
+            && self.wind_study_cases.is_empty()
+    }
+
+    /// Whether weather case `name` takes the structures' wind study (its
+    /// list, or every case: the caller keeps the cases with wind).
+    pub fn takes_wind_study(&self, name: &str) -> bool {
+        self.wind_study_cases.is_empty()
+            || self
+                .wind_study_cases
+                .iter()
+                .any(|c| ohl_core::pattern::matches(c, name))
     }
 
     /// Whether weather case `name` is run (its list, or every case).
@@ -1572,7 +1606,13 @@ impl RuleSet {
                 if search_distance.is_some_and(|d| !(d.is_finite() && d > 0.0)) {
                     return Err("[check] search_distance must be > 0 m".into());
                 }
+                let wind_study_min = c.wind_study_min.map(|p| p.si());
+                if wind_study_min.is_some_and(|p| !(p.is_finite() && p > 0.0)) {
+                    return Err("[check] wind_study_min must be > 0 Pa".into());
+                }
                 Ok(CheckScope {
+                    wind_study_min,
+                    wind_study_cases: c.wind_study_cases,
                     search_distance,
                     local: c.local,
                     circuits: c.circuits,
@@ -1771,6 +1811,16 @@ impl RuleSet {
             if c.local {
                 t.push_str("local = true\n");
             }
+            if let Some(p) = c.wind_study_min {
+                let _ = writeln!(t, "wind_study_min = \"{p} Pa\"");
+            }
+            if !c.wind_study_cases.is_empty() {
+                let _ = writeln!(
+                    t,
+                    "wind_study_cases = {}",
+                    list(c.wind_study_cases.iter().map(|n| quoted(n)))
+                );
+            }
         }
         if let Some(v) = &self.vegetation {
             t.push_str("\n# The vegetation and danger-tree check.\n");
@@ -1954,6 +2004,24 @@ mod tests {
         let c = old.check.clone().unwrap();
         assert!(!c.local && c.is_empty());
         assert!(!old.to_toml().contains("override"));
+    }
+
+    /// `[check] wind_study_min` and `wind_study_cases` (2026-11-04) are
+    /// read and written back; a least of 0 Pa is refused.
+    #[test]
+    fn the_wind_study_settings_in_the_check_table() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n";
+        let set = RuleSet::parse(&format!(
+            "{head}[check]\nlocal = true\nwind_study_min = \"300 Pa\"\n\
+             wind_study_cases = [\"wind*\"]\n"
+        ))
+        .unwrap();
+        let c = set.check.clone().unwrap();
+        assert_eq!(c.wind_study_min, Some(300.0));
+        assert!(c.takes_wind_study("wind 2") && !c.takes_wind_study("calm"));
+        assert_eq!(RuleSet::parse(&set.to_toml()).unwrap().check, set.check);
+        assert!(RuleSet::parse(&format!("{head}[check]\nwind_study_min = \"0 Pa\"\n")).is_err());
+        assert!(CheckScope::default().takes_wind_study("anything"));
     }
 
     /// `[wind] arc = true` is read and written back; a file without it

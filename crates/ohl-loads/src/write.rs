@@ -78,6 +78,9 @@ impl LoadCase {
             }
             match o.ice {
                 Some(StructureIce::Local) => out.push_str("ice = true\n"),
+                Some(StructureIce::NoIce) => {
+                    out.push_str("ice = false   # none, not even the local ice\n");
+                }
                 Some(StructureIce::Thickness(t)) => {
                     let _ = writeln!(out, "ice = {}   # m", number(t));
                 }

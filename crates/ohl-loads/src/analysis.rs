@@ -327,7 +327,7 @@ impl Analyses {
         // factor; the ice widens the members for the wind.
         let mut widening = Vec::new();
         if let Some(w) = weather
-            && (case.on_structure.ice.is_some() || case.on_structure.snow)
+            && case.ices_or_snows(w)
         {
             let ice = match case.structure_ice_at(w, placed) {
                 Ok(i) => i,
@@ -347,7 +347,12 @@ impl Analyses {
             let weights = body_weights(model, ice, snow.map(|s| s.load()));
             if let Some(i) = ice {
                 notes.push(format!(
-                    "model: ice {:.0} mm of {:.0} kg/m³ on {} member(s), {:.2} kN{}",
+                    "model: {}ice {:.0} mm of {:.0} kg/m³ on {} member(s), {:.2} kN{}",
+                    if case.takes_local_ice(w) {
+                        "the structure's local "
+                    } else {
+                        ""
+                    },
                     i.thickness * 1000.0,
                     i.density,
                     weights.iced,
@@ -548,8 +553,13 @@ impl Analyses {
                         iced = (top + 2.0 * ice.thickness) / top;
                     }
                     notes.push(format!(
-                        "pole: ice {:.0} mm of {:.0} kg/m³ on the shaft, {:.2} kN; its wind \
+                        "pole: {}ice {:.0} mm of {:.0} kg/m³ on the shaft, {:.2} kN; its wind \
                          times {iced:.3} ((D + 2t)/D at the top, conservative)",
+                        if case.takes_local_ice(w) {
+                            "the structure's local "
+                        } else {
+                            ""
+                        },
                         ice.thickness * 1000.0,
                         ice.density,
                         total / 1000.0

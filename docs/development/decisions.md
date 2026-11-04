@@ -8,6 +8,61 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-04
+
+**The structures' local ice in every iced case taking the local
+conditions; the wind study a structure's local condition** (owner,
+2026-11-04: "yes apply local ice too, and make the wind study local").
+Built, in active development, not approved yet.
+
+- **Local ice.** A load case taking the local conditions (its
+  `use_local`, or a check's switch, which sets it on every case) whose
+  weather case has ice (a thickness or a load above 0) puts each
+  structure's local `structure_ice` on its members, unless the case
+  gives ice of its own: a thickness, `ice = true` (the local ice in
+  every case, as before) or the new `ice = false` (also `"none"`): no
+  ice on the structures. `ice = false` was refused before; it now means
+  none, written as `false`. A density alone (without `ice`) is now
+  accepted (the density of that local ice); with `ice = false` it is
+  refused. The density is the case's `ice_density`, else the weather
+  case's; with neither the case is refused with a message saying so and
+  how (no density is made up — the wires' glaze default is not taken
+  for the structures). Taken by the structure loads, the fe and pole
+  checks and OHL-Structure's library recipes (one function,
+  `LoadCase::structure_ice_at`); each case's notes name the structures
+  that got it. The form's ice choice gains *by the weather case* (the
+  default) besides *none*, *the structures' local ice* and *a
+  thickness*.
+- **Wind study as a local condition.** `LocalConditions::wind_study`
+  (Pa; OHL XML `wind_study_pa`; the Structures table's **wind study
+  Pa**). With Use local conditions ticked, Internal clearances checks a
+  structure with a body and a wind study, in each case of its rules with
+  wind, at that pressure in place of the case's (extra runs, as the
+  group column did; rows marked "(wind study … Pa)"); unticked, not taken
+  (said). The rule kept from the groups: the study's run is on the line
+  as written (not times the wind clearance factors), the least raises a
+  value below it (said).
+- **Where the least and the cases went.** The least was a group's
+  `structure_wind_min` — in practice one design code's bound, the same
+  for every group naming the column — and the group's cases chose where
+  the study applied. Both now belong to the internal clearance check:
+  `[check] wind_study_min` and `wind_study_cases` of its rule file
+  (empty: every case of the rules with wind). Not per structure: a
+  bound is the code's, not the site's; not a line solver option: it
+  changes no solve, and only this check reads it; in the rule file a
+  design-code plugin's preset can bring it with its internal rules.
+- **Migration.** The groups' `structure_wind` and `structure_wind_min`
+  are still read and kept in the weather case file, no longer used (a
+  run says so). Internal clearances › Setup › 4 Wind study offers **Copy
+  into the structures** while a structure's value in such a column
+  differs from its wind study: one command (one Undo) sets each
+  structure's `local.wind_study` (unreadable values said and left out;
+  two groups differing: the larger, said), keeps the plugin's column
+  (the plugin's data), and gives the check the groups' least (the
+  largest: on the safe side) and cases where it gives none (its rule file
+  saved before the command, so Undo takes back exactly the structures'
+  values). The group-based path in the check is removed.
+
 ## 2026-11-03
 
 **Load cases, step 5: the Load cases library as a form, per-pylon sets,

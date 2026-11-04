@@ -536,34 +536,29 @@ pub struct CaseGroup {
     #[serde(default)]
     pub cases: Vec<String>,
     /// A structure column (a plugin's field key, e.g. `my-code.wind_study`)
-    /// whose value, a wind pressure in Pa, replaces the wind of the
-    /// group's cases at that structure in a check with the structure
-    /// override (a wind study; owner, 2026-10-25); empty: none.
+    /// whose value, a wind pressure in Pa, replaced the wind of the
+    /// group's cases at that structure in the internal clearance check (a
+    /// wind study; owner, 2026-10-25); empty: none. Since 2026-11-04 read
+    /// and kept, no longer used: a structure's wind study is its local
+    /// `wind_study` (owner: "make the wind study local"), the desktop
+    /// application copies the column's values into it once
+    /// ([`CaseGroup::structure_value`]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub structure_wind: String,
-    /// The least wind such a value gives: one below is taken at it, with a
-    /// warning (a design code's bound, e.g. 300 Pa).
+    /// The least wind such a value gave (a design code's bound, e.g. 300
+    /// Pa). Since 2026-11-04 read and kept, no longer used: the internal
+    /// clearance check's `[check] wind_study_min`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structure_wind_min: Option<Stress>,
 }
 
 impl CaseGroup {
-    /// The wind at a structure whose column holds `text` (Pa, a number
-    /// with or without its unit): none when it does not read or is not
-    /// above 0; raised to the least wind when below it (and said so).
-    pub fn structure_pressure(&self, text: &str) -> Option<(f64, Option<String>)> {
+    /// A structure's value `text` in the group's `structure_wind` column
+    /// as a pressure, Pa (a number with or without its unit): none when it
+    /// does not read or is not above 0.
+    pub fn structure_value(text: &str) -> Option<f64> {
         let t = text.trim().trim_end_matches("Pa").trim();
-        let v: f64 = t.parse().ok().filter(|v: &f64| v.is_finite() && *v > 0.0)?;
-        match self.structure_wind_min.map(Stress::si) {
-            Some(min) if v < min => Some((
-                min,
-                Some(format!(
-                    "{v} Pa below the least {min} Pa of group \"{}\": taken at {min} Pa",
-                    self.name
-                )),
-            )),
-            _ => Some((v, None)),
-        }
+        t.parse().ok().filter(|v: &f64| v.is_finite() && *v > 0.0)
     }
 }
 
@@ -1291,9 +1286,10 @@ mod structure_case_tests {
         assert!(WeatherCases::parse(named).is_err());
     }
 
-    /// A wind study's group: its structure column and least pressure read;
-    /// a structure's value parsed with or without "Pa", one under the
-    /// least raised to it (said), one not a pressure none.
+    /// A wind study's group (read and kept, no longer used since
+    /// 2026-11-04): its structure column and least pressure read; a
+    /// structure's value parsed with or without "Pa", one not a pressure
+    /// (or 0) none.
     #[test]
     fn structure_wind_of_a_group() {
         let text = "format = \"ohl-weather-cases\"\nversion = 1\n\
@@ -1303,12 +1299,10 @@ mod structure_case_tests {
         let g = &WeatherCases::parse(text).unwrap().groups[0];
         assert_eq!(g.structure_wind, "my-code.wind_study");
         assert_eq!(g.structure_wind_min.map(Stress::si), Some(300.0));
-        assert_eq!(g.structure_pressure("450 Pa"), Some((450.0, None)));
-        assert_eq!(g.structure_pressure(" 500 "), Some((500.0, None)));
-        let (pa, warn) = g.structure_pressure("250").unwrap();
-        assert_eq!(pa, 300.0);
-        assert!(warn.unwrap().contains("300 Pa"));
-        assert_eq!(g.structure_pressure("high"), None);
-        assert_eq!(g.structure_pressure("0"), None);
+        assert_eq!(CaseGroup::structure_value("450 Pa"), Some(450.0));
+        assert_eq!(CaseGroup::structure_value(" 500 "), Some(500.0));
+        assert_eq!(CaseGroup::structure_value("250"), Some(250.0));
+        assert_eq!(CaseGroup::structure_value("high"), None);
+        assert_eq!(CaseGroup::structure_value("0"), None);
     }
 }

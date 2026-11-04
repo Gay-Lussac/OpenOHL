@@ -11,9 +11,11 @@
 //! several at once. The structures' and sections' groups (and the checks'
 //! structure and section overrides that read them) gave way to the
 //! structures' local conditions and the checks' **Use local conditions**
-//! ([`crate::local_solve`]); a group's wind study column
-//! (`structure_wind`) is still taken by Internal clearances with that
-//! switch ticked.
+//! ([`crate::local_solve`]). A group's wind study column
+//! (`structure_wind`, `structure_wind_min`) is read and kept, no longer
+//! used (2026-11-04): a structure's wind study is its local `wind_study`;
+//! Internal clearances offers to copy the columns' values into the
+//! structures ([`crate::internal_clearances::GroupStudy`]).
 
 use std::path::PathBuf;
 use std::sync::Mutex;

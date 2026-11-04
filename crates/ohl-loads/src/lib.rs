@@ -685,28 +685,57 @@ impl LoadCase {
     }
 
     /// The ice on structure `s` in this case with weather case `weather`
-    /// ([`StructureOptions::ice`]): none without ice (or where `ice =
-    /// true` and the structure gives no local `structure_ice`, or a
-    /// thickness 0). Err: no density — neither the case's `ice_density`
+    /// ([`StructureOptions::ice`]): a thickness given, or with `ice =
+    /// true` the structure's local `structure_ice`; with `ice = false`
+    /// none. Not given (owner 2026-11-04: "yes apply local ice too"): a
+    /// case taking the local conditions ([`LoadCase::use_local`], or a
+    /// check's switch, [`with_local`]) whose weather case has ice
+    /// ([`WeatherCase::has_ice`]) puts the structure's local
+    /// `structure_ice` on it ([`LoadCase::takes_local_ice`]); else none.
+    /// None too where the structure gives no local ice, or a thickness 0.
+    /// Err: ice to put and no density — neither the case's `ice_density`
     /// nor the weather case's (none is made up).
     pub fn structure_ice_at(
         &self,
         weather: &WeatherCase,
         s: Option<&ohl_line::Structure>,
     ) -> Result<Option<IceOn>, String> {
+        let local = || s.and_then(|s| s.local.structure_ice);
         let thickness = match self.on_structure.ice {
-            None => return Ok(None),
+            Some(StructureIce::NoIce) => return Ok(None),
             Some(StructureIce::Thickness(t)) => t,
-            Some(StructureIce::Local) => match s.and_then(|s| s.local.structure_ice) {
+            Some(StructureIce::Local) => match local() {
                 Some(t) => t,
                 None => return Ok(None),
             },
+            None if self.takes_local_ice(weather) => match local() {
+                Some(t) => t,
+                None => return Ok(None),
+            },
+            None => return Ok(None),
         };
         if thickness <= 0.0 {
             return Ok(None);
         }
         let density = self.ice_density(weather)?;
         Ok(Some(IceOn { thickness, density }))
+    }
+
+    /// Whether this case puts the structures' local ice on them without
+    /// saying so: it gives no `[case.structure] ice`, takes the local
+    /// conditions and its weather case has ice (owner 2026-11-04).
+    pub fn takes_local_ice(&self, weather: &WeatherCase) -> bool {
+        self.on_structure.ice.is_none() && self.use_local && weather.has_ice()
+    }
+
+    /// Whether this case may put ice or snow on the structures: ice or
+    /// snow given, or the local ice taken ([`LoadCase::takes_local_ice`]).
+    pub fn ices_or_snows(&self, weather: &WeatherCase) -> bool {
+        matches!(
+            self.on_structure.ice,
+            Some(StructureIce::Local | StructureIce::Thickness(_))
+        ) || self.on_structure.snow
+            || self.takes_local_ice(weather)
     }
 
     /// The density of the ice on the structures: the case's
@@ -717,11 +746,21 @@ impl LoadCase {
             .ice_density
             .or(weather.ice_density.map(|d| d.si()))
             .ok_or_else(|| {
-                format!(
-                    "load case {}: ice on the structures needs a density: give \
-                     [case.structure] ice_density (weather case \"{}\" gives none)",
-                    self.name, weather.name
-                )
+                if self.takes_local_ice(weather) {
+                    format!(
+                        "load case {}: the structures' local ice (the case takes the local \
+                         conditions and weather case \"{}\" has ice) needs a density: give \
+                         [case.structure] ice_density, the weather case's ice density, or \
+                         ice = false for no ice on the structures (none is made up)",
+                        self.name, weather.name
+                    )
+                } else {
+                    format!(
+                        "load case {}: ice on the structures needs a density: give \
+                         [case.structure] ice_density (weather case \"{}\" gives none)",
+                        self.name, weather.name
+                    )
+                }
             })
     }
 
@@ -1286,10 +1325,22 @@ pub fn structure_loads(
         };
         // Ice on the structures: refused without a density (at compute
         // time: the weather case may give it).
+        let mut local_ice: Vec<String> = Vec::new();
         for s in &solving.structures {
-            if line.takes_load_case(&s.id, &case.name) {
-                case.structure_ice_at(w, Some(s)).map_err(fail)?;
+            if line.takes_load_case(&s.id, &case.name)
+                && let Some(ice) = case.structure_ice_at(w, Some(s)).map_err(fail)?
+                && case.takes_local_ice(w)
+            {
+                local_ice.push(format!("{} {:.0} mm", s.id, ice.thickness * 1000.0));
             }
+        }
+        if !local_ice.is_empty() {
+            notes.push(format!(
+                "local ice on the structures (the case takes the local conditions, weather case \
+                 \"{}\" has ice, the case gives no ice of its own): {}",
+                w.name,
+                local_ice.join(", ")
+            ));
         }
         // The broken wires: those of one span, all together; one with
         // "every", once per span of its section.
@@ -1401,7 +1452,7 @@ pub fn structure_loads(
                 b.loads.retain(|l| takes(&l.structure));
             }
         }
-        if case.on_structure.ice.is_some() || case.on_structure.snow {
+        if case.ices_or_snows(w) {
             notes.push(
                 "ice and snow on the structures: on the members of the types' models (the \
                  finite-element check), the shafts of the poles (ice), and listed per structure \

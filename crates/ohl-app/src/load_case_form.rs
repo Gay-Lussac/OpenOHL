@@ -925,6 +925,9 @@ fn structure_wind_ui(
 /// How the structures' ice is given.
 #[derive(Clone, Copy, PartialEq)]
 enum Ice {
+    /// Not given: the local ice where the case takes the local conditions
+    /// and its weather case has ice, else none.
+    ByWeather,
     None,
     Local,
     Thickness,
@@ -940,16 +943,32 @@ fn ice_snow_ui(
 ) -> bool {
     let mut changed = false;
     let key = |what: &str| format!("{item}:{what}");
+    // The local ice a case taking the local conditions puts on the
+    // structures when its weather case has ice (owner 2026-11-04).
+    let local_ice = case.use_local && weather.is_some_and(WeatherCase::has_ice);
     let o = &mut case.on_structure;
     let mode = match o.ice {
-        None => Ice::None,
+        None => Ice::ByWeather,
+        Some(StructureIce::NoIce) => Ice::None,
         Some(StructureIce::Local) => Ice::Local,
         Some(StructureIce::Thickness(_)) => Ice::Thickness,
     };
     ui.horizontal_wrapped(|ui| {
         ui.label("Ice");
         for (label, m, hover) in [
-            ("none", Ice::None, "No ice on the structures"),
+            (
+                "by the weather case",
+                Ice::ByWeather,
+                "Each structure's local ice when the case takes the local conditions (its Use \
+                 local conditions, or a check's switch) and its weather case has ice; else no \
+                 ice on the structures",
+            ),
+            (
+                "none",
+                Ice::None,
+                "No ice on the structures, not even their local ice when the case takes the \
+                 local conditions",
+            ),
             (
                 "the structures' local ice",
                 Ice::Local,
@@ -964,11 +983,12 @@ fn ice_snow_ui(
         ] {
             if ui.radio(mode == m, label).on_hover_text(hover).clicked() && mode != m {
                 o.ice = match m {
-                    Ice::None => None,
+                    Ice::ByWeather => None,
+                    Ice::None => Some(StructureIce::NoIce),
                     Ice::Local => Some(StructureIce::Local),
                     Ice::Thickness => Some(StructureIce::Thickness(0.01)),
                 };
-                if m == Ice::None {
+                if m == Ice::None || (m == Ice::ByWeather && !local_ice) {
                     o.ice_density = None;
                 }
                 changed = true;
@@ -982,7 +1002,11 @@ fn ice_snow_ui(
             changed = true;
         }
     });
-    if o.ice.is_some() {
+    if matches!(
+        o.ice,
+        Some(StructureIce::Local | StructureIce::Thickness(_))
+    ) || (o.ice.is_none() && (local_ice || o.ice_density.is_some()))
+    {
         let theirs = weather.and_then(|w| w.ice_density).map(|d| d.si());
         ui.horizontal(|ui| {
             let mut has = o.ice_density.is_some();

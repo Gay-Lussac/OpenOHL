@@ -406,6 +406,7 @@ fn rich_line() -> Line {
         structure_ice: Some(0.02),
         snow_ground: None,
         snow_altitude: Some(950.0),
+        wind_study: Some(450.0),
     };
     line.solver.local_spans = ohl_line::local::SpanRule::Mean;
     line.sections[0].weather_groups = vec!["snow zone 2".into()];

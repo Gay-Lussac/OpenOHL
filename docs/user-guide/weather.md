@@ -92,34 +92,49 @@ refused. Group names are unique in the file.
 
 ### A wind study per structure
 
-A group may take its wind at each structure from a **Structures table
-column** (2026-10-25): `structure_wind` names the column (a plugin's
-`plugin.column`, e.g. `my-code.wind_study`), `structure_wind_min` the
-least pressure it may give.
+*Built, in active development, not approved yet* (owner, 2026-11-04:
+"make the wind study local"). A wind study is a structure's **local
+condition**: the Structures table's column **wind study Pa** (in the line
+file its `local.wind_study`, Pa) — the wind pressure the study gives at
+that structure for the conductors' distances to it. With **Use local
+conditions** ticked, **Internal clearances** checks each structure with a
+body and a wind study, in each weather case of its rules **with wind** (a
+pressure above 0), a second time at the study's pressure in place of the
+case's: those cases are solved again at it (for the whole line, the
+results taken at those structures only) and its rows in them are that
+run's, named `<case> (wind study 450 Pa)`. Structures without one keep the
+case's wind (times their **wind clearance** factor). Unticked, no wind
+study is taken (the notes say at how many structures one is given).
 
-```toml
-[[group]]
-name = "LeV conductors–structure, short approach"
-cases = ["LeV 10 °C wind (Annex 1 no. 37)"]
-structure_wind = "my-code.wind_study"
-structure_wind_min = "300 Pa"
-```
+Two settings of the check, in its Setup (4 Wind study) and its rule
+file's `[check]`:
 
-With **Use local conditions** ticked (until 2026-11-03: the structure
-override), the internal clearances check a
-structure with a value in that column in the group's cases at that
-pressure: those cases are solved again at it (for the whole line, the
-results taken at those structures only) and its rows named
-`<case> (wind study 450 Pa)`. A value under the least is taken at the
-least, said in the notes; a value that is not a pressure is said and the
-case's own wind taken. Structures without a value keep the case's wind.
+| Key | Default | What |
+|---|---|---|
+| `wind_study_min` | none | The **least pressure** a wind study may give: a value below it is taken at it, said in the notes (a design code's bound; a design-code plugin's preset may bring it). |
+| `wind_study_cases` | none: every case of the rules with wind | The weather cases that take the wind study, by name (`*` `?` wildcards); only those with wind take it. |
+
 (The LeV's explanations, ESTI 240 Art. 33: a wind study may lower the
 wind for the distances of the conductors to the structures down to
-300 N/m², per EN 50341-1.) Only the internal clearances take it so far.
-The study's runs are on the line as written (its pressure in place of
-the case's), not times the structures' wind for clearances; whether the
-study stays a group's column or becomes a structure's local condition is
-the owner's to decide.
+300 N/m², per EN 50341-1 — the check's least.) Only the internal
+clearances take it. The study's runs are on the line as written (its
+pressure in place of the case's), not times the structures' wind for
+clearances; the spans' own local winds (Sections table) apply on it.
+
+**Before (2026-10-25 to 2026-11-04)** a weather case group gave the wind
+study: `structure_wind` named a Structures table column (a plugin's
+`plugin.column`, e.g. `my-code.wind_study`), `structure_wind_min` its
+least, and the group's cases took it. Those keys are still read and kept
+in the weather case file, **no longer used**: a run says so in its notes.
+Internal clearances › Setup › 4 Wind study offers **Copy into the
+structures** while a structure's value in such a column differs from its
+wind study: one change (Undo takes it back) that sets each structure's
+`local.wind_study` to its value in the column (Pa, with or without the
+unit; a value that is not a pressure is said and left out; two groups
+giving one structure different values: the larger, said), keeps the
+plugin's column (the plugin's data), and gives the check the groups'
+least (the largest of theirs, on the safe side: more wind, more swing)
+and their cases where it gives none.
 
 ### Local conditions
 
@@ -130,7 +145,8 @@ strength), **wind clearance** (a factor on their wind for clearances),
 **wire ice** (a factor on the ice and wet snow on the wires of its
 spans), **structure ice mm** (ice on its members), **snow s_k kN/m²**
 and **snow h0 m** (the snow on the ground, given or from the reference
-altitude); in the line file a structure's `local`
+altitude), **wind study Pa** (a wind study's pressure for the internal
+clearances, above); in the line file a structure's `local`
 ([Line file](line-file.md)). A span takes the **worst** of its two
 structures' factors, or their **mean** (Line › Criteria › Calculation
 options; a structure without one counts 1); a span's own local winds and
@@ -157,9 +173,13 @@ same wind, from the memo of solves). Which wind a check takes:
 | Lightning | for clearances | the wires' positions against the shield wires |
 
 The **wire ice** factor is taken by every check with the switch ticked.
-The **structure ice** and the **snow** are taken by the load cases that
-put ice or snow on the structures (Load cases library › Ice and snow on
-the structures: *the structures' local ice*, *Snow on the structures*).
+The **structure ice** is taken by every load case that takes the local
+conditions (the switch, or the case's own **Use local conditions**) and
+whose weather case has ice, unless the case gives ice of its own (owner,
+2026-11-04: "yes apply local ice too"), and by the cases giving *the
+structures' local ice*; the **snow** by the cases with *Snow on the
+structures* (Load cases library › Ice and snow on the structures; [Load
+cases: the structures' local ice](loads.md#the-structures-local-ice)).
 In Checks › Structure loads the switch means the same as a load case's
 **Use local conditions** (one rule, 2026-11-03): the wind on each
 structure's body — its wind bands, the members of the usage check and a

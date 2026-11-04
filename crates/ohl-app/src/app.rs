@@ -20,7 +20,7 @@ use crate::scene::Layer;
 use crate::selection::Selection;
 use crate::view3d::View3d;
 
-mod clearance_panel;
+pub(crate) mod clearance_panel;
 mod drafting;
 mod edits;
 mod menu_bar;

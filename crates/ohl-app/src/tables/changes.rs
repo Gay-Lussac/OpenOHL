@@ -841,8 +841,9 @@ pub(super) fn structure_cells(
 
 /// A structure row's local conditions (owner, 2026-11-03): the wind
 /// factors and the wire ice factor as typed, the structure ice in mm, the
-/// snow on the ground in kN/m², its reference altitude in m (empty: not
-/// given); checked as the line file checks them.
+/// snow on the ground in kN/m², its reference altitude in m, the wind
+/// study's pressure in Pa (empty: not given); checked as the line file
+/// checks them.
 fn local_conditions(c: &Cells, name: &str) -> Result<ohl_line::local::LocalConditions, String> {
     let col = |n: &str| TableKind::Structures.column(n);
     let get = |n: &str| opt_num(&c.get(col(n)), &format!("{name} {n}"));
@@ -853,6 +854,7 @@ fn local_conditions(c: &Cells, name: &str) -> Result<ohl_line::local::LocalCondi
         structure_ice: get("structure ice mm")?.map(|mm| mm / 1000.0),
         snow_ground: get("snow s_k kN/m²")?.map(|k| k * 1000.0),
         snow_altitude: get("snow h0 m")?,
+        wind_study: get("wind study Pa")?,
     };
     local.check().map_err(|e| format!("{name}: {e}"))?;
     Ok(local)

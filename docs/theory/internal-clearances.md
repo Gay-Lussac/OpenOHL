@@ -154,8 +154,31 @@ to keep — fixed, by voltage or by a formula — and optionally **another in
 the cases with wind** (`distance_wind`: a wind pressure above 0; owner,
 2026-10-19). With **Use local conditions** ticked (2026-11-03) the cases
 are solved again on the line with the structures' wind for clearances
-and wire ice on their spans (and a group's wind study taken at its
-structures). No distance is built in.
+and wire ice on their spans, and a structure's **wind study** is taken
+there (2026-11-04, below). No distance is built in.
+
+## Wind study at a structure
+
+*Built, in active development, not approved yet* (owner, 2026-11-04:
+"make the wind study local"). A structure's local conditions may give a
+wind study's pressure \\( q_s \\) (`local.wind_study`, Pa) for the
+conductors' distances to it. With **Use local conditions** ticked, each
+weather case \\( c \\) of the rules with wind (\\( q_c > 0 \\)) that the check's
+`[check] wind_study_cases` takes (none listed: every one) is solved
+again on the line as written with its pressure replaced:
+
+\\[ q = \max(q_s,\ q_{min}) \\]
+
+\\( q_{min} \\) the check's least (`[check] wind_study_min`; none: no
+bound) — a value below it is raised to it, said. The structure's rows in
+that case are taken from this run only (named `<case> (wind study q
+Pa)`); the other structures keep the case's run. The spans' own local
+winds apply on \\( q \\); the structures' **wind clearance** factors do not
+(the study replaces the wind there). A wind study raised to the least is
+on the safe side (more wind, more swing); a study lower than the case is
+the engineer's to justify (a design code's bound, e.g. the least of the
+LeV's explanations on ESTI 240 Art. 33). Before 2026-11-04 a weather case
+group's `structure_wind` column gave it, for the group's cases.
 
 ## Cost and exit clause
 

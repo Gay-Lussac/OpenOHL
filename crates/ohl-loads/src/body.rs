@@ -14,7 +14,9 @@ use crate::analysis::{Analyses, body_weights, pole_ice};
 use crate::{AttachmentLoad, CaseLoads};
 
 /// [`crate::add_structure_wind`], and the ice and snow of each case on
-/// the structures taking it ([`crate::LoadCase::structure_ice_at`],
+/// the structures taking it ([`crate::LoadCase::structure_ice_at`]: with
+/// the local conditions taken and a weather case with ice, each
+/// structure's local ice too,
 /// [`crate::LoadCase::structure_snow_at`]), each a load without a point,
 /// down, at the weights' centroid on the structure's axis, labelled "ice
 /// on the structure" and "snow on the structure", factored by the
@@ -44,20 +46,21 @@ pub fn add_structure_loads(
     weather: &[WeatherCase],
 ) {
     crate::add_structure_wind(results, line, types, weather);
+    let weather_of = |r: &CaseLoads| weather.iter().find(|w| w.name == r.case.weather);
     if !results
         .iter()
-        .any(|r| r.case.on_structure.ice.is_some() || r.case.on_structure.snow)
+        .any(|r| weather_of(r).is_some_and(|w| r.case.ices_or_snows(w)))
     {
         return;
     }
     let analyses = Analyses::load(types, sections);
     for r in results {
-        if r.case.on_structure.ice.is_none() && !r.case.on_structure.snow {
-            continue;
-        }
-        let Some(w) = weather.iter().find(|w| w.name == r.case.weather) else {
+        let Some(w) = weather_of(r) else {
             continue;
         };
+        if !r.case.ices_or_snows(w) {
+            continue;
+        }
         let mut without: Vec<&str> = Vec::new();
         let mut no_snow: Vec<&str> = Vec::new();
         for s in &line.structures {

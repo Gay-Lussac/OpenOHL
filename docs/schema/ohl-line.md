@@ -36,7 +36,7 @@ The names are those of the line file:
              soil_resistivity_ohm_m="8.5"           <!-- soil resistivity measured here, Ω·m -->
              earthing_resistance_ohm="6.2">         <!-- its earthing (footing), Ω (2026-10-29) -->
     <weather_group name="…"/>                   <!-- its weather case groups (kept, no longer used) -->
-    <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa) -->
+    <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa, and wind_study_pa: a wind study's pressure for the internal clearances, 2026-11-04) -->
     <load_case name="…"/>                       <!-- its load cases (2026-11-03); none: its type's, else every case -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->

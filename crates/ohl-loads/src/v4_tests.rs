@@ -192,8 +192,8 @@ span = 1
     }
     // Refused: "every" with another broken span of its section, two
     // "every", a section removed and broken, removed twice, snow values
-    // without snow, a density without ice, a bad direction, ice = false,
-    // a version above 4.
+    // without snow, a density with ice = false, a bad direction, ice not
+    // true, false, "none" or a thickness, a version above 4.
     for bad in [
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[[case.broken]]\nsection = \"S\"\nspan = \"every\"\n[[case.broken]]\nsection = \"S\"\nspan = 1\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[[case.broken]]\nsection = \"S\"\nspan = \"every\"\n[[case.broken]]\nsection = \"T\"\nspan = \"every\"\n",
@@ -202,9 +202,9 @@ span = 1
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[[case.removed]]\nsection = \"S\"\n[[case.removed]]\nsection = \"S\"\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[[case.removed]]\nsection = \"S\"\nspan = 1\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nsnow_shape = 0.8\n",
-        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice_density = 900\n",
+        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = false\nice_density = 900\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\ndirection = \"up\"\n",
-        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = false\n",
+        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = \"lots\"\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = -0.01\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\nwind_from = \"ahead\"\n",
         "version = 5\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
@@ -744,4 +744,175 @@ fn per_pylon_load_case_sets() {
             .iter()
             .any(|n| n.contains("not in the load case set"))
     );
+}
+
+/// `ice = false` and `ice = "none"` (2026-11-04): no ice on the
+/// structures, written as `false` and read back; a density alone (the
+/// density of the local ice a case taking the local conditions puts on
+/// them) is kept.
+#[test]
+fn no_ice_on_the_structures_is_written_and_read() {
+    for text in ["ice = false", "ice = \"none\""] {
+        let c = LoadCases::parse(&format!(
+            "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\n{text}\n"
+        ))
+        .unwrap();
+        assert_eq!(c.cases[0].on_structure.ice, Some(StructureIce::NoIce));
+        let written = c.to_toml();
+        assert!(written.contains("ice = false"), "{written}");
+        assert_eq!(LoadCases::parse(&written).unwrap().cases, c.cases);
+    }
+    let c = LoadCases::parse(
+        "[[case]]\nname = \"a\"\nweather = \"w\"\nuse_local = true\n\
+         [case.structure]\nice_density = 900\n",
+    )
+    .unwrap();
+    assert_eq!(c.cases[0].on_structure.ice_density, Some(900.0));
+    assert_eq!(LoadCases::parse(&c.to_toml()).unwrap().cases, c.cases);
+}
+
+/// The structures' local ice in a case taking the local conditions (owner
+/// 2026-11-04: "yes apply local ice too"), by hand: a structure with 15 mm
+/// of local ice gets 15 mm in a case whose weather case has ice ("ice", 10
+/// mm on the wires, 900 kg/m³) and takes the local conditions (the
+/// check's switch, [`with_local`]); none in a case without ice in its
+/// weather ("wind"), none without the local conditions, and the case's own
+/// ice wins (a thickness, `ice = false`). Without a density anywhere:
+/// refused, said.
+#[test]
+fn local_ice_in_iced_cases_with_the_local_conditions() {
+    let w = weather();
+    let (wind, ice) = (&w[1], &w[2]);
+    let mut s = ohl_line::Structure::new("T".to_owned(), [0.0; 3]);
+    s.local.structure_ice = Some(0.015);
+    let plain = LoadCase::from_weather("ice");
+    // Without the local conditions: none.
+    assert_eq!(plain.structure_ice_at(ice, Some(&s)), Ok(None));
+    assert!(!plain.ices_or_snows(ice));
+    // With them (the switch): 15 mm of the weather case's 900 kg/m³.
+    let local = with_local(vec![plain.clone()], true).remove(0);
+    assert!(local.takes_local_ice(ice));
+    let on = local.structure_ice_at(ice, Some(&s)).unwrap().unwrap();
+    assert_eq!((on.thickness, on.density), (0.015, 900.0));
+    // A weather case without ice: none.
+    assert!(!local.takes_local_ice(wind));
+    assert_eq!(local.structure_ice_at(wind, Some(&s)), Ok(None));
+    // A structure without local ice: none.
+    let bare = ohl_line::Structure::new("U".to_owned(), [0.0; 3]);
+    assert_eq!(local.structure_ice_at(ice, Some(&bare)), Ok(None));
+    // The case's own: a thickness, or none.
+    let mut own = local.clone();
+    own.on_structure.ice = Some(StructureIce::Thickness(0.03));
+    assert!(!own.takes_local_ice(ice));
+    assert_eq!(
+        own.structure_ice_at(ice, Some(&s))
+            .unwrap()
+            .unwrap()
+            .thickness,
+        0.03
+    );
+    own.on_structure.ice = Some(StructureIce::NoIce);
+    assert_eq!(own.structure_ice_at(ice, Some(&s)), Ok(None));
+    assert!(!own.ices_or_snows(ice));
+    // No density in the case or the weather case: refused, the message
+    // says why and how.
+    let mut no_density = ice.clone();
+    no_density.ice_density = None;
+    let err = local.structure_ice_at(&no_density, Some(&s)).unwrap_err();
+    assert!(
+        err.contains("local ice") && err.contains("ice_density") && err.contains("ice = false"),
+        "{err}"
+    );
+    // The case's density is taken.
+    let mut dense = local.clone();
+    dense.on_structure.ice_density = Some(700.0);
+    assert_eq!(
+        dense
+            .structure_ice_at(&no_density, Some(&s))
+            .unwrap()
+            .unwrap()
+            .density,
+        700.0
+    );
+}
+
+/// The local ice on the line: in an iced case with the switch, the
+/// structures giving local ice are named in the notes and their models
+/// and poles take it (more usage than without, said per structure); not
+/// without the switch.
+#[test]
+fn local_ice_in_the_structure_checks() {
+    let types = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
+        .unwrap()
+        .resolve(&types, &ohl_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, mut weather) = example();
+    // An INVENTED iced weather case with a density.
+    let mut iced = weather
+        .iter()
+        .find(|w| w.name == "everyday")
+        .unwrap()
+        .clone();
+    iced.name = "INVENTED ice".into();
+    iced.ice_thickness = ohl_core::units::Length::from_si(0.01);
+    iced.ice_density = Some(ohl_core::units::Density::from_si(900.0));
+    weather.push(iced);
+    for s in &mut line.structures {
+        s.local.structure_ice = Some(0.03);
+    }
+    let library = library();
+    let budget = default_budget();
+    let case = LoadCase::from_weather("INVENTED ice");
+    let without = structure_loads(
+        &line,
+        &library,
+        &weather,
+        std::slice::from_ref(&case),
+        &budget,
+    )
+    .unwrap();
+    let with = structure_loads(
+        &line,
+        &library,
+        &weather,
+        &with_local(vec![case], true),
+        &budget,
+    )
+    .unwrap();
+    assert!(!without[0].notes.iter().any(|n| n.contains("local ice")));
+    assert!(
+        with[0]
+            .notes
+            .iter()
+            .any(|n| n.starts_with("local ice on the structures") && n.contains("30 mm")),
+        "{:?}",
+        with[0].notes
+    );
+    let a = capacity::usage(&line, &types, &library, &weather, &without);
+    let b = capacity::usage(&line, &types, &library, &weather, &with);
+    let mut more = 0;
+    for (x, y) in a[0].structures.iter().zip(&b[0].structures) {
+        if y.fe.is_some() || y.pole.is_some() {
+            assert!(
+                y.notes
+                    .iter()
+                    .any(|n| n.contains("the structure's local ice 30 mm")),
+                "{}: {:?}",
+                y.structure,
+                y.notes
+            );
+            assert!(!x.notes.iter().any(|n| n.contains("local ice")));
+        }
+        for (p, q) in [(&x.fe, &y.fe), (&x.pole, &y.pole)] {
+            if let (Some(p), Some(q)) = (p, q)
+                && q.usage.is_finite()
+                && q.usage > p.usage + 1e-6
+            {
+                more += 1;
+            }
+        }
+    }
+    assert!(more >= 1, "the local ice uses more of some structure");
 }

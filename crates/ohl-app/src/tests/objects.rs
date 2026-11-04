@@ -1006,6 +1006,7 @@ fn structures_take_local_conditions_and_sections_local_ice() {
         ("structure ice mm", "10"),
         ("snow s_k kN/m²", "2.5"),
         ("snow h0 m", "1200"),
+        ("wind study Pa", "450"),
     ] {
         set_cell(&mut harness, kind, "T2", col, v);
     }
@@ -1022,6 +1023,7 @@ fn structures_take_local_conditions_and_sections_local_ice() {
                 structure_ice: Some(0.01),
                 snow_ground: Some(2500.0),
                 snow_altitude: Some(1200.0),
+                wind_study: Some(450.0),
             }
         );
         assert_eq!(t2.weather_groups, vec!["internal"]);
