@@ -377,6 +377,27 @@ pub fn check<E: Evaluator>(
     budget: &Budget,
     make: impl Fn() -> Result<E, String> + Sync,
 ) -> Result<Vec<UnequalWindPair>, String> {
+    check_with_progress(settings, levels, budget, make, None)
+}
+
+/// How far [`check_with_progress`] is: the pairs measured of how many
+/// (owner 2026-11-04: a progress bar, not only the time since the start).
+#[derive(Debug, Default)]
+pub struct PairProgress {
+    /// Pairs measured.
+    pub done: AtomicUsize,
+    /// Pairs to measure (0 until they are known).
+    pub total: AtomicUsize,
+}
+
+/// [`check`], counting the pairs measured in `progress`.
+pub fn check_with_progress<E: Evaluator>(
+    settings: &UnequalWindSettings,
+    levels: &[WindLevel],
+    budget: &Budget,
+    make: impl Fn() -> Result<E, String> + Sync,
+    progress: Option<&PairProgress>,
+) -> Result<Vec<UnequalWindPair>, String> {
     let run = budget.start();
     let Some(still) = levels
         .iter()
@@ -478,6 +499,10 @@ pub fn check<E: Evaluator>(
         .map(|c| polys.iter().all(|l| !l[c].is_empty()))
         .collect();
     let candidates = candidate_pairs(&settings.pairs, &still.conductors, &filled, apart);
+    if let Some(p) = progress {
+        p.done.store(0, Ordering::Relaxed);
+        p.total.store(candidates.len(), Ordering::Relaxed);
+    }
     // The combinations: (level of the first, level of the second), on the
     // same side (still air counts for both), the one at p, the other
     // from low_share·p to p.
@@ -637,7 +662,11 @@ pub fn check<E: Evaluator>(
                         let Some(&(i, j, same_span)) = candidates.get(k) else {
                             return mine;
                         };
-                        match measure(&mut evaluator, i, j, same_span) {
+                        let measured = measure(&mut evaluator, i, j, same_span);
+                        if let Some(p) = progress {
+                            p.done.fetch_add(1, Ordering::Relaxed);
+                        }
+                        match measured {
                             Ok(Some(pair)) => mine.push((k, pair)),
                             Ok(None) => {}
                             Err(e) => {

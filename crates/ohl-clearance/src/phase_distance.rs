@@ -59,7 +59,9 @@ pub struct PhaseDistanceSettings {
 impl Default for PhaseDistanceSettings {
     fn default() -> Self {
         Self {
-            spacing: 1.0,
+            // 0.1 m (owner 2026-11-04: "make it 0.1m by default instead of
+            // 1 meter"; 1 m before).
+            spacing: 0.1,
             circuits: None,
             nearby: false,
             max_distance: 20.0,

@@ -1148,6 +1148,7 @@ fn unequal_wind_benchmark() {
         &Default::default(),
         &levels,
         &ohl_core::budget::Budget::new(),
+        None,
     )
     .unwrap();
     let measured = t.elapsed();

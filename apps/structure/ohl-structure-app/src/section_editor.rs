@@ -156,11 +156,24 @@ fn rows(s: &Section, density: Option<f64>) -> Vec<(&'static str, String, &'stati
         ),
     ];
     if let Some(part) = s.part_properties() {
+        let what = match s.shape.part() {
+            Some((ohl_sections::Shape::Channel { .. }, _)) => "channel",
+            _ => "angle",
+        };
         out.push((
-            "iv, one angle",
+            if what == "channel" {
+                "iv, one channel"
+            } else {
+                "iv, one angle"
+            },
             mm(part.gyration_v),
-            "each angle's own smallest radius of gyration (it buckles on its own between the \
-             stitch bolts)",
+            if what == "channel" {
+                "each channel's own smallest radius of gyration (it buckles on its own between the \
+                 stitch bolts)"
+            } else {
+                "each angle's own smallest radius of gyration (it buckles on its own between the \
+                 stitch bolts)"
+            },
         ));
     }
     out.push((

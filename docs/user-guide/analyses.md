@@ -202,7 +202,7 @@ menu: without it, it is not there), its entry in the Checks menu (e.g.
 window: a values file (else the project's copy, else the plugin's), the
 plugin's choices, the weather cases (each checked on its own), the
 circuits (ticked in a list, select all / none), the station spacing
-(1 m), and nearby spans (conductors not between the same two
+(0.1 m by default since 2026-11-04, 1 m before), and nearby spans (conductors not between the same two
 structures, within a distance). On the check windows' layout
 (2026-10-27; 2026-10-31): *1 What it checks* with *How it is computed*
 folded, *2 Scope* (the weather cases — **Weather cases: n of m**, a tick
@@ -211,7 +211,10 @@ single-case windows use —, circuits, routes), *3 Rules* (**Choose a
 values file…** and the plugin's choices, the circuits' levels, the
 values used), *4 Model*, folded (the station spacing — under unequal
 wind the wind step and the other conductor's share instead —, nearby
-spans; each with a line saying what it changes); the Results tab holds the saved
+spans; each with a line saying what it changes); the values used as
+tables across the window's width (2026-11-04); under unequal wind the
+footer counts the run's two steps while it runs — the line solved at each
+wind level, then the pairs measured — with the time left (2026-11-04); the Results tab holds the saved
 report and *Save*, the verdict and the table (*Only violations* — the
 pairs below z — on by default, sortable, grouped by case, span or rule).
 The setup is kept in the project per project line (`app.phase_distance`,

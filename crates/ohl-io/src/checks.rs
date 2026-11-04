@@ -185,6 +185,7 @@ pub fn unequal_wind(
     settings: &UnequalWindSettings,
     levels: &[WindLevel],
     budget: &Budget,
+    progress: Option<&unequal_wind::PairProgress>,
 ) -> Result<Vec<UnequalWindPair>, String> {
     if check.info.id != UNEQUAL_WIND {
         return Err(format!(
@@ -195,7 +196,7 @@ pub fn unequal_wind(
     let first = host.load_check(&check.dir).map_err(|e| e.to_string())?;
     let first = std::sync::Mutex::new(first);
     let make = || evaluator(host, &first, check, values, choices);
-    unequal_wind::check(settings, levels, budget, make)
+    unequal_wind::check_with_progress(settings, levels, budget, make, progress)
 }
 
 fn check_with<'a>(
@@ -382,6 +383,7 @@ mod tests {
         // side.
         assert_eq!(levels.len(), 1 + 2 * 9);
         let settings = UnequalWindSettings::default();
+        let progress = unequal_wind::PairProgress::default();
         let pairs = unequal_wind(
             &host,
             check,
@@ -390,9 +392,17 @@ mod tests {
             &settings,
             &levels,
             &Budget::new(),
+            Some(&progress),
         )
         .unwrap();
         assert!(!pairs.is_empty());
+        // Every pair counted (2026-11-04: the progress bar).
+        let total = progress.total.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(total >= pairs.len());
+        assert_eq!(
+            progress.done.load(std::sync::atomic::Ordering::Relaxed),
+            total
+        );
         let still = phase_distance(
             &host,
             checks.iter().find(|c| c.info.id == PHASE_DISTANCE).unwrap(),

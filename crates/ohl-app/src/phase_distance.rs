@@ -468,8 +468,56 @@ pub struct PhaseDistanceWindow {
     /// The line's state against the saved report's, for this line version.
     since: Option<(u64, String, bool)>,
     pub(crate) job: Job<Report>,
+    /// Under unequal wind, the run under way: how far it is.
+    progress: Option<Arc<UnequalProgress>>,
     /// The setup kept in the project ([`SETTING`]).
     kept: check_ui::Kept,
+}
+
+/// How far a run under unequal wind is (owner 2026-11-04: a progress bar,
+/// not only the time since the start): the line solved at each wind
+/// level, then the pairs measured.
+#[derive(Debug, Default)]
+struct UnequalProgress {
+    /// The wind levels solved (each side), of `levels`.
+    solved: std::sync::atomic::AtomicUsize,
+    levels: usize,
+    /// When the pairs started being measured.
+    pairs_from: std::sync::Mutex<Option<std::time::Instant>>,
+    /// The pairs measured, of how many.
+    pairs: ohl_clearance::unequal_wind::PairProgress,
+}
+
+impl UnequalProgress {
+    /// The footer's bar and words, `elapsed` since the start.
+    fn shown(&self, elapsed: std::time::Duration) -> check_ui::Progress {
+        use std::sync::atomic::Ordering::Relaxed;
+        let from = *self.pairs_from.lock().expect("not poisoned");
+        match from {
+            None => {
+                let done = self.solved.load(Relaxed);
+                let mut p = check_ui::Progress::of(elapsed, done, self.levels);
+                p.text = format!(
+                    "step 1 of 2, the line solved at each wind: {done} of {} — {}",
+                    self.levels, p.text
+                );
+                p
+            }
+            Some(t) => {
+                let (done, total) = (
+                    self.pairs.done.load(Relaxed),
+                    self.pairs.total.load(Relaxed),
+                );
+                let mut p = check_ui::Progress::of(t.elapsed(), done, total);
+                p.text = format!(
+                    "step 2 of 2, the pairs measured: {done} of {total} — {:.0} s in all, {}",
+                    elapsed.as_secs_f64(),
+                    p.text
+                );
+                p
+            }
+        }
+    }
 }
 
 impl Default for PhaseDistanceWindow {
@@ -510,6 +558,7 @@ impl PhaseDistanceWindow {
             pending_values: None,
             since: None,
             job: Job::default(),
+            progress: None,
             kept: Default::default(),
         }
     }
@@ -732,14 +781,26 @@ fn value_tables_ui(
     cell: &mut Option<([u32; 3], String)>,
 ) -> Option<([u32; 3], String)> {
     let mut changed = None;
-    ui.horizontal_wrapped(|ui| {
+    // One table under the other, each across the window's width: its
+    // columns spread over it (owner 2026-11-04: "the table stops way
+    // before the window which makes for a huge unused space").
+    ui.vertical(|ui| {
         for (ti, t) in tables.iter().enumerate() {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new(&t.title).strong())
                     .on_hover_text(&t.note);
+                let n = t.columns.len().max(1) as f32;
+                let gap = help::GRID_SPACING[0];
+                // Rounded down, a little short of the width: a grid as
+                // wide as the space would widen the window it is in by
+                // its margins every frame.
+                let column = ((ui.available_width() - 8.0 - gap * (n - 1.0)) / n)
+                    .floor()
+                    .max(40.0);
                 egui::Grid::new(("phase-distance-values", ti))
                     .striped(true)
                     .spacing(help::GRID_SPACING)
+                    .min_col_width(column)
                     .show(ui, |ui| {
                         for h in &t.columns {
                             ui.label(egui::RichText::new(h).small().strong());
@@ -777,7 +838,9 @@ fn value_tables_ui(
                         }
                     });
             });
-            ui.separator();
+            if ti + 1 < tables.len() {
+                ui.add_space(6.0);
+            }
         }
     });
     changed
@@ -1023,6 +1086,26 @@ impl PhaseDistanceWindow {
             low_share: self.low_share,
         };
         let wind_step = self.wind_step;
+        // How far it is: the levels the line is solved at (each wind on
+        // both sides, still air once), then the pairs.
+        let progress = (kind == Kind::UnequalWind).then(|| {
+            let levels = cases
+                .first()
+                .and_then(|(c, _)| {
+                    ohl_clearance::unequal_wind::levels(
+                        c.case.wind_pressure.si(),
+                        wind_step,
+                        self.low_share,
+                    )
+                    .ok()
+                })
+                .map_or(0, |p| p.iter().map(|x| if *x > 0.0 { 2 } else { 1 }).sum());
+            Arc::new(UnequalProgress {
+                levels,
+                ..Default::default()
+            })
+        });
+        self.progress = progress.clone();
         // The routes chosen: the pairs with a span on them only.
         let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
@@ -1041,9 +1124,15 @@ impl PhaseDistanceWindow {
                     unequal.low_share,
                     |c| {
                         let s = crate::model::Solved::new_memo(&line, &library, c.clone());
+                        if let Some(p) = &progress {
+                            p.solved.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                         (s.shapes, s.failed)
                     },
                 )?;
+                if let Some(p) = &progress {
+                    *p.pairs_from.lock().expect("not poisoned") = Some(std::time::Instant::now());
+                }
                 notes.extend(n.into_iter().map(|n| format!("\"{}\" {n}", case.name)));
                 // Exit clause: the pairs of a 25 km line at about 20
                 // levels in seconds.
@@ -1057,6 +1146,7 @@ impl PhaseDistanceWindow {
                     &unequal,
                     &levels,
                     &budget,
+                    progress.as_ref().map(|p| &p.pairs),
                 )
                 .map_err(|e| format!("{}: {e}", check.plugin))?;
                 let cs = levels
@@ -1434,6 +1524,20 @@ impl PhaseDistanceWindow {
         let scope_words = check_ui::scope_words(&model.line, &self.scope, false);
         let plan = check_ui::scope_plan(&model.line, &self.scope, self.cases.len());
         help::footer(ui, page, |ui| {
+            // Under unequal wind: its two steps counted, Stop beside them.
+            if let (Some(elapsed), Some(p)) = (self.job.elapsed(), &self.progress) {
+                let f = check_ui::RunFooter {
+                    running: Some(p.shown(elapsed)),
+                    scope: Some(scope_words.clone()),
+                    ..Default::default()
+                };
+                if check_ui::run_footer(ui, f, |_| {}) == check_ui::Action::Stop {
+                    self.job.stop();
+                }
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(250));
+                return;
+            }
             let local = &mut self.local;
             if check_ui::job_footer(
                 ui,
@@ -2494,69 +2598,69 @@ fn what(c: &Conductor) -> String {
 /// How the check computes, in brief (always shown at the top): the
 /// measuring (OpenOHL's), then the rules (the plugin's).
 fn explanation(ui: &mut egui::Ui, rules: Option<&str>, kind: Kind) {
-    egui::CollapsingHeader::new("How it is computed")
-        .id_salt("phase-distance-how")
-        .default_open(true)
-        .show(ui, |ui| {
-            let small = |ui: &mut egui::Ui, t: &str| {
-                ui.label(egui::RichText::new(t).small());
-            };
-            for p in rules
-                .unwrap_or_default()
-                .split("\n\n")
-                .filter(|p| !p.trim().is_empty())
-            {
-                small(ui, &p.replace('\n', " "));
-            }
-            if kind == Kind::UnequalWind {
-                small(
-                    ui,
-                    "Measured by OpenOHL — pairs as for the distance in the span (in still \
+    // Shown inside the window's own "How it is computed" fold (before
+    // 2026-11-04 a second fold of that name inside it: shown twice).
+    let body = |ui: &mut egui::Ui| {
+        let small = |ui: &mut egui::Ui, t: &str| {
+            ui.label(egui::RichText::new(t).small());
+        };
+        for p in rules
+            .unwrap_or_default()
+            .split("\n\n")
+            .filter(|p| !p.trim().is_empty())
+        {
+            small(ui, &p.replace('\n', " "));
+        }
+        if kind == Kind::UnequalWind {
+            small(
+                ui,
+                "Measured by OpenOHL — pairs as for the distance in the span (in still \
                      air; nearby spans where they come within the distance at any wind). The \
                      line is solved in the weather case (its temperature and ice) with its \
                      wind every step from none to the case's, from each side, and at the \
                      share of each step (so the largest difference is always among them).",
-                );
-                small(
-                    ui,
-                    "For each pair, one conductor at a wind p, the other at every level from \
+            );
+            small(
+                ui,
+                "For each pair, one conductor at a wind p, the other at every level from \
                      the share of p to p, both ways, on each side: the shortest distance \
                      between their axes (a bundle by its subconductors), exact — segment \
                      against segment, not at stations. Kept: the closest, with the winds and \
                      the side. Required: C₃ within one system and towards earth wires, C₄ \
                      between systems (the plugin's values; no sag or string term).",
-                );
-                return;
-            }
-            small(
-                ui,
-                "Measured by OpenOHL — pairs: the conductors between the same two structures \
+            );
+            return;
+        }
+        small(
+            ui,
+            "Measured by OpenOHL — pairs: the conductors between the same two structures \
                  (and, ticked, nearby spans within the distance); not two earth wires, one \
                  circuit's same phase, or two sharing a clamp; a bundle by its subconductors.",
-            );
-            small(
-                ui,
-                "Stations every Δs along each conductor in turn; at each, the closest point \
+        );
+        small(
+            ui,
+            "Stations every Δs along each conductor in turn; at each, the closest point \
                  of the other: d their distance, β the angle of the line joining them from \
                  the vertical.",
-            );
-            small(
-                ui,
-                "f: the local sag there, below the chord between the clamps (0 at the \
+        );
+        small(
+            ui,
+            "f: the local sag there, below the chord between the clamps (0 at the \
                  clamps). l_k: the suspension string's length at each end (one string: its \
                  length; two strings to one wire point, tension or clamped: 0; a string \
                  below two: that string; two tension strings from a string: that string), \
                  linear between the ends. Conductors joined by \
                  interphase spacers in the span: each one's largest sag between its spacer \
                  clamps (and the span's clamps).",
-            );
-            small(
-                ui,
-                "Per pair: the worst station (smallest d − z) and the length of conductor \
+        );
+        small(
+            ui,
+            "Per pair: the worst station (smallest d − z) and the length of conductor \
                  below z. A worst station at a clamp has f ≈ 0: z there is C plus the string \
                  term.",
-            );
-        });
+        );
+    };
+    body(ui);
 }
 
 fn csv(r: &Report) -> String {
