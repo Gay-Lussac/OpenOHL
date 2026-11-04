@@ -4,11 +4,12 @@
 
 //! Getting around the Detail view (owner 2026-11-03): the Edit tool in
 //! the 3D view asks before it opens a tower's joint or member there; a
-//! member opened from a joint goes back to it (‹ Joint, Escape); the
-//! details below the Detail view are its own (Joint details or Member
-//! details, nothing else in that leaf); a bolt or plate picked with the
-//! Detail view's Edit tool shows its properties at their top — a bolt's
-//! with the bolt libraries to change it.
+//! member opened from a joint goes back to it (‹ Joint, Escape); by
+//! default the Detail view is a tab on top of the 3D view (owner
+//! 2026-11-04: two panes), ‹ 3D view and Escape go back to it, its details
+//! in front on the left with the text and edit panels; a bolt or plate
+//! picked with the Detail view's Edit tool shows its properties at their
+//! top — a bolt's with the bolt libraries to change it.
 
 use eframe::egui;
 use ohl_structure_edit::Handle;
@@ -23,17 +24,19 @@ use crate::member_panel::Subject;
 
 /// How to get around the Detail view (Help › Controls).
 pub const CONTROLS: &str = "Opened from the 3D view: the Edit tool on a tower's joint or \
-     member (asked first, unless the Detail view is shown), or its right-click menu, Open in the \
+     member (asked first, unless the Detail view is open), or its right-click menu, Open in the \
      Detail view.\n\
      Close-up: drag to turn, wheel to zoom; Face view: the joint's plane flat.\n\
      Its toolbar below the drawing: Edit (a bolt, plate or member clicked: its properties \
      below), Add bolt, Move bolt, Remove bolt, Member end.\n\
      Escape: from a member back to its joint, else what is picked let go, else the Edit tool \
-     again. ‹ Joint: back to the joint.";
+     again, else (over the drawing) back to the 3D view. ‹ Joint: back to the joint. ‹ 3D \
+     view: the 3D view in front again (the Detail view a tab behind it).";
 
 impl StructureApp {
     /// The details of what the Detail view shows brought to the front
-    /// below it: Joint details for a joint, Member details for a member.
+    /// (on the left by default): Joint details for a joint, Member details
+    /// for a member.
     pub(crate) fn focus_details(&mut self) {
         self.focus(match self.joints.subject {
             Subject::Joint => Panel::JointDetails,
@@ -92,7 +95,7 @@ impl StructureApp {
             self.focused(),
             Some(Panel::JointView | Panel::JointDetails | Panel::MemberDetails)
         );
-        if !(over || front) || !self.is_open(Panel::JointView) {
+        if !(over || front) || !crate::layout::is_shown(&self.dock, Panel::JointView) {
             return false;
         }
         if self.joints.subject == Subject::Member {
@@ -107,11 +110,44 @@ impl StructureApp {
             self.joints.drag = None;
             return true;
         }
-        false
+        // Nothing more of its own: back to the 3D view when it is the tab
+        // under it — with the pointer over the drawing or the Detail view
+        // itself in front (not from its details).
+        let view_front = self.focused() == Some(Panel::JointView);
+        (over || view_front) && self.back_to_3d()
     }
 
-    /// `h` (a tower's joint or member) in the Detail view, its details
-    /// in front below it.
+    /// The 3D view in front again when the Detail view is on top of it (a
+    /// tab of one pane, the default); false: they are apart (nothing to
+    /// do).
+    pub(crate) fn back_to_3d(&mut self) -> bool {
+        if !crate::layout::same_leaf(&self.dock, Panel::JointView, Panel::View3d) {
+            return false;
+        }
+        self.focus(Panel::View3d);
+        true
+    }
+
+    /// Above the Detail view, when it is on top of the 3D view: the way
+    /// back to it (Escape too).
+    pub(crate) fn detail_header(&mut self, ui: &mut egui::Ui) {
+        if !crate::layout::same_leaf(&self.dock, Panel::JointView, Panel::View3d) {
+            return;
+        }
+        if ui
+            .small_button("‹ 3D view")
+            .on_hover_text(
+                "Back to the 3D view (the Detail view stays open behind it, its tab beside the 3D \
+                 view's; Escape too)",
+            )
+            .clicked()
+        {
+            self.back_to_3d();
+        }
+    }
+
+    /// `h` (a tower's joint or member) in the Detail view, in front, its
+    /// details in front on the left.
     pub fn open_in_detail(&mut self, h: Handle) {
         self.selected = vec![h.clone()];
         self.scroll_to = Some(h.clone());
@@ -156,7 +192,7 @@ impl StructureApp {
             .default_pos(ctx.content_rect().center() - egui::vec2(170.0, 60.0))
             .show(ctx, |ui| {
                 ui.label(format!(
-                    "Open {what} in the Detail view, its details below it? Stay: its fields in \
+                    "Open {what} in the Detail view, its details on the left? Stay: its fields in \
                      the Inspector only."
                 ));
                 ui.horizontal(|ui| {

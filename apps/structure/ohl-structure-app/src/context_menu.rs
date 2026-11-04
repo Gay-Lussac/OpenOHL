@@ -78,7 +78,7 @@ impl StructureApp {
                 Some(Icon::Edit),
                 "Open in the Detail view",
                 tower,
-                "In the Detail view beside the 3D view, its details below it",
+                "In the Detail view (a tab on top of the 3D view), its details in front on the left",
                 "A tower's joint or member (Geometry › Structure kind: lattice tower or portal)",
             ) {
                 self.open_in_detail(h.clone());

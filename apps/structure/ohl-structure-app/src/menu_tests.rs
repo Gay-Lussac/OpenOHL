@@ -194,20 +194,28 @@ fn edit_tools_hold_a_tool_and_file_close_closes() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
-/// A panel's tab menu: floated in a window of its own, docked again on
-/// the right with the Inspector, or with the tables.
+/// A panel's tab menu: floated in a window of its own, docked on the
+/// right with the views, or on the left with the text and edit panels;
+/// the 3D view docked on the left when nothing else is there: a new pane
+/// on the left.
 #[test]
 fn a_panel_moves_from_its_tabs_menu() {
+    use crate::layout::same_leaf;
     let mut app = StructureApp::new(None);
     move_panel(&mut app.dock, Panel::Supports, Place::Window);
     let at = app.dock.find_tab(&Panel::Supports).unwrap();
     assert_ne!(at.surface, egui_dock::SurfaceIndex::main());
     move_panel(&mut app.dock, Panel::Supports, Place::Right);
-    let at = app.dock.find_tab(&Panel::Supports).unwrap();
-    let inspector = app.dock.find_tab(&Panel::Inspector).unwrap();
-    assert_eq!(at.node_path(), inspector.node_path());
-    move_panel(&mut app.dock, Panel::Supports, Place::Tables);
-    let at = app.dock.find_tab(&Panel::Supports).unwrap();
-    let joints = app.dock.find_tab(&Panel::Joints).unwrap();
-    assert_eq!(at.node_path(), joints.node_path());
+    assert!(same_leaf(&app.dock, Panel::Supports, Panel::View3d));
+    move_panel(&mut app.dock, Panel::Supports, Place::Left);
+    assert!(same_leaf(&app.dock, Panel::Supports, Panel::Joints));
+    assert!(same_leaf(&app.dock, Panel::Supports, Panel::Inspector));
+    // The 3D view to the left: with the text and edit panels.
+    move_panel(&mut app.dock, Panel::View3d, Place::Left);
+    assert!(same_leaf(&app.dock, Panel::View3d, Panel::Inspector));
+    // Back on the right: no view there any more, a new pane.
+    move_panel(&mut app.dock, Panel::View3d, Place::Right);
+    assert!(!same_leaf(&app.dock, Panel::View3d, Panel::Inspector));
+    assert_eq!(app.dock.main_surface().num_tabs(), 7);
+    assert_eq!(app.dock.iter_leaves().count(), 2);
 }

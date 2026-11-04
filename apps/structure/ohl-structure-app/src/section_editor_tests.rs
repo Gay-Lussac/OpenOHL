@@ -195,12 +195,17 @@ fn the_section_library_sheet_opens_a_form() {
     h.run();
     assert!(h.state().section_editor.editing.is_some());
     // Nothing typed yet: what is wrong is said; typed, the properties.
-    h.get_by_value(ohl_structure_edit::section_library::NO_ID);
+    assert!(
+        h.query_all_by_value(ohl_structure_edit::section_library::NO_ID)
+            .next()
+            .is_some()
+    );
     let file = sections.join("a.ohlsec");
     h.state_mut().section_editor.editing = Some(angle(&file, "L60", "60 mm", "6 mm"));
     h.run();
     h.get_by_label("Properties (computed as typed)");
-    h.get_by_value("5.369 kg/m");
+    // (A value wrapped in the narrower left pane: its text runs match too.)
+    assert!(h.query_all_by_value("5.369 kg/m").next().is_some());
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 

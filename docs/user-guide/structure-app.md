@@ -210,8 +210,8 @@ and opens its menu: its name, **Inspector**, **Open in the Detail view**
 first). On an object of a selection of several, or where there is
 nothing, with something selected: the selection's menu (**Inspector**,
 **Delete selected…**, **Clear selection**). A right-click on a panel's
-**tab**: **Dock with the tables**, **Dock on the right (with the
-Inspector)**, **Float in a window of its own** (as OHL-Design's pages).
+**tab**: **Dock on the left (text and edit)**, **Dock on the right
+(views)**, **Float in a window of its own** (as OHL-Design's pages).
 
 Under the menus, the **header**: the file's name (its full path and the
 structure's id and name on hover), *\* unsaved* when it has changes, the
@@ -241,14 +241,26 @@ and **Reactions** (FE results in front; the deformed shape's scale in
 FE results) and the **Usage legend**. The load and results panels keep
 their own ticks beside the scales (the same settings). **Reset layout** puts every panel
 back, and **Fit the view** shows the whole structure. The arrangement is
-kept for the next start. By default (2026-10-26) the **3D view** is
-large in the middle with its hotbar, the **Inspector** on its right (the
-**To do** list behind it), and below the view **one area of tables as
-tabs** — Points & strings, Wire points & sets, Joints, Members,
-Generators, Supports, Member cross-sections, Load table, FE results, as
-many as show their titles; the others (Groups, Line loads, …) open
-beside them from their menus. An arrangement kept by an older version
-gives way to this one once; after that yours is kept. The load recipes'
+kept for the next start. By default (2026-11-04) the window has **two
+panes**: on the **left the text and edit panels** as tabs — the
+**Inspector**, the **To do** list, Points & strings, Joints, Members,
+Supports (as many as show their titles; the others — Wire points & sets,
+Generators, Groups, the load table, FE results, Line loads, … — open
+there too, from their menus, in front); on the **right the 3D view**
+with its hotbar. The **Detail view** opens as a **tab on top of the 3D
+view** (not a third pane): opening a joint or member in it shows it in
+place of the 3D view, its **Joint details** or **Member details** in
+front on the left; **‹ 3D view** above the drawing (or **Escape**, once
+nothing of the Detail view's own is left to undo) brings the 3D view
+back, the Detail view staying open as the tab beside it; closed, the 3D
+view shows again. A panel opened from a menu that is not open goes to
+its side (a view on the right, the others on the left). Panes you move,
+split or float stay yours: the arrangement is kept as you left it.
+**Reset layout** brings back the two panes. An arrangement kept by an
+older version gives way to this one once when it is that version's
+default as it opened (the 3D view in the middle, the Inspector on its
+right, the tables below, the Detail view beside the 3D view); one you
+had changed is kept. The load recipes'
 columns and fields are named in words (*Line case*, *Self weight*, *One
 sided*); hovering one gives the key it has in the file
 (`line_case`…).
@@ -271,7 +283,7 @@ column scrolls with the others).
 | View (its main panels) | **3D view**, **Detail view**, **Inspector**, **To do** (the Level panel), **Libraries** (closed by default) |
 | **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
-| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details**, **Member details** (with the **Detail view** pane beside the 3D view) |
+| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design**, **Joint details**, **Member details** (with the **Detail view**, a tab on top of the 3D view) |
 | **Loads** | **Load case editor**, **Load table**, **Line loads** |
 | **Results** | **FE results** |
 
@@ -336,7 +348,7 @@ their menu or from View.
   default), **Edit** (2026-11-02: a joint, member or point clicked
   opens where it is edited — its fields in the Inspector, brought to the
   front, and its row in its table; a tower's joint or member, once asked, in
-  the Detail view with its details below — 2026-11-03; with the Detail
+  the Detail view with its details on the left — 2026-11-03; with the Detail
   view shown already, there at once, not asked — 2026-11-04), **Move** (drag a joint or point to move it, snapped to the
   grid — **snap** in the strip — or onto a joint; one undo step per
   drag), **Add a point** (on a joint clicked, else at the top of the stick
@@ -550,20 +562,23 @@ plates stay in the file, not shown.
 view, the Joints table, or picked in its list; the Detail view follows
 the selection even when the panel is behind another tab; each joint with
 how complete its details are, in its colour): its drawing in the
-**Detail view**, a pane of its own opened on the right of the 3D view
-(View › Detail view shows or hides it, a right-click on a joint or member: **Open in the Detail view**; no window over the view), and its
-tables in **Joint details below the Detail view** — that leaf holds only
-the Detail view's own details (Joint details, Member details), not the
-tables, loads or results (2026-11-03; a panel kept elsewhere by an older
-arrangement moves there when it is next opened).
+**Detail view**, a tab on top of the 3D view (2026-11-04: two panes by
+default; View › Detail view shows or hides it, a right-click on a joint
+or member: **Open in the Detail view**; no window over the view; **‹ 3D
+view** above the drawing brings the 3D view back), and its tables in
+**Joint details**, in front on the left with the other text and edit
+panels (Member details for a member). Joint or Member details found in a
+pane with a view are moved to the left when next opened; elsewhere they
+stay where you put them.
 
 The **Edit** tool of the 3D view on a tower's joint or member first asks
 **Open … in the Detail view?** (2026-11-03): **Open the Detail view**
-shows it there with its details in front below it; **Stay** keeps to the
-Inspector (its fields, as for any other object). When the Detail view is
-shown already (open and not behind another tab), it is not asked again:
-the joint or member clicked is shown there at once, its details in front
-below it (2026-11-04).
+shows it there, in front, with its details in front on the left;
+**Stay** keeps to the Inspector (its fields, as for any other object).
+When the Detail view is open already (in front, or the tab behind the 3D
+view), it is not asked again: the joint or member clicked is shown there
+at once, the Detail view in front, its details in front on the left
+(2026-11-04).
 
 - **Close-up**: the members meeting there as their cross-sections (angles
   with their roll, so the leg bolted shows), cut a little beyond the

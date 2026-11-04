@@ -14,7 +14,7 @@
 //! - its ASCE 10-97 capacities worked out from them on every change, what
 //!   governs, KL/r, what was assumed, and the usage under the last FE
 //!   run's forces (the bolts and holes do not change the forces);
-//! - in the Detail view beside the 3D view, its leg bolted laid flat with
+//! - in the Detail view (on top of the 3D view), its leg bolted laid flat with
 //!   the holes and bolts of both ends.
 
 use std::sync::Arc;

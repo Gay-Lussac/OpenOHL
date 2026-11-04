@@ -370,6 +370,9 @@ fn an_inspector_edit_is_one_undo_step() {
     let path = copy_of("type-02.ohls", "review-inspector");
     let mut h = harness(&path);
     let before = text(&h);
+    // The Inspector, a tab on the left with the tables, in front.
+    h.state_mut().focus(Panel::Inspector);
+    h.run();
     h.get_by_label_contains("Nothing selected");
     h.state_mut().selected = vec![Handle::Joint("L10B".into())];
     h.run();

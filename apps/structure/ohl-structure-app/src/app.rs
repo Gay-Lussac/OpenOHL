@@ -101,6 +101,10 @@ pub struct StructureApp {
     pub focus_request: Option<Panel>,
     /// The panels drawn in the last frame.
     pub panels_drawn: Vec<Panel>,
+    /// The panels are being drawn: [`Self::dock`] is a copy to read (what
+    /// is open, where), a panel brought to the front waits for the end of
+    /// the drawing ([`Self::focus_request`]).
+    pub drawing_dock: bool,
     /// Help › About is open.
     pub about: bool,
     /// Picked, in order (two joints: a member between them).
@@ -222,6 +226,7 @@ impl StructureApp {
             dock: crate::layout::default_dock(),
             focus_request: None,
             panels_drawn: Vec::new(),
+            drawing_dock: false,
             about: false,
             selected: Vec::new(),
             scroll_to: None,
@@ -842,14 +847,16 @@ impl StructureApp {
     /// Brings `panel` to the front (opened where it belongs if closed);
     /// its menu becomes the one worked in.
     pub fn focus(&mut self, panel: Panel) {
-        // Joint details brings its drawing beside the 3D view.
-        if matches!(panel, Panel::JointDetails | Panel::MemberDetails)
-            && !self.is_open(Panel::JointView)
-        {
-            crate::layout::open_panel(&mut self.dock, Panel::JointView);
+        // While the panels are drawn: once they are.
+        if self.drawing_dock {
+            self.focus_request = Some(panel);
+            return;
         }
-        // Its details below it, on their own.
+        // Joint or Member details bring their drawing, the Detail view, to
+        // the front (a tab on top of the 3D view by default); the details
+        // themselves on the left, not over a view.
         if matches!(panel, Panel::JointDetails | Panel::MemberDetails) {
+            crate::layout::open_panel(&mut self.dock, Panel::JointView);
             crate::layout::settle_details(&mut self.dock, panel);
         }
         crate::layout::open_panel(&mut self.dock, panel);
@@ -881,14 +888,16 @@ impl StructureApp {
     /// The panels as kept from the last run (none kept, or not read: the
     /// default arrangement).
     pub fn restore(&mut self, storage: Option<&dyn eframe::Storage>) {
-        // An arrangement of an older version gives way to the default
-        // once; one that does not read too.
+        // An arrangement of version 1 gives way to the default once; one of
+        // version 2 only when it is that version's default (one the user
+        // changed is theirs, kept); one that does not read too.
         let version = storage
             .and_then(|s| eframe::get_value::<u32>(s, crate::layout::DOCK_VERSION_KEY))
             .unwrap_or(1);
-        if version >= crate::layout::DOCK_VERSION
+        if version >= 2
             && let Some(dock) = storage
                 .and_then(|s| eframe::get_value::<DockState<Panel>>(s, crate::layout::DOCK_KEY))
+            && (version >= crate::layout::DOCK_VERSION || !crate::layout::is_old_default(&dock))
         {
             self.dock = dock;
         }
@@ -1041,7 +1050,10 @@ impl eframe::App for StructureApp {
             self.body.preview.clear();
         }
         let before = (self.body.preview_stamp(), self.area);
-        let mut dock = std::mem::replace(&mut self.dock, DockState::new(Vec::new()));
+        // The panels read a copy of the arrangement while it is drawn
+        // (what is open, which tab is in front).
+        let mut dock = self.dock.clone();
+        self.drawing_dock = true;
         let mut viewer = crate::layout::Viewer {
             app: self,
             drawn: Vec::new(),
@@ -1058,6 +1070,7 @@ impl eframe::App for StructureApp {
         let (drawn, moves) = (viewer.drawn, viewer.moves);
         self.panels_drawn = drawn;
         self.dock = dock;
+        self.drawing_dock = false;
         for (panel, place) in moves {
             crate::layout::move_panel(&mut self.dock, panel, place);
         }
@@ -1102,7 +1115,10 @@ impl StructureApp {
             Panel::Libraries => self.libraries_ui(ui),
             Panel::Inspector => self.inspector_ui(ui),
             Panel::JointDetails => self.joint_panel_ui(ui),
-            Panel::JointView => self.joint_view_ui(ui),
+            Panel::JointView => {
+                self.detail_header(ui);
+                self.joint_view_ui(ui);
+            }
             Panel::MemberDetails => self.member_panel_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }

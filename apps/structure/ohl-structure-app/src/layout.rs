@@ -5,8 +5,9 @@
 //! The panels of the window and where they are: docked with `egui_dock`
 //! (as in the line application), each movable (drag its tab), closable
 //! and opened again from View or from its menu; the arrangement is kept
-//! between runs. By default the tables are on the left, the 3D view on the
-//! right.
+//! between runs. By default two panes (owner 2026-11-04): the text and
+//! edit panels on the left, the 3D view on the right with the Detail view
+//! as a tab on top of it.
 
 use eframe::egui;
 use egui_dock::{DockState, NodeIndex, NodePath, TabViewer};
@@ -21,11 +22,13 @@ pub const DOCK_KEY: &str = "ols-structure-dock"; // storage key: kept
 /// Key of the arrangement's version in the window's storage.
 pub const DOCK_VERSION_KEY: &str = "ohl-structure-dock-version";
 
-/// The arrangement's version: an arrangement kept by an older version
-/// (none kept) gives way to the default once (owner, 2026-10-26: the
-/// calmer arrangement — the 3D view in the middle, the Inspector on its
-/// right, the tables as tabs below it).
-pub const DOCK_VERSION: u32 = 2;
+/// The arrangement's version. One kept by version 1 (none kept) gives way
+/// to the default once; one kept by version 2 only when it is that
+/// version's default ([`is_old_default`]: the 3D view in the middle, the
+/// Inspector on its right, the tables below), not when the user changed it
+/// (owner 2026-11-04: the text and edit panels on the left, the views on
+/// the right, two panes).
+pub const DOCK_VERSION: u32 = 3;
 
 /// The menus of the work, in order: Geometry (level 1), Body (level 2),
 /// Design (level 3), Loads, Results. Each panel belongs to one (the 3D
@@ -131,7 +134,7 @@ pub enum Panel {
     /// the bolts ([`crate::joint_panel`]).
     JointDetails,
     /// The joint of Joint details drawn: a close-up or a face view, a
-    /// pane beside the 3D view ([`crate::joint_panel`]); or the member of
+    /// tab on top of the 3D view ([`crate::joint_panel`]); or the member of
     /// Member details laid flat ([`crate::member_panel`]).
     JointView,
     /// A tower's member in detail: its two ends, its capacities live
@@ -243,8 +246,9 @@ impl Panel {
             }
             Panel::Results => "The cases of the load table solved by the finite-element model",
             Panel::JointView => {
-                "Beside the 3D view: the joint of Joint details (a close-up or a face view, saved \
-                 as SVG or PDF) or the member of Member details laid flat"
+                "On top of the 3D view (a tab of its pane): the joint of Joint details (a \
+                 close-up or a face view, saved as SVG or PDF) or the member of Member details \
+                 laid flat"
             }
             Panel::MemberDetails => {
                 "A tower's member in detail: its two ends' bolts and holes (the joints' own), its \
@@ -395,169 +399,193 @@ impl Panel {
     }
 }
 
-/// The default arrangement (owner, 2026-10-26: calmer): the 3D view
-/// large in the middle with its hotbar, the Inspector on its right (the
-/// To do list behind it), and below the view one area of tables as tabs —
-/// geometry, body, design, loads, results. The header (file, level, to
-/// do) is above them all, not a panel.
+/// The share of the window's width the left side (the text and edit
+/// panels) takes by default; the views have the rest.
+pub const LEFT_SHARE: f32 = 0.44;
+
+/// Whether `panel` is a view (the 3D view, the Detail view): on the right
+/// by default, the text and edit panels on the left.
+pub fn is_view(panel: Panel) -> bool {
+    matches!(panel, Panel::View3d | Panel::JointView)
+}
+
+/// The default arrangement (owner, 2026-11-04: "the text and edit
+/// parameters on the left and 3d view with toolbar on the right"): two
+/// panes. On the left the text and edit panels as tabs — the Inspector,
+/// the To do list and as many tables as show their titles (the others —
+/// wire points, generators, loads, results … — open beside them from
+/// their menus; Joint and
+/// Member details there too, in front, when a joint or member is opened in
+/// the Detail view). On the right the 3D view with its hotbar; the Detail
+/// view opens as a tab on top of it, not in a third pane. The header
+/// (file, level, to do) is above them all, not a panel.
 pub fn default_dock() -> DockState<Panel> {
-    let mut dock = DockState::new(vec![Panel::View3d]);
-    let tree = dock.main_surface_mut();
-    let [view, _] = tree.split_right(NodeIndex::root(), 0.8, vec![Panel::Inspector, Panel::Level]);
-    // As many tables as show their titles (Groups, Line loads and the
-    // others open beside them from their menus).
-    tree.split_below(
-        view,
-        0.6,
-        vec![
-            Panel::PointsInsulators,
-            Panel::WiresSets,
-            Panel::Joints,
-            Panel::Members,
-            Panel::Generators,
-            Panel::Supports,
-            Panel::MemberSections,
-            Panel::LoadTable,
-            Panel::Results,
-        ],
-    );
+    let mut dock = DockState::new(vec![
+        Panel::Inspector,
+        Panel::Level,
+        Panel::PointsInsulators,
+        Panel::Joints,
+        Panel::Members,
+        Panel::Supports,
+    ]);
+    dock.main_surface_mut()
+        .split_right(NodeIndex::root(), LEFT_SHARE, vec![Panel::View3d]);
     if let Some(path) = dock.find_tab(&Panel::Inspector) {
         let _ = dock.set_active_tab(path);
     }
     dock
 }
 
-/// The leaf a panel opened again goes to: one with a panel of its menu,
-/// else one with any table, else none.
+/// The shapes of the main surface the defaults before 2026-11-04 had
+/// ([`shape`]): the 3D view in the middle, the Inspector on its right, the
+/// tables below (version 2, owner 2026-10-26), with the Detail view beside
+/// the 3D view and the details beside the tables as they opened by
+/// default. A kept arrangement of this shape is an old default, not the
+/// user's own: it gives way to the new default.
+const OLD_DEFAULTS: [&str; 3] = [
+    "H(V(3d,t),i)",
+    "H(V(H(3d,dv),t),i)",
+    "H(V(H(3d,dv),H(t,d)),i)",
+];
+
+/// The main surface's arrangement in a few letters: a split `H(..,..)`
+/// (side by side) or `V(..,..)` (one above the other), a leaf by what it
+/// holds — `3d` the 3D view alone, `dv` the Detail view alone, `i` the
+/// Inspector and the To do list, `d` Joint or Member details alone, `t`
+/// tables, `x` anything else (a mix the user made).
+pub fn shape(dock: &DockState<Panel>) -> String {
+    fn leaf(tabs: &[Panel]) -> &'static str {
+        let all = |f: fn(&Panel) -> bool| !tabs.is_empty() && tabs.iter().all(f);
+        if tabs == [Panel::View3d] {
+            "3d"
+        } else if tabs == [Panel::JointView] {
+            "dv"
+        } else if all(|p| matches!(p, Panel::Inspector | Panel::Level)) {
+            "i"
+        } else if all(|p| matches!(p, Panel::JointDetails | Panel::MemberDetails)) {
+            "d"
+        } else if all(|p| p.area().is_some()) {
+            "t"
+        } else {
+            "x"
+        }
+    }
+    fn walk(nodes: &[&egui_dock::Node<Panel>], at: usize, out: &mut String) {
+        match nodes.get(at) {
+            Some(egui_dock::Node::Leaf(l)) => out.push_str(leaf(l.tabs())),
+            Some(n @ (egui_dock::Node::Horizontal(_) | egui_dock::Node::Vertical(_))) => {
+                let h = matches!(n, egui_dock::Node::Horizontal(_));
+                out.push_str(if h { "H(" } else { "V(" });
+                walk(nodes, NodeIndex(at).left().0, out);
+                out.push(',');
+                walk(nodes, NodeIndex(at).right().0, out);
+                out.push(')');
+            }
+            _ => out.push('-'),
+        }
+    }
+    let nodes: Vec<_> = dock.main_surface().iter().collect();
+    let mut out = String::new();
+    walk(&nodes, 0, &mut out);
+    out
+}
+
+/// Whether a kept arrangement of an older version is one of the old
+/// defaults ([`OLD_DEFAULTS`]; a window with the Load case editor alone, as
+/// it opens, allowed): replaced by the new default. One the user changed
+/// (panes moved or split, tabs mixed or floated) is not: it is kept as
+/// theirs.
+pub fn is_old_default(dock: &DockState<Panel>) -> bool {
+    let windows = dock.iter_surfaces().skip(1).all(|s| {
+        s.node_tree().is_none_or(|t| {
+            t.iter()
+                .filter_map(|n| n.get_leaf())
+                .all(|l| l.tabs().iter().all(|p| *p == Panel::LoadRecipes))
+        })
+    });
+    windows && OLD_DEFAULTS.contains(&shape(dock).as_str())
+}
+
+/// The leaf a text or edit panel opened again goes to: one without a
+/// view (the left), the main window's first — one with the other of its
+/// pair (the Inspector and the To do list; Joint and Member details), else
+/// one with a panel of its menu, else the one with the Inspector or the To
+/// do list, else any; none: no such leaf.
 fn home(dock: &DockState<Panel>, panel: Panel) -> Option<NodePath> {
-    let loads = |p: &Panel| matches!(p.area(), Some(Area::LoadCases | Area::Results));
-    // The Detail view's details keep their leaf to themselves.
-    let table =
-        |p: &Panel| p.area().is_some() && !matches!(p, Panel::JointDetails | Panel::MemberDetails);
-    let same = |p: &Panel| table(p) && p.area() == panel.area();
-    let near = |p: &Panel| table(p) && loads(p) == loads(&panel);
-    let any = |p: &Panel| table(p);
-    [
-        dock.find_tab_from(same),
-        dock.find_tab_from(near),
-        dock.find_tab_from(any),
-    ]
-    .into_iter()
-    .flatten()
-    .next()
-    .map(|t| t.node_path())
+    let pair = match panel {
+        Panel::Inspector => Some(Panel::Level),
+        Panel::Level => Some(Panel::Inspector),
+        Panel::JointDetails => Some(Panel::MemberDetails),
+        Panel::MemberDetails => Some(Panel::JointDetails),
+        _ => None,
+    };
+    let mut leaves: Vec<(NodePath, &[Panel])> = dock
+        .iter_leaves()
+        .filter(|(_, l)| !l.tabs().iter().any(|p| is_view(*p)))
+        .map(|(at, l)| (at, l.tabs()))
+        .collect();
+    leaves.sort_by_key(|(at, _)| at.surface != egui_dock::SurfaceIndex::main());
+    let with = |f: &dyn Fn(&Panel) -> bool| {
+        leaves
+            .iter()
+            .find(|(_, tabs)| tabs.iter().any(f))
+            .map(|(at, _)| *at)
+    };
+    pair.and_then(|o| with(&|p| *p == o))
+        .or_else(|| panel.area().and_then(|a| with(&|p| p.area() == Some(a))))
+        .or_else(|| with(&|p| matches!(p, Panel::Inspector | Panel::Level)))
+        .or_else(|| with(&|_| true))
+}
+
+/// The leaf of the views (the 3D view's, else the Detail view's): where a
+/// view opened again goes, on top of the other.
+fn views(dock: &DockState<Panel>) -> Option<NodePath> {
+    dock.find_tab(&Panel::View3d)
+        .or_else(|| dock.find_tab(&Panel::JointView))
+        .map(|t| t.node_path())
+}
+
+/// A new pane for `panel` on its side of the whole main window: a view on
+/// the right, a text or edit panel on the left.
+fn new_side(dock: &mut DockState<Panel>, panel: Panel) {
+    let tree = dock.main_surface_mut();
+    if tree.is_empty() {
+        dock.push_to_first_leaf(panel);
+    } else if is_view(panel) {
+        tree.split_right(NodeIndex::root(), LEFT_SHARE, vec![panel]);
+    } else {
+        tree.split_left(NodeIndex::root(), LEFT_SHARE, vec![panel]);
+    }
 }
 
 /// Shows `panel`: brought to the front of its leaf and focused; closed, it
-/// opens where it belongs (next to a panel of its menu; the 3D view on the
-/// right, the level above the tables; the Load case editor in a window of
-/// its own).
+/// opens on its side (owner 2026-11-04): a view with the other view (the
+/// Detail view on top of the 3D view, a tab of the same pane), a text or
+/// edit panel on the left with the others (next to a panel of its menu);
+/// the Load case editor in a window of its own.
 pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
     if dock.find_tab(&panel).is_none() {
-        let tables = home(dock, Panel::PointsInsulators);
-        match panel {
+        let at = if is_view(panel) {
+            views(dock)
+        } else {
+            home(dock, panel)
+        };
+        match (panel, at) {
             // The Load case editor in a window of its own, large enough
             // to see a case's two parts at once (owner, 2026-10-25:
             // "easily understandable"); dragged into the dock if wanted.
-            Panel::LoadRecipes => {
+            (Panel::LoadRecipes, _) => {
                 let surface = dock.add_window(vec![panel]);
                 if let Some(w) = dock.get_window_state_mut(surface) {
                     w.set_position(egui::pos2(120.0, 80.0));
                     w.set_size(egui::vec2(980.0, 760.0));
                 }
             }
-            Panel::View3d => {
-                dock.main_surface_mut()
-                    .split_right(NodeIndex::root(), 0.45, vec![panel]);
+            (_, Some(at)) => {
+                dock.set_focused_node_and_surface(at);
+                dock.push_to_focused_leaf(panel);
             }
-            // The joint drawn in a pane of its own on the right of the 3D
-            // view (owner, 2026-11-02: "opens on the tower window as a new
-            // pane … easier to not fill the view with screens").
-            Panel::JointView => match dock.find_tab(&Panel::View3d) {
-                Some(view) if view.surface == egui_dock::SurfaceIndex::main() => {
-                    dock.main_surface_mut()
-                        .split_right(view.node, 0.5, vec![panel]);
-                }
-                _ => dock.push_to_first_leaf(panel),
-            },
-            // Joint and Member details below the Detail view, in a leaf
-            // of their own (owner 2026-11-03: the detail view's bottom
-            // panel shows only what belongs to it, not the tables, loads
-            // and results).
-            Panel::JointDetails | Panel::MemberDetails => {
-                let other = if panel == Panel::JointDetails {
-                    Panel::MemberDetails
-                } else {
-                    Panel::JointDetails
-                };
-                let main = |p: &egui_dock::TabPath| p.surface == egui_dock::SurfaceIndex::main();
-                match (
-                    dock.find_tab(&other),
-                    tables.filter(|t| t.surface == egui_dock::SurfaceIndex::main()),
-                    dock.find_tab(&Panel::JointView),
-                ) {
-                    (Some(at), _, _) if details_only(dock, at.node_path()) => {
-                        dock.set_focused_node_and_surface(at.node_path());
-                        dock.push_to_focused_leaf(panel);
-                    }
-                    // Beside the tables, under the Detail view (as wide as
-                    // it, the tables' height).
-                    (_, Some(t), Some(view)) if main(&view) => {
-                        dock.main_surface_mut()
-                            .split_right(t.node, 0.5, vec![panel]);
-                    }
-                    (_, _, Some(view)) if main(&view) => {
-                        dock.main_surface_mut()
-                            .split_below(view.node, 0.55, vec![panel]);
-                    }
-                    _ => match home(dock, panel) {
-                        Some(at) => {
-                            dock.set_focused_node_and_surface(at);
-                            dock.push_to_focused_leaf(panel);
-                        }
-                        None => dock.push_to_first_leaf(panel),
-                    },
-                }
-            }
-            // The Inspector and the To do list on the right of the view,
-            // together.
-            Panel::Level | Panel::Inspector => {
-                let other = if panel == Panel::Level {
-                    Panel::Inspector
-                } else {
-                    Panel::Level
-                };
-                match (dock.find_tab(&other), dock.find_tab(&Panel::View3d)) {
-                    (Some(at), _) => {
-                        dock.set_focused_node_and_surface(at.node_path());
-                        dock.push_to_focused_leaf(panel);
-                    }
-                    (None, Some(view)) if view.surface == egui_dock::SurfaceIndex::main() => {
-                        dock.main_surface_mut()
-                            .split_right(view.node, 0.8, vec![panel]);
-                    }
-                    _ => match tables {
-                        Some(at) if at.surface == egui_dock::SurfaceIndex::main() => {
-                            dock.main_surface_mut()
-                                .split_above(at.node, 0.2, vec![panel]);
-                        }
-                        _ => dock.push_to_first_leaf(panel),
-                    },
-                }
-            }
-            _ => match home(dock, panel) {
-                Some(at) => {
-                    dock.set_focused_node_and_surface(at);
-                    dock.push_to_focused_leaf(panel);
-                }
-                None if dock.find_tab(&Panel::View3d).is_some() => {
-                    // Only the 3D view (and the level) left: the tables on
-                    // its left again.
-                    dock.main_surface_mut()
-                        .split_left(NodeIndex::root(), 0.45, vec![panel]);
-                }
-                None => dock.push_to_first_leaf(panel),
-            },
+            (_, None) => new_side(dock, panel),
         }
     }
     if let Some(path) = dock.find_tab(&panel) {
@@ -566,27 +594,28 @@ pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
     }
 }
 
-/// Whether the leaf at `at` holds Joint and Member details only (the
-/// Detail view's own details).
-pub fn details_only(dock: &DockState<Panel>, at: NodePath) -> bool {
-    dock.leaf(at).is_ok_and(|l| {
-        l.tabs()
-            .iter()
-            .all(|p| matches!(p, Panel::JointDetails | Panel::MemberDetails))
-    })
-}
-
-/// Joint or Member details open among other panels (an arrangement kept
-/// from before 2026-11-03): moved below the Detail view, alone there.
+/// Joint or Member details in a pane with a view (where they would hide
+/// it): moved to the left, with the text and edit panels. Anywhere else
+/// they stay (the user's place).
 pub fn settle_details(dock: &mut DockState<Panel>, panel: Panel) {
     let Some(at) = dock.find_tab(&panel) else {
         return;
     };
-    if details_only(dock, at.node_path()) || dock.find_tab(&Panel::JointView).is_none() {
-        return;
+    let with_view = dock
+        .leaf(at.node_path())
+        .is_ok_and(|l| l.tabs().iter().any(|p| is_view(*p)));
+    if with_view {
+        dock.remove_tab(at);
+        open_panel(dock, panel);
     }
-    dock.remove_tab(at);
-    open_panel(dock, panel);
+}
+
+/// Whether `a` and `b` are tabs of one pane.
+pub fn same_leaf(dock: &DockState<Panel>, a: Panel, b: Panel) -> bool {
+    match (dock.find_tab(&a), dock.find_tab(&b)) {
+        (Some(a), Some(b)) => a.node_path() == b.node_path(),
+        _ => false,
+    }
 }
 
 /// Whether `panel` is shown: open and the tab in front of its leaf (not
@@ -677,16 +706,18 @@ const MENU_HEIGHT: f32 = 0.8;
 /// pages).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place {
-    /// With the tables (below the 3D view by default).
-    Tables,
-    /// With the Inspector and the To do list, on the right.
+    /// On the left, with the text and edit panels (the Inspector, the
+    /// tables).
+    Left,
+    /// On the right, with the views (the 3D view, the Detail view).
     Right,
     /// A window of its own (still a panel: dragged back in).
     Window,
 }
 
-/// Moves `panel` to `place` (its tab's right-click menu); nowhere to go
-/// (no panel there): it stays.
+/// Moves `panel` to `place` (its tab's right-click menu): into the pane of
+/// that side (the views' on the right, the text and edit panels' on the
+/// left); none there, a new pane on that side.
 pub fn move_panel(dock: &mut DockState<Panel>, panel: Panel, place: Place) {
     let Some(src) = dock.find_tab(&panel) else {
         return;
@@ -697,19 +728,34 @@ pub fn move_panel(dock: &mut DockState<Panel>, panel: Panel, place: Place) {
                 egui::Rect::from_min_size(egui::pos2(160.0, 120.0), egui::vec2(820.0, 600.0));
             dock.detach_tab(src, rect);
         }
-        Place::Tables | Place::Right => {
-            let group = |p: &Panel| match place {
-                Place::Right => matches!(p, Panel::Inspector | Panel::Level),
-                _ => p.area().is_some() && !matches!(p, Panel::JointDetails | Panel::MemberDetails),
+        Place::Left | Place::Right => {
+            let right = place == Place::Right;
+            let dst = if right {
+                dock.find_tab_from(|p| *p != panel && is_view(*p))
+                    .map(|t| t.node_path())
+            } else {
+                dock.iter_leaves()
+                    .filter(|(_, l)| {
+                        l.tabs().iter().any(|p| *p != panel)
+                            && !l.tabs().iter().any(|p| is_view(*p))
+                    })
+                    .min_by_key(|(at, _)| at.surface != egui_dock::SurfaceIndex::main())
+                    .map(|(at, _)| at)
             };
-            let Some(dst) = dock
-                .find_tab_from(|p| *p != panel && group(p))
-                .map(|t| t.node_path())
-            else {
-                return;
-            };
-            if dst != src.node_path() {
-                dock.move_tab(src, (dst, egui_dock::TabInsert::Append));
+            match dst {
+                Some(dst) if dst == src.node_path() => {}
+                Some(dst) => dock.move_tab(src, (dst, egui_dock::TabInsert::Append)),
+                None => {
+                    dock.remove_tab(src);
+                    let tree = dock.main_surface_mut();
+                    if tree.is_empty() {
+                        dock.push_to_first_leaf(panel);
+                    } else if right {
+                        tree.split_right(NodeIndex::root(), LEFT_SHARE, vec![panel]);
+                    } else {
+                        tree.split_left(NodeIndex::root(), LEFT_SHARE, vec![panel]);
+                    }
+                }
             }
         }
     }
@@ -747,8 +793,8 @@ impl TabViewer for Viewer<'_> {
     /// pages); moved once the dock is drawn.
     fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Panel, _path: NodePath) {
         for (place, text) in [
-            (Place::Tables, "Dock with the tables"),
-            (Place::Right, "Dock on the right (with the Inspector)"),
+            (Place::Left, "Dock on the left (text and edit)"),
+            (Place::Right, "Dock on the right (views)"),
             (Place::Window, "Float in a window of its own"),
         ] {
             if ui.button(text).clicked() {

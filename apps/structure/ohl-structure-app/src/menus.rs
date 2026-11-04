@@ -538,8 +538,8 @@ impl StructureApp {
             ui,
             "Reset layout",
             true,
-            "Every panel back where it starts: the 3D view in the middle, the Inspector on its \
-             right, the tables below it",
+            "Every panel back where it starts: the text and edit panels (Inspector, To do, tables) \
+             on the left, the 3D view on the right (the Detail view a tab on top of it)",
             "",
         ) {
             self.reset_layout();

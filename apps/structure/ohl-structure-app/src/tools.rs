@@ -158,7 +158,7 @@ impl Tool {
             Tool::Edit => {
                 "Click a joint, member or point: its fields in the Inspector, its row in its \
                  table; a tower's joint or member: asked whether to open it in the Detail \
-                 view, its details below it"
+                 view, its details on the left"
             }
         }
     }
@@ -665,8 +665,9 @@ impl StructureApp {
     /// front), its table's row shown; a tower's joint or member: asked
     /// first whether to open it in the Detail view, its details below it
     /// (owner 2026-11-03; [`StructureApp::detail_question`]) — not asked
-    /// when the Detail view is shown already: it shows the joint or member
-    /// at once, its details in front below it (owner 2026-11-04: "if i
+    /// when the Detail view is open already (in front, or the tab behind
+    /// the 3D view): it shows the joint or member at once, in front, its
+    /// details in front on the left (owner 2026-11-04: "if i
     /// click with edit and the detailed view is already open it should not
     /// ask to open it again").
     pub fn edit_clicked(&mut self, h: Handle) {
@@ -678,7 +679,7 @@ impl StructureApp {
             .is_some_and(|f| ohl_structure_edit::is_tower(f.structure().kind));
         if tower
             && matches!(h, Handle::Joint(_) | Handle::Member(_))
-            && crate::layout::is_shown(&self.dock, crate::layout::Panel::JointView)
+            && self.is_open(crate::layout::Panel::JointView)
         {
             self.joints.ask_open = None;
             self.open_in_detail(h.clone());

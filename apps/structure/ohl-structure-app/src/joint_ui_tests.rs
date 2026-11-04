@@ -66,7 +66,7 @@ fn the_kind_is_toggled_and_a_joint_shown_in_detail() {
     assert_eq!(kind(&h), StructureKind::Other);
     menu(&mut h, "Design", "Joint details");
     assert_eq!(h.state_mut().focused(), Some(Panel::JointDetails));
-    // Its drawing in a pane of its own beside the 3D view.
+    // Its drawing, the Detail view, a tab on top of the 3D view.
     assert!(h.state().is_open(Panel::JointView));
     h.get_by_label_contains("Joint details are a tower's");
     // Geometry › Structure kind › lattice tower: one undo step.
@@ -387,8 +387,8 @@ fn the_joint_view_follows_the_selection_with_the_panel_hidden() {
 /// or joints and open the necessary window to edit them"): a member
 /// clicked is selected, the Inspector in front with its fields; a tower's
 /// joint or member is first asked about (owner 2026-11-03), then opened in
-/// the Detail view with its details in front below it — or not (Stay).
-/// The Detail view shown already: not asked again, the joint or member
+/// the Detail view with its details in front on the left — or not (Stay).
+/// The Detail view open already: not asked again, the joint or member
 /// shown at once, its details in front (owner 2026-11-04: "if i click with
 /// edit and the detailed view is already open it should not ask to open
 /// it again but just show the joint directly or member").
@@ -414,16 +414,32 @@ fn the_edit_tool_opens_where_it_is_edited() {
     h.get_by_label("Open the Detail view").click();
     h.run();
     h.run();
-    // A tower's member: Member details in front below the Detail view.
+    // A tower's member: Member details in front on the left, the Detail
+    // view on top of the 3D view.
     assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
     assert_eq!(h.state_mut().focused(), Some(Panel::MemberDetails));
     assert!(h.state().joints.ask_open.is_none());
-    assert!(h.get_all_by_label_contains("Member m155").count() >= 2);
-    // Its leaf holds the details only, not the tables, loads or results.
-    let at = h.state().dock.find_tab(&Panel::MemberDetails).unwrap();
-    assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
-    // The Detail view shown: a joint clicked is shown there at once.
-    assert!(crate::layout::is_shown(&h.state().dock, Panel::JointView));
+    assert!(h.get_all_by_label_contains("Member m155").count() >= 1);
+    // The details on the left with the text and edit panels; the Detail
+    // view a tab on top of the 3D view, in front (owner 2026-11-04).
+    let dock = &h.state().dock;
+    assert!(crate::layout::same_leaf(
+        dock,
+        Panel::MemberDetails,
+        Panel::Inspector
+    ));
+    assert!(crate::layout::same_leaf(
+        dock,
+        Panel::JointView,
+        Panel::View3d
+    ));
+    assert!(crate::layout::is_shown(dock, Panel::JointView));
+    // Back to the 3D view: the Detail view still open behind it.
+    crate::layout::open_panel(&mut h.state_mut().dock, Panel::View3d);
+    h.run();
+    assert!(crate::layout::is_shown(&h.state().dock, Panel::View3d));
+    assert!(h.state().is_open(Panel::JointView));
+    // The Detail view open: a joint clicked is shown there at once.
     h.state_mut()
         .tool_click(Some(Handle::Joint("L9A".into())), None);
     h.run();
@@ -437,10 +453,14 @@ fn the_edit_tool_opens_where_it_is_edited() {
     assert!(h.state().is_open(Panel::JointDetails) && h.state().is_open(Panel::JointView));
     assert_eq!(h.state().joints.joint.as_deref(), Some("L9A"));
     assert_eq!(h.state_mut().focused(), Some(Panel::JointDetails));
-    let at = h.state().dock.find_tab(&Panel::JointDetails).unwrap();
-    assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
-    // The Inspector's heading and the Detail view's.
-    assert_eq!(h.get_all_by_label("Joint L9A").count(), 2);
+    assert!(crate::layout::same_leaf(
+        &h.state().dock,
+        Panel::JointDetails,
+        Panel::Inspector
+    ));
+    assert!(crate::layout::is_shown(&h.state().dock, Panel::JointView));
+    // The Detail view's heading (the Inspector a tab behind the details).
+    assert_eq!(h.get_all_by_label("Joint L9A").count(), 1);
     // … and a member: Member details in front, not asked.
     h.state_mut()
         .tool_click(Some(Handle::Member("m155".into())), None);
@@ -507,8 +527,8 @@ fn member_details_follow_the_bolts_live() {
     h.run();
     h.get_by_label_contains("Resistance (ASCE 10-97");
     h.get_by_label("Tension");
-    // The Inspector's heading and the Detail view's.
-    assert_eq!(h.get_all_by_label("Member D1").count(), 2);
+    // The Detail view's heading (the Inspector a tab behind the details).
+    assert_eq!(h.get_all_by_label("Member D1").count(), 1);
     let tension = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>| {
         h.state_mut()
             .member_capacity("D1")
@@ -835,9 +855,17 @@ fn the_detail_view_goes_back_and_shows_what_is_picked() {
     let file = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
         h.state().file.as_ref().unwrap().structure().clone()
     };
-    // The details below the Detail view are its own.
-    let at = h.state().dock.find_tab(&Panel::JointDetails).unwrap();
-    assert!(crate::layout::details_only(&h.state().dock, at.node_path()));
+    // The details on the left, the Detail view on top of the 3D view.
+    assert!(crate::layout::same_leaf(
+        &h.state().dock,
+        Panel::JointDetails,
+        Panel::Inspector
+    ));
+    assert!(crate::layout::same_leaf(
+        &h.state().dock,
+        Panel::JointView,
+        Panel::View3d
+    ));
     // The member in detail from the joint, then back: the button.
     h.state_mut().selected = vec![Handle::Member("D1".into())];
     h.run();
