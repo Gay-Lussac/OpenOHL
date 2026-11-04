@@ -214,10 +214,12 @@ pub(crate) fn check_value(id: &str, value: &Value) -> Result<(), SessionError> {
             AnnotationKind::Dimension,
             "distance" | "stations" | "wire_to_wire" | "wire_to_object",
         ) => 2,
+        // Three points, the vertex second (2026-11-04).
+        (AnnotationKind::Dimension, "angle") => 3,
         (AnnotationKind::Dimension, other) => {
             return Err(refused(format!(
                 "annotation {id}: measurement \"{other}\" (distance, height, stations, \
-                 wire_to_wire, clearance or wire_to_object)"
+                 wire_to_wire, clearance, wire_to_object or angle)"
             )));
         }
         _ => 1,

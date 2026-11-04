@@ -45,6 +45,10 @@ pub enum Kind {
     /// The shortest distance from a wire (its span or jumper picked) to
     /// an object: a structure's members, a point.
     WireToObject,
+    /// The angle at the second of three points between the lines to the
+    /// first and the third (owner 2026-11-04: "a new tool where i can
+    /// click 3 points and get the angle between them").
+    Angle,
 }
 
 impl Kind {
@@ -53,6 +57,7 @@ impl Kind {
         match self {
             Kind::Height | Kind::Clearance => 1,
             Kind::Distance | Kind::Stations | Kind::WireToWire | Kind::WireToObject => 2,
+            Kind::Angle => 3,
         }
     }
 
@@ -65,6 +70,7 @@ impl Kind {
             Kind::WireToWire => "wire_to_wire",
             Kind::Clearance => "clearance",
             Kind::WireToObject => "wire_to_object",
+            Kind::Angle => "angle",
         }
     }
 
@@ -77,6 +83,7 @@ impl Kind {
             Kind::WireToWire,
             Kind::Clearance,
             Kind::WireToObject,
+            Kind::Angle,
         ]
         .into_iter()
         .find(|k| k.key() == key)
@@ -91,6 +98,7 @@ impl Kind {
             Kind::WireToWire => "Wire to wire",
             Kind::Clearance => "Clearance at a point",
             Kind::WireToObject => "Wire to object",
+            Kind::Angle => "Angle between points",
         }
     }
 
@@ -108,6 +116,37 @@ type P3 = [f64; 3];
 
 fn dist(a: P3, b: P3) -> f64 {
     (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
+}
+
+/// The direction from `p` to `q`: its bearing in plan (degrees from grid
+/// north, clockwise, 0–360; none when `q` is straight above or below `p`)
+/// and its elevation angle (degrees from the horizontal, up positive);
+/// none for one point.
+pub fn direction(p: P3, q: P3) -> Option<(Option<f64>, f64)> {
+    let d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+    let h = d[0].hypot(d[1]);
+    if h.hypot(d[2]) <= 1e-12 {
+        return None;
+    }
+    let bearing = (h > 1e-9).then(|| d[0].atan2(d[1]).to_degrees().rem_euclid(360.0));
+    Some((bearing, d[2].atan2(h).to_degrees()))
+}
+
+/// The angle between the directions `a` and `b`, degrees (0–180); none
+/// for a direction of no length.
+fn angle_between(a: P3, b: P3) -> Option<f64> {
+    let (la, lb) = (dist(a, [0.0; 3]), dist(b, [0.0; 3]));
+    if la <= 1e-12 || lb <= 1e-12 {
+        return None;
+    }
+    // atan2 of |a × b| and a · b: exact near 0° and 180° too.
+    let c = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    Some(dist(c, [0.0; 3]).atan2(dot).to_degrees())
 }
 
 /// The wire an anchor is on, as solved in case `case`: its span's or
@@ -221,17 +260,34 @@ pub struct Measurement {
     /// The line drawn in the views (none: a single point's height —
     /// from the point down to the ground).
     pub line: Option<([f64; 3], [f64; 3])>,
+    /// A second line drawn, without a label (an angle's second arm).
+    pub arm: Option<([f64; 3], [f64; 3])>,
+    /// From the first point to the second (two points): the bearing in
+    /// plan (from grid north, clockwise; none straight up or down) and
+    /// the elevation angle (from the horizontal, up positive), degrees —
+    /// written beside the value in the views (owner 2026-11-04: "for all
+    /// the tools that measure the difference between 2 points you should
+    /// write 2 angles (one on the flat ground like a compass and the
+    /// elevation angle)").
+    pub angles: Option<(Option<f64>, f64)>,
 }
 
 impl Measurement {
     /// The value in the views and the panel's heading (0.01 m).
     pub fn label(&self) -> String {
-        match self.rows.first() {
+        let mut out = match self.rows.first() {
             Some(r) => format!("{} {}", fmt(r.value, r.unit), r.unit)
                 .trim()
                 .to_owned(),
-            None => self.notes.first().cloned().unwrap_or_default(),
+            None => return self.notes.first().cloned().unwrap_or_default(),
+        };
+        if let Some((bearing, elevation)) = self.angles {
+            if let Some(b) = bearing {
+                out.push_str(&format!(" · az {b:.1}°"));
+            }
+            out.push_str(&format!(" · el {elevation:+.1}°"));
         }
+        out
     }
 
     /// As tab-separated text with every value in full: a heading line
@@ -565,6 +621,7 @@ pub fn measure_with(
     let mut rows = Vec::new();
     let mut notes = Vec::new();
     let mut line = None;
+    let mut arm = None;
     let row = |name: &str, value: f64, unit: &'static str| Row {
         name: name.into(),
         value,
@@ -588,18 +645,6 @@ pub fn measure_with(
                 rows.push(row(&format!("along {}", sa.0), sb.1 - sa.1, "m"));
                 rows.push(row("across (offset change)", sb.2 - sa.2, "m"));
             }
-            if h > 0.0 {
-                rows.push(row(
-                    "slope from the horizontal",
-                    d[2].atan2(h).to_degrees(),
-                    "°",
-                ));
-                rows.push(row(
-                    "bearing (from grid north, clockwise)",
-                    d[0].atan2(d[1]).to_degrees().rem_euclid(360.0),
-                    "°",
-                ));
-            }
             for (x, end) in [(a, "first"), (b, "second")] {
                 if let Some(w) = &x.wire {
                     notes.push(if w.radius > 0.0 {
@@ -613,6 +658,45 @@ pub fn measure_with(
                 }
             }
             line = Some((p, q));
+        }
+        Kind::Angle => {
+            // The vertex is the second pick; a wire picked: the point of
+            // its axis clicked (an angle between directions, not a
+            // distance to a surface).
+            let (a, o, c) = (picks[0].at, picks[1].at, picks[2].at);
+            let (u, v) = (
+                [a[0] - o[0], a[1] - o[1], a[2] - o[2]],
+                [c[0] - o[0], c[1] - o[1], c[2] - o[2]],
+            );
+            match angle_between(u, v) {
+                Some(t) => {
+                    rows.push(row("angle at the second point", t, "°"));
+                    let flat = |x: P3| [x[0], x[1], 0.0];
+                    match angle_between(flat(u), flat(v)) {
+                        Some(t) => rows.push(row("angle in plan", t, "°")),
+                        None => notes
+                            .push("in plan: an arm straight up or down, no angle in plan".into()),
+                    }
+                    rows.push(row("first arm (second to first)", dist(o, a), "m"));
+                    rows.push(row("second arm (second to third)", dist(o, c), "m"));
+                    for (x, name) in [(a, "first arm"), (c, "second arm")] {
+                        if let Some((bearing, elevation)) = direction(o, x) {
+                            if let Some(b) = bearing {
+                                rows.push(row(&format!("{name}: bearing in plan"), b, "°"));
+                            }
+                            rows.push(row(&format!("{name}: elevation angle"), elevation, "°"));
+                        }
+                    }
+                }
+                None => notes.push("two of the points are the same: no angle".into()),
+            }
+            notes.push(
+                "the angle at the second point clicked, between the lines to the first and the \
+                 third; a wire: the point of its axis clicked"
+                    .into(),
+            );
+            line = Some((o, a));
+            arm = Some((o, c));
         }
         Kind::Height => {
             let a = &picks[0];
@@ -868,6 +952,24 @@ pub fn measure_with(
             );
         }
     }
+    // Two points measured between: the direction's two angles, as rows
+    // and beside the value.
+    let angles = match kind {
+        Kind::Distance | Kind::Stations | Kind::WireToWire | Kind::WireToObject => {
+            line.and_then(|(p, q)| direction(p, q))
+        }
+        Kind::Height | Kind::Clearance | Kind::Angle => None,
+    };
+    if let Some((bearing, elevation)) = angles {
+        if let Some(b) = bearing {
+            rows.push(row("bearing in plan (from grid north, clockwise)", b, "°"));
+        }
+        rows.push(row(
+            "elevation angle (from the horizontal, up +)",
+            elevation,
+            "°",
+        ));
+    }
     Measurement {
         kind,
         picks: picks.to_vec(),
@@ -875,6 +977,8 @@ pub fn measure_with(
         rows,
         notes,
         line,
+        arm,
+        angles,
     }
 }
 
@@ -1034,10 +1138,14 @@ impl Measuring {
     /// (the picks so far and the point under the cursor).
     pub fn overlay(&self, others: Others) -> Overlay {
         let mut lines = Vec::new();
-        if let Some(m) = self.live.as_ref().or(self.done.last())
-            && let Some((a, b)) = m.line
-        {
-            lines.push((a, b, m.label()));
+        if let Some(m) = self.live.as_ref().or(self.done.last()) {
+            if let Some((a, b)) = m.line {
+                lines.push((a, b, m.label()));
+            }
+            // An angle's second arm: its line only.
+            if let Some((a, b)) = m.arm {
+                lines.push((a, b, String::new()));
+            }
         }
         let (kept, notes) = match &self.drawn {
             Some((o, kept, notes)) if *o == others => (kept.clone(), notes.clone()),
@@ -1076,6 +1184,9 @@ impl Measuring {
                             format!("{} {}", k.ann.text, m.label())
                         };
                         kept.push((k.ann.id.clone(), a, b, format!("{text}{by}")));
+                    }
+                    if let Some((a, b)) = m.arm {
+                        kept.push((k.ann.id.clone(), a, b, String::new()));
                     }
                 }
                 (_, Some(at)) if k.mine || others.notes => {
@@ -1646,19 +1757,23 @@ impl Overlay {
         near: Near,
     ) {
         let mut placer = crate::annotations::Placer::default();
-        let lines: Vec<(egui::Pos2, egui::Pos2, Label)> = self
+        let lines: Vec<(egui::Pos2, egui::Pos2, Option<Label>)> = self
             .lines
             .iter()
             .filter_map(|(a, b, label)| {
                 let (p, q) = (screen(*a)?, screen(*b)?);
                 let mid = p + (q - p) * 0.5;
-                let l = Label::new(
-                    painter,
-                    mid + egui::vec2(8.0, -8.0),
-                    label,
-                    egui::Color32::WHITE,
-                );
-                placer.force(l.rect());
+                // (An angle's second arm: no label.)
+                let l = (!label.is_empty()).then(|| {
+                    let l = Label::new(
+                        painter,
+                        mid + egui::vec2(8.0, -8.0),
+                        label,
+                        egui::Color32::WHITE,
+                    );
+                    placer.force(l.rect());
+                    l
+                });
                 Some((p, q, l))
             })
             .collect();
@@ -1707,7 +1822,7 @@ impl Overlay {
                 }
             };
             // (Off the view: not placed.)
-            if d <= range {
+            if d <= range && !text.is_empty() {
                 let l = Label::new(painter, label, text, KEPT);
                 if painter.clip_rect().intersects(l.rect()) && placer.reserve(l.rect()) {
                     l.paint(painter);
@@ -1718,7 +1833,9 @@ impl Overlay {
             for (w, c) in [(4.5, egui::Color32::from_black_alpha(180)), (2.0, COLOUR)] {
                 painter.line_segment([p, q], egui::Stroke::new(w, c));
             }
-            label.paint(painter);
+            if let Some(l) = label {
+                l.paint(painter);
+            }
         }
         for x in self.points.iter().filter_map(|p| screen(*p)) {
             painter.circle_stroke(x, 5.0, egui::Stroke::new(2.0, COLOUR));
@@ -1833,7 +1950,114 @@ mod tests {
             .find(|r| r.name.starts_with("bearing"))
             .unwrap();
         assert!((bearing.value - 90.0).abs() < 1e-9);
-        assert_eq!(east.label(), "10.00 m");
+        assert_eq!(east.label(), "10.00 m · az 90.0° · el +0.0°");
+    }
+
+    /// Two points: the bearing in plan (compass, from grid north,
+    /// clockwise) and the elevation angle, as rows and beside the value —
+    /// a pick 10 m south-west in plan and 10 m down: 225°, −45°; straight
+    /// up: no bearing, +90°. Stations give them too.
+    #[test]
+    fn two_points_give_bearing_and_elevation() {
+        let m = crate::tests::synthetic();
+        let s = 10.0 / 2f64.sqrt();
+        let r = measure(
+            &m,
+            &Centrelines::of(&m),
+            Kind::Distance,
+            &[point([0.0, 0.0, 0.0]), point([-s, -s, -10.0])],
+            "c",
+        );
+        let (b, e) = r.angles.unwrap();
+        assert!((b.unwrap() - 225.0).abs() < 1e-9);
+        assert!((e + 45.0).abs() < 1e-9, "{e}");
+        assert!(r.rows.iter().any(|x| x.name.starts_with("elevation angle")));
+        assert_eq!(r.label(), "14.14 m · az 225.0° · el -45.0°");
+        let up = measure(
+            &m,
+            &Centrelines::of(&m),
+            Kind::Distance,
+            &[point([0.0, 0.0, 0.0]), point([0.0, 0.0, 5.0])],
+            "c",
+        );
+        assert_eq!(up.angles, Some((None, 90.0)));
+        assert!(!up.rows.iter().any(|x| x.name.starts_with("bearing")));
+        let st = measure(
+            &m,
+            &Centrelines::of(&m),
+            Kind::Stations,
+            &[point([0.0, 0.0, 0.0]), point([0.0, 10.0, 0.0])],
+            "c",
+        );
+        assert_eq!(st.angles, Some((Some(0.0), 0.0)));
+    }
+
+    /// Angle: three points, the vertex second — a right angle in plan; a
+    /// 30° slope against the horizontal; straight back: 180°. The panel
+    /// state takes three picks, the third live before the click; the
+    /// second arm drawn without a label.
+    #[test]
+    fn angle_between_three_points() {
+        let m = crate::tests::synthetic();
+        let lines = Centrelines::of(&m);
+        let o = [100.0, 200.0, 10.0];
+        let r = measure(
+            &m,
+            &lines,
+            Kind::Angle,
+            &[
+                point([110.0, 200.0, 10.0]),
+                point(o),
+                point([100.0, 205.0, 10.0]),
+            ],
+            "c",
+        );
+        assert!((r.rows[0].value - 90.0).abs() < 1e-9);
+        assert!((r.rows[1].value - 90.0).abs() < 1e-9);
+        assert_eq!(r.label(), "90.00 °");
+        let up = [
+            100.0 + 30f64.to_radians().cos(),
+            200.0,
+            10.0 + 30f64.to_radians().sin(),
+        ];
+        let r = measure(
+            &m,
+            &lines,
+            Kind::Angle,
+            &[point([105.0, 200.0, 10.0]), point(o), point(up)],
+            "c",
+        );
+        assert!((r.rows[0].value - 30.0).abs() < 1e-9, "{}", r.rows[0].value);
+        assert!(r.rows[1].value.abs() < 1e-6, "in plan both arms run east");
+        let r = measure(
+            &m,
+            &lines,
+            Kind::Angle,
+            &[
+                point([90.0, 200.0, 10.0]),
+                point(o),
+                point([120.0, 200.0, 10.0]),
+            ],
+            "c",
+        );
+        assert!((r.rows[0].value - 180.0).abs() < 1e-9);
+        let mut state = Measuring::default();
+        for p in [[110.0, 200.0, 10.0], o] {
+            state.click(&m, Kind::Angle, "c", point(p)).unwrap();
+        }
+        assert!(state.done.is_empty());
+        state.hover(&m, Kind::Angle, "c", Some(point([100.0, 210.0, 10.0])));
+        assert!(state.live.is_some(), "the angle before the third click");
+        let overlay = state.overlay(Others {
+            measurements: true,
+            notes: true,
+        });
+        assert_eq!(overlay.lines.len(), 2);
+        assert!(overlay.lines[1].2.is_empty());
+        state
+            .click(&m, Kind::Angle, "c", point([100.0, 210.0, 10.0]))
+            .unwrap();
+        assert!((state.done[0].rows[0].value - 90.0).abs() < 1e-9);
     }
 
     /// A wire measured to its surface: a single conductor of radius r,

@@ -2053,9 +2053,17 @@ fn annotations_are_kept_apart_and_go_with_their_object() {
             span: 0,
             fraction: 1.5,
         },
-        free,
+        free.clone(),
     ];
     assert!(s.apply("ben", bad.put()).is_err());
+    // An angle (2026-11-04): three anchors, two refused.
+    let mut angle = a("a4", vec![free.clone(), free.clone(), free.clone()]);
+    angle.tool = "angle".into();
+    s.apply("ben", angle.put()).unwrap();
+    angle.anchors.pop();
+    angle.id = "a5".into();
+    assert!(s.apply("ben", angle.put()).is_err());
+    s.undo("ben").unwrap();
     // T3 deleted takes every section: the wire's annotation goes with it,
     // T1's stays.
     s.apply(

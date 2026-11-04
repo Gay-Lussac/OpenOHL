@@ -71,6 +71,9 @@ pub enum Tool {
     MeasureClearance,
     /// Click a wire, then an object: the shortest distance.
     MeasureObject,
+    /// Click three points: the angle at the second between the lines to
+    /// the first and the third (owner 2026-11-04).
+    MeasureAngle,
     /// Click an object or a point: a note kept there.
     Note,
     /// Click an object, choose LiDAR classes, move along it: the
@@ -82,7 +85,7 @@ pub enum Tool {
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Edit › Tools list them in this order.
-    pub const ALL: [Tool; 23] = [
+    pub const ALL: [Tool; 24] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -104,6 +107,7 @@ impl Tool {
         Tool::MeasureWires,
         Tool::MeasureClearance,
         Tool::MeasureObject,
+        Tool::MeasureAngle,
         Tool::Follow,
         Tool::Note,
     ];
@@ -123,6 +127,7 @@ impl Tool {
             | Tool::MeasureWires
             | Tool::MeasureClearance
             | Tool::MeasureObject
+            | Tool::MeasureAngle
             | Tool::Follow
             | Tool::Note => "Measure",
         }
@@ -153,6 +158,7 @@ impl Tool {
             Tool::MeasureWires => "Wire to wire",
             Tool::MeasureClearance => "Clearance at a point",
             Tool::MeasureObject => "Wire to object",
+            Tool::MeasureAngle => "Angle between points",
             Tool::Follow => "Follow and snap",
         }
     }
@@ -185,6 +191,7 @@ impl Tool {
             Tool::MeasureWires => "≈",
             Tool::MeasureClearance => "⬇",
             Tool::MeasureObject => "↘",
+            Tool::MeasureAngle => "Λ",
             Tool::Follow => "🎯",
         }
     }
@@ -239,7 +246,7 @@ impl Tool {
                 "click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint where it is, its distance kept as the offset (Escape or a click elsewhere: cancel)"
             }
             Tool::MeasureDistance => {
-                "click two points — a wire where clicked (to its surface), a structure's base, a wire point, a LiDAR or survey point, or the ground: the distance and its parts (Escape: start again)"
+                "click two points — a wire where clicked (to its surface), a structure's base, a wire point, a LiDAR or survey point, or the ground: the distance and its parts, its bearing in plan and its elevation angle (Escape: start again)"
             }
             Tool::MeasureHeight => {
                 "click a point — a wire (the bottom of its lowest subconductor), a LiDAR point, a structure, or anywhere: its height above the ground under it"
@@ -258,6 +265,9 @@ impl Tool {
             }
             Tool::MeasureObject => {
                 "click a wire (a span or a jumper), then a structure or a point: the shortest distance from the whole span, to the wire's surface"
+            }
+            Tool::MeasureAngle => {
+                "click three points — the second is the vertex: the angle there between the lines to the first and the third, in space and in plan, with each arm's length, bearing and elevation angle (Escape: start again)"
             }
             Tool::Follow => {
                 "click a wire, a jumper or a structure, tick the LiDAR classes, move the cursor along it: the nearest point of those classes measured live; click again: kept in the project (N: the closest spot; Escape: another object)"
@@ -284,6 +294,7 @@ impl Tool {
             Tool::MeasureWires => Some(crate::measure::Kind::WireToWire),
             Tool::MeasureClearance => Some(crate::measure::Kind::Clearance),
             Tool::MeasureObject => Some(crate::measure::Kind::WireToObject),
+            Tool::MeasureAngle => Some(crate::measure::Kind::Angle),
             _ => None,
         }
     }
@@ -358,6 +369,7 @@ impl Tool {
             Tool::MeasureWires => "measure_wires",
             Tool::MeasureClearance => "measure_clearance",
             Tool::MeasureObject => "measure_object",
+            Tool::MeasureAngle => "measure_angle",
             Tool::Follow => "follow",
         }
     }

@@ -55,6 +55,7 @@ impl Tool {
             Tool::MeasureWires => tool!("measure-wires"),
             Tool::MeasureClearance => tool!("measure-clearance"),
             Tool::MeasureObject => tool!("measure-object"),
+            Tool::MeasureAngle => tool!("measure-angle"),
             Tool::Follow => tool!("follow"),
         }
     }
