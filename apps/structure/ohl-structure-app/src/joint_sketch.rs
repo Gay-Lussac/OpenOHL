@@ -12,14 +12,14 @@
 //! edge (the toe), its end where the steel stops — with the member's axis
 //! (its centroid line, dashed) running past that end to beside the work
 //! point, the gauge line with three bolts, a second gauge line faint, and
-//! a dimension per value of the table, named as its column is ([`TERMS`]:
+//! a dimension per value of the table, named as its column is (`TERMS`:
 //! the table's headers and hover texts come from the same list).
 //!
 //! One drawing, two outputs: the folding section "What the values mean"
 //! above the table (egui's painter, the theme's colours, scaled to the
 //! width, hover on a label: its column's hover text), and the user
 //! guide's SVG (`docs/images/joint-details/joint-values.svg`, written by
-//! [`svg`]; a test keeps it in step).
+//! `svg`; a test keeps it in step).
 
 use eframe::egui;
 
