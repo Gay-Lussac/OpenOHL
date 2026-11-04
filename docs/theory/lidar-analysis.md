@@ -424,6 +424,14 @@ beyond it would stand at nearly 90° and stop the trunk at once; from
 \\( B \\) it rises at its slope. A smaller resting angle is a larger
 sector. With \\( k = 0 \\) the two are the same.
 
+**The ground stops the trunk — not conservative against a rule that
+ignores the ground** (owner's decision, 2026-11-05: kept). A tool that
+lets the trunk rotate on through the slope (as compared on a real line:
+another program's falling trees found a wire 2.4 m below the trees'
+bases, beside a steep slope) flags trees whose fall the ground would
+stop. OpenOHL keeps the physical stop: a tree does not fall through the
+ground.
+
 With \\( q = (\rho, \zeta) \\) in that plane (\\( \rho \\) its horizontal
 distance from \\( B \\), \\( \zeta \\) its height above \\( B \\)) and
 \\( \theta_q = \operatorname{atan2}(\zeta, \rho - b_r) \\) its angle about

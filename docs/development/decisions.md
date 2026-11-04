@@ -8,6 +8,19 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-05
+
+**Falling trees stop at the ground; the radial check keeps its precision**
+(owner, 2026-11-05: "Go ahead with trees until ground and keep precision
+for the radial"). After the comparison with another program on a real
+line, which lets a falling trunk rotate on through a steep slope (a few
+hundred points on one steep connector span found by it only), the
+physical rule stays: the trunk sweeps down to its resting angle on the
+ground ([theory](../theory/lidar-analysis.md)) — marked there as not
+conservative against a rule ignoring the ground. The radial clearances'
+swing arcs keep their 2 cm boundary spacing (`ARC_TOLERANCE`): coarser
+would make the arcs' ground check faster at the cost of precision.
+
 ## 2026-11-04
 
 **The conductor surface gradient, 2D only** (owner, 2026-11-04: "yes go
