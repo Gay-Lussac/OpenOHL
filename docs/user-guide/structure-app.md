@@ -680,7 +680,10 @@ out. Each change is one undo step.
   the joints with the same members — cross-section, class and angle to
   what they bolt onto within 1°, so the mirror joints too — their
   connections replaced, what they bolt onto matched, a plate copied to
-  each.
+  each. Each end's own fit goes with it (2026-11-04): where its steel
+  **stops**, its **shift** (+ towards what it bolts onto, so the same on
+  a mirror joint) and its rolled edge — before, those fell back to
+  worked out on the copies.
 - **+ Plate** (2026-11-03): a gusset plate at the joint, on the joint's
   leg (10 mm to start: type its thickness); a joint may have several.
   The plates table gives each one's **Welded to** (a menu with a box per

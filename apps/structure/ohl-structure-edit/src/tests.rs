@@ -978,6 +978,16 @@ fn connections_are_defined_field_by_field() {
         Some(&FieldValue::Word(g.clone())),
     )
     .unwrap();
+    // Its end's own fit (2026-11-04): copied with it.
+    ce::set_connection_field(&mut doc, "M2", "N2", "cut", Some(&FieldValue::Length(0.04))).unwrap();
+    ce::set_connection_field(
+        &mut doc,
+        "M2",
+        "N2",
+        "shift",
+        Some(&FieldValue::SignedLength(-0.015)),
+    )
+    .unwrap();
     let t = read(&doc);
     let n = ce::copy_ends(
         &mut doc,
@@ -995,6 +1005,14 @@ fn connections_are_defined_field_by_field() {
     assert_eq!(t.plates.len(), 2);
     let far = t.connection("M2", "N3").unwrap();
     assert_eq!(far.bolts.as_ref().unwrap().count, 3);
+    assert!(
+        (far.cut.unwrap().si() - 0.04).abs() < 1e-9,
+        "the steel stops as at N2"
+    );
+    assert!(
+        (far.shift.unwrap().si() + 0.015).abs() < 1e-9,
+        "shifted as at N2"
+    );
     let copy = far.onto.clone().unwrap();
     assert_ne!(copy, g);
     let copied = t.plates.iter().find(|p| p.id == copy).unwrap();

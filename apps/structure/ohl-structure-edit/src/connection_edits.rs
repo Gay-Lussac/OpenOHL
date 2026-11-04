@@ -237,6 +237,30 @@ pub fn carried(doc: &DocumentMut, member: &str, joint: &str) -> Table {
     out
 }
 
+/// The fields of a member end's own fit, copied to the ends of the
+/// joints like it (not carried by presets and copies to other members:
+/// they depend on the joint's geometry).
+pub const END_FIT: [&str; 3] = ["cut", "shift", "rolled_edge"];
+
+/// `member`'s end at `joint`: its [`END_FIT`] fields as given.
+fn end_fit(doc: &DocumentMut, member: &str, joint: &str) -> Vec<(String, Item)> {
+    doc.get("connection")
+        .and_then(Item::as_array_of_tables)
+        .and_then(|a| {
+            a.iter().find(|t| {
+                t.get("member").and_then(Item::as_str) == Some(member)
+                    && t.get("joint").and_then(Item::as_str) == Some(joint)
+            })
+        })
+        .map(|t| {
+            t.iter()
+                .filter(|(k, _)| END_FIT.contains(k))
+                .map(|(k, v)| (k.to_owned(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Writes `fields` (carried fields) onto `member`'s end at `joint`,
 /// replacing its carried fields (its `onto` and bolt points kept).
 pub fn put_carried(doc: &mut DocumentMut, member: &str, joint: &str, fields: &Table) {
@@ -290,8 +314,17 @@ pub fn copy_ends(doc: &mut DocumentMut, t: &StructureType, ends: &[CopyEnd]) -> 
         };
         given += 1;
         let fields = carried(doc, &e.from_member, &e.from_joint);
+        // The end's own fit too (owner 2026-11-04: "the end parameter is
+        // not really being copied"): where its steel stops, its shift
+        // (+ towards what it bolts onto: the same on a mirror joint) and
+        // its rolled edge — the joints alike, so the same fit.
+        let fit = end_fit(doc, &e.from_member, &e.from_joint);
         clear_connection(doc, &e.to_member, &e.to_joint);
         put_carried(doc, &e.to_member, &e.to_joint, &fields);
+        let target = find_or_make(doc, &e.to_member, &e.to_joint);
+        for (k, v) in fit {
+            target.insert(&k, v);
+        }
         let onto = match &c.onto {
             Some(o) if t.plates.iter().any(|p| &p.id == o) => {
                 let key = (o.clone(), e.to_joint.clone());
