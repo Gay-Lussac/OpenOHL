@@ -829,3 +829,55 @@ fn a_member_onto_a_plate_lies_flat_on_it() {
         assert!(off.abs() < 1e-9);
     }
 }
+
+/// A plate in a bolt's grip is drawn (owner 2026-11-04: "the bolts get
+/// longer but without a plate"): the member's bolts clamp its thickness,
+/// its outline lies in their face, and it runs through its thickness away
+/// from the member — exactly where the member was moved off the joint's
+/// leg to make room for it.
+#[test]
+fn a_plate_in_a_grip_has_an_outline_and_its_thickness() {
+    let with = |onto: &str| {
+        let text = format!(
+            "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n",
+            AT_N2.replace("leg = \"long\"\n", onto)
+        );
+        joint_details(&text, &library(), &Default::default()).unwrap()
+    };
+    let on = with("onto = \"G1\"\n");
+    let off = with("");
+    let n2 = on.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let p = &n2.plates[0];
+    // The grip: its own leg and the plate.
+    assert!((a.grip[1] - 0.010).abs() < 1e-12, "{:?}", a.grip);
+    assert!(p.outline.len() >= 3 && p.members == ["D1"]);
+    // Through the thickness: against the bolts' axis (the heads on the
+    // member's side).
+    let n = p.through.expect("an outline: a side to extrude to");
+    let cos: f64 = (0..3).map(|k| n[k] * a.bolt_axis[k]).sum();
+    assert!((cos + 1.0).abs() < 1e-9, "{cos}");
+    // The member moved out by the plate's thickness from where it lies
+    // without the plate: the plate fills that gap.
+    let b = off
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap();
+    let moved: f64 = (0..3)
+        .map(|k| (a.offset[k] - b.offset[k]) * a.bolt_axis[k])
+        .sum();
+    assert!((moved - 0.010).abs() < 1e-9, "{moved}");
+    // Nothing bolted onto it: no outline (no disc at the work point any
+    // more), said; no bolt's grip takes it.
+    let lone = &off.joint("N2").unwrap().plates[0];
+    assert!(lone.outline.is_empty() && lone.through.is_none());
+    assert!(
+        lone.notes.iter().any(|x| x.contains(crate::NO_OUTLINE)),
+        "{:?}",
+        lone.notes
+    );
+    assert!((b.grip[1] - 0.010).abs() > 1e-6, "{:?}", b.grip);
+}

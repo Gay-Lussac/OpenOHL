@@ -272,6 +272,12 @@ pub struct PlateDetail {
     pub outline: Vec<[f64; 3]>,
     /// The outline given in the file.
     pub outline_given: bool,
+    /// From the outline's face through its thickness (unit): away from
+    /// the members bolted onto it (their bolts' heads are on their side),
+    /// as the IFC export extrudes it; the close-up draws the plate as a
+    /// solid from the outline this way (owner 2026-11-04: "the bolts get
+    /// longer but without a plate"). None: no outline.
+    pub through: Option<[f64; 3]>,
     /// The members bolted onto it.
     pub members: Vec<String>,
     /// The plates it is welded to directly (given on either plate, or both
@@ -1054,7 +1060,11 @@ fn weld_plates(
                         length: data.and_then(|w| w.length).map(|v| v.si()),
                     });
                 }
-                None if direct(&plates[i].id, &plates[k].id) => {
+                // A plate without an outline says so itself.
+                None if direct(&plates[i].id, &plates[k].id)
+                    && plates[i].outline.len() >= 3
+                    && plates[k].outline.len() >= 3 =>
+                {
                     let note = format!(
                         "plate {}: welded to {}, but the two do not meet (parallel, or their \
                          outlines apart)",
@@ -1484,12 +1494,14 @@ fn plate(
     if !p.outline.is_empty() {
         let outline: Vec<[f64; 3]> = p.outline.iter().map(|q| q.map(|v| v.si())).collect();
         let notes = bolts_near_edge(&outline, &keeps, &p.id);
+        let through = through_of(&outline, &onto);
         return PlateDetail {
             id: p.id.clone(),
             thickness: p.thickness.si(),
             material: p.material.clone(),
             outline,
             outline_given: true,
+            through,
             members,
             welded_to: Vec::new(),
             assembly: vec![p.id.clone()],
@@ -1497,6 +1509,27 @@ fn plate(
             leg: on_leg,
             edges,
             notes,
+        };
+    }
+    // Nothing bolted onto it and no outline given: nothing to draw it
+    // round (before 2026-11-04 a small disc round the work point, inside
+    // the leg's steel, so it never showed). No bolt's grip takes it: a
+    // grip takes only the plate its member end bolts onto ([`grip`]).
+    if onto.is_empty() {
+        return PlateDetail {
+            id: p.id.clone(),
+            thickness: p.thickness.si(),
+            material: p.material.clone(),
+            outline: Vec::new(),
+            outline_given: false,
+            through: None,
+            members,
+            welded_to: Vec::new(),
+            assembly: vec![p.id.clone()],
+            welds: Vec::new(),
+            leg: on_leg,
+            edges,
+            notes: vec![format!("{}: {NO_OUTLINE}", p.id)],
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -1558,12 +1591,14 @@ fn plate(
     };
     // Kept by construction; said should the bolts' planes differ.
     let notes = bolts_near_edge(&outline, &keeps, &p.id);
+    let through = through_of(&outline, &onto);
     PlateDetail {
         id: p.id.clone(),
         thickness: p.thickness.si(),
         material: p.material.clone(),
         outline,
         outline_given: false,
+        through,
         members,
         welded_to: Vec::new(),
         assembly: vec![p.id.clone()],
@@ -1572,6 +1607,25 @@ fn plate(
         edges,
         notes,
     }
+}
+
+/// What a plate with no member bolted onto it and no outline given says
+/// (its row in Joint details, its box).
+pub const NO_OUTLINE: &str = "no member bolted onto it: no outline to draw";
+
+/// From a plate's outline through its thickness: its normal, turned away
+/// from the members bolted onto it (against their bolts' axis: the heads
+/// on the members' side). None: no outline.
+fn through_of(outline: &[[f64; 3]], onto: &[&Arrival]) -> Option<[f64; 3]> {
+    let n = crate::welds::polygon_normal(outline)?;
+    let axis = onto
+        .iter()
+        .find(|a| !a.bolt_points.is_empty())
+        .map(|a| a.bolt_axis);
+    Some(match axis {
+        Some(ax) if dot(n, ax) > 0.0 => scale(n, -1.0),
+        _ => n,
+    })
 }
 
 /// The corners of `a`'s leg bolted over its bolts: from its first bolt

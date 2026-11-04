@@ -537,6 +537,7 @@ mod tests {
                     [1.02, 0.0, 0.3],
                 ],
                 outline_given: true,
+                through: None,
                 members: Vec::new(),
                 welded_to: Vec::new(),
                 assembly: vec!["G".into()],

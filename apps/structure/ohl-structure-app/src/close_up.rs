@@ -215,11 +215,37 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         let poly: Vec<[f64; 3]> = pl.outline.iter().map(|q| rel(*q)).collect();
         // A plate on its own blue; welded with others (an assembly) amber.
         let base = if pl.assembly.len() > 1 {
-            [200, 135, 75, 150]
+            [200, 135, 75, 255]
         } else {
-            [70, 140, 210, 150]
+            [70, 140, 210, 255]
         };
-        add(fan(&poly), base, None, None);
+        // A solid of its thickness (owner 2026-11-04: "the plate
+        // thickness never shows … the bolts get longer but without a
+        // plate"): its outline lies in the face of the bolts onto it — the
+        // member's leg on it — and the plate runs through its thickness
+        // away from the member, into the room the member was moved out
+        // by. Before, a film in that face, under the member's leg and in
+        // front of the corner's: hidden from most sides.
+        let through = pl
+            .through
+            .unwrap_or_else(|| normal_of(&poly).unwrap_or([0.0, 0.0, 1.0]));
+        let back: Vec<[f64; 3]> = poly
+            .iter()
+            .map(|q| add3(*q, scale3(through, pl.thickness)))
+            .collect();
+        for face in [&poly, &back] {
+            if let Some(nv) = normal_of(face) {
+                add(fan(face), base, Some(nv), None);
+            }
+        }
+        let n = poly.len();
+        for i in 0..n {
+            let i2 = (i + 1) % n;
+            let quad = [poly[i], poly[i2], back[i2], back[i]];
+            if let Some(nv) = normal_of(&quad) {
+                add(fan(&quad), base, Some(nv), None);
+            }
+        }
         // Its weld seams: a fillet along each, between the two plates.
         for w in &pl.welds {
             let [s0, s1] = w.ends.map(rel);
@@ -573,6 +599,17 @@ pub fn paint(
             text,
         );
     }
+    // Each plate's id and thickness at its middle (2026-11-04: its
+    // thickness shows; its hover says more, [`plate_at`]).
+    for pl in j.plates.iter().filter(|p| p.outline.len() >= 3) {
+        painter.text(
+            at(plate_middle(pl)),
+            egui::Align2::CENTER_CENTER,
+            plate_words(pl),
+            egui::FontId::proportional(11.0),
+            text,
+        );
+    }
     // The welds' sizes at their seams' middles (2026-11-04).
     for pl in &j.plates {
         for w in &pl.welds {
@@ -596,6 +633,91 @@ pub fn paint(
         egui::FontId::proportional(11.0),
         text,
     );
+}
+
+/// A plate's middle: its outline's mean, half its thickness through.
+fn plate_middle(p: &ohl_structure_link::PlateDetail) -> [f64; 3] {
+    let n = p.outline.len().max(1) as f64;
+    let mut m = [0.0; 3];
+    for q in &p.outline {
+        for (k, v) in m.iter_mut().enumerate() {
+            *v += q[k] / n;
+        }
+    }
+    add3(m, scale3(p.through.unwrap_or([0.0; 3]), p.thickness / 2.0))
+}
+
+/// A plate in words, on the drawings: "G1 · 10 mm".
+pub fn plate_words(p: &ohl_structure_link::PlateDetail) -> String {
+    format!("{} · {:.0} mm", p.id, p.thickness * 1000.0)
+}
+
+/// A plate's hover text: its thickness, material and what bolts onto it.
+pub fn plate_hover(p: &ohl_structure_link::PlateDetail) -> String {
+    format!(
+        "Plate {}: {:.0} mm thick, {} — bolted onto it: {} (their bolts clamp it, so they \
+         are longer by its thickness)",
+        p.id,
+        p.thickness * 1000.0,
+        p.material.as_deref().unwrap_or("material not given"),
+        if p.members.is_empty() {
+            "no member".to_owned()
+        } else {
+            p.members.join(", ")
+        }
+    )
+}
+
+/// The plate of `j` drawn under `pos` in the close-up painted into
+/// `rect` as `s` turns it (its outline's either face, or its middle
+/// within 8 points), the nearest to the viewer first.
+pub fn plate_at<'a>(
+    j: &'a JointDetail,
+    s: &crate::joint_panel::JointPanel,
+    rect: egui::Rect,
+    pos: egui::Pos2,
+) -> Option<&'a ohl_structure_link::PlateDetail> {
+    let reach = ohl_structure_link::reach(j);
+    let k = f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(s.zoom).exp();
+    let r = rotation(s.yaw, s.pitch);
+    let at = |p: [f64; 3]| {
+        let q = turn(&r, sub(p, j.position));
+        (
+            rect.center() + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32),
+            q[2],
+        )
+    };
+    j.plates
+        .iter()
+        .filter(|p| p.outline.len() >= 3)
+        .filter_map(|p| {
+            let through = scale3(p.through.unwrap_or([0.0; 3]), p.thickness);
+            let faces = [0.0, 1.0].map(|f| {
+                p.outline
+                    .iter()
+                    .map(|q| at(add3(*q, scale3(through, f))).0)
+                    .collect::<Vec<_>>()
+            });
+            let (mid, depth) = at(plate_middle(p));
+            (faces.iter().any(|f| inside_2d(f, pos)) || mid.distance(pos) < 8.0)
+                .then_some((p, depth))
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|x| x.0)
+}
+
+/// `pos` inside the polygon `poly` (screen, either turning).
+pub(crate) fn inside_2d(poly: &[egui::Pos2], pos: egui::Pos2) -> bool {
+    let n = poly.len();
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (poly[i], poly[(i + 1) % n]);
+        if (a.y > pos.y) != (b.y > pos.y) && pos.x < a.x + (pos.y - a.y) / (b.y - a.y) * (b.x - a.x)
+        {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 /// The triangles `tris` (in order) as one mesh on the screen (`to`), each

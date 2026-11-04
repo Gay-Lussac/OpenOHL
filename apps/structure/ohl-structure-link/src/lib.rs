@@ -62,8 +62,8 @@ pub use joint_sheet::{
 };
 pub use joints::{
     Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, FLAT_OFF, JointDetail,
-    JointDetails, PlateDetail, Profile, Similar, Source, Valued, bolt_faces, joint_details,
-    similar_joints,
+    JointDetails, NO_OUTLINE, PlateDetail, Profile, Similar, Source, Valued, bolt_faces,
+    joint_details, similar_joints,
 };
 pub use member_view::{
     FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,
