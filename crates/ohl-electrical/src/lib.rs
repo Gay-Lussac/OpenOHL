@@ -30,6 +30,9 @@
 //! - [`field_views`]: a field's vertical cuts and volumes (isosurfaces),
 //!   for any field given as a function of the place; [`contour`]: the
 //!   isolines and isosurfaces they are drawn with.
+//! - [`surface_gradient`]: the conductor surface gradient in 2D
+//!   cross-sections by a charge simulation (for the corona noise; 2D
+//!   only, owner 2026-11-04).
 //!
 //! [`run`] does all of it for a line solved in one weather case.
 //!
@@ -54,6 +57,7 @@ pub mod magnetic;
 pub mod matrices;
 pub mod parameters;
 pub mod report;
+pub mod surface_gradient;
 
 use ohl_line::Line;
 use ohl_line::solve::SectionShape;

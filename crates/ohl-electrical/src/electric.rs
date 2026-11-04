@@ -634,7 +634,7 @@ pub struct ElectricField {
 
 /// A phase's voltage to earth, V (rms phasor), and its frequency; `None`:
 /// DC or no voltage.
-fn phase_voltage(
+pub(crate) fn phase_voltage(
     p: &PhaseData,
     given: &[CircuitVoltage],
     defaulted: &mut BTreeMap<String, f64>,
@@ -665,7 +665,7 @@ fn phase_voltage(
 /// The charges per metre of a cross-section's wires (the whole bundle's),
 /// per frequency: \\( q = P^{-1} V \\), the earth wires at zero voltage and
 /// the phases of another frequency at zero too (each frequency apart).
-fn cross_section_charges(
+pub(crate) fn cross_section_charges(
     cs: &CrossSection,
     given: &[CircuitVoltage],
     defaulted: &mut BTreeMap<String, f64>,

@@ -65,6 +65,9 @@ pub struct Answer {
     pub meshes: Vec<(f64, Arc<ohl_electrical::contour::Mesh>)>,
     /// The points computed and the pieces, for the speed.
     pub work: f64,
+    /// The conductor surface gradients of the 2D cross-sections (owner,
+    /// 2026-11-04: 2D only), when asked.
+    pub gradient: Option<ohl_electrical::surface_gradient::SurfaceGradients>,
 }
 
 /// A duration in words (the magnetic window's).
@@ -212,6 +215,9 @@ pub struct ElectricFieldWindow {
     cut_width: f64,
     cut_step: f64,
     cut_above: f64,
+    /// 2D: the conductor surface gradients at the spans' lowest points and
+    /// ends too (owner, 2026-11-04: "only for the 2D cuts for the noise").
+    gradient: bool,
     /// What the window asks of the application (a cut opened, the 3D
     /// view turned to a volume), taken each frame.
     pub requests: Vec<FieldRequest>,
@@ -296,6 +302,7 @@ impl Default for ElectricFieldWindow {
             // matters: the low levels' isolines within 0.03 %, measured).
             cut_step: 1.0,
             cut_above: crate::magnetic_field::views::ABOVE,
+            gradient: true,
             requests: Vec::new(),
             panel: PanelCuts::default(),
             rate: None,
@@ -388,6 +395,8 @@ struct Stored {
     cut_width: Option<f64>,
     cut_step: Option<f64>,
     cut_above: Option<f64>,
+    /// 2D: the surface gradients too (2026-11-04; absent: yes).
+    gradient: Option<bool>,
 }
 
 impl ElectricFieldWindow {
@@ -469,6 +478,7 @@ impl ElectricFieldWindow {
             cut_width: Some(self.cut_width),
             cut_step: Some(self.cut_step),
             cut_above: Some(self.cut_above),
+            gradient: Some(self.gradient),
         }
     }
 
@@ -548,6 +558,7 @@ impl ElectricFieldWindow {
         self.cut_width = st.cut_width.unwrap_or(d.cut_width);
         self.cut_step = st.cut_step.unwrap_or(d.cut_step);
         self.cut_above = st.cut_above.unwrap_or(d.cut_above);
+        self.gradient = st.gradient.unwrap_or(d.gradient);
         self.buildings = st.buildings.clone();
         (self.points, self.points_text, self.points_error) = match st.points {
             Some((name, text)) => match magnetic::parse_points(&text) {
@@ -1072,6 +1083,14 @@ impl ElectricFieldWindow {
         // Each kind of output its own step, one after another (owner,
         // 2026-11-01: "not all at once and clearly separated").
         let steps = steps_of(&settings);
+        // The surface gradients of the 2D cross-sections (2026-11-04):
+        // the profiles' spans, their lowest points and both ends.
+        let gradient_settings =
+            (self.planes && self.gradient).then(|| ohl_electrical::surface_gradient::Settings {
+                voltages: settings.voltages.clone(),
+                stations: settings.stations.clone(),
+                ..Default::default()
+            });
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
         // A new run's outputs all drawn.
@@ -1127,6 +1146,13 @@ impl ElectricFieldWindow {
                     }
                 });
             }
+            let gradient = match &gradient_settings {
+                Some(gs) => {
+                    progress.set_stage("the surface gradients (2D)".to_owned());
+                    Some(ohl_electrical::surface_gradient::run(&src, gs)?)
+                }
+                None => None,
+            };
             progress.set_stage(String::new());
             let mut field = field.ok_or("nothing asked: tick a span, a cut or a volume")?;
             // Each point sums every piece twice: the charges and their
@@ -1175,6 +1201,7 @@ impl ElectricFieldWindow {
                 ground_model: settings.ground_model,
                 meshes,
                 work,
+                gradient,
             })
         });
     }
@@ -1227,6 +1254,10 @@ impl ElectricFieldWindow {
             ground_model,
             meshes,
             work: 0.0,
+            gradient: r
+                .results
+                .get("gradient")
+                .and_then(|g| serde_json::from_value(g.clone()).ok()),
         }));
         self.job.generation += 1;
         self.hidden.clear();
@@ -1247,6 +1278,9 @@ impl ElectricFieldWindow {
         results["radius"] = serde_json::json!(a.radius);
         results["ground_model"] =
             serde_json::to_value(a.ground_model).map_err(|e| e.to_string())?;
+        if let Some(g) = &a.gradient {
+            results["gradient"] = serde_json::to_value(g).map_err(|e| e.to_string())?;
+        }
         let largest = a
             .field
             .profiles
@@ -1593,6 +1627,17 @@ impl ElectricFieldWindow {
                      and straight, its ground level.",
                 );
                 ui.end_row();
+                // The conductor surface gradient (owner, 2026-11-04: 2D
+                // only, for the noise).
+                ui.label("Surface gradient");
+                ui.add_enabled_ui(self.planes, |ui| {
+                    ui.checkbox(
+                        &mut self.gradient,
+                        "2D, per span: lowest point and both ends",
+                    )
+                    .on_hover_text(GRADIENT_EFFECT);
+                });
+                ui.end_row();
                 {
                     ui.label("Jumpers");
                     ui.checkbox(&mut self.jumpers, "carry their phase's charge")
@@ -1934,6 +1979,9 @@ impl ElectricFieldWindow {
             .small()
             .weak(),
         );
+        if let Some(g) = &answer.gradient {
+            gradient_ui(ui, g);
+        }
         self.views_results_ui(ui, m, &answer.meshes);
         if !m.profiles.is_empty() {
             ui.separator();
@@ -2033,6 +2081,88 @@ impl ElectricFieldWindow {
             );
         }
     }
+}
+
+/// The surface gradients of the 2D cross-sections: one row per bundle.
+fn gradient_ui(ui: &mut egui::Ui, g: &ohl_electrical::surface_gradient::SurfaceGradients) {
+    let rows: usize = g.cuts.iter().map(|c| c.bundles.len()).sum();
+    egui::CollapsingHeader::new(format!(
+        "Conductor surface gradient, 2D ({} cross-sections, {rows} rows)",
+        g.cuts.len()
+    ))
+    .id_salt("electric-field-gradient")
+    .show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "kV/cm rms (peak √2 times); {} line charges per subconductor, {} points round it",
+                    g.charges, g.points
+                ))
+                .small()
+                .weak(),
+            );
+            if ui
+                .button("Export CSV…")
+                .on_hover_text("Every subconductor: its largest gradient, where, its mean; its bundle's values")
+                .clicked()
+            {
+                save_csv(
+                    "surface-gradient.csv",
+                    &ohl_electrical::surface_gradient::csv(g),
+                );
+            }
+        });
+        help::list(
+            ui,
+            "electric-field-gradient",
+            help::LIST_HEIGHT,
+            egui::ScrollArea::vertical().id_salt("electric-field-gradient-scroll"),
+            |ui| {
+                egui::Grid::new("electric-field-gradient-grid")
+                    .striped(true)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        for (h, tip) in [
+                            ("span", "The span's structures"),
+                            ("station m", "From the span's first structure"),
+                            ("where", "lowest: the lowest phase's lowest point; start, end: at the structures, the first cross-section every wire reaches; given: the station asked"),
+                            ("section", "The wire's section"),
+                            ("circuit", "Its circuit; earth wire: at earth potential"),
+                            ("phase", "Its phase"),
+                            ("n", "Subconductors"),
+                            ("avg max kV/cm", "The average maximum: the mean over the subconductors of each one's largest surface gradient — what corona noise formulas take"),
+                            ("max kV/cm", "The largest surface gradient of any subconductor"),
+                            ("Markt–Mengele", "Markt–Mengele's average maximum from the bundle's charge (the equivalent wire), a cross-check"),
+                        ] {
+                            ui.strong(h).on_hover_text(tip);
+                        }
+                        ui.end_row();
+                        for c in &g.cuts {
+                            for b in &c.bundles {
+                                ui.label(format!("{}–{}", c.from, c.to));
+                                ui.label(format!("{:.1}", c.at));
+                                ui.label(&c.place);
+                                ui.label(&b.section);
+                                ui.label(if b.circuit.is_empty() {
+                                    "earth wire"
+                                } else {
+                                    &b.circuit
+                                });
+                                ui.label(&b.phase);
+                                ui.label(b.count.to_string());
+                                ui.label(format!("{:.3}", b.average_max_kv_cm));
+                                ui.label(format!("{:.3}", b.max_kv_cm));
+                                ui.label(format!("{:.3}", b.markt_mengele_kv_cm));
+                                ui.end_row();
+                            }
+                        }
+                    });
+            },
+        );
+        for n in &g.notes {
+            ui.label(egui::RichText::new(n).small().weak());
+        }
+    });
 }
 
 /// A margin, kV/m: red when below zero, a dash without a limit.
@@ -2222,6 +2352,9 @@ fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
     }
     out
 }
+
+/// What the surface gradient option does (its effect and time, measured).
+const GRADIENT_EFFECT: &str = "The conductor surface gradient (kV/cm rms) by a charge simulation of every subconductor (8 line charges in each, within 0.01 % of 64 on line cross-sections; 360 points round it) over level, perfectly conducting ground at each cross-section: the profiles' spans at their lowest points and at both ends. Per bundle the average maximum (what corona noise formulas take), the maximum and Markt–Mengele's value. Only in 2D (not in 3D). It changes no field value; measured some milliseconds per cross-section. Off: not computed";
 
 /// What the stretches per span change, measured (the theory's
 /// sensitivity table; filled from it).

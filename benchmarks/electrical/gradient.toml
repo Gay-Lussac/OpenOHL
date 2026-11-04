@@ -1,0 +1,57 @@
+# The conductor surface gradient's charge simulation against exact closed
+# forms (2026-11-04): a smooth cylinder over a perfectly conducting plane
+# — its surface an equipotential of one line charge at
+# d = sqrt(h^2 - r^2) and its image (bipolar coordinates) — and two
+# cylinders at opposite voltages in free space (the plane midway at zero:
+# the same solution). reference_gradient.py computes the values.
+#
+# Tolerances: 0.1 % (the program's 8 charges at 0.3 r: within 3e-4 on
+# these, more where a cylinder nearly touches the plane — the theory page's
+# convergence table); the angle of the largest value exactly the bottom
+# (-90°).
+
+[[case]]
+id = "electrical-069"
+title = "A 31.8 mm wire 20 m over the ground at 231 kV to earth: the surface gradient, exact"
+calculation = "electrical.cylinder_gradient"
+reference = "closed form: line charge at d = sqrt(h^2 - r^2) and its image; E_max = V d / (r (h - r) ln((h + d)/r)); reference_gradient.py"
+[case.inputs]
+height = 20.0
+radius = 0.0159
+kv = 231.0
+[case.expected]
+e_max_kv_cm = { value = 18.56867267, rel_tol = 0.001 }
+e_min_kv_cm = { value = 18.53917194, rel_tol = 0.001 }
+angle_deg = { value = -90.0, abs_tol = 1e-9 }
+potential_error = { value = 0, abs_tol = 1e-4 }
+
+[[case]]
+id = "electrical-070"
+title = "A 0.5 m cylinder 2 m over the ground at 100 kV: a strongly non-uniform surface gradient, exact"
+calculation = "electrical.cylinder_gradient"
+reference = "closed form: line charge at d = sqrt(h^2 - r^2) and its image; reference_gradient.py"
+[case.inputs]
+height = 2.0
+radius = 0.5
+kv = 100.0
+[case.expected]
+e_max_kv_cm = { value = 1.251304891, rel_tol = 0.001 }
+e_min_kv_cm = { value = 0.7507829349, rel_tol = 0.001 }
+angle_deg = { value = -90.0, abs_tol = 1e-9 }
+potential_error = { value = 0, abs_tol = 1e-3 }
+
+[[case]]
+id = "electrical-071"
+title = "Two 0.1 m cylinders 0.6 m apart at +10 kV and -10 kV in free space: the surface gradient, exact"
+calculation = "electrical.cylinder_gradient"
+reference = "closed form (bipolar coordinates): the cylinder over the plane midway; reference_gradient.py"
+[case.inputs]
+height = 0.3
+radius = 0.1
+kv = 10.0
+opposite = 1
+[case.expected]
+e_max_kv_cm = { value = 0.8022781617, rel_tol = 0.001 }
+e_min_kv_cm = { value = 0.4011390809, rel_tol = 0.001 }
+angle_deg = { value = -90.0, abs_tol = 1e-9 }
+potential_error = { value = 0, abs_tol = 1e-3 }

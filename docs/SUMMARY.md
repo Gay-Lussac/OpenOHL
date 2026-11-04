@@ -58,6 +58,7 @@
 - [Line parameters](theory/line-parameters.md)
 - [Magnetic field](theory/magnetic-field.md)
 - [Electric field](theory/electric-field.md)
+- [Conductor surface gradient](theory/surface-gradient.md)
 - [Lightning shielding](theory/lightning-shielding.md)
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)

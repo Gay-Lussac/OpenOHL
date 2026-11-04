@@ -577,6 +577,21 @@ core staying independent of them.
    conductor surface gradient per subconductor (Markt–Mengele or a charge
    simulation), the onset gradient (Peek) and the margin, per section —
    to decide whether it belongs to the plugin above.
+   *The surface gradient built 2026-11-04, 2D only, in active
+   development, not approved yet* (owner: "yes go ahead with 1-4 but only
+   for the 2D cuts for the noise do not apply it in 3D as these are
+   different usage"): in the core (`ohl_electrical::surface_gradient`), a
+   charge simulation of every subconductor and earth wire over level,
+   perfectly conducting ground (8 line charges at 0.3 r by a convergence
+   study, 360 points round each); per span at its lowest point and both
+   ends; per bundle the average maximum, the maximum and Markt–Mengele's
+   value, kV/cm rms. Checks › Electrical › Electric field… (2D, *Surface
+   gradient*) and `ohl electrical gradient`. Validated on closed forms
+   (0.03 %) and against hvlbuzz (within 1e-4; 4e-6 converged),
+   `electrical-066…073` ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/surface-gradient.md)).
+   Not yet: the onset gradient (Peek) and margin, the noise itself
+   (item 6), a published worked example, Markt and Mengele's original
+   publication.
 
 Methods from textbooks and papers (cited in a new theory page), each
 validated against worked examples with their published values; the

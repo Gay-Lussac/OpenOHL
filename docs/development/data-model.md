@@ -715,6 +715,33 @@ surfaces on the layer `scene::Layer::ElectricField` (*Electric field
 field's); its inputs are the project setting `app.electric_field.<project
 line>` (below). Methods: [Electric field](../theory/electric-field.md).
 
+**Conductor surface gradient** (`surface_gradient::run`, roadmap O18
+item 7, 2026-11-04; 2D only; derived, never stored except with a saved
+Electric field run). Inputs `surface_gradient::Settings`: `voltages`
+[`CircuitVoltage`] (as the electric field's), `stations` [`StationSpec`]
+(empty: every span), `ends` (bool, default true: also each span's two
+ends, the first cross-section every wire reaches), `charges` (line
+charges per subconductor, `CHARGES` 8), `points` (evaluation points round
+each, `POINTS` 360). Results `SurfaceGradients` {`charges`, `points`,
+`cuts` [`GradientCut` {`from`, `to`, `at` (m), `place` (`lowest`,
+`start`, `end`, `given`), `bundles` [`BundleGradient` {`section`,
+`circuit` (empty: an earth wire), `phase`, `kv` to earth, `count`,
+`diameter` (m), `subconductors` [`SubconductorGradient` {`offset`,
+`height` (m), `max_kv_cm`, `angle_deg`, `mean_kv_cm`}],
+`average_max_kv_cm`, `max_kv_cm`, `markt_mengele_kv_cm`}],
+`potential_error` (share of the largest voltage)}], `notes`}; kV/cm rms.
+The solver alone: `surface_gradient::solve` (cylinders
+[`Cylinder` {`y`, `z`, `radius`, `volts`}], charges per cylinder,
+ground or free space, placement — `PLACEMENT` 0.3 r) → `Solution`
+(`potential`, `field`, `surface_field`, `charge`, `potential_error`),
+`surface_gradient::surface_gradient`, `markt_mengele`;
+`surface_gradient::csv` one row per subconductor. OHL-Design keeps the
+option in the Electric field window's project setting (`gradient`,
+absent: on) and the results in a saved run's `results.gradient`. CLI
+`ohl electrical gradient`. Validation calculations
+`electrical.surface_gradient_2d`, `electrical.cylinder_gradient`.
+Methods: [Conductor surface gradient](../theory/surface-gradient.md).
+
 **Magnetic field** (`magnetic::run`, roadmap O18 step 4, 2026-10-27;
 derived, never stored — the window's inputs live in the window for the
 session only). Inputs `Settings`: `model` (`three_d` / `two_d`),

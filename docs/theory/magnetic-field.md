@@ -758,7 +758,7 @@ reversed one, the ellipse's axes, and on the synthetic double circuit the
 symmetry, the load-flow directions and phase arrangement, the earth wire's
 currents, 2D against 3D, the 2D line angle warning, given points.
 
-**Against hvlbuzz** (FKH; 2026-10-29, the owner's suggestion): the 2D
+**Against hvlbuzz** (hvlbuzz — *HVLBuzz 2.0* by Michael Kefeder, Gerhard Bräunlich and Joel Winiger (the authors its `Cargo.toml` names), © FKH, Switzerland ([fkh.ch](https://fkh.ch)); source [gitlab.com/fkh-ch/emc](https://gitlab.com/fkh-ch/emc); documentation [fkh-ch.gitlab.io/emc/hvlbuzz/index.html](https://fkh-ch.gitlab.io/emc/hvlbuzz/index.html); GNU General Public License version 3; 2026-10-29, the owner's suggestion): the 2D
 model on three cross-sections (a 380 kV bundled circuit, a 110 kV double
 circuit with and without an earth wire), 1 m above the ground: B equal to
 hvlbuzz's last digits ([validation](../validation/textbook.md#the-2d-fields-against-hvlbuzz-benchmarkselectricalhvlbuzztoml)).
