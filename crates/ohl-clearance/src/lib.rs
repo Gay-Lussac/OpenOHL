@@ -59,6 +59,7 @@ pub mod wire_arc;
 pub mod wirefit;
 pub mod zone;
 pub mod zone_arc;
+pub mod zone_progress;
 pub mod zone_run;
 
 pub use case::{

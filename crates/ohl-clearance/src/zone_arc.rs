@@ -129,6 +129,30 @@ pub fn zone_arcs(
     cases: &[ArcCase],
     margins: crate::positions::BandMargins,
 ) -> (Vec<ZoneArc>, Vec<String>) {
+    zone_arcs_with(
+        line,
+        shapes,
+        jumpers,
+        cases,
+        margins,
+        &ohl_core::budget::Budget::new(),
+        &|| {},
+    )
+    .expect("no limit")
+}
+
+/// [`zone_arcs`] within `budget` (looked at for each span), calling
+/// `tick()` after each case.
+pub fn zone_arcs_with(
+    line: &Line,
+    shapes: &[Vec<SectionShape>],
+    jumpers: &[Vec<JumperShape>],
+    cases: &[ArcCase],
+    margins: crate::positions::BandMargins,
+    budget: &ohl_core::budget::Budget,
+    tick: &dyn Fn(),
+) -> Result<(Vec<ZoneArc>, Vec<String>), String> {
+    let run = budget.start();
     let mut out = Vec::new();
     let mut notes = Vec::new();
     for (c, case) in cases.iter().enumerate() {
@@ -145,6 +169,8 @@ pub fn zone_arcs(
         let (left, right) = (wires(case.left), wires(case.right));
         let (mut left_out, mut jumpers_out) = (0, 0);
         for w in &still {
+            run.check()
+                .map_err(|e| format!("making the swing arcs {e}"))?;
             let jumper = w.section.starts_with("jumper:");
             let mut missed = || {
                 if jumper {
@@ -214,8 +240,9 @@ pub fn zone_arcs(
                 case.name
             ));
         }
+        tick();
     }
-    (out, notes)
+    Ok((out, notes))
 }
 
 /// The wires of a rule's check among `arcs`: (arc index) of those the rule
@@ -459,43 +486,17 @@ impl ArcPointCheck {
     }
 }
 
-/// Rule `def`'s clearances of arc `a` (a band) to the ground: its
-/// boundary — the wire swung to angles every Δφ ≤ 2e / R (e =
-/// [`ARC_TOLERANCE`], R the band's largest radius) at its outer and its
-/// inner radius, and its two end edges at fractions of the thickness
-/// every Δr ≤ 2e — each line checked as a solved wire ([`ground_wire`],
-/// exact for its polyline): every point of the boundary lies within e of
-/// one of them at its station (and a ground reaching into the band
-/// crosses its boundary). Each is taken e thicker, in a zone e wider (and 2e deeper);
-/// vertically each piece also e·s lower (s its rise per plan length: an
-/// arc point e away from the wire's point lies over ground the piece
-/// passes over up to e·s higher or lower; s the steeper of the piece and
-/// its neighbours). The lowest is kept (the counts:
-/// of the worst angle). The angles nearest the hanging position first; a
-/// piece that cannot come below the lowest found so far nor below the
-/// requirement is passed over (its bound from the highest ground near
-/// it).
-pub(crate) fn arc_ground(
-    def: &Rule,
-    a: &ZoneArc,
-    terrain: &Terrain,
-    top: &GroundMax,
-) -> WireResult {
+/// The lines of arc `a`'s boundary [`arc_ground`] checks: (angle,
+/// fraction from the inner to the outer radius), the outer surface
+/// nearest the hanging position first ([`arc_ground_lines`] counts
+/// them).
+fn arc_lines(a: &ZoneArc) -> Vec<(f64, f64)> {
     let e = ARC_TOLERANCE;
     let (r, from, to) = a.arc.extent();
     let n = if to > from && r > 0.0 {
         (((to - from) * r / (2.0 * e)).ceil() as usize).clamp(1, 20_000)
     } else {
         0
-    };
-    let wide = Rule {
-        vertical_band: def.vertical_band + e,
-        vertical_depth: if def.vertical_depth > 0.0 {
-            def.vertical_depth + 2.0 * e
-        } else {
-            0.0
-        },
-        ..def.clone()
     };
     let angles: Vec<f64> = (0..=n)
         .map(|k| {
@@ -540,8 +541,59 @@ pub(crate) fn arc_ground(
     }
     // The outer surface nearest the hanging position first.
     lines.sort_by(|x, y| (y.1).total_cmp(&x.1).then(x.0.abs().total_cmp(&y.0.abs())));
+    lines
+}
+
+/// The lines [`arc_ground`] checks for arc `a` (the ground's step counts
+/// them: an arc is some hundreds of wires).
+pub(crate) fn arc_ground_lines(a: &ZoneArc) -> usize {
+    arc_lines(a).len()
+}
+
+/// Rule `def`'s clearances of arc `a` (a band) to the ground: its
+/// boundary — the wire swung to angles every Δφ ≤ 2e / R (e =
+/// [`ARC_TOLERANCE`], R the band's largest radius) at its outer and its
+/// inner radius, and its two end edges at fractions of the thickness
+/// every Δr ≤ 2e — each line checked as a solved wire ([`ground_wire`],
+/// exact for its polyline): every point of the boundary lies within e of
+/// one of them at its station (and a ground reaching into the band
+/// crosses its boundary). Each is taken e thicker, in a zone e wider (and 2e deeper);
+/// vertically each piece also e·s lower (s its rise per plan length: an
+/// arc point e away from the wire's point lies over ground the piece
+/// passes over up to e·s higher or lower; s the steeper of the piece and
+/// its neighbours). The lowest is kept (the counts:
+/// of the worst angle). The angles nearest the hanging position first; a
+/// piece that cannot come below the lowest found so far nor below the
+/// requirement is passed over (its bound from the highest ground near
+/// it).
+/// `stop` is looked at before each line (none when it says stop),
+/// `tick(1)` called after each.
+pub(crate) fn arc_ground(
+    def: &Rule,
+    a: &ZoneArc,
+    terrain: &Terrain,
+    top: &GroundMax,
+    stop: &dyn Fn() -> bool,
+    tick: &dyn Fn(usize),
+) -> Option<WireResult> {
+    let e = ARC_TOLERANCE;
+    let wide = Rule {
+        vertical_band: def.vertical_band + e,
+        vertical_depth: if def.vertical_depth > 0.0 {
+            def.vertical_depth + 2.0 * e
+        } else {
+            0.0
+        },
+        ..def.clone()
+    };
+    let lines = arc_lines(a);
     let mut best = WireResult::with(def.required(a.wire.kv()));
     for (phi, t) in lines {
+        // Stop and the time limit, line by line (an arc has up to some
+        // thousands).
+        if stop() {
+            return None;
+        }
         let line = Wire {
             points: a.arc.line_at_radius(phi, t),
             polyline_error: a.arc.allowance() - a.wire.surface_radius + e,
@@ -576,6 +628,7 @@ pub(crate) fn arc_ground(
             best.radial.map_or(f64::INFINITY, |h| h.distance),
         ];
         let r = ground_wire(&wide, &line, terrain, top, bound, Some(&slope));
+        tick(1);
         if let Some(h) = r.vertical
             && best.vertical.is_none_or(|b| h.distance < b.distance)
         {
@@ -589,5 +642,5 @@ pub(crate) fn arc_ground(
         best.vertical_violations = best.vertical_violations.max(r.vertical_violations);
         best.radial_violations = best.radial_violations.max(r.radial_violations);
     }
-    best
+    Some(best)
 }

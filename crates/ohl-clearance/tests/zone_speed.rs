@@ -327,6 +327,7 @@ fn speed() {
                         surfaces: &[],
                         points: Some(&mut feed),
                         filter: &Default::default(),
+                        progress: None,
                     },
                     &budget,
                 )

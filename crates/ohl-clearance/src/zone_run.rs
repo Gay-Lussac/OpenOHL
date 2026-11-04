@@ -13,7 +13,6 @@
 //! cloud or a COPC file).
 
 use std::collections::BTreeSet;
-use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
 
 use ohl_core::budget::Budget;
@@ -23,8 +22,9 @@ use ohl_terrain::Terrain;
 use crate::rules::CheckScope;
 use crate::zone::{
     ArcCase, WindState, Zone, ZoneReport, ZoneRule, ZoneTargets, arc_cases, arc_polylines,
-    check_zones, jumpers_needed, sections_needed, solve_states, zone_arcs,
+    check_zones, jumpers_needed, sections_needed, solve_states,
 };
+use crate::zone_progress::{Step, ZoneProgress};
 
 /// Reads the points around the wires: `(polylines, reach, classes, budget,
 /// visit)` — the wires in plan (x, y), the distance from them within which
@@ -92,9 +92,11 @@ type Merged = (
 /// `arc` (the bands' margins, m: the spans' and the jumpers'), each
 /// span's swing arc too — and each
 /// jumper's a rule checks, since 2026-10-21 — ([`arc_cases`],
-/// [`zone_arcs`]; the states must hold each windy case's still air, as
+/// [`crate::zone_arc::zone_arcs`]; the states must hold each windy case's still air, as
 /// [`crate::zone::wind_states`] gives them with the arc on). Stops when
-/// `budget` runs out, with an error.
+/// `budget` runs out, with an error. `progress` says each step and how
+/// far it has got ([`ZoneProgress`]; the point reader counts the points'
+/// step).
 #[allow(clippy::too_many_arguments)]
 pub fn run_zone_check(
     line: &Line,
@@ -109,7 +111,7 @@ pub fn run_zone_check(
     surfaces: &[(String, &Terrain)],
     sections_scope: Option<&BTreeSet<String>>,
     budget: &Budget,
-    done: &AtomicUsize,
+    progress: &ZoneProgress,
     filter: &ohl_weather::CaseFilter,
 ) -> Result<ZoneCheckResult, String> {
     let mut sections = sections_needed(line, &rules);
@@ -158,9 +160,23 @@ pub fn run_zone_check(
     // the wires solved by its calculation (none: the sections' own, or the
     // method chosen), the others set aside; the reports merged.
     let groups = crate::calculation::of_zone_rules(&rules);
+    // The steps of each calculation, said as they come.
+    let mut steps = vec![Step::Solving];
+    if arc.is_some() {
+        steps.push(Step::Arcs);
+    }
+    steps.push(Step::Indexing);
+    if points.is_some() && rules.iter().any(|r| !r.classes.is_empty()) {
+        steps.push(Step::Points);
+    }
+    if rules.iter().any(|r| r.ground) {
+        steps.push(Step::Ground);
+    }
+    progress.plan(&steps, groups.len());
     let base = line;
     let mut merged: Option<Merged> = None;
-    for calc in groups.iter().copied() {
+    for (k, calc) in groups.iter().copied().enumerate() {
+        progress.calculation(k);
         let grouped;
         let rules: &[ZoneRule] = if groups.len() == 1 {
             &rules
@@ -178,6 +194,7 @@ pub fn run_zone_check(
         };
         let one = (|| -> Result<_, String> {
             let started = Instant::now();
+            progress.begin(Step::Solving, states.len() as u64);
             let solved = solve_states(
                 line,
                 library,
@@ -185,7 +202,7 @@ pub fn run_zone_check(
                 &sections,
                 jumpers_needed(rules),
                 budget,
-                done,
+                &progress.solved,
             )?;
             let solving = started.elapsed();
             let started = Instant::now();
@@ -198,8 +215,18 @@ pub fn run_zone_check(
             if let Some(e) = margins.problem() {
                 return Err(e);
             }
-            let (arcs, arc_notes) =
-                zone_arcs(line, &solved.shapes, &solved.jumpers, &cases, margins);
+            if !cases.is_empty() {
+                progress.begin(Step::Arcs, cases.len() as u64);
+            }
+            let (arcs, arc_notes) = crate::zone_arc::zone_arcs_with(
+                line,
+                &solved.shapes,
+                &solved.jumpers,
+                &cases,
+                margins,
+                budget,
+                &|| progress.add(1),
+            )?;
             // Points around the wires at every wind position, within reach.
             let reach = match zone.search {
                 Some(d) => d,
@@ -250,6 +277,7 @@ pub fn run_zone_check(
                     surfaces,
                     points: points.is_some().then_some(&mut feed as _),
                     filter,
+                    progress: Some(progress),
                 },
                 budget,
             )?;

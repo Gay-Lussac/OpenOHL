@@ -116,6 +116,83 @@ classes in the cloud (`zone::time_limit`): about ten times the ~2 s per
 million measured on the real project. Shown before Run and in the error
 when reached.
 
+## Radial clearances: every step counted, Stop, the corridor test (2026-11-04)
+
+The owner's radial run on a real line (1.1 GB project, 511 sections, a
+design code's 36 radial rules, the swing arc in 3 weather cases, 7
+wind positions, search distance 30 m) said "about 0 s left" after some
+800 s and went on; Stop did nothing. Measured on a copy with the
+project's own rule files (`bench::clearance_zones_benchmark`, below;
+bench-fast, 10 cores, other builds running on the machine):
+
+- **The progress counted the points read only.** Once they were read
+  (100 %), the ground check of the swing arcs — 1342 arcs, 3.0 million
+  lines of their boundaries at the 2 cm tolerance — ran for minutes
+  uncounted. Now every step is counted with its own bar and time left
+  (`ohl_clearance::zone_progress`): solving the positions, making the
+  arcs, indexing the wires, reading and checking the points (from the
+  point reader's counts, reset for each read), checking the ground (each
+  wire position and each line of each arc). No time left is said before
+  2 % of a step nor once its counter is full.
+- **Stop.** The points were checked in blocks of 65 536 without looking
+  at the token, and the ground wires and arcs not at all: Stop waited for
+  the end. Now the check looks every 2048 points on each core, before
+  each wire and each arc line, each span while making the arcs and each
+  rule while indexing; the window frees itself at once (the previous
+  results kept) while the thread winds down. Test:
+  `a_zone_check_stopped_among_the_points_returns_at_once` (40 million
+  points offered, stopped after 0.1 s of checking: returns within 5 s).
+- **Reading: the corridor test.** Each point read is tested against the
+  corridor around every wire position and every swing arc (the arcs
+  give a polyline every metre of their swing: many polylines). The
+  vertical window has no swing arc, so its corridor was cheap; with the
+  arcs the test took most of the radial run (262 s of 514). A chunk's
+  part of the corridor now has a fine grid (cells of a quarter of the
+  width): a cell wholly inside (its four corners within the width of one
+  segment, less 1 µm: the distance to a segment is convex), wholly
+  outside (no segment within reach, by a lower bound from its centre) or
+  the segments that may reach it, nearest first; the parts are made on
+  every core. The same points are read (`a_local_corridor_answers_as_the_whole`
+  compares with the test against every segment, at the edge too).
+- **What the vertical had that the radial lacked:** nothing in the
+  checking itself — both run the same one pass over the points (every
+  rule, wind position and arc against each block on every core, since
+  2026-10-27). The radial differs by its swing arcs: their polylines in
+  the corridor (fixed above) and their ground check (below).
+
+| Real line (findings identical, compared in full) | Before | After |
+|---|---|---|
+| radial, in all | 514 s | 225 s |
+| radial, solving 7 positions | 35 s | 34 s |
+| radial, reading the points (10.3 M near the wires) | 262 s | 9 s |
+| radial, checking the points | 5 s | 3 s |
+| radial, the ground with 1342 swing arcs | 205 s | 173 s (noise) |
+| vertical, in all | 69 s | 45 s |
+| vertical, solving 30 positions | 42 s | 41 s |
+| vertical, reading the points (9.7 M) | 24 s | 1 s |
+
+**Left as it is:** the ground check of the swing arcs (some 3 minutes
+here) checks each arc's boundary as lines 2 × `ARC_TOLERANCE` = 4 cm
+apart (the swing arc's precision), each as a wire against the ground
+triangles. Two exact speed-ups were tried and dropped: a nearest
+triangle found ring by ring (no gain: the nearest is about as far as the
+search radius, so nearly the whole box is searched anyway) and
+passing over samples by the distances of the neighbouring lines (the
+distance to a surface changes by at most the distance moved; no gain:
+the searches are cut at the rule's reach, below the clearances to beat,
+so the bounds never sufficed). A coarser tolerance would be faster but
+coarsens computed precision: the owner's decision. The solving of the
+wind positions waits for its slowest position (one whole-line solve of
+some 25 s here).
+
+The benchmark (a copy of a project of your own: it is opened for
+editing; `OHL_BENCH_OUT` writes the findings in full to compare runs):
+
+```bash
+OHL_BENCH_FILE=copy.ohl OHL_BENCH_OUT=out/ OHL_BENCH_MEASURE=radial \
+  cargo test --profile bench-fast -p ohl-app clearance_zones_benchmark -- --ignored --nocapture
+```
+
 ## Frame benchmark (desktop application)
 
 The desktop window is drawn headless (egui_kittest with wgpu, as the GPU tests) with the 3D view at four distances (the whole line, 3 km, 600 m and 80 m from the middle structure) and the plan view at four zooms (the whole line, 3 km, 400 m and 60 m wide). For each view it settles (every chunk built, every point cloud node read), checks that an idle frame asks for no other one, then draws 20 frames while turning or panning a little (as a drag does) and reports the median and slowest frame, the time to tessellate the frame's shapes, the shapes, what the 3D view drew, the time of a click (picking) and the time of each phase (`crate::perf` spans: frame hooks, menus, each tab, 3D layers rebuilt, chunk plan and build, point stream, render, labels; plan wires and labels; …):

@@ -120,6 +120,143 @@ pub struct Corridor {
     cell: f64,
     /// Segments within `half_width` of each cell (by bounding boxes).
     cells: HashMap<(i64, i64), Vec<u32>>,
+    /// A fine grid over a local corridor's box ([`Corridor::local`]).
+    fine: Option<Fine>,
+}
+
+/// A fine grid of a corridor's part (2026-11-04: the test of each point
+/// read took most of a radial clearance check, its swing arcs giving
+/// many polylines): each cell wholly inside (every point of it within
+/// the width of one segment, by its corners: the distance to a segment
+/// is convex), wholly outside (no segment within reach of it), or the
+/// segments that may reach it, nearest first. The same answers as the
+/// test against every segment of the cell: a margin of [`FINE_MARGIN`]
+/// keeps the cells decided away from the edge.
+#[derive(Debug, Clone, PartialEq)]
+struct Fine {
+    origin: [f64; 2],
+    size: f64,
+    nx: usize,
+    ny: usize,
+    cells: Vec<FineCell>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum FineCell {
+    Outside,
+    Inside,
+    Near(Vec<u32>),
+}
+
+/// Distance kept from the corridor's edge by the fine cells decided
+/// without a test, m.
+const FINE_MARGIN: f64 = 1e-6;
+/// Most cells of a fine grid.
+const FINE_CELLS: f64 = 65_536.0;
+
+impl Fine {
+    fn new(segments: &[[[f64; 2]; 2]], half_width: f64, min: [f64; 2], max: [f64; 2]) -> Self {
+        let (w, h) = ((max[0] - min[0]).max(0.0), (max[1] - min[1]).max(0.0));
+        let size = (half_width / 4.0)
+            .max(0.25)
+            .max((w * h / FINE_CELLS).sqrt());
+        let nx = (w / size).floor() as usize + 1;
+        let ny = (h / size).floor() as usize + 1;
+        // Per cell: inside, and the segments (with a lower bound of their
+        // distance) that may reach it.
+        let mut inside = vec![false; nx * ny];
+        let mut near: Vec<Vec<(f64, u32)>> = vec![Vec::new(); nx * ny];
+        let half = size * std::f64::consts::FRAC_1_SQRT_2;
+        let index = |v: f64, o: f64, n: usize| -> Option<usize> {
+            let k = ((v - o) / size).floor();
+            (k >= 0.0).then_some((k as usize).min(n - 1))
+        };
+        for (k, s) in segments.iter().enumerate() {
+            let lo = [
+                s[0][0].min(s[1][0]) - half_width,
+                s[0][1].min(s[1][1]) - half_width,
+            ];
+            let hi = [
+                s[0][0].max(s[1][0]) + half_width,
+                s[0][1].max(s[1][1]) + half_width,
+            ];
+            // The grid reaches past `max` by up to a cell: every cell of
+            // it is decided.
+            let top = [min[0] + nx as f64 * size, min[1] + ny as f64 * size];
+            if hi[0] < min[0] || hi[1] < min[1] || lo[0] > top[0] || lo[1] > top[1] {
+                continue;
+            }
+            let i0 = index(lo[0], min[0], nx).unwrap_or(0);
+            let j0 = index(lo[1], min[1], ny).unwrap_or(0);
+            let (Some(i1), Some(j1)) = (index(hi[0], min[0], nx), index(hi[1], min[1], ny)) else {
+                continue;
+            };
+            for j in j0..=j1 {
+                for i in i0..=i1 {
+                    let c = j * nx + i;
+                    if inside[c] {
+                        continue;
+                    }
+                    let x0 = min[0] + i as f64 * size;
+                    let y0 = min[1] + j as f64 * size;
+                    let centre = [x0 + size / 2.0, y0 + size / 2.0];
+                    let low = ohl_core::geometry::distance_to_segment(centre, s[0], s[1]) - half;
+                    if low > half_width + FINE_MARGIN {
+                        continue;
+                    }
+                    let far = [
+                        [x0, y0],
+                        [x0 + size, y0],
+                        [x0, y0 + size],
+                        [x0 + size, y0 + size],
+                    ]
+                    .into_iter()
+                    .map(|q| ohl_core::geometry::distance_to_segment(q, s[0], s[1]))
+                    .fold(0.0, f64::max);
+                    if far <= half_width - FINE_MARGIN {
+                        inside[c] = true;
+                        near[c] = Vec::new();
+                    } else {
+                        near[c].push((low, k as u32));
+                    }
+                }
+            }
+        }
+        let cells = inside
+            .into_iter()
+            .zip(near)
+            .map(|(full, mut list)| {
+                if full {
+                    FineCell::Inside
+                } else if list.is_empty() {
+                    FineCell::Outside
+                } else {
+                    list.sort_by(|a, b| a.0.total_cmp(&b.0));
+                    FineCell::Near(list.into_iter().map(|(_, k)| k).collect())
+                }
+            })
+            .collect();
+        Self {
+            origin: min,
+            size,
+            nx,
+            ny,
+            cells,
+        }
+    }
+
+    /// The cell of (x, y), when in the grid's box (its upper edges in).
+    fn cell(&self, x: f64, y: f64) -> Option<&FineCell> {
+        let i = (x - self.origin[0]) / self.size;
+        let j = (y - self.origin[1]) / self.size;
+        if !(i >= 0.0 && j >= 0.0) {
+            return None;
+        }
+        let (i, j) = (i.floor() as usize, j.floor() as usize);
+        // The box's upper edges belong to its last cells (the grid
+        // reaches past them by up to a cell).
+        (i < self.nx && j < self.ny).then(|| &self.cells[j * self.nx + i])
+    }
 }
 
 impl Corridor {
@@ -173,11 +310,22 @@ impl Corridor {
             half_width,
             cell,
             cells,
+            fine: None,
         }
     }
 
     /// Whether (x, y) is inside.
     pub fn contains(&self, x: f64, y: f64) -> bool {
+        if let Some(cell) = self.fine.as_ref().and_then(|f| f.cell(x, y)) {
+            return match cell {
+                FineCell::Outside => false,
+                FineCell::Inside => true,
+                FineCell::Near(ids) => ids.iter().any(|&k| {
+                    let [a, b] = self.segments[k as usize];
+                    ohl_core::geometry::distance_to_segment([x, y], a, b) <= self.half_width
+                }),
+            };
+        }
         let key = (
             (x / self.cell).floor() as i64,
             (y / self.cell).floor() as i64,
@@ -234,14 +382,21 @@ impl Corridor {
 
     /// The part of the corridor that may reach into the plan box
     /// `min`–`max`: same width, only the segments near the box (empty if
-    /// none). Queries on it are cheaper.
+    /// none). Queries on it are cheaper: within the box a fine grid
+    /// answers most at once (its cells wholly inside, wholly outside or
+    /// with the segments near them), the same answers as the whole
+    /// corridor's.
     pub fn local(&self, min: [f64; 2], max: [f64; 2]) -> Self {
-        let segments = self
+        let segments: Vec<[[f64; 2]; 2]> = self
             .near_box(min, max)
             .into_iter()
             .map(|k| self.segments[k as usize])
             .collect();
-        Self::from_segments(segments, self.half_width)
+        let fine = (!segments.is_empty() && max[0] >= min[0] && max[1] >= min[1])
+            .then(|| Fine::new(&segments, self.half_width, min, max));
+        let mut out = Self::from_segments(segments, self.half_width);
+        out.fine = fine;
+        out
     }
 
     /// Whether there is no segment.
@@ -653,6 +808,65 @@ mod tests {
     use super::*;
     use las::point::Classification;
     use las::{Builder, Point, Writer};
+
+    /// A local corridor's fine grid gives the answers of the test against
+    /// every segment (2026-11-04), on many points, near the edge too:
+    /// wires and the dense fans of polylines a swing arc gives.
+    #[test]
+    fn a_local_corridor_answers_as_the_whole() {
+        // A small generator, the same on every run.
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut polylines: Vec<Vec<[f64; 2]>> = Vec::new();
+        for k in 0..12 {
+            // A span 300 m long, and a fan of swung copies 4 cm apart.
+            let y = k as f64 * 8.0;
+            for f in 0..25 {
+                let off = f as f64 * 0.04;
+                polylines.push(
+                    (0..=30)
+                        .map(|i| [i as f64 * 10.0, y + off + (i as f64 * 0.3).sin()])
+                        .collect(),
+                );
+            }
+        }
+        for width in [0.5, 3.0, 30.0] {
+            let whole = Corridor::new(&polylines, width);
+            for (min, max) in [
+                ([0.0, 0.0], [100.0, 100.0]),
+                ([150.0, 50.0], [250.0, 150.0]),
+            ] {
+                let local = whole.local(min, max);
+                let mut n = 0;
+                for _ in 0..10_000 {
+                    let x = min[0] + next() * (max[0] - min[0]);
+                    let y = min[1] + next() * (max[1] - min[1]);
+                    let brute = whole.segments.iter().any(|[a, b]| {
+                        ohl_core::geometry::distance_to_segment([x, y], *a, *b) <= width
+                    });
+                    assert_eq!(local.contains(x, y), brute, "({x}, {y}) at {width} m");
+                    assert_eq!(whole.contains(x, y), brute);
+                    n += usize::from(brute);
+                }
+                assert!(n > 0, "some points inside");
+            }
+            // On the edge itself: points exactly at the width from a
+            // segment's end.
+            let local = whole.local([0.0, 0.0], [100.0, 100.0]);
+            for k in 0..360 {
+                let a = (k as f64).to_radians();
+                let (x, y) = (width * a.cos(), width * a.sin());
+                if x >= 0.0 && y >= 0.0 {
+                    assert_eq!(local.contains(x, y), whole.contains(x, y));
+                }
+            }
+        }
+    }
 
     #[test]
     fn lowest_point_per_cell_and_cloud_names() {

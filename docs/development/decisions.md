@@ -10,6 +10,39 @@ of Parts A, B and C).
 
 ## 2026-11-04
 
+**Vertical and radial clearances: every step counted, Stop at once, the
+corridor test faster** (owner, 2026-11-04: "i'm trying the radial
+clearances but the time estimation said it should be done 0sec left on
+[a real line] after around 800 seconds and clicking stop does nothing.
+can you investigate" … "okay just make it count and look if it can be
+made faster. the vertical clearance go way faster last time we looked
+to improve it"). Built, in active development, not approved yet.
+
+- **Counted**: the footer says the step of the run's steps ("step 4 of
+  5: reading and checking the points"), its counter and its own time
+  left; the ground's step counts each wire position and each line of the
+  swing arcs' boundaries. Never "0 s left" while a step runs
+  (`ohl_clearance::zone_progress::ZoneProgress`; `run_zone_check` takes
+  it in place of the counter of positions solved; `ohl zones` and the
+  tests pass one).
+- **Stop** is looked at every 2048 points per core, before each ground
+  wire and arc line, per span while the arcs are made and per rule while
+  indexing; the window is free at once, the previous results kept and
+  said, the thread winding down unseen. The time limit and its message
+  are unchanged.
+- **Faster, same results**: the corridor test of the points read (most
+  of a radial run with the swing arc) answered by a fine grid per chunk
+  (cells wholly inside, wholly outside, or the segments near them),
+  made on every core; same points read. On a real line: radial 514 s →
+  225 s, vertical 69 s → 45 s, the findings compared in full and
+  identical (`docs/development/performance.md`). The ground check of the
+  swing arcs (some 3 min there) is left: faster only with a coarser arc
+  tolerance (the owner's decision, not taken).
+- One pass over the points for every rule, wind position and arc (the
+  owner's direction) was already how both windows check (2026-10-27);
+  with rules of several calculations the points are read once per
+  calculation (each its own step, said "calculation 1 of 2").
+
 **A circuit's current in the line; the Thermal rating in four pages; one
 step from a current to the clearance** (owner, 2026-11-04: "go ahead
 with 1-3 and also review the thermal menu as all the others in the app

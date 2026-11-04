@@ -7,7 +7,6 @@
 //! clearances › Arc or steps: speed and quality).
 
 use std::path::Path;
-use std::sync::atomic::AtomicUsize;
 
 use ohl_clearance::rules::{Requirement, WindSides, WindSteps};
 use ohl_clearance::zone::{Measure, Zone, ZoneCheckResult, ZoneRule, run_zone_check, wind_states};
@@ -136,7 +135,7 @@ fn run_with(
         &[],
         None,
         &Budget::new(),
-        &AtomicUsize::new(0),
+        &ohl_clearance::zone_progress::ZoneProgress::new(),
         &Default::default(),
     )
     .unwrap()
@@ -329,7 +328,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
             &[],
             None,
             &Budget::new(),
-            &AtomicUsize::new(0),
+            &ohl_clearance::zone_progress::ZoneProgress::new(),
             &Default::default(),
         )
         .unwrap()
@@ -382,7 +381,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         &[],
         None,
         &Budget::new(),
-        &AtomicUsize::new(0),
+        &ohl_clearance::zone_progress::ZoneProgress::new(),
         &Default::default(),
     )
     .unwrap_err();
@@ -403,7 +402,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         &[],
         None,
         &Budget::new(),
-        &AtomicUsize::new(0),
+        &ohl_clearance::zone_progress::ZoneProgress::new(),
         &Default::default(),
     )
     .unwrap_err();
@@ -452,7 +451,7 @@ fn a_ground_rule_checks_the_surface_it_names() {
         &[("raised TIN".to_owned(), &raised)],
         None,
         &Budget::new(),
-        &AtomicUsize::new(0),
+        &ohl_clearance::zone_progress::ZoneProgress::new(),
         &Default::default(),
     )
     .unwrap();
@@ -478,5 +477,107 @@ fn a_ground_rule_checks_the_surface_it_names() {
             .any(|n| n.contains("\"missing\"") && n.contains("no such TIN")),
         "{:?}",
         r.zone.notes
+    );
+}
+
+/// A run with the swing arc on the example line, its progress and its
+/// budget given; `points` repeated `times`.
+fn run_watched(
+    points: &[[f64; 3]],
+    times: usize,
+    budget: &Budget,
+    progress: &ohl_clearance::zone_progress::ZoneProgress,
+) -> Result<ZoneCheckResult, String> {
+    let (line, library, terrain) = example();
+    let wind = WindSteps {
+        stepped: false,
+        arc: true,
+        ..WindSteps::default()
+    };
+    let states = wind_states(&[windy()], |_| true, &wind);
+    let read = |_: &[Vec<[f64; 2]>],
+                _: f64,
+                _: &[u8],
+                _: &Budget,
+                visit: &mut dyn FnMut(f64, f64, f64, u8)| {
+        for _ in 0..times {
+            for p in points {
+                visit(p[0], p[1], p[2], 5);
+            }
+        }
+        Ok(())
+    };
+    run_zone_check(
+        &line,
+        &library,
+        Zone::new(Measure::Radial),
+        &Default::default(),
+        rules(100.0),
+        states,
+        Some(wind.margins()),
+        Some(&read),
+        Some(&terrain),
+        &[],
+        None,
+        budget,
+        progress,
+        &Default::default(),
+    )
+}
+
+/// Every step is counted (owner, 2026-11-04: "make it count"): a run
+/// with points, the ground and the swing arcs says its five steps, and
+/// at the end the last one (the ground: its wires and every line of the
+/// arcs' boundaries) is counted to the full.
+#[test]
+fn a_zone_check_counts_its_steps() {
+    use ohl_clearance::zone_progress::{Step, ZoneProgress};
+    let (line, library, _) = example();
+    let points = cloud(&line, &library, 2000);
+    let progress = ZoneProgress::new();
+    run_watched(&points, 1, &Budget::new(), &progress).unwrap();
+    let s = progress.snapshot().unwrap();
+    assert_eq!((s.step, s.number, s.steps), (Step::Ground, 5, 5));
+    assert!(s.total > 0);
+    assert_eq!(s.done, s.total);
+    assert_eq!(s.left(), None);
+}
+
+/// Stop while the points are checked (2026-11-04: Stop did nothing for
+/// minutes): the run returns at once with "cancelled", well before the
+/// points it was given are checked.
+#[test]
+fn a_zone_check_stopped_among_the_points_returns_at_once() {
+    use ohl_clearance::zone_progress::{Step, ZoneProgress};
+    use ohl_core::budget::CancelToken;
+    use std::time::{Duration, Instant};
+    let (line, library, _) = example();
+    let points = cloud(&line, &library, 20_000);
+    let progress = ZoneProgress::new();
+    let token = CancelToken::new();
+    let budget = Budget::new().cancel_token(token.clone());
+    let stopped = std::thread::scope(|s| {
+        let watcher = s.spawn(|| {
+            // Cancelled once the points are being checked.
+            let begun = Instant::now();
+            while progress.snapshot().is_none_or(|p| p.step != Step::Points) {
+                assert!(begun.elapsed() < Duration::from_secs(300), "no points step");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            token.cancel();
+            Instant::now()
+        });
+        // Far more points than are checked in the time allowed below.
+        let r = run_watched(&points, 2_000, &budget, &progress);
+        let at = watcher.join().unwrap();
+        (r, at.elapsed())
+    });
+    let (r, after) = stopped;
+    let e = r.unwrap_err();
+    assert!(e.contains("cancelled"), "{e}");
+    assert!(
+        after < Duration::from_secs(5),
+        "returned {after:?} after Stop"
     );
 }
