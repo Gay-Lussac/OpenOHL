@@ -7,7 +7,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::AtomicUsize;
 
 use ohl_clearance::RuleSet;
 use ohl_clearance::zone::{self, Measure, Zone};
@@ -240,7 +239,7 @@ fn zones_by_a_rule_file_with_its_check() {
         &[],
         None,
         &Budget::new(),
-        &AtomicUsize::new(0),
+        &ohl_clearance::zone_progress::ZoneProgress::new(),
         &Default::default(),
     )
     .unwrap();

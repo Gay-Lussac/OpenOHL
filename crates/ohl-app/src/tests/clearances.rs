@@ -393,6 +393,97 @@ pub(super) fn open_clearance_window(harness: &mut Harness<'_, App>, item: &str) 
     harness.run();
 }
 
+/// Checks › Radial clearances: the footer counts the run's steps, and
+/// Stop frees the window at once (2026-11-04: Stop did nothing for
+/// minutes), the previous results kept and said so.
+#[test]
+fn the_radial_clearances_window_counts_and_stops_at_once() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1600.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    open_clearance_window(&mut harness, "Radial clearances…");
+    let dir = std::env::temp_dir().join(format!("ohl-app-{}-zones-stop", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.radial_clearances;
+        w.rules.clear();
+        w.file = Some(dir.join("rules.ohlr"));
+        // The swing arc: its ground check takes a while.
+        w.wind = ohl_clearance::WindSteps {
+            stepped: false,
+            arc: true,
+            ..Default::default()
+        };
+        w.rules.push(ohl_clearance::ZoneRule {
+            name: "Ground".into(),
+            voltages: Vec::new(),
+            cases: vec!["high wind".into()],
+            distance: ohl_clearance::Requirement::Fixed(100.0),
+            classes: Vec::new(),
+            ground: true,
+            surface: None,
+            wires: ohl_clearance::Wires::Sections,
+            width: None,
+            screen: false,
+            calculation: None,
+        });
+    }
+    harness.run();
+    harness.get_by_label("Run").click();
+    // Counted: "step k of 4: …" (solving, the arcs, indexing, the ground).
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let text = harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .radial_clearances
+            .progress_text();
+        if text.starts_with("step ") {
+            assert!(text.contains(" of 4: "), "{text}");
+            break;
+        }
+        assert!(
+            harness
+                .state_mut()
+                .ready()
+                .unwrap()
+                .radial_clearances
+                .result()
+                .1,
+            "the run ended before it was seen"
+        );
+        assert!(started.elapsed().as_secs() < 120, "no step said: {text}");
+    }
+    // The footer drawn while it runs.
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .radial_clearances
+            .result()
+            .1
+    );
+    harness.get_by_label("Stop").click();
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    // Free at once: no run, no result taken from it.
+    assert!(matches!(r.radial_clearances.result(), (None, false)));
+    harness.run();
+    assert!(
+        harness
+            .query_by_label_contains("stopped: the previous results are kept")
+            .is_some()
+    );
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// Checks › Vertical clearances: the project's rule file
 /// next to the model; a ground rule run with the wind stepped finds every
 /// span, the violations are drawn, a span link goes to it.
@@ -582,14 +673,21 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
     std::fs::remove_dir_all(dir).ok();
 }
 
-/// The time left to solve: none before the first position, then the
-/// mean time of those solved times those left.
+/// The time left of a step: none before 2 % of it, then from its pace;
+/// none once its counter is full while it still runs (2026-11-04: "0 s
+/// left" was said while the radial check went on for minutes).
 #[test]
 fn the_clearance_windows_say_the_time_left() {
-    use crate::clearance_zones::time_left;
-    assert_eq!(time_left(3.0, 0, 10), None);
-    assert_eq!(time_left(3.0, 3, 10), Some(7.0));
-    assert_eq!(time_left(3.0, 10, 10), None);
+    use ohl_clearance::zone_progress::{Step, ZoneProgress};
+    let p = ZoneProgress::new();
+    p.plan(&[Step::Solving, Step::Indexing, Step::Points], 1);
+    p.begin(Step::Solving, 10);
+    p.solved.store(3, std::sync::atomic::Ordering::Relaxed);
+    let s = p.snapshot().unwrap();
+    assert_eq!((s.number, s.steps, s.done, s.total), (1, 3, 3, 10));
+    assert!(s.left().is_some());
+    p.solved.store(10, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(p.snapshot().unwrap().left(), None);
 }
 
 /// Checks › Radial clearances: a rule added is kept in the

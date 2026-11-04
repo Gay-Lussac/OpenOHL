@@ -44,7 +44,7 @@ use ohl_weather::{WeatherCase, WindSide};
 
 use crate::checks::{
     GroundMax, Hit, PointCheck, PointEvent, Tally, Wire, WireResult, WireSet, checked_parts,
-    ground_check_grouped, wires_of,
+    wires_of,
 };
 use crate::rules::{
     CheckScope, CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet,
@@ -811,6 +811,8 @@ pub struct ZoneTargets<'a> {
     /// The structure and section overrides (owner, 2026-10-25): a span
     /// takes only the cases its section's and its ends' groups give.
     pub filter: &'a ohl_weather::CaseFilter,
+    /// Where the steps are said (none: not said).
+    pub progress: Option<&'a crate::zone_progress::ZoneProgress>,
 }
 
 /// One rule's check of one kind of target.
@@ -1024,22 +1026,42 @@ pub fn check_zones(
             ));
         }
     };
+    let progress = targets.progress;
+    let say = |step: crate::zone_progress::Step, total: usize| {
+        if let Some(p) = progress {
+            p.begin(step, total as u64);
+        }
+    };
+    let tick = |n: usize| {
+        if let Some(p) = progress {
+            p.add(n as u64);
+        }
+    };
+    say(crate::zone_progress::Step::Indexing, parts.len());
     let next = AtomicUsize::new(0);
     let slots: Vec<Mutex<&mut Part>> = parts.iter_mut().map(Mutex::new).collect();
     let threads = std::thread::available_parallelism()
         .map_or(1, |n| n.get())
         .min(slots.len())
         .max(1);
+    // Stopped (Stop, the time limit): between the parts.
+    let stopped = AtomicBool::new(false);
     std::thread::scope(|s| {
         for _ in 0..threads {
             s.spawn(|| {
                 while let Some(slot) = slots.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    if stopped.load(Ordering::Relaxed) || run.check().is_err() {
+                        stopped.store(true, Ordering::Relaxed);
+                        return;
+                    }
                     index(&mut slot.lock().expect("not poisoned"));
+                    tick(1);
                 }
             });
         }
     });
     drop(slots);
+    run.check().map_err(|e| format!("indexing the wires {e}"))?;
     report.timing.preparing = begun.elapsed();
     let have_points = targets.points.is_some();
     let classes: Vec<u8> = (0..=255u8).filter(|c| wanted[*c as usize]).collect();
@@ -1056,19 +1078,37 @@ pub fn check_zones(
                 let mut spent = vec![Duration::ZERO; parts.len()];
                 let mut checking = Duration::ZERO;
                 let started = Instant::now();
+                // The point reader counts this step (the points of the
+                // blocks read).
+                say(crate::zone_progress::Step::Points, 0);
+                // Stop and the time limit: before each block of points and
+                // within it every few thousand points (2026-11-04: Stop
+                // did nothing while the points were checked); the points
+                // read after are passed over, the reader stopping at its
+                // next batch.
+                let mut stop = false;
                 feed(&classes, &mut |x, y, z, c| {
+                    if stop {
+                        return;
+                    }
                     n += 1;
                     block.push(([x, y, z], c));
                     if block.len() == BLOCK {
                         let t = Instant::now();
-                        check_block(&mut parts, arcs, &block, &mut spent);
+                        stop = !check_block(&mut parts, arcs, &block, &mut spent, &run);
                         checking += t.elapsed();
                         block.clear();
                     }
                 })?;
                 let t = Instant::now();
-                check_block(&mut parts, arcs, &block, &mut spent);
+                if !stop {
+                    stop = !check_block(&mut parts, arcs, &block, &mut spent, &run);
+                }
                 checking += t.elapsed();
+                if stop {
+                    run.check()
+                        .map_err(|e| format!("checking the points {e}"))?;
+                }
                 report.points = n;
                 report.timing.reading = started.elapsed().saturating_sub(checking);
                 report.timing.checking = checking;
@@ -1091,6 +1131,23 @@ pub fn check_zones(
         .map_err(|e| format!("checking the clearances {e}"))?;
     let vertical = zone.measure == Measure::Vertical;
     let mut findings: Vec<ZoneFinding> = Vec::new();
+    // The ground's step: every wire of the ground rules and every line
+    // of their swing arcs' boundaries (an arc is some hundreds).
+    let ground_work: usize = parts
+        .iter()
+        .filter(|p| !matches!(p.def.target, Target::Points { .. }))
+        .filter(|p| ground_of(&p.def.surface, targets.ground, targets.surfaces).is_some())
+        .map(|p| {
+            p.wires.len()
+                + p.arcs
+                    .iter()
+                    .map(|&a| crate::zone_arc::arc_ground_lines(&arcs[a]))
+                    .sum::<usize>()
+        })
+        .sum();
+    if ground_work > 0 {
+        say(crate::zone_progress::Step::Ground, ground_work);
+    }
     // The highest ground per cell, made once per surface for every rule.
     let mut tops: Vec<(Option<String>, GroundMax)> = Vec::new();
     for p in &parts {
@@ -1129,14 +1186,18 @@ pub fn check_zones(
                     // (owner, 2026-10-26).
                     let group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
                     let started = Instant::now();
-                    let mut all: Vec<Entry> =
-                        ground_check_grouped(&p.def, &p.wires, &group, ground, top)
-                            .into_iter()
-                            .zip(&p.meta)
-                            .map(|(r, &(s, g))| (r, s, g, None))
-                            .collect();
+                    let stop = || run.check().is_err();
+                    let mut all: Vec<Entry> = crate::checks::ground_check_grouped_with(
+                        &p.def, &p.wires, &group, ground, top, &stop, &tick,
+                    )
+                    .ok_or_else(|| stopped_text("checking the ground", &run))?
+                    .into_iter()
+                    .zip(&p.meta)
+                    .map(|(r, &(s, g))| (r, s, g, None))
+                    .collect();
                     let found = crate::positions::parallel(p.arcs.len(), budget, |k| {
-                        Ok(arc_ground(&p.def, &arcs[p.arcs[k]], ground, top))
+                        arc_ground(&p.def, &arcs[p.arcs[k]], ground, top, &stop, &tick)
+                            .ok_or_else(|| stopped_text("checking the swing arcs", &run))
                     })
                     .map_err(|e| format!("checking the clearances {e}"))?;
                     for ((&arc, &g), r) in p.arcs.iter().zip(&p.arc_groups).zip(found) {
@@ -1232,6 +1293,19 @@ pub fn check_zones(
 /// Points worked out together on every core.
 const BLOCK: usize = 1 << 16;
 
+/// Points worked out between two looks at Stop and the time limit, per
+/// core.
+const STOP_EVERY: usize = 2048;
+
+/// Why `run` stopped, after `what` ("checking the ground stopped after
+/// the time limit …").
+fn stopped_text(what: &str, run: &ohl_core::budget::Run<'_>) -> String {
+    match run.check() {
+        Err(e) => format!("{what} {e}"),
+        Ok(()) => format!("{what} stopped"),
+    }
+}
+
 /// Checks a block of points against every part, in one pass (owner,
 /// 2026-10-27): each core takes a stretch of the block and works it out
 /// for every part — every rule and measure, with the wires of every wind
@@ -1239,16 +1313,22 @@ const BLOCK: usize = 1 << 16;
 /// results so far; then each part's events are applied in the points'
 /// order: the results, the counts and the first of equal clearances as
 /// one point at a time gives them. `spent` adds each part's time (summed
-/// over the cores).
+/// over the cores). False, and nothing applied, when `run` stopped
+/// (looked at every [`STOP_EVERY`] points on each core).
 fn check_block(
     parts: &mut [Part],
     arcs: &[ZoneArc],
     block: &[([f64; 3], u8)],
     spent: &mut [Duration],
-) {
+    run: &ohl_core::budget::Run<'_>,
+) -> bool {
     if block.is_empty() {
-        return;
+        return true;
     }
+    if run.check().is_err() {
+        return false;
+    }
+    let halted = AtomicBool::new(false);
     let threads = std::thread::available_parallelism()
         .map_or(1, |n| n.get())
         .min(block.len().div_ceil(1024))
@@ -1270,6 +1350,7 @@ fn check_block(
     // Per stretch (core), per part.
     let stretches: Vec<Vec<Option<Stretch>>> = {
         let parts = &*parts;
+        let halted = &halted;
         std::thread::scope(|s| {
             let handles: Vec<_> = block
                 .chunks(size)
@@ -1300,6 +1381,12 @@ fn check_block(
                                     took: Duration::ZERO,
                                 };
                                 for (i, &(q, c)) in chunk.iter().enumerate() {
+                                    if i % STOP_EVERY == STOP_EVERY - 1
+                                        && (halted.load(Ordering::Relaxed) || run.check().is_err())
+                                    {
+                                        halted.store(true, Ordering::Relaxed);
+                                        break;
+                                    }
                                     let stamp = first + i as u64 + 1;
                                     let taken = check.eval(
                                         set,
@@ -1340,6 +1427,9 @@ fn check_block(
                 .collect()
         })
     };
+    if halted.load(Ordering::Relaxed) {
+        return false;
+    }
     for (n, p) in parts.iter_mut().enumerate() {
         let Some(check) = p.points.as_mut() else {
             continue;
@@ -1367,6 +1457,7 @@ fn check_block(
             }
         }
     }
+    true
 }
 
 /// A rule's voltages in words: "any voltage", "220 kV", "110 or 220 kV".
@@ -1496,6 +1587,7 @@ mod tests {
                 surfaces: &[],
                 points: Some(&mut feed),
                 filter: &Default::default(),
+                progress: None,
             },
             &budget,
         )
@@ -1627,6 +1719,7 @@ mod tests {
                     surfaces: &[],
                     points: Some(&mut feed),
                     filter: &Default::default(),
+                    progress: None,
                 },
                 &budget,
             )
@@ -1704,7 +1797,7 @@ mod tests {
                 &[],
                 None,
                 &Budget::new(),
-                &AtomicUsize::new(0),
+                &crate::zone_progress::ZoneProgress::new(),
                 &Default::default(),
             )
         };
@@ -1745,7 +1838,7 @@ mod tests {
             &[],
             None,
             &Budget::new(),
-            &AtomicUsize::new(0),
+            &crate::zone_progress::ZoneProgress::new(),
             &Default::default(),
         )
         .unwrap();
@@ -1823,6 +1916,7 @@ mod tests {
                 surfaces: &[],
                 points: None,
                 filter: &Default::default(),
+                progress: None,
             },
             &budget,
         )

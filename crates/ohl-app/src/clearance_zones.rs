@@ -18,9 +18,10 @@
 //! physics first, then by name, and created where none is the same:
 //! [`crate::preset_cases`]).
 //! The check runs on its own thread: the wind positions are solved, the
-//! LiDAR points read again from the point cloud around the wires; its
-//! progress and the time left are shown, and **Stop** keeps the previous
-//! results.
+//! LiDAR points read again from the point cloud around the wires; every
+//! step is counted with its own time left
+//! ([`ohl_clearance::zone_progress`]), and **Stop** frees the window at
+//! once, keeping the previous results.
 //!
 //! The settings are grouped and explained as in the vegetation panel
 //! (the shared [`crate::check_help`]): a heading per group with a link to
@@ -33,7 +34,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
@@ -42,6 +43,7 @@ use eframe::egui;
 use crate::check_ui;
 use ohl_clearance::rules::Requirement;
 use ohl_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneFinding, ZoneRule};
+use ohl_clearance::zone_progress::{Step, ZoneProgress};
 use ohl_clearance::{CheckScope, RuleSet, WindSteps};
 use ohl_core::budget::{Budget, CancelToken};
 use ohl_line::condition::Method;
@@ -128,16 +130,12 @@ pub struct Out {
 
 struct Running {
     rx: Receiver<Result<Report, String>>,
-    done: Arc<AtomicUsize>,
-    total: usize,
-    /// How far the reading of the points has got.
+    /// The step under way and how far it has got.
+    progress: Arc<ZoneProgress>,
+    /// How far the reading of the points has got (the points' step).
     read: Arc<ohl_pointcloud::ReadProgress>,
-    /// When the reading began (seen here).
-    reading_since: Option<Instant>,
     cancel: CancelToken,
     started: Instant,
-    /// Stopped by the user: the previous results stay.
-    stopped: bool,
 }
 
 /// Violations drawn: (wire point, target) each.
@@ -495,14 +493,13 @@ impl ZoneWindow {
         let check = self.check.clone();
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.sections);
-        let done = Arc::new(AtomicUsize::new(0));
+        let progress = Arc::new(ZoneProgress::new());
         let cancel = CancelToken::new();
-        let total = states.len();
         let (tx, rx) = channel();
         let ctx = ctx.clone();
-        let (d, c) = (done.clone(), cancel.clone());
+        let (d, c) = (progress.clone(), cancel.clone());
         let read = Arc::new(ohl_pointcloud::ReadProgress::default());
-        let progress = read.clone();
+        let reading = read.clone();
         let points = cloud.as_ref().map_or(0, |_| rule_points(model, &rules));
         self.stamp.started(model.revision());
         self.rules_hash.0 = Some(self.settings_hash());
@@ -522,9 +519,9 @@ impl ZoneWindow {
                 &surfaces,
                 scope,
                 &Progress {
-                    done: &d,
+                    steps: &d,
                     cancel: &c,
-                    read: &progress,
+                    read: &reading,
                     points,
                 },
             )
@@ -538,13 +535,10 @@ impl ZoneWindow {
         });
         self.running = Some(Running {
             rx,
-            done,
-            total,
+            progress,
             read,
-            reading_since: None,
             cancel,
             started: Instant::now(),
-            stopped: false,
         });
     }
 
@@ -558,13 +552,6 @@ impl ZoneWindow {
             Err(TryRecvError::Empty) => return false,
             Err(TryRecvError::Disconnected) => Err("the check stopped".into()),
         };
-        // Stopped by the user: the previous results stay, said so.
-        if r.stopped && report.is_err() {
-            self.status = Some(("stopped: the previous results are kept".into(), false));
-            self.rules_hash.0 = None;
-            self.running = None;
-            return true;
-        }
         match &report {
             Ok(rep) => log::info!(
                 "{}: {} spans below the rules, {} wind positions ({:.1?} + {:.1?})",
@@ -581,6 +568,46 @@ impl ZoneWindow {
         self.rules_hash.1 = self.rules_hash.0.take();
         self.running = None;
         true
+    }
+
+    /// Waits for the check started (benchmarks): calls `tick` with the
+    /// footer's progress text about every `every`; the report.
+    #[cfg(test)]
+    pub fn wait(&mut self, every: Duration, mut tick: impl FnMut(&str)) {
+        let mut last = Instant::now();
+        while self.running.is_some() && !self.poll() {
+            std::thread::sleep(Duration::from_millis(50));
+            if last.elapsed() >= every {
+                last = Instant::now();
+                tick(&self.progress_text());
+            }
+        }
+    }
+
+    /// The footer's progress in words (benchmarks, tests).
+    #[cfg(test)]
+    pub fn progress_text(&self) -> String {
+        match &self.running {
+            Some(r) => footer_progress(r).text,
+            None => "idle".into(),
+        }
+    }
+
+    /// Stops the check under way at once (Stop): the window is free
+    /// again, the previous results kept and said so, while the check's
+    /// thread winds down on its own (its report is dropped).
+    pub fn stop(&mut self) {
+        if let Some(r) = self.running.take() {
+            r.cancel.cancel();
+            self.status = Some(("stopped: the previous results are kept".into(), false));
+            self.rules_hash.0 = None;
+        }
+    }
+
+    /// The report (benchmarks).
+    #[cfg(test)]
+    pub fn report(&self) -> Option<&Result<Report, String>> {
+        self.report.as_ref()
     }
 
     /// A hash of the rules and the settings of the window (zone, wind,
@@ -721,9 +748,9 @@ impl ZoneWindow {
         });
         out.guide = guide;
         self.open = open;
-        if !open && let Some(r) = &self.running {
+        if !open {
             // Closing the window stops its check.
-            r.cancel.cancel();
+            self.stop();
         }
         if run {
             self.start(model, ctx);
@@ -1181,51 +1208,25 @@ impl ZoneWindow {
         let mut stop_now = false;
         match &mut self.running {
             Some(r) => {
-                ui.spinner();
-                let done = r.done.load(Ordering::Relaxed);
-                let elapsed = r.started.elapsed().as_secs_f64();
-                let read = r.read.share();
-                if read.is_some() && r.reading_since.is_none() {
-                    r.reading_since = Some(Instant::now());
+                let p = footer_progress(r);
+                match p.fraction {
+                    Some(x) => {
+                        ui.add(
+                            egui::ProgressBar::new(x)
+                                .desired_width(140.0)
+                                .show_percentage(),
+                        );
+                    }
+                    None => {
+                        ui.spinner();
+                    }
                 }
-                if let (Some(share), Some(since)) = (read, r.reading_since) {
-                    // The points read: blocks decoded of those listed.
-                    let visited = r.read.visited.load(Ordering::Relaxed);
-                    ui.add(
-                        egui::ProgressBar::new(share as f32)
-                            .desired_width(140.0)
-                            .text(format!("{:.0} % of the points", share * 100.0)),
-                    );
-                    let reading = since.elapsed().as_secs_f64();
-                    let left = (share > 0.02).then(|| reading / share * (1.0 - share));
-                    ui.label(match left {
-                        Some(left) => format!(
-                            "{elapsed:.0} s, about {left:.0} s left; {} points checked",
-                            zone::millions(visited)
-                        ),
-                        None => {
-                            format!("{elapsed:.0} s; {} points checked", zone::millions(visited))
-                        }
-                    });
-                } else if done < r.total {
-                    ui.add(
-                        egui::ProgressBar::new(done as f32 / r.total.max(1) as f32)
-                            .desired_width(140.0)
-                            .text(format!("{done} of {} solved", r.total)),
-                    );
-                    ui.label(match time_left(elapsed, done, r.total) {
-                        Some(left) => format!("{elapsed:.0} s, about {left:.0} s left to solve"),
-                        None => format!("{elapsed:.0} s"),
-                    });
-                } else {
-                    ui.label(format!(
-                        "indexing the wires, checking the ground… {elapsed:.0} s"
-                    ));
-                }
+                // Stop before the words (a long step's words would push
+                // it out of a narrow window).
                 if help::stop_button(ui, "Stop this check: the previous results stay") {
-                    r.cancel.cancel();
                     stop_now = true;
                 }
+                ui.label(&p.text);
                 ui.ctx().request_repaint_after(Duration::from_millis(200));
             }
             None => {
@@ -1269,8 +1270,8 @@ impl ZoneWindow {
                 }
             }
         }
-        if stop_now && let Some(r) = self.running.as_mut() {
-            r.stopped = true;
+        if stop_now {
+            self.stop();
         }
         // Use local conditions (kept in the rule file's [check]), in the
         // footer as every check window has it.
@@ -1531,6 +1532,15 @@ fn run(
                 budget: &Budget,
                 visit: &mut dyn FnMut(f64, f64, f64, u8)| {
         let spec = cloud.as_deref().unwrap_or_default();
+        // Each read counts from nothing (one per calculation of the
+        // rules: a second would start full).
+        for a in [
+            &progress.read.total,
+            &progress.read.done,
+            &progress.read.visited,
+        ] {
+            a.store(0, Ordering::Relaxed);
+        }
         ohl_pointcloud::visit_around_with(
             spec,
             polylines,
@@ -1542,7 +1552,6 @@ fn run(
         )
         .map(|_| ())
     };
-    let done = progress.done;
     let result = zone::run_zone_check(
         line,
         library,
@@ -1556,7 +1565,7 @@ fn run(
         &surfaces,
         scope.as_ref(),
         &budget,
-        done,
+        progress.steps,
         &Default::default(),
     );
     // The time limit reached: said, with what to change.
@@ -1575,8 +1584,8 @@ fn run(
 
 /// What a run reports its progress to, and what it may take.
 struct Progress<'a> {
-    /// Wind positions solved.
-    done: &'a AtomicUsize,
+    /// The steps and how far each has got.
+    steps: &'a ZoneProgress,
     /// Stop.
     cancel: &'a CancelToken,
     /// Points read.
@@ -1596,10 +1605,62 @@ pub fn rule_points(model: &Model, rules: &[ZoneRule]) -> u64 {
         .sum()
 }
 
-/// The seconds left to solve `total` positions after `done` in
-/// `elapsed` s (none before the first is solved).
-pub fn time_left(elapsed: f64, done: usize, total: usize) -> Option<f64> {
-    (done > 0 && done < total).then(|| elapsed / done as f64 * (total - done) as f64)
+/// The footer's bar and words for a check under way (owner, 2026-11-04:
+/// "make it count"): the step of the run's steps ("step 4 of 5: reading
+/// and checking the points"), its counter and its own time left — the
+/// points' step from the point reader's counts — and the time in all.
+/// No time left is said before a step has 2 % done, nor once its
+/// counter is full while it still runs: never "0 s left" while work
+/// remains.
+fn footer_progress(r: &Running) -> check_ui::Progress {
+    let all = r.started.elapsed().as_secs_f64();
+    let Some(mut s) = r.progress.snapshot() else {
+        return check_ui::Progress {
+            fraction: None,
+            text: format!("starting… {all:.0} s"),
+        };
+    };
+    let mut extra = String::new();
+    if s.step == Step::Points {
+        s.done = r.read.done.load(Ordering::Relaxed);
+        s.total = r.read.total.load(Ordering::Relaxed);
+        extra = format!(
+            ", {} near the wires",
+            zone::millions(r.read.visited.load(Ordering::Relaxed))
+        );
+    }
+    let count = match s.share() {
+        Some(share) if s.step == Step::Points => format!(
+            "{:.0} % of {} points{extra}",
+            share * 100.0,
+            zone::millions(s.total)
+        ),
+        Some(_) => format!(
+            "{} of {} {}",
+            zone::millions(s.done),
+            zone::millions(s.total),
+            s.step.unit()
+        ),
+        None => "counting…".into(),
+    };
+    let left = match (s.left(), s.share()) {
+        (Some(l), _) => format!("about {} left in this step", left_words(l)),
+        (None, Some(x)) if x >= 1.0 => "finishing this step".into(),
+        _ => "time left once 2 % is done".into(),
+    };
+    check_ui::Progress {
+        fraction: s.share().map(|x| x as f32),
+        text: format!("{} — {count}; {left}; {all:.0} s in all", s.words()),
+    }
+}
+
+/// Seconds, then minutes.
+fn left_words(s: f64) -> String {
+    if s < 90.0 {
+        format!("{s:.0} s")
+    } else {
+        format!("{:.0} min", s / 60.0)
+    }
 }
 
 /// The nominal voltages of the line's sections, kV (0: earthed), lowest

@@ -1450,33 +1450,59 @@ impl Store {
         })?;
         let mut stats = Stats::default();
         let mut selected = Vec::new();
+        let rows: Vec<_> = rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|r| wanted[r.3 as usize])
+            .collect();
         // The corridor near each chunk (shared by its class blocks): the
-        // per-point test then looks at a few segments only.
-        let mut near: HashMap<(i64, i64), Option<std::sync::Arc<Corridor>>> = HashMap::new();
-        for row in rows {
-            let (id, cx, cy, class, count, z0) = row?;
-            if !wanted[class as usize] {
-                stats.skipped += 1;
-                continue;
+        // per-point test then looks at a few segments only. Made on every
+        // core (2026-11-04: with a fine grid each, [`Corridor::local`]).
+        let near: HashMap<(i64, i64), Option<std::sync::Arc<Corridor>>> = match area {
+            None => HashMap::new(),
+            Some(a) => {
+                let mut keys: Vec<(i64, i64)> = rows.iter().map(|r| (r.1, r.2)).collect();
+                keys.sort_unstable();
+                keys.dedup();
+                let threads = std::thread::available_parallelism()
+                    .map_or(1, |n| n.get())
+                    .min(keys.len())
+                    .max(1);
+                let per = keys.len().div_ceil(threads).max(1);
+                std::thread::scope(|s| {
+                    let handles: Vec<_> = keys
+                        .chunks(per)
+                        .map(|part| {
+                            s.spawn(move || {
+                                part.iter()
+                                    .map(|&(cx, cy)| {
+                                        let l = a.local(
+                                            [cx as f64 * c, cy as f64 * c],
+                                            [(cx + 1) as f64 * c, (cy + 1) as f64 * c],
+                                        );
+                                        ((cx, cy), (!l.is_empty()).then(|| std::sync::Arc::new(l)))
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                        })
+                        .collect();
+                    handles
+                        .into_iter()
+                        .flat_map(|h| h.join().expect("a corridor thread"))
+                        .collect()
+                })
             }
+        };
+        for (id, cx, cy, class, count, z0) in rows {
             let local = match area {
                 None => None,
-                Some(a) => {
-                    let entry = near.entry((cx, cy)).or_insert_with(|| {
-                        let l = a.local(
-                            [cx as f64 * c, cy as f64 * c],
-                            [(cx + 1) as f64 * c, (cy + 1) as f64 * c],
-                        );
-                        (!l.is_empty()).then(|| std::sync::Arc::new(l))
-                    });
-                    match entry {
-                        Some(l) => Some(l.clone()),
-                        None => {
-                            stats.skipped += 1;
-                            continue;
-                        }
+                Some(_) => match near.get(&(cx, cy)).cloned().flatten() {
+                    Some(l) => Some(l),
+                    None => {
+                        stats.skipped += 1;
+                        continue;
                     }
-                }
+                },
             };
             selected.push((id, cx, cy, class, count, z0, local));
         }

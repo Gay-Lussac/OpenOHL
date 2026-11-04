@@ -14,7 +14,6 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
 
 use ohl_clearance::zone::{self, Measure, Zone, ZoneCheckResult, ZoneFinding};
@@ -619,7 +618,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         let spec = cloud.as_deref().unwrap_or_default();
         ohl_pointcloud::visit_around(spec, polylines, reach, classes, budget, visit).map(|_| ())
     };
-    let done = AtomicUsize::new(0);
+    let done = ohl_clearance::zone_progress::ZoneProgress::new();
     let result = zone::run_zone_check(
         &line,
         &library,

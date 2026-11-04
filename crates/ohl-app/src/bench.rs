@@ -1549,3 +1549,74 @@ fn check_results_benchmark() {
         h.step();
     }
 }
+
+/// The vertical and radial clearance checks (Checks › Ground clearances)
+/// on `OHL_BENCH_FILE` (a copy: the project is opened for editing) with
+/// the project's own rule files and settings, as the windows run them;
+/// per run the breakdown of its time, and (with `OHL_BENCH_OUT`, a
+/// folder) the findings written out in full to compare runs bit for bit.
+/// `OHL_BENCH_MEASURE` = vertical or radial runs one only;
+/// `OHL_BENCH_RULE` keeps the rules whose name holds it.
+///
+/// ```bash
+/// OHL_BENCH_FILE=copy.ohl OHL_BENCH_OUT=out/ \
+///   cargo test --profile bench-fast -p ohl-app clearance_zones_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "a benchmark on a project of your own"]
+fn clearance_zones_benchmark() {
+    use ohl_clearance::zone::Measure;
+    let Some(mut m) = from_env() else {
+        eprintln!("skipping: set OHL_BENCH_FILE");
+        return;
+    };
+    let only = ohl_core::env::var("OHL_BENCH_MEASURE").ok();
+    let out = ohl_core::env::var_os("OHL_BENCH_OUT").map(std::path::PathBuf::from);
+    let ctx = egui::Context::default();
+    for measure in [Measure::Vertical, Measure::Radial] {
+        if only.as_deref().is_some_and(|o| o != measure.as_str()) {
+            continue;
+        }
+        let mut w = crate::clearance_zones::ZoneWindow::new(measure);
+        w.show(&m);
+        // Only the rules whose name holds OHL_BENCH_RULE.
+        if let Ok(only) = ohl_core::env::var("OHL_BENCH_RULE") {
+            w.rules.retain(|r| r.name.contains(&only));
+        }
+        eprintln!(
+            "{}: {} rule(s), wind {:?}, zone {:?}, check {:?}",
+            measure.as_str(),
+            w.rules.len(),
+            w.wind,
+            w.zone,
+            w.check
+        );
+        let t = Instant::now();
+        w.start(&mut m, &ctx);
+        w.wait(Duration::from_secs(10), |p| eprintln!("  {p}"));
+        let took = t.elapsed();
+        match w.report() {
+            Some(Ok(r)) => {
+                println!(
+                    "{}: {took:.1?} in all, {} rule(s), {} wind position(s), {} below",
+                    measure.as_str(),
+                    r.rules.len(),
+                    r.states.len(),
+                    r.violations()
+                );
+                for l in ohl_clearance::zone::breakdown(r) {
+                    println!("  {l}");
+                }
+                if let Some(dir) = &out {
+                    std::fs::create_dir_all(dir).unwrap();
+                    let text = format!(
+                        "points {}\nfailed {:?}\nnotes {:#?}\nlowest {:#?}\nfindings {:#?}\n",
+                        r.zone.points, r.failed, r.zone.notes, r.zone.lowest, r.zone.findings
+                    );
+                    std::fs::write(dir.join(format!("{}.txt", measure.as_str())), text).unwrap();
+                }
+            }
+            other => println!("{}: {took:.1?}, {other:?}", measure.as_str()),
+        }
+    }
+}

@@ -1454,6 +1454,22 @@ pub fn ground_check_grouped(
     terrain: &Terrain,
     top: &GroundMax,
 ) -> Vec<WireResult> {
+    ground_check_grouped_with(rule, wires, group, terrain, top, &|| false, &|_| {})
+        .expect("never stopped")
+}
+
+/// [`ground_check_grouped`] that looks at `stop` before each wire (none
+/// when it says stop) and calls `tick(1)` after each.
+pub fn ground_check_grouped_with(
+    rule: &Rule,
+    wires: &[Wire],
+    group: &[usize],
+    terrain: &Terrain,
+    top: &GroundMax,
+    stop: &(dyn Fn() -> bool + Sync),
+    tick: &(dyn Fn(usize) + Sync),
+) -> Option<Vec<WireResult>> {
+    let halted = std::sync::atomic::AtomicBool::new(false);
     // Each group's wires, in their order.
     let mut lists: Vec<Vec<usize>> = Vec::new();
     let mut index: HashMap<usize, usize> = HashMap::new();
@@ -1468,15 +1484,20 @@ pub fn ground_check_grouped(
     let check = |list: &[usize]| -> Vec<(usize, WireResult)> {
         let mut bound = [f64::INFINITY; 2];
         list.iter()
-            .map(|&w| {
+            .map_while(|&w| {
+                if halted.load(std::sync::atomic::Ordering::Relaxed) || stop() {
+                    halted.store(true, std::sync::atomic::Ordering::Relaxed);
+                    return None;
+                }
                 let r = ground_wire(rule, &wires[w], terrain, top, bound, None);
+                tick(1);
                 if let Some(h) = r.vertical {
                     bound[0] = bound[0].min(h.distance);
                 }
                 if let Some(h) = r.radial {
                     bound[1] = bound[1].min(h.distance);
                 }
-                (w, r)
+                Some((w, r))
             })
             .collect()
     };
@@ -1502,6 +1523,9 @@ pub fn ground_check_grouped(
                         let Some(list) = lists.get(k) else {
                             return;
                         };
+                        if halted.load(std::sync::atomic::Ordering::Relaxed) {
+                            return;
+                        }
                         let r = check(list);
                         found.lock().expect("not poisoned").extend(r);
                     }
@@ -1512,9 +1536,14 @@ pub fn ground_check_grouped(
             out[w] = Some(r);
         }
     }
-    out.into_iter()
-        .map(|r| r.expect("every wire checked"))
-        .collect()
+    if halted.into_inner() {
+        return None;
+    }
+    Some(
+        out.into_iter()
+            .map(|r| r.expect("every wire checked"))
+            .collect(),
+    )
 }
 
 /// One wire's [`ground_check`]. `bound`: clearances (vertical, radial)
