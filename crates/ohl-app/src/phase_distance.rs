@@ -2719,6 +2719,15 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>, kind: Kind) {
 fn csv(r: &Report) -> String {
     use ohl_core::text::csv_field as q;
     use std::fmt::Write as _;
+    // A value not given (under unequal wind: no sag term, no k): blank,
+    // not "NaN".
+    let n = |v: f64, d: usize| {
+        if v.is_finite() {
+            format!("{v:.d$}")
+        } else {
+            String::new()
+        }
+    };
     let mut out = String::from(
         "case,section,span,circuit,other_section,other_span,other_circuit,c,kv,distance_m,\
          required_m,margin_m,length_below_m,sag_m,other_sag_m,lk_m,other_lk_m,beta_deg,k,\
@@ -2728,8 +2737,8 @@ fn csv(r: &Report) -> String {
     for row in &r.rows {
         let _ = writeln!(
             out,
-            "{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.3},{:.3},{:.3},{:.3},{:.1},\
-             {:.3},{:.3},{:.3},{},{},{:.1},{:.1},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{},{},{},{},{},\
+             {},{},{},{},{},{:.1},{:.1},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
             q(&row.case),
             q(&row.span[0].0),
             row.span[0].1 + 1,
@@ -2743,14 +2752,14 @@ fn csv(r: &Report) -> String {
             row.required,
             row.margin(),
             row.length_below,
-            row.sag[0],
-            row.sag[1],
-            row.lk[0],
-            row.lk[1],
-            row.beta,
-            row.k[0],
-            row.k[1],
-            row.c,
+            n(row.sag[0], 3),
+            n(row.sag[1], 3),
+            n(row.lk[0], 3),
+            n(row.lk[1], 3),
+            n(row.beta, 1),
+            n(row.k[0], 3),
+            n(row.k[1], 3),
+            n(row.c, 3),
             row.at_clamp,
             row.same_span,
             row.along[0],
