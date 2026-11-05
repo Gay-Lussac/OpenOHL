@@ -120,6 +120,14 @@ pub fn completeness_color(c: Completeness) -> [u8; 4] {
     }
 }
 
+impl JointPanel {
+    /// What the joint details kept were worked out for: (file revision,
+    /// libraries stamp).
+    pub(crate) fn details_key(&self) -> Option<(u64, u64)> {
+        self.details.as_ref().map(|d| d.0)
+    }
+}
+
 impl StructureApp {
     /// The joint details of the file open, worked out once per revision
     /// and libraries.

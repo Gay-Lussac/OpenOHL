@@ -580,6 +580,13 @@ impl StructureApp {
                 "The rigid links drawn: from a joint to an attachment point at an offset \
                  (magenta; none at zero offset)",
             );
+        ui.checkbox(&mut self.profiles, "Profiles as placed")
+            .on_hover_text(
+                "The members drawn by their cross-sections as the joint details place them \
+                 (Design › Joint details): turned by their roll, seated on what they bolt onto, \
+                 the steel stopping where it is cut. Off, or a member without a cross-section: \
+                 its work line",
+            );
         ui.checkbox(&mut self.joint_colors, "Joints by their details")
             .on_hover_text(
                 "A tower's joints coloured by how complete their details are (Design › Joint \

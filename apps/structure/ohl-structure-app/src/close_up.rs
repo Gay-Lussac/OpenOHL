@@ -87,14 +87,20 @@ impl Tri {
 
 /// The view's rotation, turned `yaw` about z and tilted `pitch` (radians):
 /// its rows are the view's x (right), up and depth (towards the viewer)
-/// in the structure's axes. Seen from the front (−y), z up.
-fn rotation(yaw: f32, pitch: f32) -> [[f64; 3]; 3] {
+/// in the structure's axes. Seen from the front (−y), from above, z up:
+/// the 3D view's camera at yaw `yaw` − 90° and pitch `pitch` + 0.35 rad.
+///
+/// A rotation (determinant +1). Until 2026-11-05 its up and depth rows
+/// had their horizontal parts the other way round: seen from behind
+/// (+y) with +x still to the right — a mirror image of the joint (found
+/// comparing it with the 3D view's solids, owner 2026-11-05).
+pub(crate) fn rotation(yaw: f32, pitch: f32) -> [[f64; 3]; 3] {
     let (sy, cy) = f64::from(yaw).sin_cos();
     let (sp, cp) = f64::from(pitch + 0.35).sin_cos();
     [
         [cy, sy, 0.0],
-        [sp * sy, -sp * cy, cp],
-        [-cp * sy, cp * cy, sp],
+        [-sp * sy, sp * cy, cp],
+        [cp * sy, -cp * cy, sp],
     ]
 }
 
@@ -165,47 +171,24 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
     } else {
         [120, 135, 155, 255]
     };
+    // The members: each end's steel as the link crate places it
+    // ([`ohl_structure_link::section_at`], the 3D view's own corners),
+    // from its cut out to the drawing's reach.
     for a in &j.arrivals {
         let length = a.length.min(reach);
         let Some(p) = &a.profile else {
             continue;
         };
-        let corner = |sd: f64, q: [f64; 2]| {
-            std::array::from_fn(|i| {
-                a.offset[i] + a.direction[i] * sd + p.axes[1][i] * q[0] + p.axes[2][i] * q[1]
-            })
-        };
-        let start = a.cut.value.unwrap_or(0.0).min(length);
-        let near: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(start, *q)).collect();
-        let far: Vec<[f64; 3]> = p.outline.iter().map(|q| corner(length, *q)).collect();
-        let n = near.len();
-        if n < 3 {
+        let start = ohl_structure_link::steel_start(a).min(length);
+        let near = ohl_structure_link::section_at(a, p, start);
+        let far = ohl_structure_link::section_at(a, p, length);
+        let Some(faces) =
+            ohl_structure_link::prism_faces(&near, &far, &p.outline, p.axes[1], p.axes[2])
+        else {
             continue;
-        }
-        for i in 0..n {
-            let i2 = (i + 1) % n;
-            let quad = [near[i], near[i2], far[i2], far[i]];
-            if let Some(nv) = normal_of(&quad) {
-                add(fan(&quad), steel, Some(nv), None);
-            }
-        }
-        // The ends: the profile's outline, cut into triangles (an angle's
-        // L, a channel, an I…).
-        let caps = ear_clip(&p.outline);
-        for ends in [&near, &far] {
-            if let Some(nv) = normal_of(ends) {
-                let tris = caps
-                    .iter()
-                    .map(|t| {
-                        let edge = |u: usize, v: usize| (u + 1) % n == v || (v + 1) % n == u;
-                        (
-                            [ends[t[0]], ends[t[1]], ends[t[2]]],
-                            [edge(t[0], t[1]), edge(t[1], t[2]), edge(t[2], t[0])],
-                        )
-                    })
-                    .collect();
-                add(tris, steel, Some(nv), None);
-            }
+        };
+        for f in faces {
+            add(f.triangles, steel, Some(f.normal), None);
         }
     }
     for pl in &j.plates {
@@ -473,66 +456,6 @@ fn split(t: Piece, size: &dyn Fn(&[[f64; 3]; 3]) -> f64, out: &mut Vec<Piece>, d
     );
 }
 
-/// A simple polygon (2D, either turning) cut into triangles by its ears;
-/// the corners' indices.
-pub fn ear_clip(poly: &[[f64; 2]]) -> Vec<[usize; 3]> {
-    let n = poly.len();
-    if n < 3 {
-        return Vec::new();
-    }
-    let area: f64 = (0..n)
-        .map(|i| {
-            let (a, b) = (poly[i], poly[(i + 1) % n]);
-            a[0] * b[1] - b[0] * a[1]
-        })
-        .sum();
-    let turn = if area >= 0.0 { 1.0 } else { -1.0 };
-    let cross2 = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
-        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-    };
-    let mut left: Vec<usize> = (0..n).collect();
-    let mut out = Vec::new();
-    let mut guard = 0;
-    while left.len() > 3 && guard < 4 * n * n {
-        guard += 1;
-        let m = left.len();
-        let mut cut = None;
-        for k in 0..m {
-            let (ia, ib, ic) = (left[(k + m - 1) % m], left[k], left[(k + 1) % m]);
-            let (a, b, c) = (poly[ia], poly[ib], poly[ic]);
-            // Convex at b, and no other corner inside a-b-c.
-            if cross2(a, b, c) * turn <= 1e-15 {
-                continue;
-            }
-            let inside = left.iter().any(|&q| {
-                if q == ia || q == ib || q == ic {
-                    return false;
-                }
-                let p = poly[q];
-                cross2(a, b, p) * turn >= 0.0
-                    && cross2(b, c, p) * turn >= 0.0
-                    && cross2(c, a, p) * turn >= 0.0
-            });
-            if !inside {
-                cut = Some(k);
-                out.push([ia, ib, ic]);
-                break;
-            }
-        }
-        match cut {
-            Some(k) => {
-                left.remove(k);
-            }
-            // Degenerate: the rest as a fan.
-            None => break,
-        }
-    }
-    for k in 1..left.len().saturating_sub(1) {
-        out.push([left[0], left[k], left[k + 1]]);
-    }
-    out
-}
-
 /// The close-up painted into `rect`: the pieces (cut once, [`CloseUpCache`])
 /// sorted for the view in one mesh, far to near, each face's edges after
 /// its triangles — the mesh kept while the view and the pane stay the
@@ -793,6 +716,32 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 mod tests {
     use super::*;
 
+    /// The close-up is a rotation, not a mirror (2026-11-05): its rows are
+    /// right-handed, and it looks from the 3D view's camera at yaw − 90°,
+    /// pitch + 0.35 rad (the camera's eye towards the viewer).
+    #[test]
+    fn the_close_up_turns_without_mirroring() {
+        for (yaw, pitch) in [(0.0_f32, 0.0_f32), (0.6, 0.2), (-2.0, -0.5)] {
+            let r = rotation(yaw, pitch);
+            let c = cross(r[0], r[1]);
+            assert!((0..3).all(|k| (c[k] - r[2][k]).abs() < 1e-12), "{r:?}");
+            let cam = ohl_render::Camera {
+                target: [0.0; 3],
+                distance: 1.0,
+                yaw: f64::from(yaw) - std::f64::consts::FRAC_PI_2,
+                pitch: f64::from(pitch) + 0.35,
+                fov_y: 1.0,
+                exaggeration: 1.0,
+                ortho: true,
+            };
+            let eye = cam.eye();
+            assert!(
+                (0..3).all(|k| (eye[k] - r[2][k]).abs() < 1e-6),
+                "{eye:?} {r:?}"
+            );
+        }
+    }
+
     #[test]
     fn an_l_is_cut_into_four_triangles() {
         let l = [
@@ -803,7 +752,7 @@ mod tests {
             [0.006, 0.06],
             [0.0, 0.06],
         ];
-        let t = ear_clip(&l);
+        let t = ohl_structure_link::ear_clip(&l);
         assert_eq!(t.len(), 4);
         let area: f64 = t
             .iter()
@@ -899,7 +848,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod timing {
+pub(crate) mod timing {
     /// A heavier joint: every member bolted, a plate with three members.
     pub(crate) fn heavy() -> String {
         let mut t = crate::joint_ui_tests::ANGLES.replace(

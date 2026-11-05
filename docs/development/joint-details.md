@@ -403,6 +403,53 @@ development, not approved yet:
 
 > **Owner:**
 
+### The profiles in the 3D view as placed — built 2026-11-05
+
+(Owner, 2026-11-05: "In the 3d view of the OHL structure, I need the
+profiles to be shown with there actual right orientation and placement
+as defined in the joints and members detail view".) Built, in active
+development, not approved yet:
+
+- **One builder** in the link crate (`member_solids.rs`):
+  `section_at` (a member end's outline turned by its axes — the
+  reference and the roll, the finite-element model's — and moved by the
+  end's offset: an angle seated with its leg bolted on what it bolts
+  onto, the end's shift), `steel_start` (the cut), `prism_faces` (the
+  sides and the ends) and `member_solids` (each member from the cut at
+  one end to the cut at the other). The close-up draws each member end
+  with `section_at` and `prism_faces` from its cut to its reach; the 3D
+  view the whole member with `member_solids`: at each end the same
+  corners (tested within 1e-9 m). Where the two ends are seated
+  differently the section moves linearly from one end's place to the
+  other's (each end exactly as the close-up draws it). Built-ups by
+  their built-up outline, channels, I sections, tubes (16 sides),
+  general boxes; a section of values only as a square of its area (as
+  the close-up).
+- **The 3D view** draws each member with a solid as its steel, shaded,
+  its edges and its work line (thin) drawn when a profile is at least
+  4 pixels wide; further away the work lines as before over the steel
+  (display only). Picking stays on the work line; picked members, the
+  usage colours of the results and the extension shown colour the
+  steel. A member without a profile, or whose joints have moved since
+  the solids were made, is a stick; its hover says why. View › Display
+  options › **Profiles as placed** (on by default) turns them off.
+- **Once per revision**: a structure of up to 400 members has its
+  solids at once (the joint details shared with the Joint details
+  panel); a larger one on a thread of its own, the last solids drawn
+  meanwhile where they still fit. A real lattice tower of 3030 members:
+  joint details 0.31 s and solids 4 ms (release build), 71 248
+  triangles.
+- **The close-up was a mirror image** until now: its rotation had a
+  determinant of −1 (seen from behind, +x still to the right). It is a
+  rotation now, seen from the front as documented; turned and tilted it
+  matches the 3D view's camera at yaw − 90°, pitch + 0.35 rad (tested).
+
+Open: plates and bolts are not in the 3D view (the close-up has them);
+OHL-Design's line view still draws the structures' members about their
+centroids (`ohl_structures_fe::drawn`), without the seat or the cut.
+
+> **Owner:**
+
 ### Bolt library — built 2026-11-02
 
 "A bolt library could be nice to have too so that it can be easily

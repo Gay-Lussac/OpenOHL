@@ -181,7 +181,7 @@ in active development):
 |---|---|
 | **File** | **New structure…** (⌘N), **Open…** (⌘O), **Open recent ›** (a file no longer there greyed out) · **Save** (⌘S), **Save as…** (Shift+⌘S) · **Import ›** (per library kind — *Cross-section libraries*, *Bolt libraries*, *Insulator assemblies*, *Poles*, *Structure models*, *Load-case recipes*, *Structure templates* — each *A file…* or *The files of a folder…*; **Load recipes…**, **Load table…**; [Libraries](#libraries)) · **Export ›** (the file formats…, [below](#export); **Libraries it uses…**, **Every library…**; **Load recipes…**, **Load table…**, **Structure report…**; **Export options…**: the cross-section library, bolt library and load table the formats take) · **Plugins ›** (**Plugin manager…**, [below](#plugins)) · **Close** (the structure: the start page again; greyed out with unsaved changes), **Quit** (⌘Q; asks first with unsaved changes) |
 | **Edit** | **Undo** (⌘Z), **Redo** (Shift+⌘Z), each naming what it undoes · **Delete selected…** (Delete or Backspace: everything selected, with what goes with each, asked first; one undo step), **Clear selection** · **Tools ›** (**Tool inventory** (E), then every tool of the 3D view by its group — *Select and edit*, *Geometry*, *Body* —, its hotbar key 1–9 shown, the one held marked; the menu stays open until a tool is chosen) |
-| **View** | **Fit the view** · the main panels ticked (**3D view**, **Detail view**, **Inspector**, **To do**, **Libraries**) · **Tables ›** (every other panel, ticked, under a grey heading per menu; one of another structure kind greyed out, why on hover) · **Display options ›** (**Rigid links**, **Joints by their details**, **Volumes on the strings**, **Load arrows**, **Deformed**, **Reactions**, **Usage legend**) · **UI scale ›**, **Reset layout** |
+| **View** | **Fit the view** · the main panels ticked (**3D view**, **Detail view**, **Inspector**, **To do**, **Libraries**) · **Tables ›** (every other panel, ticked, under a grey heading per menu; one of another structure kind greyed out, why on hover) · **Display options ›** (**Rigid links**, **Profiles as placed**, **Joints by their details**, **Volumes on the strings**, **Load arrows**, **Deformed**, **Reactions**, **Usage legend**) · **UI scale ›**, **Reset layout** |
 | **Geometry** | **Structure kind ›** · its panels · **Add a point**, **One string below the point**, **Two strings to one wire point** |
 | **Body** | its panels (Pole not for a tower without a pole) · **Add a joint**, **Add a member**, **Point on the joint** · **Symmetry ›** (none, or a mirror; **Make symmetric**) |
 | **Design** | its panels (Joint and Member details not for a pole, Pole design not for a tower without a pole) · **Support the feet (pinned)** |
@@ -340,6 +340,17 @@ their menu or from View.
   (while FE results was) are drawn over the structure; with the members
   coloured by usage, a **legend** at the bottom right gives the colours
   (over 100 %, 90 to 100 %, under 90 %, no capacity).
+  **Profiles as placed** (2026-11-05; built, in active development, not
+  approved yet): at level 3 every member is drawn as its steel — its
+  cross-section turned by its roll, an angle seated with its leg bolted
+  on what it bolts onto, the steel stopping where it is cut short of the
+  work point — exactly as the Detail view places it (Design › Joint
+  details). Near, its edges and its work line (thin) show; far, the
+  work lines are drawn over it as before. A member without a
+  cross-section is drawn as its work line; hovering a member says how
+  it is drawn. On a large tower the profiles follow an edit after a
+  moment (worked out beside the window). View › Display options ›
+  Profiles as placed turns them off.
 - **Hotbar and tools** (as in OHL-Design): nine slots at the bottom of
   the 3D view, each a tool; a click on a slot or the keys **1–9** hold
   one, **Escape** lets go of it (Select again), **E** (or the slots'
