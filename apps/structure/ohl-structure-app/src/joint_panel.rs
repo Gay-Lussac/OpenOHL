@@ -344,6 +344,23 @@ impl StructureApp {
                         crate::joint_sketch::show(ui, &shown.clone().unwrap_or_default(), width);
                     });
             });
+        egui::CollapsingHeader::new("How member ends meet")
+            .id_salt("joint-plies-sketch")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "In section: nested (Face), a double cover splice (+ Splice), continuous \
+                         (Held); hover a name: what it is.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                let width = ui.available_width();
+                egui::ScrollArea::horizontal()
+                    .id_salt("joint-plies-sketch-scroll")
+                    .show(ui, |ui| crate::joint_sketch::show_plies(ui, width));
+            });
         acts.extend(crate::joint_tools::table(
             ui,
             &t,
@@ -897,12 +914,15 @@ fn flat_notes(
                 }
             });
         }
+        // A member end that does not fit as given (2026-11-05: a nested
+        // angle too large, its leg through another's): its notes red.
         for n in a.notes.iter().filter(|n| !n.ends_with("— turn it")) {
-            ui.label(
-                egui::RichText::new(format!("{}: {n}", a.member))
-                    .small()
-                    .weak(),
-            );
+            let text = egui::RichText::new(format!("{}: {n}", a.member)).small();
+            if a.misfit {
+                ui.colored_label(ui.visuals().error_fg_color, text);
+            } else {
+                ui.label(text.weak());
+            }
         }
     }
     acts

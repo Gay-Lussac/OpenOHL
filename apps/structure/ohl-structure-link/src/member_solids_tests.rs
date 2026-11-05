@@ -251,3 +251,88 @@ fn solids_timing() {
         (t2 - t1).as_secs_f64() * 1e3
     );
 }
+
+/// The sum of a set of faces' area vectors (nothing for a closed solid)
+/// and their volume by the divergence theorem.
+fn area_sum_and_volume<'a>(
+    faces: impl Iterator<Item = &'a crate::member_solids::SolidFace>,
+) -> ([f64; 3], f64) {
+    let mut sum = [0.0; 3];
+    let mut volume = 0.0;
+    for f in faces {
+        for (t, _) in &f.triangles {
+            let u = [0, 1, 2].map(|i| t[1][i] - t[0][i]);
+            let v = [0, 1, 2].map(|i| t[2][i] - t[0][i]);
+            let c = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let area = 0.5 * (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
+            for (x, n) in sum.iter_mut().zip(f.normal) {
+                *x += n * area;
+            }
+            let mid = [0, 1, 2].map(|i| (t[0][i] + t[1][i] + t[2][i]) / 3.0);
+            volume += area * (0..3).map(|i| mid[i] * f.normal[i]).sum::<f64>() / 3.0;
+        }
+    }
+    (sum, volume)
+}
+
+/// Two members running on through a joint as one part (2026-11-05): their
+/// sections meet in the same corners there and neither has an end face
+/// at it; together closed (one solid through the joint).
+#[test]
+fn a_continuous_pair_is_one_solid_through_the_joint() {
+    let text = format!(
+        "{TOWER}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\n\
+         onto = \"L2\"\n"
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let s = member_solids(&d);
+    let (l1, l2) = (solid(&s, "L1"), solid(&s, "L2"));
+    assert_eq!(l1.runs_on, [false, true]);
+    assert_eq!(l2.runs_on, [true, false]);
+    assert_eq!(l1.ends[1], l2.ends[0]);
+    // Its sides and one end face each.
+    let p = arrival(&d, "N2", "L1").profile.as_ref().unwrap();
+    assert_eq!(l1.faces.len(), p.outline.len() + 1);
+    assert_eq!(l2.faces.len(), p.outline.len() + 1);
+    let (sum, _) = area_sum_and_volume(l1.faces.iter().chain(&l2.faces));
+    assert!(sum.iter().all(|v| v.abs() < 1e-9), "{sum:?}");
+}
+
+/// A plate's solid: its outline run through its thickness, closed, its
+/// volume the outline's area times the thickness (10 mm).
+#[test]
+fn a_plate_is_a_solid_of_its_thickness() {
+    let text = format!(
+        "{TOWER}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G1\"\nleg = \"long\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\ngauges = [\"30 mm\"]\npitch = \"50 mm\"\n\
+         end_distance = \"30 mm\"\n"
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let plates = crate::plate_solids(&d);
+    assert_eq!(plates.len(), 1);
+    let s = &plates[0];
+    assert_eq!(s.id, "G1");
+    assert!(!s.cover);
+    let (sum, volume) = area_sum_and_volume(s.faces.iter());
+    assert!(sum.iter().all(|v| v.abs() < 1e-9), "{sum:?}");
+    // The outline's area (a fan about its first corner).
+    let o = &d.joint("N2").unwrap().plates[0].outline;
+    let mut area = [0.0; 3];
+    for k in 1..o.len() - 1 {
+        let u = [0, 1, 2].map(|i| o[k][i] - o[0][i]);
+        let v = [0, 1, 2].map(|i| o[k + 1][i] - o[0][i]);
+        area[0] += 0.5 * (u[1] * v[2] - u[2] * v[1]);
+        area[1] += 0.5 * (u[2] * v[0] - u[0] * v[2]);
+        area[2] += 0.5 * (u[0] * v[1] - u[1] * v[0]);
+    }
+    let area = (area[0] * area[0] + area[1] * area[1] + area[2] * area[2]).sqrt();
+    assert!(
+        (volume.abs() - area * 0.01).abs() < 1e-12,
+        "{volume} {area}"
+    );
+}

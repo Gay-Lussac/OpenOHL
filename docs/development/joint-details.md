@@ -513,6 +513,25 @@ choices, the continuous command, the three views, the sketch); 5 the
 exports (CSV, IFC `OHL_Splice`, one part per continuous chain) and the
 docs.
 
+**Stages 2 and 4 built 2026-11-05** (in active development, not approved
+yet). Stage 2 (`ohl_structure_link`): `face = "inside"` lays the end on
+the inner face of the other's leg (its outstanding leg through that leg:
+a misfit, red); `nested` places the angle heel into heel (its heel
+ground: on the other's inner faces), in line and turned alike within 5°
+(an assumption), the fit said per leg (≤ leg − t − r) and the code's end
+and edge distances in both parts, the larger running on past the work
+point over the bolts (cut below 0); covers on the leg's faces round the
+bolts (an inner cover from t + r), the grip the leg and the covers;
+continuous ends without cut, shift or bolts, one solid through the joint
+(`MemberSolid::runs_on`), `part_chains`; plates and covers as solids
+(`plate_solids`). Stage 4 (OHL-Structure): Face and Planes columns,
+continuous in the Held list (offered only when `continuous_problem` is
+none), + Splice and the splice box, Design › Continuous members… (ticked,
+one undo step), covers and misfits in the close-up, the face view and the
+3D view, the sketch "How member ends meet" (`joint-plies.svg`). Open: the
+checks (stage 3), the exports (stage 5), channels nested, a bent splice
+angle.
+
 > **Owner:**
 
 ### Bolt library — built 2026-11-02

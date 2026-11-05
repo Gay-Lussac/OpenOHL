@@ -9,6 +9,9 @@
 //! ([`ohl_structure_link::member_solids`], the Detail view's own builder),
 //! worked out once per file revision and libraries.
 //!
+//! The plates and a splice's covers (2026-11-05) come with them, as
+//! solids of their thickness ([`ohl_structure_link::plate_solids`]).
+//!
 //! A small structure's joint details are worked out at once (and shared
 //! with the Joint details panel); a large one's (a real lattice tower of
 //! some 3000 members takes about 0.3 s) on a thread of its own, one at a
@@ -19,7 +22,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use eframe::egui;
-use ohl_structure_link::MemberSolid;
+use ohl_structure_link::{MemberSolid, PlateSolid};
 
 use crate::app::StructureApp;
 
@@ -29,13 +32,18 @@ pub const AT_ONCE: usize = 400;
 /// What the solids were made for: (file revision, libraries stamp).
 type Key = (u64, u64);
 
+/// The members' and the plates' solids, as a thread sends them.
+type Made = (Vec<MemberSolid>, Vec<PlateSolid>);
+
 /// The solids kept between frames.
 #[derive(Default)]
 pub struct Solids {
     /// The solids and what they were made for.
     have: Option<(Key, Arc<Vec<MemberSolid>>)>,
+    /// The plates' and covers' solids made with them.
+    plates: Arc<Vec<PlateSolid>>,
     /// A thread working them out, for its key.
-    pending: Option<(Key, mpsc::Receiver<Vec<MemberSolid>>)>,
+    pending: Option<(Key, mpsc::Receiver<Made>)>,
     /// How often new solids were taken (the view draws again then).
     pub generation: u64,
 }
@@ -57,10 +65,10 @@ impl StructureApp {
         // revision: their work lines say where they still fit).
         if let Some((k, rx)) = &self.solids.pending {
             match rx.try_recv() {
-                Ok(s) => {
+                Ok((s, p)) => {
                     let k = *k;
                     self.solids.pending = None;
-                    self.take(k, Arc::new(s));
+                    self.take(k, Arc::new(s), Arc::new(p));
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.solids.pending = None,
                 Err(mpsc::TryRecvError::Empty) => {}
@@ -75,12 +83,15 @@ impl StructureApp {
         // at once.
         let ready = matches!(self.joints.details_key(), Some(k) if k == key);
         if ready || members <= AT_ONCE {
-            let s = match self.joint_details().as_deref() {
-                Some(Ok(d)) => ohl_structure_link::member_solids(d),
-                _ => Vec::new(),
+            let (s, p) = match self.joint_details().as_deref() {
+                Some(Ok(d)) => (
+                    ohl_structure_link::member_solids(d),
+                    ohl_structure_link::plate_solids(d),
+                ),
+                _ => (Vec::new(), Vec::new()),
             };
             let s = Arc::new(s);
-            self.take(key, s.clone());
+            self.take(key, s.clone(), Arc::new(p));
             return s;
         }
         // A large one: on a thread, one at a time.
@@ -93,7 +104,12 @@ impl StructureApp {
             let ctx = ctx.clone();
             std::thread::spawn(move || {
                 let s = ohl_structure_link::joint_details(&text, &sections, &bolts.0)
-                    .map(|d| ohl_structure_link::member_solids(&d))
+                    .map(|d| {
+                        (
+                            ohl_structure_link::member_solids(&d),
+                            ohl_structure_link::plate_solids(&d),
+                        )
+                    })
                     .unwrap_or_default();
                 tx.send(s).ok();
                 ctx.request_repaint();
@@ -107,9 +123,20 @@ impl StructureApp {
             .unwrap_or_default()
     }
 
-    fn take(&mut self, key: Key, s: Arc<Vec<MemberSolid>>) {
+    fn take(&mut self, key: Key, s: Arc<Vec<MemberSolid>>, p: Arc<Vec<PlateSolid>>) {
         self.solids.have = Some((key, s));
+        self.solids.plates = p;
         self.solids.generation += 1;
+    }
+
+    /// The plates' and splices' covers' solids made with the members' last
+    /// ([`Self::member_solids`]; none when Display options › Profiles as
+    /// placed is off).
+    pub(crate) fn plate_solids(&self) -> Arc<Vec<PlateSolid>> {
+        if !self.profiles || self.file.is_none() {
+            return Arc::default();
+        }
+        self.solids.plates.clone()
     }
 
     /// Waits until the solids of the file as it is are worked out (tests).

@@ -200,6 +200,9 @@ pub struct ViewInput<'a> {
     /// ([`crate::solids`]; a member without one, or whose work line has
     /// moved since, drawn as its work line).
     pub solids: &'a [ohl_structure_link::MemberSolid],
+    /// The plates and splices' covers as solids (2026-11-05), drawn with
+    /// the members' solids.
+    pub plates: &'a [ohl_structure_link::PlateSolid],
     /// The members' colours by usage, with results shown (empty: as
     /// usual).
     pub usage: &'a [(String, [u8; 4])],
@@ -519,6 +522,7 @@ impl View {
                 v.volumes,
                 &Members {
                     solids: v.solids,
+                    plates: v.plates,
                     usage: v.usage,
                 },
                 v.joint_colors,
@@ -918,11 +922,11 @@ fn scene(
         };
         let fitting = solids.get(id.as_str()).filter(|m| fits(m, *a, *b));
         // The solid's steel: the close-up's colour unless picked or
-        // coloured.
-        let c = if fitting.is_some() && c == STEEL {
-            SOLID_STEEL
-        } else {
-            c
+        // coloured; red where it does not fit as given.
+        let c = match fitting {
+            Some(m) if c == STEEL && m.misfit => crate::close_up::MISFIT,
+            Some(_) if c == STEEL => SOLID_STEEL,
+            _ => c,
         };
         match fitting {
             // Its steel as placed; near, its edges and its work line thin
@@ -935,6 +939,18 @@ fn scene(
             }
             None => s.polyline(&[*a, *b], c, 1.8),
         }
+    }
+    // The plates and covers, drawn near with the members' solids (a
+    // plate is thinner than the profiles it joins).
+    for p in members.plates {
+        let c = if p.misfit {
+            crate::close_up::MISFIT
+        } else if p.cover {
+            crate::close_up::COVER
+        } else {
+            PLATE
+        };
+        plate_solid(&mut levels.near, p, c);
     }
     for (_, a, b) in &g.strings {
         s.polyline(&[*a, *b], STRING, 2.5);
@@ -1017,6 +1033,8 @@ const NEAR_PIXELS: f64 = 4.0;
 pub struct Members<'a> {
     /// The solids ([`ohl_structure_link::member_solids`]).
     pub solids: &'a [ohl_structure_link::MemberSolid],
+    /// The plates and covers ([`ohl_structure_link::plate_solids`]).
+    pub plates: &'a [ohl_structure_link::PlateSolid],
     /// The colours by usage (empty: none).
     pub usage: &'a [(String, [u8; 4])],
 }
@@ -1035,7 +1053,12 @@ pub fn scene_for_tests(
     solids: &[ohl_structure_link::MemberSolid],
     usage: &[(String, [u8; 4])],
 ) -> (usize, usize, usize) {
-    let (s, l) = scene(g, 0.0, &[], 0.0, &[], &[], &Members { solids, usage }, &[]);
+    let members = Members {
+        solids,
+        plates: &[],
+        usage,
+    };
+    let (s, l) = scene(g, 0.0, &[], 0.0, &[], &[], &members, &[]);
     let (a, b) = (s.counts(), l.near.counts());
     (a.0 + b.0, a.1 + b.1, a.2 + b.2)
 }
@@ -1084,6 +1107,33 @@ const LIGHTS: [([f64; 3], f64); 2] = [([0.40, -0.55, 0.73], 0.42), ([-0.65, 0.55
 /// coloured by usage).
 const SOLID_STEEL: [u8; 4] = [170, 182, 200, 255];
 
+/// A gusset plate's solid (the close-up's blue).
+const PLATE: [u8; 4] = [70, 140, 210, 255];
+
+/// The plate or cover `p` in the scene `s`: its faces shaded by the
+/// lights from `c`, the outlines of its two faces as its edges.
+fn plate_solid(s: &mut Scene, p: &ohl_structure_link::PlateSolid, c: [u8; 4]) {
+    for f in &p.faces {
+        let mut k = 0.48;
+        for (l, share) in LIGHTS {
+            let n = (l[0] * l[0] + l[1] * l[1] + l[2] * l[2]).sqrt();
+            let lit: f64 = (0..3).map(|i| f.normal[i] * l[i] / n).sum();
+            k += share * lit.max(0.0) * 1.25;
+        }
+        let col = shade(c, k.min(1.0));
+        for (t, _) in &f.triangles {
+            s.triangle(*t, [col; 3]);
+        }
+    }
+    for ring in &p.ends {
+        if let Some(first) = ring.first() {
+            let mut l = ring.clone();
+            l.push(*first);
+            s.polyline(&l, shade(c, 0.3), 1.0);
+        }
+    }
+}
+
 /// `c` darkened to `k` of it.
 fn shade(c: [u8; 4], k: f64) -> [u8; 4] {
     let f = |v: u8| (f64::from(v) * k).round().clamp(0.0, 255.0) as u8;
@@ -1112,7 +1162,12 @@ fn solid(s: &mut Scene, edges: &mut Scene, m: &ohl_structure_link::MemberSolid, 
     if n < 3 || far.len() != n {
         return;
     }
-    for ring in [near, far] {
+    // Its ends' outlines (none where it runs on into the next member as
+    // one part: no seam there).
+    for (ring, on) in [(near, m.runs_on[0]), (far, m.runs_on[1])] {
+        if on {
+            continue;
+        }
         let mut l = ring.clone();
         l.push(ring[0]);
         edges.polyline(&l, edge, 1.0);
@@ -1252,6 +1307,7 @@ mod tests {
 
     const NONE: Members<'static> = Members {
         solids: &[],
+        plates: &[],
         usage: &[],
     };
 

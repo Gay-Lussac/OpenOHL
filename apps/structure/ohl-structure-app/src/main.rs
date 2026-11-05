@@ -89,6 +89,8 @@ mod case_editor_tests;
 #[cfg(test)]
 mod glyph_tests;
 #[cfg(test)]
+mod joint_lap_ui_tests;
+#[cfg(test)]
 mod joint_ui_tests;
 #[cfg(test)]
 mod layout_tests;

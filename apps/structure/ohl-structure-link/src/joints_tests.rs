@@ -881,3 +881,370 @@ fn a_plate_in_a_grip_has_an_outline_and_its_thickness() {
     );
     assert!((b.grip[1] - 0.010).abs() > 1e-6, "{:?}", b.grip);
 }
+
+/// The example library and two smaller equal angles (invented): 45 × 5
+/// (fits in 61 × 7: at most 61 − 7 − 8 = 46 mm) and 50 × 5 (does not).
+pub(crate) fn nest_library() -> SectionLibrary {
+    let mut lib = library();
+    let extra = SectionLibrary::parse(
+        r#"format = "ohl-sections"
+version = 1
+name = "nest"
+default_material = "steel-example"
+
+[[section]]
+id = "EA-45x5"
+name = "Equal angle 45 × 5 (invented)"
+shape = "equal_angle"
+h = "45 mm"
+t = "5 mm"
+r = "6 mm"
+
+[[section]]
+id = "EA-50x5"
+name = "Equal angle 50 × 5 (invented)"
+shape = "equal_angle"
+h = "50 mm"
+t = "5 mm"
+r = "6 mm"
+"#,
+    )
+    .unwrap();
+    lib.merge(extra);
+    lib
+}
+
+/// L2 (45 × 5) nested in L1 (61 × 7) at N2, two 12 mm bolts on its long
+/// leg 25 mm from the heel, 25 and 65 mm from the joint.
+const NESTED: &str = r#"
+[[connection]]
+member = "L2"
+joint = "N2"
+onto = "L1"
+face = "nested"
+leg = "long"
+bolts = { count = 2, diameter = "12 mm", grade = "8.8" }
+gauges = ["25 mm"]
+gauge_lines = 1
+pitch = "40 mm"
+end_distance = "25 mm"
+"#;
+
+/// [`TOWER`] with L2 of section `section` (and `more` after it).
+fn with_l2(section: &str, more: &str) -> String {
+    format!("{TOWER}{NESTED}").replace(
+        "id = \"L2\"\nnodes = [\"N2\", \"N3\"]\nsection = \"EA-61x7\"",
+        &format!("id = \"L2\"\nnodes = [\"N2\", \"N3\"]\nsection = \"{section}\"{more}"),
+    )
+}
+
+fn at<'a>(d: &'a crate::JointDetails, joint: &str, member: &str) -> &'a crate::Arrival {
+    d.joint(joint)
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == member)
+        .unwrap()
+}
+
+/// The heel of `a` where it is drawn, structure's axes.
+fn heel_of(d: &crate::JointDetails, joint: &str, a: &crate::Arrival) -> [f64; 3] {
+    let p = a.profile.as_ref().unwrap();
+    let g = p.angle.unwrap();
+    let j = d.joint(joint).unwrap().position;
+    [0, 1, 2].map(|k| j[k] + a.offset[k] + p.axes[1][k] * g.heel[0] + p.axes[2][k] * g.heel[1])
+}
+
+/// A lap joint (owner 2026-11-05): the smaller angle heel into heel in the
+/// larger, its heel 7 mm (the larger's thickness) along both the larger's
+/// legs from the larger's heel; the bolts clamp 5 + 7 mm; the larger runs
+/// on past the work point over the bolts; it fits (45 ≤ 46 mm).
+#[test]
+fn an_angle_nests_in_a_larger_one() {
+    let d = joint_details(
+        &with_l2("EA-45x5", ""),
+        &nest_library(),
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(d.level3, "{:?}", d.notes);
+    let (inner, outer) = (at(&d, "N2", "L2"), at(&d, "N2", "L1"));
+    assert_eq!(inner.sits.value, Some(crate::Face::Nested));
+    assert_eq!(inner.sits.source, Source::Given);
+    assert!(!inner.misfit, "{:?}", inner.notes);
+    assert!(!outer.misfit, "{:?}", outer.notes);
+    // The larger's heel, then 7 mm along each of its legs' normals.
+    let q = outer.profile.as_ref().unwrap();
+    let (hi, ho) = (heel_of(&d, "N2", inner), heel_of(&d, "N2", outer));
+    for k in 0..3 {
+        let want = ho[k] + 0.007 * (q.axes[1][k] + q.axes[2][k]);
+        assert!((hi[k] - want).abs() < 1e-9, "{hi:?} {ho:?}");
+    }
+    // The larger not moved (it is the one nested in), its bolts here those
+    // of the smaller.
+    assert!(outer.offset.iter().all(|v| v.abs() < 1e-12));
+    assert!(outer.bolt_points.is_empty());
+    // The bolts through both legs: 5 mm and 7 mm.
+    assert_eq!(inner.grip, [0.005, 0.007]);
+    for (b, want) in inner.bolt_flat.iter().zip([[0.025, 0.025], [0.065, 0.025]]) {
+        assert!((b[0] - want[0]).abs() < 1e-12 && (b[1] - want[1]).abs() < 1e-12);
+    }
+    // The larger runs on past the work point beyond the last bolt (65 mm)
+    // by the end distance it keeps: worked out, below 0.
+    assert_eq!(outer.cut.source, Source::WorkedOut);
+    let cut = outer.cut.value.unwrap();
+    assert!(cut < -0.065 - 0.012 && cut > -0.2, "{cut}");
+    // The ground heel said, with the gap had it not been: 8 (1 − 1/√2) =
+    // 2.3 mm.
+    assert!(
+        inner
+            .notes
+            .iter()
+            .any(|n| n.contains("ground") && n.contains("2.3 mm")),
+        "{:?}",
+        inner.notes
+    );
+    // Its solid runs below the work point.
+    let s = crate::member_solids(&d);
+    let l1 = s.iter().find(|m| m.member == "L1").unwrap();
+    assert!((l1.cut[1] - cut).abs() < 1e-12);
+}
+
+/// A nested angle too large (50 > 61 − 7 − 8 = 46 mm) or turned otherwise
+/// is a misfit, said.
+#[test]
+fn a_nested_angle_that_does_not_fit_is_said() {
+    let d = joint_details(
+        &with_l2("EA-50x5", ""),
+        &nest_library(),
+        &Default::default(),
+    )
+    .unwrap();
+    let a = at(&d, "N2", "L2");
+    assert!(a.misfit);
+    assert!(
+        a.notes
+            .iter()
+            .any(|n| n.contains("50 mm leg does not fit") && n.contains("= 46 mm")),
+        "{:?}",
+        a.notes
+    );
+    assert!(at(&d, "N2", "L1").misfit);
+    // Turned a quarter: its legs not along the other's.
+    let d = joint_details(
+        &with_l2("EA-45x5", "\nroll = \"90 deg\""),
+        &nest_library(),
+        &Default::default(),
+    )
+    .unwrap();
+    let a = at(&d, "N2", "L2");
+    assert!(a.misfit);
+    assert!(
+        a.notes.iter().any(|n| n.contains("do not lie along")),
+        "{:?}",
+        a.notes
+    );
+}
+
+/// The face of the leg a member bolts onto (2026-11-05): worked out from
+/// how it is turned; the other face given puts it on that face, its leg
+/// through the other's thickness and its own (6 + 7 mm along its bolts'
+/// axis), its inner face on it — its outstanding leg through that leg: a
+/// misfit, the bolts on the face they meet, from the other side.
+#[test]
+fn the_face_given_moves_the_member_to_it() {
+    let bolts = ohl_structures::bolts::BoltLibrary::default();
+    // D1 turned to lie flat on the leg's flange (see
+    // a_member_a_quarter_turn_off_is_said_and_laid_flat).
+    let d = joint_details(&format!("{TOWER}{AT_N2}"), &library(), &bolts).unwrap();
+    let turn = at(&d, "N2", "D1").flat.unwrap().turn.to_degrees();
+    let tower = format!("{TOWER}roll = \"{turn} deg\"\n");
+    let d = joint_details(&format!("{tower}{AT_N2}"), &library(), &bolts).unwrap();
+    let a = at(&d, "N2", "D1").clone();
+    assert_eq!(a.sits.source, Source::WorkedOut, "{a:?}");
+    assert!(!a.misfit);
+    let worked = a.sits.value.unwrap();
+    // The same face given: the same place.
+    let text = format!("{tower}{AT_N2}face = \"{}\"\n", worked.as_str());
+    let d = joint_details(&text, &library(), &bolts).unwrap();
+    let b = at(&d, "N2", "D1");
+    assert_eq!(b.sits.source, Source::Given);
+    assert_eq!(b.offset, a.offset);
+    assert!(!b.misfit);
+    // The other face.
+    let other = if worked == crate::Face::Inside {
+        crate::Face::Outside
+    } else {
+        crate::Face::Inside
+    };
+    let text = format!("{tower}{AT_N2}face = \"{}\"\n", other.as_str());
+    let d = joint_details(&text, &library(), &bolts).unwrap();
+    let b = at(&d, "N2", "D1");
+    assert_eq!(b.sits.value, Some(other));
+    assert!(b.misfit, "{:?}", b.notes);
+    let nb = a.bolt_axis;
+    for (k, n) in nb.iter().enumerate() {
+        assert!(
+            (b.offset[k] - a.offset[k] + 0.013 * n).abs() < 1e-9,
+            "{:?} {:?}",
+            b.offset,
+            a.offset
+        );
+        assert!((b.bolt_axis[k] + n).abs() < 1e-12);
+    }
+    // Its bolts on the face it meets the other by: its inner face, 6 mm
+    // from its outer face: 13 − 6 = 7 mm from where they were.
+    assert_eq!(b.bolt_points.len(), 2);
+    for (p, q) in b.bolt_points.iter().zip(&a.bolt_points) {
+        let s: f64 = (0..3).map(|k| (p[k] - q[k]) * nb[k]).sum();
+        assert!((s + 0.007).abs() < 1e-9, "{s}");
+    }
+}
+
+/// L1 and L2 spliced at N2 by 8 mm covers (outer and inner on the long
+/// leg, outer on the short), each bolting onto it by two 16 mm bolts on
+/// its long leg.
+const SPLICED: &str = r#"
+[[splice]]
+id = "S1"
+joint = "N2"
+members = ["L1", "L2"]
+[[splice.cover]]
+face = "outer"
+leg = "long"
+thickness = "8 mm"
+[[splice.cover]]
+face = "inner"
+leg = "long"
+thickness = "8 mm"
+[[splice.cover]]
+face = "outer"
+leg = "short"
+thickness = "8 mm"
+
+[[connection]]
+member = "L1"
+joint = "N2"
+onto = "S1"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm", grade = "8.8" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+
+[[connection]]
+member = "L2"
+joint = "N2"
+onto = "S1"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm", grade = "8.8" }
+gauges = ["30 mm"]
+gauge_lines = 1
+pitch = "50 mm"
+end_distance = "30 mm"
+"#;
+
+/// A double cover splice (owner 2026-11-05): the bolts clamp the leg and
+/// the inner cover (7 + 8 mm) and the outer cover (8 mm); each cover lies
+/// on its face of the leg (outer: the heel's plane; inner: 7 mm in, clear
+/// of the root: from 7 + 8 = 15 mm across), round both members' bolts,
+/// the same length each way from the joint.
+#[test]
+fn covers_lie_on_the_legs_round_the_bolts() {
+    let d = joint_details(
+        &format!("{TOWER}{SPLICED}"),
+        &library(),
+        &Default::default(),
+    )
+    .unwrap();
+    let j = d.joint("N2").unwrap();
+    assert_eq!(j.splices.len(), 1);
+    let s = &j.splices[0];
+    assert_eq!(s.bolted, vec!["L1".to_owned(), "L2".to_owned()]);
+    assert_eq!(s.covers.len(), 3);
+    for m in ["L1", "L2"] {
+        let a = at(&d, "N2", m);
+        assert_eq!(a.grip, [0.015, 0.008], "{m}");
+        assert_eq!(a.bolt_points.len(), 2);
+        assert!(a.offset.iter().all(|v| v.abs() < 1e-12));
+    }
+    let a = at(&d, "N2", "L1");
+    let p = a.profile.as_ref().unwrap();
+    let heel = heel_of(&d, "N2", a);
+    // The long leg (equal legs: along y), its normal z.
+    let (across, n) = (p.axes[1], p.axes[2]);
+    let dotp = |u: [f64; 3], v: [f64; 3]| (0..3).map(|k| u[k] * v[k]).sum::<f64>();
+    let rel = |q: [f64; 3]| [0, 1, 2].map(|k| q[k] - heel[k]);
+    for (c, depth, from) in [(&s.covers[0], 0.0, 0.0), (&s.covers[1], 0.007, 0.015)] {
+        assert!(c.outline.len() >= 4, "{:?}", c.notes);
+        for q in &c.outline {
+            assert!((dotp(rel(*q), n) - depth).abs() < 1e-9, "{}", c.words());
+            let x = dotp(rel(*q), across);
+            assert!(x >= from - 1e-9 && x <= 0.061 + 1e-9, "{}: {x}", c.words());
+        }
+        let through = c.through.unwrap();
+        let sign = if c.face == crate::CoverFace::Outer {
+            -1.0
+        } else {
+            1.0
+        };
+        assert!((dotp(through, n) - sign).abs() < 1e-9);
+        // As long below the joint as above it, beyond the last bolts (80
+        // mm) by the end distance kept.
+        let along: Vec<f64> = c.outline.iter().map(|q| q[2] - 5.0).collect();
+        let (lo, hi) = (
+            along.iter().copied().fold(f64::INFINITY, f64::min),
+            along.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        );
+        assert!((lo + hi).abs() < 1e-9, "{lo} {hi}");
+        assert!(hi > 0.08 + 0.016, "{hi}");
+        assert_eq!(c.edges.len(), 2, "{:?}", c.edges);
+    }
+    // The short leg's cover: no bolts on it, over the members' bolts.
+    let c = &s.covers[2];
+    assert!(c.outline.len() >= 4);
+    assert!(c.edges.is_empty());
+    // The solids: three covers.
+    let solids = crate::plate_solids(&d);
+    assert_eq!(solids.iter().filter(|x| x.cover).count(), 3);
+}
+
+/// L1 runs on through N2 into L2 as one part: no cut, no shift, no bolts
+/// there; one part of 10 m.
+#[test]
+fn a_continuous_member_is_one_part() {
+    let text = format!(
+        "{TOWER}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\n\
+         onto = \"L2\"\ncut = \"40 mm\"\n"
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    for (m, o) in [("L1", "L2"), ("L2", "L1")] {
+        let a = at(&d, "N2", m);
+        assert_eq!(a.continuous.as_deref(), Some(o));
+        assert_eq!(a.cut.value, Some(0.0));
+        assert!(a.bolts.value.is_none());
+        assert!(a.bolt_points.is_empty());
+        assert!(a.offset.iter().all(|v| *v == 0.0));
+    }
+    assert!(
+        at(&d, "N2", "L1")
+            .notes
+            .iter()
+            .any(|n| n.contains("cut and shift not used")),
+    );
+    let chains = crate::part_chains(&d);
+    assert_eq!(chains.len(), 1);
+    assert_eq!(chains[0].members, vec!["L1".to_owned(), "L2".to_owned()]);
+    assert_eq!(chains[0].joints, vec!["N2".to_owned()]);
+    assert!((chains[0].length - 10.0).abs() < 1e-9);
+    assert!((chains[0].steel - 10.0).abs() < 1e-9);
+    // Not one part with the diagonal (not in line): nothing.
+    let text = format!(
+        "{TOWER}\n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nkind = \"continuous\"\n\
+         onto = \"L2\"\n"
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    assert!(at(&d, "N2", "D1").continuous.is_none());
+    assert!(crate::part_chains(&d).is_empty());
+}

@@ -321,6 +321,37 @@ impl StructureApp {
                 b.grade.clone().unwrap_or_else(|| "not given".into()),
                 a.bolts.source.words()
             ));
+            // What it clamps (2026-11-05: through both legs of a lap joint,
+            // the leg and the covers of a splice).
+            ui.label(format!(
+                "Clamps {} + {} = {} (its leg{}, then {}){}",
+                mm(a.grip[0]),
+                mm(a.grip[1]),
+                mm(a.grip[0] + a.grip[1]),
+                if a.grip[0]
+                    > a.profile
+                        .as_ref()
+                        .and_then(|p| p.angle)
+                        .map_or(f64::MAX, |g| g.t)
+                        + 1e-9
+                {
+                    " and the inner covers"
+                } else {
+                    ""
+                },
+                a.onto.value.as_deref().unwrap_or("what it bolts onto"),
+                match &a.planes {
+                    (v, _) if v.value.is_some_and(|n| n >= 2) => {
+                        format!(" · {} shear planes", v.value.unwrap_or(1))
+                    }
+                    _ => String::new(),
+                }
+            ))
+            .on_hover_text(
+                "The bolt's grip: the thickness of the leg bolted (and a splice's inner covers \
+                 on it), then of what it bolts onto (the other member's leg, a plate, a \
+                 splice's outer covers)",
+            );
             // The bolt libraries: a member end's bolts are of one kind.
             let mut chosen = b.bolt.clone();
             ui.horizontal_wrapped(|ui| {
