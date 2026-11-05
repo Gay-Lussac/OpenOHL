@@ -453,3 +453,69 @@ fn a_splice_gives_its_shear_planes() {
         "{notes:?}"
     );
 }
+
+/// L1 runs on into L2 through N2 (given on L1 only): both ends are one
+/// part — concentric, worked out; the restraint not (assumed: none, on
+/// the safe side); no connection checked there;
+/// the diagonal given continuous onto the leg (not in line) computes as
+/// bolted, said.
+#[test]
+fn a_continuous_leg_has_no_connection_at_the_joint() {
+    let m = model(
+        "[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L1\"\n",
+        &BoltLibrary::default(),
+    );
+    let (l1, l2) = (0, 1);
+    assert_eq!(
+        m.members[l1].design.ends[1].as_ref().unwrap().continuous,
+        Some(l2)
+    );
+    assert_eq!(
+        m.members[l2].design.ends[0].as_ref().unwrap().continuous,
+        Some(l1)
+    );
+    let e = end_conditions(&m, l2);
+    assert_eq!(e.eccentric[0].value, Some(false));
+    assert_eq!(e.eccentric[0].why.as_deref(), Some("continuous into L1"));
+    assert_eq!(e.eccentric[0].source, Source::WorkedOut);
+    assert_ne!(e.restrained[0].source, Source::WorkedOut);
+    let mut notes = Vec::new();
+    let d = &m.members[l1].design;
+    assert!(asce10::end_bolts(d, d.ends[1].as_ref(), &mut notes).is_none());
+    assert_eq!(
+        notes,
+        ["continuous through the joint: no connection to check"]
+    );
+    let d1 = m.members[D1].design.ends[1].as_ref().unwrap();
+    assert_eq!(d1.kind, None);
+    assert!(d1.continuous.is_none());
+    assert!(
+        d1.notes
+            .iter()
+            .any(|n| n.starts_with("continuous: not one part (D1 and L1 turn")),
+        "{:?}",
+        d1.notes
+    );
+}
+
+/// D1 bolted onto L1 at N2, L1's leg 4 mm (thinner than D1's 6 mm): the
+/// bearing on L1's leg governs, 2 × 1.5 × 510 MPa × 16 mm × 4 mm = 97.92
+/// kN (ASCE 10-97 4.4), below the bolts' 120 kN and D1's own 146.88 kN.
+#[test]
+fn the_bolts_bear_on_the_thinner_leg_they_bolt_onto() {
+    let mut m = model(
+        "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\n\
+         bolts = { count = 2, diameter = \"16 mm\" }\n",
+        &BoltLibrary::default(),
+    );
+    m.members[0].design.thickness = Some(0.004);
+    let c = asce10::capacity(&m, D1, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 2.0 * 1.5 * 510e6 * 0.016 * 0.004).abs() < 1e-6, "{t}");
+    assert_eq!(what, "bearing at N2");
+    // L1 as thick as D1: D1's own bearing, as before.
+    m.members[0].design.thickness = Some(0.006);
+    let (_, what) = asce10::capacity(&m, D1, None).tension.unwrap();
+    assert_eq!(what, "bolt shear");
+}

@@ -272,6 +272,41 @@ fn angle_legs(s: &Section) -> Option<(f64, f64, f64)> {
     }
 }
 
+/// The leg of the member an end bolts onto directly (lapped, on either
+/// face or nested; 2026-11-05): the bolts bear on it too.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OntoLeg {
+    /// The member's id.
+    pub id: String,
+    /// Its leg's thickness, m.
+    pub thickness: f64,
+    /// Its steel's ultimate strength, Pa.
+    pub fu: Option<f64>,
+}
+
+/// The leg member `idx`'s `end` bolts onto, when it bolts onto a member
+/// (given or worked out) whose thickness is known (its design data's,
+/// else its angle's); only at an end with a connection, none for a
+/// continuous end.
+pub(crate) fn onto_leg(model: &Model, idx: usize, end: usize) -> Option<OntoLeg> {
+    // Only at an end with a connection: a member without stays as before.
+    let e = model.members[idx].design.ends[end].as_ref()?;
+    if e.continuous.is_some() || e.kind.is_some_and(|k| k != ConnectionKind::Bolted) {
+        return None;
+    }
+    let (crate::design::Onto::Member(k), _) = crate::member_ends::onto(model, idx, end)? else {
+        return None;
+    };
+    let o = &model.members[k];
+    let s = &model.sections[o.section];
+    let thickness = o.design.thickness.or(angle_legs(s).map(|l| l.1))?;
+    Some(OntoLeg {
+        id: o.id.clone(),
+        thickness,
+        fu: s.ultimate,
+    })
+}
+
 /// The ASCE 10-97 capacities of member `idx`. `partner_in_tension`: for a
 /// crossing diagonal with a partner, whether that partner is in tension
 /// in this load case (none: no partner, or not a crossing diagonal).
@@ -409,7 +444,10 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     );
     // The connection, at each end: the end's own data over the member's.
     let thickness = d.thickness.or(legs.map(|l| l.1));
-    let checks = [0, 1].map(|end| end_check(d, d.ends[end].as_ref(), s, thickness, fy, a));
+    let checks = [0, 1].map(|end| {
+        let onto = onto_leg(model, idx, end);
+        end_check(d, d.ends[end].as_ref(), s, thickness, fy, a, onto.as_ref())
+    });
     // Ends alike (no connection data, or the same capacities at both): as
     // one, as before; else what governs named by its end (a note of one
     // end only is named by it in any case).
@@ -538,6 +576,10 @@ pub(crate) fn end_bolts(
     let Some(e) = end else {
         return member;
     };
+    if e.continuous.is_some() {
+        notes.push("continuous through the joint: no connection to check".into());
+        return None;
+    }
     let Some(own) = e.bolts else {
         if let Some(k) = e.kind
             && k != ConnectionKind::Bolted
@@ -590,6 +632,7 @@ fn end_check(
     thickness: Option<f64>,
     fy: f64,
     a: f64,
+    onto: Option<&OntoLeg>,
 ) -> EndCheck {
     let plies = f64::from(d.plies.unwrap_or(1));
     let mut shear = None;
@@ -650,6 +693,24 @@ fn end_check(
                 }
                 (None, _) => conn.push("bearing not checked (no ultimate strength)".into()),
                 (_, None) => conn.push("bearing not checked (no thickness)".into()),
+            }
+            // And on the leg it bolts onto (4.4), when thinner or weaker.
+            if let Some(o) = onto {
+                let fu = match (o.fu, b.ultimate) {
+                    (Some(m), Some(bolt)) => Some(m.min(bolt)),
+                    (m, _) => m,
+                };
+                if let Some(fu) = fu {
+                    let v = f64::from(b.count) * 1.5 * fu * b.diameter * o.thickness;
+                    if bearing.is_none_or(|own| v < own) {
+                        bearing = Some(v);
+                        conn.push(format!(
+                            "bearing on {}'s leg ({:.0} mm), the weaker",
+                            o.id,
+                            o.thickness * 1e3
+                        ));
+                    }
+                }
             }
         }
     }

@@ -302,6 +302,11 @@ pub struct EndDesign {
     /// through, and why ("two covers on the leg"); the bolts' given
     /// `shear_planes` wins.
     pub planes: Option<(u32, String)>,
+    /// The member it runs on into through the joint as one part (its
+    /// index; `kind = "continuous"` given on either end, the two in line
+    /// within 1°, of the same section, roll and reference): no
+    /// connection at this end ([`crate::member_ends::link_continuous`]).
+    pub continuous: Option<usize>,
     /// What could not be used ("bolt M16: in no bolt library").
     pub notes: Vec<String>,
 }

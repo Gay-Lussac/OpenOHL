@@ -31,7 +31,8 @@
 
 use ohl_structures::bolts::BoltLibrary;
 use ohl_structures::connections::{
-    BoltedLeg, CoverLeg, Face, TypeConnection, TypePlate, TypeSplice,
+    BoltedLeg, CONTINUOUS_ANGLE_DEG, ConnectionKind, CoverLeg, Face, TypeConnection, TypePlate,
+    TypeSplice,
 };
 
 use crate::design::{ConnectedLeg, EndBolts, EndDesign, Ends, MemberClass, Onto};
@@ -258,6 +259,15 @@ pub fn end_conditions(model: &Model, idx: usize) -> EndConditions {
         };
         given_ecc[end] = c.eccentric;
         given_res[end] = c.restrained;
+        // One part through the joint: the force passes straight on
+        // (concentric). Held against turning is not worked out from it:
+        // the panel beyond can buckle with this one (ASCE 10-97 C3.7.4),
+        // so the restraint stays given, the member's or assumed (on the
+        // safe side).
+        if let Some(k) = c.continuous {
+            worked_ecc[end] = Some((false, format!("continuous into {}", model.members[k].id)));
+            continue;
+        }
         if let Some(leg) = c.leg.or(d.connected_leg) {
             worked_ecc[end] = eccentric_from_leg(leg).map(|v| {
                 let why = if v {
@@ -500,8 +510,113 @@ pub(crate) fn read_connections(
         }
         model.members[idx].design.ends[end] = Some(e);
     }
+    link_continuous(model);
     crate::offsets::from_shifts(model);
     Ok(())
+}
+
+/// The ends that run on through their joint as one part: an end of kind
+/// continuous onto a member that may be one part with it (in line within
+/// [`CONTINUOUS_ANGLE_DEG`], the same section, roll and reference) and
+/// whose own end there does not say otherwise gets
+/// [`EndDesign::continuous`], and so does that member's end (made when
+/// it has none). Otherwise the kind is dropped and the end computes as
+/// bolted (a splice, as before), said.
+pub fn link_continuous(model: &mut Model) {
+    let n = model.members.len();
+    for idx in 0..n {
+        for end in 0..2 {
+            let Some(e) = model.members[idx].design.ends[end].as_ref() else {
+                continue;
+            };
+            if e.kind != Some(ConnectionKind::Continuous) || e.continuous.is_some() {
+                continue;
+            }
+            let node = node_of(model, idx, end);
+            let partner = match &e.onto {
+                Some(Onto::Member(k)) => Some(*k),
+                _ => None,
+            };
+            let why = match partner {
+                None => Some("into no member (onto)".to_owned()),
+                Some(k) => continuous_problem(model, idx, k, node).or_else(|| {
+                    let kend = usize::from(model.members[k].j == node);
+                    model.members[k].design.ends[kend].as_ref().and_then(|o| {
+                        let agrees = o.kind.is_none()
+                            || (o.kind == Some(ConnectionKind::Continuous)
+                                && o.onto == Some(Onto::Member(idx)));
+                        (!agrees).then(|| {
+                            format!("the end of {} there says otherwise", model.members[k].id)
+                        })
+                    })
+                }),
+            };
+            match (partner, why) {
+                (Some(k), None) => {
+                    let kend = usize::from(model.members[k].j == node);
+                    if let Some(e) = model.members[idx].design.ends[end].as_mut() {
+                        e.continuous = Some(k);
+                    }
+                    let o =
+                        model.members[k].design.ends[kend].get_or_insert_with(EndDesign::default);
+                    o.kind = Some(ConnectionKind::Continuous);
+                    o.onto = Some(Onto::Member(idx));
+                    o.continuous = Some(idx);
+                }
+                (_, Some(why)) => {
+                    if let Some(e) = model.members[idx].design.ends[end].as_mut() {
+                        e.kind = None;
+                        e.notes.push(format!(
+                            "continuous: not one part ({why}): computed as a splice"
+                        ));
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+    }
+}
+
+/// The joint (node index) at member `idx`'s `end`.
+fn node_of(model: &Model, idx: usize, end: usize) -> usize {
+    let m = &model.members[idx];
+    if end == 0 { m.i } else { m.j }
+}
+
+/// Why members `a` and `b` cannot be one part through node `node` (none:
+/// they can): in line within [`CONTINUOUS_ANGLE_DEG`], the same section,
+/// roll and reference — as `StructureType::continuous_problem`, on the
+/// model.
+pub fn continuous_problem(model: &Model, a: usize, b: usize, node: usize) -> Option<String> {
+    let (ma, mb) = (&model.members[a], &model.members[b]);
+    if a == b || !(mb.i == node || mb.j == node) {
+        return Some(format!("{} does not meet {} there", mb.id, ma.id));
+    }
+    let away = |m: &crate::model::Member| {
+        let far = if m.i == node { m.j } else { m.i };
+        let (p, q) = (model.nodes[node].point, model.nodes[far].point);
+        let d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        d.map(|v| v / l)
+    };
+    let (u, v) = (away(ma), away(mb));
+    let angle = (-(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]))
+        .clamp(-1.0, 1.0)
+        .acos()
+        .to_degrees();
+    if angle.is_nan() || angle > CONTINUOUS_ANGLE_DEG {
+        return Some(format!("{} and {} turn {angle:.1}°", ma.id, mb.id));
+    }
+    if ma.section != mb.section {
+        return Some(format!(
+            "{} and {} are not of the same section",
+            ma.id, mb.id
+        ));
+    }
+    if (ma.roll - mb.roll).abs() > 1e-9 || ma.reference != mb.reference {
+        return Some(format!("{} and {} are not turned alike", ma.id, mb.id));
+    }
+    None
 }
 
 /// What a member end bolting onto splice `s` by `leg` bolts onto: the

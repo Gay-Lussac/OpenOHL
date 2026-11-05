@@ -196,3 +196,28 @@ fn method_by_name_and_bolt_rules() {
     assert_eq!((r.end, r.spacing, r.edge), (0.025, 0.040, 0.020));
     assert_eq!(r.code, "SIA 263:2013");
 }
+
+/// The angle bolted at its top end onto a leg of 4 mm (thinner than its
+/// 6 mm): the bearing (76) on that leg, with this member's e_1, governs:
+/// min(0.85 e_1/d_0, 2.4) f_u d t / γ_M2 on t = 4 mm (2026-11-05).
+#[test]
+fn bearing_on_the_thinner_leg_bolted_onto_by_hand() {
+    use crate::design::{EndDesign, Onto};
+    let (mut m, _) = angle_model(0.060, 0.006, 355e6, 2.0);
+    m.nodes.push(Node::pinned("c", [0.0, 0.0, 4.0]));
+    let mut leg = Member::new("G", MemberKind::Truss, 1, 2, 0);
+    leg.design.thickness = Some(0.004);
+    m.members.push(leg);
+    m.members[0].design.ends[1] = Some(EndDesign {
+        onto: Some(Onto::Member(1)),
+        ..EndDesign::default()
+    });
+    let (c, _) = sia263::capacity(&m, 0, None);
+    let d0 = sia263::standard_hole(0.016).unwrap();
+    let fu = 510e6;
+    let one = |t: f64| (0.85 * 0.025 / d0 * fu * 0.016 * t).min(2.4 * fu * 0.016 * t) / GAMMA_M2;
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - one(0.004)).abs() < 1e-6, "{t} {what} {}", one(0.004));
+    assert_eq!(what, "bearing at b");
+    assert!(one(0.004) < one(0.006));
+}

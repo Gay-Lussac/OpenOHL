@@ -65,6 +65,7 @@
 - [Member capacities by ASCE 10-97](theory/asce10.md)
 - [Member capacities by SIA 263:2013](theory/sia263.md)
 - [Gusset plates and their welds](theory/joint-plates.md)
+- [Lap joints, splices and continuous members](theory/joint-laps-splices.md)
 - [Wood poles by SIA 265:2012](theory/sia265.md)
 - [Steel pole shafts by ASCE/SEI 48-19](theory/asce48.md)
 - [Wind on lattice structures: faces, solidity, shielding](theory/structure-wind.md)

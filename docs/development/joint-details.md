@@ -487,12 +487,21 @@ development of stage 1 and further".) Three cases, at level 3:
   have the same section, roll and reference; otherwise kept, said, and
   computed as a splice (today). The ends join rigidly in the analysis
   (as `fixed`); no bolt, bearing, net section or block shear at that
-  end; the end concentric and restrained; the buckling length is
-  unchanged (from bracing point to bracing point). Drawn as one solid
+  end; the end concentric (its restraint not taken from the continuity:
+  the panel beyond can buckle with it, ASCE 10-97 C3.7.4 — on the safe
+  side); the buckling length is unchanged (from bracing point to bracing
+  point). Drawn as one solid
   through the joint; the part lists count the chain as one piece of its
   whole length; the members keep their ids. A command proposes the
   pairs in line of the same section, for the user to confirm (never
   set by itself, nor by an importer).
+
+**Built 2026-11-05** (in active development, not approved yet): stage
+1 (the data, `f7cfd96d`) and stage 3's member checks — the shear planes
+worked out, the bearing on the leg bolted onto (ASCE 10-97 4.4, SIA 263
+(76); at ends with a connection), a continuous end without connection
+checks ([theory](../theory/joint-laps-splices.md)). Open: the covers'
+own checks (with their geometry).
 
 **Shear planes** are worked out from the plies the bolts pass through
 (given still wins, said when it differs). Stages: 1 the data (`face`,

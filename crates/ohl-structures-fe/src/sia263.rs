@@ -605,6 +605,7 @@ fn end_check(
     fy: f64,
     a: f64,
     angle: Option<(f64, f64)>,
+    onto: Option<&crate::asce10::OntoLeg>,
 ) -> EndCheck {
     let mut notes: Vec<String> = Vec::new();
     let mut limits: Vec<String> = Vec::new();
@@ -695,6 +696,25 @@ fn end_check(
                 let one = (0.85 * e / hole * fu * b.diameter * t).min(2.4 * fu * b.diameter * t)
                     / GAMMA_M2;
                 bearing = Some(f64::from(b.count) * one * plies);
+                // And on the leg it bolts onto, when weaker: its own end
+                // distance there not known, this member's taken (said).
+                if let Some(o) = onto
+                    && let Some(fo) = o.fu
+                {
+                    let to = o.thickness;
+                    let v = f64::from(b.count)
+                        * (0.85 * e / hole * fo * b.diameter * to).min(2.4 * fo * b.diameter * to)
+                        / GAMMA_M2;
+                    if bearing.is_none_or(|own| v < own) {
+                        bearing = Some(v);
+                        notes.push(format!(
+                            "bearing on {}'s leg ({:.0} mm), the weaker; its e_1 taken as this \
+                             member's",
+                            o.id,
+                            to * 1e3
+                        ));
+                    }
+                }
                 if let Some(e2) = e2
                     && e2 < hole
                 {
@@ -996,7 +1016,19 @@ pub fn capacity(
         _ => None,
     };
     let thickness = d.thickness.or(leg_t);
-    let checks = [0, 1].map(|end| end_check(d, d.ends[end].as_ref(), s, thickness, fy, a, angle));
+    let checks = [0, 1].map(|end| {
+        let onto = crate::asce10::onto_leg(model, idx, end);
+        end_check(
+            d,
+            d.ends[end].as_ref(),
+            s,
+            thickness,
+            fy,
+            a,
+            angle,
+            onto.as_ref(),
+        )
+    });
     let at = |end: usize| model.nodes[if end == 0 { m.i } else { m.j }].id.as_str();
     let alike = (checks[0].shear, checks[0].bearing, &checks[0].tension)
         == (checks[1].shear, checks[1].bearing, &checks[1].tension);
