@@ -254,3 +254,138 @@ fn version_9_is_read() {
     assert_eq!(t.connections.len(), 1);
     assert!(parse(&format!("format = \"ohl-structure\"\nversion = 10\n{BODY}")).is_err());
 }
+
+/// The leg L1–L2 in line through N2 with a section, the diagonal D1.
+fn in_line(extra: &str) -> String {
+    let body = BODY
+        .replace(
+            "nodes = [\"N1\", \"N2\"]\n",
+            "nodes = [\"N1\", \"N2\"]\nsection = \"L100\"\n",
+        )
+        .replace(
+            "nodes = [\"N2\", \"N3\"]\n",
+            "nodes = [\"N2\", \"N3\"]\nsection = \"L100\"\n",
+        );
+    format!("{body}{extra}")
+}
+
+#[test]
+fn a_continuous_leg_is_one_part_when_in_line_and_alike() {
+    use crate::connections::Face;
+    let t = parse(&in_line(
+        "[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\nface = \"inside\"\n",
+    ))
+    .unwrap();
+    // Given on one end: both read it.
+    assert_eq!(t.continuous_with("L1", "N2"), Some("L2"));
+    assert_eq!(t.continuous_with("L2", "N2"), Some("L1"));
+    assert_eq!(t.continuous_with("D1", "N2"), None);
+    assert_eq!(t.connection("D1", "N2").unwrap().face(), Face::Inside);
+    assert_eq!(t.connection("L1", "N2").unwrap().face(), Face::Outside);
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    // The diagonal is not in line, nor is a member of another section.
+    assert!(
+        t.continuous_problem("D1", "L1", "N2")
+            .unwrap()
+            .contains("turn")
+    );
+    let other = parse(&in_line("").replacen("section = \"L100\"", "section = \"L90\"", 1)).unwrap();
+    assert!(
+        other
+            .continuous_problem("L1", "L2", "N2")
+            .unwrap()
+            .contains("same section")
+    );
+}
+
+#[test]
+fn a_continuous_end_contradicted_or_not_in_line_is_said_and_not_used() {
+    // The other end bolted onto the diagonal: not one part.
+    let t = parse(&in_line(
+        "[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n\
+         [[connection]]\nmember = \"L2\"\njoint = \"N2\"\nkind = \"bolted\"\nonto = \"D1\"\n",
+    ))
+    .unwrap();
+    assert_eq!(t.continuous_with("L1", "N2"), None);
+    assert!(
+        t.connection_notes()
+            .iter()
+            .any(|n| n.contains("says otherwise")),
+        "{:?}",
+        t.connection_notes()
+    );
+    // A leg turned by more than 1°.
+    let bent = in_line(
+        "[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+    )
+    .replace(
+        "point = [\"0 m\", \"0 m\", \"10 m\"]",
+        "point = [\"0.2 m\", \"0 m\", \"10 m\"]",
+    );
+    let t = parse(&bent).unwrap();
+    assert_eq!(t.continuous_with("L1", "N2"), None);
+    assert!(
+        t.connection_notes()
+            .iter()
+            .any(|n| n.contains("not one part") && n.contains("2.3°")),
+        "{:?}",
+        t.connection_notes()
+    );
+}
+
+const SPLICE: &str = "[[splice]]\nid = \"S1\"\njoint = \"N2\"\nmembers = [\"L1\", \"L2\"]\n\
+    [[splice.cover]]\nface = \"outer\"\nleg = \"long\"\nthickness = \"8 mm\"\n\
+    [[splice.cover]]\nface = \"inner\"\nleg = \"long\"\nthickness = \"6 mm\"\n\
+    [[splice.cover]]\nface = \"outer\"\nleg = \"short\"\nthickness = \"8 mm\"\n\
+    [[connection]]\nmember = \"L1\"\njoint = \"N2\"\nonto = \"S1\"\n\
+    [[connection]]\nmember = \"L2\"\njoint = \"N2\"\nonto = \"S1\"\n";
+
+#[test]
+fn a_splice_gives_a_shear_plane_per_cover() {
+    use crate::connections::CoverLeg;
+    let t = parse(&in_line(SPLICE)).unwrap();
+    let s = t.splice("S1", "N2").unwrap();
+    assert_eq!(s.shear_planes(Some(CoverLeg::Long)), 2);
+    assert_eq!(s.shear_planes(Some(CoverLeg::Short)), 1);
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    // Onto a splice that does not join it.
+    let t = parse(&in_line(&format!(
+        "{SPLICE}[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"S1\"\n"
+    )))
+    .unwrap();
+    assert!(
+        t.connection_notes()
+            .iter()
+            .any(|n| n.contains("does not join it")),
+        "{:?}",
+        t.connection_notes()
+    );
+}
+
+#[test]
+fn a_wrong_splice_is_refused() {
+    let twice = SPLICE
+        .replace("thickness = \"6 mm\"", "thickness = \"6 mm\"\n")
+        .replace(
+            "face = \"inner\"\nleg = \"long\"",
+            "face = \"outer\"\nleg = \"long\"",
+        );
+    assert!(
+        parse(&in_line(&twice))
+            .unwrap_err()
+            .contains("two outer covers")
+    );
+    let clash = SPLICE.replace("id = \"S1\"", "id = \"D1\"");
+    assert!(parse(&in_line(&clash)).unwrap_err().contains("has that id"));
+    let thin = SPLICE.replace("\"8 mm\"", "\"0 mm\"");
+    assert!(parse(&in_line(&thin)).unwrap_err().contains("above 0"));
+}

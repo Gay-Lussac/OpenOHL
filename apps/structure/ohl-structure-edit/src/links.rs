@@ -242,6 +242,21 @@ pub fn insert_joint(
                 }
             }
         }
+        // And the splices there that join it (2026-11-05).
+        if let Some(a) = doc.get_mut("splice").and_then(Item::as_array_of_tables_mut) {
+            for sp in a.iter_mut() {
+                if sp.get("joint").and_then(Item::as_str) != Some(far) {
+                    continue;
+                }
+                if let Some(list) = sp.get_mut("members").and_then(Item::as_array_mut) {
+                    for v in list.iter_mut() {
+                        if v.as_str() == Some(member) {
+                            *v = toml_edit::Value::from(last.id.clone());
+                        }
+                    }
+                }
+            }
+        }
     }
     raise_version(doc, LINKS_VERSION);
     Ok(id)

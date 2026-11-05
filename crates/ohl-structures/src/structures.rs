@@ -1074,6 +1074,10 @@ pub struct StructureType {
     /// Version 9: gusset plates at the joints.
     #[serde(rename = "plate", default)]
     pub plates: Vec<crate::connections::TypePlate>,
+    /// Splices (covers bolting members together) at the joints
+    /// (2026-11-05, still version 9).
+    #[serde(rename = "splice", default)]
+    pub splices: Vec<crate::connections::TypeSplice>,
     /// Finite-element check: analysis options (read by
     /// `ohl_structures_fe`).
     #[serde(default)]

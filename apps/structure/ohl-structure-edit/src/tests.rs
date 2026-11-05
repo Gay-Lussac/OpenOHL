@@ -1398,3 +1398,101 @@ fn a_member_roll_is_written_in_degrees() {
     let t = read(&doc);
     assert_eq!(crate::member_roll(&t.members[1]), 0.0);
 }
+
+/// A continuous leg, a splice with its covers and a nested face, written
+/// and read back; the splice and the one part follow deletions
+/// (2026-11-05).
+#[test]
+fn continuous_ends_splices_and_faces_are_edited() {
+    use crate::connection_edits::{self as ce, FieldValue};
+    use ohl_structures::connections::{ConnectionKind, CoverFace, CoverLeg, Face};
+    // M1 runs on into M3 above N2, both of section L.
+    let text = PYLON.replace(
+        "nodes = [\"N1\", \"N2\"]\n",
+        "nodes = [\"N1\", \"N2\"]\nsection = \"L\"\n",
+    ) + "\n[[node]]\nid = \"N4\"\npoint = [\"0 m\", \"0 m\", \"40 m\"]\n\
+        [[member]]\nid = \"M3\"\nnodes = [\"N2\", \"N4\"]\nsection = \"L\"\n";
+    let mut doc: DocumentMut = text.parse().unwrap();
+    let t = read(&doc);
+    ce::set_continuous(&mut doc, &t, "M1", "N2", "M3", true).unwrap();
+    let t = read(&doc);
+    assert_eq!(t.continuous_with("M3", "N2"), Some("M1"));
+    assert_eq!(
+        t.connection("M3", "N2").unwrap().kind(),
+        ConnectionKind::Continuous
+    );
+    // Deleting M3: M1 bolted again.
+    let mut gone = doc.clone();
+    let r = removal(&t, &crate::Handle::Member("M3".into()));
+    remove(&mut gone, &r);
+    let g = read(&gone);
+    assert!(g.connection("M1", "N2").is_none_or(|c| c.kind.is_none()));
+    ce::set_continuous(&mut doc, &t, "M1", "N2", "M3", false).unwrap();
+    let t = read(&doc);
+    assert!(t.connection("M1", "N2").is_none() && t.connection("M3", "N2").is_none());
+    // Not in line: refused.
+    assert!(ce::set_continuous(&mut doc, &t, "M1", "N2", "M2", true).is_err());
+    let j = "N2".to_owned();
+    // A splice: covers on both faces of both legs, the ends onto it.
+    let s = ce::add_splice(
+        &mut doc,
+        &t,
+        &j,
+        &["M1".to_owned(), "M2".to_owned()],
+        &[CoverLeg::Long, CoverLeg::Short],
+        0.008,
+    );
+    assert_eq!(s, "S1");
+    ce::set_connection_field(
+        &mut doc,
+        "M1",
+        &j,
+        "face",
+        Some(&FieldValue::Word("nested".into())),
+    )
+    .unwrap();
+    let t = read(&doc);
+    let sp = t.splice("S1", &j).unwrap();
+    assert_eq!(sp.covers.len(), 4);
+    assert_eq!(sp.shear_planes(Some(CoverLeg::Short)), 2);
+    assert_eq!(t.connection("M2", &j).unwrap().onto.as_deref(), Some("S1"));
+    assert_eq!(t.connection("M1", &j).unwrap().face(), Face::Nested);
+    // One cover off the short leg, the other thicker.
+    ce::set_cover(
+        &mut doc,
+        "S1",
+        CoverFace::Inner,
+        Some(CoverLeg::Short),
+        None,
+    )
+    .unwrap();
+    ce::set_cover(
+        &mut doc,
+        "S1",
+        CoverFace::Outer,
+        Some(CoverLeg::Short),
+        Some(0.01),
+    )
+    .unwrap();
+    assert!(ce::set_cover(&mut doc, "S1", CoverFace::Outer, None, Some(0.0)).is_err());
+    let t = read(&doc);
+    let sp = t.splice("S1", &j).unwrap();
+    assert_eq!(sp.shear_planes(Some(CoverLeg::Short)), 1);
+    assert!((sp.covers_on(Some(CoverLeg::Short))[0].thickness.si() - 0.01).abs() < 1e-12);
+    // M2 deleted: out of the splice; the joint deleted: the splice gone.
+    let r = removal(&t, &crate::Handle::Member("M2".into()));
+    remove(&mut doc, &r);
+    let t = read(&doc);
+    assert_eq!(t.splice("S1", &j).unwrap().members, vec!["M1".to_owned()]);
+    let r = removal(&t, &crate::Handle::Joint(j.clone()));
+    assert!(r.connections.contains(&"splice S1".to_owned()));
+    remove(&mut doc, &r);
+    assert!(read(&doc).splices.is_empty());
+    // Removed outright: the ends lose their onto.
+    let mut doc: DocumentMut = text.parse().unwrap();
+    let t = read(&doc);
+    ce::add_splice(&mut doc, &t, &j, &["M1".to_owned()], &[], 0.008);
+    ce::remove_splice(&mut doc, "S1");
+    let t = read(&doc);
+    assert!(t.splices.is_empty() && t.connection("M1", &j).is_none());
+}

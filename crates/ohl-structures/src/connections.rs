@@ -29,6 +29,25 @@
 //! #   worked out so it fits); the axis still runs to the work point
 //! # shift = "15 mm"  # the end moved sideways to fit (none: 0); its force
 //! #   then passes beside the work point: an eccentricity, analysed
+//! # face = "outside"  # where on what it bolts onto (2026-11-05): outside
+//! #   (default), inside (the inside face of its leg), nested (an angle
+//! #   heel into heel inside the other: a lap joint, one shear plane)
+//!
+//! [[connection]]          # one part through the joint (2026-11-05):
+//! member = "L1"           #   no bolts, the two members in line, of the
+//! joint = "N2"            #   same section, roll and reference
+//! kind = "continuous"
+//! onto = "L2"
+//!
+//! [[splice]]              # covers bolting members together (2026-11-05)
+//! id = "S1"
+//! joint = "N2"
+//! members = ["L1", "L2"]
+//! [[splice.cover]]        # per leg (long, short; none: the member's
+//! face = "outer"          #   flat part) outer and/or inner: two on a
+//! leg = "long"            #   leg, two shear planes
+//! thickness = "8 mm"
+//! # material = "S355"; outline = [...] as a plate's
 //!
 //! [[plate]]
 //! id = "G1"
@@ -101,15 +120,19 @@ pub enum ConnectionKind {
     Pinned,
     /// Held against turning (a rigid joint).
     Fixed,
+    /// One part through the joint (2026-11-05): the member runs on into
+    /// `onto` (in line, the same section, roll and reference); no bolts.
+    Continuous,
 }
 
 impl ConnectionKind {
     /// Every kind, in the order offered.
-    pub const ALL: [ConnectionKind; 4] = [
+    pub const ALL: [ConnectionKind; 5] = [
         ConnectionKind::Bolted,
         ConnectionKind::Welded,
         ConnectionKind::Pinned,
         ConnectionKind::Fixed,
+        ConnectionKind::Continuous,
     ];
 
     /// Name in files.
@@ -119,6 +142,7 @@ impl ConnectionKind {
             Self::Welded => "welded",
             Self::Pinned => "pinned",
             Self::Fixed => "fixed",
+            Self::Continuous => "continuous",
         }
     }
 }
@@ -148,6 +172,139 @@ impl BoltedLeg {
         }
     }
 }
+
+/// Where a member end sits on the member it bolts onto (2026-11-05).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Face {
+    /// On the outside face of its leg (the default, as before).
+    #[default]
+    Outside,
+    /// On the inside face of its leg.
+    Inside,
+    /// An angle heel into heel inside the other (a lap joint): bolted by
+    /// one leg or both, one shear plane.
+    Nested,
+}
+
+impl Face {
+    /// Every face, in the order offered.
+    pub const ALL: [Face; 3] = [Face::Outside, Face::Inside, Face::Nested];
+
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Outside => "outside",
+            Self::Inside => "inside",
+            Self::Nested => "nested",
+        }
+    }
+}
+
+/// The side of a member's leg a splice's cover lies on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverFace {
+    /// On the outer face (an angle's heel side).
+    Outer,
+    /// On the inner face.
+    Inner,
+}
+
+impl CoverFace {
+    /// Both, in the order offered.
+    pub const ALL: [CoverFace; 2] = [CoverFace::Outer, CoverFace::Inner];
+
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Outer => "outer",
+            Self::Inner => "inner",
+        }
+    }
+}
+
+/// The leg of an angle a splice's cover lies on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverLeg {
+    /// The long leg.
+    Long,
+    /// The short leg.
+    Short,
+}
+
+impl CoverLeg {
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Long => "long",
+            Self::Short => "short",
+        }
+    }
+}
+
+/// A cover of a splice (`[[splice.cover]]`): a flat plate on one face of
+/// the members' leg.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeCover {
+    /// Outer or inner.
+    pub face: CoverFace,
+    /// The angle's leg (none: the member's flat part, or a section that is
+    /// no angle).
+    #[serde(default)]
+    pub leg: Option<CoverLeg>,
+    /// Thickness.
+    pub thickness: Length,
+    /// Material (none: not given).
+    #[serde(default)]
+    pub material: Option<String>,
+    /// Its outline in local axes (none: around the bolts onto it).
+    #[serde(default)]
+    pub outline: Vec<[Length; 3]>,
+}
+
+/// Covers bolting members together at a joint (`[[splice]]`,
+/// 2026-11-05, still structure file version 9): each member end bolts
+/// onto it (`onto` its id) with its own bolts; the bolts pass through
+/// the member's leg and the covers on that leg, one shear plane per
+/// cover.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeSplice {
+    /// Id, unique among the splices, plates and members.
+    pub id: String,
+    /// The joint it is at.
+    pub joint: String,
+    /// The members it joins (meeting at the joint).
+    #[serde(default)]
+    pub members: Vec<String>,
+    /// Its covers.
+    #[serde(default, rename = "cover")]
+    pub covers: Vec<TypeCover>,
+}
+
+impl TypeSplice {
+    /// The covers on `leg` (an angle's; none: a member's flat part):
+    /// those given for that leg and those given for no leg.
+    pub fn covers_on(&self, leg: Option<CoverLeg>) -> Vec<&TypeCover> {
+        self.covers
+            .iter()
+            .filter(|c| c.leg.is_none() || c.leg == leg)
+            .collect()
+    }
+
+    /// The shear planes of a bolt through `leg` and its covers: one per
+    /// cover (at least one).
+    pub fn shear_planes(&self, leg: Option<CoverLeg>) -> u32 {
+        (self.covers_on(leg).len() as u32).max(1)
+    }
+}
+
+/// The most two members may turn from in line and still be one
+/// continuous part, degrees (owner 2026-11-05).
+pub const CONTINUOUS_ANGLE_DEG: f64 = 1.0;
 
 /// The bolts of a member end: a bolt of a library (`bolt`) and what is
 /// typed here (overriding the library's).
@@ -244,6 +401,9 @@ pub struct TypeConnection {
     /// analysis takes into account (owner 2026-11-02).
     #[serde(default)]
     pub shift: Option<Length>,
+    /// Where it sits on what it bolts onto (2026-11-05; none: outside).
+    #[serde(default)]
+    pub face: Option<Face>,
 }
 
 /// The direction a member end's `shift` is measured in: across the
@@ -414,9 +574,104 @@ impl TypeConnection {
     pub fn kind(&self) -> ConnectionKind {
         self.kind.unwrap_or_default()
     }
+
+    /// Where it sits (outside when not given).
+    pub fn face(&self) -> Face {
+        self.face.unwrap_or_default()
+    }
 }
 
 impl StructureType {
+    /// Why `member` cannot run on through `joint` into `onto` as one part
+    /// (none: it can): both meet there, in line within
+    /// [`CONTINUOUS_ANGLE_DEG`], of the same section, roll and reference.
+    pub fn continuous_problem(&self, member: &str, onto: &str, joint: &str) -> Option<String> {
+        if member == onto {
+            return Some("it cannot run on into itself".into());
+        }
+        let find = |id: &str| {
+            self.members
+                .iter()
+                .find(|m| m.id == id && m.nodes.contains(&joint.to_owned()))
+        };
+        let (Some(a), Some(b)) = (find(member), find(onto)) else {
+            return Some(format!("{member} and {onto} do not both meet at {joint}"));
+        };
+        let at = |id: &str| {
+            self.nodes
+                .iter()
+                .find(|n| n.id == id)
+                .map(|n| n.point.map(|v| v.si()))
+        };
+        let away = |m: &crate::structures::TypeMember| {
+            let far = if m.nodes[0] == joint {
+                &m.nodes[1]
+            } else {
+                &m.nodes[0]
+            };
+            let (p, q) = (at(joint)?, at(far)?);
+            let d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+            let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            (l > 1e-9).then(|| d.map(|v| v / l))
+        };
+        let (Some(u), Some(v)) = (away(a), away(b)) else {
+            return Some("a joint without a position".into());
+        };
+        // In line: they leave the joint in opposite directions.
+        let cos = -(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]);
+        let angle = cos.clamp(-1.0, 1.0).acos().to_degrees();
+        if angle > CONTINUOUS_ANGLE_DEG {
+            return Some(format!(
+                "{member} and {onto} turn {angle:.1}° at {joint} (at most {CONTINUOUS_ANGLE_DEG}°)"
+            ));
+        }
+        if a.section.is_none() || a.section != b.section {
+            return Some(format!("{member} and {onto} are not of the same section"));
+        }
+        if a.roll != b.roll || a.reference != b.reference || a.orientation != b.orientation {
+            return Some(format!(
+                "{member} and {onto} are not turned alike (roll, reference)"
+            ));
+        }
+        None
+    }
+
+    /// The member `member` runs on into through `joint` as one part
+    /// (`kind = "continuous"` given on either end, the other end not
+    /// saying otherwise, and [`Self::continuous_problem`] none).
+    pub fn continuous_with(&self, member: &str, joint: &str) -> Option<&str> {
+        let own = self.connection(member, joint);
+        let onto = match own {
+            Some(c) if c.kind() == ConnectionKind::Continuous => c.onto.as_deref()?,
+            Some(c) if c.kind.is_some() => return None,
+            _ => self
+                .connections
+                .iter()
+                .find(|c| {
+                    c.joint == joint
+                        && c.kind() == ConnectionKind::Continuous
+                        && c.onto.as_deref() == Some(member)
+                })
+                .map(|c| c.member.as_str())?,
+        };
+        // The other end not saying otherwise.
+        if let Some(o) = self.connection(onto, joint) {
+            let agrees = o.kind.is_none()
+                || (o.kind() == ConnectionKind::Continuous && o.onto.as_deref() == Some(member));
+            if !agrees {
+                return None;
+            }
+        }
+        self.continuous_problem(member, onto, joint)
+            .is_none()
+            .then_some(onto)
+    }
+
+    /// The splice `id` at `joint`, if the file gives one.
+    pub fn splice(&self, id: &str, joint: &str) -> Option<&TypeSplice> {
+        self.splices.iter().find(|s| s.id == id && s.joint == joint)
+    }
+
     /// The connection of `member` at `joint`, if the file gives one.
     pub fn connection(&self, member: &str, joint: &str) -> Option<&TypeConnection> {
         self.connections
@@ -506,11 +761,66 @@ impl StructureType {
                     .iter()
                     .any(|m| &m.id == o && m.nodes.contains(&c.joint));
                 let plate = self.plates.iter().any(|p| &p.id == o && p.joint == c.joint);
-                if !member && !plate {
+                let splice = self.splice(o, &c.joint);
+                if !member && !plate && splice.is_none() {
                     out.push(format!(
-                        "{at}: onto {o}: no member meeting at the joint or plate there"
+                        "{at}: onto {o}: no member meeting at the joint, plate or splice there"
                     ));
                 }
+                if let Some(s) = splice
+                    && !s.members.contains(&c.member)
+                {
+                    out.push(format!("{at}: onto splice {o}, which does not join it"));
+                }
+                if c.kind() == ConnectionKind::Continuous && plate | splice.is_some() {
+                    out.push(format!(
+                        "{at}: continuous onto {o}, a plate or splice: computed as bolted onto it"
+                    ));
+                }
+            }
+            if c.kind() == ConnectionKind::Continuous {
+                match &c.onto {
+                    None => out.push(format!(
+                        "{at}: continuous into no member (onto): computed as a splice"
+                    )),
+                    Some(o) if self.members.iter().any(|m| &m.id == o) => {
+                        if let Some(why) = self.continuous_problem(&c.member, o, &c.joint) {
+                            out.push(format!("{at}: not one part ({why}): computed as a splice"));
+                        } else if self.continuous_with(&c.member, &c.joint).is_none() {
+                            out.push(format!(
+                                "{at}: the connection of {o} there says otherwise: computed as a \
+                                 splice"
+                            ));
+                        }
+                    }
+                    Some(_) => {}
+                }
+                if c.bolts.is_some() {
+                    out.push(format!("{at}: continuous: its bolts not used"));
+                }
+            }
+        }
+        for s in &self.splices {
+            if !self.nodes.iter().any(|n| n.id == s.joint) {
+                out.push(format!(
+                    "splice {}: no joint {} (kept, not used)",
+                    s.id, s.joint
+                ));
+            }
+            for m in &s.members {
+                if !self
+                    .members
+                    .iter()
+                    .any(|x| &x.id == m && x.nodes.contains(&s.joint))
+                {
+                    out.push(format!(
+                        "splice {}: {m} does not meet at joint {} (kept, not used)",
+                        s.id, s.joint
+                    ));
+                }
+            }
+            if s.covers.is_empty() {
+                out.push(format!("splice {}: no covers", s.id));
             }
         }
         for p in &self.plates {
@@ -634,6 +944,32 @@ impl StructureType {
                 }
                 if p.welds[..k].iter().any(|x| x.to == w.to) {
                     return Err(format!("plate {}: the weld to {} given twice", p.id, w.to));
+                }
+            }
+        }
+        let mut splices = std::collections::BTreeSet::new();
+        for s in &self.splices {
+            if s.id.is_empty() || !splices.insert(s.id.as_str()) {
+                return Err(format!("splice \"{}\": empty or given twice", s.id));
+            }
+            if self.members.iter().any(|m| m.id == s.id) || plates.contains(s.id.as_str()) {
+                return Err(format!("splice {}: a member or a plate has that id", s.id));
+            }
+            for (k, c) in s.covers.iter().enumerate() {
+                if c.thickness.si() <= 0.0 {
+                    return Err(format!("splice {}: a cover's thickness above 0", s.id));
+                }
+                if s.covers[..k].iter().any(|x| {
+                    x.face == c.face && (x.leg == c.leg || x.leg.is_none() || c.leg.is_none())
+                }) {
+                    let leg = c
+                        .leg
+                        .map_or("one".to_owned(), |l| format!("the {}", l.as_str()));
+                    return Err(format!(
+                        "splice {}: two {} covers on {leg} leg",
+                        s.id,
+                        c.face.as_str()
+                    ));
                 }
             }
         }

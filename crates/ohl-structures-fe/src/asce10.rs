@@ -77,7 +77,7 @@
 
 use ohl_structures::connections::ConnectionKind;
 
-use crate::design::{Bolts, ConnectedLeg, EndDesign, Ends, MemberClass, MemberDesign};
+use crate::design::{Bolts, ConnectedLeg, EndDesign, Ends, MemberClass, MemberDesign, Onto};
 use crate::member_ends::{self, Source};
 use crate::model::{Member, Model, Section};
 
@@ -556,10 +556,23 @@ pub(crate) fn end_bolts(
         diameter,
         hole: own.hole.or(same.and_then(|b| b.hole)),
         count: own.count,
-        shear_planes: own
-            .shear_planes
-            .or(d.bolts.map(|b| b.shear_planes))
-            .unwrap_or(1),
+        shear_planes: {
+            let worked = e.planes.as_ref();
+            if let (Some(g), Some((w, why))) = (own.shear_planes, worked)
+                && g != *w
+            {
+                notes.push(format!("shear planes: {g} given ({w} worked out: {why})"));
+            }
+            // A splice's covers count over the member's design data (they
+            // are the end's own); a lap's one plane only where nothing
+            // else says (as before: the member's, else 1).
+            let splice = worked.filter(|_| matches!(e.onto, Some(Onto::Splice { .. })));
+            own.shear_planes
+                .or(splice.map(|w| w.0))
+                .or(d.bolts.map(|b| b.shear_planes))
+                .or(worked.map(|w| w.0))
+                .unwrap_or(1)
+        },
         shear_capacity: own.shear_capacity.or(same.and_then(|b| b.shear_capacity)),
         ultimate: own.ultimate.or(d.bolts.and_then(|b| b.ultimate)),
         holes: layout.or(d.bolts.and_then(|b| b.holes)),

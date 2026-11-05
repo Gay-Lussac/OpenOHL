@@ -450,6 +450,62 @@ centroids (`ohl_structures_fe::drawn`), without the seat or the cut.
 
 > **Owner:**
 
+### Lap joints, double covers, continuous members (proposal, 2026-11-05)
+
+(Owner, 2026-11-05: "have a profile slide into the other (if smaller and
+fits) and be directly bolted to the other … and also have the
+possibility to have 2 plates on each side of the profile to bolt two
+profiles together which would make the bolt have 2 shear planes", then
+"also add the continuous … it's just one part", then "go ahead with the
+development of stage 1 and further".) Three cases, at level 3:
+
+- **A — one profile inside the other (lap, single shear).** A
+  connection's `face`: `outside` (today, the default), `inside` (on the
+  inside face of the leg it bolts onto) or `nested` (an angle heel into
+  heel inside the other, by one leg or both). The fit is checked: the
+  inner leg at most the outer leg less its thickness and root radius,
+  the end and edge distances on both parts. The inner heel is taken as
+  **ground to clear the outer root fillet** (the usual practice; not
+  ground it would sit r (1 − 1/√2) off along the diagonal, said). One
+  shear plane; bearing on the thinner of the two legs; net section and
+  block shear on both; one leg bolted eccentric, both legs nested
+  concentric. Angle in angle only for now (channels later, the same
+  rule; a pole's slip joints stay their own item).
+- **B — covers on both sides (double shear).** A `[[splice]]` at a
+  joint: its id, the members it joins, its covers (per leg of an angle
+  `outer` and `inner`, each a thickness, a material, an outline worked
+  out from the bolts or given). Each member end bolts onto it (`onto =
+  "S1"`) with its own bolts and layout. Two covers on a leg: two shear
+  planes; one: one. Bearing on the lower of the member's leg and the
+  covers' thicknesses together; each cover checked as a plate is
+  (net section, block shear, end and edge distances) for its share of
+  the force **by area** (an assumption, said in the theory); bolt slip
+  not modelled. Flat covers only for now (an inner splice angle later).
+- **C — continuous through the joint (one part).** `kind =
+  "continuous"` with `onto` the member it runs on into; one end given
+  sets the other's. Allowed when the two are in line within **1°** and
+  have the same section, roll and reference; otherwise kept, said, and
+  computed as a splice (today). The ends join rigidly in the analysis
+  (as `fixed`); no bolt, bearing, net section or block shear at that
+  end; the end concentric and restrained; the buckling length is
+  unchanged (from bracing point to bracing point). Drawn as one solid
+  through the joint; the part lists count the chain as one piece of its
+  whole length; the members keep their ids. A command proposes the
+  pairs in line of the same section, for the user to confirm (never
+  set by itself, nor by an importer).
+
+**Shear planes** are worked out from the plies the bolts pass through
+(given still wins, said when it differs). Stages: 1 the data (`face`,
+`[[splice]]`, `continuous`, the worked-out shear planes); 2 the
+geometry (the nested seat and the fit, the covers' outlines, the bolt
+grip, the continuous solid and part chains); 3 the checks (ASCE 10-97
+and SIA 263, each by hand in a test); 4 the app (the Joint panel's
+choices, the continuous command, the three views, the sketch); 5 the
+exports (CSV, IFC `OHL_Splice`, one part per continuous chain) and the
+docs.
+
+> **Owner:**
+
 ### Bolt library — built 2026-11-02
 
 "A bolt library could be nice to have too so that it can be easily

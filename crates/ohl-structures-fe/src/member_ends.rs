@@ -30,7 +30,9 @@
 //! [joint details]: https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md
 
 use ohl_structures::bolts::BoltLibrary;
-use ohl_structures::connections::{BoltedLeg, TypeConnection, TypePlate};
+use ohl_structures::connections::{
+    BoltedLeg, CoverLeg, Face, TypeConnection, TypePlate, TypeSplice,
+};
 
 use crate::design::{ConnectedLeg, EndBolts, EndDesign, Ends, MemberClass, Onto};
 use crate::model::Model;
@@ -283,22 +285,27 @@ pub fn end_conditions(model: &Model, idx: usize) -> EndConditions {
                         ),
                     )
                 }
+                // Covers alone are taken as a plate is (on the safe side).
+                Some(Onto::Splice { id, .. }) => (false, format!("splice {id} only")),
                 Some(Onto::Other(o)) => (false, o.clone()),
                 None => (false, String::new()),
             };
-            worked_res[end] =
-                if n >= 2 && matches!(onto, Some(Onto::Plate { .. }) | Some(Onto::Member(_))) {
-                    Some((stiffer, format!("{n} bolts onto {what}")))
-                } else {
-                    restrained_from_bolts(n, stiffer).map(|v| {
-                        let why = match (n, v) {
-                            (0, _) => "no bolts".to_owned(),
-                            (1, _) => "one bolt".to_owned(),
-                            _ => format!("{n} bolts onto {what}"),
-                        };
-                        (v, why)
-                    })
-                };
+            worked_res[end] = if n >= 2
+                && matches!(
+                    onto,
+                    Some(Onto::Plate { .. } | Onto::Splice { .. } | Onto::Member(_))
+                ) {
+                Some((stiffer, format!("{n} bolts onto {what}")))
+            } else {
+                restrained_from_bolts(n, stiffer).map(|v| {
+                    let why = match (n, v) {
+                        (0, _) => "no bolts".to_owned(),
+                        (1, _) => "one bolt".to_owned(),
+                        _ => format!("{n} bolts onto {what}"),
+                    };
+                    (v, why)
+                })
+            };
         }
     }
     let (eccentric, eccentricity) = resolve(given_ecc, d.end_eccentricity, worked_ecc, true);
@@ -412,6 +419,13 @@ pub(crate) fn read_connections(
                 .map_err(|e: toml::de::Error| format!("plate: {e}"))
         })
         .collect::<Result<_, _>>()?;
+    let splices: Vec<TypeSplice> = list("splice")
+        .into_iter()
+        .map(|v| {
+            v.try_into()
+                .map_err(|e: toml::de::Error| format!("splice: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
     for v in list("connection") {
         let c: TypeConnection = v
             .try_into()
@@ -442,6 +456,7 @@ pub(crate) fn read_connections(
             eccentric: c.eccentric,
             restrained: c.restrained,
             shift: c.shift.map(|l| l.si()).filter(|s| *s != 0.0),
+            face: c.face,
             ..EndDesign::default()
         };
         e.onto = c.onto.as_ref().map(|o| {
@@ -455,10 +470,14 @@ pub(crate) fn read_connections(
                         id: p.id.clone(),
                         thickness: p.thickness.si(),
                     },
-                    None => Onto::Other(o.clone()),
+                    None => match splices.iter().find(|s| &s.id == o && s.joint == c.joint) {
+                        Some(s) => splice_onto(s, c.leg),
+                        None => Onto::Other(o.clone()),
+                    },
                 },
             }
         });
+        e.planes = worked_planes(e.onto.as_ref(), c.face);
         if let Some(b) = &c.bolts {
             let lib = b.bolt.as_deref().and_then(|id| bolts.get(id));
             if let (Some(id), None) = (&b.bolt, lib) {
@@ -483,4 +502,52 @@ pub(crate) fn read_connections(
     }
     crate::offsets::from_shifts(model);
     Ok(())
+}
+
+/// What a member end bolting onto splice `s` by `leg` bolts onto: the
+/// covers on that leg (both legs: the leg with fewer planes, on the safe
+/// side; no leg given: the long one).
+fn splice_onto(s: &TypeSplice, leg: Option<BoltedLeg>) -> Onto {
+    let on = |l: Option<CoverLeg>| {
+        let covers: f64 = s.covers_on(l).iter().map(|c| c.thickness.si()).sum();
+        (s.shear_planes(l), covers)
+    };
+    let (planes, covers) = match leg {
+        Some(BoltedLeg::Short) => on(Some(CoverLeg::Short)),
+        Some(BoltedLeg::Both) => {
+            let (a, b) = (on(Some(CoverLeg::Long)), on(Some(CoverLeg::Short)));
+            if (b.0, b.1) < (a.0, a.1) { b } else { a }
+        }
+        _ => on(Some(CoverLeg::Long)),
+    };
+    Onto::Splice {
+        id: s.id.clone(),
+        planes,
+        covers,
+    }
+}
+
+/// The shear planes per bolt worked out from what the end bolts onto
+/// and where it sits: one per cover of a splice; one bolted directly
+/// onto a member or a plate (lapped, nested or not).
+pub fn worked_planes(onto: Option<&Onto>, face: Option<Face>) -> Option<(u32, String)> {
+    match onto? {
+        Onto::Splice { planes, .. } => Some((
+            *planes,
+            if *planes >= 2 {
+                format!("{planes} covers on the leg")
+            } else {
+                "one cover on the leg".into()
+            },
+        )),
+        Onto::Member(_) => Some((
+            1,
+            match face {
+                Some(Face::Nested) => "nested in what it bolts onto".into(),
+                _ => "lapped onto the member".into(),
+            },
+        )),
+        Onto::Plate { .. } => Some((1, "lapped onto the plate".into())),
+        Onto::Other(_) => None,
+    }
 }

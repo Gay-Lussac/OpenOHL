@@ -223,6 +223,16 @@ pub enum Onto {
         /// Its thickness, m.
         thickness: f64,
     },
+    /// A splice's covers at the joint (2026-11-05).
+    Splice {
+        /// Its id.
+        id: String,
+        /// The shear planes of a bolt through the member's leg bolted and
+        /// the covers on it (one per cover, at least one).
+        planes: u32,
+        /// The covers' thicknesses on that leg together, m.
+        covers: f64,
+    },
     /// Something not found at the joint (kept, not used).
     Other(String),
 }
@@ -286,6 +296,12 @@ pub struct EndDesign {
     /// bolts onto: [`ohl_structures::connections::shift_direction`]); the
     /// analysis takes it as a rigid end offset ([`crate::offsets`]).
     pub shift: Option<f64>,
+    /// Where it sits on what it bolts onto (none: outside).
+    pub face: Option<ohl_structures::connections::Face>,
+    /// The shear planes per bolt worked out from the plies the bolts pass
+    /// through, and why ("two covers on the leg"); the bolts' given
+    /// `shear_planes` wins.
+    pub planes: Option<(u32, String)>,
     /// What could not be used ("bolt M16: in no bolt library").
     pub notes: Vec<String>,
 }

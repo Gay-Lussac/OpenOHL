@@ -401,3 +401,55 @@ fn restraint_by_plate_and_by_stiffness() {
         Some("2 bolts onto L2 (I/L 0.83 of those it holds)")
     );
 }
+
+/// A splice at N2 with covers on both faces of the long leg: two shear
+/// planes per bolt, worked out (over the member's design data); one cover:
+/// one; given on the bolts: as given, the difference said.
+#[test]
+fn a_splice_gives_its_shear_planes() {
+    use crate::design::Onto;
+    let splice = |covers: &str, planes: &str| {
+        format!(
+            "[[splice]]\nid = \"S1\"\njoint = \"N2\"\nmembers = [\"D1\", \"L1\"]\n{covers}\
+             [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"S1\"\nleg = \"long\"\n\
+             bolts = {{ count = 2, diameter = \"16 mm\"{planes} }}\n"
+        )
+    };
+    let outer = "[[splice.cover]]\nface = \"outer\"\nleg = \"long\"\nthickness = \"8 mm\"\n";
+    let inner = "[[splice.cover]]\nface = \"inner\"\nleg = \"long\"\nthickness = \"6 mm\"\n";
+    let planes = |m: &Model| {
+        let d = &m.members[D1].design;
+        let mut notes = Vec::new();
+        let b = asce10::end_bolts(d, d.ends[1].as_ref(), &mut notes)
+            .unwrap()
+            .0;
+        (b.shear_planes, notes)
+    };
+    let m = model(
+        &splice(&format!("{outer}{inner}"), ""),
+        &BoltLibrary::default(),
+    );
+    let end = m.members[D1].design.ends[1].as_ref().unwrap();
+    match end.onto.as_ref().unwrap() {
+        Onto::Splice { planes, covers, .. } => {
+            assert_eq!(*planes, 2);
+            assert!((covers - 0.014).abs() < 1e-12);
+        }
+        o => panic!("{o:?}"),
+    }
+    assert_eq!(planes(&m).0, 2);
+    let m = model(&splice(outer, ""), &BoltLibrary::default());
+    assert_eq!(planes(&m).0, 1);
+    let m = model(
+        &splice(&format!("{outer}{inner}"), ", shear_planes = 1"),
+        &BoltLibrary::default(),
+    );
+    let (n, notes) = planes(&m);
+    assert_eq!(n, 1);
+    assert!(
+        notes
+            .iter()
+            .any(|x| x == "shear planes: 1 given (2 worked out: 2 covers on the leg)"),
+        "{notes:?}"
+    );
+}

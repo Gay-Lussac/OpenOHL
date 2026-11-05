@@ -13,13 +13,15 @@
 //! connections or plates.
 
 use ohl_structures::StructureType;
-use ohl_structures::connections::{CONNECTIONS_VERSION, MAX_GAUGE_LINES, WeldKind};
+use ohl_structures::connections::{
+    CONNECTIONS_VERSION, ConnectionKind, CoverFace, CoverLeg, MAX_GAUGE_LINES, WeldKind,
+};
 use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::edits::{array, next_id, raise_version};
 
 /// The fields of a connection a user gives (not its member and joint).
-pub const FIELDS: [&str; 15] = [
+pub const FIELDS: [&str; 16] = [
     "kind",
     "onto",
     "leg",
@@ -35,6 +37,7 @@ pub const FIELDS: [&str; 15] = [
     "eccentricity",
     "cut",
     "shift",
+    "face",
 ];
 
 /// The fields a preset or a copy to other members carries: all but
@@ -240,7 +243,7 @@ pub fn carried(doc: &DocumentMut, member: &str, joint: &str) -> Table {
 /// The fields of a member end's own fit, copied to the ends of the
 /// joints like it (not carried by presets and copies to other members:
 /// they depend on the joint's geometry).
-pub const END_FIT: [&str; 3] = ["cut", "shift", "rolled_edge"];
+pub const END_FIT: [&str; 4] = ["cut", "shift", "rolled_edge", "face"];
 
 /// `member`'s end at `joint`: its [`END_FIT`] fields as given.
 fn end_fit(doc: &DocumentMut, member: &str, joint: &str) -> Vec<(String, Item)> {
@@ -1153,4 +1156,196 @@ pub fn clear_plate_outline(doc: &mut DocumentMut, id: &str) -> Result<(), String
         .ok_or_else(|| format!("no plate {id}"))?;
     t.remove("outline");
     Ok(())
+}
+
+/// Makes `member` run on through `joint` into `onto` as one part (`on`),
+/// or bolted again (`!on`: the `continuous` kind removed): both ends
+/// written alike, any other `onto` and kind of theirs replaced. Refused
+/// when the two cannot be one part
+/// ([`StructureType::continuous_problem`]).
+pub fn set_continuous(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    member: &str,
+    joint: &str,
+    onto: &str,
+    on: bool,
+) -> Result<(), String> {
+    if on {
+        if let Some(why) = t.continuous_problem(member, onto, joint) {
+            return Err(why);
+        }
+        for (a, b) in [(member, onto), (onto, member)] {
+            let x = find_or_make(doc, a, joint);
+            x.insert(
+                "kind",
+                toml_edit::value(ConnectionKind::Continuous.as_str()),
+            );
+            x.insert("onto", toml_edit::value(b));
+        }
+    } else {
+        for (a, b) in [(member, onto), (onto, member)] {
+            if let Some(x) = find(doc, a, joint)
+                && x.get("kind").and_then(Item::as_str) == Some(ConnectionKind::Continuous.as_str())
+            {
+                x.remove("kind");
+                if x.get("onto").and_then(Item::as_str) == Some(b) {
+                    x.remove("onto");
+                }
+            }
+        }
+        tidy(doc);
+    }
+    Ok(())
+}
+
+/// The ids of the splices in the file.
+fn splice_ids(doc: &DocumentMut) -> Vec<String> {
+    doc.get("splice")
+        .and_then(Item::as_array_of_tables)
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t.get("id").and_then(Item::as_str).map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The splice `id`'s table.
+fn splice_table<'a>(doc: &'a mut DocumentMut, id: &str) -> Result<&'a mut Table, String> {
+    doc.get_mut("splice")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+        })
+        .ok_or_else(|| format!("no splice {id}"))
+}
+
+/// Adds a splice at `joint` joining `members`, with a cover `thickness`
+/// m thick on each face (outer and inner: two shear planes) of every leg
+/// (`legs`: an angle's long and short; empty: one flat part); each member
+/// end there bolts onto it (its `onto`). Its id (`S1`, `S2`…).
+pub fn add_splice(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    joint: &str,
+    members: &[String],
+    legs: &[CoverLeg],
+    thickness: f64,
+) -> String {
+    let taken: Vec<String> = t
+        .splices
+        .iter()
+        .map(|s| s.id.clone())
+        .chain(t.plates.iter().map(|p| p.id.clone()))
+        .chain(t.members.iter().map(|m| m.id.clone()))
+        .chain(splice_ids(doc))
+        .chain(plate_ids(doc))
+        .collect();
+    let id = match t.splices.last() {
+        Some(s) => next_id(taken.iter().map(String::as_str), &s.id),
+        None => crate::edits::fresh(taken.iter().map(String::as_str), "S1"),
+    };
+    let mut x = Table::new();
+    x.insert("id", toml_edit::value(id.clone()));
+    x.insert("joint", toml_edit::value(joint));
+    let mut list = toml_edit::Array::new();
+    for m in members {
+        list.push(m.as_str());
+    }
+    x.insert("members", toml_edit::value(list));
+    let mut covers = ArrayOfTables::new();
+    let legs: Vec<Option<CoverLeg>> = if legs.is_empty() {
+        vec![None]
+    } else {
+        legs.iter().copied().map(Some).collect()
+    };
+    for leg in legs {
+        for face in CoverFace::ALL {
+            let mut c = Table::new();
+            c.insert("face", toml_edit::value(face.as_str()));
+            if let Some(l) = leg {
+                c.insert("leg", toml_edit::value(l.as_str()));
+            }
+            c.insert("thickness", Item::Value(mm(thickness)));
+            covers.push(c);
+        }
+    }
+    x.insert("cover", Item::ArrayOfTables(covers));
+    array(doc, "splice").push(x);
+    for m in members {
+        find_or_make(doc, m, joint).insert("onto", toml_edit::value(id.as_str()));
+    }
+    raise_version(doc, i64::from(CONNECTIONS_VERSION));
+    id
+}
+
+/// Gives the cover of splice `id` on `face` of `leg` a thickness, m
+/// (made when missing), or removes it (`None`).
+pub fn set_cover(
+    doc: &mut DocumentMut,
+    id: &str,
+    face: CoverFace,
+    leg: Option<CoverLeg>,
+    thickness: Option<f64>,
+) -> Result<(), String> {
+    if thickness.is_some_and(|v| v <= 0.0 || !v.is_finite()) {
+        return Err("a cover's thickness above 0".into());
+    }
+    let s = splice_table(doc, id)?;
+    let is = |c: &Table| {
+        c.get("face").and_then(Item::as_str) == Some(face.as_str())
+            && c.get("leg").and_then(Item::as_str) == leg.map(CoverLeg::as_str)
+    };
+    if !s.contains_key("cover") {
+        s.insert("cover", Item::ArrayOfTables(ArrayOfTables::new()));
+    }
+    let covers = s
+        .get_mut("cover")
+        .and_then(Item::as_array_of_tables_mut)
+        .ok_or_else(|| format!("splice {id}: its covers unreadable"))?;
+    let at = covers.iter().position(&is);
+    match (thickness, at) {
+        (Some(v), Some(k)) => {
+            if let Some(c) = covers.get_mut(k) {
+                c.insert("thickness", Item::Value(mm(v)));
+            }
+        }
+        (Some(v), None) => {
+            let mut c = Table::new();
+            c.insert("face", toml_edit::value(face.as_str()));
+            if let Some(l) = leg {
+                c.insert("leg", toml_edit::value(l.as_str()));
+            }
+            c.insert("thickness", Item::Value(mm(v)));
+            covers.push(c);
+        }
+        (None, _) => covers.retain(|c| !is(c)),
+    }
+    if covers.is_empty() {
+        s.remove("cover");
+    }
+    Ok(())
+}
+
+/// Removes splice `id`; the connections onto it lose their `onto`.
+pub fn remove_splice(doc: &mut DocumentMut, id: &str) {
+    if let Some(a) = doc.get_mut("splice").and_then(Item::as_array_of_tables_mut) {
+        a.retain(|t| t.get("id").and_then(Item::as_str) != Some(id));
+        if a.is_empty() {
+            doc.remove("splice");
+        }
+    }
+    if let Some(a) = doc
+        .get_mut("connection")
+        .and_then(Item::as_array_of_tables_mut)
+    {
+        for t in a.iter_mut() {
+            if t.get("onto").and_then(Item::as_str) == Some(id) {
+                t.remove("onto");
+            }
+        }
+    }
+    tidy(doc);
 }

@@ -198,6 +198,12 @@ pub(crate) fn connections_going(
                 .filter(|p| joints.contains(&p.joint))
                 .map(|p| format!("plate {}", p.id)),
         )
+        .chain(
+            t.splices
+                .iter()
+                .filter(|p| joints.contains(&p.joint))
+                .map(|p| format!("splice {}", p.id)),
+        )
         .collect()
 }
 
@@ -223,8 +229,10 @@ pub fn remove(doc: &mut DocumentMut, r: &Removal) {
     }
 }
 
-/// The connections of `members` and at `joints` and the plates at
-/// `joints` removed; `onto` a member or plate removed dropped.
+/// The connections of `members` and at `joints` and the plates and
+/// splices at `joints` removed, `members` out of the splices left;
+/// `onto` a member, plate or splice removed dropped (a continuous end
+/// bolted again).
 pub(crate) fn remove_connections(doc: &mut DocumentMut, members: &[String], joints: &[String]) {
     let s = |t: &Table, f: &str| t.get(f).and_then(Item::as_str).map(str::to_owned);
     let mut plates_gone = Vec::new();
@@ -240,6 +248,23 @@ pub(crate) fn remove_connections(doc: &mut DocumentMut, members: &[String], join
             doc.remove("plate");
         }
     }
+    if let Some(a) = doc.get_mut("splice").and_then(Item::as_array_of_tables_mut) {
+        a.retain(|t| {
+            let gone = s(t, "joint").is_some_and(|j| joints.contains(&j));
+            if gone {
+                plates_gone.extend(s(t, "id"));
+            }
+            !gone
+        });
+        for t in a.iter_mut() {
+            if let Some(list) = t.get_mut("members").and_then(Item::as_array_mut) {
+                list.retain(|v| !v.as_str().is_some_and(|m| members.iter().any(|x| x == m)));
+            }
+        }
+        if a.is_empty() {
+            doc.remove("splice");
+        }
+    }
     if let Some(a) = doc
         .get_mut("connection")
         .and_then(Item::as_array_of_tables_mut)
@@ -251,6 +276,10 @@ pub(crate) fn remove_connections(doc: &mut DocumentMut, members: &[String], join
         for t in a.iter_mut() {
             if s(t, "onto").is_some_and(|o| members.contains(&o) || plates_gone.contains(&o)) {
                 t.remove("onto");
+                // One part with a member gone: bolted again.
+                if s(t, "kind").as_deref() == Some("continuous") {
+                    t.remove("kind");
+                }
             }
         }
         if a.is_empty() {

@@ -158,14 +158,14 @@ spacing = "50 mm"
 
 A file with design data is version 8 (an older program says it is newer); the structure application keeps them as written, and its member properties show them (one line; editing them there: not yet — edit the file, or import them).
 
-**Connections and plates** (version 9, 2026-11-02; built, in active development, not approved yet; [Joint details of towers](../development/joint-details.md), stage 1). Where a member's end says more than its design data — the two ends differ, or the end bolts onto a plate — a `[[connection]]` gives that end, and a `[[plate]]` a gusset plate at a joint. All optional; what a connection does not give comes from the member's `[member.design]` (the same at both ends). OHL-Structure shows each value as given, the member's, worked out, assumed or not given ([Joint details](structure-app.md#joint-details-towers)). **The checks do not read connections yet**: a file with them computes as one without.
+**Connections and plates** (version 9, 2026-11-02; built, in active development, not approved yet; [Joint details of towers](../development/joint-details.md), stage 1). Where a member's end says more than its design data — the two ends differ, or the end bolts onto a plate — a `[[connection]]` gives that end, and a `[[plate]]` a gusset plate at a joint. All optional; what a connection does not give comes from the member's `[member.design]` (the same at both ends). OHL-Structure shows each value as given, the member's, worked out, assumed or not given ([Joint details](structure-app.md#joint-details-towers)). The ASCE 10-97 check reads them since 2026-11-02 (each end's eccentricity, restraint, bolts and net section; [theory](../theory/joint-plates.md)); a file without connections computes as before.
 
 ```toml
 [[connection]]
 member = "D12"            # the member …
 joint = "N7"              # … at its end at this joint
-kind = "bolted"           # bolted (default) | welded | pinned | fixed
-onto = "L3"               # a member meeting at the joint, or a plate's id
+kind = "bolted"           # bolted (default) | welded | pinned | fixed | continuous
+onto = "L3"               # a member meeting at the joint, a plate's or a splice's id
 leg = "long"              # the angle's leg bolted: both | long | short | none
 bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm", grade = "8.8",
           shear_planes = 1, threads_in_shear = false }
@@ -188,6 +188,30 @@ edge_distance = "25 mm"
 # shift = "15 mm"         # the end moved sideways to fit (+ towards what it
 #                         #   bolts onto): its force passes beside the work
 #                         #   point, an eccentricity the analysis takes
+# face = "outside"        # where it sits on what it bolts onto (2026-11-05):
+#                         #   outside (default) | inside (the inside face of
+#                         #   its leg) | nested (an angle heel into heel
+#                         #   inside the other: a lap joint, one shear plane)
+
+[[connection]]            # one part through the joint (2026-11-05)
+member = "L1"
+joint = "N7"
+kind = "continuous"       # runs on into onto: no bolts
+onto = "L2"
+
+[[splice]]                # covers bolting members together (2026-11-05)
+id = "S1"                 # unique among splices, plates and members
+joint = "N7"
+members = ["L2", "L3"]    # each bolts onto it: its connection's onto = "S1"
+[[splice.cover]]          # one per face of a leg
+face = "outer"            # outer | inner
+leg = "long"              # long | short (an angle's); none: a flat part
+thickness = "8 mm"
+# material = "S355"; outline = [...]   # as a plate's
+[[splice.cover]]
+face = "inner"
+leg = "long"
+thickness = "8 mm"
 
 [[plate]]
 id = "G1"                 # unique among the plates, not a member's id
@@ -212,6 +236,8 @@ size = "6 mm"             # the fillet's throat a (SIA 263 6.3.2.6)
 length = "220 mm"         # none: the seam's length (one side)
 kind = "fillet"           # fillet (default) or full_penetration
 ```
+
+**Lap joints, splices and continuous members** (2026-11-05, still version 9; built, in active development, not approved yet; [proposal](../development/joint-details.md#lap-joints-double-covers-continuous-members-proposal-2026-11-05)). `face` says where a member end sits on the member it bolts onto: on the outside face of its leg (the default, as before), on the inside face, or nested — an angle heel into heel inside the other. A `[[splice]]` holds the covers of a joint bolting members together: per leg an `outer` and/or an `inner` cover. The bolts pass through the member's leg and the covers on it, **one shear plane per cover** — two covers, two planes — worked out and used by the bolt shear check over the member's design data (a `shear_planes` given on the bolts still wins; the difference is said). A cover given twice on the same face of a leg, a thickness of 0, or an id a plate or member has is refused; a splice whose joint or members are gone, or a connection onto a splice that does not join it, is said. `kind = "continuous"` makes a member run on through the joint into `onto` as **one part** (no bolts); given on either end it holds for both, unless the other end says otherwise. It holds only when the two are in line within 1° and have the same section, roll and reference; otherwise it is said and the end computes as a splice, as before. Deleting a joint deletes its splices; deleting a member takes it out of the splices and makes a member continuous with it bolted again.
 
 **A welded plate** (2026-11-04, still version 9) is several plates welded together so that every member bolting onto the joint reaches one of them. `welded_to` names the plates of the same joint a plate is welded to; it is read both ways (given on either plate) and through others (G3 welded to G2, G2 to G1: one welded plate of three). A plate welded to itself is refused; one welded to a plate not at its joint is said, not used. Files of 2026-11-03 gave a plate `kind = "welded"` (then: welded onto the joint's leg): still read, the joint's plates of that kind taken as one welded plate (one alone: a plain plate), said; OHL-Structure writes them as `welded_to` (the kind dropped) at the next welding change, and no longer writes `kind`.
 
