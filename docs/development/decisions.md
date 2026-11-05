@@ -17,7 +17,13 @@ line, which lets a falling trunk rotate on through a steep slope (a few
 hundred points on one steep connector span found by it only), the
 physical rule stays: the trunk sweeps down to its resting angle on the
 ground ([theory](../theory/lidar-analysis.md)) — marked there as not
-conservative against a rule ignoring the ground. The radial clearances'
+conservative against a rule ignoring the ground. Then (owner,
+2026-11-05: "for the tree falling part make a toggle in the model to
+ignore the ground and continue the rotation. this is switched off by
+default but can be added if decided"): `fall_through_ground` — the
+vegetation window's *the trunk turns on through the ground*, a rule
+file's `[vegetation]` key, `ohl … --fall-through-ground` — off by
+default. The radial clearances'
 swing arcs keep their 2 cm boundary spacing (`ARC_TOLERANCE`): coarser
 would make the arcs' ground check faster at the cost of precision.
 

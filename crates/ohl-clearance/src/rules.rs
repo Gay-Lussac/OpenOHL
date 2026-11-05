@@ -1103,6 +1103,7 @@ impl PresetCheck {
 /// classes = [42, 43]
 /// clearance = { by_voltage = [[110, "5 m"], [220, "7 m"], [380, "9 m"]] }
 /// root_ball = 0.05
+/// fall_through_ground = false
 /// fall_allowance = "2 m"
 /// max_base_ground_distance = "5 m"
 /// search_distance = "50 m"
@@ -1124,6 +1125,8 @@ pub struct VegetationPreset {
     pub fall_in: Option<bool>,
     /// Root-ball fraction k.
     pub root_ball: Option<f64>,
+    /// A falling trunk turns on through the ground (2026-11-05).
+    pub fall_through_ground: Option<bool>,
     /// Clearance allowance A of a falling tree (by voltage or not).
     pub fall_allowance: Option<Requirement>,
     /// Smallest tree height, m.
@@ -1166,6 +1169,10 @@ impl VegetationPreset {
             ("years", self.years.map(|v| format!("{v:?}"))),
             ("buffer", self.buffer.map(length)),
             ("root_ball", self.root_ball.map(|v| format!("{v:?}"))),
+            (
+                "fall_through_ground",
+                self.fall_through_ground.map(|v| v.to_string()),
+            ),
             ("min_tree_height", self.min_tree_height.map(length)),
             ("max_tree_height", self.max_tree_height.map(length)),
             (
@@ -1206,6 +1213,8 @@ struct RawVegetation {
     #[serde(default)]
     root_ball: Option<f64>,
     #[serde(default)]
+    fall_through_ground: Option<bool>,
+    #[serde(default)]
     fall_allowance: Option<RawRequirement>,
     #[serde(default)]
     min_tree_height: Option<Length>,
@@ -1238,6 +1247,7 @@ impl RawVegetation {
             buffer: len(self.buffer),
             fall_in: self.fall_in,
             root_ball: self.root_ball,
+            fall_through_ground: self.fall_through_ground,
             fall_allowance: self
                 .fall_allowance
                 .map(RawRequirement::resolve)

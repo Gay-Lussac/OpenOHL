@@ -145,6 +145,9 @@ pub struct Settings {
     pub fall_in: bool,
     /// Root-ball fraction k.
     pub root_ball: f64,
+    /// A falling trunk turns on through the ground (off: it rests on it;
+    /// 2026-11-05).
+    pub fall_through_ground: bool,
     /// Clearance allowance A of a falling tree (by voltage or not).
     pub allowance: Requirement,
     /// Smallest tree, m.
@@ -183,6 +186,7 @@ impl Default for Settings {
             buffer: p.buffer,
             fall_in: true,
             root_ball: p.root_ball,
+            fall_through_ground: p.fall_through_ground,
             allowance: Requirement::Fixed(p.fall_allowance),
             min_tree_height: p.min_tree_height,
             max_tree_height: p.max_tree_height,
@@ -218,6 +222,7 @@ impl Settings {
             buffer: self.buffer,
             fall_in: self.fall_in,
             root_ball: self.root_ball,
+            fall_through_ground: self.fall_through_ground,
             fall_allowance: largest(&self.allowance),
             min_tree_height: self.min_tree_height,
             max_tree_height: self.max_tree_height,
@@ -265,6 +270,9 @@ impl Settings {
         if let Some(d) = p.max_base_ground_distance {
             self.base_limit = (true, d);
         }
+        if let Some(f) = p.fall_through_ground {
+            self.fall_through_ground = f;
+        }
         if let Some(f) = p.fall_in {
             self.fall_in = f;
         }
@@ -290,6 +298,7 @@ impl Settings {
             "buffer": self.buffer,
             "fall_in": self.fall_in,
             "root_ball": self.root_ball,
+            "fall_through_ground": self.fall_through_ground,
             "fall_allowance": self.allowance.to_toml(),
             "min_tree_height": self.min_tree_height,
             "max_tree_height": self.max_tree_height,
@@ -365,6 +374,10 @@ impl Settings {
                     .and_then(Value::as_bool)
                     .unwrap_or(d.fall_in),
                 root_ball: num("root_ball", d.root_ball),
+                fall_through_ground: v
+                    .get("fall_through_ground")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(d.fall_through_ground),
                 allowance: req("fall_allowance", &d.allowance)?,
                 min_tree_height: num("min_tree_height", d.min_tree_height),
                 max_tree_height: num("max_tree_height", d.max_tree_height),
@@ -1419,6 +1432,16 @@ impl VegetationWindow {
             if let Some(r) = &v.fall_allowance {
                 rows.push(("allowance A".into(), r.to_string()));
             }
+            if let Some(f) = v.fall_through_ground {
+                rows.push((
+                    "falling trunk".into(),
+                    if f {
+                        "turns on through the ground".into()
+                    } else {
+                        "rests on the ground".into()
+                    },
+                ));
+            }
             for (k, x) in [
                 ("growth per year, m", v.growth_per_year),
                 ("years", v.years),
@@ -1666,6 +1689,17 @@ impl VegetationWindow {
                         "The tree turns about the edge of its root ball, k × h from its trunk.",
                         "h: the tree's height grown until the next cut. k = 0: it turns about \
                          its base. The sector it sweeps has radius √(h² + (k·h)²).",
+                    );
+                    ui.checkbox(
+                        &mut s.fall_through_ground,
+                        "the trunk turns on through the ground",
+                    )
+                    .on_hover_text(
+                        "Off (the default): a falling trunk rests on the ground — the sector \
+                         stops where the ground stops it. On: it turns on through the ground, \
+                         down to straight below its hinge, as some programs count it: more \
+                         trees found below a steep slope (wires lower than the tree bases); \
+                         nothing changes on level ground. No change in time.",
                     );
                     ui.horizontal(|ui| {
                         ui.label("allowance A");

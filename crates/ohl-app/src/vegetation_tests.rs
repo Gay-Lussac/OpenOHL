@@ -317,8 +317,8 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
     let trees = format!(
         "{head}[wind]\nsteps = true\nstep = \"100 Pa\"\n[vegetation]\nclasses = [42, 43]\n\
          clearance = {{ by_voltage = [[0, \"2.5 m\"], [220, \"7 m\"], [380, \"9 m\"]] }}\n\
-         root_ball = 0.05\nfall_allowance = \"2 m\"\nmax_base_ground_distance = \"5 m\"\n\
-         search_distance = \"50 m\"\n"
+         root_ball = 0.05\nfall_through_ground = true\nfall_allowance = \"2 m\"\n\
+         max_base_ground_distance = \"5 m\"\nsearch_distance = \"50 m\"\n"
     );
     let cases = "format = \"ohl-weather-cases\"\nversion = 1\n\
                  [[case]]\nname = \"max temperature\"\ndescription = \"maximum conductor temperature\"\n\
@@ -384,6 +384,8 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
         assert_eq!(s.clearance.at(380.0), Ok(9.0));
         assert_eq!(s.clearance.at(220.0), Ok(7.0));
         assert_eq!(s.root_ball, 0.05);
+        assert!(s.fall_through_ground, "the preset's switch taken");
+        assert!(s.params().fall_through_ground);
         assert_eq!(s.base_limit, (true, 5.0));
         assert_eq!(s.search, 50.0);
         assert!(s.steps.stepped && s.steps.step == 100.0);

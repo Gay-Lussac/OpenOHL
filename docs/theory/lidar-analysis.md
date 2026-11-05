@@ -429,8 +429,13 @@ ignores the ground** (owner's decision, 2026-11-05: kept). A tool that
 lets the trunk rotate on through the slope (as compared on a real line:
 another program's falling trees found a wire 2.4 m below the trees'
 bases, beside a steep slope) flags trees whose fall the ground would
-stop. OpenOHL keeps the physical stop: a tree does not fall through the
-ground.
+stop. OpenOHL keeps the physical stop by default: a tree does not fall
+through the ground. **An option** (2026-11-05, off by default, *the
+trunk turns on through the ground*; `fall_through_ground`) counts it as
+such programs do: \\( \theta_{\min} = -90° \\) whatever the ground, the
+trunk turning on down to straight below its hinge — on level ground
+nothing changes (the wires are above it), below a steep slope more trees
+are found.
 
 With \\( q = (\rho, \zeta) \\) in that plane (\\( \rho \\) its horizontal
 distance from \\( B \\), \\( \zeta \\) its height above \\( B \\)) and

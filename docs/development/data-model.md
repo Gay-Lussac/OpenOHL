@@ -1212,7 +1212,8 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   the vegetation and danger-tree check, each optional — `classes` (LiDAR
   class numbers), `clearance` and `fall_allowance` (a distance, a table
   by voltage or a formula, as `vertical`), `growth_per_year`, `years`,
-  `buffer`, `fall_in`, `root_ball`, `min_tree_height`, `max_tree_height`,
+  `buffer`, `fall_in`, `root_ball`, `fall_through_ground` (since
+  2026-11-05), `min_tree_height`, `max_tree_height`,
   `max_base_ground_distance`, `search_distance`, `swing_arc`, and since
   2026-10-21 `cases` (the weather cases the check runs in, names of the
   preset's cases with `*` `?`; written only when given); the wind
@@ -1435,7 +1436,9 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - **Danger trees** (2026-10-20; derived, never stored in the project):
   `ohl_clearance::vegetation::VegetationParams` — `clearance`,
   `growth_per_year`, `years`, `buffer` (b), `fall_in`, `root_ball` (k,
-  0 = as before), `fall_allowance` (A), `min_tree_height`,
+  0 = as before), `fall_through_ground` (2026-11-05, default false: the
+  trunk rests on the ground; true: it turns on to −90°), `fall_allowance`
+  (A), `min_tree_height`,
   `max_tree_height`, `max_base_ground_distance` (`Option`, m: a tree
   base only with a TIN vertex within it in plan; none = no limit), `keep`
   — all inputs of a run (command-line flags, the window's fields), not
@@ -2945,6 +2948,7 @@ danger trees", 2026-10-20; `ohl-app` `vegetation::saved`) keeps as
 case names), `clearance` and `fall_allowance` (as a rule file writes a
 distance: `"5 m"`, `{ by_voltage = … }`, `{ base = … }`),
 `growth_per_year`, `years`, `buffer`, `fall_in`, `root_ball`,
+`fall_through_ground` (since 2026-11-05; missing: false),
 `min_tree_height`, `max_tree_height`, `max_base_ground_distance` (null:
 no limit), `search_distance`, `swing_arc`, `band_margin` (m, since
 2026-10-21; absent in older runs: 0.15 m), `jumper_band_margin` (m,

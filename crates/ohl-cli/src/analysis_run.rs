@@ -199,6 +199,11 @@ pub struct VegetationArgs {
     /// base).
     #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_ROOT_BALL)]
     pub root_ball: f64,
+    /// A falling trunk turns on through the ground, down to straight
+    /// below its hinge, instead of resting on it (more trees found below
+    /// a steep slope; off by default).
+    #[arg(long)]
+    pub fall_through_ground: bool,
     /// Clearance allowance of a falling tree (flashover clearance,
     /// buffers): a distance, or by voltage as --clearance. Default 2 m.
     #[arg(long, value_parser = requirement)]
@@ -855,6 +860,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         buffer: a.buffer,
         fall_in: a.fall_in,
         root_ball: a.root_ball,
+        fall_through_ground: a.fall_through_ground,
         fall_allowance: fixed(&a.fall_allowance)
             .unwrap_or(ohl_clearance::vegetation::DEFAULT_FALL_ALLOWANCE),
         max_tree_height: a.max_tree_height,

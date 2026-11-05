@@ -319,6 +319,7 @@ the strings' maximum load is their own.
                               # or "5 m", or { base = …, per_kv = …, above_kv = … }
   fall_allowance = "2 m"      # A: the same forms
   root_ball = 0.05            # k
+  fall_through_ground = false # the trunk turns on through the ground (default false)
   max_base_ground_distance = "5 m"
   search_distance = "50 m"
   growth_per_year = "0.3 m"

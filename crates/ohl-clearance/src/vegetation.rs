@@ -79,6 +79,13 @@ pub struct VegetationParams {
     /// Clearance allowance A of a falling tree (flashover clearance,
     /// buffers), m (default [`DEFAULT_FALL_ALLOWANCE`]).
     pub fall_allowance: f64,
+    /// A falling trunk goes on turning through the ground (down to
+    /// straight below its hinge) instead of resting on it — as some
+    /// programs do (owner 2026-11-05: "a toggle in the model to ignore the
+    /// ground and continue the rotation … switched off by default"). On:
+    /// a larger sector, more trees found below a steep slope; off (the
+    /// default): the trunk rests on the ground.
+    pub fall_through_ground: bool,
     /// Points lower than this above the ground are not trees, m.
     pub min_tree_height: f64,
     /// The tallest tree looked for, m (how far from the wires bases are
@@ -136,6 +143,7 @@ impl Default for VegetationParams {
             fall_in: false,
             root_ball: DEFAULT_ROOT_BALL,
             fall_allowance: DEFAULT_FALL_ALLOWANCE,
+            fall_through_ground: false,
             min_tree_height: 2.0,
             max_tree_height: 40.0,
             max_base_ground_distance: Some(DEFAULT_MAX_BASE_GROUND_DISTANCE),
@@ -759,7 +767,7 @@ impl Fixed<'_> {
             };
             work.sectors += 1;
             let (rho, zeta, dir) = tree.plane(q);
-            let theta = tree.theta_min(ground, dir);
+            let theta = self.resting(tree, ground, dir);
             let value = if tree.in_sector(rho, zeta, theta) {
                 Fall {
                     margin: self.margin_from(tree, h, k, d),
@@ -785,6 +793,18 @@ impl Fixed<'_> {
     /// within [`CIRCLE_TOLERANCE`] of the best (the bound reported). A
     /// swing arc is taken by its circle value (**Conservative**: the
     /// ground's shelter is not credited on an arc).
+    /// The angle a falling tree's trunk rests at along `dir`: on the
+    /// ground ([`Tree::theta_min`]), or — the ground ignored
+    /// ([`VegetationParams::fall_through_ground`]) — straight below its
+    /// hinge, as where there is no ground.
+    fn resting(&self, tree: &Tree, ground: &Terrain, dir: [f64; 2]) -> f64 {
+        if self.params.fall_through_ground {
+            -std::f64::consts::FRAC_PI_2
+        } else {
+            tree.theta_min(ground, dir)
+        }
+    }
+
     fn sheltered_fall(&self, ground: &Terrain, tree: &Tree, k: usize) -> Fall {
         let shape = &self.geo.positions[k].shape;
         let a = self.allowance_of(k);
@@ -806,7 +826,7 @@ impl Fixed<'_> {
         };
         let f = |q: P3| {
             let (rho, zeta, dir) = tree.plane(q);
-            let theta = tree.theta_min(ground, dir);
+            let theta = self.resting(tree, ground, dir);
             tree.fall_distance(rho, zeta, theta)
         };
         let pts = &w.wire.points;
@@ -1429,6 +1449,65 @@ mod tests {
             "{got} {expect}"
         );
         assert!((expect + 4.0308).abs() < 1e-4);
+    }
+
+    /// A falling trunk on the ground or through it (2026-11-05): a 20 m
+    /// tree on a level plateau 30 m high, 12 m from the wire (at 20 m,
+    /// beyond the plateau's edge, which drops to 0 m 5 m from the wire).
+    /// Resting on the plateau, the trunk stays level at 30 m: 10 m above
+    /// the wire, clear. Turning on through the ground, it sweeps down to
+    /// the wire: from the base, √(12² + 10²) = 15.62 m < 20 m, it falls
+    /// in.
+    #[test]
+    fn a_trunk_through_the_ground_reaches_a_wire_below_a_plateau() {
+        let p = |x: f64, y: f64, z: f64| SurveyPoint {
+            x,
+            y,
+            z,
+            code: String::new(),
+            line: String::new(),
+        };
+        let ground = Terrain::from_points(
+            &[
+                p(-100.0, -100.0, 0.0),
+                p(400.0, -100.0, 0.0),
+                p(400.0, 0.0, 0.0),
+                p(-100.0, 0.0, 0.0),
+                p(-100.0, 5.0, 30.0),
+                p(400.0, 5.0, 30.0),
+                p(400.0, 100.0, 30.0),
+                p(-100.0, 100.0, 30.0),
+            ],
+            None,
+        )
+        .unwrap();
+        let run = |through: bool| {
+            let params = VegetationParams {
+                clearance: 4.0,
+                fall_in: true,
+                root_ball: 0.0,
+                fall_allowance: 0.0,
+                fall_through_ground: through,
+                ..plain()
+            };
+            let mut c = VegetationCheck::new(vec![level_wire()], &[5], params);
+            c.visit(Some(&ground), 150.0, 12.0, 50.0, 5);
+            c.finish().remove(0)
+        };
+        let rests = run(false);
+        assert_eq!(rests.fall_in, 0, "the plateau stops the trunk");
+        let through = run(true);
+        assert_eq!(through.fall_in, 1, "through the ground it reaches the wire");
+        let m = through.worst_fall.unwrap().fall_margin.unwrap();
+        let expect = 12f64.hypot(10.0) - 20.0;
+        assert!(
+            m <= expect + 1e-9 && expect - m <= CIRCLE_TOLERANCE,
+            "{m} {expect}"
+        );
+        assert!(
+            !VegetationParams::default().fall_through_ground,
+            "off by default"
+        );
     }
 
     /// The fall allowance A and the buffer b move the margins by their

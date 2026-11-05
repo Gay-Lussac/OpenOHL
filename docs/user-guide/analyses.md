@@ -342,7 +342,10 @@ span (in parallel on every core):
   grown, falls towards each wire point turning about the edge of its
   **root ball** — a hinge `--root-ball` × its height from the trunk
   (default 0.05; 0: about its base) — and rests on the ground along that
-  direction (a ridge between the tree and a low wire shelters it). A
+  direction (a ridge between the tree and a low wire shelters it);
+  `--fall-through-ground` (2026-11-05, off by default) lets the trunk turn
+  on through the ground instead, down to straight below its hinge, as
+  some programs count it (more trees found below a steep slope). A
   danger tree when the swept trunk comes nearer the wire's surface than
   `--fall-allowance` (default 2 m, e.g. the flashover clearance).
   `--max-tree-height` (40 m) is the tallest tree looked for.
@@ -485,7 +488,11 @@ wire with the three rings.
 
 **Trees falling in**; the **root-ball fraction k** (the hinge k·h from the
 trunk; default 0.05), the **allowance A** (default 2 m; one distance or by
-voltage like c), the **smallest and tallest tree** (2 and 40 m), the
+voltage like c), **the trunk turns on through the ground** (2026-11-05;
+off by default: the trunk rests on the ground; on: it turns on through
+it, down to straight below its hinge, as some programs count it — more
+trees found below a steep slope, nothing changes on level ground), the
+**smallest and tallest tree** (2 and 40 m), the
 **tree base's ground point** within a distance (ticked, 5 m: else no
 fall-in check for that point). Drawings: the falling tree (trunk, hinge
 at k·h, the sector it sweeps, A to the wire), the tree base and the
