@@ -144,7 +144,7 @@ pub struct StructureApp {
     rs: Option<egui_wgpu::RenderState>,
     /// What the view drew last (drawn again when it changes): the file's
     /// revision, what is picked, the options, the preview.
-    drawn: Option<(u64, Vec<Handle>, u64, usize)>,
+    drawn: Option<(u64, Vec<Handle>, u64, usize, u64)>,
     /// Changes when the libraries are read again (what is kept from them
     /// is worked out again).
     pub(crate) libs_stamp: u64,
@@ -210,6 +210,11 @@ pub struct StructureApp {
     pub usage_legend: bool,
     /// File › Export › Export options… is open.
     pub export_options: bool,
+    /// The members drawn by their profiles as the joint details place
+    /// them (View › Display options › Profiles as placed; on by default).
+    pub profiles: bool,
+    /// The members' solids for the 3D view ([`crate::solids`]).
+    pub solids: crate::solids::Solids,
 }
 
 impl StructureApp {
@@ -275,6 +280,8 @@ impl StructureApp {
             joint_colors: false,
             usage_legend: true,
             export_options: false,
+            profiles: true,
+            solids: Default::default(),
         }
     }
 
@@ -937,6 +944,12 @@ impl StructureApp {
         self.view.camera()
     }
 
+    /// The 3D view's camera set (tests).
+    #[cfg(test)]
+    pub fn set_view_camera(&mut self, c: ohl_render::Camera) {
+        self.view.set_camera(c);
+    }
+
     /// The joint under the pointer with the Link tool (tests).
     #[cfg(test)]
     pub fn view_link_hover(&self) -> Option<String> {
@@ -1154,11 +1167,35 @@ impl StructureApp {
         let shown = self.ext.shown.clone().filter(|n| t.extension(n).is_some());
         let revision = f.revision();
         let g = self.geometry_of(&t, revision, shown.clone());
+        // The members' steel as the joint details place it, and their
+        // colours by usage with results shown.
+        let solids = self.member_solids(ui.ctx());
+        let usage: Vec<(String, [u8; 4])> = if self.area == Area::Results {
+            self.results
+                .shown()
+                .map(|r| {
+                    r.members
+                        .iter()
+                        .map(|m| (m.id.clone(), crate::results_tab::usage_colour(m.usage)))
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let usage_key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            usage.hash(&mut h);
+            self.solids.generation.hash(&mut h);
+            self.profiles.hash(&mut h);
+            h.finish()
+        };
         let Some(f) = &mut self.file else {
             return;
         };
         // Drawn again when the file, what is picked, the compass, the
-        // preview or the extension shown change.
+        // preview, the extension shown, the solids or the usage change.
         let key = (
             f.revision(),
             self.selected.clone(),
@@ -1168,6 +1205,7 @@ impl StructureApp {
                 ^ (u64::from(self.joint_colors) << 2)
                 ^ (self.libs_stamp << 3),
             self.body.preview_stamp() ^ shown.as_ref().map_or(0, |n| n.len() + 1),
+            usage_key,
         );
         if self.drawn.as_ref() != Some(&key) {
             self.view.redraw();
@@ -1260,6 +1298,8 @@ impl StructureApp {
                 linkable: &linkable,
                 moments: &moments,
                 volumes: &volumes,
+                solids: &solids,
+                usage: &usage,
                 joint_colors: &joint_colors,
                 action: &mut action,
                 usage_legend: self.usage_legend

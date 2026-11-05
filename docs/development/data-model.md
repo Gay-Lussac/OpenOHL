@@ -1579,6 +1579,24 @@ growing by `GROWTH` (0.5) of the distance beyond, at most `MAX_PIECES`
 (40 000); sorted again and the mesh rebuilt only when the turn, tilt, zoom
 or pane changes.
 
+Member solids, 2026-11-05 (OHL-Structure, `ohl_structure_link::member_solids`,
+nothing stored; built, in active development, not approved yet): one
+builder for the Detail view's close-up and the 3D view —
+`section_at(arrival, profile, along)` (the profile's outline turned by
+its axes, moved by `Arrival::offset`, `along` m from the joint),
+`steel_start` (the cut), `prism_faces(near, far, outline, ey, ez) ->
+Vec<SolidFace { triangles, normal }>` (sides and the two ends, normals
+out), `ear_clip`; `member_solids(&JointDetails) -> Vec<MemberSolid {
+member, section, shaped, joints, work, cut, ends, faces }>` runs each
+member's section from the cut at its first joint to the cut at its
+second, each end's corners exactly the close-up's (two ends seated
+differently: the section moves linearly between them). `Profile::shaped`
+(false: a section of values only, a square of its area). The 3D view
+(`solids::Solids` in `StructureApp::solids`) keeps them per (file
+revision, libraries stamp): up to `AT_ONCE` (400) members at once, more
+on a thread of their own; a solid whose work points no longer match its
+member's (within 1 mm) is drawn as a stick.
+
 **Detail level** (`StructureType::detail`, never stored — an older
 `detail` key is read and ignored): 3 *full design* when `model` is given
 or `StructureType::missing_for_design` finds nothing: there are members,

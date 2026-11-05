@@ -62,6 +62,7 @@ mod results_tab;
 mod roll_ui;
 mod rows;
 mod section_editor;
+mod solids;
 mod start;
 mod style;
 mod tables;
@@ -107,6 +108,8 @@ mod results_ui_tests;
 mod section_editor_tests;
 #[cfg(test)]
 mod self_sufficient_tests;
+#[cfg(test)]
+mod solids_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

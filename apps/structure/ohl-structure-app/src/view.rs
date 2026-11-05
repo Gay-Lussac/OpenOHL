@@ -143,6 +143,9 @@ pub struct View {
     camera: Option<Camera>,
     renderer: Option<Renderer>,
     gpu: Option<GpuScene>,
+    /// The solids' levels of detail: near (edges, thin work lines), far
+    /// (work lines as before), and the typical profile's size, m.
+    levels: Option<(GpuScene, GpuScene, f64)>,
     texture: Option<egui::TextureId>,
     /// The scene needs building.
     dirty: bool,
@@ -193,6 +196,13 @@ pub struct ViewInput<'a> {
     pub moments: &'a [(String, String)],
     /// The volumes on the strings to draw (none: not shown).
     pub volumes: &'a [ohl_structure_link::VolumeMesh],
+    /// The members' steel as the joint details place them
+    /// ([`crate::solids`]; a member without one, or whose work line has
+    /// moved since, drawn as its work line).
+    pub solids: &'a [ohl_structure_link::MemberSolid],
+    /// The members' colours by usage, with results shown (empty: as
+    /// usual).
+    pub usage: &'a [(String, [u8; 4])],
     /// The joints' colours by their details (View › Joints by their
     /// details; empty: as usual).
     pub joint_colors: &'a [(String, [u8; 4])],
@@ -239,6 +249,12 @@ impl View {
     #[cfg(test)]
     pub fn camera(&self) -> Option<Camera> {
         self.camera
+    }
+
+    /// The camera set (tests).
+    #[cfg(test)]
+    pub fn set_camera(&mut self, c: Camera) {
+        self.camera = Some(c);
     }
 
     /// Where `p` (local axes) was drawn on the screen last (tests).
@@ -494,21 +510,35 @@ impl View {
         // Draw.
         let device = &rs.device;
         if self.dirty || self.gpu.is_none() {
-            self.gpu = Some(GpuScene::new(
-                device,
-                &scene(
-                    g,
-                    v.foot,
-                    v.selected,
-                    v.ahead,
-                    v.preview,
-                    v.volumes,
-                    v.joint_colors,
-                ),
+            let (main, levels) = scene(
+                g,
+                v.foot,
+                v.selected,
+                v.ahead,
+                v.preview,
+                v.volumes,
+                &Members {
+                    solids: v.solids,
+                    usage: v.usage,
+                },
+                v.joint_colors,
+            );
+            self.gpu = Some(GpuScene::new(device, &main));
+            self.levels = Some((
+                GpuScene::new(device, &levels.near),
+                GpuScene::new(device, &levels.far),
+                levels.size,
             ));
             self.dirty = false;
         }
         let camera = *self.camera.as_ref().expect("set above");
+        // The solids' level of detail, for the display only: their edges
+        // and thin work lines once a profile is a few pixels wide; else
+        // their work lines drawn as before (the steel too thin to see).
+        let near = self.levels.as_ref().map(|l| {
+            let mpp = camera.metres_per_pixel(f64::from(rect.height()));
+            l.2 / mpp >= NEAR_PIXELS
+        });
         self.last = Some((rect, camera));
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
@@ -526,6 +556,11 @@ impl View {
         let layers: Vec<&GpuScene> = self
             .gpu
             .iter()
+            .chain(
+                self.levels
+                    .as_ref()
+                    .map(|l| if near == Some(true) { &l.0 } else { &l.1 }),
+            )
             .chain(self.overlay.as_ref().map(|o| &o.1))
             .collect();
         let texture = renderer.render(device, &rs.queue, &layers, &camera, px);
@@ -594,6 +629,18 @@ impl View {
             usage_legend(&painter, rect);
         }
         self.buttons(ui, rect);
+        // A member under the pointer: how it is drawn.
+        let words = response
+            .hover_pos()
+            .filter(|_| self.drag.is_none() && linking.is_none() && !response.dragged())
+            .and_then(|p| match pick(g, &project, local(p), 12.0) {
+                Some(Handle::Member(id)) => Some(member_words(g, v.solids, &id)),
+                _ => None,
+            });
+        let response = match words {
+            Some(w) => response.on_hover_text_at_pointer(w),
+            None => response,
+        };
         Some(response)
     }
 
@@ -805,6 +852,7 @@ const HOTBAR_ROOM: f64 = 64.0;
 /// The scene: the ground at the feet (a 1 m grid), the axes, the compass,
 /// the sticks, members, strings, joints, points and wire points, and a
 /// generator's preview.
+#[allow(clippy::too_many_arguments)]
 fn scene(
     g: &Geometry,
     foot: f64,
@@ -812,9 +860,16 @@ fn scene(
     ahead: f64,
     preview: &[[[f64; 3]; 2]],
     volumes: &[ohl_structure_link::VolumeMesh],
+    members: &Members<'_>,
     joint_colors: &[(String, [u8; 4])],
-) -> Scene {
+) -> (Scene, Levels) {
     let mut s = Scene::new([0.0; 3]);
+    let mut levels = Levels {
+        near: Scene::new([0.0; 3]),
+        far: Scene::new([0.0; 3]),
+        size: 0.0,
+    };
+    let mut sizes: Vec<f64> = Vec::new();
     let extent = g
         .all()
         .map(|p| p[0].abs().max(p[1].abs()))
@@ -843,9 +898,17 @@ fn scene(
         s.polyline(l, POLE, 1.3);
     }
     let picked = |h: Handle| selected.contains(&h);
+    let solids = members.by_member();
+    let usage: std::collections::HashMap<&str, [u8; 4]> = members
+        .usage
+        .iter()
+        .map(|(m, c)| (m.as_str(), *c))
+        .collect();
     for (id, a, b, section) in &g.members {
         let c = if picked(Handle::Member(id.clone())) {
             PICKED
+        } else if let Some(u) = usage.get(id.as_str()) {
+            *u
         } else if g.extension.contains(id) {
             EXTENSION
         } else if *section {
@@ -853,7 +916,25 @@ fn scene(
         } else {
             BARE
         };
-        s.polyline(&[*a, *b], c, 1.8);
+        let fitting = solids.get(id.as_str()).filter(|m| fits(m, *a, *b));
+        // The solid's steel: the close-up's colour unless picked or
+        // coloured.
+        let c = if fitting.is_some() && c == STEEL {
+            SOLID_STEEL
+        } else {
+            c
+        };
+        match fitting {
+            // Its steel as placed; near, its edges and its work line thin
+            // through it; far, its work line as a stick.
+            Some(m) => {
+                solid(&mut s, &mut levels.near, m, c);
+                levels.near.polyline(&[*a, *b], shade(c, 0.55), 1.0);
+                levels.far.polyline(&[*a, *b], c, 1.8);
+                sizes.push(m.size());
+            }
+            None => s.polyline(&[*a, *b], c, 1.8),
+        }
     }
     for (_, a, b) in &g.strings {
         s.polyline(&[*a, *b], STRING, 2.5);
@@ -909,7 +990,150 @@ fn scene(
         };
         s.point(*p, c, 10.0);
     }
-    s
+    // The typical profile: the median of the solids' sizes.
+    sizes.sort_by(f64::total_cmp);
+    levels.size = sizes.get(sizes.len() / 2).copied().unwrap_or(0.0);
+    (s, levels)
+}
+
+/// The solids' levels of detail ([`scene`]): what is drawn near (their
+/// edges, thin work lines), what far (their work lines as sticks), and
+/// the typical profile's size, m.
+pub struct Levels {
+    /// Drawn near.
+    pub near: Scene,
+    /// Drawn far.
+    pub far: Scene,
+    /// The typical profile's size, m.
+    pub size: f64,
+}
+
+/// A profile this many pixels wide or more: the solids drawn with their
+/// edges (else their work lines as sticks over them).
+const NEAR_PIXELS: f64 = 4.0;
+
+/// The members' steel for the scene: the solids and the colours by
+/// usage.
+pub struct Members<'a> {
+    /// The solids ([`ohl_structure_link::member_solids`]).
+    pub solids: &'a [ohl_structure_link::MemberSolid],
+    /// The colours by usage (empty: none).
+    pub usage: &'a [(String, [u8; 4])],
+}
+
+impl Members<'_> {
+    fn by_member(&self) -> std::collections::HashMap<&str, &ohl_structure_link::MemberSolid> {
+        self.solids.iter().map(|m| (m.member.as_str(), m)).collect()
+    }
+}
+
+/// The scene of `g` with `solids` and the colours by `usage`, nothing
+/// picked, as drawn near: its lines, points and triangles (tests).
+#[cfg(test)]
+pub fn scene_for_tests(
+    g: &Geometry,
+    solids: &[ohl_structure_link::MemberSolid],
+    usage: &[(String, [u8; 4])],
+) -> (usize, usize, usize) {
+    let (s, l) = scene(g, 0.0, &[], 0.0, &[], &[], &Members { solids, usage }, &[]);
+    let (a, b) = (s.counts(), l.near.counts());
+    (a.0 + b.0, a.1 + b.1, a.2 + b.2)
+}
+
+/// The solid `m` still fits the member drawn from `a` to `b`: its work
+/// points where the member's ends are (within 1 mm; else the file has
+/// moved them since, or an extension is shown).
+fn fits(m: &ohl_structure_link::MemberSolid, a: [f64; 3], b: [f64; 3]) -> bool {
+    let near = |p: [f64; 3], q: [f64; 3]| (0..3).all(|k| (p[k] - q[k]).abs() <= 1e-3);
+    near(m.work[0], a) && near(m.work[1], b)
+}
+
+/// How member `id` is drawn, in words (its hover).
+fn member_words(g: &Geometry, solids: &[ohl_structure_link::MemberSolid], id: &str) -> String {
+    let Some((_, a, b, section)) = g.members.iter().find(|m| m.0 == id) else {
+        return id.to_owned();
+    };
+    match solids.iter().find(|m| m.member == id && fits(m, *a, *b)) {
+        Some(m) if m.shaped => format!(
+            "{id} — {}: its profile as the joint details place it (turned by its roll, \
+             seated on what it bolts onto), its steel stopping {:.0} and {:.0} mm short of \
+             its work points; the thin line is its work line",
+            m.section,
+            m.cut[0] * 1000.0,
+            m.cut[1] * 1000.0
+        ),
+        Some(m) => format!(
+            "{id} — {}: a section of values only (no shape), drawn as a square of its area \
+             as the joint details draw it",
+            m.section
+        ),
+        None if *section => format!(
+            "{id}: drawn as its work line (a stick) — its profile is not placed: Display \
+             options › Profiles as placed off, below level 3, an extension shown, or the joint \
+             details still being worked out"
+        ),
+        None => format!("{id}: no cross-section — drawn as its work line (a stick)"),
+    }
+}
+
+/// The lights on the solids, structure axes, and their shares: the main
+/// one from above, front right; a fill from behind left.
+const LIGHTS: [([f64; 3], f64); 2] = [([0.40, -0.55, 0.73], 0.42), ([-0.65, 0.55, 0.15], 0.18)];
+
+/// A solid's steel (its colour as the close-up's, when not picked or
+/// coloured by usage).
+const SOLID_STEEL: [u8; 4] = [170, 182, 200, 255];
+
+/// `c` darkened to `k` of it.
+fn shade(c: [u8; 4], k: f64) -> [u8; 4] {
+    let f = |v: u8| (f64::from(v) * k).round().clamp(0.0, 255.0) as u8;
+    [f(c[0]), f(c[1]), f(c[2]), c[3]]
+}
+
+/// The solid `m` in the scene, its faces shaded by the lights from `c`,
+/// its edges drawn as the close-up draws them: the ends' outlines and
+/// the corners along it (not between the flat sides of a round tube).
+fn solid(s: &mut Scene, edges: &mut Scene, m: &ohl_structure_link::MemberSolid, c: [u8; 4]) {
+    for f in &m.faces {
+        let mut k = 0.48;
+        for (l, share) in LIGHTS {
+            let n = (l[0] * l[0] + l[1] * l[1] + l[2] * l[2]).sqrt();
+            let lit: f64 = (0..3).map(|i| f.normal[i] * l[i] / n).sum();
+            k += share * lit.max(0.0) * 1.25;
+        }
+        let col = shade(c, k.min(1.0));
+        for (t, _) in &f.triangles {
+            s.triangle(*t, [col; 3]);
+        }
+    }
+    let edge = shade(c, 0.3);
+    let [near, far] = &m.ends;
+    let n = near.len();
+    if n < 3 || far.len() != n {
+        return;
+    }
+    for ring in [near, far] {
+        let mut l = ring.clone();
+        l.push(ring[0]);
+        edges.polyline(&l, edge, 1.0);
+    }
+    for i in 0..n {
+        let (a, b, c2) = (near[(i + n - 1) % n], near[i], near[(i + 1) % n]);
+        let u = [0, 1, 2].map(|k| b[k] - a[k]);
+        let v = [0, 1, 2].map(|k| c2[k] - b[k]);
+        let (lu, lv) = (
+            (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt(),
+            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt(),
+        );
+        if lu < 1e-12 || lv < 1e-12 {
+            continue;
+        }
+        let cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (lu * lv);
+        // A corner of 30° or more.
+        if cos < 0.866 {
+            edges.polyline(&[near[i], far[i]], edge, 1.0);
+        }
+    }
 }
 
 /// Where a plan angle as counted (clockwise, `ahead` meaning +y) points.
@@ -1026,6 +1250,11 @@ fn labels(
 mod tests {
     use super::*;
 
+    const NONE: Members<'static> = Members {
+        solids: &[],
+        usage: &[],
+    };
+
     /// The volumes on the strings are drawn as triangles of the scene, as
     /// many as their meshes hold.
     #[test]
@@ -1038,8 +1267,38 @@ mod tests {
             state: ohl_structures::ElectricalState::Electrified,
             triangles: vec![tri; 5],
         }];
-        let without = scene(&g, 0.0, &[], 0.0, &[], &[], &[]).counts().2;
-        let with = scene(&g, 0.0, &[], 0.0, &[], &v, &[]).counts().2;
+        let without = scene(&g, 0.0, &[], 0.0, &[], &[], &NONE, &[]).0.counts().2;
+        let with = scene(&g, 0.0, &[], 0.0, &[], &v, &NONE, &[]).0.counts().2;
         assert_eq!(with - without, 5);
+    }
+
+    /// A member's hover says how it is drawn: its profile as placed, a
+    /// square of a section of values, or a stick (and why).
+    #[test]
+    fn a_members_hover_says_how_it_is_drawn() {
+        let lib = ohl_structure_link::section_library(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../libraries/sections/example-sections.ohlsec"),
+        )
+        .unwrap();
+        let text = crate::joint_ui_tests::ANGLES;
+        let d = ohl_structure_link::joint_details(text, &lib, &Default::default()).unwrap();
+        let solids = ohl_structure_link::member_solids(&d);
+        let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+            std::path::Path::new("a.ohls"),
+            text,
+        )
+        .unwrap();
+        let g = ohl_structure_edit::geometry(&t, &Default::default());
+        let w = member_words(&g, &solids, "D1");
+        assert!(
+            w.contains("Unequal angle 83") && w.contains("as the joint details place it"),
+            "{w}"
+        );
+        let w = member_words(&g, &[], "D1");
+        assert!(w.contains("work line (a stick)"), "{w}");
+        let mut values = solids.clone();
+        values.iter_mut().for_each(|s| s.shaped = false);
+        assert!(member_words(&g, &values, "D1").contains("square of its area"));
     }
 }

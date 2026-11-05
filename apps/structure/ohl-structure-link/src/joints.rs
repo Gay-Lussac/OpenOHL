@@ -129,6 +129,9 @@ pub struct Profile {
     pub section: String,
     /// The section's id.
     pub section_id: String,
+    /// The outline is the section's shape (false: a section of values
+    /// only, drawn as a square of its area).
+    pub shaped: bool,
 }
 
 /// An angle's geometry around its centroid.
@@ -1809,6 +1812,7 @@ fn face(at: [f64; 3], d: [f64; 3], far: [f64; 3]) -> String {
 /// A member's profile from its axes and section.
 fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
     let [w, h] = s.size;
+    let mut shaped = true;
     // The lower left of the outline box from the centroid.
     let ll = [-(s.centroid[0] + w / 2.0), -(s.centroid[1] + h / 2.0)];
     let shift = |pts: Vec<[f64; 2]>| -> Vec<[f64; 2]> {
@@ -1864,6 +1868,7 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
         _ if w > 0.0 && h > 0.0 => (shift(vec![[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]), None),
         // Only values (a `[[section]]` table): a square of its area.
         _ => {
+            shaped = false;
             let a = s.area.max(1e-6).sqrt() / 2.0;
             (vec![[-a, -a], [a, -a], [a, a], [-a, a]], None)
         }
@@ -1874,6 +1879,7 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
         angle,
         section: s.name.clone(),
         section_id: s.id.clone(),
+        shaped,
     }
 }
 
