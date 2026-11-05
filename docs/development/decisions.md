@@ -10,6 +10,34 @@ of Parts A, B and C).
 
 ## 2026-11-05
 
+**Lap joints, double covers and continuous members** (owner, 2026-11-05:
+"have a profile slide into the other … and be directly bolted to the
+other … and also have the possibility to have 2 plates on each side of
+the profile … 2 shear planes", "also add the continuous … it's just one
+part", "go ahead with the development of stage 1 and further"). Built,
+in active development, not approved yet
+([proposal](joint-details.md#lap-joints-double-covers-continuous-members-proposal-2026-11-05),
+[theory](../theory/joint-laps-splices.md)). The open questions were
+taken by the proposed defaults (to be confirmed): angle in angle only;
+the nested inner heel ground to clear the outer root fillet; flat covers
+only; the covers sharing the force by area; continuous within 1° and of
+the same section, roll and reference, set by the user only (a command
+proposes the pairs, nothing sets it by itself). Decided on the way:
+
+- A continuous end is concentric but **not taken as restrained** from
+  the continuity (the panel beyond can buckle with it, ASCE 10-97
+  C3.7.4): on the safe side.
+- At an end **with connection data** bolted onto a member, the bolts'
+  bearing on that member's leg is checked too, the lower governing (ASCE
+  10-97 4.4; SIA 263 (76) with the member's own e_1, not on the safe side
+  where that leg ends nearer). This can lower the capacity of ends of
+  existing towers with connection data; towers without are unchanged.
+- The shear planes worked out from a splice's covers take precedence over
+  the member's design data; planes given on the bolts still win.
+- A nested end: in line and legs aligned within 5° (`NESTED_ANGLE_DEG`,
+  an assumption, said); the outer angle runs on past the work point to
+  hold the inner one's bolts.
+
 **Falling trees stop at the ground; the radial check keeps its precision**
 (owner, 2026-11-05: "Go ahead with trees until ground and keep precision
 for the radial"). After the comparison with another program on a real

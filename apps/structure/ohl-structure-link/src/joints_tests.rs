@@ -1104,7 +1104,7 @@ fn the_face_given_moves_the_member_to_it() {
 /// L1 and L2 spliced at N2 by 8 mm covers (outer and inner on the long
 /// leg, outer on the short), each bolting onto it by two 16 mm bolts on
 /// its long leg.
-const SPLICED: &str = r#"
+pub(crate) const SPLICED: &str = r#"
 [[splice]]
 id = "S1"
 joint = "N2"

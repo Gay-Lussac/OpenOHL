@@ -8,7 +8,8 @@
 //! `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`,
 //! `loads.csv`; and when the file has them (version 9) `connections.csv`,
 //! `plates.csv` and `splices.csv` (2026-11-05: one row per cover), the
-//! values as the file gives them.
+//! values as the file gives them; `parts.csv` (2026-11-05) the members
+//! joined by continuous ends, one row per piece of steel.
 
 use ohl_core::text::csv_field;
 use ohl_sections::Shape;
@@ -300,7 +301,30 @@ pub fn tables(s: &ExportStructure) -> Vec<(&'static str, String)> {
     if !s.splices.is_empty() {
         out.push(("splices.csv", splices(s)));
     }
+    if !s.parts.is_empty() {
+        out.push(("parts.csv", parts(s)));
+    }
     out
+}
+
+/// The parts of members joined by continuous ends: one row per piece of
+/// steel (2026-11-05).
+fn parts(s: &ExportStructure) -> String {
+    table(
+        &["part", "members", "joints", "length_m", "steel_length_m"],
+        s.parts
+            .iter()
+            .map(|p| {
+                vec![
+                    p.members.first().cloned().unwrap_or_default(),
+                    p.members.join(";"),
+                    p.joints.join(";"),
+                    num(p.length),
+                    num(p.steel),
+                ]
+            })
+            .collect(),
+    )
 }
 
 /// The splices as the file gives them: one row per cover (a splice

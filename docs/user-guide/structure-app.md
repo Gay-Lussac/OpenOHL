@@ -1474,7 +1474,7 @@ them, the IFC2x3 one too. Per joint an assembly named after the joint
 holds its bolts (each with its diameter, its length under the head, a
 head, a shank and a nut; property set `OHL_Fastener`: joint, member,
 end, grip, hole, grade, library bolt) and its plates (the outline
-extruded by the thickness; `OHL_Plate`, with `WeldedTo` for a plate of a welded plate). They are where the **Joint
+extruded by the thickness; `OHL_Plate`, with `WeldedTo` for a plate of a welded plate) and a splice's covers (2026-11-05: "splice cover", `OHL_Splice`); a member of a continuous part names its part (`OHL_Member.Part`), and the CSV export lists the parts (`parts.csv`) and the covers (`splices.csv`). They are where the **Joint
 view** draws them: a member bolted onto a leg or a plate is **seated** — its solid
 moved across so that its leg lies on the leg it bolts onto, as in the
 drawings — when its bolted ends agree on that shift; otherwise its solid

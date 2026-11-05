@@ -86,6 +86,9 @@ enum Plan {
         member: String,
         group: BoltGroup,
         steel: PlateSteel,
+        /// The share of the member's force this plate takes (1; a
+        /// splice's cover: its share by area).
+        share: f64,
     },
     Weld {
         with: String,
@@ -98,6 +101,8 @@ enum Plan {
     /// Two plates welded to each other that do not meet: no seam, not
     /// checked.
     NoSeam { with: String },
+    /// A member's bolts not placed in a cover: not checked (said).
+    Unplaced { member: String },
 }
 
 /// One planned part.
@@ -137,7 +142,7 @@ pub fn plate_plans(
 ) -> Result<PlatePlans, String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
-    if t.plates.is_empty() {
+    if t.plates.is_empty() && t.splices.is_empty() {
         return Ok(PlatePlans::default());
     }
     let details = crate::joint_details(text, library, bolts)?;
@@ -152,6 +157,7 @@ pub fn plate_plans(
         out.notes.push(plates::SIMPLE_NOT_CHECKED.into());
     }
     for j in &details.joints {
+        cover_plans(j, &model, library, &mut out.parts);
         for p in &j.plates {
             let (steel, steel_note) = plate_steel(p, j, &model, library);
             for a in j
@@ -161,7 +167,8 @@ pub fn plate_plans(
             {
                 let mut notes = Vec::new();
                 notes.extend(steel_note.clone());
-                let Some(group) = bolt_group(a, p, j, &model, steel, &mut notes) else {
+                let Some(group) = bolt_group(a, &p.id, &p.outline, j, &model, steel, &mut notes)
+                else {
                     continue;
                 };
                 if model
@@ -183,6 +190,7 @@ pub fn plate_plans(
                         member: a.member.clone(),
                         group,
                         steel,
+                        share: 1.0,
                     },
                     notes,
                 });
@@ -253,18 +261,99 @@ pub fn plate_plans(
     Ok(out)
 }
 
-/// A plate's thickness and steel: its material's, else (assumed) the
-/// weakest of the members bolted onto it, said.
-fn plate_steel(
-    p: &PlateDetail,
+/// The checks of a splice's covers at joint `j`: per member end bolting
+/// onto the splice, each cover on the leg it is bolted by checked as a
+/// plate is, for its share of the member's force by area — its thickness
+/// times its width across the member, over the covers' together
+/// (2026-11-05; an assumption, said: the covers taken as straining alike).
+fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &mut Vec<Planned>) {
+    for sp in &j.splices {
+        for a in j
+            .arrivals
+            .iter()
+            .filter(|a| a.onto.value.as_deref() == Some(sp.id.as_str()) && !a.modelling)
+        {
+            let leg = crate::joints::bolted_cover_leg(a);
+            let on: Vec<&crate::joints::CoverDetail> = sp
+                .covers
+                .iter()
+                .filter(|c| c.leg.is_none() || leg.is_none() || c.leg == leg)
+                .collect();
+            let mut planned = Vec::new();
+            for c in &on {
+                let name = format!("{} ({})", sp.id, c.words());
+                let (steel, steel_note) = material_steel(
+                    c.material.as_deref(),
+                    c.thickness,
+                    j,
+                    &sp.id,
+                    &name,
+                    model,
+                    library,
+                );
+                let mut notes: Vec<String> = steel_note.into_iter().collect();
+                let Some(group) = bolt_group(a, &name, &c.outline, j, model, steel, &mut notes)
+                else {
+                    out.push(Planned {
+                        joint: j.id.clone(),
+                        plate: name,
+                        plan: Plan::Unplaced {
+                            member: a.member.clone(),
+                        },
+                        notes,
+                    });
+                    continue;
+                };
+                // Its width across the member (the outline's extent).
+                let (_, across) = crate::joints::keep_axes(a);
+                let x: Vec<f64> = c.outline.iter().map(|q| dot(*q, across)).collect();
+                let width = x.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+                    - x.iter().copied().fold(f64::INFINITY, f64::min);
+                planned.push((name, group, steel, notes, width * c.thickness));
+            }
+            let total: f64 = planned.iter().map(|x| x.4).sum();
+            for (name, group, steel, mut notes, area) in planned {
+                let share = if total > 0.0 { area / total } else { 1.0 };
+                if on.len() > 1 {
+                    notes.push(format!(
+                        "{}: {:.0} % of {}'s force — shared between the covers by area (thickness \
+                         × width across the member; an assumption)",
+                        name,
+                        share * 100.0,
+                        a.member
+                    ));
+                }
+                out.push(Planned {
+                    joint: j.id.clone(),
+                    plate: name,
+                    plan: Plan::Bolted {
+                        member: a.member.clone(),
+                        group,
+                        steel,
+                        share,
+                    },
+                    notes,
+                });
+            }
+        }
+    }
+}
+
+/// A plate's or cover's steel: its material's, else (assumed) the
+/// weakest of the members bolting onto `onto`, said of `label`.
+fn material_steel(
+    material: Option<&str>,
+    thickness: f64,
     j: &JointDetail,
+    onto: &str,
+    label: &str,
     model: &Model,
     library: &SectionLibrary,
 ) -> (PlateSteel, Option<String>) {
-    if let Some(m) = p.material.as_deref().and_then(|id| library.material(id)) {
+    if let Some(m) = material.and_then(|id| library.material(id)) {
         return (
             PlateSteel {
-                thickness: p.thickness,
+                thickness,
                 fy: m.yield_strength,
                 fu: m.ultimate,
             },
@@ -276,7 +365,7 @@ fn plate_steel(
     for a in j
         .arrivals
         .iter()
-        .filter(|a| a.onto.value.as_deref() == Some(p.id.as_str()))
+        .filter(|a| a.onto.value.as_deref() == Some(onto))
     {
         if let Some(m) = model.members.iter().find(|m| m.id == a.member) {
             let s = &model.sections[m.section];
@@ -288,38 +377,50 @@ fn plate_steel(
             }
         }
     }
-    let note = match &p.material {
+    let note = match material {
         Some(m) => format!(
-            "plate {}: material {m} not in the library — the weakest steel of the members onto \
-             it (assumed)",
-            p.id
+            "{label}: material {m} not in the library — the weakest steel of the members onto \
+             it (assumed)"
         ),
         None => format!(
-            "plate {}: no material given — the weakest steel of the members onto it (assumed)",
-            p.id
+            "{label}: no material given — the weakest steel of the members onto it (assumed)"
         ),
     };
-    (
-        PlateSteel {
-            thickness: p.thickness,
-            fy,
-            fu,
-        },
-        Some(note),
+    (PlateSteel { thickness, fy, fu }, Some(note))
+}
+
+/// A plate's thickness and steel: its material's, else (assumed) the
+/// weakest of the members bolted onto it, said.
+fn plate_steel(
+    p: &PlateDetail,
+    j: &JointDetail,
+    model: &Model,
+    library: &SectionLibrary,
+) -> (PlateSteel, Option<String>) {
+    let label = format!("plate {}", p.id);
+    material_steel(
+        p.material.as_deref(),
+        p.thickness,
+        j,
+        &p.id,
+        &label,
+        model,
+        library,
     )
 }
 
 /// A member's bolt group in plate `p`, from its bolts where they are.
 fn bolt_group(
     a: &Arrival,
-    p: &PlateDetail,
+    id: &str,
+    outline: &[[f64; 3]],
     j: &JointDetail,
     model: &Model,
     steel: PlateSteel,
     notes: &mut Vec<String>,
 ) -> Option<BoltGroup> {
     let set = a.bolts.value.as_ref()?;
-    if a.bolt_points.is_empty() || p.outline.len() < 3 {
+    if a.bolt_points.is_empty() || outline.len() < 3 {
         notes.push(format!(
             "{}: its bolts not placed in the plate: not checked",
             a.member
@@ -365,7 +466,7 @@ fn bolt_group(
     let lo = lines.iter().map(|l| l.0).fold(f64::INFINITY, f64::min);
     let hi = lines.iter().map(|l| l.0).fold(f64::NEG_INFINITY, f64::max);
     let span = (hi - lo).max(0.0);
-    let ray = |q: &[f64; 3], d: [f64; 3]| ray_to_outline(&p.outline, *q, d);
+    let ray = |q: &[f64; 3], d: [f64; 3]| ray_to_outline(outline, *q, d);
     let least = |d: [f64; 3]| -> Option<f64> {
         let mut out: Option<f64> = None;
         for q in &a.bolt_points {
@@ -381,7 +482,7 @@ fn bolt_group(
         _ => None,
     };
     if end[0].is_none() || end[1].is_none() {
-        notes.push(format!("{}: a bolt lies outside plate {}", a.member, p.id));
+        notes.push(format!("{}: a bolt lies outside plate {id}", a.member));
     }
     // The width the net section crosses: the bolt group's width plus the
     // code's minimum edge distance each side (on the safe side: the
@@ -494,14 +595,20 @@ pub fn plate_usage(
                     member,
                     group,
                     steel,
+                    share,
                 } => {
-                    let n = axial.get(member).copied().unwrap_or(0.0);
+                    let n = axial.get(member).copied().unwrap_or(0.0) * share;
                     (
                         PlatePart::Member(member.clone()),
                         n,
                         plates::bolted(plans.method, group, steel, n),
                     )
                 }
+                Plan::Unplaced { member } => (
+                    PlatePart::Member(member.clone()),
+                    axial.get(member).copied().unwrap_or(0.0),
+                    plates::Checked::default(),
+                ),
                 Plan::NoSeam { with } => (
                     PlatePart::Weld(with.clone()),
                     0.0,

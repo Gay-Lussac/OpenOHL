@@ -960,6 +960,12 @@ fn member(
     if !m.check {
         values.push(("Check", "IFCBOOLEAN(.F.)".into()));
     }
+    // One part with others through continuous ends (2026-11-05): the
+    // part, named by its first member, and its members.
+    if let Some(p) = s.parts.iter().find(|p| p.members.contains(&m.id)) {
+        values.push(("Part", label(&p.members[0])));
+        values.push(("PartMembers", label(&p.members.join(", "))));
+    }
     properties(
         f,
         oh,
@@ -1256,8 +1262,13 @@ fn plate(
     let e = f.add(
         "IFCPLATE",
         &format!(
-            "{g},{oh},{},$,'gusset plate',{local},{shape},{}{}",
+            "{g},{oh},{},$,{},{local},{shape},{}{}",
             string(&p.id),
+            if p.cover.is_some() {
+                "'splice cover'"
+            } else {
+                "'gusset plate'"
+            },
             string(&p.id),
             if ifc4 { ",.NOTDEFINED." } else { "" }
         ),
@@ -1302,6 +1313,13 @@ fn plate(
             })
             .collect();
         values.push(("Welds", label(&words.join("; "))));
+    }
+    // A splice's cover (2026-11-05): its splice and its face and leg.
+    if let Some((splice, words)) = &p.cover {
+        values.push(("Splice", label(splice)));
+        values.push(("Cover", label(words)));
+        properties(f, oh, &key, std::slice::from_ref(&e), "OHL_Splice", &values);
+        return e;
     }
     properties(f, oh, &key, std::slice::from_ref(&e), "OHL_Plate", &values);
     e

@@ -226,6 +226,9 @@ pub struct ExportStructure {
     pub plates: Vec<ohl_structures::connections::TypePlate>,
     /// The splices (covers) as the file gives them (2026-11-05).
     pub splices: Vec<ohl_structures::connections::TypeSplice>,
+    /// The parts of members joined by continuous ends, one piece each
+    /// (2026-11-05, [`crate::part_chains`]; [`export_joints`]).
+    pub parts: Vec<crate::PartChain>,
     /// The bolts where the joint details put them ([`export_joints`]);
     /// empty when the file has no connection or plate.
     pub bolts: Vec<ExportBolt>,
@@ -308,6 +311,9 @@ pub struct ExportPlate {
     /// Its welds to the plates of its assembly listed after it (each seam
     /// once), with their size and length (2026-11-04).
     pub welds: Vec<crate::welds::Weld>,
+    /// A splice's cover (2026-11-05): the splice's id, its face and leg in
+    /// words ("outer, long leg"); none: a gusset plate.
+    pub cover: Option<(String, String)>,
 }
 
 fn add3(a: [f64; 3], b: [f64; 3], k: f64) -> [f64; 3] {
@@ -350,13 +356,14 @@ pub fn export_joints(
     library: &SectionLibrary,
     bolts: &ohl_structures::bolts::BoltLibrary,
 ) -> Result<(), String> {
-    if s.connections.is_empty() && s.plates.is_empty() {
+    if s.connections.is_empty() && s.plates.is_empty() && s.splices.is_empty() {
         return Ok(());
     }
     let d = crate::joint_details(text, library, bolts)?;
     if !d.level3 {
         return Ok(());
     }
+    s.parts = crate::part_chains(&d);
     // The shift of each end with bolts, per member.
     let mut shifts: BTreeMap<&str, Vec<[f64; 3]>> = BTreeMap::new();
     for j in &d.joints {
@@ -466,7 +473,44 @@ pub fn export_joints(
                 members: p.members.clone(),
                 assembly: p.assembly.clone(),
                 welds: p.welds.clone(),
+                cover: None,
             });
+        }
+        // The splices' covers (2026-11-05), each as a plate on its face of
+        // the leg, through its thickness away from the leg.
+        for sp in &j.splices {
+            for c in &sp.covers {
+                let (Some(normal), true) = (c.through, c.outline.len() >= 3) else {
+                    s.notes.push(format!(
+                        "splice {} at {}: its {} cover has no outline, left out of IFC",
+                        sp.id,
+                        j.id,
+                        c.words()
+                    ));
+                    continue;
+                };
+                let id = format!(
+                    "{}-{}{}",
+                    sp.id,
+                    c.face.as_str(),
+                    c.leg
+                        .map(|l| format!("-{}", l.as_str()))
+                        .unwrap_or_default()
+                );
+                s.joint_plates.push(ExportPlate {
+                    id: id.clone(),
+                    joint: j.id.clone(),
+                    thickness: c.thickness,
+                    material: c.material.clone(),
+                    outline: c.outline.clone(),
+                    normal,
+                    outline_given: c.outline_given,
+                    members: sp.bolted.clone(),
+                    assembly: vec![id],
+                    welds: Vec::new(),
+                    cover: Some((sp.id.clone(), c.words())),
+                });
+            }
         }
     }
     Ok(())

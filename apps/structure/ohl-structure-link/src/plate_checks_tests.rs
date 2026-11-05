@@ -106,3 +106,45 @@ fn asce10_has_no_weld_rule_and_simple_checks_nothing() {
             .all(|p| p.usage.is_none() && p.governs.contains("not checked"))
     );
 }
+
+/// A double cover splice (2026-11-05): each of L1's covers on its long
+/// leg is checked as a plate for its share of L1's force by area — the
+/// outer cover across the leg's 61 mm, the inner from the root's 15 mm,
+/// 46 mm (both 8 mm thick): 61/107 and 46/107 of it; the short leg's
+/// cover holds none of L1's bolts and is not checked for it.
+#[test]
+fn a_splices_covers_share_the_force_by_area() {
+    use crate::joints_tests::SPLICED;
+    let text = format!("{TOWER}{SPLICED}\n[analysis]\ncapacity = \"sia263-2013\"\n");
+    let plans = plate_plans(&text, &library(), &Default::default()).unwrap();
+    let mut axial = axial();
+    axial.insert("L1".into(), 100e3);
+    let u = plate_usage(&plans, &axial, 1.0);
+    let l1: Vec<_> = u
+        .iter()
+        .filter(|p| p.part == PlatePart::Member("L1".into()))
+        .collect();
+    assert_eq!(l1.len(), 2, "{l1:?}");
+    let outer = l1.iter().find(|p| p.plate.contains("outer")).unwrap();
+    let inner = l1.iter().find(|p| p.plate.contains("inner")).unwrap();
+    assert_eq!(outer.plate, "S1 (outer, long leg)");
+    assert!(
+        (outer.force - 100e3 * 61.0 / 107.0).abs() < 1.0,
+        "{}",
+        outer.force
+    );
+    assert!((outer.force + inner.force - 100e3).abs() < 1e-6);
+    assert!(outer.usage.is_some_and(|x| x > 0.0 && x < 1.0), "{outer:?}");
+    assert!(
+        outer.checks.iter().any(|x| x.0.contains("(76)")),
+        "{outer:?}"
+    );
+    assert!(
+        outer
+            .notes
+            .iter()
+            .any(|n| n.contains("shared between the covers by area")),
+        "{:?}",
+        outer.notes
+    );
+}

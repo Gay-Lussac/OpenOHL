@@ -95,6 +95,29 @@ At a continuous end:
 
 ## Covers
 
-The covers' own checks (bearing on the covers, their net section, block
-shear and end and edge distances, the force shared between the covers by
-area) follow with their geometry (stage 2 of the proposal).
+Each cover of a splice (`[[splice.cover]]`) lies on its face of the
+members' leg, its outline given or worked out round the bolts on that leg
+(`ohl_structure_link::joint_details`). Per member end bolting onto the
+splice, each cover on the leg it is bolted by is checked **as a gusset
+plate is** ([Gusset plates and their welds](joint-plates.md)): the bolts'
+bearing on the cover, its block shear round the bolt group, its section
+across the group, its end and edge distances
+(`plate_checks::cover_plans`, run with every case).
+
+**The force each cover takes.** The member's force is shared between the
+covers on that leg **by area**, each cover's thickness times its width
+across the member over the covers' together:
+
+\[ N_c = N\,rac{t_c\,b_c}{\sum_k t_k\,b_k} \]
+
+That is the share of covers straining alike (the same steel, the bolts
+in their holes): **an assumption**, said in the results. It is **not on
+the safe side** where the bolts' slip or the holes' clearance lets one
+cover take more before the other bears; the bolt shear itself is checked
+in the member's own check with every shear plane. An inner cover starts
+clear of the root (the leg's thickness plus its root radius), so it is
+narrower than the outer one and takes less: for an L 61 × 7 with 8 mm
+covers, 61 and 46 mm wide, 57 % and 43 %.
+
+A cover's steel is its material's; none given, the weakest of the
+members bolting onto the splice (assumed, said).

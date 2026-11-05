@@ -500,8 +500,10 @@ development of stage 1 and further".) Three cases, at level 3:
 1 (the data, `f7cfd96d`) and stage 3's member checks — the shear planes
 worked out, the bearing on the leg bolted onto (ASCE 10-97 4.4, SIA 263
 (76); at ends with a connection), a continuous end without connection
-checks ([theory](../theory/joint-laps-splices.md)). Open: the covers'
-own checks (with their geometry).
+checks ([theory](../theory/joint-laps-splices.md)); the covers' own
+checks as plates for their share of the force by area; the exports
+(`splices.csv`, `parts.csv`, a `face` column; IFC covers as `IfcPlate`
+with `OHL_Splice`, `OHL_Member.Part`/`PartMembers`).
 
 **Shear planes** are worked out from the plies the bolts pass through
 (given still wins, said when it differs). Stages: 1 the data (`face`,

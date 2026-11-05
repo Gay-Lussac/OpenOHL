@@ -1537,3 +1537,55 @@ fn a_welded_plate_in_ifc() {
     assert!(ifc.contains("'Welds'"), "no Welds");
     assert!(ifc.contains("fillet a 6 mm"), "no weld size");
 }
+
+/// A splice's covers in IFC (2026-11-05): each an `IfcPlate` described as
+/// a splice cover, with `OHL_Splice` naming its splice, face and leg.
+#[test]
+fn a_splices_covers_in_ifc() {
+    let text = format!(
+        "{TOWER}\n[[splice]]\nid = \"S1\"\njoint = \"N2\"\nmembers = [\"L1\", \"L2\"]\n\
+         [[splice.cover]]\nface = \"outer\"\nleg = \"long\"\nthickness = \"8 mm\"\n\
+         [[splice.cover]]\nface = \"inner\"\nleg = \"long\"\nthickness = \"8 mm\"\n\
+         \n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nonto = \"S1\"\nleg = \"long\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n\
+         \n[[connection]]\nmember = \"L2\"\njoint = \"N2\"\nonto = \"S1\"\nleg = \"long\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n"
+    );
+    let library = example_library();
+    let s = structure(&text, &library, &example_bolts(), None).unwrap();
+    let covers: Vec<_> = s
+        .joint_plates
+        .iter()
+        .filter(|p| p.cover.is_some())
+        .collect();
+    assert_eq!(covers.len(), 2, "{:?}", s.notes);
+    assert_eq!(covers[0].id, "S1-outer-long");
+    assert_eq!(covers[0].members, ["L1", "L2"]);
+    let ifc = ifc::ifc(&s, &IfcOptions::default()).unwrap();
+    assert!(ifc.contains("'splice cover'"));
+    assert!(ifc.contains("'OHL_Splice'"));
+    assert!(ifc.contains("IFCLABEL('outer, long leg')"));
+}
+
+/// L1 and L2 one part through N2 (2026-11-05): one row in parts.csv, and
+/// each member's `OHL_Member.Part` in IFC.
+#[test]
+fn a_continuous_part_in_the_exports() {
+    let text = format!(
+        "{TOWER}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\n\
+         onto = \"L2\"\n"
+    );
+    let library = example_library();
+    let s = structure(&text, &library, &example_bolts(), None).unwrap();
+    assert_eq!(s.parts.len(), 1, "{:?}", s.notes);
+    assert_eq!(s.parts[0].members, ["L1", "L2"]);
+    let t = csv::tables(&s);
+    let parts = &t.iter().find(|(x, _)| *x == "parts.csv").unwrap().1;
+    assert!(
+        parts.starts_with("part,members,joints,length_m,steel_length_m\nL1,L1;L2,N2,"),
+        "{parts}"
+    );
+    let ifc = ifc::ifc(&s, &IfcOptions::default()).unwrap();
+    assert!(ifc.contains("'PartMembers'"));
+    assert!(ifc.contains("IFCLABEL('L1, L2')"));
+}
