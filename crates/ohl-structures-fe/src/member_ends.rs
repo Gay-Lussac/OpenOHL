@@ -381,23 +381,27 @@ pub fn connected_leg(l: BoltedLeg) -> ConnectedLeg {
 }
 
 /// Holes in one cross-section from a connection's layout: its gauge lines
-/// (all in one section: staggering not counted, on the safe side), else
-/// the bolt points across the leg; never more than its bolts (none: no
-/// layout).
+/// (all in one section: staggering not counted, on the safe side; both
+/// legs bolted: on each leg, 2026-11-05), else the bolt points across
+/// each leg; never more than its bolts (none: no layout).
 fn holes_of(c: &TypeConnection) -> Option<u32> {
     let count = c.bolts.as_ref().map(|b| b.count);
+    let both = c.leg == Some(BoltedLeg::Both);
+    // Across a leg, to 0.1 mm.
+    let across = |points: &[[ohl_core::units::Length; 2]]| {
+        let mut x: Vec<i64> = points
+            .iter()
+            .map(|p| (p[1].si() * 1e4).round() as i64)
+            .collect();
+        x.sort_unstable();
+        x.dedup();
+        x.len() as u32
+    };
     let lines = match c.gauge_lines {
+        Some(n) if both => Some(2 * n),
         Some(n) => Some(n),
-        None if !c.bolt_points.is_empty() => {
-            // Across the leg, to 0.1 mm.
-            let mut across: Vec<i64> = c
-                .bolt_points
-                .iter()
-                .map(|p| (p[1].si() * 1e4).round() as i64)
-                .collect();
-            across.sort_unstable();
-            across.dedup();
-            Some(across.len() as u32)
+        None if !c.bolt_points.is_empty() || (both && !c.other_leg_points.is_empty()) => {
+            Some(across(&c.bolt_points) + if both { across(&c.other_leg_points) } else { 0 })
         }
         None => None,
     }?;

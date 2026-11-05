@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use eframe::egui;
-use ohl_structure_link::{MemberSolid, PlateSolid};
+use ohl_structure_link::{BoltSolid, MemberSolid, PlateSolid};
 
 use crate::app::StructureApp;
 
@@ -32,8 +32,9 @@ pub const AT_ONCE: usize = 400;
 /// What the solids were made for: (file revision, libraries stamp).
 type Key = (u64, u64);
 
-/// The members' and the plates' solids, as a thread sends them.
-type Made = (Vec<MemberSolid>, Vec<PlateSolid>);
+/// The members', the plates' and the bolts' solids, as a thread sends
+/// them.
+type Made = (Vec<MemberSolid>, Vec<PlateSolid>, Vec<BoltSolid>);
 
 /// The solids kept between frames.
 #[derive(Default)]
@@ -42,6 +43,8 @@ pub struct Solids {
     have: Option<(Key, Arc<Vec<MemberSolid>>)>,
     /// The plates' and covers' solids made with them.
     plates: Arc<Vec<PlateSolid>>,
+    /// The bolts' solids made with them.
+    bolts: Arc<Vec<BoltSolid>>,
     /// A thread working them out, for its key.
     pending: Option<(Key, mpsc::Receiver<Made>)>,
     /// How often new solids were taken (the view draws again then).
@@ -65,10 +68,10 @@ impl StructureApp {
         // revision: their work lines say where they still fit).
         if let Some((k, rx)) = &self.solids.pending {
             match rx.try_recv() {
-                Ok((s, p)) => {
+                Ok((s, p, b)) => {
                     let k = *k;
                     self.solids.pending = None;
-                    self.take(k, Arc::new(s), Arc::new(p));
+                    self.take(k, Arc::new(s), Arc::new(p), Arc::new(b));
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.solids.pending = None,
                 Err(mpsc::TryRecvError::Empty) => {}
@@ -83,15 +86,16 @@ impl StructureApp {
         // at once.
         let ready = matches!(self.joints.details_key(), Some(k) if k == key);
         if ready || members <= AT_ONCE {
-            let (s, p) = match self.joint_details().as_deref() {
+            let (s, p, b) = match self.joint_details().as_deref() {
                 Some(Ok(d)) => (
                     ohl_structure_link::member_solids(d),
                     ohl_structure_link::plate_solids(d),
+                    ohl_structure_link::bolt_solids(d),
                 ),
-                _ => (Vec::new(), Vec::new()),
+                _ => (Vec::new(), Vec::new(), Vec::new()),
             };
             let s = Arc::new(s);
-            self.take(key, s.clone(), Arc::new(p));
+            self.take(key, s.clone(), Arc::new(p), Arc::new(b));
             return s;
         }
         // A large one: on a thread, one at a time.
@@ -108,6 +112,7 @@ impl StructureApp {
                         (
                             ohl_structure_link::member_solids(&d),
                             ohl_structure_link::plate_solids(&d),
+                            ohl_structure_link::bolt_solids(&d),
                         )
                     })
                     .unwrap_or_default();
@@ -123,9 +128,16 @@ impl StructureApp {
             .unwrap_or_default()
     }
 
-    fn take(&mut self, key: Key, s: Arc<Vec<MemberSolid>>, p: Arc<Vec<PlateSolid>>) {
+    fn take(
+        &mut self,
+        key: Key,
+        s: Arc<Vec<MemberSolid>>,
+        p: Arc<Vec<PlateSolid>>,
+        b: Arc<Vec<BoltSolid>>,
+    ) {
         self.solids.have = Some((key, s));
         self.solids.plates = p;
+        self.solids.bolts = b;
         self.solids.generation += 1;
     }
 
@@ -137,6 +149,15 @@ impl StructureApp {
             return Arc::default();
         }
         self.solids.plates.clone()
+    }
+
+    /// The bolts' solids made with the members' last (none when Display
+    /// options › Profiles as placed is off).
+    pub(crate) fn bolt_solids(&self) -> Arc<Vec<BoltSolid>> {
+        if !self.profiles || self.file.is_none() {
+            return Arc::default();
+        }
+        self.solids.bolts.clone()
     }
 
     /// Waits until the solids of the file as it is are worked out (tests).

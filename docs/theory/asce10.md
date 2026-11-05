@@ -234,7 +234,9 @@ The tension capacity is the least, at the weaker end, of:
 - **net section** (3.10.1, 3.10.2): \\( (A' - n_h\,d_h\,t)\,f_y \\), times
   0.9 for an angle bolted by one leg (3.10.2). \\( n_h \\) is the number of
   holes in one cross-section (`holes`, or from the connection's gauge
-  lines or bolt points, not more than its bolts); \\( t \\) the thickness
+  lines or bolt points, not more than its bolts; both legs bolted, since
+  2026-11-05: the lines or points of each leg, both legs' holes in the
+  same cross-section); \\( t \\) the thickness
   of the connected leg; \\( A' \\) the gross area, for an unequal angle
   bolted by its short leg less \\( (b_{long} - b_{short})\,t \\) (3.10.2:
   its unconnected leg counted no larger than the connected one).
@@ -276,8 +278,8 @@ Without bolts the tension is on the gross section, \\( A f_y \\) (said: "no
 bolts given: connection not checked"). With bolts counted 0 (the holes
 only, the connection elsewhere) only the net section is checked.
 
-**Conservative:** with two gauge lines all holes are taken in one
-cross-section; the standard's chain rule (3.10.1: deduct the holes of a
+**Conservative:** with two gauge lines, or both legs bolted, all holes
+are taken in one cross-section; the standard's chain rule (3.10.1: deduct the holes of a
 zigzag chain and add \\( s^2/4g \\) per gauge space) can only give a larger
 net width.
 

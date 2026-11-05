@@ -137,6 +137,10 @@ struct Move {
     normal: [f64; 3],
 }
 
+/// What the bolts' scene was built from: the solids' generation and how
+/// many bolts.
+type BoltsKey = (u64, usize);
+
 /// The 3D view.
 #[derive(Default)]
 pub struct View {
@@ -146,6 +150,11 @@ pub struct View {
     /// The solids' levels of detail: near (edges, thin work lines), far
     /// (work lines as before), and the typical profile's size, m.
     levels: Option<(GpuScene, GpuScene, f64)>,
+    /// The bolts (2026-11-05), by the solids they were built from (not
+    /// built again on a pick: a bolt is never coloured), and the typical
+    /// bolt's diameter, m; drawn with the solids near, once a bolt is a
+    /// few pixels wide.
+    bolts: Option<(BoltsKey, GpuScene, f64)>,
     texture: Option<egui::TextureId>,
     /// The scene needs building.
     dirty: bool,
@@ -203,6 +212,11 @@ pub struct ViewInput<'a> {
     /// The plates and splices' covers as solids (2026-11-05), drawn with
     /// the members' solids.
     pub plates: &'a [ohl_structure_link::PlateSolid],
+    /// The bolts as solids (2026-11-05), drawn with the members' solids.
+    pub bolts: &'a [ohl_structure_link::BoltSolid],
+    /// The solids' generation the bolts were made in (their scene is
+    /// built again when it changes).
+    pub bolts_generation: u64,
     /// The members' colours by usage, with results shown (empty: as
     /// usual).
     pub usage: &'a [(String, [u8; 4])],
@@ -535,14 +549,25 @@ impl View {
             ));
             self.dirty = false;
         }
+        // The bolts: built once per solids (a pick leaves them).
+        let bolts_key = (v.bolts_generation, v.bolts.len());
+        if self.bolts.as_ref().is_none_or(|b| b.0 != bolts_key) {
+            self.bolts = (!v.bolts.is_empty()).then(|| {
+                let (scene, size) = bolt_scene(v.bolts);
+                (bolts_key, GpuScene::new(device, &scene), size)
+            });
+        }
         let camera = *self.camera.as_ref().expect("set above");
         // The solids' level of detail, for the display only: their edges
         // and thin work lines once a profile is a few pixels wide; else
         // their work lines drawn as before (the steel too thin to see).
-        let near = self.levels.as_ref().map(|l| {
-            let mpp = camera.metres_per_pixel(f64::from(rect.height()));
-            l.2 / mpp >= NEAR_PIXELS
-        });
+        let mpp = camera.metres_per_pixel(f64::from(rect.height()));
+        let near = self.levels.as_ref().map(|l| l.2 / mpp >= NEAR_PIXELS);
+        let bolts_seen = near == Some(true)
+            && self
+                .bolts
+                .as_ref()
+                .is_some_and(|b| b.2 / mpp >= BOLT_PIXELS);
         self.last = Some((rect, camera));
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
@@ -565,6 +590,7 @@ impl View {
                     .as_ref()
                     .map(|l| if near == Some(true) { &l.0 } else { &l.1 }),
             )
+            .chain(self.bolts.as_ref().filter(|_| bolts_seen).map(|b| &b.1))
             .chain(self.overlay.as_ref().map(|o| &o.1))
             .collect();
         let texture = renderer.render(device, &rs.queue, &layers, &camera, px);
@@ -1106,6 +1132,39 @@ const LIGHTS: [([f64; 3], f64); 2] = [([0.40, -0.55, 0.73], 0.42), ([-0.65, 0.55
 /// A solid's steel (its colour as the close-up's, when not picked or
 /// coloured by usage).
 const SOLID_STEEL: [u8; 4] = [170, 182, 200, 255];
+
+/// A bolt this many pixels wide or more: the bolts drawn.
+const BOLT_PIXELS: f64 = 3.0;
+
+/// The bolts' scene, shaded as the solids, and the typical bolt's
+/// diameter (the median), m.
+fn bolt_scene(bolts: &[ohl_structure_link::BoltSolid]) -> (Scene, f64) {
+    let mut s = Scene::new([0.0; 3]);
+    for b in bolts {
+        let c = if b.assumed { BOLT_ASSUMED } else { BOLT };
+        for f in &b.faces {
+            let mut k = 0.48;
+            for (l, share) in LIGHTS {
+                let n = (l[0] * l[0] + l[1] * l[1] + l[2] * l[2]).sqrt();
+                let lit: f64 = (0..3).map(|i| f.normal[i] * l[i] / n).sum();
+                k += share * lit.max(0.0) * 1.25;
+            }
+            let col = shade(c, k.min(1.0));
+            for (t, _) in &f.triangles {
+                s.triangle(*t, [col; 3]);
+            }
+        }
+    }
+    let mut d: Vec<f64> = bolts.iter().map(|b| b.diameter).collect();
+    d.sort_by(f64::total_cmp);
+    (s, d.get(d.len() / 2).copied().unwrap_or(0.0))
+}
+
+/// A bolt (the close-up's grey).
+const BOLT: [u8; 4] = [200, 202, 196, 255];
+
+/// A bolt of a layout partly assumed (the close-up's orange).
+const BOLT_ASSUMED: [u8; 4] = [235, 170, 60, 255];
 
 /// A gusset plate's solid (the close-up's blue).
 const PLATE: [u8; 4] = [70, 140, 210, 255];

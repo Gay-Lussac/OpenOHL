@@ -120,8 +120,8 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
     let bolts: Vec<[f64; 3]> = j
         .arrivals
         .iter()
-        .flat_map(|a| a.bolt_points.iter())
-        .map(|q| rel(*q))
+        .flat_map(|a| a.bolts_with_axes())
+        .map(|(q, _)| rel(q))
         .collect();
     // A lower bound of a triangle's distance to the nearest bolt: from its
     // middle, less its corners' reach from there.
@@ -296,9 +296,8 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         } else {
             [200, 202, 196, 255]
         };
-        for p in &a.bolt_points {
-            for (poly, part) in
-                ohl_structure_link::bolt_faces(*p, a.bolt_axis, b.diameter, a.grip, b.drawn)
+        for (p, axis) in a.bolts_with_axes() {
+            for (poly, part) in ohl_structure_link::bolt_faces(p, axis, b.diameter, a.grip, b.drawn)
             {
                 let poly: Vec<[f64; 3]> = poly.iter().map(|q| rel(*q)).collect();
                 if let Some(nv) = normal_of(&poly) {

@@ -444,9 +444,58 @@ development, not approved yet:
   rotation now, seen from the front as documented; turned and tilted it
   matches the 3D view's camera at yaw − 90°, pitch + 0.35 rad (tested).
 
-Open: plates and bolts are not in the 3D view (the close-up has them);
-OHL-Design's line view still draws the structures' members about their
-centroids (`ohl_structures_fe::drawn`), without the seat or the cut.
+Open: OHL-Design's line view still draws the structures' members about
+their centroids (`ohl_structures_fe::drawn`), without the seat or the
+cut. (Plates and covers are in the 3D view since stage 4 of the lap
+joints, bolts since the section below.)
+
+> **Owner:**
+
+### Seated without bolts, bolts on both legs, bolts in 3D — built 2026-11-05
+
+(Owner, 2026-11-05: "With the members please draw them at the right
+place in 3d also give the possibility to define on which surface of the
+member are the bolts we might need them on both side of a corner in
+some cases for joints".) Built, in active development, not approved
+yet:
+
+- **Seated without bolts.** A member end that bolts onto a member (given
+  or worked out) is seated on that member's leg whether or not it has
+  bolts (`joints::place_bolts`); before, an end without bolts was seated
+  only when its face was given, and was drawn on its work line through
+  the other member's steel. Not an end in line with the member it meets
+  (within 20°: a leg running on, one part or spliced, not lapped)
+  without bolts or a face given: it stays on its work line. Display only,
+  as before (the analysis takes the shift, not the seat).
+- **Bolts on both legs.** `leg = "both"` lays the layout on each leg of
+  the angle: the bolts shared (`count` the total; the leg lying on what
+  it bolts onto takes the odd one), the same gauge lines, pitch and end
+  distance, the gauges given measured from each leg's heel (assumed:
+  each leg divided evenly). `other_leg_points` gives the other leg's
+  bolts by hand, as `bolt_points` (then those of the leg on what it bolts
+  onto). `Arrival::{other_points, other_flat, other_axis}` and
+  `bolts_with_axes()`: the close-up, the joint sheet, the IFC export, the
+  splice covers' outlines (each cover round the bolts of its own leg)
+  and the 3D view take each bolt with its own axis. A bolt added, moved
+  or taken away in the face view (the leg on what it bolts onto) writes
+  the other leg's bolts as `other_leg_points`, so they stay.
+- **The check:** the holes in one cross-section count both legs' lines
+  (`member_ends::holes_of`; on the safe side: all in one section). The
+  bolt shear takes all the bolts, the end is concentric (both legs), as
+  before for `both`. Bearing onto a splice: the leg with fewer planes,
+  as before.
+- **Bolts in the 3D view** (`member_solids::bolt_solids`): every bolt as
+  the close-up draws it, grey (orange: a layout partly assumed), in a
+  scene of its own built once per solids (a pick does not build it
+  again: a real tower of 2244 members has 10 772 bolts, 0.9 million
+  triangles; a pick 7.1 ms per frame as without them), drawn near once
+  a typical bolt is 3 pixels wide.
+
+Open: the member view (the member laid flat) shows the leg on what it
+bolts onto only; the other leg's bolts are edited in the file
+(`other_leg_points`) or by the layout. A second leg bolting onto
+something else than the first (another member, a plate) is not modelled
+yet: both legs bolt onto `onto`.
 
 > **Owner:**
 

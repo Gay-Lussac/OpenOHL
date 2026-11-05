@@ -1172,6 +1172,7 @@ impl StructureApp {
         // colours by usage with results shown.
         let solids = self.member_solids(ui.ctx());
         let plates = self.plate_solids();
+        let bolts = self.bolt_solids();
         let usage: Vec<(String, [u8; 4])> = if self.area == Area::Results {
             self.results
                 .shown()
@@ -1302,6 +1303,8 @@ impl StructureApp {
                 volumes: &volumes,
                 solids: &solids,
                 plates: &plates,
+                bolts: &bolts,
+                bolts_generation: self.solids.generation,
                 usage: &usage,
                 joint_colors: &joint_colors,
                 action: &mut action,

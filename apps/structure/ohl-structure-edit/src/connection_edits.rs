@@ -21,7 +21,7 @@ use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 use crate::edits::{array, next_id, raise_version};
 
 /// The fields of a connection a user gives (not its member and joint).
-pub const FIELDS: [&str; 16] = [
+pub const FIELDS: [&str; 17] = [
     "kind",
     "onto",
     "leg",
@@ -32,6 +32,7 @@ pub const FIELDS: [&str; 16] = [
     "end_distance",
     "edge_distance",
     "bolt_points",
+    "other_leg_points",
     "eccentric",
     "restrained",
     "eccentricity",
@@ -348,15 +349,21 @@ pub fn copy_ends(doc: &mut DocumentMut, t: &StructureType, ends: &[CopyEnd]) -> 
         if let Some(o) = onto {
             target.insert("onto", toml_edit::value(o));
         }
-        if !c.bolt_points.is_empty() {
+        for (key, points) in [
+            ("bolt_points", &c.bolt_points),
+            ("other_leg_points", &c.other_leg_points),
+        ] {
+            if points.is_empty() {
+                continue;
+            }
             let mut a = toml_edit::Array::new();
-            for p in &c.bolt_points {
+            for p in points {
                 let mut q = toml_edit::Array::new();
                 q.push(mm(p[0].si()));
                 q.push(mm(p[1].si()));
                 a.push(Value::Array(q));
             }
-            target.insert("bolt_points", Item::Value(Value::Array(a)));
+            target.insert(key, Item::Value(Value::Array(a)));
         }
         tidy(doc);
     }
@@ -970,6 +977,7 @@ pub fn set_bolt_layout(doc: &mut DocumentMut, member: &str, joint: &str, l: &Bol
         }
     }
     t.remove("bolt_points");
+    t.remove("other_leg_points");
 }
 
 /// A preset of a connection: a name and its carried fields
@@ -1075,41 +1083,64 @@ pub fn presets_text(presets: &[Preset]) -> String {
 /// along the member from the joint, across its leg bolted from the heel,
 /// m) — a bolt added or taken away by hand; the layout's gauge lines,
 /// pitch and end distance go (the places are the bolts now), the bolts'
-/// count follows. `bolts`: the bolts' kind to write when the end gives
-/// none yet (its diameter: the member's or assumed; none: keep the
-/// end's). No places left: the end's bolts go.
+/// count follows. `other`: both legs bolted, the other leg's bolts as
+/// places too (`other_leg_points`, so the layout's bolts there stay;
+/// none: those given stay as they are). `bolts`: the bolts' kind to
+/// write when the end gives none yet (its diameter: the member's or
+/// assumed; none: keep the end's). No places left: the end's bolts go.
 pub fn set_bolt_points(
     doc: &mut DocumentMut,
     member: &str,
     joint: &str,
     points: &[[f64; 2]],
+    other: Option<&[[f64; 2]]>,
     bolts: Option<&FieldValue>,
 ) {
     let t = find_or_make(doc, member, joint);
     for k in ["gauge_lines", "gauges", "pitch", "end_distance"] {
         t.remove(k);
     }
+    let list = |points: &[[f64; 2]]| {
+        let mut a = toml_edit::Array::new();
+        for p in points {
+            let mut q = toml_edit::Array::new();
+            q.push(mm(p[0]));
+            q.push(mm(p[1]));
+            a.push(Value::Array(q));
+        }
+        Item::Value(Value::Array(a))
+    };
+    match other {
+        Some([]) => {
+            t.remove("other_leg_points");
+        }
+        Some(o) => {
+            t.insert("other_leg_points", list(o));
+        }
+        None => {}
+    }
+    let others = t
+        .get("other_leg_points")
+        .and_then(Item::as_array)
+        .map_or(0, toml_edit::Array::len);
     if points.is_empty() {
         t.remove("bolt_points");
+    } else {
+        t.insert("bolt_points", list(points));
+    }
+    let count = points.len() + others;
+    if count == 0 {
         t.remove("bolts");
         tidy(doc);
         return;
     }
-    let mut a = toml_edit::Array::new();
-    for p in points {
-        let mut q = toml_edit::Array::new();
-        q.push(mm(p[0]));
-        q.push(mm(p[1]));
-        a.push(Value::Array(q));
-    }
-    t.insert("bolt_points", Item::Value(Value::Array(a)));
     if let Some(b) = bolts.filter(|_| t.get("bolts").is_none()) {
         t.insert("bolts", Item::Value(b.value()));
     }
     if let Some(b) = t.get_mut("bolts").and_then(Item::as_inline_table_mut) {
-        b.insert("count", Value::from(points.len() as i64));
+        b.insert("count", Value::from(count as i64));
     } else if let Some(b) = t.get_mut("bolts").and_then(Item::as_table_mut) {
-        b.insert("count", toml_edit::value(points.len() as i64));
+        b.insert("count", toml_edit::value(count as i64));
     }
 }
 

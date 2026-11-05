@@ -238,6 +238,18 @@ pub struct Arrival {
     /// Its bolts flat: along it from the joint and across its leg bolted
     /// from the heel, m (the same order as `bolt_points`).
     pub bolt_flat: Vec<[f64; 2]>,
+    /// Both legs bolted (`leg = "both"`, 2026-11-05): the bolts on its
+    /// other leg (the one not on what it bolts onto) where they are
+    /// (structure's axes, m), through that leg along `other_axis`; none
+    /// with one leg bolted. `bolt_points` and `bolt_flat` stay those of
+    /// the leg bolted (the one the face view shows and edits).
+    pub other_points: Vec<[f64; 3]>,
+    /// The other leg's bolts flat: along it from the joint and across
+    /// that leg from the heel, m (the order of `other_points`).
+    pub other_flat: Vec<[f64; 2]>,
+    /// The other leg's bolts' axis: normal to that leg, towards its own
+    /// side (where the heads are).
+    pub other_axis: [f64; 3],
     /// A modelling member (`check = false`).
     pub modelling: bool,
     /// Its leg bolted against the face it bolts onto (a plate's, a leg's
@@ -261,6 +273,17 @@ pub struct Arrival {
     pub misfit: bool,
     /// Notes on it ("one end eccentric, which not said"…).
     pub notes: Vec<String>,
+}
+
+impl Arrival {
+    /// Every bolt of this end where it is with its axis: those of the leg
+    /// bolted, then (both legs bolted) the other leg's.
+    pub fn bolts_with_axes(&self) -> impl Iterator<Item = ([f64; 3], [f64; 3])> + '_ {
+        self.bolt_points
+            .iter()
+            .map(|p| (*p, self.bolt_axis))
+            .chain(self.other_points.iter().map(|p| (*p, self.other_axis)))
+    }
 }
 
 /// How complete a joint's details are.
@@ -551,6 +574,9 @@ pub fn joint_details(
                 cut: Valued::none(),
                 shift: (0.0, None),
                 bolt_flat: Vec::new(),
+                other_points: Vec::new(),
+                other_flat: Vec::new(),
+                other_axis: [0.0, 1.0, 0.0],
                 modelling: design.is_some_and(|(_, _, check)| !check),
                 flat: None,
                 sits: Valued::none(),
@@ -1712,26 +1738,28 @@ fn place_bolts(
         _ => {}
     }
     let shifted = scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0);
-    let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
-        // No bolts: still drawn shifted (and nested or on the face given).
-        a.offset = match seated {
-            Some(s) if given_face.is_some() => add(s, shifted),
-            _ => shifted,
-        };
-        return;
-    };
-    let Some(g) = p.angle else {
-        return;
-    };
-    let along_y = a.leg_y;
+    // Seated on what it bolts onto, bolts or not (owner 2026-11-05: "draw
+    // them at the right place in 3d"; before, an end without bolts was
+    // seated only on a face given), and shifted. Without bolts and in
+    // line with the member it meets (a leg running on: one part or
+    // spliced, not lapped), only on a face given.
+    let in_line = onto_member.is_some_and(|o| angle_between(a.direction, o.direction) < 20.0);
+    let lapped = a.bolts.value.is_some() || given_face.is_some() || !in_line;
     a.offset = add(
-        if host {
+        if host || !lapped {
             [0.0; 3]
         } else {
             seated.unwrap_or_else(|| seat(a, joint, all, seats))
         },
         shifted,
     );
+    let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
+        return;
+    };
+    let Some(g) = p.angle else {
+        return;
+    };
+    let along_y = a.leg_y;
     if host {
         // Its bolts at this joint are those of the member nested in it.
         a.notes.push(format!(
@@ -1759,39 +1787,80 @@ fn place_bolts(
         }
         q
     };
-    let given: Vec<[f64; 2]> = c
-        .map(|c| {
-            c.bolt_points
-                .iter()
-                .map(|p| [p[0].si(), p[1].si()])
-                .collect()
-        })
-        .unwrap_or_default();
-    let flat: Vec<[f64; 2]> = if !given.is_empty() {
-        given
-    } else {
-        let gauges = a.gauges.value.clone().unwrap_or_default();
-        let (Some(pitch), Some(end)) = (a.pitch.value, a.end_distance.value) else {
-            return;
+    // Both legs bolted: the other leg's bolts too, through that leg (its
+    // normal, towards its own side), on its outer face.
+    let both = a.leg.value == Some(BoltedLeg::Both);
+    let no = if along_y { ey } else { ez };
+    a.other_axis = no;
+    let at_other = |s: f64, across: f64| {
+        let (y, z) = if along_y {
+            (g.heel[0], g.heel[1] + across)
+        } else {
+            (g.heel[0] + across, g.heel[1])
         };
-        if gauges.is_empty() {
-            return;
+        let mut q = joint;
+        for k in 0..3 {
+            q[k] += a.direction[k] * s + ey[k] * y + ez[k] * z;
         }
-        let lines = gauges.len() as u32;
-        (0..b.count)
-            .map(|k| {
-                let line = (k % lines) as usize;
-                let row = (k / lines) as f64;
-                // Every second line staggered by half a pitch (two lines:
-                // the second; three: the middle one).
-                let stagger = if line % 2 == 1 { pitch / 2.0 } else { 0.0 };
-                // From the steel's end, where the member stops.
-                [cut + end + row * pitch + stagger, gauges[line]]
-            })
-            .collect()
+        q
     };
+    let read = |l: &[[ohl_core::units::Length; 2]]| -> Vec<[f64; 2]> {
+        l.iter().map(|p| [p[0].si(), p[1].si()]).collect()
+    };
+    let given = c.map(|c| read(&c.bolt_points)).unwrap_or_default();
+    let given_other = c
+        .filter(|_| both)
+        .map(|c| read(&c.other_leg_points))
+        .unwrap_or_default();
+    let (flat, other): (Vec<[f64; 2]>, Vec<[f64; 2]>) =
+        if !given.is_empty() || !given_other.is_empty() {
+            (given, given_other)
+        } else {
+            let gauges = a.gauges.value.clone().unwrap_or_default();
+            let (Some(pitch), Some(end)) = (a.pitch.value, a.end_distance.value) else {
+                return;
+            };
+            if gauges.is_empty() {
+                return;
+            }
+            let lines = gauges.len() as u32;
+            let layout = |count: u32, gauges: &[f64]| -> Vec<[f64; 2]> {
+                (0..count)
+                    .map(|k| {
+                        let line = (k % lines) as usize;
+                        let row = (k / lines) as f64;
+                        // Every second line staggered by half a pitch (two
+                        // lines: the second; three: the middle one).
+                        let stagger = if line % 2 == 1 { pitch / 2.0 } else { 0.0 };
+                        // From the steel's end, where the member stops.
+                        [cut + end + row * pitch + stagger, gauges[line]]
+                    })
+                    .collect()
+            };
+            if both {
+                // Shared: the leg on what it bolts onto first. The gauges
+                // given are each leg's from the heel; assumed: the other
+                // leg divided evenly as well.
+                let other_gauges: Vec<f64> = if a.gauges.source == Source::Given {
+                    gauges.clone()
+                } else {
+                    let w = if along_y { g.h } else { g.b };
+                    (1..=lines)
+                        .map(|k| w * f64::from(k) / (f64::from(lines) + 1.0))
+                        .collect()
+                };
+                (
+                    layout(b.count.div_ceil(2), &gauges),
+                    layout(b.count / 2, &other_gauges),
+                )
+            } else {
+                (layout(b.count, &gauges), Vec::new())
+            }
+        };
     a.bolt_points = flat.iter().map(|q| at(q[0], q[1])).collect();
     a.bolt_flat = flat;
+    a.other_points = other.iter().map(|q| at_other(q[0], q[1])).collect();
+    a.other_flat = other;
 }
 
 /// Where `a`'s steel must stop so it fits, m from the work point: its leg
@@ -2255,9 +2324,16 @@ fn cover(
             CoverFace::Outer => 0.0,
             CoverFace::Inner => g.t + g.r,
         };
-        let mine = a.leg_y == leg_y && !a.bolt_flat.is_empty();
+        // Its bolts on that leg (both legs bolted: the other leg's on a
+        // cover of the other leg).
+        let on_leg = if a.leg_y == leg_y {
+            &a.bolt_flat
+        } else {
+            &a.other_flat
+        };
+        let mine = !on_leg.is_empty();
         let (k, words) = keep(a, &|x| rules(x, c));
-        let (lo, hi) = if a.bolt_flat.is_empty() {
+        let (lo, hi) = if on_leg.is_empty() {
             (0.0, 0.15)
         } else {
             let lo = a
@@ -2283,7 +2359,7 @@ fn cover(
             // Round each bolt the distances it keeps (across: not past the
             // heel, an inner cover not into the root).
             let mut near_root = false;
-            for q in &a.bolt_flat {
+            for q in on_leg {
                 for i in 0..16 {
                     let t = i as f64 * std::f64::consts::TAU / 16.0;
                     let grow = 1.0 / (std::f64::consts::PI / 16.0).cos();

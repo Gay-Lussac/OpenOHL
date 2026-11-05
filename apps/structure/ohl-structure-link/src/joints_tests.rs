@@ -1248,3 +1248,117 @@ fn a_continuous_member_is_one_part() {
     assert!(at(&d, "N2", "D1").continuous.is_none());
     assert!(crate::part_chains(&d).is_empty());
 }
+
+/// A member end without bolts is seated on what it bolts onto as one
+/// with bolts is (owner 2026-11-05: "draw them at the right place in
+/// 3d"): the diagonal at N2 sits on the leg's face, not on its work line.
+#[test]
+fn an_end_without_bolts_is_seated_on_what_it_bolts_onto() {
+    let bolted = joint_details(TOWER, &library(), &Default::default()).unwrap();
+    let bare = TOWER.replace(
+        r#"design = { class = "bracing", bolts = { diameter = "16 mm", count = 1 } }"#,
+        r#"design = { class = "bracing" }"#,
+    );
+    let none = joint_details(&bare, &library(), &Default::default()).unwrap();
+    let at = |d: &crate::JointDetails| {
+        d.joint("N2")
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == "D1")
+            .unwrap()
+            .clone()
+    };
+    let (a, b) = (at(&bolted), at(&none));
+    assert!(a.bolts.value.is_some() && b.bolts.value.is_none());
+    let size = (0..3)
+        .map(|k| a.offset[k] * a.offset[k])
+        .sum::<f64>()
+        .sqrt();
+    assert!(size > 1e-3, "seated off its axis: {:?}", a.offset);
+    for k in 0..3 {
+        assert!((a.offset[k] - b.offset[k]).abs() < 1e-12, "{a:?} {b:?}");
+    }
+}
+
+/// `leg = "both"`: the layout's bolts on both legs, shared (the leg on
+/// what it bolts onto first), each leg's through its own face (square to
+/// it, on the heel's plane); `other_leg_points` gives the other leg's by
+/// hand.
+#[test]
+fn both_legs_bolted_put_bolts_on_each_side_of_the_corner() {
+    let text = format!(
+        "{TOWER}{}",
+        AT_N2.replace(r#"leg = "long""#, r#"leg = "both""#)
+    )
+    .replace(
+        "count = 2, diameter = \"16 mm\", grade",
+        "count = 5, diameter = \"16 mm\", grade",
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert_eq!(a.leg.value, Some(BoltedLeg::Both));
+    assert_eq!((a.bolt_points.len(), a.other_points.len()), (3, 2));
+    let dot = |x: [f64; 3], y: [f64; 3]| (0..3).map(|k| x[k] * y[k]).sum::<f64>();
+    assert!(dot(a.bolt_axis, a.other_axis).abs() < 1e-9, "square legs");
+    let p = a.profile.as_ref().unwrap();
+    let g = p.angle.unwrap();
+    let heel: [f64; 3] = std::array::from_fn(|k| {
+        n2.position[k] + a.offset[k] + p.axes[1][k] * g.heel[0] + p.axes[2][k] * g.heel[1]
+    });
+    for (q, axis) in a.bolts_with_axes() {
+        let rel: [f64; 3] = std::array::from_fn(|k| q[k] - heel[k]);
+        assert!(dot(rel, axis).abs() < 1e-9, "on its leg's outer face");
+    }
+    // The gauge given: on each leg, 30 mm from the heel.
+    for q in a.bolt_flat.iter().chain(&a.other_flat) {
+        assert!((q[1] - 0.03).abs() < 1e-12);
+    }
+    // The 3D view's bolts: all five, each with its faces.
+    let solids = crate::bolt_solids(&d);
+    let here: Vec<_> = solids
+        .iter()
+        .filter(|b| b.member == "D1" && b.joint == "N2")
+        .collect();
+    assert_eq!(here.len(), 5);
+    assert!(
+        here.iter()
+            .all(|b| b.faces.len() >= 20 && (b.diameter - 0.016).abs() < 1e-12)
+    );
+    // The other leg's bolts by hand.
+    let given = format!("{text}other_leg_points = [[\"40 mm\", \"25 mm\"]]\n");
+    let d = joint_details(&given, &library(), &Default::default()).unwrap();
+    let a = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap();
+    assert_eq!(a.other_flat, vec![[0.04, 0.025]]);
+    assert!(a.bolt_points.is_empty(), "the leg bolted's: none given");
+    // One leg bolted: other_leg_points said, not used.
+    let one = given.replace(r#"leg = "both""#, r#"leg = "long""#);
+    let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+        Path::new("t.ohls"),
+        &one,
+    )
+    .unwrap();
+    assert!(
+        t.connection_notes()
+            .iter()
+            .any(|n| n.contains("other_leg_points without leg")),
+        "{:?}",
+        t.connection_notes()
+    );
+    let d = joint_details(&one, &library(), &Default::default()).unwrap();
+    let a = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap();
+    assert!(a.other_points.is_empty());
+}

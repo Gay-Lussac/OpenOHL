@@ -128,6 +128,9 @@ fn the_3d_view_draws_the_profiles_as_placed() {
     let ctx = h.ctx.clone();
     let solids = h.state_mut().wait_for_solids(&ctx);
     assert_eq!(solids.len(), 5, "every member a solid");
+    // Its bolts with them (2026-11-05): D1's three at N2 and the
+    // member's two at each of its other ends.
+    assert!(!h.state().bolt_solids().is_empty(), "the bolts too");
     let generation = h.state().solids.generation;
     h.state_mut().selected = vec![Handle::Member("D1".into())];
     h.run();
@@ -255,6 +258,13 @@ fn large_tower_frames() {
         solids.len(),
         t0.elapsed().as_secs_f64() * 1e3
     );
+    let bolts = h.state().bolt_solids();
+    let bolt_tris: usize = bolts
+        .iter()
+        .flat_map(|b| &b.faces)
+        .map(|f| f.triangles.len())
+        .sum();
+    eprintln!("{} bolts, {bolt_tris} triangles", bolts.len());
     h.run();
     let ids: Vec<String> = solids.iter().take(10).map(|s| s.member.clone()).collect();
     let t0 = std::time::Instant::now();

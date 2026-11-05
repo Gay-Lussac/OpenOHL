@@ -301,6 +301,67 @@ pub struct PlateSolid {
     pub misfit: bool,
 }
 
+/// A bolt as a solid (head, shank, nut; the close-up's
+/// [`crate::bolt_faces`]), structure axes, m.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoltSolid {
+    /// Its joint.
+    pub joint: String,
+    /// The member whose end it bolts.
+    pub member: String,
+    /// Where it is (on the face of the leg it goes through).
+    pub at: [f64; 3],
+    /// Its layout partly assumed (drawn in the close-up's orange).
+    pub assumed: bool,
+    /// Its diameter, m.
+    pub diameter: f64,
+    /// Its faces, each normal out of the bolt.
+    pub faces: Vec<SolidFace>,
+}
+
+/// Every member end's bolts as solids, each through its own leg (both
+/// legs bolted: on both sides of the corner, 2026-11-05) — the
+/// close-up's bolts in the 3D view.
+pub fn bolt_solids(d: &JointDetails) -> Vec<BoltSolid> {
+    let mut out = Vec::new();
+    for j in &d.joints {
+        for a in &j.arrivals {
+            let Some(b) = &a.bolts.value else { continue };
+            let assumed = a.gauges.source == crate::Source::Assumed
+                || a.pitch.source == crate::Source::Assumed;
+            for (p, axis) in a.bolts_with_axes() {
+                let polys = crate::bolt_faces(p, axis, b.diameter, a.grip, b.drawn);
+                // Its middle, on its axis: each face's normal away from it
+                // (across the axis for the sides, along it for the ends).
+                let all: Vec<[f64; 3]> = polys.iter().flat_map(|f| f.0.iter().copied()).collect();
+                let mid = mean(&all);
+                let faces = polys
+                    .iter()
+                    .filter_map(|(poly, _)| {
+                        let mut nv = normal_of(poly)?;
+                        if dot(nv, sub(mean(poly), mid)) < 0.0 {
+                            nv = scale(nv, -1.0);
+                        }
+                        Some(SolidFace {
+                            triangles: fan(poly),
+                            normal: nv,
+                        })
+                    })
+                    .collect();
+                out.push(BoltSolid {
+                    joint: j.id.clone(),
+                    member: a.member.clone(),
+                    at: p,
+                    assumed,
+                    diameter: b.diameter,
+                    faces,
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Every joint's plates and splices' covers with an outline as solids:
 /// the outline from its face through its thickness (the close-up's way).
 pub fn plate_solids(d: &JointDetails) -> Vec<PlateSolid> {

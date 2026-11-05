@@ -519,3 +519,28 @@ fn the_bolts_bear_on_the_thinner_leg_they_bolt_onto() {
     let (_, what) = asce10::capacity(&m, D1, None).tension.unwrap();
     assert_eq!(what, "bolt shear");
 }
+
+/// Both legs bolted (2026-11-05): each gauge line has a hole on each leg,
+/// so one gauge line makes two holes in the section; bolt places count
+/// the lines across each leg.
+#[test]
+fn both_legs_bolted_hole_each_leg() {
+    let holes = |extra: &str| {
+        let m = model(
+            &format!(
+                "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nleg = \"both\"\n\
+                 bolts = {{ count = 4, diameter = \"16 mm\" }}\n{extra}"
+            ),
+            &BoltLibrary::default(),
+        );
+        m.members[D1].design.ends[1].as_ref().unwrap().holes
+    };
+    assert_eq!(holes("gauge_lines = 1\n"), Some(2));
+    assert_eq!(
+        holes(
+            "bolt_points = [[\"30 mm\", \"30 mm\"], [\"80 mm\", \"30 mm\"]]\n\
+             other_leg_points = [[\"30 mm\", \"25 mm\"], [\"80 mm\", \"40 mm\"]]\n"
+        ),
+        Some(3)
+    );
+}

@@ -784,8 +784,22 @@ impl StructureApp {
             }
             Act::BoltPoints(member, joint, points, bolts) => {
                 let n = points.len();
+                // Both legs bolted: the other leg's bolts kept where they
+                // are (the face view edits the leg bolted).
+                let other: Option<Vec<[f64; 2]>> = details
+                    .joint(&joint)
+                    .and_then(|j| j.arrivals.iter().find(|a| a.member == member))
+                    .filter(|a| !a.other_flat.is_empty())
+                    .map(|a| a.other_flat.clone());
                 f.edit(&format!("Bolts of {member} at {joint}"), |doc, _| {
-                    connection_edits::set_bolt_points(doc, &member, &joint, &points, bolts.as_ref())
+                    connection_edits::set_bolt_points(
+                        doc,
+                        &member,
+                        &joint,
+                        &points,
+                        other.as_deref(),
+                        bolts.as_ref(),
+                    )
                 });
                 Some((
                     format!(

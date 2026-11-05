@@ -368,7 +368,7 @@ pub fn export_joints(
     let mut shifts: BTreeMap<&str, Vec<[f64; 3]>> = BTreeMap::new();
     for j in &d.joints {
         for a in &j.arrivals {
-            if !a.bolt_points.is_empty() {
+            if !a.bolt_points.is_empty() || !a.other_points.is_empty() {
                 shifts.entry(a.member.as_str()).or_default().push(a.offset);
             }
         }
@@ -406,13 +406,13 @@ pub fn export_joints(
             };
             let shift = body.get(a.member.as_str()).copied().unwrap_or([0.0; 3]);
             let dia = b.diameter;
-            for p in &a.bolt_points {
+            for (p, axis) in a.bolts_with_axes() {
                 s.bolts.push(ExportBolt {
                     joint: j.id.clone(),
                     member: a.member.clone(),
                     end: a.end,
-                    point: add3(add3(*p, a.offset, -1.0), shift, 1.0),
-                    axis: a.bolt_axis,
+                    point: add3(add3(p, a.offset, -1.0), shift, 1.0),
+                    axis,
                     diameter: dia,
                     hole: b.hole,
                     grade: b.grade.clone(),

@@ -179,6 +179,11 @@ edge_distance = "25 mm"
 # rolled_edge = true      # the leg's edge rolled (none: sheared, the larger minimum edge distance)
 # bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]   # instead of the
 #   layout: along the member from the joint, across the leg from the heel
+# With leg = "both" (bolts on both sides of the corner, 2026-11-05) the
+# layout goes on both legs, the bolts shared (the leg lying on what it
+# bolts onto takes the odd one), each leg's gauges from its own heel;
+# bolt_points are then the bolts of the leg on what it bolts onto, and
+# other_leg_points = [["30 mm", "25 mm"]]   # those of the other leg
 # eccentric = true        # given instead of worked out (one leg bolted)
 # restrained = false      # given instead of worked out (two bolts or more
 #                         #   onto a member stiff enough; never a plate alone)

@@ -70,8 +70,8 @@ pub use joints::{
     part_chains, similar_joints,
 };
 pub use member_solids::{
-    MemberSolid, PlateSolid, SolidFace, ear_clip, member_solids, plate_solids, prism_faces,
-    prism_faces_capped, section_at, steel_start,
+    BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
+    plate_solids, prism_faces, prism_faces_capped, section_at, steel_start,
 };
 pub use member_view::{
     FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,

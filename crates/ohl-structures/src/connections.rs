@@ -24,6 +24,10 @@
 //! # rolled_edge = true  # the leg's edge rolled (none: sheared, on the safe side)
 //! # bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]  # instead of
 //! #   the layout: along the member from the joint, across from the heel
+//! # leg = "both" lays the layout on both legs, the bolts shared (the leg
+//! #   on what it bolts onto first); other_leg_points (2026-11-05) gives
+//! #   the other leg's bolts by hand, as bolt_points (theirs: the leg on
+//! #   what it bolts onto)
 //! # eccentric = true / restrained = false   # given instead of worked out
 //! # cut = "40 mm"   # where the steel stops from the work point (none:
 //! #   worked out so it fits); the axis still runs to the work point
@@ -377,6 +381,13 @@ pub struct TypeConnection {
     /// the joint, across the bolted leg from the heel.
     #[serde(default)]
     pub bolt_points: Vec<[Length; 2]>,
+    /// With `leg = "both"`: the bolts on the other leg where they are, as
+    /// `bolt_points` (along the member from the joint, across that leg
+    /// from the heel); `bolt_points` are then those on the leg lying on
+    /// what it bolts onto (2026-11-05: bolts on both sides of the
+    /// corner).
+    #[serde(default)]
+    pub other_leg_points: Vec<[Length; 2]>,
     /// Eccentric, given (none: worked out from the leg bolted).
     #[serde(default)]
     pub eccentric: Option<bool>,
@@ -798,6 +809,11 @@ impl StructureType {
                 if c.bolts.is_some() {
                     out.push(format!("{at}: continuous: its bolts not used"));
                 }
+            }
+            if !c.other_leg_points.is_empty() && c.leg != Some(BoltedLeg::Both) {
+                out.push(format!(
+                    "{at}: other_leg_points without leg = \"both\" (kept, not used)"
+                ));
             }
         }
         for s in &self.splices {

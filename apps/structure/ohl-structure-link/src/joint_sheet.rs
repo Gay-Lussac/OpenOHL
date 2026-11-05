@@ -116,8 +116,8 @@ pub fn reach(d: &JointDetail) -> f64 {
     let far = d
         .arrivals
         .iter()
-        .flat_map(|a| a.bolt_points.iter())
-        .map(|p| dist(*p, d.position))
+        .flat_map(|a| a.bolts_with_axes())
+        .map(|(p, _)| dist(p, d.position))
         .fold(0.0, f64::max);
     (far + 0.12).max(0.3)
 }
@@ -332,11 +332,11 @@ fn bolts_and_dimensions(
     let assumed = a.gauges.source == Source::Assumed
         || a.pitch.source == Source::Assumed
         || a.end_distance.source == Source::Assumed;
-    let end_on = dot(a.bolt_axis, towards).abs() > 0.5;
-    // The head towards the viewer is drawn last (over the shank).
-    let head_near = dot(a.bolt_axis, towards) >= 0.0;
-    for p in &a.bolt_points {
-        let faces = crate::joints::bolt_faces(*p, a.bolt_axis, b.diameter, a.grip, b.drawn);
+    for (p, axis) in a.bolts_with_axes() {
+        let end_on = dot(axis, towards).abs() > 0.5;
+        // The head towards the viewer is drawn last (over the shank).
+        let head_near = dot(axis, towards) >= 0.0;
+        let faces = crate::joints::bolt_faces(p, axis, b.diameter, a.grip, b.drawn);
         let outline = |part: crate::joints::BoltPart| {
             hull(
                 faces
@@ -353,7 +353,7 @@ fn bolts_and_dimensions(
             [Head, Shank, Nut]
         };
         marks.push(Mark::Bolt {
-            at: to(*p),
+            at: to(p),
             parts: order.iter().map(|x| outline(*x)).collect(),
             end_on,
             assumed,

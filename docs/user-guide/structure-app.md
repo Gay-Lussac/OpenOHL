@@ -345,8 +345,13 @@ their menu or from View.
   cross-section turned by its roll, an angle seated with its leg bolted
   on what it bolts onto, the steel stopping where it is cut short of the
   work point — exactly as the Detail view places it (Design › Joint
-  details). Near, its edges and its work line (thin) show; far, the
-  work lines are drawn over it as before. A member without a
+  details). An end seated on a member is seated with or without bolts
+  given (since 2026-11-05; before, an end without bolts lay on its work
+  line). The plates, splices' covers and **bolts** are drawn with them
+  (the bolts once they are a few pixels wide; each through its own leg,
+  orange where the layout is partly assumed). Near, its edges and its
+  work line (thin) show; far, the work lines are drawn over it as
+  before. A member without a
   cross-section is drawn as its work line; hovering a member says how
   it is drawn. On a large tower the profiles follow an edit after a
   moment (worked out beside the window). View › Display options ›
@@ -1006,6 +1011,19 @@ another member, an outline the shop wants simpler — a plate picked with
 A bolt added or taken away turns that end's layout into its bolts'
 places (`bolt_points`); the bolt layout form makes a regular layout
 again. Every action is one undo step.
+
+**Bolts on both legs** (2026-11-05; built, in active development, not
+approved yet). The **Leg** column of the joint table says which surface
+of an angle the bolts go through: **long**, **short** or **both** (the
+two sides of the corner — a leg splice nested heel into heel, covers on
+both legs). With **both** the layout is laid on each leg, the bolts
+shared (the leg lying on what it bolts onto first), each leg's gauges
+from its own heel; the close-up, the 3D view, the joint sheet and the
+IFC export draw each bolt square to its own leg. The face view and the
+member view show and edit the bolts of the leg lying on what it bolts
+onto; the other leg's are kept as they are when those are edited (as
+`other_leg_points` once the layout becomes places by hand). The check
+counts the holes of both legs in one cross-section.
 
 **The code's distances** (2026-11-03). The member view shows each end's
 minimums in one line above the drawing (`ASCE 10-97: end ≥ 21 mm

@@ -10,6 +10,21 @@ of Parts A, B and C).
 
 ## 2026-11-05
 
+**Members seated in 3D, bolts on both legs, bolts in 3D** (owner,
+2026-11-05: "draw them at the right place in 3d also give the
+possibility to define on which surface of the member are the bolts we
+might need them on both side of a corner"). Built, in active
+development, not approved yet
+([joint details](joint-details.md#seated-without-bolts-bolts-on-both-legs-bolts-in-3d--built-2026-11-05)).
+Taken without asking (to be confirmed): an end without bolts is seated
+on what it bolts onto like one with bolts; `leg = "both"` shares the
+layout's bolts between the legs (the leg on what it bolts onto first)
+with each leg's gauges from its own heel; `other_leg_points` for the
+other leg by hand; the net section counts both legs' holes in one
+cross-section (on the safe side; ends already given `leg = "both"` with
+gauge lines get twice the holes they had: a lower net-section capacity);
+both legs bolt onto the same `onto`.
+
 **Lap joints, double covers and continuous members** (owner, 2026-11-05:
 "have a profile slide into the other … and be directly bolted to the
 other … and also have the possibility to have 2 plates on each side of

@@ -1133,6 +1133,7 @@ fn bolt_points_and_plate_outlines_are_written() {
         "M2",
         "N2",
         &[[0.03, 0.025], [0.08, 0.025]],
+        None,
         Some(&kind),
     );
     let t = read(&doc);
@@ -1140,18 +1141,55 @@ fn bolt_points_and_plate_outlines_are_written() {
     assert_eq!(c.bolt_points.len(), 2);
     assert!(c.pitch.is_none());
     assert_eq!(c.bolts.as_ref().unwrap().count, 2);
-    ce::set_bolt_points(&mut doc, "M2", "N2", &[[0.03, 0.025]], Some(&kind));
-    assert_eq!(
-        read(&doc)
+    ce::set_bolt_points(&mut doc, "M2", "N2", &[[0.03, 0.025]], None, Some(&kind));
+    let count = |doc: &toml_edit::DocumentMut| {
+        read(doc)
             .connection("M2", "N2")
             .unwrap()
             .bolts
             .as_ref()
             .unwrap()
-            .count,
-        1
+            .count
+    };
+    assert_eq!(count(&doc), 1);
+    // Both legs bolted (2026-11-05): the other leg's bolts written and
+    // counted; kept when not given again; gone with an empty list.
+    ce::set_bolt_points(
+        &mut doc,
+        "M2",
+        "N2",
+        &[[0.03, 0.025]],
+        Some(&[[0.03, 0.02], [0.08, 0.02]]),
+        None,
     );
-    ce::set_bolt_points(&mut doc, "M2", "N2", &[], None);
+    assert_eq!(
+        read(&doc)
+            .connection("M2", "N2")
+            .unwrap()
+            .other_leg_points
+            .len(),
+        2
+    );
+    assert_eq!(count(&doc), 3);
+    ce::set_bolt_points(
+        &mut doc,
+        "M2",
+        "N2",
+        &[[0.03, 0.025], [0.08, 0.025]],
+        None,
+        None,
+    );
+    assert_eq!(count(&doc), 4);
+    ce::set_bolt_points(&mut doc, "M2", "N2", &[[0.03, 0.025]], Some(&[]), None);
+    assert!(
+        read(&doc)
+            .connection("M2", "N2")
+            .unwrap()
+            .other_leg_points
+            .is_empty()
+    );
+    assert_eq!(count(&doc), 1);
+    ce::set_bolt_points(&mut doc, "M2", "N2", &[], None, None);
     assert!(read(&doc).connection("M2", "N2").is_none());
     let t = read(&doc);
     let g = ce::add_plate(&mut doc, &t, "N2", 0.01);
