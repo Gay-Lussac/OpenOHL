@@ -17,7 +17,11 @@
 //!   its group or class;
 //! - **presets** (`Connections/connection-presets.ohlcp` next to the
 //!   structure): an end saved as one, one applied to an end;
-//! - **plates** added at the joint, their thickness and material, removed.
+//! - **plates** added at the joint, their thickness and material, removed;
+//! - where a member end **sits** on the member it bolts onto (outside,
+//!   inside, nested: a lap joint), a member **continuous** through the
+//!   joint into another (one part), **splices** (covers on the members'
+//!   legs: two on a leg, two shear planes), 2026-11-05.
 //!
 //! Every action is one undo step.
 
@@ -31,7 +35,7 @@ use ohl_structure_link::{
     Arrival, BoltRules, BoltedLeg, ConnectionKind, JointDetail, JointDetails, Source, Valued,
 };
 
-use ohl_structures::connections::MAX_GAUGE_LINES;
+use ohl_structures::connections::{CoverFace, CoverLeg, Face, MAX_GAUGE_LINES};
 
 use crate::app::StructureApp;
 use crate::detail_tools::Rules;
@@ -137,7 +141,21 @@ pub enum Act {
     },
     /// Something to say (an error: true).
     Say(String, bool),
+    /// Member ends made one part (`on`) or bolted again, each (member,
+    /// joint, the member it runs on into, on); one undo step for all.
+    Continuous(Vec<(String, String, String, bool)>),
+    /// A splice added at a joint joining these members.
+    AddSplice(String, Vec<String>),
+    /// A splice's cover on a face of a leg given a thickness, m (made when
+    /// missing), or removed (none).
+    Cover(String, CoverFace, Option<CoverLeg>, Option<f64>),
+    /// A splice removed.
+    RemoveSplice(String),
 }
+
+/// A splice's covers start this thick, m (2026-11-05: type their
+/// thickness).
+pub const COVER_THICKNESS: f64 = 0.008;
 
 /// A new gauge line offered by the bolt tools, waiting for the user.
 pub type Offer = Act;
@@ -253,7 +271,14 @@ pub struct JointTools {
     /// The design code's bolt rules per member end, and the state they
     /// were worked out for (the file, the libraries, the analysis).
     rules: std::collections::HashMap<(String, String), (u64, Option<BoltRules>)>,
+    /// The Continuous members window: (joint, member, the other, one part
+    /// now, ticked).
+    pub continuous: Option<Vec<ContinuousRow>>,
 }
+
+/// A row of the Continuous members window: joint, member, the other, one
+/// part now, ticked.
+pub type ContinuousRow = (String, String, String, bool, bool);
 
 /// The bolt libraries read, and what did not read.
 pub type BoltLibs = std::sync::Arc<(ohl_structures::bolts::BoltLibrary, Vec<String>)>;
@@ -452,7 +477,19 @@ impl StructureApp {
                 field,
                 value,
             } => {
-                let r = f.edit(&format!("{field} of {member} at {joint}"), |doc, _| {
+                // A kind given to an end running on as one part: both
+                // ends bolted again first (the same undo step).
+                let was = (field == "kind")
+                    .then(|| {
+                        f.structure()
+                            .continuous_with(&member, &joint)
+                            .map(str::to_owned)
+                    })
+                    .flatten();
+                let r = f.edit(&format!("{field} of {member} at {joint}"), |doc, t| {
+                    if let Some(o) = &was {
+                        connection_edits::set_continuous(doc, t, &member, &joint, o, false)?;
+                    }
                     connection_edits::set_connection_field(
                         doc,
                         &member,
@@ -462,6 +499,69 @@ impl StructureApp {
                     )
                 });
                 r.err().map(|e| (e, true))
+            }
+            Act::Continuous(ends) => {
+                let n = ends.len();
+                let what = match ends.as_slice() {
+                    [(m, j, o, true)] => format!("{m} continuous into {o} at {j}"),
+                    [(m, j, o, false)] => format!("{m} and {o} bolted again at {j}"),
+                    _ => format!("Continuous members ({n})"),
+                };
+                let r = f.edit(&what, |doc, t| {
+                    let mut said = Vec::new();
+                    for (m, j, o, on) in &ends {
+                        if let Err(e) = connection_edits::set_continuous(doc, t, m, j, o, *on) {
+                            said.push(format!("{m} at {j}: {e}"));
+                        }
+                    }
+                    said
+                });
+                Some(if r.is_empty() {
+                    (format!("{}: one undo step", what.to_lowercase()), false)
+                } else {
+                    (r.join("; "), true)
+                })
+            }
+            Act::AddSplice(joint, members) => {
+                // Angles: covers on both legs; else on the flat part.
+                let angles = details.joint(&joint).is_some_and(|j| {
+                    j.arrivals
+                        .iter()
+                        .filter(|a| members.contains(&a.member))
+                        .all(|a| a.profile.as_ref().is_some_and(|p| p.angle.is_some()))
+                });
+                let legs: Vec<CoverLeg> = if angles {
+                    vec![CoverLeg::Long, CoverLeg::Short]
+                } else {
+                    Vec::new()
+                };
+                let id = f.edit(&format!("Splice at {joint}"), |doc, t| {
+                    connection_edits::add_splice(doc, t, &joint, &members, &legs, COVER_THICKNESS)
+                });
+                Some((
+                    format!(
+                        "splice {id} at {joint} joining {}: covers {:.0} mm outer and inner on                          {} (two shear planes); each member end bolts onto it with its own bolts",
+                        members.join(", "),
+                        COVER_THICKNESS * 1000.0,
+                        if angles { "both legs" } else { "its flat part" }
+                    ),
+                    false,
+                ))
+            }
+            Act::Cover(id, face, leg, thickness) => {
+                let r = f.edit(&format!("Cover of splice {id}"), |doc, _| {
+                    connection_edits::set_cover(doc, &id, face, leg, thickness)
+                });
+                r.err().map(|e| (e, true))
+            }
+            Act::RemoveSplice(id) => {
+                f.edit(&format!("Remove splice {id}"), |doc, _| {
+                    connection_edits::remove_splice(doc, &id)
+                });
+                Some((
+                    format!("splice {id} removed (what bolted onto it: not given)"),
+                    false,
+                ))
             }
             Act::Clear(member, joint) => {
                 f.edit(&format!("Clear {member} at {joint}"), |doc, _| {
@@ -1314,10 +1414,12 @@ pub fn rows_table(
                         ("Held", "Bolted, welded, pinned or fixed"),
                         (
                             "Onto",
-                            "What it bolts onto: a member meeting here or a plate",
+                            "What it bolts onto: a member meeting here, a plate or a splice",
                         ),
+                        ("Face", FACE_TIP),
                         ("Leg", "The angle's leg bolted"),
                         ("Bolts", "Count × diameter, grade (click: the bolt layout)"),
+                        ("Planes", PLANES_TIP),
                         // The values drawn in "What the values mean"
                         // (2026-11-04): the same names and hover texts.
                         (sketch::LINES.header, sketch::LINES.tip),
@@ -1399,27 +1501,16 @@ fn row(
             .on_hover_text(format!("to {to}")),
         None => ui.label("—"),
     };
-    // Held.
-    let kinds: Vec<String> = ConnectionKind::ALL
-        .iter()
-        .map(|k| k.as_str().to_owned())
-        .collect();
-    if let Some(v) = choice(
-        ui,
-        ("held", m, jid),
-        tinted(ui, &a.kind, shown(&a.kind, |k| k.as_str().to_owned())),
-        &kinds,
-        a.kind.source.words(),
-    ) {
-        acts.push(field("kind", v.map(FieldValue::Word)));
-    }
-    // Onto: the members meeting here, the plates here.
+    // Held (continuous: into a member in line of the same section only).
+    acts.extend(held_cell(ui, t, j, a));
+    // Onto: the members meeting here, the plates and splices here.
     let ontos: Vec<String> = j
         .arrivals
         .iter()
         .filter(|b| b.member != a.member)
         .map(|b| b.member.clone())
         .chain(j.plates.iter().map(|p| p.id.clone()))
+        .chain(j.splices.iter().map(|s| s.id.clone()))
         .collect();
     if let Some(v) = choice(
         ui,
@@ -1429,6 +1520,34 @@ fn row(
         a.onto.source.words(),
     ) {
         acts.push(field("onto", v.map(FieldValue::Word)));
+    }
+    // Where it sits on the member it bolts onto.
+    let onto_member = a
+        .onto
+        .value
+        .as_ref()
+        .is_some_and(|o| j.arrivals.iter().any(|b| &b.member == o));
+    if onto_member && a.continuous.is_none() {
+        let faces: Vec<String> = Face::ALL.iter().map(|f| f.as_str().to_owned()).collect();
+        let mut text = tinted(ui, &a.sits, shown(&a.sits, |f| f.as_str().to_owned()));
+        if a.misfit {
+            text = text.color(ui.visuals().error_fg_color);
+        }
+        if let Some(v) = choice(
+            ui,
+            ("face", m, jid),
+            text,
+            &faces,
+            &format!("{} — {FACE_TIP}", a.sits.source.words()),
+        ) {
+            acts.push(field("face", v.map(FieldValue::Word)));
+        }
+    } else {
+        ui.label("—").on_hover_text(if a.continuous.is_some() {
+            "One part through the joint: it sits nowhere"
+        } else {
+            "Onto a plate or a splice: on its face (a face is chosen onto a member)"
+        });
     }
     // Leg.
     let legs: Vec<String> = [
@@ -1476,6 +1595,14 @@ fn row(
             ui.close();
         }
     });
+    // The shear planes, worked out from the plies (given with the bolts
+    // wins).
+    let (planes, why) = &a.planes;
+    ui.label(tinted(ui, planes, shown(planes, |n| n.to_string())))
+        .on_hover_text(match why {
+            Some(w) => format!("{}: {w} — {PLANES_TIP}", planes.source.words()),
+            None => format!("{} — {PLANES_TIP}", planes.source.words()),
+        });
     // Gauge lines.
     let lines: Vec<String> = (1..=MAX_GAUGE_LINES).map(|n| n.to_string()).collect();
     if let Some(v) = choice(
@@ -1707,7 +1834,9 @@ pub fn joint_bar(
         if r.clicked() {
             acts.push(Act::WeldedPlate(j.id.clone()));
         }
+        acts.extend(add_splice_menu(ui, t, j));
     });
+    acts.extend(splices_box(ui, j, buffers));
     if !j.plates.is_empty() {
         egui::Grid::new("joint-plates")
             .striped(true)
@@ -1964,4 +2093,423 @@ pub fn welded_to_menu(
         });
     });
     acts
+}
+
+/// What the Face column means (its header's and cells' hover).
+pub const FACE_TIP: &str = "Where it sits on the member it bolts onto: outside — on the outer \
+     face of that member's leg (the heel's side); inside — on its inner face; nested — an angle \
+     heel into heel inside the other (a lap joint, one shear plane; its heel taken as ground to \
+     clear the other's root fillet; it must fit: each leg at most the other's less its thickness \
+     and root radius, the end and edge distances kept on both parts). Its effect: the member \
+     drawn on that face, the bolts through both legs; nested: the other runs on past the work \
+     point over the bolts. Not given: worked out from how it is turned. Red: it does not fit \
+     as given (said under the table)";
+
+/// What the Planes column means.
+pub const PLANES_TIP: &str = "Shear planes per bolt: worked out from the plies the bolts pass \
+     through — a splice's covers on the leg, one per cover (two: double shear, the bolts' shear \
+     capacity twice); lapped or nested onto a member or a plate, one. Given with the bolts \
+     (shear_planes) wins, said when it differs";
+
+/// The Held cell of member end `a`: bolted, welded, pinned, fixed, or
+/// continuous into a member meeting here (offered only when the two can be
+/// one part: in line within 1°, the same section, roll and reference —
+/// otherwise greyed, the reason on hover), written on both ends.
+fn held_cell(
+    ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
+    j: &JointDetail,
+    a: &Arrival,
+) -> Vec<Act> {
+    let (m, jid) = (a.member.as_str(), j.id.as_str());
+    let mut acts = Vec::new();
+    let field = |value: Option<FieldValue>| Act::Field {
+        member: m.to_owned(),
+        joint: jid.to_owned(),
+        field: "kind",
+        value,
+    };
+    let text = match &a.continuous {
+        Some(o) => egui::RichText::new(format!("continuous into {o}"))
+            .color(source_color(ui, Source::Given)),
+        None => tinted(ui, &a.kind, shown(&a.kind, |k| k.as_str().to_owned())),
+    };
+    egui::ComboBox::from_id_salt(("held", m, jid))
+        .selected_text(text)
+        .width(80.0)
+        .show_ui(ui, |ui| {
+            for k in ConnectionKind::ALL
+                .iter()
+                .filter(|k| **k != ConnectionKind::Continuous)
+            {
+                if ui.selectable_label(false, k.as_str()).clicked() {
+                    acts.push(field(Some(FieldValue::Word(k.as_str().to_owned()))));
+                }
+            }
+            ui.separator();
+            for b in j.arrivals.iter().filter(|b| b.member != a.member) {
+                let why = t.continuous_problem(m, &b.member, jid);
+                let on = a.continuous.as_deref() == Some(b.member.as_str());
+                let r = ui
+                    .add_enabled(
+                        why.is_none(),
+                        egui::Button::selectable(on, format!("continuous into {}", b.member)),
+                    )
+                    .on_hover_text(format!(
+                        "One part through the joint: {m} runs on into {} — no cut, no shift, no \
+                         bolts here; the analysis joins the two rigidly; one solid drawn; one \
+                         part in the lists. Both ends written, one undo step",
+                        b.member
+                    ))
+                    .on_disabled_hover_text(why.unwrap_or_default());
+                if r.clicked() && !on {
+                    acts.push(Act::Continuous(vec![(
+                        m.to_owned(),
+                        jid.to_owned(),
+                        b.member.clone(),
+                        true,
+                    )]));
+                }
+            }
+            if let Some(o) = &a.continuous
+                && ui
+                    .selectable_label(false, "not continuous (bolted again)")
+                    .on_hover_text("Both ends' continuous kind removed: one undo step")
+                    .clicked()
+            {
+                acts.push(Act::Continuous(vec![(
+                    m.to_owned(),
+                    jid.to_owned(),
+                    o.clone(),
+                    false,
+                )]));
+            }
+            ui.separator();
+            if ui
+                .selectable_label(false, "not given here")
+                .on_hover_text("Back to the member's design data or what is worked out")
+                .clicked()
+            {
+                acts.push(field(None));
+            }
+        })
+        .response
+        .on_hover_text(a.kind.source.words());
+    acts
+}
+
+/// The "+ Splice" options menu of joint `j`: a tick box per member meeting
+/// here (stays open on a tick; at first the members in line with another
+/// of the same section), and Add: a splice joining the ticked, covers 8
+/// mm outer and inner on every leg.
+fn add_splice_menu(
+    ui: &mut egui::Ui,
+    t: &ohl_structures::StructureType,
+    j: &JointDetail,
+) -> Vec<Act> {
+    let mut acts = Vec::new();
+    let key = egui::Id::new(("splice-ticks", j.id.as_str()));
+    let mut ticked: Vec<String> = ui.data(|d| d.get_temp(key)).unwrap_or_else(|| {
+        // At first: the members in line with another of the same section.
+        let mut out = Vec::new();
+        for a in &j.arrivals {
+            for b in &j.arrivals {
+                if a.member < b.member
+                    && t.continuous_problem(&a.member, &b.member, &j.id).is_none()
+                {
+                    out.push(a.member.clone());
+                    out.push(b.member.clone());
+                }
+            }
+        }
+        out.dedup();
+        out
+    });
+    ui.push_id(("add-splice", j.id.as_str()), |ui| {
+        crate::layout::options_menu(ui, "+ Splice", |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Covers bolting members together at this joint: tick the member ends it \
+                     joins. Each bolts onto it with its own bolts; a cover outer and inner on \
+                     each leg (8 mm to start): two shear planes.",
+                )
+                .small()
+                .weak(),
+            );
+            for a in &j.arrivals {
+                let mut on = ticked.contains(&a.member);
+                if ui.checkbox(&mut on, a.member.as_str()).changed() {
+                    if on {
+                        ticked.push(a.member.clone());
+                    } else {
+                        ticked.retain(|x| x != &a.member);
+                    }
+                }
+            }
+            if ui
+                .add_enabled(!ticked.is_empty(), egui::Button::new("Add the splice"))
+                .on_hover_text("One undo step; the ends ticked bolt onto it (their Onto)")
+                .on_disabled_hover_text("Tick the member ends it joins")
+                .clicked()
+            {
+                let mut members: Vec<String> = j
+                    .arrivals
+                    .iter()
+                    .filter(|a| ticked.contains(&a.member))
+                    .map(|a| a.member.clone())
+                    .collect();
+                members.dedup();
+                acts.push(Act::AddSplice(j.id.clone(), members));
+                ui.close();
+            }
+        });
+    });
+    ui.data_mut(|d| d.insert_temp(key, ticked));
+    acts
+}
+
+/// The splices of joint `j`: per cover its face, leg and thickness
+/// (typed), the shear planes of each member end onto it as worked out, a
+/// cover added or removed, the splice removed.
+fn splices_box(
+    ui: &mut egui::Ui,
+    j: &JointDetail,
+    buffers: &mut std::collections::HashMap<String, String>,
+) -> Vec<Act> {
+    let mut acts = Vec::new();
+    for s in &j.splices {
+        ui.group(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.strong(format!("Splice {}", s.id)).on_hover_text(
+                    "Covers bolting members together: each member end bolts onto it with its \
+                     own bolts through its leg and the covers on that leg",
+                );
+                ui.label(format!("joins {}", s.members.join(", ")));
+                if ui
+                    .small_button("🗑")
+                    .on_hover_text("Remove the splice (what bolted onto it: not given)")
+                    .clicked()
+                {
+                    acts.push(Act::RemoveSplice(s.id.clone()));
+                }
+            });
+            // The shear planes of each end onto it, worked out.
+            for a in j
+                .arrivals
+                .iter()
+                .filter(|a| a.onto.value.as_deref() == Some(s.id.as_str()))
+            {
+                let (planes, why) = &a.planes;
+                ui.label(tinted(
+                    ui,
+                    planes,
+                    egui::RichText::new(format!(
+                        "{}: {} shear plane(s){} — bolts clamp {:.0} + {:.0} mm",
+                        a.member,
+                        planes.value.map_or("—".to_owned(), |n| n.to_string()),
+                        why.as_ref()
+                            .map(|w| format!(", {} ({w})", planes.source.words()))
+                            .unwrap_or_else(|| format!(", {}", planes.source.words())),
+                        a.grip[0] * 1000.0,
+                        a.grip[1] * 1000.0
+                    ))
+                    .small(),
+                ))
+                .on_hover_text(PLANES_TIP);
+            }
+            egui::Grid::new(("splice-covers", s.id.as_str()))
+                .striped(true)
+                .show(ui, |ui| {
+                    for h in ["Cover", "Thickness mm", "Outline", ""] {
+                        ui.strong(h);
+                    }
+                    ui.end_row();
+                    for c in &s.covers {
+                        ui.label(c.words());
+                        let v = Valued {
+                            value: Some(c.thickness),
+                            source: Source::Given,
+                        };
+                        let key = format!("ct-{}-{}", s.id, c.words());
+                        if let Some(Some(x)) = length_cell(ui, buffers, key, &v, "Its thickness")
+                            && x > 0.0
+                        {
+                            acts.push(Act::Cover(s.id.clone(), c.face, c.leg, Some(x)));
+                        }
+                        let words = if c.outline_given {
+                            "given"
+                        } else if c.outline.len() >= 3 {
+                            "round the bolts"
+                        } else {
+                            "none"
+                        };
+                        ui.label(words).on_hover_text(if c.edges.is_empty() {
+                            c.notes.join("; ")
+                        } else {
+                            c.edges.join("\n")
+                        });
+                        if ui
+                            .small_button("🗑")
+                            .on_hover_text("Remove this cover (one shear plane fewer on that leg)")
+                            .clicked()
+                        {
+                            acts.push(Act::Cover(s.id.clone(), c.face, c.leg, None));
+                        }
+                        ui.end_row();
+                    }
+                });
+            // The covers not there yet, to add.
+            let legs: Vec<Option<CoverLeg>> = if s.covers.iter().any(|c| c.leg.is_some()) {
+                vec![Some(CoverLeg::Long), Some(CoverLeg::Short)]
+            } else {
+                vec![None]
+            };
+            let missing: Vec<(CoverFace, Option<CoverLeg>)> = legs
+                .iter()
+                .flat_map(|l| CoverFace::ALL.map(|f| (f, *l)))
+                .filter(|(f, l)| !s.covers.iter().any(|c| c.face == *f && c.leg == *l))
+                .collect();
+            if !missing.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    for (f, l) in missing {
+                        let name = match l {
+                            Some(l) => format!("+ {} {}", f.as_str(), l.as_str()),
+                            None => format!("+ {}", f.as_str()),
+                        };
+                        if ui
+                            .small_button(name)
+                            .on_hover_text(format!(
+                                "A cover {:.0} mm on that face (one shear plane more on the leg)",
+                                COVER_THICKNESS * 1000.0
+                            ))
+                            .clicked()
+                        {
+                            acts.push(Act::Cover(s.id.clone(), f, l, Some(COVER_THICKNESS)));
+                        }
+                    }
+                });
+            }
+            for n in s
+                .notes
+                .iter()
+                .chain(s.covers.iter().flat_map(|c| c.notes.iter()))
+            {
+                ui.label(egui::RichText::new(n).small().weak());
+            }
+        });
+    }
+    acts
+}
+
+/// Every pair of members that can be one part through a joint (in line
+/// within 1°, the same section, roll and reference: `continuous_problem`
+/// none), joint by joint: (joint, member, the other, already one part).
+pub fn continuous_pairs(t: &ohl_structures::StructureType) -> Vec<(String, String, String, bool)> {
+    let mut out = Vec::new();
+    for n in &t.nodes {
+        let here: Vec<&str> = t
+            .members
+            .iter()
+            .filter(|m| m.nodes.contains(&n.id))
+            .map(|m| m.id.as_str())
+            .collect();
+        for (k, a) in here.iter().enumerate() {
+            for b in &here[k + 1..] {
+                if t.continuous_problem(a, b, &n.id).is_none() {
+                    let on = t.continuous_with(a, &n.id) == Some(*b);
+                    out.push((n.id.clone(), (*a).to_owned(), (*b).to_owned(), on));
+                }
+            }
+        }
+    }
+    out
+}
+
+impl StructureApp {
+    /// Design › Continuous members…: the pairs that can be one part
+    /// through a joint, each with a tick box (at first ticked: proposed),
+    /// applied on confirm in one undo step — never set by itself.
+    pub(crate) fn open_continuous_window(&mut self) {
+        let Some(f) = self.file.as_ref() else {
+            return;
+        };
+        let pairs = continuous_pairs(f.structure());
+        self.joint_tools.continuous = Some(
+            pairs
+                .into_iter()
+                .map(|(j, a, b, on)| (j, a, b, on, true))
+                .collect(),
+        );
+    }
+
+    /// The Continuous members window ([`Self::open_continuous_window`]).
+    pub(crate) fn continuous_window(&mut self, ctx: &egui::Context) {
+        let Some(mut list) = self.joint_tools.continuous.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut apply = false;
+        egui::Window::new("Continuous members")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.label(
+                    "Members in line (within 1°) of the same section, roll and reference at a \
+                     joint can run on through it as one part: no cut, no shift, no bolts there; \
+                     the analysis joins them rigidly; one solid drawn; one part in the lists. \
+                     Ticked: one part. Nothing is written before Apply.",
+                );
+                if list.is_empty() {
+                    ui.label(egui::RichText::new("No pair in line of the same section.").weak());
+                }
+                ui.horizontal(|ui| {
+                    if ui.small_button("Tick all").clicked() {
+                        list.iter_mut().for_each(|x| x.4 = true);
+                    }
+                    if ui.small_button("Tick none").clicked() {
+                        list.iter_mut().for_each(|x| x.4 = false);
+                    }
+                });
+                egui::ScrollArea::vertical()
+                    .id_salt("continuous-pairs")
+                    .max_height(320.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for (j, a, b, was, tick) in list.iter_mut() {
+                            let text = format!(
+                                "{a} into {b} at {j}{}",
+                                if *was { " (one part now)" } else { "" }
+                            );
+                            ui.checkbox(tick, text);
+                        }
+                    });
+                let changes = list.iter().filter(|x| x.3 != x.4).count();
+                if ui
+                    .add_enabled(changes > 0, egui::Button::new(format!("Apply ({changes})")))
+                    .on_hover_text("The ticks written on both ends of each pair: one undo step")
+                    .on_disabled_hover_text("Nothing changed")
+                    .clicked()
+                {
+                    apply = true;
+                }
+            });
+        if apply {
+            let ends: Vec<(String, String, String, bool)> = list
+                .iter()
+                .filter(|x| x.3 != x.4)
+                .map(|(j, a, b, _, tick)| (a.clone(), j.clone(), b.clone(), *tick))
+                .collect();
+            if let Some(Ok(d)) = self.joint_details().as_deref().map(|d| d.as_ref()) {
+                self.apply_joint_acts(vec![Act::Continuous(ends)], d);
+            } else {
+                self.apply_joint_acts(vec![Act::Continuous(ends)], &JointDetails::default());
+            }
+            return;
+        }
+        if open {
+            self.joint_tools.continuous = Some(list);
+        }
+    }
 }

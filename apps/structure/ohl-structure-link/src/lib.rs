@@ -71,7 +71,7 @@ pub use joints::{
 };
 pub use member_solids::{
     MemberSolid, PlateSolid, SolidFace, ear_clip, member_solids, plate_solids, prism_faces,
-    section_at, steel_start,
+    prism_faces_capped, section_at, steel_start,
 };
 pub use member_view::{
     FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,

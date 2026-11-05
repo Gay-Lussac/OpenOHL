@@ -20,6 +20,12 @@
 //! width, hover on a label: its column's hover text), and the user
 //! guide's SVG (`docs/images/joint-details/joint-values.svg`, written by
 //! `svg`; a test keeps it in step).
+//!
+//! A second drawing (2026-11-05, [`show_plies`]): how member ends meet,
+//! each in section — A nested (an angle in an angle, one shear plane), B
+//! a double cover splice (the leg between two covers, two shear planes),
+//! C continuous (one part through the joint, no bolt); its SVG
+//! `docs/images/joint-details/joint-plies.svg`.
 
 use eframe::egui;
 
@@ -538,7 +544,143 @@ impl Colours {
 /// The drawing in `ui`, as wide as the panel (at least [`MIN_WIDTH`]),
 /// with `v`'s values beside the names; a label's hover: its column's.
 pub fn show(ui: &mut egui::Ui, v: &Shown, width: f32) {
-    let ps = prims(v);
+    show_prims(ui, &prims(v), width);
+}
+
+/// How member ends meet, in section (A nested, B double cover, C
+/// continuous), as wide as the panel (at least [`MIN_WIDTH`]).
+pub fn show_plies(ui: &mut egui::Ui, width: f32) {
+    show_prims(ui, &plies(), width);
+}
+
+/// What the plies drawing's names mean.
+const NESTED_TIP: &str = "Face = nested: an angle heel into heel inside the other (its heel \
+     ground to clear the other's root fillet), bolted through both legs: one shear plane";
+/// What a double cover means.
+const COVERS_TIP: &str = "A splice: a cover on the outer and the inner face of the leg (the \
+     inner clear of the root fillet), the bolts through the cover, the leg and the cover: two \
+     shear planes";
+/// What continuous means.
+const CONTINUOUS_TIP: &str = "Held = continuous: the member runs on through the joint into the \
+     other as one part (in line, the same section): no cut, no bolts, one piece";
+
+/// The plies drawing (mm, y up): A an angle nested in another, B a leg
+/// between two covers, C one bar through a joint.
+fn plies() -> Vec<Prim> {
+    let rect = |x0: f32, y0: f32, x1: f32, y1: f32| vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    let outline = |x0: f32, y0: f32, x1: f32, y1: f32| {
+        Prim::Line(
+            vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]],
+            Ink::Steel,
+        )
+    };
+    let label = |at: [f32; 2], text: &str, anchor: Anchor, tip: Option<&'static str>| Prim::Label {
+        at,
+        text: text.to_owned(),
+        anchor,
+        tip,
+        faint: false,
+    };
+    let faint = |at: [f32; 2], text: &str, anchor: Anchor| Prim::Label {
+        at,
+        text: text.to_owned(),
+        anchor,
+        tip: None,
+        faint: true,
+    };
+    // A bolt in section at `x`: its shank from `lo` to `hi`, its head above
+    // `hi`, its nut below `lo`.
+    let bolt = |x: f32, lo: f32, hi: f32| {
+        vec![
+            outline(x - 4.0, lo - 6.0, x + 4.0, hi + 6.0),
+            outline(x - 10.0, hi, x + 10.0, hi + 6.0),
+            outline(x - 10.0, lo - 6.0, x + 10.0, lo),
+        ]
+    };
+    let mut out = Vec::new();
+    // A: the larger angle (legs 140, 10 thick), the smaller inside it (its
+    // heel on the larger's inner faces, legs 110, 8 thick).
+    for r in [
+        rect(0.0, 0.0, 140.0, 10.0),
+        rect(0.0, 0.0, 10.0, 140.0),
+        rect(10.0, 10.0, 120.0, 18.0),
+        rect(10.0, 10.0, 18.0, 120.0),
+    ] {
+        out.push(Prim::Fill(r));
+    }
+    out.push(outline(0.0, 0.0, 140.0, 10.0));
+    out.push(outline(0.0, 0.0, 10.0, 140.0));
+    out.push(outline(10.0, 10.0, 120.0, 18.0));
+    out.push(outline(10.0, 10.0, 18.0, 120.0));
+    out.extend(bolt(75.0, 0.0, 18.0));
+    out.push(Prim::Line(vec![[55.0, 10.0], [150.0, 10.0]], Ink::Dashed));
+    out.push(faint([152.0, 10.0], "shear plane", Anchor::Right));
+    out.push(label(
+        [70.0, -16.0],
+        "A — nested",
+        Anchor::Below,
+        Some(NESTED_TIP),
+    ));
+    // B: an angle's leg (140, 10 thick) between an outer cover (below) and
+    // an inner one (above, clear of the root).
+    let bx = 250.0;
+    for r in [
+        rect(bx, 0.0, bx + 140.0, 10.0),
+        rect(bx, 0.0, bx + 10.0, 140.0),
+        rect(bx, -10.0, bx + 140.0, 0.0),
+        rect(bx + 25.0, 10.0, bx + 140.0, 20.0),
+    ] {
+        out.push(Prim::Fill(r));
+    }
+    out.push(outline(bx, 0.0, bx + 140.0, 10.0));
+    out.push(outline(bx, 0.0, bx + 10.0, 140.0));
+    out.push(outline(bx, -10.0, bx + 140.0, 0.0));
+    out.push(outline(bx + 25.0, 10.0, bx + 140.0, 20.0));
+    out.extend(bolt(bx + 85.0, -10.0, 20.0));
+    for y in [0.0, 10.0] {
+        out.push(Prim::Line(
+            vec![[bx + 65.0, y], [bx + 105.0, y]],
+            Ink::Dashed,
+        ));
+    }
+    out.push(faint([bx + 142.0, 30.0], "inner cover", Anchor::Right));
+    out.push(faint([bx + 142.0, -8.0], "outer cover", Anchor::Right));
+    out.push(label(
+        [bx + 70.0, -24.0],
+        "B — double cover",
+        Anchor::Below,
+        Some(COVERS_TIP),
+    ));
+    // C: one bar through the joint (seen from the side), the work point on
+    // its axis, no bolt.
+    let cx = 540.0;
+    out.push(Prim::Fill(rect(cx, 50.0, cx + 200.0, 74.0)));
+    out.push(outline(cx, 50.0, cx + 200.0, 74.0));
+    out.push(Prim::Line(
+        vec![[cx - 10.0, 62.0], [cx + 210.0, 62.0]],
+        Ink::Dashed,
+    ));
+    out.push(Prim::Point([cx + 100.0, 62.0]));
+    out.push(faint(
+        [cx + 100.0, 78.0],
+        "the joint: no cut, no bolt",
+        Anchor::Above,
+    ));
+    out.push(faint([cx + 30.0, 46.0], "L1", Anchor::Below));
+    out.push(faint([cx + 170.0, 46.0], "L2", Anchor::Below));
+    out.push(label(
+        [cx + 100.0, -16.0],
+        "C — continuous",
+        Anchor::Below,
+        Some(CONTINUOUS_TIP),
+    ));
+    out
+}
+
+/// `ps` drawn in `ui`, as wide as the panel (at least [`MIN_WIDTH`]); a
+/// label's hover: its tip.
+fn show_prims(ui: &mut egui::Ui, ps: &[Prim], width: f32) {
+    let ps = ps.to_vec();
     let font = egui::FontId::proportional(12.0);
 
     let painter = ui.painter().clone();
@@ -662,7 +804,39 @@ fn arrow2(painter: &egui::Painter, a: egui::Pos2, b: egui::Pos2, colour: egui::C
 /// guide), the names only (no values).
 #[cfg(test)]
 pub fn svg() -> String {
-    let ps = prims(&Shown::default());
+    svg_of(
+        &prims(&Shown::default()),
+        "What the values of a member end mean",
+        "The bolted leg of an angle seen flat, from its \
+         heel to its edge, its end where the steel stops; the member's axis runs past that end \
+         to beside the work point. Dimensioned: the gauge from the heel to the gauge line, the \
+         edge distance from it to the leg's edge, the pitch between bolts, the end distance \
+         from the last bolt to the member's end, the eccentricity e from the axis to the gauge \
+         line, where the steel stops from the work point, and the shift of the axis beside the \
+         work point towards what the member bolts onto; a second gauge line faint.",
+        "What the values of a member end mean (the leg bolted, seen flat)",
+    )
+}
+
+/// The plies drawing as an SVG for the user guide (as [`svg`]).
+#[cfg(test)]
+pub fn plies_svg() -> String {
+    svg_of(
+        &plies(),
+        "How member ends meet",
+        "Three cases in section. A: an angle nested heel into heel inside a larger one, a bolt \
+         through both legs, one shear plane between them. B: an angle's leg between an outer \
+         cover and an inner cover clear of the root fillet, a bolt through the three, two shear \
+         planes. C: one bar running on through the joint, the work point on its axis, no cut \
+         and no bolt.",
+        "How member ends meet (in section)",
+    )
+}
+
+/// `ps` as an SVG: its title, description and heading.
+#[cfg(test)]
+fn svg_of(ps: &[Prim], title: &str, desc: &str, heading: &str) -> String {
+    let ps = ps.to_vec();
     // 13 px text, about 7 px a character.
     let measure = |t: &str| egui::vec2(t.chars().count() as f32 * 7.0 + 2.0, 16.0);
     let laid = lay(&ps, 1.6, &measure);
@@ -674,14 +848,8 @@ pub fn svg() -> String {
     };
     let mut s = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w} {h}\" width=\"{w}\" \
-         height=\"{h}\" role=\"img\" aria-labelledby=\"t d\"><title id=\"t\">What the values of \
-         a member end mean</title><desc id=\"d\">The bolted leg of an angle seen flat, from its \
-         heel to its edge, its end where the steel stops; the member's axis runs past that end \
-         to beside the work point. Dimensioned: the gauge from the heel to the gauge line, the \
-         edge distance from it to the leg's edge, the pitch between bolts, the end distance \
-         from the last bolt to the member's end, the eccentricity e from the axis to the gauge \
-         line, where the steel stops from the work point, and the shift of the axis beside the \
-         work point towards what the member bolts onto; a second gauge line faint.</desc>\
+         height=\"{h}\" role=\"img\" aria-labelledby=\"t d\"><title id=\"t\">{title}</title>\
+         <desc id=\"d\">{desc}</desc>\
          <style>svg{{--ink:#1f2328;--muted:#59636e;--acc:#0969da;--bg:#ffffff;--fill:#eef1f4;}}\
          @media (prefers-color-scheme: dark){{svg{{--ink:#e6edf3;--muted:#9198a1;--acc:#58a6ff;\
          --bg:#0d1117;--fill:#1c2128;}}}}.bg{{fill:var(--bg)}}.steel{{fill:var(--fill)}}\
@@ -698,7 +866,7 @@ pub fn svg() -> String {
          stroke-linejoin:round}}.lab{{fill:var(--muted);font-size:12px}}\
          .val{{fill:var(--acc)}}.t{{font-weight:600;font-size:14px}}</style>\
          <rect class=\"bg\" width=\"{w}\" height=\"{h}\"/><text x=\"8\" y=\"20\" class=\"t\">\
-         What the values of a member end mean (the leg bolted, seen flat)</text>"
+         {heading}</text>"
     );
     let pts = |v: &[[f32; 2]]| {
         v.iter()
@@ -875,6 +1043,40 @@ mod tests {
         let now = svg();
         if ohl_core::env::var_os("OHL_WRITE_DOCS_SVG").is_some() {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &now).unwrap();
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_eq!(have, now, "OHL_WRITE_DOCS_SVG=1 writes it again");
+    }
+
+    /// The plies drawing (2026-11-05): its labels apart, at every width;
+    /// the guide's SVG is it (`OHL_WRITE_DOCS_SVG=1` writes it again).
+    #[test]
+    fn the_plies_drawing_is_laid_out_and_in_the_guide() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
+        let font = egui::FontId::proportional(12.0);
+        let measure = |t: &str| {
+            ctx.fonts_mut(|f| {
+                f.layout_no_wrap(t.to_owned(), font.clone(), egui::Color32::WHITE)
+                    .size()
+            })
+        };
+        let ps = plies();
+        for width in [300.0, MIN_WIDTH, 800.0, 1400.0] {
+            let laid = fit(&ps, width, &measure);
+            assert!(laid.size.x <= width.max(MIN_WIDTH) + 1.0, "{width}");
+            for (i, a) in laid.labels.iter().enumerate() {
+                for b in &laid.labels[i + 1..] {
+                    assert!(!a.0.intersects(b.0), "{width}: labels {i} overlap");
+                }
+            }
+        }
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../docs/images/joint-details/joint-plies.svg");
+        let now = plies_svg();
+        if ohl_core::env::var_os("OHL_WRITE_DOCS_SVG").is_some() {
             std::fs::write(&path, &now).unwrap();
         }
         let have = std::fs::read_to_string(&path).unwrap_or_default();

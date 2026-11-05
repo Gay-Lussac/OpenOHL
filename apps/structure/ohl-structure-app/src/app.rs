@@ -1047,6 +1047,7 @@ impl eframe::App for StructureApp {
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         self.follow_link_tool();
         self.inventory_window(&ctx);
+        self.continuous_window(&ctx);
         self.status_bar(ui);
         self.notices.observe(&self.message, ctx.input(|i| i.time));
         self.notices.ui(&ctx);
@@ -1170,6 +1171,7 @@ impl StructureApp {
         // The members' steel as the joint details place it, and their
         // colours by usage with results shown.
         let solids = self.member_solids(ui.ctx());
+        let plates = self.plate_solids();
         let usage: Vec<(String, [u8; 4])> = if self.area == Area::Results {
             self.results
                 .shown()
@@ -1299,6 +1301,7 @@ impl StructureApp {
                 moments: &moments,
                 volumes: &volumes,
                 solids: &solids,
+                plates: &plates,
                 usage: &usage,
                 joint_colors: &joint_colors,
                 action: &mut action,

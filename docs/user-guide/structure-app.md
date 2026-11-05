@@ -809,6 +809,70 @@ out. Each change is one undo step.
   for every structure in the folder; a file that cannot be read is said
   above the table.
 
+**Lap joints, double covers, continuous members** (2026-11-05, stages 2
+and 4 of the [proposal](../development/joint-details.md#lap-joints-double-covers-continuous-members-proposal-2026-11-05);
+built, in active development, not approved yet):
+
+- **Face** (a column of the connections table): where a member end sits
+  on the member it bolts onto — **outside** (the outer face of that
+  member's leg, the heel's side), **inside** (its inner face) or
+  **nested** (an angle heel into heel inside the other: a lap joint, one
+  shear plane). Not given: worked out from how the member is turned
+  (blue), as before. A face whose outstanding leg would pass through the
+  other's leg is drawn there in red and said ("turn it"). **Nested**:
+  both legs of the smaller angle lie on the inner faces of the larger
+  one's legs; its heel is taken as **ground to clear the larger one's
+  root fillet** (not ground it would sit r (1 − 1/√2) off along the
+  diagonal, said); the bolts clamp both legs; the larger runs on past the
+  work point over the bolts (its **Steel stops** below 0, worked out).
+  The fit is said under the table, in red when it does not fit: each leg
+  at most the other's less its thickness and root radius (an angle in an
+  angle only; in line and turned alike within 5°, an assumption), the end
+  and edge distances of the design code kept in both parts.
+- **Planes**: the shear planes per bolt, worked out from the plies the
+  bolts pass through (blue; its hover says why) — one lapped or nested
+  onto a member or a plate, one per cover of a splice on the leg; the
+  bolts' own `shear_planes` given wins (said when it differs).
+- **+ Splice** (a menu that stays open on a tick): a tick box per member
+  meeting at the joint (the members in line of the same section ticked
+  at first) and **Add the splice**: covers **8 mm outer and inner on both
+  legs** of an angle (two shear planes; on the flat part for other
+  sections), every ticked end bolted onto it (its Onto) — one undo step.
+  Its box lists the covers (face, leg, thickness typed in mm, its outline
+  worked out round the bolts or given; 🗑 removes one: one shear plane
+  fewer on that leg; **+ inner short**… adds one back), the shear planes
+  and the bolts' grip of each end onto it, and 🗑 removes the splice. A
+  cover is drawn as a plate on its face of the members' legs (green):
+  round the bolts on that leg with the design code's end and edge
+  distances in the cover, over the legs' widths, an inner cover clear of
+  the root fillet; a leg without bolts over the members' bolts on the
+  other leg. The bolts clamp the leg and the inner covers, then the
+  outer covers. Flat covers only for now.
+- **Continuous** (in the **Held** list: "continuous into L2"): the member
+  runs on through the joint into the other as one part — no cut, no
+  shift, no bolts there; one solid through the joint in the close-up and
+  the 3D view (no end face between them). Offered only when the two are
+  in line within 1° with the same section, roll and reference; otherwise
+  greyed with the reason on hover. Both ends are written (one undo step);
+  "not continuous (bolted again)" or another kind takes it back.
+  **Design › Continuous members…** lists every such pair at every joint
+  with a tick box (ticked at first: proposed), **Tick all** / **Tick
+  none**, and **Apply (n)** writes the changes on both ends of each pair
+  in one undo step. Nothing is made continuous by itself or by an
+  import.
+- **How member ends meet**, a folding section under What the values
+  mean: the three cases in section (A nested, B double cover, C
+  continuous; hover a name: what it is).
+
+  ![Three cases in section: an angle nested in a larger one with one
+  shear plane; an angle's leg between an outer and an inner cover with
+  two shear planes; one bar running on through the joint with no
+  bolt](../images/joint-details/joint-plies.svg)
+
+  The covers and plates are drawn in the 3D view too (Display options ›
+  Profiles as placed), a misfit in red. A bolt picked with Edit in the
+  Detail view says what it clamps ("Clamps 5.0 + 7.0 = 12.0 mm").
+
 **Design › Member details** (2026-11-02) shows a tower's member — the
 one selected (the Edit tool opens it on the member clicked, once asked) or picked in
 its list — from its own side:

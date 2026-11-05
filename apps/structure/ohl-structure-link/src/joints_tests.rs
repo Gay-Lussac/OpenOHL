@@ -1083,14 +1083,14 @@ fn the_face_given_moves_the_member_to_it() {
     assert_eq!(b.sits.value, Some(other));
     assert!(b.misfit, "{:?}", b.notes);
     let nb = a.bolt_axis;
-    for k in 0..3 {
+    for (k, n) in nb.iter().enumerate() {
         assert!(
-            (b.offset[k] - a.offset[k] + 0.013 * nb[k]).abs() < 1e-9,
+            (b.offset[k] - a.offset[k] + 0.013 * n).abs() < 1e-9,
             "{:?} {:?}",
             b.offset,
             a.offset
         );
-        assert!((b.bolt_axis[k] + nb[k]).abs() < 1e-12);
+        assert!((b.bolt_axis[k] + n).abs() < 1e-12);
     }
     // Its bolts on the face it meets the other by: its inner face, 6 mm
     // from its outer face: 13 − 6 = 7 mm from where they were.

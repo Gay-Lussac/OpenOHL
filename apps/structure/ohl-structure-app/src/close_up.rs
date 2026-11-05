@@ -173,7 +173,10 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
     };
     // The members: each end's steel as the link crate places it
     // ([`ohl_structure_link::section_at`], the 3D view's own corners),
-    // from its cut out to the drawing's reach.
+    // from its cut out to the drawing's reach; no end face where it runs
+    // on into the next member as one part (2026-11-05); red where it does
+    // not fit as given (a nested angle too large, its leg through
+    // another's).
     for a in &j.arrivals {
         let length = a.length.min(reach);
         let Some(p) = &a.profile else {
@@ -182,13 +185,65 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         let start = ohl_structure_link::steel_start(a).min(length);
         let near = ohl_structure_link::section_at(a, p, start);
         let far = ohl_structure_link::section_at(a, p, length);
-        let Some(faces) =
-            ohl_structure_link::prism_faces(&near, &far, &p.outline, p.axes[1], p.axes[2])
-        else {
+        let Some(faces) = ohl_structure_link::prism_faces_capped(
+            &near,
+            &far,
+            &p.outline,
+            p.axes[1],
+            p.axes[2],
+            [a.continuous.is_none(), true],
+        ) else {
             continue;
         };
+        let base = if a.misfit { MISFIT } else { steel };
         for f in faces {
-            add(f.triangles, steel, Some(f.normal), None);
+            add(f.triangles, base, Some(f.normal), None);
+        }
+    }
+    // A flat plate of `thickness` on its outline `poly` (relative to the
+    // joint), run `through` it: its two faces and its edges.
+    let slab = |poly: &[[f64; 3]], through: [f64; 3], thickness: f64| {
+        let back: Vec<[f64; 3]> = poly
+            .iter()
+            .map(|q| add3(*q, scale3(through, thickness)))
+            .collect();
+        let mut out: Vec<Face> = Vec::new();
+        for face in [poly, back.as_slice()] {
+            if let Some(nv) = normal_of(face) {
+                out.push((fan(face), nv));
+            }
+        }
+        let n = poly.len();
+        for i in 0..n {
+            let i2 = (i + 1) % n;
+            let quad = [poly[i], poly[i2], back[i2], back[i]];
+            if let Some(nv) = normal_of(&quad) {
+                out.push((fan(&quad), nv));
+            }
+        }
+        out
+    };
+    // A splice's covers (2026-11-05): plates on the members' legs, green;
+    // red when a member end onto it does not fit or a bolt is too near
+    // its given edge.
+    for s in &j.splices {
+        let misfit = j
+            .arrivals
+            .iter()
+            .any(|a| a.misfit && a.onto.value.as_deref() == Some(s.id.as_str()));
+        for c in &s.covers {
+            let Some(through) = c.through.filter(|_| c.outline.len() >= 3) else {
+                continue;
+            };
+            let poly: Vec<[f64; 3]> = c.outline.iter().map(|q| rel(*q)).collect();
+            let base = if misfit || (c.outline_given && !c.notes.is_empty()) {
+                MISFIT
+            } else {
+                COVER
+            };
+            for (tris, nv) in slab(&poly, through, c.thickness) {
+                add(tris, base, Some(nv), None);
+            }
         }
     }
     for pl in &j.plates {
@@ -212,22 +267,8 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         let through = pl
             .through
             .unwrap_or_else(|| normal_of(&poly).unwrap_or([0.0, 0.0, 1.0]));
-        let back: Vec<[f64; 3]> = poly
-            .iter()
-            .map(|q| add3(*q, scale3(through, pl.thickness)))
-            .collect();
-        for face in [&poly, &back] {
-            if let Some(nv) = normal_of(face) {
-                add(fan(face), base, Some(nv), None);
-            }
-        }
-        let n = poly.len();
-        for i in 0..n {
-            let i2 = (i + 1) % n;
-            let quad = [poly[i], poly[i2], back[i2], back[i]];
-            if let Some(nv) = normal_of(&quad) {
-                add(fan(&quad), base, Some(nv), None);
-            }
+        for (tris, nv) in slab(&poly, through, pl.thickness) {
+            add(tris, base, Some(nv), None);
         }
         // Its weld seams: a fillet along each, between the two plates.
         for w in &pl.welds {
@@ -268,6 +309,15 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
     }
     out
 }
+
+/// A flat face's triangles (with their face edges) and its normal.
+type Face = (Vec<([[f64; 3]; 3], [bool; 3])>, [f64; 3]);
+
+/// A member, plate or cover that does not fit as given: red.
+pub const MISFIT: [u8; 4] = [215, 60, 50, 255];
+
+/// A splice's cover: green.
+pub const COVER: [u8; 4] = [80, 165, 110, 255];
 
 /// The finest size of the close-up of `j`: 40 % of its smallest bolt's
 /// diameter (4 to 10 mm).

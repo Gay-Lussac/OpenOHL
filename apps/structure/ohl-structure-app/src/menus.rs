@@ -653,6 +653,24 @@ impl StructureApp {
                     self.support_feet();
                     self.focus(Panel::Supports);
                 }
+                let tower = t
+                    .as_ref()
+                    .is_some_and(|t| ohl_structure_edit::is_tower(t.kind) && !t.members.is_empty());
+                if entry(
+                    ui,
+                    None,
+                    "Continuous members…",
+                    None,
+                    tower,
+                    "The pairs of members in line (within 1°) of the same section, roll and \
+                     reference at every joint, proposed to run on through it as one part (no \
+                     cut, no bolts there; rigidly joined in the analysis; one piece in the part \
+                     lists): tick the ones to make so and Apply — one undo step. Never set by \
+                     itself.",
+                    "A tower with members first",
+                ) {
+                    self.open_continuous_window();
+                }
             }
             Area::LoadCases => self.load_actions(ui),
             Area::Results => self.results_actions(ui),

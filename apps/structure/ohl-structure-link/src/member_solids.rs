@@ -129,8 +129,9 @@ pub fn prism_faces(
     prism_faces_capped(near, far, outline, ey, ez, [true, true])
 }
 
-/// [`prism_faces`] with its end faces only where `caps` says (near, far).
-fn prism_faces_capped(
+/// [`prism_faces`] with its end faces only where `caps` says (near, far):
+/// none where a member runs on into the next as one part.
+pub fn prism_faces_capped(
     near: &[[f64; 3]],
     far: &[[f64; 3]],
     outline: &[[f64; 2]],
@@ -342,13 +343,12 @@ pub fn plate_solids(d: &JointDetails) -> Vec<PlateSolid> {
     out
 }
 
+/// A flat plate's solid: its two faces' corners and its faces.
+type Slab = ([Vec<[f64; 3]>; 2], Vec<SolidFace>);
+
 /// The solid of a flat plate: `outline` run along `through` by
 /// `thickness` (its two faces' corners and its faces). None: no outline.
-fn slab(
-    outline: &[[f64; 3]],
-    through: Option<[f64; 3]>,
-    thickness: f64,
-) -> Option<([Vec<[f64; 3]>; 2], Vec<SolidFace>)> {
+fn slab(outline: &[[f64; 3]], through: Option<[f64; 3]>, thickness: f64) -> Option<Slab> {
     let n = through?;
     if outline.len() < 3 {
         return None;

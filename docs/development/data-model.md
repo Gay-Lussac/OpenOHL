@@ -1598,6 +1598,31 @@ revision, libraries stamp): up to `AT_ONCE` (400) members at once, more
 on a thread of their own; a solid whose work points no longer match its
 member's (within 1 mm) is drawn as a stick.
 
+Lap joints, covers, continuous members, 2026-11-05 (OHL-Structure,
+`ohl_structure_link`, nothing stored; stages 2 and 4 of the proposal in
+joint-details.md; built, in active development, not approved yet):
+`Arrival::sits: Valued<Face>` (given, else worked out from the seat;
+none onto a plate or splice), `Arrival::continuous: Option<member>`
+(`StructureType::continuous_with`; no cut, shift, bolts or layout there),
+`Arrival::misfit` (drawn red, said in `notes`), `Arrival::planes:
+(Valued<u32>, Option<why>)` (the bolts' `shear_planes` given, else
+`EndDesign::planes` worked out, else the member's), `Angle::r` (root
+radius). `NESTED_ANGLE_DEG` (5°). `JointDetail::splices: Vec<SpliceDetail
+{ id, members, bolted, covers: Vec<CoverDetail { face, leg, thickness,
+material, outline, outline_given, through, edges, notes }>, notes }>`
+(`CoverDetail::words`); `bolted_cover_leg(arrival)`. `part_chains(&JointDetails)
+-> Vec<PartChain { members, joints, length, steel }>` (two members or
+more joined by continuous ends; `steel` less the free ends' cuts).
+`MemberSolid::{runs_on, misfit}` (no end face where it runs on),
+`prism_faces_capped`, `plate_solids(&JointDetails) -> Vec<PlateSolid {
+id, joint, cover, thickness, ends, faces, misfit }>` (gusset plates and
+covers, drawn in the 3D view). `steel_start` may be below 0 (at most half
+the length): a member nested in runs on past the work point. The grip
+onto a splice: [leg + inner covers on that leg, outer covers]. App:
+`joint_tools::Act::{Continuous, AddSplice, Cover, RemoveSplice}`,
+`continuous_pairs(t)`, `JointTools::continuous` (the Continuous members
+window).
+
 **Detail level** (`StructureType::detail`, never stored — an older
 `detail` key is read and ignored): 3 *full design* when `model` is given
 or `StructureType::missing_for_design` finds nothing: there are members,

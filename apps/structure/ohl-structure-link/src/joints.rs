@@ -184,6 +184,11 @@ pub struct Arrival {
     pub leg: Valued<BoltedLeg>,
     /// Its bolts.
     pub bolts: Valued<BoltSet>,
+    /// Shear planes per bolt: given with the bolts, else worked out from
+    /// the plies they pass through (a splice's covers on the leg: one per
+    /// cover; lapped or nested: one; `ohl_structures_fe::member_ends::worked_planes`),
+    /// else the member's; with why when worked out.
+    pub planes: (Valued<u32>, Option<String>),
     /// Gauge lines.
     pub gauge_lines: Valued<u32>,
     /// The gauges, m.
@@ -528,6 +533,7 @@ pub fn joint_details(
                 onto: Valued::none(),
                 leg: Valued::none(),
                 bolts: Valued::none(),
+                planes: (Valued::none(), None),
                 gauge_lines: Valued::none(),
                 gauges: Valued::none(),
                 pitch: Valued::none(),
@@ -770,6 +776,31 @@ fn condition(
         }
         (None, _) => member_bolts(design),
     };
+    // The shear planes: given, else worked out from the plies, else the
+    // member's (given that differs from worked out: said).
+    let worked = design
+        .and_then(|d| d.ends.get(a.end))
+        .and_then(Option::as_ref)
+        .and_then(|e| e.planes.clone());
+    a.planes = match (
+        c.and_then(|c| c.bolts.as_ref())
+            .and_then(|b| b.shear_planes),
+        worked,
+    ) {
+        (Some(n), w) => {
+            if let Some((k, why)) = w.filter(|w| w.0 != n) {
+                a.notes.push(format!(
+                    "shear planes: {n} given, {k} worked out ({why}): the given taken"
+                ));
+            }
+            (Valued::of(n, Given), None)
+        }
+        (None, Some((n, why))) => (Valued::of(n, WorkedOut), Some(why)),
+        (None, None) => match design.and_then(|d| d.bolts) {
+            Some(b) => (Valued::of(b.shear_planes, Member), None),
+            None => (Valued::none(), None),
+        },
+    };
     let diameter = a.bolts.value.as_ref().map(|b| b.diameter);
     let count = a.bolts.value.as_ref().map_or(0, |b| b.count);
     // The layout.
@@ -908,6 +939,7 @@ fn condition(
     // One part through the joint: no bolts, no layout at this end.
     if let Some(o) = a.continuous.clone() {
         a.bolts = Valued::none();
+        a.planes = (Valued::none(), None);
         a.gauge_lines = Valued::none();
         a.gauges = Valued::none();
         a.pitch = Valued::none();
@@ -1413,6 +1445,11 @@ fn nested_here(t: &StructureType, joint: &str, all: &[Arrival]) -> BTreeMap<Stri
     out
 }
 
+/// The code's minimums of a member end's bolts in a part of a thickness
+/// and an ultimate strength (none: the member's own leg).
+type PartRules<'a> = dyn Fn(&Arrival, Option<(f64, Option<f64>)>) -> Option<ohl_structures_fe::bolt_rules::BoltRules>
+    + 'a;
+
 /// The fit of each member nested in another at a joint (`nested`, by the
 /// member they nest in), in words in its notes, a misfit flagged: each
 /// leg at most the other's less its thickness and root radius; the end
@@ -1424,10 +1461,7 @@ fn nested_here(t: &StructureType, joint: &str, all: &[Arrival]) -> BTreeMap<Stri
 fn nest_fit(
     arrivals: &mut [Arrival],
     nested: &BTreeMap<String, Vec<String>>,
-    rules: &dyn Fn(
-        &Arrival,
-        Option<(f64, Option<f64>)>,
-    ) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
+    rules: &PartRules<'_>,
 ) {
     let mm = |v: f64| v * 1000.0;
     for (host, inners) in nested {
@@ -1471,7 +1505,7 @@ fn nest_fit(
             }
             notes.push(format!(
                 "nested in {host}: its heel taken as ground to clear {host}'s root fillet (r {:.0} \
-                 mm); not ground it would sit {:.1} mm off along the diagonal, r (1 − 1/√2)",
+                 mm); not ground it would sit {:.1} mm off along the diagonal, r (1 − cos 45°)",
                 mm(h.r),
                 mm(h.r * (1.0 - std::f64::consts::FRAC_1_SQRT_2))
             ));
