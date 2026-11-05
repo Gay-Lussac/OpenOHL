@@ -224,6 +224,8 @@ pub struct ExportStructure {
     pub connections: Vec<ohl_structures::connections::TypeConnection>,
     /// The gusset plates as the file gives them.
     pub plates: Vec<ohl_structures::connections::TypePlate>,
+    /// The splices (covers) as the file gives them (2026-11-05).
+    pub splices: Vec<ohl_structures::connections::TypeSplice>,
     /// The bolts where the joint details put them ([`export_joints`]);
     /// empty when the file has no connection or plate.
     pub bolts: Vec<ExportBolt>,
@@ -544,6 +546,7 @@ pub fn export_structure(
         description: structure.description.clone(),
         connections: structure.connections.clone(),
         plates: structure.plates.clone(),
+        splices: structure.splices.clone(),
         ..Default::default()
     };
     out.nodes = model

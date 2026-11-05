@@ -1205,11 +1205,29 @@ fn connections_and_plates_as_csv() {
         plates.contains("\nG2,N1,0.01,,,,,G1,fillet,0.006,0.22"),
         "{plates}"
     );
+    // A splice with two covers and a nested face (2026-11-05): a row per
+    // cover; the face column last in connections.csv.
+    let spliced = format!(
+        "{text}[[splice]]\nid = \"S1\"\njoint = \"N1\"\nmembers = [\"m-EA\"]\n\
+         [[splice.cover]]\nface = \"outer\"\nleg = \"long\"\nthickness = \"8 mm\"\n\
+         [[splice.cover]]\nface = \"inner\"\nleg = \"long\"\nthickness = \"6 mm\"\n"
+    )
+    .replace("onto = \"G1\"\n", "onto = \"G1\"\nface = \"nested\"\n");
+    let s = structure(&spliced, &library, &Default::default(), None).unwrap();
+    let t = csv::tables(&s);
+    let get = |n: &str| t.iter().find(|(x, _)| *x == n).map(|x| x.1.clone());
+    let sp = get("splices.csv").unwrap();
+    assert!(sp.starts_with("id,joint,members,cover_face,cover_leg,thickness_m,material,outline_m"));
+    assert!(sp.contains("\nS1,N1,m-EA,outer,long,0.008,,"), "{sp}");
+    assert!(sp.contains("\nS1,N1,m-EA,inner,long,0.006,,"), "{sp}");
+    let c = get("connections.csv").unwrap();
+    assert!(c.lines().next().unwrap().ends_with(",shift_m,face"));
+    assert!(c.lines().nth(1).unwrap().ends_with(",nested"), "{c}");
     let none = structure(SHAPES, &library, &Default::default(), None).unwrap();
     assert!(
         csv::tables(&none)
             .iter()
-            .all(|(n, _)| *n != "connections.csv")
+            .all(|(n, _)| *n != "connections.csv" && *n != "splices.csv")
     );
 }
 

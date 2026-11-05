@@ -6,8 +6,9 @@
 //! in the headers, the structure's axes: x right, y ahead, z up), for any
 //! program that reads tables: `materials.csv`, `sections.csv`,
 //! `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`,
-//! `loads.csv`; and when the file has them (version 9) `connections.csv`
-//! and `plates.csv`, the values as the file gives them.
+//! `loads.csv`; and when the file has them (version 9) `connections.csv`,
+//! `plates.csv` and `splices.csv` (2026-11-05: one row per cover), the
+//! values as the file gives them.
 
 use ohl_core::text::csv_field;
 use ohl_sections::Shape;
@@ -296,7 +297,52 @@ pub fn tables(s: &ExportStructure) -> Vec<(&'static str, String)> {
     if !s.plates.is_empty() {
         out.push(("plates.csv", plates(s)));
     }
+    if !s.splices.is_empty() {
+        out.push(("splices.csv", splices(s)));
+    }
     out
+}
+
+/// The splices as the file gives them: one row per cover (a splice
+/// without covers: one row, the cover's columns empty).
+fn splices(s: &ExportStructure) -> String {
+    let mut rows = Vec::new();
+    for sp in &s.splices {
+        let head = vec![sp.id.clone(), sp.joint.clone(), sp.members.join(";")];
+        if sp.covers.is_empty() {
+            let mut r = head.clone();
+            r.extend(std::iter::repeat_n(String::new(), 5));
+            rows.push(r);
+        }
+        for c in &sp.covers {
+            let mut r = head.clone();
+            r.extend([
+                c.face.as_str().to_owned(),
+                c.leg.map(|l| l.as_str().to_owned()).unwrap_or_default(),
+                num(c.thickness.si()),
+                c.material.clone().unwrap_or_default(),
+                c.outline
+                    .iter()
+                    .map(|q| q.iter().map(|v| num(v.si())).collect::<Vec<_>>().join(" "))
+                    .collect::<Vec<_>>()
+                    .join(";"),
+            ]);
+            rows.push(r);
+        }
+    }
+    table(
+        &[
+            "id",
+            "joint",
+            "members",
+            "cover_face",
+            "cover_leg",
+            "thickness_m",
+            "material",
+            "outline_m",
+        ],
+        rows,
+    )
 }
 
 /// The connections as the file gives them (empty: not given).
@@ -328,6 +374,7 @@ fn connections(s: &ExportStructure) -> String {
             "eccentricity_m",
             "cut_m",
             "shift_m",
+            "face",
         ],
         s.connections
             .iter()
@@ -362,6 +409,7 @@ fn connections(s: &ExportStructure) -> String {
                     ol(&c.eccentricity),
                     ol(&c.cut),
                     ol(&c.shift),
+                    c.face.map(|f| f.as_str().to_owned()).unwrap_or_default(),
                 ]
             })
             .collect(),
