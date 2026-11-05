@@ -436,6 +436,23 @@ whole metres; the earlier code is kept for them).
   sample (\\( t \\) the threshold, \\( a \\) the allowance, \\( s \\) the
   sample spacing): a triangle nearer in plan is under that ground, one
   farther is more than \\( r \\) away.
+- **The reach for the ground, radially** (2026-11-05). The radial
+  clearance to the ground is kept within the reach \\( R \\) (the
+  requirement plus `search_margin`) only, as for the points; a wire
+  below the ground always counts. A piece or sample more than \\( R \\)
+  above the highest ground within \\( R \\) of it in plan is passed
+  over. Before, the smallest clearance so far was the threshold, so a
+  wire tens of metres above a valley — every swing-arc line of its span,
+  every 0.5 m — searched some 2000 triangles of a fine surface each, for
+  a lowest outside the reach that was not exact either (the search
+  stopped at \\( R \\) in plan).
+- **The last sample's distance** (2026-11-05). The distance to a
+  surface changes by at most the distance moved, so a sample's lies
+  within \\( d \pm m \\) of the last one searched (\\( d \\) its
+  distance, \\( m \\) the distance between them): the upper bound
+  narrows the search radius, the lower one passes over samples that
+  cannot come below the threshold or within the reach — the same
+  results.
 - **Every core.** The ground check checks the wires in parallel; the
   points are read in blocks of 65 536, each block's stretches worked out
   on every core from the results so far and the results applied in the

@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-11-05
 
+**Radial ground clearances within the reach; `ohl zones` progress**
+(owner, 2026-11-05: the radial check of a real line with a design
+code's preset reached its time limit, fast at first, then slower).
+Measured, not a memory problem: the memory stayed flat (6–10 GB); the
+time went into the ground's swing-arc lines on spans 30–50 m above the
+valley, each 0.5 m sample listing some 2000 triangles of the 12.7 M
+triangle surface for a lowest far outside the reach. Now the radial
+clearance to the ground is kept within the reach only (the
+requirement plus `search_margin`, as `search_margin` is documented and
+the points already did; a wire below the ground always counts), and a
+sample's search uses the last sample's distance. The ground step of
+that line: 8 min (before: past 50 min, 27 % done after 16 min); one
+circuit 14 s against 619 s, the same findings within the reach — the
+ground rule's lowest of 22.7 m beyond its 11.3 m reach no longer
+reported ("nothing within reach"). The vertical is unchanged.
+`ohl zones` writes its progress to the standard error every 30 s.
+Built, in active development, not approved yet.
+
 **Members seated in 3D, bolts on both legs, bolts in 3D** (owner,
 2026-11-05: "draw them at the right place in 3d also give the
 possibility to define on which surface of the member are the bolts we

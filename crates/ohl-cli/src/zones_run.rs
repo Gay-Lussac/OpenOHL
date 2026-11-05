@@ -14,6 +14,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use ohl_clearance::zone::{self, Measure, Zone, ZoneCheckResult, ZoneFinding};
@@ -610,31 +611,58 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
     );
 
     println!("time limit: {limit_text}");
+    let read_progress = ohl_pointcloud::ReadProgress::default();
     let read = |polylines: &[Vec<[f64; 2]>],
                 reach: f64,
                 classes: &[u8],
                 budget: &Budget,
                 visit: &mut dyn FnMut(f64, f64, f64, u8)| {
         let spec = cloud.as_deref().unwrap_or_default();
-        ohl_pointcloud::visit_around(spec, polylines, reach, classes, budget, visit).map(|_| ())
+        // Each read counts from nothing (one per calculation).
+        for a in [
+            &read_progress.total,
+            &read_progress.done,
+            &read_progress.visited,
+        ] {
+            a.store(0, Ordering::Relaxed);
+        }
+        ohl_pointcloud::visit_around_with(
+            spec,
+            polylines,
+            reach,
+            classes,
+            budget,
+            Some(&read_progress),
+            visit,
+        )
+        .map(|_| ())
     };
     let done = ohl_clearance::zone_progress::ZoneProgress::new();
-    let result = zone::run_zone_check(
-        &line,
-        &library,
-        z,
-        &check,
-        rules,
-        states,
-        wind.arc.then_some(wind.margins()),
-        cloud.is_some().then_some(&read as _),
-        ground.as_ref().map(|(t, _)| t),
-        &surfaces,
-        None,
-        &budget,
-        &done,
-        &Default::default(),
-    )
+    // How far it has got, on the standard error every 30 s (a large
+    // project's run takes many minutes): the step, its share, the
+    // points handed on and the time left at the pace so far.
+    let finished = AtomicBool::new(false);
+    let result = std::thread::scope(|s| {
+        s.spawn(|| progress_lines(&done, &read_progress, &finished));
+        let result = zone::run_zone_check(
+            &line,
+            &library,
+            z,
+            &check,
+            rules,
+            states,
+            wind.arc.then_some(wind.margins()),
+            cloud.is_some().then_some(&read as _),
+            ground.as_ref().map(|(t, _)| t),
+            &surfaces,
+            None,
+            &budget,
+            &done,
+            &Default::default(),
+        );
+        finished.store(true, Ordering::Relaxed);
+        result
+    })
     .map_err(stopped)?;
     print_report(&result, &scheme);
     if let Some(out) = &args.csv {
@@ -643,6 +671,72 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         println!("findings written to {}", out.display());
     }
     Ok(result)
+}
+
+/// Writes how far a run has got to the standard error every
+/// [`PROGRESS_EVERY`] until `finished`: "progress: step 4 of 5: reading
+/// and checking the points — 41 % (3.2 M points checked), about 6 min
+/// left (12 min in the step)".
+fn progress_lines(
+    steps: &ohl_clearance::zone_progress::ZoneProgress,
+    read: &ohl_pointcloud::ReadProgress,
+    finished: &AtomicBool,
+) {
+    let mut last = Instant::now();
+    while !finished.load(Ordering::Relaxed) {
+        // Looks at `finished` often, so the run's end is not held up.
+        std::thread::sleep(Duration::from_millis(200));
+        if last.elapsed() < PROGRESS_EVERY {
+            continue;
+        }
+        last = Instant::now();
+        let Some(snap) = steps.snapshot() else {
+            continue;
+        };
+        let mut line = format!("progress: {}", snap.words());
+        // The points' step: the share of the blocks read (its own
+        // counter), else the step's.
+        let points = snap.step == ohl_clearance::zone_progress::Step::Points;
+        let total = read.total.load(Ordering::Relaxed);
+        let share = if points && total > 0 {
+            Some((read.done.load(Ordering::Relaxed) as f64 / total as f64).min(1.0))
+        } else {
+            snap.share()
+        };
+        if let Some(share) = share {
+            let _ = write!(line, " — {:.0} %", share * 100.0);
+        }
+        let visited = read.visited.load(Ordering::Relaxed);
+        if points && visited > 0 {
+            let _ = write!(line, " ({:.1} M points checked)", visited as f64 / 1e6);
+        }
+        if let Some(share) = share.filter(|s| (0.02..1.0).contains(s)) {
+            let elapsed = snap.elapsed.as_secs_f64();
+            let _ = write!(
+                line,
+                ", about {} left",
+                minutes(elapsed / share * (1.0 - share))
+            );
+        }
+        let _ = write!(
+            line,
+            " ({} in the step)",
+            minutes(snap.elapsed.as_secs_f64())
+        );
+        eprintln!("{line}");
+    }
+}
+
+/// How often [`progress_lines`] writes.
+const PROGRESS_EVERY: Duration = Duration::from_secs(30);
+
+/// "40 s", "6 min".
+fn minutes(s: f64) -> String {
+    if s < 120.0 {
+        format!("{s:.0} s")
+    } else {
+        format!("{:.0} min", s / 60.0)
+    }
 }
 
 /// ", zone ±1.5 m in slices of 0.2 m, wind stepped by 50 Pa from both

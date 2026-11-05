@@ -1572,6 +1572,15 @@ pub(crate) fn ground_wire(
         let own = if m == 0 { r.vertical } else { r.radial };
         own.map_or(bound[m], |h| h.distance.min(bound[m]))
     };
+    // Per subconductor: the last sample searched and bounds of its
+    // distance to the surface (lower; upper: a surface point found).
+    // The distance to a surface changes by at most the distance moved,
+    // so the next sample's lies within that of them: the upper bound
+    // narrows the search radius, the lower one passes over samples that
+    // cannot come below the threshold — the same results, fewer
+    // triangles listed (2026-11-05: a 12.7 M-triangle surface under
+    // swing arcs on steep slopes reached the time limit).
+    let mut last: Vec<Option<(P3, f64, Option<f64>)>> = Vec::new();
     for (piece, s) in wire.points.windows(2).enumerate() {
         let (a, b) = (s[0], s[1]);
         let extra = vertical_extra.map_or(0.0, |x| x[piece]);
@@ -1627,6 +1636,21 @@ pub(crate) fn ground_wire(
             }
         };
         let around = |t: f64| (t + off).hypot(spacing / 2.0);
+        // Out of reach: the ground is reported within the reach only
+        // (`search_margin`; 2026-11-05: wires tens of metres up were
+        // searched for a lowest beyond it, every 0.5 m of every swing
+        // arc line). A piece whose every sample lies more than the reach
+        // above the highest ground within the reach of it in plan finds
+        // nothing (a triangle farther in plan is farther in space).
+        let high = top.max_in(
+            a[0].min(b[0]) - bundle - reach,
+            a[0].max(b[0]) + bundle + reach,
+            a[1].min(b[1]) - bundle - reach,
+            a[1].max(b[1]) + bundle + reach,
+        );
+        if a[2].min(b[2]) - bundle - high > reach {
+            continue;
+        }
         let t = threshold(&result, false);
         if t.is_finite() {
             let r = around(t);
@@ -1652,26 +1676,57 @@ pub(crate) fn ground_wire(
             // never larger than vertical); where it is far below or
             // missing (a hole), the ground beside may still be near:
             // searched over the whole reach.
-            for p in wire.subconductors(centre, a, b) {
+            for (j, p) in wire.subconductors(centre, a, b).into_iter().enumerate() {
+                if last.len() <= j {
+                    last.resize(j + 1, None);
+                }
+                // From the last sample searched: (lower, upper bound).
+                let known = last[j].map(|(q, lower, upper)| {
+                    let moved = distance(p, q);
+                    (lower - moved, upper.map(|u| u + moved))
+                });
+                // Nothing within the reach (see above).
+                if known.is_some_and(|(lower, _)| lower > reach) {
+                    continue;
+                }
+                let high = top.max_in(p[0] - reach, p[0] + reach, p[1] - reach, p[1] + reach);
+                if p[2] - high > reach {
+                    continue;
+                }
                 let t = threshold(&result, radial_bad);
                 if t.is_finite() {
                     let r = around(t);
+                    if known.is_some_and(|(lower, _)| lower >= r) {
+                        continue;
+                    }
                     let high = top.max_in(p[0] - r, p[0] + r, p[1] - r, p[1] + r);
                     if p[2] - high >= r {
                         continue;
                     }
                 }
                 let below = terrain.height(p[0], p[1]);
-                let radius = below.map_or(reach, |g| (p[2] - g).max(0.0).min(reach));
+                let mut radius = below.map_or(reach, |g| (p[2] - g).max(0.0).min(reach));
+                if let Some((_, Some(upper))) = known {
+                    // A whisker over, for the rounding of the distances.
+                    radius = radius.min(upper + NEAREST_MARGIN);
+                }
                 let nearest = nearest_triangle(terrain, p, radius);
-                if let Some((d, q)) = nearest {
+                // Above the surface: every triangle within the radius in
+                // plan was listed, so the distance is the nearest found
+                // when within the radius, else at least the radius.
+                last[j] = match (below, nearest) {
+                    (Some(g), _) if p[2] < g => None,
+                    (_, Some((d, _))) => Some((p, d.min(radius), Some(d))),
+                    (_, None) => Some((p, radius, None)),
+                };
+                // Within the reach only (a triangle in a corner of the
+                // square searched may lie beyond it); below the ground
+                // always.
+                let under = below.is_some_and(|g| p[2] < g);
+                if let Some((d, q)) = nearest.filter(|&(d, _)| under || d <= reach) {
                     // Between samples the wire may come nearer:
                     // the lower bound, then to the surface.
-                    let d = if below.is_some_and(|g| p[2] < g) {
-                        -d
-                    } else {
-                        sampled_floor(d, spacing)
-                    } - off;
+                    let d = if under { -d } else { sampled_floor(d, spacing) } - off;
                     let hit = Hit {
                         distance: d,
                         wire: p,
@@ -1686,6 +1741,10 @@ pub(crate) fn ground_wire(
     }
     result
 }
+
+/// Margin added to a search radius bounded by an earlier sample's
+/// distance ([`ground_wire`]), m: the rounding of the distances.
+const NEAREST_MARGIN: f64 = 1e-6;
 
 /// Margin of the triangles' box test in [`nearest_triangle`], m: the
 /// point found on a triangle may lie outside its box by the rounding of
@@ -2389,6 +2448,48 @@ mod tests {
         let expected = sampled_floor(expected, 0.4);
         assert!((radial - expected).abs() < 1e-6, "{radial} vs {expected}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
+    }
+
+    /// The radial clearance to the ground is reported within the reach
+    /// only (the requirement plus `search_margin`, 2026-11-05): a wire
+    /// far above it finds nothing, one within it the same as before —
+    /// to the reference.
+    #[test]
+    fn ground_radial_only_within_the_reach() {
+        let mut points = Vec::new();
+        for i in 0..=10 {
+            for j in -10..=10 {
+                let (x, y) = (i as f64 * 10.0, j as f64 * 2.0);
+                points.push(SurveyPoint {
+                    x,
+                    y,
+                    z: y,
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let terrain = Terrain::from_points(&points, None).unwrap();
+        // Radial 8 m, search margin 5 m: a reach of 13 m.
+        let r = rule(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nradial = 8.0\n\
+             search_margin = \"5 m\"",
+        );
+        // 40 m up over the 45° slope: about 28 m from it, beyond the reach.
+        let high = vec![straight("S", "L1", [10.0, 0.0, 40.0], [90.0, 0.0, 40.0])];
+        let res = &ground_check(&r, &high, &terrain)[0];
+        assert!(res.radial.is_none(), "{:?}", res.radial);
+        // 15 m up: about 10.6 m, within the reach — as the reference.
+        let low = vec![straight("S", "L1", [10.0, 0.0, 15.0], [90.0, 0.0, 15.0])];
+        let res = &ground_check(&r, &low, &terrain)[0];
+        let reference = &super::reference::old_ground_check(&r, &low, &terrain)[0];
+        let radial = res.radial.unwrap().distance;
+        assert_eq!(Some(radial), reference.radial.map(|h| h.distance));
+        assert!(
+            (radial - sampled_floor(15.0 * 0.5f64.sqrt(), 0.4)).abs() < 1e-9,
+            "{radial}"
+        );
+        assert_eq!(res.radial_violations, 0);
     }
 
     /// The vertical (owner, 2026-10-22): only targets whose plan position

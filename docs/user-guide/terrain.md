@@ -97,7 +97,7 @@ radial = "4.5 m"
 | `vertical_depth` | Vertical clearances to points and the ground: the depth along the line of the area under the wire (`vertical_band` its half width across), e.g. `"0.2 m"`. The clearance is the shortest vertical distance between the wire and a point of the area: a point is compared with the wire's lowest point within that depth around it (its highest for a point above the wire). Default 0: the wire straight above the point. |
 | `voltages` | Optional: only the wires of these nominal voltages are checked, e.g. `[220]` (kV; `0` for earthed wires); default: all. Wire rules: the first wire of a pair. A distance by voltage (a table or base + per kV) needs none: one rule covers every voltage (2026-10-21; [A rule's voltages](desktop-app.md#a-rules-voltages)). |
 | `wires` | Which wires are checked: `"sections"` (the spans), `"jumpers"`, or `"both"` (default). |
-| `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
+| `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. The radial clearance to the ground too since 2026-11-05 (before, a lowest beyond it was still sought: slow under swing arcs high above a valley); a wire below the ground always counts. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
 | `circuits` | `same_line`: `"different"` checks only pairs of wires of different circuits (circuit to circuit, e.g. the two circuits of a double-circuit structure; a phase and an earth wire), `"same"` only pairs of the same circuit (phase to phase); default `"any"`. Combine with `case_pairs` for one circuit iced and the other not. |
 | `cases` | Weather cases the rule applies to, by name (`*` `?` wildcards); default: all cases run. |
@@ -538,6 +538,14 @@ row per finding. The exit
 status is **0** with no violation, **1** with violations, **2** on an
 error (a rule file with both measures, no weather case, the time limit) —
 for scripts and batch runs.
+
+While it runs (2026-11-05), `ohl zones` writes how far it has got to
+the standard error every 30 s — the step, its share, the LiDAR points
+checked and the time left at the pace so far:
+
+```text
+progress: step 5 of 5: checking the ground — 41 %, about 6 min left (4 min in the step)
+```
 
 ## Survey files
 

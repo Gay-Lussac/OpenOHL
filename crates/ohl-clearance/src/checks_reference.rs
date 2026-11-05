@@ -147,7 +147,8 @@ impl OldPointCheck {
 /// within that horizontal distance of the wire; with its `vertical_depth`,
 /// the wire's lowest in a slice of that depth. Radial: wire samples every [`GROUND_STEP`] to the
 /// triangles within the rule's reach (narrowed to the vertical clearance
-/// where that is smaller: the radial distance is never larger).
+/// where that is smaller: the radial distance is never larger), a
+/// distance kept only within the reach.
 pub fn old_ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireResult> {
     wires
         .iter()
@@ -205,7 +206,10 @@ pub fn old_ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<W
                                 best = Some((d, q));
                             }
                         });
-                        if let Some((d, q)) = best {
+                        // Within the reach only (since 2026-11-05);
+                        // below the ground always.
+                        let under = below.is_some_and(|g| p[2] < g);
+                        if let Some((d, q)) = best.filter(|&(d, _)| under || d <= reach) {
                             // Between samples the wire may come nearer:
                             // the lower bound, then to the surface.
                             let d = if below.is_some_and(|g| p[2] < g) {
