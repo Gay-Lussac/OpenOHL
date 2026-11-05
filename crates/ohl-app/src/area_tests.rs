@@ -66,7 +66,11 @@ fn drag(h: &mut Harness<'_, App>, path: &[egui::Pos2], modifiers: egui::Modifier
     });
     h.step();
     h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
-    h.run();
+    // A background job may still repaint (under load): a few steps, not
+    // `run` (which fails when the frames keep coming).
+    for _ in 0..8 {
+        h.step();
+    }
 }
 
 /// The dots of the profile inside `area` (pixels from the view's top
