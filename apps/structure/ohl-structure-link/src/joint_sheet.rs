@@ -170,6 +170,31 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
             label: false,
         });
     }
+    // A splice's covers as plates (2026-11-05), each with its splice, face
+    // and thickness.
+    for s in &d.splices {
+        for c in &s.covers {
+            let pts: Vec<[f64; 2]> = c.outline.iter().map(|q| to(*q)).collect();
+            if pts.is_empty() {
+                continue;
+            }
+            let n = pts.len() as f64;
+            let mid = [
+                pts.iter().map(|q| q[0]).sum::<f64>() / n,
+                pts.iter().map(|q| q[1]).sum::<f64>() / n,
+            ];
+            marks.push(Mark::Line {
+                points: pts,
+                closed: true,
+                kind: LineKind::Plate,
+            });
+            marks.push(Mark::Text {
+                at: mid,
+                text: format!("{} {} · {:.0} mm", s.id, c.words(), c.thickness * 1000.0),
+                label: false,
+            });
+        }
+    }
     // The welds where the plates of a welded plate meet.
     for p in &d.plates {
         for w in &p.welds {

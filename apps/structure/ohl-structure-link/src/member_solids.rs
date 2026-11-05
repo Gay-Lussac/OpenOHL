@@ -22,6 +22,12 @@
 //! the close-up draws it). The work line still runs to the work points;
 //! the steel stops short of them by the cuts.
 //!
+//! A member running on through a joint into the next as one part
+//! (`kind = "continuous"`, 2026-11-05) has no cut, no shift and no end
+//! face there: the two members' solids meet in one section, one solid
+//! through the joint. The plates and a splice's covers are solids of
+//! their thickness on their outlines ([`plate_solids`]).
+//!
 //! Display only: nothing here is used by a calculation.
 
 use crate::joints::{Arrival, JointDetails, Profile};
@@ -56,8 +62,14 @@ pub struct MemberSolid {
     /// The section's corners where its steel stops at each end
     /// ([`section_at`] from that end's joint), in the outline's order.
     pub ends: [Vec<[f64; 3]>; 2],
-    /// Its faces: the sides and the two ends.
+    /// Its faces: the sides and the two ends (not at an end where it
+    /// runs on into the next member as one part).
     pub faces: Vec<SolidFace>,
+    /// It runs on into the next member as one part at each end (no end
+    /// face there).
+    pub runs_on: [bool; 2],
+    /// It does not fit at an end as given ([`Arrival::misfit`]): drawn red.
+    pub misfit: bool,
 }
 
 impl MemberSolid {
@@ -94,9 +106,11 @@ pub fn section_at(a: &Arrival, p: &Profile, along: f64) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// Where `a`'s steel starts from its joint, m (its cut; 0 when none).
+/// Where `a`'s steel starts from its joint, m (its cut; 0 when none; below
+/// 0 where it runs on past the work point, over the bolts of a member
+/// nested in it — at most half its length).
 pub fn steel_start(a: &Arrival) -> f64 {
-    a.cut.value.unwrap_or(0.0).max(0.0)
+    a.cut.value.unwrap_or(0.0).max(-a.length / 2.0)
 }
 
 /// The prism of `outline` (the profile's, in the section's plane) from the
@@ -111,6 +125,18 @@ pub fn prism_faces(
     outline: &[[f64; 2]],
     ey: [f64; 3],
     ez: [f64; 3],
+) -> Option<Vec<SolidFace>> {
+    prism_faces_capped(near, far, outline, ey, ez, [true, true])
+}
+
+/// [`prism_faces`] with its end faces only where `caps` says (near, far).
+fn prism_faces_capped(
+    near: &[[f64; 3]],
+    far: &[[f64; 3]],
+    outline: &[[f64; 2]],
+    ey: [f64; 3],
+    ez: [f64; 3],
+    caps: [bool; 2],
 ) -> Option<Vec<SolidFace>> {
     let n = outline.len();
     if n < 3 || near.len() != n || far.len() != n {
@@ -151,9 +177,15 @@ pub fn prism_faces(
             normal: nv,
         });
     }
-    let caps = ear_clip(outline);
+    let ears = ear_clip(outline);
     let unit_along = scale(along, 1.0 / norm(along));
-    for (ends, outward) in [(near, scale(unit_along, -1.0)), (far, unit_along)] {
+    for (ends, outward, cap) in [
+        (near, scale(unit_along, -1.0), caps[0]),
+        (far, unit_along, caps[1]),
+    ] {
+        if !cap {
+            continue;
+        }
         let Some(mut nv) = normal_of(ends) else {
             continue;
         };
@@ -161,7 +193,7 @@ pub fn prism_faces(
             nv = scale(nv, -1.0);
         }
         let edge = |u: usize, v: usize| (u + 1) % n == v || (v + 1) % n == u;
-        let triangles = caps
+        let triangles = ears
             .iter()
             .map(|t| {
                 (
@@ -221,6 +253,7 @@ fn solid_of(m: &str, e0: End<'_>, e1: End<'_>) -> Option<MemberSolid> {
     // The cuts, the second within what the first leaves.
     let c0 = steel_start(a0).min(length);
     let c1 = steel_start(a1).min(length - c0);
+    let runs_on = [a0.continuous.is_some(), a1.continuous.is_some()];
     let at = |e: End<'_>, c: f64| -> Vec<[f64; 3]> {
         let prof = e.2.profile.as_ref().unwrap_or(p);
         section_at(e.2, prof, c)
@@ -230,7 +263,8 @@ fn solid_of(m: &str, e0: End<'_>, e1: End<'_>) -> Option<MemberSolid> {
     };
     let near = at(e0, c0);
     let far = at(e1, c1);
-    let faces = prism_faces(&near, &far, &p.outline, p.axes[1], p.axes[2])?;
+    let caps = runs_on.map(|r| !r);
+    let faces = prism_faces_capped(&near, &far, &p.outline, p.axes[1], p.axes[2], caps)?;
     Some(MemberSolid {
         member: m.to_owned(),
         section: p.section.clone(),
@@ -240,7 +274,102 @@ fn solid_of(m: &str, e0: End<'_>, e1: End<'_>) -> Option<MemberSolid> {
         cut: [c0, c1],
         ends: [near, far],
         faces,
+        runs_on,
+        misfit: a0.misfit || a1.misfit,
     })
+}
+
+/// A plate or a splice's cover as a solid: its outline run through its
+/// thickness (structure axes, m).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlateSolid {
+    /// The plate's id, or the splice's id and the cover ("S1 outer long").
+    pub id: String,
+    /// Its joint.
+    pub joint: String,
+    /// A splice's cover (else a gusset plate).
+    pub cover: bool,
+    /// Its thickness, m.
+    pub thickness: f64,
+    /// Its outline's corners on its two faces.
+    pub ends: [Vec<[f64; 3]>; 2],
+    /// Its faces.
+    pub faces: Vec<SolidFace>,
+    /// Something at it does not fit (a member end onto it, its bolts too
+    /// near its edge): drawn red.
+    pub misfit: bool,
+}
+
+/// Every joint's plates and splices' covers with an outline as solids:
+/// the outline from its face through its thickness (the close-up's way).
+pub fn plate_solids(d: &JointDetails) -> Vec<PlateSolid> {
+    let mut out = Vec::new();
+    for j in &d.joints {
+        let misfit_onto = |id: &str| {
+            j.arrivals
+                .iter()
+                .any(|a| a.misfit && a.onto.value.as_deref() == Some(id))
+        };
+        for p in &j.plates {
+            if let Some(s) = slab(&p.outline, p.through, p.thickness) {
+                out.push(PlateSolid {
+                    id: p.id.clone(),
+                    joint: j.id.clone(),
+                    cover: false,
+                    thickness: p.thickness,
+                    ends: s.0,
+                    faces: s.1,
+                    misfit: misfit_onto(&p.id) || (p.outline_given && !p.notes.is_empty()),
+                });
+            }
+        }
+        for sp in &j.splices {
+            for c in &sp.covers {
+                if let Some(s) = slab(&c.outline, c.through, c.thickness) {
+                    out.push(PlateSolid {
+                        id: format!("{} {}", sp.id, c.words()),
+                        joint: j.id.clone(),
+                        cover: true,
+                        thickness: c.thickness,
+                        ends: s.0,
+                        faces: s.1,
+                        misfit: misfit_onto(&sp.id) || (c.outline_given && !c.notes.is_empty()),
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The solid of a flat plate: `outline` run along `through` by
+/// `thickness` (its two faces' corners and its faces). None: no outline.
+fn slab(
+    outline: &[[f64; 3]],
+    through: Option<[f64; 3]>,
+    thickness: f64,
+) -> Option<([Vec<[f64; 3]>; 2], Vec<SolidFace>)> {
+    let n = through?;
+    if outline.len() < 3 {
+        return None;
+    }
+    let far: Vec<[f64; 3]> = outline
+        .iter()
+        .map(|q| add(*q, scale(n, thickness)))
+        .collect();
+    // The outline in its own plane, for the faces' turning and ears.
+    let u0 = sub(outline[1], outline[0]);
+    let u = scale(u0, 1.0 / norm(u0).max(1e-12));
+    let v = cross(n, u);
+    let flat: Vec<[f64; 2]> = outline
+        .iter()
+        .map(|q| {
+            let d = sub(*q, outline[0]);
+            [dot(d, u), dot(d, v)]
+        })
+        .collect();
+    let faces = prism_faces_capped(outline, &far, &flat, u, v, [true, true])?;
+    Some(([outline.to_vec(), far], faces))
 }
 
 /// A simple polygon (2D, either turning) cut into triangles by its ears;
@@ -359,4 +488,12 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }

@@ -64,17 +64,21 @@ pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
 };
 pub use joints::{
-    Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, FLAT_OFF, JointDetail,
-    JointDetails, NO_OUTLINE, PlateDetail, Profile, Similar, Source, Valued, bolt_faces,
-    joint_details, similar_joints,
+    Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, CoverDetail, FLAT_OFF,
+    JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Profile,
+    Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, joint_details,
+    part_chains, similar_joints,
 };
 pub use member_solids::{
-    MemberSolid, SolidFace, ear_clip, member_solids, prism_faces, section_at, steel_start,
+    MemberSolid, PlateSolid, SolidFace, ear_clip, member_solids, plate_solids, prism_faces,
+    section_at, steel_start,
 };
 pub use member_view::{
     FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,
 };
-pub use ohl_structures::connections::{BoltedLeg, ConnectionKind, WeldKind};
+pub use ohl_structures::connections::{
+    BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, WeldKind,
+};
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
 pub use plate_checks::{
     PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_usage,

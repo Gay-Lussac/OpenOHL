@@ -27,7 +27,10 @@
 use std::collections::BTreeMap;
 
 use ohl_sections::{SectionLibrary, Shape};
-use ohl_structures::connections::{BoltedLeg, ConnectionKind, MAX_GAUGE_LINES, TypeConnection};
+use ohl_structures::connections::{
+    BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, MAX_GAUGE_LINES, TypeConnection,
+    TypeSplice,
+};
 use ohl_structures::{LibraryItem, StructureType};
 use ohl_structures_fe::design::{ConnectedLeg, MemberClass, MemberDesign};
 use ohl_structures_fe::member_ends::{self, connected_leg};
@@ -145,6 +148,8 @@ pub struct Angle {
     pub h: f64,
     /// Thickness, m.
     pub t: f64,
+    /// The root radius (the fillet between the legs inside), m.
+    pub r: f64,
 }
 
 /// One member end at a joint.
@@ -234,6 +239,21 @@ pub struct Arrival {
     /// flange): how far off and the roll that lays it flat (none: not an
     /// angle, or nothing to lie on; owner 2026-11-04).
     pub flat: Option<crate::welds::Flat>,
+    /// Where it sits on the member it bolts onto (2026-11-05): given at
+    /// the end (`face`), else worked out from how it is turned (on the
+    /// inside face of that leg when its outstanding leg points into the
+    /// other angle, else the outside); none: onto a plate, a splice or
+    /// nothing drawn.
+    pub sits: Valued<Face>,
+    /// The member it runs on into through the joint as one part
+    /// (`kind = "continuous"`, [`StructureType::continuous_with`]): no cut,
+    /// no shift, no bolts at this end.
+    pub continuous: Option<String>,
+    /// It does not fit as given (a nested angle too large, its legs not
+    /// along the other's, bolts nearer an edge than the code allows on
+    /// either part, its outstanding leg through the leg it bolts onto):
+    /// said in the notes, drawn red.
+    pub misfit: bool,
     /// Notes on it ("one end eccentric, which not said"…).
     pub notes: Vec<String>,
 }
@@ -314,6 +334,63 @@ struct Keep {
     across: f64,
 }
 
+/// A cover of a splice (2026-11-05): a flat plate on the outer or inner
+/// face of the members' leg, as a plate is drawn.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoverDetail {
+    /// Outer or inner.
+    pub face: CoverFace,
+    /// The angle's leg (none: given for no leg; drawn on each member's leg
+    /// bolted).
+    pub leg: Option<CoverLeg>,
+    /// Thickness, m.
+    pub thickness: f64,
+    /// Material.
+    pub material: Option<String>,
+    /// Its outline, structure's axes, m: given, or round the bolts of the
+    /// member ends onto the splice on that leg (each kept the code's end
+    /// and edge distances in the cover), over the legs' widths (an inner
+    /// cover clear of the root fillet). Its face against the members'
+    /// leg.
+    pub outline: Vec<[f64; 3]>,
+    /// The outline given in the file.
+    pub outline_given: bool,
+    /// From the outline through its thickness (unit): away from the
+    /// members' leg. None: no outline.
+    pub through: Option<[f64; 3]>,
+    /// How far its edge keeps from the bolts, per member end (as a
+    /// plate's).
+    pub edges: Vec<String>,
+    /// Bolts nearer its edge than those distances, an inner cover's bolts
+    /// too near the root, nothing to draw it round.
+    pub notes: Vec<String>,
+}
+
+impl CoverDetail {
+    /// In words: "outer, long leg".
+    pub fn words(&self) -> String {
+        match self.leg {
+            Some(l) => format!("{}, {} leg", self.face.as_str(), l.as_str()),
+            None => self.face.as_str().to_owned(),
+        }
+    }
+}
+
+/// A splice at a joint (2026-11-05): covers bolting members together.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpliceDetail {
+    /// Id.
+    pub id: String,
+    /// The members it joins.
+    pub members: Vec<String>,
+    /// The member ends bolted onto it here.
+    pub bolted: Vec<String>,
+    /// Its covers.
+    pub covers: Vec<CoverDetail>,
+    /// Notes ("no covers", members not bolted onto it).
+    pub notes: Vec<String>,
+}
+
 /// A joint in detail.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JointDetail {
@@ -325,6 +402,8 @@ pub struct JointDetail {
     pub arrivals: Vec<Arrival>,
     /// Its plates.
     pub plates: Vec<PlateDetail>,
+    /// Its splices (covers bolting members together, 2026-11-05).
+    pub splices: Vec<SpliceDetail>,
     /// How complete.
     pub completeness: Completeness,
 }
@@ -468,6 +547,9 @@ pub fn joint_details(
                 bolt_flat: Vec::new(),
                 modelling: design.is_some_and(|(_, _, check)| !check),
                 flat: None,
+                sits: Valued::none(),
+                continuous: t.continuous_with(&m.id, &n.id).map(str::to_owned),
+                misfit: false,
                 notes: Vec::new(),
             });
         }
@@ -484,6 +566,16 @@ pub fn joint_details(
             .collect();
         let snapshot = arrivals.clone();
         let seats = plate_seats(&t, &n.id, &plates_here, &snapshot, &areas);
+        // The members nested in another here (a lap joint, `face =
+        // "nested"`): by the member they nest in.
+        let nested = nested_here(&t, &n.id, &snapshot);
+        // The code's minimums of a member end's bolts in a part of
+        // `thickness` and `fu` (none: the member's own leg).
+        let rules_in = |a: &Arrival, part: Option<(f64, Option<f64>)>| {
+            let m = model.as_ref()?;
+            let idx = m.members.iter().position(|x| x.id == a.member)?;
+            ohl_structures_fe::bolt_rules::rules_in(m, idx, a.end, None, part)
+        };
         for a in &mut arrivals {
             let c = t.connection(&a.member, &n.id);
             let design = designs.get(a.member.as_str()).map(|d| d.0);
@@ -501,12 +593,18 @@ pub fn joint_details(
                 &seats,
             );
             if level3 {
-                place_bolts(a, at, c, &snapshot, &seats);
-                a.grip = grip(a, &snapshot, &plates_here);
+                let host = a
+                    .onto
+                    .value
+                    .as_ref()
+                    .is_some_and(|o| nested.get(&a.member).is_some_and(|v| v.contains(o)));
+                place_bolts(a, at, c, &snapshot, &seats, host);
+                a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
                 a.flat = flat_of(a, &snapshot, &seats);
                 if let Some(f) = a.flat
                     && f.off > FLAT_OFF
                     && let Some(o) = a.onto.value.as_ref()
+                    && a.continuous.is_none()
                 {
                     let what = if seats.contains_key(o) {
                         "plate"
@@ -520,31 +618,35 @@ pub fn joint_details(
                 }
             }
         }
+        if level3 {
+            nest_fit(&mut arrivals, &nested, &|a, part| rules_in(a, part));
+        }
         // The code's minimums of each member end onto a plate (its bolts'
         // shear capacity as the force: no analysis here, on the safe
         // side), for the plates' edges.
         // A plate's edges by the plate's own thickness and steel (owner
         // 2026-11-03; its material's ultimate strength, else the member's).
+        let fu_of = |material: Option<&str>| {
+            material
+                .and_then(|id| library.material(id))
+                .and_then(|m| m.ultimate)
+        };
         let mut plates: Vec<PlateDetail> = plates_here
             .iter()
             .map(|p| {
-                let fu = p
-                    .material
-                    .as_deref()
-                    .and_then(|id| library.material(id))
-                    .and_then(|m| m.ultimate);
-                let rules = |a: &Arrival| {
-                    let m = model.as_ref()?;
-                    let idx = m.members.iter().position(|x| x.id == a.member)?;
-                    ohl_structures_fe::bolt_rules::rules_in(
-                        m,
-                        idx,
-                        a.end,
-                        None,
-                        Some((p.thickness.si(), fu)),
-                    )
-                };
+                let fu = fu_of(p.material.as_deref());
+                let rules = |a: &Arrival| rules_in(a, Some((p.thickness.si(), fu)));
                 plate(p, at, &arrivals, seats.get(&p.id), &rules)
+            })
+            .collect();
+        let splices: Vec<SpliceDetail> = t
+            .splices
+            .iter()
+            .filter(|s| s.joint == n.id)
+            .map(|s| {
+                splice(s, at, &arrivals, &|a, c| {
+                    rules_in(a, Some((c.thickness.si(), fu_of(c.material.as_deref()))))
+                })
             })
             .collect();
         weld_plates(&mut plates, &t.welded_assemblies(&n.id), &plates_here);
@@ -554,6 +656,7 @@ pub fn joint_details(
             position: at,
             arrivals,
             plates,
+            splices,
             completeness,
         });
     }
@@ -802,6 +905,19 @@ fn condition(
             _ => Valued::none(),
         },
     };
+    // One part through the joint: no bolts, no layout at this end.
+    if let Some(o) = a.continuous.clone() {
+        a.bolts = Valued::none();
+        a.gauge_lines = Valued::none();
+        a.gauges = Valued::none();
+        a.pitch = Valued::none();
+        a.end_distance = Valued::none();
+        a.edge_distance = Valued::none();
+        a.eccentricity = Valued::none();
+        a.notes.push(format!(
+            "runs on into {o} as one part: no cut, no shift, no bolts here"
+        ));
+    }
 }
 
 /// The member's own bolts (`[member.design] bolts`), if any.
@@ -1130,19 +1246,48 @@ fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival], seats: &PlateSeats) -> [f
             }
         };
     }
-    let (Some(p), Some(o)) = (
-        a.profile.as_ref(),
-        a.onto
-            .value
-            .as_ref()
-            .and_then(|o| all.iter().find(|b| &b.member == o))
-            .and_then(|b| b.profile.as_ref()),
-    ) else {
-        return [0.0; 3];
-    };
-    let (Some(g), Some(h)) = (p.angle, o.angle) else {
-        return [0.0; 3];
-    };
+    let face = (a.sits.source == Source::Given)
+        .then_some(a.sits.value)
+        .flatten();
+    member_seat(a, joint, all, face).map_or([0.0; 3], |s| s.offset)
+}
+
+/// How a member end sits on the leg of the angle it bolts onto
+/// ([`member_seat`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct MemberSeat {
+    /// The shift that seats it, m.
+    offset: [f64; 3],
+    /// Its leg bolted lies on that leg by its inner face (the toe's
+    /// side): its outstanding leg then points through the leg it bolts
+    /// onto — it does not fit (turn it).
+    flipped: bool,
+    /// The face of that leg it lies on.
+    face: Face,
+}
+
+/// The shift that seats `a`'s leg bolted on a face of the leg of the
+/// angle it bolts onto: along the bolts' axis, so its leg lies on that
+/// face, on the far side of the leg from the other's steel. The face is
+/// `given` (outside: the leg's outer face, the heel's; inside: its inner
+/// face), else the one turned towards `a`'s outer face (the inner one when
+/// `a`'s outstanding leg points into the other angle: as before
+/// 2026-11-05). None when it bolts onto no angle or the legs are not near
+/// parallel (within 25°).
+fn member_seat(
+    a: &Arrival,
+    joint: [f64; 3],
+    all: &[Arrival],
+    given: Option<Face>,
+) -> Option<MemberSeat> {
+    let p = a.profile.as_ref()?;
+    let o = a
+        .onto
+        .value
+        .as_ref()
+        .and_then(|o| all.iter().find(|b| &b.member == o))
+        .and_then(|b| b.profile.as_ref())?;
+    let (g, h) = (p.angle?, o.angle?);
     // The leg bolted's normal, towards its own side (its outstanding leg).
     let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
     let heel = |q: &Profile, g: Angle| {
@@ -1153,34 +1298,311 @@ fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival], seats: &PlateSeats) -> [f
     };
     let own = dot(sub(heel(p, g), joint), nb);
     // The onto leg most nearly parallel: its normal from the heel into
-    // its thickness (a leg along y: z).
+    // its thickness (a leg along y: z), towards the other angle's inside.
     let (nl, cos) = [o.axes[2], o.axes[1]]
         .into_iter()
         .map(|n| (n, dot(n, nb)))
         .max_by(|x, y| x.1.abs().total_cmp(&y.1.abs()))
         .expect("two legs");
     if cos.abs() < 25f64.to_radians().cos() {
-        return [0.0; 3];
+        return None;
     }
-    // Its face turned towards `a`'s outer face (whose outward normal is
-    // −nb): the inner one when the leg's normal goes along nb.
-    let face = if cos > 0.0 {
+    let inner = match given {
+        Some(Face::Inside) => true,
+        Some(Face::Outside) => false,
+        // Turned towards `a`'s outer face (whose outward normal is −nb):
+        // the inner one when the leg's normal goes along nb.
+        _ => cos > 0.0,
+    };
+    let face = if inner {
         add(heel(o, h), scale(nl, h.t))
     } else {
         heel(o, h)
     };
-    scale(nb, dot(sub(face, joint), nb) - own)
+    // `a`'s leg on the far side of that face from the other's steel:
+    // along nb (its outer face on it) or against it (its inner face on
+    // it, its outstanding leg through the other's leg).
+    let away = if inner { cos > 0.0 } else { cos < 0.0 };
+    let f = dot(sub(face, joint), nb);
+    let heel_at = if away { f } else { f - g.t };
+    Some(MemberSeat {
+        offset: scale(nb, heel_at - own),
+        flipped: !away,
+        face: if inner { Face::Inside } else { Face::Outside },
+    })
+}
+
+/// The most two angles may turn from in line, or their legs from each
+/// other's, and still nest one in the other, degrees (an assumption of
+/// 2026-11-05, said in the notes).
+pub const NESTED_ANGLE_DEG: f64 = 5.0;
+
+/// An angle nested heel into heel in another ([`nest`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Nest {
+    /// The shift that places it, m.
+    offset: [f64; 3],
+    /// Its legs and the other's they lie in: (its leg, the other's), m;
+    /// its leg along its y first.
+    legs: [(f64, f64); 2],
+}
+
+/// Where angle `a` sits nested in angle `o` at `joint`: heel into heel,
+/// both its legs' outer faces on the inner faces of `o`'s legs (its heel
+/// taken as ground to clear `o`'s root fillet, owner 2026-11-05). Refused
+/// (in words) when either is no angle, they are not in line or `a`'s
+/// legs do not lie along `o`'s (within [`NESTED_ANGLE_DEG`]).
+fn nest(a: &Arrival, o: &Arrival, joint: [f64; 3]) -> Result<Nest, String> {
+    let (Some(p), Some(q)) = (a.profile.as_ref(), o.profile.as_ref()) else {
+        return Err(format!(
+            "nested in {}: no profile to nest (level 3 sections needed)",
+            o.member
+        ));
+    };
+    let (Some(g), Some(h)) = (p.angle, q.angle) else {
+        return Err(format!(
+            "nested in {}: an angle in an angle only (channels later)",
+            o.member
+        ));
+    };
+    let turn = angle_between(a.direction, o.direction);
+    if turn > NESTED_ANGLE_DEG {
+        return Err(format!(
+            "nested in {}: not in line with it ({turn:.1}°, at most {NESTED_ANGLE_DEG}°)",
+            o.member
+        ));
+    }
+    let c = NESTED_ANGLE_DEG.to_radians().cos();
+    let legs = if dot(p.axes[1], q.axes[1]) > c && dot(p.axes[2], q.axes[2]) > c {
+        [(g.b, h.b), (g.h, h.h)]
+    } else if dot(p.axes[1], q.axes[2]) > c && dot(p.axes[2], q.axes[1]) > c {
+        [(g.b, h.h), (g.h, h.b)]
+    } else {
+        return Err(format!(
+            "nested in {}: its legs do not lie along {}'s (turn it: its roll or reference)",
+            o.member, o.member
+        ));
+    };
+    // Its heel on the other's inner faces: the other's heel moved its
+    // thickness along both its legs' normals.
+    let target = add(
+        add(scale(q.axes[1], h.heel[0]), scale(q.axes[2], h.heel[1])),
+        scale(add(q.axes[1], q.axes[2]), h.t),
+    );
+    let own = add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1]));
+    let off = sub(add(joint, target), add(joint, own));
+    let off = sub(off, scale(a.direction, dot(off, a.direction)));
+    Ok(Nest { offset: off, legs })
+}
+
+/// The members nested in another at `joint` (`face = "nested"`, onto a
+/// member meeting there), by the member they nest in.
+fn nested_here(t: &StructureType, joint: &str, all: &[Arrival]) -> BTreeMap<String, Vec<String>> {
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for c in t.connections.iter().filter(|c| c.joint == joint) {
+        if c.face != Some(Face::Nested) || c.kind() == ConnectionKind::Continuous {
+            continue;
+        }
+        let Some(o) = c.onto.as_ref() else {
+            continue;
+        };
+        if all.iter().any(|a| &a.member == o) && all.iter().any(|a| a.member == c.member) {
+            out.entry(o.clone()).or_default().push(c.member.clone());
+        }
+    }
+    out
+}
+
+/// The fit of each member nested in another at a joint (`nested`, by the
+/// member they nest in), in words in its notes, a misfit flagged: each
+/// leg at most the other's less its thickness and root radius; the end
+/// and edge distances on both parts — the code's minimums by `rules` (a
+/// part's thickness and steel; none: the member's own leg), else the
+/// end's own distances, else 1.5 bolt diameters ([`keep`]). The member
+/// nested in runs on past the work point over the bolts (its cut worked
+/// out, below 0) unless its cut is given.
+fn nest_fit(
+    arrivals: &mut [Arrival],
+    nested: &BTreeMap<String, Vec<String>>,
+    rules: &dyn Fn(
+        &Arrival,
+        Option<(f64, Option<f64>)>,
+    ) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
+) {
+    let mm = |v: f64| v * 1000.0;
+    for (host, inners) in nested {
+        let Some(hk) = arrivals.iter().position(|a| &a.member == host) else {
+            continue;
+        };
+        let mut reach: f64 = 0.0;
+        let mut misfit_host = Vec::new();
+        for inner in inners {
+            let Some(ik) = arrivals.iter().position(|a| &a.member == inner) else {
+                continue;
+            };
+            let (a, o) = (arrivals[ik].clone(), arrivals[hk].clone());
+            let (Some(g), Some(h)) = (
+                a.profile.as_ref().and_then(|p| p.angle),
+                o.profile.as_ref().and_then(|p| p.angle),
+            ) else {
+                continue;
+            };
+            let Ok(n) = nest(&a, &o, [0.0; 3]) else {
+                continue;
+            };
+            let mut notes = Vec::new();
+            let mut misfit = false;
+            for (wi, wo) in n.legs {
+                let most = wo - h.t - h.r;
+                if wi > most + 1e-6 {
+                    misfit = true;
+                    notes.push(format!(
+                        "nested in {host}: its {:.0} mm leg does not fit {host}'s {:.0} mm leg (at \
+                         most {:.0} − {:.0} − {:.0} = {:.0} mm: the leg less its thickness and \
+                         root radius)",
+                        mm(wi),
+                        mm(wo),
+                        mm(wo),
+                        mm(h.t),
+                        mm(h.r),
+                        mm(most)
+                    ));
+                }
+            }
+            notes.push(format!(
+                "nested in {host}: its heel taken as ground to clear {host}'s root fillet (r {:.0} \
+                 mm); not ground it would sit {:.1} mm off along the diagonal, r (1 − 1/√2)",
+                mm(h.r),
+                mm(h.r * (1.0 - std::f64::consts::FRAC_1_SQRT_2))
+            ));
+            // The distances, its bolts in its own leg and in the other's.
+            if !a.bolt_flat.is_empty() {
+                let (ki, _) = keep(&a, &|x| rules(x, None));
+                let (ko, _) = keep(&a, &|x| rules(x, Some((h.t, None))));
+                // The leg bolted's width and the other's it lies in.
+                let (wi, wo) = if a.leg_y { n.legs[0] } else { n.legs[1] };
+                let gauge = a.bolt_flat.iter().map(|q| q[1]).fold(0.0, f64::max);
+                let first = a
+                    .bolt_flat
+                    .iter()
+                    .map(|q| q[0])
+                    .fold(f64::INFINITY, f64::min);
+                let last = a.bolt_flat.iter().map(|q| q[0]).fold(0.0, f64::max);
+                let cut = a.cut.value.unwrap_or(0.0);
+                let edges = [
+                    (
+                        wi - gauge,
+                        ki.across,
+                        format!("its own leg ({:.0} mm)", mm(g.t)),
+                    ),
+                    (
+                        wo - h.t - gauge,
+                        ko.across,
+                        format!("{host}'s leg ({:.0} mm)", mm(h.t)),
+                    ),
+                ];
+                for (have, need, what) in edges {
+                    if have < need - 5e-4 {
+                        misfit = true;
+                        notes.push(format!(
+                            "nested in {host}: edge distance {:.0} mm in {what}, {:.0} mm needed",
+                            mm(have),
+                            mm(need)
+                        ));
+                    }
+                }
+                if first - cut < ki.along - 5e-4 {
+                    misfit = true;
+                    notes.push(format!(
+                        "nested in {host}: end distance {:.0} mm in its own leg, {:.0} mm needed",
+                        mm(first - cut),
+                        mm(ki.along)
+                    ));
+                }
+                // The other runs on over the bolts: its end beyond the last.
+                match o.cut.source {
+                    Source::Given => {
+                        let have = -o.cut.value.unwrap_or(0.0) - last;
+                        if have < ko.along - 5e-4 {
+                            misfit = true;
+                            notes.push(format!(
+                                "nested in {host}: end distance {:.0} mm in {host}'s leg (its cut \
+                                 given), {:.0} mm needed",
+                                mm(have),
+                                mm(ko.along)
+                            ));
+                        }
+                    }
+                    _ => reach = reach.max(last + ko.along),
+                }
+            }
+            if misfit {
+                misfit_host.push(inner.clone());
+            }
+            let x = &mut arrivals[ik];
+            x.misfit |= misfit;
+            x.notes.extend(notes);
+        }
+        let h = &mut arrivals[hk];
+        if reach > 0.0 && h.cut.source != Source::Given {
+            h.cut = Valued::of(-reach, Source::WorkedOut);
+            h.notes.push(format!(
+                "runs on {:.0} mm past the work point over the bolts of {} nested in it",
+                mm(reach),
+                inners.join(", ")
+            ));
+        }
+        if !misfit_host.is_empty() {
+            h.misfit = true;
+            h.notes.push(format!(
+                "{} nested in it does not fit (see {})",
+                misfit_host.join(", "),
+                misfit_host.join(", ")
+            ));
+        }
+    }
 }
 
 /// The bolts of `a` where they are: given points, else the layout (the
 /// bolts shared among the gauge lines, from the end distance at the pitch).
+/// Seated on what it bolts onto: on a face of the leg of the angle it
+/// bolts onto ([`member_seat`]), nested in it ([`nest`]), on a plate. A
+/// continuous end (one part through the joint): no cut, no shift, no
+/// bolts. A `host` (the member it bolts onto nested in it): not seated,
+/// its bolts those of the member nested in it (not drawn twice).
 fn place_bolts(
     a: &mut Arrival,
     joint: [f64; 3],
     c: Option<&TypeConnection>,
     all: &[Arrival],
     seats: &PlateSeats,
+    host: bool,
 ) {
+    if a.continuous.is_some() {
+        a.cut = Valued::of(0.0, Source::WorkedOut);
+        a.shift = (0.0, None);
+        a.offset = [0.0; 3];
+        if c.is_some_and(|c| c.cut.is_some() || c.shift.is_some()) {
+            a.notes
+                .push("continuous: its cut and shift not used (one part)".into());
+        }
+        return;
+    }
+    let onto_member = a
+        .onto
+        .value
+        .as_ref()
+        .and_then(|o| all.iter().find(|b| &b.member == o));
+    let given_face = c.and_then(|c| c.face);
+    if let Some(f) = given_face
+        && f != Face::Outside
+        && onto_member.is_none()
+    {
+        a.notes.push(format!(
+            "face {}: only onto a member's leg (onto a plate or splice: on its face)",
+            f.as_str()
+        ));
+    }
     a.cut = match c.and_then(|c| c.cut) {
         Some(x) => Valued::of(x.si(), Source::Given),
         None => match fit_cut(a, all) {
@@ -1208,9 +1630,60 @@ fn place_bolts(
             .push("shift: no direction (it runs in line with what it bolts onto)".into());
     }
     let cut = a.cut.value.unwrap_or(0.0);
+    // Where it sits on a member it bolts onto.
+    let mut flipped = false;
+    let mut seated: Option<[f64; 3]> = None;
+    match (onto_member, given_face) {
+        _ if host => {}
+        (Some(o), Some(Face::Nested)) => match nest(a, o, joint) {
+            Ok(n) => {
+                a.sits = Valued::of(Face::Nested, Source::Given);
+                // Nested: no sideways shift (it lies in the other's corner).
+                if a.shift.0 != 0.0 {
+                    a.notes
+                        .push("nested: its shift not used (it lies in the corner)".into());
+                    a.shift.0 = 0.0;
+                }
+                seated = Some(n.offset);
+            }
+            Err(why) => {
+                a.misfit = true;
+                a.notes.push(why);
+            }
+        },
+        (Some(_), f) => {
+            if let Some(s) = member_seat(a, joint, all, f) {
+                a.sits = Valued::of(
+                    s.face,
+                    if f.is_some() {
+                        Source::Given
+                    } else {
+                        Source::WorkedOut
+                    },
+                );
+                flipped = s.flipped;
+                if s.flipped {
+                    a.misfit = true;
+                    a.notes.push(format!(
+                        "on the {} face of {}'s leg its outstanding leg would pass through that                          leg: turn it (its roll), or choose the other face",
+                        s.face.as_str(),
+                        a.onto.value.as_deref().unwrap_or("?")
+                    ));
+                }
+                seated = Some(s.offset);
+            } else if let Some(f) = f {
+                a.sits = Valued::of(f, Source::Given);
+            }
+        }
+        _ => {}
+    }
+    let shifted = scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0);
     let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
-        // No bolts: still drawn shifted.
-        a.offset = scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0);
+        // No bolts: still drawn shifted (and nested or on the face given).
+        a.offset = match seated {
+            Some(s) if given_face.is_some() => add(s, shifted),
+            _ => shifted,
+        };
         return;
     };
     let Some(g) = p.angle else {
@@ -1218,13 +1691,28 @@ fn place_bolts(
     };
     let along_y = a.leg_y;
     a.offset = add(
-        seat(a, joint, all, seats),
-        scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0),
+        if host {
+            [0.0; 3]
+        } else {
+            seated.unwrap_or_else(|| seat(a, joint, all, seats))
+        },
+        shifted,
     );
+    if host {
+        // Its bolts at this joint are those of the member nested in it.
+        a.notes.push(format!(
+            "its bolts here: those of {} nested in it",
+            a.onto.value.as_deref().unwrap_or("?")
+        ));
+        return;
+    }
     let joint = add(joint, a.offset);
     let (ey, ez) = (p.axes[1], p.axes[2]);
-    // The bolts go through the leg bolted: across it, along the other axis.
-    a.bolt_axis = if along_y { ez } else { ey };
+    // The bolts go through the leg bolted: across it, along the other axis
+    // (on the face it lies on: its inner one when flipped).
+    let nb = if along_y { ez } else { ey };
+    a.bolt_axis = if flipped { scale(nb, -1.0) } else { nb };
+    let lift = if flipped { g.t } else { 0.0 };
     let at = |s: f64, across: f64| {
         let (y, z) = if along_y {
             (g.heel[0] + across, g.heel[1])
@@ -1233,7 +1721,7 @@ fn place_bolts(
         };
         let mut q = joint;
         for k in 0..3 {
-            q[k] += a.direction[k] * s + ey[k] * y + ez[k] * z;
+            q[k] += a.direction[k] * s + ey[k] * y + ez[k] * z + nb[k] * lift;
         }
         q
     };
@@ -1612,6 +2100,319 @@ fn plate(
     }
 }
 
+/// The leg of an angle `a` bolts by, as a splice's covers name it (none:
+/// no angle).
+pub fn bolted_cover_leg(a: &Arrival) -> Option<CoverLeg> {
+    let g = a.profile.as_ref()?.angle?;
+    Some(if a.leg_y == (g.b >= g.h) {
+        CoverLeg::Long
+    } else {
+        CoverLeg::Short
+    })
+}
+
+/// A splice's detail: each cover on its face of the members' leg, its
+/// outline given (the bolts too near its edge said) or worked out round
+/// the bolts on that leg of the member ends onto it (`rules`: the code's
+/// minimums of a member end's bolts in the cover) over the legs' widths
+/// near the joint — a leg without bolts: over its member's bolts on the
+/// other leg.
+fn splice(
+    s: &TypeSplice,
+    joint: [f64; 3],
+    arrivals: &[Arrival],
+    rules: &dyn Fn(
+        &Arrival,
+        &ohl_structures::connections::TypeCover,
+    ) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
+) -> SpliceDetail {
+    let onto: Vec<&Arrival> = arrivals
+        .iter()
+        .filter(|a| a.onto.value.as_deref() == Some(s.id.as_str()))
+        .collect();
+    let mut notes = Vec::new();
+    if s.covers.is_empty() {
+        notes.push(format!("splice {}: no covers", s.id));
+    }
+    for m in &s.members {
+        if !onto.iter().any(|a| &a.member == m) {
+            notes.push(format!(
+                "splice {}: {m} not bolted onto it (its onto)",
+                s.id
+            ));
+        }
+    }
+    let covers = s
+        .covers
+        .iter()
+        .map(|c| cover(s, c, joint, &onto, rules))
+        .collect();
+    SpliceDetail {
+        id: s.id.clone(),
+        members: s.members.clone(),
+        bolted: onto.iter().map(|a| a.member.clone()).collect(),
+        covers,
+        notes,
+    }
+}
+
+/// A cover `c` of splice `s` ([`splice`]).
+fn cover(
+    s: &TypeSplice,
+    c: &ohl_structures::connections::TypeCover,
+    joint: [f64; 3],
+    onto: &[&Arrival],
+    rules: &dyn Fn(
+        &Arrival,
+        &ohl_structures::connections::TypeCover,
+    ) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
+) -> CoverDetail {
+    let label = |c: &ohl_structures::connections::TypeCover| match c.leg {
+        Some(l) => format!("{} {} {}", s.id, c.face.as_str(), l.as_str()),
+        None => format!("{} {}", s.id, c.face.as_str()),
+    };
+    let mut notes = Vec::new();
+    let mut edges = Vec::new();
+    let mut keeps: Vec<(&Arrival, Keep)> = Vec::new();
+    // The plane it lies in (a point on its face against the leg, the
+    // leg's normal towards the cover's side) and the points it covers.
+    let mut plane: Option<([f64; 3], [f64; 3], [f64; 3])> = None;
+    let mut pts: Vec<[f64; 3]> = Vec::new();
+    for a in onto {
+        let Some(p) = a.profile.as_ref() else {
+            continue;
+        };
+        let Some(g) = p.angle else {
+            notes.push(format!(
+                "{}: {} is no angle — covers drawn on angles only",
+                label(c),
+                a.member
+            ));
+            continue;
+        };
+        // The leg it lies on: along y or z of the member.
+        let leg = c.leg.or_else(|| bolted_cover_leg(a));
+        let long_y = g.b >= g.h;
+        let leg_y = match leg {
+            Some(CoverLeg::Long) => long_y,
+            Some(CoverLeg::Short) => !long_y,
+            None => a.leg_y,
+        };
+        let (across, w, n) = if leg_y {
+            (p.axes[1], g.b, p.axes[2])
+        } else {
+            (p.axes[2], g.h, p.axes[1])
+        };
+        let heel = add(
+            add(joint, a.offset),
+            add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
+        );
+        // Its face against the leg, and the side it lies on.
+        let (on, side) = match c.face {
+            CoverFace::Outer => (heel, scale(n, -1.0)),
+            CoverFace::Inner => (add(heel, scale(n, g.t)), n),
+        };
+        if plane.is_none() {
+            plane = Some((on, side, a.direction));
+        }
+        // From the heel across the leg: an inner cover clear of the root
+        // fillet.
+        let from = match c.face {
+            CoverFace::Outer => 0.0,
+            CoverFace::Inner => g.t + g.r,
+        };
+        let mine = a.leg_y == leg_y && !a.bolt_flat.is_empty();
+        let (k, words) = keep(a, &|x| rules(x, c));
+        let (lo, hi) = if a.bolt_flat.is_empty() {
+            (0.0, 0.15)
+        } else {
+            let lo = a
+                .bolt_flat
+                .iter()
+                .map(|q| q[0])
+                .fold(f64::INFINITY, f64::min);
+            let hi = a
+                .bolt_flat
+                .iter()
+                .map(|q| q[0])
+                .fold(f64::NEG_INFINITY, f64::max);
+            ((lo - k.along).max(0.0), hi + k.along)
+        };
+        let at = |s: f64, x: f64| add(add(on, scale(a.direction, s)), scale(across, x));
+        for s in [lo, hi] {
+            pts.push(at(s, from));
+            pts.push(at(s, w));
+        }
+        if mine {
+            edges.push(words);
+            keeps.push((a, k));
+            // Round each bolt the distances it keeps (across: not past the
+            // heel, an inner cover not into the root).
+            let mut near_root = false;
+            for q in &a.bolt_flat {
+                for i in 0..16 {
+                    let t = i as f64 * std::f64::consts::TAU / 16.0;
+                    let grow = 1.0 / (std::f64::consts::PI / 16.0).cos();
+                    let x = q[1] + k.across * grow * t.sin();
+                    if x < from - 1e-9 {
+                        near_root |= c.face == CoverFace::Inner;
+                    }
+                    pts.push(at(q[0] + k.along * grow * t.cos(), x.max(from)));
+                }
+            }
+            if near_root {
+                notes.push(format!(
+                    "{}: the bolts of {} nearer the root than the cover's edge distance ({:.0} \
+                     mm): its edge there is the root fillet's",
+                    label(c),
+                    a.member,
+                    k.across * 1000.0
+                ));
+            }
+        }
+    }
+    let given: Vec<[f64; 3]> = c.outline.iter().map(|q| q.map(|v| v.si())).collect();
+    let outline = if given.len() >= 3 {
+        notes.extend(bolts_near_edge(&given, &keeps, &label(c)));
+        given
+    } else {
+        match plane {
+            Some((on, side, along)) if pts.len() >= 3 => face_hull(&pts, on, side, along, 0.0),
+            _ => {
+                notes.push(format!("{}: {NO_OUTLINE}", label(c)));
+                Vec::new()
+            }
+        }
+    };
+    let through = plane.map(|p| p.1).filter(|_| outline.len() >= 3);
+    CoverDetail {
+        face: c.face,
+        leg: c.leg,
+        thickness: c.thickness.si(),
+        material: c.material.clone(),
+        outline_given: c.outline.len() >= 3,
+        outline,
+        through,
+        edges,
+        notes,
+    }
+}
+
+/// A part: members joined by continuous ends (`kind = "continuous"`), one
+/// piece of steel through the joints between them (2026-11-05), for the
+/// part lists and exports.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartChain {
+    /// Its members in order along it.
+    pub members: Vec<String>,
+    /// The joints it runs on through, between them.
+    pub joints: Vec<String>,
+    /// Its work lines' length together, m.
+    pub length: f64,
+    /// Its steel's length: the work length less the cuts at its two ends
+    /// (more where a cut is below 0), m.
+    pub steel: f64,
+}
+
+/// The parts of two members or more joined by continuous ends, in the
+/// file's member order of their first member (a member alone is a part of
+/// its own and not listed).
+pub fn part_chains(d: &JointDetails) -> Vec<PartChain> {
+    // Each member's two ends: (joint, the member it runs on into, cut,
+    // length).
+    type End = (String, Option<String>, f64, f64);
+    let mut ends: BTreeMap<&str, [Option<End>; 2]> = BTreeMap::new();
+    let mut order: Vec<&str> = Vec::new();
+    for j in &d.joints {
+        for a in &j.arrivals {
+            let e = ends.entry(a.member.as_str()).or_insert_with(|| {
+                order.push(a.member.as_str());
+                [None, None]
+            });
+            e[a.end.min(1)] = Some((
+                j.id.clone(),
+                a.continuous.clone(),
+                a.cut.value.unwrap_or(0.0),
+                a.length,
+            ));
+        }
+    }
+    let next = |m: &str, from: Option<&str>| -> Option<(String, String)> {
+        ends.get(m)?.iter().flatten().find_map(|e| {
+            let o = e.1.as_deref()?;
+            (Some(o) != from).then(|| (o.to_owned(), e.0.clone()))
+        })
+    };
+    let mut done: std::collections::BTreeSet<String> = Default::default();
+    let mut out = Vec::new();
+    for &m in &order {
+        if done.contains(m) {
+            continue;
+        }
+        let linked = ends[m].iter().flatten().filter(|e| e.1.is_some()).count();
+        if linked == 0 {
+            continue;
+        }
+        // From one end of the chain (a member running on at one end only),
+        // or from here when it closes on itself.
+        let mut start = m.to_owned();
+        let mut prev: Option<String> = None;
+        let mut seen = vec![start.clone()];
+        while let Some((o, _)) = next(&start, prev.as_deref()) {
+            if seen.contains(&o) {
+                break;
+            }
+            seen.push(o.clone());
+            prev = Some(start.clone());
+            start = o;
+        }
+        let mut members = vec![start.clone()];
+        let mut joints = Vec::new();
+        let mut prev: Option<String> = None;
+        let mut cur = start;
+        while let Some((o, j)) = next(&cur, prev.as_deref()) {
+            if members.contains(&o) {
+                break;
+            }
+            joints.push(j);
+            members.push(o.clone());
+            prev = Some(cur);
+            cur = o;
+        }
+        let length: f64 = members
+            .iter()
+            .filter_map(|x| ends.get(x.as_str()))
+            .filter_map(|e| e.iter().flatten().next().map(|e| e.3))
+            .sum();
+        // The cuts at its two free ends.
+        let cuts: f64 = members
+            .iter()
+            .filter_map(|x| ends.get(x.as_str()))
+            .flat_map(|e| e.iter().flatten())
+            .filter(|e| e.1.is_none())
+            .map(|e| e.2)
+            .sum();
+        // From the end whose member comes first in the file.
+        let rank = |x: &String| order.iter().position(|o| *o == x.as_str());
+        if members.len() >= 2 && rank(&members[members.len() - 1]) < rank(&members[0]) {
+            members.reverse();
+            joints.reverse();
+        }
+        for x in &members {
+            done.insert(x.clone());
+        }
+        if members.len() >= 2 {
+            out.push(PartChain {
+                members,
+                joints,
+                length,
+                steel: length - cuts,
+            });
+        }
+    }
+    out
+}
+
 /// What a plate with no member bolted onto it and no outline given says
 /// (its row in Joint details, its box).
 pub const NO_OUTLINE: &str = "no member bolted onto it: no outline to draw";
@@ -1828,7 +2629,16 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
             };
             (
                 shift(vec![[0.0, 0.0], [b, 0.0], [b, t], [t, t], [t, h], [0.0, h]]),
-                Some(Angle { heel: ll, b, h, t }),
+                Some(Angle {
+                    heel: ll,
+                    b,
+                    h,
+                    t,
+                    r: match s.shape {
+                        Some(Shape::EqualAngle { r, .. } | Shape::UnequalAngle { r, .. }) => r,
+                        _ => 0.0,
+                    },
+                }),
             )
         }
         Some(Shape::Channel { h, b, tw, tf, .. }) => (
@@ -1977,17 +2787,36 @@ pub fn similar_joints(d: &JointDetails, id: &str) -> Vec<Similar> {
 }
 
 /// What the bolts of `a` clamp: its leg's thickness and what it bolts
-/// onto's.
+/// onto's. Onto a splice: its leg and the inner covers on that leg (the
+/// head's side), and the outer covers (the nut's; none: 0).
 fn grip(
     a: &Arrival,
     all: &[Arrival],
     plates: &[&ohl_structures::connections::TypePlate],
+    splices: &[TypeSplice],
+    joint: &str,
 ) -> [f64; 2] {
     let own = a
         .profile
         .as_ref()
         .and_then(|p| p.angle)
         .map_or(0.008, |g| g.t);
+    if let Some(s) = a
+        .onto
+        .value
+        .as_ref()
+        .and_then(|o| splices.iter().find(|s| &s.id == o && s.joint == joint))
+    {
+        let leg = bolted_cover_leg(a);
+        let on = |f: CoverFace| -> f64 {
+            s.covers_on(leg)
+                .iter()
+                .filter(|c| c.face == f)
+                .map(|c| c.thickness.si())
+                .sum()
+        };
+        return [own + on(CoverFace::Inner), on(CoverFace::Outer)];
+    }
     let onto = a.onto.value.as_ref().and_then(|o| {
         plates
             .iter()
