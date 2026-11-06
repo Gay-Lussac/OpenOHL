@@ -675,7 +675,14 @@ impl Model {
     /// stiffness, so every step is stable), the motion stopped at each peak
     /// of kinetic energy — until near equilibrium, then Newton from there.
     /// Only for models with such strings (others: the error stands).
-    /// Exit clauses: 50 000 steps or 5 s, and the budget's time limit.
+    /// Exit clauses: 50 000 steps, and the budget's time limit and cancel
+    /// token (those report the stop). No clock of its own: stopping the
+    /// relaxation early by the time alone gave Newton a different start on a
+    /// busy machine, so the result depended on the load (a failure here
+    /// under a 12-fold slowdown, 2026-11-06). Expected cost, only for chained
+    /// models Newton and the load steps could not solve: ~90 µs a step for
+    /// 12 free nodes in a debug build, some 8 600 steps to settle; at most
+    /// ~5 s for one that never does, growing with the square of its nodes.
     fn solve_by_relaxation(&self, budget: &Budget) -> Result<Solution, FeError> {
         let chained = self
             .trusses
@@ -684,6 +691,7 @@ impl Model {
         if !chained {
             return Err(FeError::InvalidModel("no chained strings".into()));
         }
+        // For the trace only: nothing here may depend on it.
         let started = std::time::Instant::now();
         let run = budget.start();
         let mut dof = vec![None; self.nodes.len()];
@@ -719,9 +727,6 @@ impl Model {
                     residual: f64::NAN,
                     worst_node: 0,
                 })?;
-                if started.elapsed() > Duration::from_secs(5) {
-                    break;
-                }
             }
             let eval = self.evaluate(&positions, &dof, n_dof, &mut guesses)?;
             let mut worst = 0.0_f64;
