@@ -14,6 +14,7 @@
 
 use std::collections::BTreeMap;
 
+use ohl_core::geometry::cross;
 use ohl_sections::{SectionLibrary, Shape};
 use ohl_structure_loads::{At, LoadCaseRecipe, LoadTable, MODEL_CASE};
 use ohl_structures::{LibraryItem, StructureType};
@@ -518,14 +519,6 @@ pub fn export_joints(
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 fn unit(a: [f64; 3]) -> [f64; 3] {

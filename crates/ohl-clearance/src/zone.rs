@@ -160,11 +160,7 @@ pub struct ZoneRule {
 impl ZoneRule {
     /// Whether the rule applies to weather case `case`.
     pub fn applies(&self, case: &str) -> bool {
-        self.cases.is_empty()
-            || self
-                .cases
-                .iter()
-                .any(|c| ohl_core::pattern::matches(c, case))
+        ohl_core::pattern::matches_list(&self.cases, case)
     }
 
     /// The rules of a rule file: one for the classes, one for the ground.

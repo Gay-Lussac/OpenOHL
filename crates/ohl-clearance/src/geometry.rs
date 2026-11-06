@@ -4,6 +4,8 @@
 
 //! Closest points between points, segments and triangles in 3D.
 
+pub(crate) use ohl_core::geometry::cross;
+
 /// A point, m.
 pub type P3 = [f64; 3];
 
@@ -21,14 +23,6 @@ fn scale(a: P3, k: f64) -> P3 {
 
 pub(crate) fn dot(a: P3, b: P3) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-pub(crate) fn cross(a: P3, b: P3) -> P3 {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// Distance between two points.

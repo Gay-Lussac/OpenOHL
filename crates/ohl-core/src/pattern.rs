@@ -6,6 +6,12 @@
 //! cases, structures, …): `*` any text, `?` one character,
 //! case-insensitive.
 
+/// Whether `text` matches one of `patterns`; an empty list matches every
+/// text (a rule without cases applies to all of them).
+pub fn matches_list(patterns: &[String], text: &str) -> bool {
+    patterns.is_empty() || patterns.iter().any(|p| matches(p, text))
+}
+
 /// Whether `text` matches `pattern`.
 pub fn matches(pattern: &str, text: &str) -> bool {
     let (p, t): (Vec<char>, Vec<char>) = (
@@ -34,7 +40,15 @@ pub fn matches(pattern: &str, text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::matches;
+    use super::{matches, matches_list};
+
+    #[test]
+    fn an_empty_list_matches_every_text() {
+        assert!(matches_list(&[], "any case"));
+        let list = ["ice*".to_owned()];
+        assert!(matches_list(&list, "Ice heavy"));
+        assert!(!matches_list(&list, "high wind"));
+    }
 
     #[test]
     fn wildcards() {

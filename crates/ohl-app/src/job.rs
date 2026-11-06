@@ -33,6 +33,20 @@ pub struct Job<T> {
     pub units: usize,
 }
 
+impl<T> Job<T> {
+    /// What of `uses` changed since the last answer was computed, in words
+    /// (`None`: nothing, or no answer).
+    pub fn out_of_date(
+        &self,
+        model: &crate::model::Model,
+        uses: crate::revision::Uses,
+    ) -> Option<String> {
+        matches!(self.result, Some(Ok(_)))
+            .then(|| self.stamp.out_of_date(model, uses))
+            .flatten()
+    }
+}
+
 impl<T> Default for Job<T> {
     fn default() -> Self {
         Self {

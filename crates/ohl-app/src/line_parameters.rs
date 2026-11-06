@@ -73,9 +73,7 @@ impl LineParametersWindow {
     /// What the last run was computed from that changed since, in words
     /// (`None`: nothing, or no answer).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// Starts a run: the parameters from the case's solved sections.

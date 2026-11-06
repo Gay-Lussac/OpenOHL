@@ -26,6 +26,7 @@
 
 use std::collections::BTreeMap;
 
+use ohl_core::geometry::cross;
 use ohl_sections::{SectionLibrary, Shape};
 use ohl_structures::connections::{
     BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, MAX_GAUGE_LINES, TypeConnection,
@@ -2821,14 +2822,6 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// The angle between two members' lines, 0 to 90°.

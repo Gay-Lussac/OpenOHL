@@ -138,11 +138,7 @@ impl StringRule {
 
     /// Whether it applies to weather case `case`.
     pub fn applies(&self, case: &str) -> bool {
-        self.cases.is_empty()
-            || self
-                .cases
-                .iter()
-                .any(|c| ohl_core::pattern::matches(c, case))
+        ohl_core::pattern::matches_list(&self.cases, case)
     }
 
     /// Whether it applies to a section of nominal voltage `kv` (none: 0).

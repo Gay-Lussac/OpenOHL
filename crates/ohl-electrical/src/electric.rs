@@ -47,6 +47,7 @@ use std::f64::consts::PI;
 use std::sync::atomic::Ordering;
 
 use nalgebra::{Complex, DVector};
+use ohl_core::text::csv_field;
 use ohl_line::electrical::SystemKind;
 use serde::{Deserialize, Serialize};
 
@@ -2387,14 +2388,6 @@ pub fn feet_ground(line: &ohl_line::Line) -> impl Fn(f64, f64) -> f64 + Send + S
             }
         }
         best.map_or(0.0, |b| b.1)
-    }
-}
-
-fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_owned()
     }
 }
 

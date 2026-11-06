@@ -34,6 +34,7 @@ use std::time::Duration;
 use eframe::egui;
 
 use crate::check_help as help;
+use crate::model::Model;
 use crate::tick_list::{self, Item};
 
 pub use crate::rule_table::{PresetPick, RuleRow, RuleTable, Summary};
@@ -543,6 +544,73 @@ pub fn scope_words(line: &ohl_line::Line, scope: &Scope, sections: bool) -> Stri
         out.push_str(&format!(", {n} of {} sections", line.sections.len()));
     }
     out
+}
+
+/// A tick per item of `all`, `chosen` the ticked; whether one changed (the
+/// menu stays open).
+pub(crate) fn ticks(ui: &mut egui::Ui, all: &[String], chosen: &mut Vec<String>) -> bool {
+    let mut changed = false;
+    for item in all {
+        let mut on = chosen.contains(item);
+        if ui.checkbox(&mut on, item).changed() {
+            if on {
+                chosen.push(item.clone());
+            } else {
+                chosen.retain(|x| x != item);
+            }
+            changed = true;
+        }
+    }
+    for gone in chosen.clone().iter().filter(|x| !all.contains(x)) {
+        let mut on = true;
+        if ui
+            .checkbox(&mut on, format!("{gone} (not in the model)"))
+            .changed()
+        {
+            chosen.retain(|x| x != gone);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// The file of a window's rules in a project: in its clearance rules (its
+/// working copy), else next to the model, named `{line}.{name}`.
+pub(crate) fn project_rule_file(model: &Model, name: &str) -> std::path::PathBuf {
+    let model_file = &model.sources.file;
+    let line = model_file
+        .file_name()
+        .map_or(String::from("line"), |n| n.to_string_lossy().into_owned());
+    let stem = line.split('.').next().unwrap_or("line").to_owned();
+    let dir = model
+        .library_dir
+        .as_ref()
+        .filter(|_| model.editing.is_ok())
+        .map(|w| w.join("rules"))
+        .filter(|d| d.is_dir())
+        .unwrap_or_else(|| ohl_core::files::dir_of(model_file));
+    dir.join(format!("{stem}.{name}"))
+}
+
+/// The status line after writing a window's rule file: `written` is how
+/// the write went; the project's working copy goes into the project.
+pub(crate) fn rule_file_status(
+    written: Result<(), String>,
+    file: &std::path::Path,
+    model: &mut Model,
+) -> (String, bool) {
+    let in_project = model
+        .library_dir
+        .as_ref()
+        .is_some_and(|w| file.starts_with(w));
+    match written {
+        Ok(()) if in_project => match model.store_libraries() {
+            Ok(_) => ("kept in the project".to_owned(), false),
+            Err(e) => (format!("keeping the rules in the project: {e}"), true),
+        },
+        Ok(()) => (format!("kept in {}", file.display()), false),
+        Err(e) => (e, true),
+    }
 }
 
 /// A tick menu of the scope: `title` on its button, `list` inside.

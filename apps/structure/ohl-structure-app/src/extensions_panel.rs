@@ -9,9 +9,10 @@
 //! the feet, legs lowered, as the finite-element model has them). Every
 //! change is one edit of the file (one undo step).
 
+use crate::tables::hold;
 use eframe::egui;
 use ohl_structure_edit::extension_edits::{self as ext, PieceBracing};
-use ohl_structure_edit::{Handle, StructureFile, edits};
+use ohl_structure_edit::{Handle, edits};
 use ohl_structures::StructureType;
 use ohl_structures::extensions::LEGS;
 
@@ -33,13 +34,6 @@ pub struct ExtensionsState {
     pub leg: String,
     /// Its `dz`, m.
     pub leg_dz: f64,
-}
-
-/// While the pointer is pressed on `r` its changes are one undo step.
-fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
-    if r.is_pointer_button_down_on() {
-        file.begin(what);
-    }
 }
 
 impl StructureApp {

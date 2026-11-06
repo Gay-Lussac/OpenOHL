@@ -291,19 +291,7 @@ impl ZoneWindow {
     /// The project's rule file of a window: in the project's clearance
     /// rules (its working copy), else next to the model.
     pub fn project_file(model: &Model, measure: Measure) -> PathBuf {
-        let model_file = &model.sources.file;
-        let name = model_file
-            .file_name()
-            .map_or(String::from("line"), |n| n.to_string_lossy().into_owned());
-        let stem = name.split('.').next().unwrap_or("line").to_owned();
-        let dir = model
-            .library_dir
-            .as_ref()
-            .filter(|_| model.editing.is_ok())
-            .map(|w| w.join("rules"))
-            .filter(|d| d.is_dir())
-            .unwrap_or_else(|| ohl_core::files::dir_of(model_file));
-        dir.join(format!("{stem}.{}-clearances.ohlr", measure.as_str()))
+        crate::check_ui::project_rule_file(model, &format!("{}-clearances.ohlr", measure.as_str()))
     }
 
     /// Another project line worked on (it has its own rule files): a

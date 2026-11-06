@@ -49,6 +49,7 @@ use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
 use nalgebra::{DMatrix, DVector};
+use ohl_core::text::csv_field;
 use ohl_line::Bundle;
 use serde::{Deserialize, Serialize};
 
@@ -669,14 +670,6 @@ fn cut_gradients(
         });
     }
     Ok((out, error))
-}
-
-fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_owned()
-    }
 }
 
 /// The surface gradients as CSV: one row per subconductor, with its

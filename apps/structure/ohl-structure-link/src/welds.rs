@@ -18,6 +18,7 @@
 //!   turn off).
 
 use crate::joints::{Arrival, JointDetail};
+use ohl_core::geometry::cross;
 
 /// Where two plates of a welded assembly meet: the seam's two ends
 /// (structure's axes, m) and, from the seam, the directions into each
@@ -327,14 +328,6 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 #[cfg(test)]

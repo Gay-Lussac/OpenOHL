@@ -15,6 +15,7 @@
 //! string, failures first; the strings beyond a limit (else the worst)
 //! are marked in the views while the window is open.
 
+use crate::check_ui::ticks;
 use std::path::PathBuf;
 
 use eframe::egui;
@@ -91,19 +92,7 @@ pub struct StringChecksWindow {
 /// The rule file of the window in a project: in its clearance rules (its
 /// working copy), else next to the model.
 pub fn project_file(model: &Model) -> PathBuf {
-    let model_file = &model.sources.file;
-    let name = model_file
-        .file_name()
-        .map_or(String::from("line"), |n| n.to_string_lossy().into_owned());
-    let stem = name.split('.').next().unwrap_or("line").to_owned();
-    let dir = model
-        .library_dir
-        .as_ref()
-        .filter(|_| model.editing.is_ok())
-        .map(|w| w.join("rules"))
-        .filter(|d| d.is_dir())
-        .unwrap_or_else(|| ohl_core::files::dir_of(model_file));
-    dir.join(format!("{stem}.string-rules.ohlr"))
+    crate::check_ui::project_rule_file(model, "string-rules.ohlr")
 }
 
 impl StringChecksWindow {
@@ -165,18 +154,11 @@ impl StringChecksWindow {
     /// project.
     pub fn save(&mut self, model: &mut Model) {
         let file = self.file.get_or_insert_with(|| project_file(model)).clone();
-        let in_project = model
-            .library_dir
-            .as_ref()
-            .is_some_and(|w| file.starts_with(w));
-        self.status = Some(match self.rule_set().save(&file) {
-            Ok(()) if in_project => match model.store_libraries() {
-                Ok(_) => ("kept in the project".to_owned(), false),
-                Err(e) => (format!("keeping the rules in the project: {e}"), true),
-            },
-            Ok(()) => (format!("kept in {}", file.display()), false),
-            Err(e) => (e, true),
-        });
+        self.status = Some(crate::check_ui::rule_file_status(
+            self.rule_set().save(&file),
+            &file,
+            model,
+        ));
     }
 
     /// Starts a check: each weather case of the rules solved in the
@@ -259,9 +241,7 @@ impl StringChecksWindow {
     /// What the last check was computed from that changed since, in
     /// words (`None`: nothing, or no report).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// The marks to draw when what the views should show changed: drawn
@@ -796,34 +776,6 @@ impl check_ui::RuleRow for StringRule {
             wires: "strings".into(),
         }
     }
-}
-
-/// A tick per item of `all`, `chosen` the ticked; whether one changed (the
-/// menu stays open).
-fn ticks(ui: &mut egui::Ui, all: &[String], chosen: &mut Vec<String>) -> bool {
-    let mut changed = false;
-    for item in all {
-        let mut on = chosen.contains(item);
-        if ui.checkbox(&mut on, item).changed() {
-            if on {
-                chosen.push(item.clone());
-            } else {
-                chosen.retain(|x| x != item);
-            }
-            changed = true;
-        }
-    }
-    for gone in chosen.clone().iter().filter(|x| !all.contains(x)) {
-        let mut on = true;
-        if ui
-            .checkbox(&mut on, format!("{gone} (not in the model)"))
-            .changed()
-        {
-            chosen.retain(|x| x != gone);
-            changed = true;
-        }
-    }
-    changed
 }
 
 #[cfg(test)]

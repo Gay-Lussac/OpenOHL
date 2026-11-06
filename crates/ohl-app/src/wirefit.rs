@@ -180,9 +180,7 @@ impl WireFitWindow {
     /// (`None`: nothing, or no fit): the line, the LiDAR points
     /// ([`crate::revision`]).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// The window; returns a span to go to.

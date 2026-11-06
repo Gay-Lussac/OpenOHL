@@ -332,19 +332,21 @@ pub(crate) fn cable_of<'a>(
     })
 }
 
+/// The root of `i` in the union-find `parent`, the path shortened on the way.
+fn find(parent: &mut [usize], mut i: usize) -> usize {
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
+}
+
 /// The groups of sections (indices) whose assemblies are joined — a
 /// section ending on a string that another one's string hangs from too (a
 /// TAK) — with more than one section each.
 pub fn coupled_groups(line: &Line) -> Vec<Vec<usize>> {
     let n = line.sections.len();
     let mut parent: Vec<usize> = (0..n).collect();
-    fn find(parent: &mut [usize], mut i: usize) -> usize {
-        while parent[i] != i {
-            parent[i] = parent[parent[i]];
-            i = parent[i];
-        }
-        i
-    }
     // The section ending at each (structure, set).
     let mut at: std::collections::BTreeMap<(&str, u32), Vec<usize>> = Default::default();
     for (k, sec) in line.sections.iter().enumerate() {
@@ -395,13 +397,6 @@ pub const COUPLING_PASSES: usize = 30;
 pub fn spacer_groups(line: &Line) -> Vec<Vec<usize>> {
     let n = line.sections.len();
     let mut parent: Vec<usize> = (0..n).collect();
-    fn find(parent: &mut [usize], mut i: usize) -> usize {
-        while parent[i] != i {
-            parent[i] = parent[parent[i]];
-            i = parent[i];
-        }
-        i
-    }
     let index = |id: &str| line.sections.iter().position(|s| s.id == id);
     for s in &line.spacers {
         if let (Some(a), Some(b)) = (index(&s.a.section), index(&s.b.section)) {

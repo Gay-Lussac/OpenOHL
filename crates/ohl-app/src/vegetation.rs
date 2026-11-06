@@ -1635,7 +1635,7 @@ impl VegetationWindow {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("required clearance c");
-                    crate::requirement_ui::requirement_ui_stacked(
+                    crate::requirement_ui::requirement_ui(
                         ui,
                         "vegetation-clearance",
                         &mut s.clearance,
@@ -1703,7 +1703,7 @@ impl VegetationWindow {
                     );
                     ui.horizontal(|ui| {
                         ui.label("allowance A");
-                        crate::requirement_ui::requirement_ui_stacked(
+                        crate::requirement_ui::requirement_ui(
                             ui,
                             "vegetation-allowance",
                             &mut s.allowance,

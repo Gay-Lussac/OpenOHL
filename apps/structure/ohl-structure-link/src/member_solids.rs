@@ -31,6 +31,7 @@
 //! Display only: nothing here is used by a calculation.
 
 use crate::joints::{Arrival, JointDetails, Profile};
+use ohl_core::geometry::cross;
 
 /// One flat face of a solid: its triangles (each with the edges that are
 /// the face's own, `p[k]` to `p[k + 1]`) and its outward unit normal.
@@ -549,12 +550,4 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }

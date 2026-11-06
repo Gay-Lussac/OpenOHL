@@ -124,7 +124,7 @@ pub(crate) fn field_text(v: Option<&toml::Value>) -> String {
 
 /// While the pointer is pressed on `r` its changes are one undo step
 /// (`what`); the step ends when the pointer is let go.
-fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
+pub(crate) fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
     if r.is_pointer_button_down_on() {
         file.begin(what);
     }

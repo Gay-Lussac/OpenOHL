@@ -7,6 +7,8 @@
 
 use std::fmt::Write as _;
 
+use ohl_core::text::csv_field;
+
 use crate::parameters::{CircuitParameters, LineParameters, Totals};
 
 /// One row of the parameters table: per kilometre and in total.
@@ -134,14 +136,6 @@ pub fn rows(p: &LineParameters, sections: &[String]) -> Vec<Row> {
         });
     }
     out
-}
-
-fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_owned()
-    }
 }
 
 /// The rows as CSV: per kilometre and in total, then the notes as

@@ -2330,21 +2330,23 @@ pub(crate) fn is_zero(x: &f64) -> bool {
     *x == 0.0
 }
 
-/// `prefix` and the first number not a label of `taken`.
-fn free_label(taken: &[SpanPoint], prefix: &str) -> String {
+/// `prefix` and the first number for which `is_taken` is false.
+fn first_free_label(prefix: &str, is_taken: impl Fn(&str) -> bool) -> String {
     (1..)
         .map(|k| format!("{prefix}{k}"))
-        .find(|l| !taken.iter().any(|p| &p.label == l))
+        .find(|l| !is_taken(l))
         .expect("a free label")
+}
+
+/// `prefix` and the first number not a label of `taken`.
+fn free_label(taken: &[SpanPoint], prefix: &str) -> String {
+    first_free_label(prefix, |l| taken.iter().any(|p| p.label == l))
 }
 
 /// A label `{prefix}1`, `{prefix}2`… not taken by `taken` (a jumper's
 /// points).
 fn free_point_label(taken: &[JumperPoint], prefix: &str) -> String {
-    (1..)
-        .map(|k| format!("{prefix}{k}"))
-        .find(|l| !taken.iter().any(|p| &p.label == l))
-        .expect("a free label")
+    first_free_label(prefix, |l| taken.iter().any(|p| p.label == l))
 }
 
 impl Section {

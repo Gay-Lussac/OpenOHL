@@ -393,16 +393,6 @@ pub fn requirement_ui(
     ui.vertical(|ui| parts(ui, id, r, voltages)).inner
 }
 
-/// [`requirement_ui`] in a panel (the same component).
-pub fn requirement_ui_stacked(
-    ui: &mut egui::Ui,
-    id: impl std::hash::Hash + std::fmt::Debug + Copy,
-    r: &mut Requirement,
-    voltages: &[f64],
-) -> bool {
-    ui.vertical(|ui| parts(ui, id, r, voltages)).inner
-}
-
 /// The same component read-only: greyed, on a faint background, marked
 /// [`PREVIEW_NOTE`] (a preset's rule before it is applied).
 pub fn requirement_view(
@@ -745,7 +735,7 @@ mod tests {
     fn editor(r: Requirement) -> Harness<'static, Requirement> {
         let mut h = Harness::new_ui_state(
             |ui, r: &mut Requirement| {
-                requirement_ui_stacked(ui, "test", r, &LINE);
+                requirement_ui(ui, "test", r, &LINE);
             },
             r,
         );

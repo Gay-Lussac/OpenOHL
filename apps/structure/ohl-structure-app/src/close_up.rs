@@ -27,6 +27,7 @@
 use std::sync::Arc;
 
 use eframe::egui;
+use ohl_core::geometry::cross;
 use ohl_structure_link::{BoltPart, JointDetail, Source};
 
 /// The most pieces a close-up is cut into: beyond it the finest size is
@@ -751,14 +752,6 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 #[cfg(test)]

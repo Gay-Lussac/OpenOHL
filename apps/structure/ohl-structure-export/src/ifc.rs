@@ -46,6 +46,7 @@
 //! GlobalIds come from the structure's id and each object's id, so an
 //! export of the same structure gives the same ids.
 
+use ohl_core::geometry::cross;
 use ohl_sections::Shape;
 use ohl_structure_link::{
     ExportBolt, ExportKind, ExportMember, ExportPlate, ExportSection, ExportStructure, LoadPlace,
@@ -116,14 +117,6 @@ fn add3(a: [f64; 3], b: [f64; 3], f: f64) -> [f64; 3] {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 fn unit(a: [f64; 3]) -> [f64; 3] {

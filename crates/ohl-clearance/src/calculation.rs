@@ -55,13 +55,12 @@ pub fn solves<R>(
     out
 }
 
-/// The calculations the clearance rules `rules` ask, each once, in their
-/// order (none first when a rule takes the sections' own; no rule: none).
-pub fn of_rules(rules: &[crate::Rule]) -> Vec<Calc> {
+/// `calcs`, each once, none first; no calculation: none.
+fn distinct(calcs: impl Iterator<Item = Calc>) -> Vec<Calc> {
     let mut out: Vec<Calc> = Vec::new();
-    for r in rules {
-        if !out.contains(&r.calculation) {
-            out.push(r.calculation);
+    for c in calcs {
+        if !out.contains(&c) {
+            out.push(c);
         }
     }
     out.sort_by_key(|c| c.is_some());
@@ -69,6 +68,12 @@ pub fn of_rules(rules: &[crate::Rule]) -> Vec<Calc> {
         out.push(None);
     }
     out
+}
+
+/// The calculations the clearance rules `rules` ask, each once, in their
+/// order (none first when a rule takes the sections' own; no rule: none).
+pub fn of_rules(rules: &[crate::Rule]) -> Vec<Calc> {
+    distinct(rules.iter().map(|r| r.calculation))
 }
 
 /// Rules `rules` checked by calculation `calc` only: the others kept in
@@ -97,17 +102,7 @@ pub const NO_CASE: &str = "\u{0}";
 /// The calculations the zone rules `rules` ask, each once (none first;
 /// no rule: none).
 pub fn of_zone_rules(rules: &[crate::ZoneRule]) -> Vec<Calc> {
-    let mut out: Vec<Calc> = Vec::new();
-    for r in rules {
-        if !out.contains(&r.calculation) {
-            out.push(r.calculation);
-        }
-    }
-    out.sort_by_key(|c| c.is_some());
-    if out.is_empty() {
-        out.push(None);
-    }
-    out
+    distinct(rules.iter().map(|r| r.calculation))
 }
 
 /// Zone rules `rules` checked by calculation `calc` only, the others in

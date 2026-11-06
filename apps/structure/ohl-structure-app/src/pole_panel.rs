@@ -9,11 +9,11 @@
 //! named by the file is brought into it in one step. Every change is one
 //! edit of the file (one undo step; a value dragged is one step).
 
+use crate::tables::hold;
 use std::path::{Path, PathBuf};
 
 use eframe::egui;
 use ohl_sections::{SectionLibrary, Shape};
-use ohl_structure_edit::StructureFile;
 use ohl_structure_edit::pole::{self as pole_edit, POLE_FIELDS};
 use ohl_structures::pole::POLE_MATERIALS;
 use ohl_structures::structures::StructureKind;
@@ -63,13 +63,6 @@ impl PoleState {
 /// kind pole.
 pub fn has_pole(t: &StructureType) -> bool {
     t.pole.is_some() || t.kind == StructureKind::Pole
-}
-
-/// While the pointer is pressed on `r` its changes are one undo step.
-fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
-    if r.is_pointer_button_down_on() {
-        file.begin(what);
-    }
 }
 
 /// The `.ohlp` file a `pole = "…"` names, next to the structure file: by

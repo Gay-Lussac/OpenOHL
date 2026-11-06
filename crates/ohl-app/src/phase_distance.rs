@@ -1756,9 +1756,7 @@ impl PhaseDistanceWindow {
     /// line by its own state): the line, its cases and files
     /// ([`crate::revision`]).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// The saved report shown (its line's state now), the questions, and

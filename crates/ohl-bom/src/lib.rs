@@ -30,6 +30,7 @@ pub mod cost;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use ohl_core::text::csv_field;
 use ohl_line::{InsulatorString, Line, Stringing, Structure};
 use serde::Serialize;
 
@@ -601,14 +602,6 @@ fn quantity(q: f64, unit: &str) -> String {
         format!("{q:.1}")
     } else {
         format!("{q}")
-    }
-}
-
-fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_owned()
     }
 }
 

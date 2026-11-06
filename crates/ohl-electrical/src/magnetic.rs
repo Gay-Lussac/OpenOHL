@@ -32,12 +32,14 @@
 //! A limit is optional input (µT), never a built-in value: with it, the
 //! margin per point and the limit line's extent per profile.
 
+use ohl_core::geometry::cross;
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
 use std::fmt::Write as _;
 use std::sync::atomic::Ordering;
 
 use nalgebra::{Complex, DMatrix, DVector};
+use ohl_core::text::csv_field;
 use ohl_line::electrical::SystemKind;
 use serde::{Deserialize, Serialize};
 
@@ -82,14 +84,6 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// The flux density at `p` of a current of 1 A flowing in the straight
@@ -3303,14 +3297,6 @@ pub fn parse_points(text: &str) -> Result<Vec<GivenPoint>, String> {
         });
     }
     Ok(out)
-}
-
-fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_owned()
-    }
 }
 
 /// The results as CSV: one row per profile point, grid point, given

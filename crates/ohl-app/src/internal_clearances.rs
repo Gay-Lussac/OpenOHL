@@ -103,19 +103,7 @@ pub struct InternalClearancesWindow {
 /// The rule file of the window in a project: in its rules folder (its
 /// working copy), else next to the model.
 pub fn project_file(model: &Model) -> PathBuf {
-    let model_file = &model.sources.file;
-    let name = model_file
-        .file_name()
-        .map_or(String::from("line"), |n| n.to_string_lossy().into_owned());
-    let stem = name.split('.').next().unwrap_or("line").to_owned();
-    let dir = model
-        .library_dir
-        .as_ref()
-        .filter(|_| model.editing.is_ok())
-        .map(|w| w.join("rules"))
-        .filter(|d| d.is_dir())
-        .unwrap_or_else(|| ohl_core::files::dir_of(model_file));
-    dir.join(format!("{stem}.internal-rules.ohlr"))
+    crate::check_ui::project_rule_file(model, "internal-rules.ohlr")
 }
 
 /// A wind study's winds (ESTI 240 Art. 33; owner 2026-11-04: "make the
@@ -436,18 +424,11 @@ impl InternalClearancesWindow {
     /// project.
     pub fn save(&mut self, model: &mut Model) {
         let file = self.file.get_or_insert_with(|| project_file(model)).clone();
-        let in_project = model
-            .library_dir
-            .as_ref()
-            .is_some_and(|w| file.starts_with(w));
-        self.status = Some(match self.rule_set().save(&file) {
-            Ok(()) if in_project => match model.store_libraries() {
-                Ok(_) => ("kept in the project".to_owned(), false),
-                Err(e) => (format!("keeping the rules in the project: {e}"), true),
-            },
-            Ok(()) => (format!("kept in {}", file.display()), false),
-            Err(e) => (e, true),
-        });
+        self.status = Some(crate::check_ui::rule_file_status(
+            self.rule_set().save(&file),
+            &file,
+            model,
+        ));
     }
 
     /// Starts a check: each weather case of the rules solved in the
@@ -596,9 +577,7 @@ impl InternalClearancesWindow {
     /// What the last check was computed from that changed since, in
     /// words (`None`: nothing, or no report).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// The marks to draw when what the views should show changed: the

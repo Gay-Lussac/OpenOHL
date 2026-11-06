@@ -217,9 +217,7 @@ impl GallopingWindow {
     /// words (`None`: nothing, or no report): the line, its weather cases
     /// and files ([`crate::revision`]).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// The window; returns a span to go to.

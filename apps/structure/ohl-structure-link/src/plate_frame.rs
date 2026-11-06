@@ -18,6 +18,7 @@
 //!   plane.
 
 use crate::{JointDetail, PlateDetail};
+use ohl_core::geometry::cross;
 
 /// A plate's axes in its plane, structure's axes, m.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,13 +47,6 @@ fn scale(a: [f64; 3], k: f64) -> [f64; 3] {
 }
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()

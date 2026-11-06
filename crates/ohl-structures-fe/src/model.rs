@@ -83,6 +83,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+pub(crate) use ohl_core::geometry::cross;
 use ohl_core::units::{Angle, Area, Density, Force, Length, SecondMoment, SectionModulus, Stress};
 use ohl_sections::SectionLibrary;
 use ohl_structures::bolts::BoltLibrary;
@@ -1421,14 +1422,6 @@ pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 pub(crate) fn norm(a: [f64; 3]) -> f64 {
     (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
-}
-
-pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// The tables of a structure file with extension `name` as `x` makes it:

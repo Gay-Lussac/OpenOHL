@@ -165,9 +165,7 @@ impl BuildingFieldsWindow {
     /// What the last search was computed from that changed since, in
     /// words.
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        matches!(self.job.result, Some(Ok(_)))
-            .then(|| self.job.stamp.out_of_date(model, USES))
-            .flatten()
+        self.job.out_of_date(model, USES)
     }
 
     /// The plugin chosen among `plugins` (name, folder): by name, else

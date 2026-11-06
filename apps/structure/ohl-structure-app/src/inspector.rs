@@ -12,6 +12,7 @@
 //! same edits as the tables (one undo step each; a value dragged is one
 //! step).
 
+use crate::tables::hold;
 use eframe::egui;
 use ohl_structure_edit::{self as edit, Handle, StringChange, StructureFile};
 use ohl_structures::StructureType;
@@ -33,13 +34,6 @@ fn design_text(d: &toml::Value) -> String {
             .collect::<Vec<_>>()
             .join(", "),
         None => d.to_string(),
-    }
-}
-
-/// While the pointer is pressed on `r` its changes are one undo step.
-fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
-    if r.is_pointer_button_down_on() {
-        file.begin(what);
     }
 }
 

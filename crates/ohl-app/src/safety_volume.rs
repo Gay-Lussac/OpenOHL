@@ -1182,7 +1182,7 @@ impl SafetyVolumeWindow {
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                 ui.label("from the conductors' surface");
-                crate::requirement_ui::requirement_ui_stacked(
+                crate::requirement_ui::requirement_ui(
                     ui,
                     "safety-volume-distance",
                     &mut s.distance,
