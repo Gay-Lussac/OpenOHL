@@ -2020,6 +2020,22 @@ fn the_magnetic_field_views_are_drawn() {
         let o = &r.view3d.magnetic_field;
         assert!(o.plan.is_empty(), "no isolines from above (dropped)");
         assert!(!o.surfaces.is_empty(), "surfaces");
+    }
+    // The volume in the 3D view beside its window (an image for the docs
+    // and the website, with OHL_RENDER_PNG): the window made wide for it,
+    // then as it was.
+    if let Some(dir) = &png {
+        harness.get_by_label("Show in 3D").click();
+        harness.set_size(egui::vec2(2600.0, 1000.0));
+        harness.run_steps(6);
+        let image = harness.render().unwrap();
+        let path = std::path::PathBuf::from(dir).join("ohl-design-magnetic-field-3d.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        harness.set_size(egui::vec2(1600.0, 1000.0));
+        harness.run();
+    }
+    {
+        let r = harness.state_mut().ready().unwrap();
         // A cross-section panel in the first span.
         r.open_cut(crate::xsection::CutSpec {
             alignment: "main".into(),

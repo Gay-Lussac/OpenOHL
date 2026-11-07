@@ -245,7 +245,7 @@ image = "example-logo.svg"    # an image of the template (or "{logos}")
 [[title_block.cell]]
 at = [0, 2]
 span = [1, 2]
-text = "{project}\n{line}"
+text = "{plan_kind}\n{line}"  # what the drawing is: plan and profile, route plan …
 size = "3.5 mm"
 bold = true
 [[title_block.cell]]
@@ -280,7 +280,7 @@ text = "Scales"
 size = "2 mm"
 [[title_block.cell]]
 at = [2, 3]
-text = "1:{hscale} / 1:{vscale}"
+text = "{scales}"            # each plan writes its own scale here
 size = "2.5 mm"
 align = "right"
 [[title_block.cell]]

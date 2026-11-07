@@ -144,7 +144,8 @@ fn the_furniture_stays_inside_the_frame_padding() {
             }
             assert!(texts > 20);
             let svg = sheet.svg();
-            assert!(svg.contains("1:1000 / 1:200"));
+            // The template's scales cell (`{scales}`).
+            assert!(svg.contains("horizontal 1:1000 · vertical 1:200"));
         }
     }
 }

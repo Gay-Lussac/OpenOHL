@@ -51,6 +51,25 @@ next background maps in the project (O16). Still open: O13's dynamic method (the
 jumpers' swing band margin (left to the owner, Phase 4) and the items
 not built in the record below (`[ ]`).
 
+**Next up** (2026-11-07): background maps (O16) are built since
+2026-10-25. Built since 2026-11-04, all in active development (not
+approved yet): the thermal rating at a current and the conductor surface
+gradient in 2D cuts (O18 item 7); the vertical and radial clearances
+counted step by step with Stop at once and a faster corridor test
+(2026-11-04), the radial ground clearance kept within the reach
+(2026-11-06); the distance between conductors at 0.1 m stations by
+default and the unequal wind results without lag, saved reports opening
+again (2026-11-04); falling trees stopping at the ground, with a switch
+to let the trunk turn on through it, off by default (2026-11-05); the
+wire solver's relaxation without a clock of its own (2026-11-06); the
+sheet templates explained with drawings in the user guide, the corridor
+on the route and situation plans and the revision order fixed, plan
+headings that say what the plan is and the scale bars' box fitted to its
+bars (O14, 2026-11-07); the electric and magnetic field windows sharing
+their setup (2026-11-07). No next item has been named by the owner since.
+Still open: O13's dynamic method, the jumpers' swing band margin (left
+to the owner, Phase 4) and the items not built (`[ ]`).
+
 ## Where it stands
 
 OHL-Design (`ohl-design`) is built as a base through Phases 1 to 5
@@ -197,7 +216,19 @@ development (not approved yet):* one PDF of a set (Plan set… › also as
 one PDF, `--set-pdf`) and `ohl drawing --set FILE|PLUGIN/NAME`, a set's
 second drawing of a kind named apart (`-2`); still to come: links to
 public map services, the corridor's protection zones and land use as
-their own layers (today: the project's drawings).* Proposed (to discuss):
+their own layers (today: the project's drawings).*
+*Status (2026-11-07), built, in active development (not approved yet):*
+the [Sheet templates](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/sheet-templates.md)
+guide rewritten with a section per part of a template (each key, its
+values, default and effect) and drawings made by
+`tools/sheet_template_figures.py` from real sheets of the invented
+example line, saying which drawing uses which part; two defects found
+on the way and fixed: the corridor on the route and situation plans
+lost the last piece of the centreline, and the revision table drew the
+oldest revision at the top. `{heading}` on the route, situation and
+phase plans now says what the plan is (no longer "plan and profile"),
+and the scale bars' box in the bottom row grows with its bars.
+Proposed (to discuss):
 
 1. **Route plan and situation plans** — the plan alone, the line drawn
    on a background, at two scales (owner, 2026-10-23):
@@ -593,6 +624,13 @@ core staying independent of them.
    (item 6), a published worked example, Markt and Mengele's original
    publication.
 
+*Status (2026-11-07), built, in active development (not approved yet):*
+the Electric field and Magnetic field windows share what they had word
+for word in one module (`field_common`: the setup's inputs and how they
+are kept in the project, the span and profile setup, the profile plot,
+the notes of a run); each window keeps its own physics. Meant to change
+nothing the user sees; the project keys are unchanged.
+
 Methods from textbooks and papers (cited in a new theory page), each
 validated against worked examples with their published values; the
 plugins' methods validated by their authors, the comparison values in
@@ -677,7 +715,7 @@ the plugin's own tests.
 
 - [x] `ohl-cables`: conductor/wire library — area, diameter, weight, RTS, modulus, thermal coefficients, bimetallic (core/outer) properties
 - [x] Stress-strain models: linear elastic, polynomial (initial / final / creep curves, per CIGRE/Aluminum Association practice), bimetallic split, aluminium compression limit
-- [x] Creep models: creep-curve method (10-year curve) — *time-based / equivalent-temperature variants still open*
+- [x] Creep models: creep-curve method (10-year curve); the linear wire models take creep as a given equivalent temperature shift (`linear_creep_temperature`, and `linear_creep_tension` scaled by the creep case's tension; see [Sag-tension](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sagtension.md)) — *still open (corrected 2026-11-07): a time-based creep law, and working out the equivalent temperature instead of typing it (GitHub issue #12, "Creep: a time-based law")*
 - [x] `ohl-sagtension`: exact catenary, parabola approximation, inclined spans, sag/tension/length/slack
 - [x] Change-of-state equation; initial / final-after-creep / final-after-load conditions
 - [x] Ruling-span (equivalent span) method for tension sections, plus exact equal-H section solution
@@ -708,10 +746,10 @@ the plugin's own tests.
 - [x] Structure library v1 (`.ohls`, DESIGN_GOALS §10): one file per type, local attachment points, default insulator per set, extensions, placement (position, rotation, extension), derive types from an existing line
 - [x] Insulator library basics (`.ohli`, DESIGN_GOALS §11): suspension, two-string and strain assemblies used by the solver (two strings to one wire point solved in lines as tension-only, slack strings reported)
 - [x] Insulator assembly model (graph of nodes and elements): structure points (fixed), wire points (free), strings as bars between them — one string, two strings to one wire point, a string below two, strain (single and multiple), strings hanging from strings, compression allowed per string (flagged beyond its limit); sections sharing an assembly solved together, Dirichlet–Neumann by the stiffest section (see [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/wirefe.md#strings-hanging-from-strings)) *(post insulators and yokes as presets still to add)*
-- [x] Multi-span sections solved in 3D (FE with suspension strings, wind per span, point loads); `ohl line` with 3D HTML viewer and CSV exports — compared with an existing line exported from another program (930 spans, median 1.1 cm)
+- [x] Multi-span sections solved in 3D (FE with suspension strings, wind per span, point loads); `ohl line` with 3D HTML viewer and CSV exports — compared with an existing line exported from another program (930 spans, median 1.1 cm) *(2026-11-06, built, in active development (not approved yet): the dynamic relaxation fallback no longer stops after 5 s of wall-clock time, only by its step count and the budget's time limit and cancel token, so its result no longer depends on how busy the computer is)*
 - [x] Insulator behaviour in the 3D solve: a string's swing, the forces of two strings to one wire point & slack detection, strain assembly geometry *(from the FE solve; closed-form checks as validation cases since 2026-10-20: `tbins-001…005`, `tbrs-002…003`, `tb324-011`)*
 - [x] `ohl-clearance` v1: vertical ground clearance of every solved span per weather case, violations in `ohl line --terrain --clearance` and in the viewer
-- [x] `ohl-clearance` v2 (DESIGN_GOALS §13): vertical **and** radial clearances; rule files (`.ohlr`) per target — ground, LiDAR classes/roles, other lines, other wires of the same line (same span and between spans)
+- [x] `ohl-clearance` v2 (DESIGN_GOALS §13): vertical **and** radial clearances; rule files (`.ohlr`) per target — ground, LiDAR classes/roles, other lines, other wires of the same line (same span and between spans) *(2026-11-04, built, in active development (not approved yet): every step of a run counted with its own time left, Stop answered at once, the corridor test of the points faster with the same findings; 2026-11-06: the radial clearance to the ground kept within the reach — the requirement plus `search_margin`, a wire below the ground always counting — as the points already were, and `ohl zones` writes its progress every 30 s)*
 - [x] Clearances to the conductor's **surface** (2026-10-19): every check (ground, points, wires, zones, vegetation, galloping, right of way, distance between conductors, the thermal clearance limit) takes the conductor's radius — iced in a case with ice — and the polyline's bound (the solver's `polyline_error`, sagitta on the catenary's smallest radius of curvature H/w) off the distance to the axis; the radial ground distance from 0.5 m samples lowered by its sampling bound; galloping ellipses as circumscribed polygons — each on the safe side, labelled **Conservative** (validation `clearance-surface-001`)
 - [x] Clearance envelopes over several weather cases (lowest clearance and governing case per wire and rule), different cases per wire in wire-to-wire checks (`case_pairs`), rules limited to cases; sheets draw every case
 - [x] Exclusion zones in clearance rules: near the wire ends (`exclude_near_ends`) and spans at given structures (`exclude_spans_at`, e.g. cable terminations)
@@ -779,7 +817,7 @@ the plugin's own tests.
 
 *Status: built as a base, in active development (not approved yet). Each item says what is simplified or left for later.*
 
-- [x] `ohl-loads`: load case framework (weather × load factors × wire condition), `.ohllc` files kept in the project, edited in the app
+- [x] `ohl-loads`: load case framework (weather × load factors × wire condition), `.ohllc` files kept in the project, edited in the app *(2026-11-03, owner's local-conditions and load-case design; built, in active development (not approved yet); added to this page 2026-11-07: `.ohllc` version 4 — removed conductors apart from broken ones, several broken wires solved together, the structure wind's direction, ice and snow on the structures; the Load cases library as a form; a load case set per structure (its own, else its type's, else every case); one **Use local conditions** switch per check window in place of the weather groups' override ticks; OHL-Structure takes a placed structure's set from the library; see the [decision log](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md), 2026-11-03)*
 - [x] Structure capacity Method 1: allowable spans (wind/weight span, line angle) — `[capacity.spans]` in the structure types, interpolated by line angle (linearly in sin(θ/2), on the safe side for a structure responding linearly — 2026-10-19), minimum weight span (uplift)
 - [x] Method 2: allowable load trees per attachment (vertical, uplift, transverse, longitudinal; linear interaction optional) against factored loads × strength factor *(interaction diagrams of the whole structure later)*
 - [x] Finite-element wire system (SAPS-style, `ohl-wirefe`): exact elastic catenary elements, single strings and two strings to one wire point (tension-only), 3D wind blowout, insulator swing, broken span, point loads, unequal spans *(delivered early, in Phase 1)*
@@ -804,8 +842,9 @@ the plugin's own tests.
 - [x] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps) — *base*: COPC read directly as a point source (area/corridor/depth queries by octree node; also on `--pointcloud` for `ohl line` and the app), imported like LAZ, written on export (in memory), `ohl pointcloud info` shows its octree; stored clouds keep levels of detail per block (¼, 1/16, 1/64 of the points; schema 2, `ohl pointcloud octree` for older files, ADR-0007 amendment); the 3D view streams nodes on background threads by screen-space error under a per-user point budget (default 5 M) with an LRU GPU cache. Measured (M1 Max, synthetic 25 M points): 5 M points drawn at 16.5 ms a frame, 10 M at 32 ms; a view read in 0.1–0.2 s. Not measured with 10⁹ points (synthetic data only, extrapolated in the user guide); stored-cloud nodes are 256 m squares × 4 levels, not a spatial octree, so very large *areas* hit the budget at the coarsest level; COPC export holds the points in memory; COPC colours/GPS time not kept
 - [x] LiDAR: classification, vegetation & encroachment analysis, as-built wire extraction/fitting — base: ground by progressive morphological filter + height classes (`ohl lidar classify`), vegetation encroachment with growth and fall-in per span, catenary fits per span with the survey temperature from the model (synthetic tests: sag within 2 cm, temperature within 2 °C); app windows. Still to come: buildings/wires/poles told apart from vegetation, leaning trees
 - [x] Safety volumes for work near the line (2026-10-20, built, in active development (not approved yet)): the union over weather cases and wind positions (blowouts, steps, swing arc, both) of the space within a distance by voltage (no distance built in; a preset rule may fill it) plus a margin of the conductors, one closed mesh per wire or circuit that holds the exact volume whole (sparse marching tetrahedra, then collapses kept only outward, checked as a whole); Checks › Safety volumes (3D translucent, plan outline, Performed checks, out of date), `ohl safety-volume`; DXF R12 + `.prj`, IFC4 with `IfcMapConversion`, KML/KMZ (WGS84, heights kept); validation `safetyvolume-001…005`. Since 2026-10-21 (built, in active development (not approved yet)): the swing arc a band from the smallest to the largest radius (widened by its measured margin), each volume an `IfcSpatialZone` in IFC, and the jumpers included at their solved positions (continuous at the structures). Not included yet: structures Also since 2026-10-21: wires chosen by system, circuit or span (searchable tick lists with All / None / Invert on the rows found, a shared widget; CLI `--span`), one volume per wire, circuit or system (CLI `--system`, `--per system`), the window's settings grouped and explained with drawings and user-guide links; the wires without a system (earthed wires) one group "(no system)" to tick and one volume per system (CLI `--system none`); the band margin editable (`--band-margin`); with the swing arc each jumper on a band of its own about its end clamps (built, in active development (not approved yet))
-- [x] Danger trees (2026-10-20, built, in active development (not approved yet)): fall-in about the root ball (hinge at k·h', resting on the ground along the fall direction, sheltered by ridges; tree base only with a ground point within a given distance), grow-in with buffer against every case solved left and right, the optional swing arc per span and unbalanced ice per span near vegetation; per span the worst with case and position; isoclearance lines (GeoJSON/DXF/CSV, drawings layer `OHL_ISOCLEARANCE`, app layers in 3D and plan); parallel and bounded (`ohl lidar vegetation --root-ball --fall-allowance --buffer --swing-arc --band-margin --unbalanced-ice --isoclearance --max-base-ground-distance`; Checks › Vegetation; validation `dangertree-001…005`, `swingarc-001…004`). Since 2026-10-20 the unbalanced ice is a weather case of its own on the span (`--unbalanced-ice case|thickness=m|extra=N/m|load=N`; the wind on its iced diameter) and the defaults are the utility practice (root ball 0.05, allowance 2 m, base ground point within 5 m, search distance 50 m; the command line's results with the defaults change). Since 2026-10-21 a cross-section view of the line (built, in active development (not approved yet)); the check's grow-in and fall-in points in it still to come
+- [x] Danger trees (2026-10-20, built, in active development (not approved yet)): fall-in about the root ball (hinge at k·h', resting on the ground along the fall direction, sheltered by ridges; tree base only with a ground point within a given distance), grow-in with buffer against every case solved left and right, the optional swing arc per span and unbalanced ice per span near vegetation; per span the worst with case and position; isoclearance lines (GeoJSON/DXF/CSV, drawings layer `OHL_ISOCLEARANCE`, app layers in 3D and plan); parallel and bounded (`ohl lidar vegetation --root-ball --fall-allowance --buffer --swing-arc --band-margin --unbalanced-ice --isoclearance --max-base-ground-distance`; Checks › Vegetation; validation `dangertree-001…005`, `swingarc-001…004`). Since 2026-10-20 the unbalanced ice is a weather case of its own on the span (`--unbalanced-ice case|thickness=m|extra=N/m|load=N`; the wind on its iced diameter) and the defaults are the utility practice (root ball 0.05, allowance 2 m, base ground point within 5 m, search distance 50 m; the command line's results with the defaults change). Since 2026-10-21 a cross-section view of the line (built, in active development (not approved yet)); the check's grow-in and fall-in points in it still to come. *2026-11-05 (owner), built, in active development (not approved yet): a falling trunk stops at the ground (said in the theory as not conservative against a rule that ignores the ground); a switch lets it turn on through the ground — the vegetation window's "the trunk turns on through the ground", `[vegetation] fall_through_ground`, `--fall-through-ground` — off by default*
 - [x] Thermal rating: IEEE 738, CIGRE TB 601 / TB 207, max operating temperature from clearance — `ohl-thermal`: ampacity, temperature, transient, solar position; `.ohlta` ambient cases; per-section clearance-limited temperature (ground and point rules); `ohl thermal`, Checks › Thermal rating *(base: uniform conductor temperature, no radial gradient; no published TB 601 example in the validation yet)*
+- [x] Lightning shielding (2026-10-31, built, in active development (not approved yet); added to this page 2026-11-07): `[[lightning_rule]]` in the rule file (shielding angle, or rolling sphere with a typed striking distance or a formula of the current), cross-sections square to each span, the margin; `ohl lightning`, Checks › Electrical › Lightning shielding with the 3D layer of the exposed parts; validation against the classical construction ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/lightning-shielding.md))
 - [x] Thermal rating at a current (owner, 2026-11-04 — *built 2026-11-04, in active development, not approved yet*): a system's operating current in the line file (version 13); Checks › Thermal rating in four pages with Setup and Results — Ampacity, Temperature at a current (steady, per ambient case, heat terms on hover), Step change (the transient as a table and a plot), Clearance (the clearance-limited temperature, or the clearance at the current's temperature: pass or fail per section, drawn in the views); `ohl thermal clearance-check` *(the bundle shares the current equally; the steady temperature, not the transient's, in the clearance check)*
 - [x] Optimum (automatic) structure spotting — cost-based optimisation: dynamic programming over candidate stations × types/extensions (ground clearance of a design catenary, allowable wind/weight spans, alignment points, forbidden zones); `ohl spot`, Tools › Spot structures (proposal as a new line file) *(clearance under the centreline only, one tension for the route)*
 - [x] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances — base: ellipses by user coefficients (`.ohlg`; Davison / RUS / CIGRE TB 322 forms, no coefficients shipped), swept along the span, per span pair (`ohl clearance galloping`, app window); blown-out wires against the right of way (`ohl clearance row`); `circuits = same|different` on wire rules with case pairs
@@ -837,7 +876,38 @@ members before joints): waits for the owner's agreement on the plugin
 interface and for the standard's values from the owner (none typed from
 memory).
 
+**Next up** (2026-11-07): the statement above is out of date. SIA
+263:2013 is built in the core as a member capacity method beside ASCE
+10-97 (2026-11-03, from the standard the owner gave; in active
+development, not approved yet); the plugin interface for code checks
+(O4) is not built. The joint details (O19) took most of the work from
+2026-11-02 to 2026-11-05. No next item has been named by the owner
+since. Open: O19's buckling lengths from what braces a member, end
+releases and bolt slip, the joints' own checks beyond the plates and
+covers, weight and quantities, and the validation; O20's B3 to B5; the
+hotbar's drawing and the check footer into the shared UI crate (Part C).
+
 ## Where it stands
+
+### Just finished (2026-11-07)
+All built, in active development (not approved yet):
+- **Joint details** (O19): plates several per joint, welded plates, a
+  member's roll, weld size and length and the plate checks, a plate's
+  outline corrected by hand, the values of a joint drawn and explained
+  (2026-11-03 and 2026-11-04); the members' profiles in the 3D view as
+  the Detail view places them, lap joints, splices with covers (two
+  shear planes) and continuous members, ends seated without bolts, bolts
+  on both legs, bolts in the 3D view (2026-11-05).
+- **Member capacities**: SIA 263:2013 beside ASCE 10-97, torsional and
+  torsional-flexural buckling in the ASCE 10-97 check, bolt tools that
+  keep the design code's minimum distances; steel pole shafts by
+  ASCE/SEI 48-19 or SIA 263, wood poles by SIA 265 (2026-11-03).
+- **Load cases**: a structure's set from the Load cases library
+  (2026-11-03, Part A Phase 4); OHL-Structure's menus aligned with
+  OHL-Design's (2026-11-03); a row double-clicked zooms the 3D view on
+  it (2026-11-04); `double_channel` sections (2026-11-04).
+- **One UI crate** shared with OHL-Design, `crates/ohl-ui` (2026-11-07,
+  Part C).
 
 ### Just finished (2026-10-25)
 - **Load cases of two parts** in the Load case editor (a window of its
@@ -857,6 +927,19 @@ forces, buckling lengths, sections, joint details), what comes back
 > **Owner:** (2026-10-19) Can be done in parallel with other work. First
 > code: SIA 263 for steel. Members first, then joints. The theory of the
 > checks goes in a theory page of the book.
+
+**Status (2026-11-07):** the member capacities are in the core, not
+through a plugin: ASCE 10-97 the default (2026-10-27) and SIA 263:2013
+as a second method (`[analysis] capacity = "sia263-2013"`, 2026-11-03,
+owner) — buckling curves, section classes and effective widths, single
+angles bolted by one leg, frames, tension, bolts and their minimum
+distances, with every step and its clause in the
+[theory page](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia263.md);
+built, in active development (not approved yet). The joints' plates and
+fillet welds are checked by the structure's capacity method (O19). The
+plugin interface for code checks (what the core hands over, what comes
+back) is not built; whether it is still wanted beside the core methods
+is for the owner.
 
 ### O19. Joint details of towers: show and define them
 A tool in OHL-Structure to see and define, at each joint of a tower:
@@ -902,9 +985,49 @@ Six stages, the questions per stage and per detail level:
   offset in the FE model: the moment carried where a frame member meets
   the joint, left out and said where only bars do; reported per member
   and case; validation `structfe-015` (2026-11-02)
+- [x] The ASCE 10-97 connection rules on the safe side (no end restraint
+  from bolts onto a gusset plate only, punched holes, block shear, the
+  short-leg rule, up to three gauge lines) and bolt tools that keep the
+  design code's minimum distances (snapping onto gauge lines, breaking
+  bolts ringed with the clause) (2026-11-03)
+- [x] Plates: several per joint, bolted or welded, drawn round their
+  bolts with the code's end and edge distances in the plate
+  (2026-11-03); a welded plate as several plates welded together, a
+  member's roll (Lay flat, Turn it flat), gauge lines from the holes
+  (2026-11-04)
+- [x] Weld size and length (`[[plate.weld]]`) and the plate checks per
+  case — bearing, block shear, the section across the bolt group, end
+  and edge distances, fillet welds by SIA 263 (welds not checked under
+  ASCE 10-97, said); the joints marked by their plates' worst usage
+  (2026-11-04)
+- [x] A plate's outline corrected by hand in its own plane, back to
+  automatic, corners dragged in the face view (2026-11-04); what the
+  values of a joint mean, drawn and dimensioned above the connections
+  table and in the user guide; a plate in a bolt's grip drawn as a
+  solid; joints like it copying the end's stops, shift and rolled edge
+  (2026-11-04)
+- [x] The members' profiles in OHL-Structure's 3D view as the Detail
+  view places them (seat, cut, roll, shift), View › Display options ›
+  Profiles as placed (2026-11-05)
+- [x] Lap joints, double covers and continuous members (owner,
+  2026-11-05): a connection's `face` (outside, inside, nested with its
+  fit), `[[splice]]` covers giving two shear planes and checked as
+  plates for their share by area, continuous members as one part
+  (Design › Continuous members…, never set by itself); bearing on the
+  leg bolted onto; `splices.csv`, `parts.csv`, IFC covers
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-laps-splices.md))
+  (2026-11-05)
+- [x] Ends seated without bolts, bolts on both legs (`leg = "both"`,
+  `other_leg_points`; the net section counting both legs' holes), bolts
+  in the 3D view (2026-11-05)
 - [ ] Stage 4.3 to 4.6 — buckling lengths from what braces a member,
   the FE model's other options (end releases, bolt slip), the joints'
   own checks, weight and quantities
+  *(status 2026-11-07: of the joints' own checks, the plates', covers'
+  and fillet welds' are built (above); the bolt group under the members'
+  forces together, a gusset plate's buckling and the rest are not;
+  buckling lengths from the bracing, end releases, bolt slip and the
+  bolts' and plates' weight are not built)*
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)
@@ -934,7 +1057,14 @@ questions: [Built-up members](https://github.com/Gay-Lussac/OpenOHL/blob/main/do
   the export's second moments (within 5 %, else kept `general`, said);
   its bolts as the project's bolt library (library kind `bolts`)
   (2026-11-02, built, in active development, not approved yet)
+- [x] `double_channel`: two channels back to back, its properties from
+  the outline (2026-11-04, built, in active development, not approved
+  yet)
 - [ ] B3 — shown: each angle drawn, the joints see the plies
+  *(status 2026-11-07: since 2026-11-05 OHL-Structure's 3D view and the
+  joint close-up draw a built-up member by its built-up outline (O19,
+  the profiles as placed); the joint details taking a built-up member's
+  plies and filler plates: not built)*
 - [ ] B4 — the rules for built-up members
 - [ ] B5 — joints of built-up members
 > **Owner:** (2026-11-02) "plan the double star and 4 corners to be
@@ -1175,10 +1305,10 @@ and 3 members drawn with the line).
 
 *Status: built as a base, in active development (not approved yet). Each item says what is simplified or left for later.*
 
-- [x] `ohl-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.ohlfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction; a member's own capacities and effective length, angle legs by structure directions, a dead-load factor on the self-weight), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ohl structures fe`, the Results tab of OHL-Structure). *Simplified / later:* no corotational large rotations, wind on the structure body only on profiles from the cross-section library (drag per shape, face drag by solidity and shielding of the faces behind only when the cross-section library's `[wind]` gives them — from a design-code plugin or typed; else one drag factor, no shielding), no code column curves or angle-section eccentricities, no member-load cases beyond self-weight and the load-case recipes, no 3D view of the model in OHL-Design
+- [x] `ohl-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.ohlfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction; a member's own capacities and effective length, angle legs by structure directions, a dead-load factor on the self-weight), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ohl structures fe`, the Results tab of OHL-Structure). *Simplified / later:* no corotational large rotations, wind on the structure body only on profiles from the cross-section library (drag per shape, face drag by solidity and shielding of the faces behind only when the cross-section library's `[wind]` gives them — from a design-code plugin or typed; else one drag factor, no shielding), no code column curves or angle-section eccentricities, no member-load cases beyond self-weight and the load-case recipes, no 3D view of the model in OHL-Design. *Since then, built, in active development (not approved yet); added to this page 2026-11-07:* member capacities by ASCE 10-97 in the core, the default (2026-10-27; column curves, end eccentricity and restraint, angle legs' local buckling, bolts and net section; [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md)), with its torsional and torsional-flexural buckling by the profile's symmetry (2026-11-03); SIA 263:2013 as a second capacity method beside it (`capacity = "sia263-2013"`, 2026-11-03, owner; [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia263.md)); the end conditions and bolts taken from the joints where they are defined (O19)
 - [x] **Joint stabilisation**: lattice towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused (a hold to the ground; a hold relative to its line is flagged above the limit, not refused — owner, 2026-10-19); true mechanisms are named with the joints that move *(since 2026-10-19, U6, not approved yet: a joint on a straight line of members is held relative to the line's ends, following its face with P-Delta; the others to the ground)*
 - [x] **Tension-only members** (`kind = "tension"`, the "tension-only" members of tower programs): a truss in tension and in compression up to its own elastic buckling load π²EI_min/L_k² (L_k: `lk`, else `k` × length, k = 1 pinned), **bowed** beyond it carrying that load (slack without a second moment); solved by active-set iterations on that cap (members beyond it bowed, those loaded less put back, first order then P-Delta); members on one line through a joint switch as one tie, split into their members when the set goes round or a half hides compression; bowed members named in the notes, usage, `ohl structures fe` and OHL-Structure's results (benchmark `structfe-011`); tension-only members that bend (`bending = true`, a tower program's tension-only beams: frames while in, trusses bowed or slack; benchmark `structfe-012`) and members not checked (`check = false`, its fictitious members), `.ohls` 6, `.ohlfe` 3. *See Known limitations below:* the last resort
-- [x] Wood/steel/concrete pole libraries and checks. *Base:* `.ohlp` poles (taper by diameter or circumference, fibre stress for wood, moment capacity at the ground line or by height, hollow wall), moment along the pole from the factored attachment loads (both directions, offsets) plus wind on the pole, P-Delta amplification from a tapered frame model (`pole` check, `ohl structures pole`). *Simplified / later:* one amplification factor for every height, no foundation/embedment check, no shear or deflection limits, no pole class tables (user data)
+- [x] Wood/steel/concrete pole libraries and checks. *Base:* `.ohlp` poles (taper by diameter or circumference, fibre stress for wood, moment capacity at the ground line or by height, hollow wall), moment along the pole from the factored attachment loads (both directions, offsets) plus wind on the pole, P-Delta amplification from a tapered frame model (`pole` check, `ohl structures pole`). *Simplified / later:* one amplification factor for every height, no foundation/embedment check, no shear or deflection limits, no pole class tables (user data). *2026-11-03 (owner), built, in active development (not approved yet); added to this page 2026-11-07:* hollow steel pole shafts by ASCE/SEI 48-19 (the default for them, [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce48.md)) or by SIA 263:2013 (`pole code`), wood poles by SIA 265:2012 ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia265.md)); member buckling of a steel shaft by SIA 263 said not covered
 
 #### Structure analysis — known limitations (unfinished)
 - [ ] **Tension-only sets that do not settle — last resort** (recorded 2026-10-18; O5 decided 2026-10-19). Since the buckling-load cap and the splitting of ties (above), the case that used to go round (a pair of diagonals in halves through a joint slightly off a tie's line, the joint held otherwise only by a weak spring) settles. Kept as a flagged **last resort**: when single members still go taut and slack in turn (or after 1000 solves), they are **kept active as ordinary truss members**, the others iterated on, and the result is flagged — a note *"tension-only members kept active because the set did not settle: … — approximate (last resort)"*, those members marked *kept active (did not settle)*, the structure's usage **approximate** (never a plain pass). No tested model reaches it. Later (owner, O5): the energy-based (or damped) active-set update, which would always settle
@@ -1233,9 +1363,42 @@ server and version control, validation and docs, 1.0 and further ahead.
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- 177 validation cases pass (47 textbook and CIGRE TB 324 cases added
+- **236 validation cases pass** (count of 2026-11-07, `ohl validate
+  benchmarks`; the last added: `electrical-066…073`, the conductor
+  surface gradient, 2026-11-04) and there are 27 theory pages. The
+  count of 2026-10-22 and how it grew to it: 177 validation cases pass (47 textbook and CIGRE TB 324 cases added
   2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21; 2 on attachment points: an offset's moment and a member split at a point, 2026-10-21; 1 on the jumpers' own band margin and 1 on the ice and wind per unstretched metre, 2026-10-21; 2026-10-22: 2 on the curves' range, 5 on tension criteria on the non-linear model, 3 on the sagging outputs, then the 9 Drake-like cross-check cases removed and 5 on both final states and the signed set on an invented cable, 2 more on the curves' range added); the private Swiss plugin and the importers of
   another program's files live outside the public code.
+
+### Just finished (2026-11-07)
+All built, in active development (not approved yet):
+- **One shared UI crate**, `crates/ohl-ui` (2026-11-07, owner): the
+  look, messages, notices, long tables, the artwork's drawing and the
+  glyph test's helpers, used by both applications; still to move: the
+  hotbar's drawing and the check footer
+  ([A shared UI crate](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/ui-shared.md)).
+- **Duplicate code merged** (2026-11-06): helpers that had been copied
+  around (CSV fields, the 3D cross product, the tick menu, the
+  out-of-date test, the weather case match and others) have one
+  definition each; no change of method or result. The copies between
+  the two applications that stay are decided in the same page.
+- **The docs checked as a whole** (2026-11-04): every page in the book,
+  every `ohl` command in the overview; measuring with two angles for two
+  points and an Angle tool for three.
+- In Part A: the thermal rating at a current, the conductor surface
+  gradient in 2D cuts, the clearance runs counted and faster, the radial
+  ground clearance within the reach, the wire solver's relaxation
+  without its own clock, the sheet templates explained with drawings,
+  the plans' headings and scale bars, the field windows' shared setup.
+  In Part B: the joint details, SIA 263 and the pole codes, the load
+  cases per structure.
+- **GitHub issues tidied** (2026-11-07): the epics #28 (tower and pole
+  FE), #44 (the renderer), #48 (version control) and #50 (roles and
+  permissions) closed as built bases, their follow-ups on this page (O4,
+  O7, O19, O20; Phase 3's renderer items; Server and version control —
+  more capabilities); #12 retitled "Creep: a time-based law" (Phase 1);
+  #34 (stable plugin SDK and registry) and #35 (theory manual and
+  validation report) still open (Phase 6).
 
 ### Just finished (2026-10-25)
 - **The tutorial** (O1), **structure load cases** of two parts (line
@@ -1281,6 +1444,13 @@ structures sends such a case to OHL-Structure as a line result
 and construction cases written by their plugins (the format is
 documented for them), a single subconductor of a bundle broken, the
 dynamic impact beyond a factor.
+*Status (2026-11-03; added here 2026-11-07), built, in active
+development (not approved yet):* `.ohllc` version 4 — several broken
+wires in one case, solved together per section, and **removed**
+conductors (the wire absent from the solve) apart from broken ones
+(owner: broken only for conductors that actually break); a broken-wire
+case sent to OHL-Structure breaks all its wires and leaves its removed
+conductors out.
 > **Owner:** (2026-10-19) All three, each in its respective design-code
 > plugin. The core gets a **broken-wire case** type (the section solved
 > with the wire gone) for the plugins to use: approved.
@@ -1361,6 +1531,12 @@ owner.
 
 - [x] `ohl-session`: project file (`.ohl`), validated commands, operation log, per-user undo/redo (content-based conflicts), admin rollback, roles, dirty tracking with **incremental re-solving** (`ohl-line::incremental`, `ohl_session::Live`: only the touched sections, identical to a full solve), `.ohl.json` import/export
 
+### Shared user interface
+*Added 2026-11-07.*
+
+- [x] `ohl-ui`, one UI crate for OHL-Design and OHL-Structure (2026-11-07, owner; built, in active development (not approved yet)): text sizes and scroll bars, value fields, the UI scale, messages and long errors in a scroll box of one height, notices, long tables drawing only the rows in view, the SVG artwork, the glyph test's helpers; it depends on no model, engine or format crate ([A shared UI crate](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/ui-shared.md))
+- [ ] The hotbar's drawing (slots, inventory, drag and drop) with the tools as a trait each application implements, and the check footer (Run/Stop, progress) once OHL-Structure has windows that run
+
 ### Plugins and SDK
 *From Phases 2 and 4.*
 
@@ -1385,9 +1561,9 @@ owner.
 - [ ] **Version control**: cherry-pick, visual diffs in the views, history export for audits, revision comparison of results (sag, clearances, loads), automatic sync of offline copies, custom roles, area grants drawn in the plan
 
 ### Phase 6 — Ecosystem & 1.0
-- [ ] Stable plugin SDK (semantic versioning, compatibility guarantees)
-- [ ] Plugin registry / index
-- [ ] Complete theory manual and validation report
+- [ ] Stable plugin SDK (semantic versioning, compatibility guarantees) — GitHub issue #34
+- [ ] Plugin registry / index — GitHub issue #34
+- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-07: 27 theory pages and 236 validation cases, a report from `ohl validate --report`; not complete)*
 - [ ] Translations (i18n)
 - [ ] Public release, governance model, maintainers team
 
