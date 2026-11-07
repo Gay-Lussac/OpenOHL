@@ -911,6 +911,7 @@ impl StructureApp {
         self.recent = crate::start::Recent::load(storage);
         self.ui_scale = crate::style::load_scale(storage);
         self.hotbar = crate::tools::Hotbar::load(storage);
+        self.joints.steps = crate::detail_tools::ToolSteps::load(storage);
         self.held = self.hotbar.tool();
         if self.held == crate::tools::Tool::Link {
             // The Link tool is not taken up at the start.
@@ -991,6 +992,7 @@ impl eframe::App for StructureApp {
         self.recent.save(storage);
         crate::style::save_scale(storage, self.ui_scale);
         self.hotbar.save(storage);
+        self.joints.steps.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

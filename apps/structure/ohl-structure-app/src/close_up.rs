@@ -421,18 +421,25 @@ pub struct CloseUpCache {
 }
 
 /// What the pieces were cut for: (file revision, libraries stamp), the
-/// joint, dark.
-type CutKey = ((u64, u64), String, bool);
+/// joint, dark, and the variant drawn (0: the joint as the file gives it;
+/// else a member turned for Rotate member's preview, [`rolled`]).
+type CutKey = ((u64, u64), String, bool, u64);
 
 /// The view a mesh was drawn for: the cut's key, turn, tilt, zoom and
 /// the pane's rectangle (as bits: the same frame to frame).
 type ViewKey = (CutKey, [u32; 7]);
 
 impl CloseUpCache {
-    /// The pieces of `j`, cut again only when `key`, the joint or the
-    /// theme changed.
-    pub fn pieces(&mut self, key: (u64, u64), j: &JointDetail, dark: bool) -> Arc<Vec<Piece>> {
-        let k = (key, j.id.clone(), dark);
+    /// The pieces of `j`, cut again only when `key`, the joint, the theme
+    /// or the `variant` (a preview, [`CutKey`]) changed.
+    pub fn pieces(
+        &mut self,
+        key: (u64, u64),
+        j: &JointDetail,
+        dark: bool,
+        variant: u64,
+    ) -> Arc<Vec<Piece>> {
+        let k = (key, j.id.clone(), dark, variant);
         if let Some((have, p)) = &self.built
             && *have == k
         {
@@ -511,7 +518,7 @@ fn split(t: Piece, size: &dyn Fn(&[[f64; 3]; 3]) -> f64, out: &mut Vec<Piece>, d
 /// its triangles — the mesh kept while the view and the pane stay the
 /// same; the members without a profile as lines; the members' names at
 /// their cut ends. `key`: the file revision and libraries the details are
-/// of.
+/// of; `variant`: 0, or a preview's own key ([`CutKey`]).
 pub fn paint(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -519,13 +526,14 @@ pub fn paint(
     s: &mut crate::joint_panel::JointPanel,
     key: (u64, u64),
     dark: bool,
+    variant: u64,
 ) {
     let reach = ohl_structure_link::reach(j);
-    let k = f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(s.zoom).exp();
+    let k = scale_of(j, s.zoom, rect);
     let to = |q: [f64; 3]| rect.center() + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32);
-    let pieces = s.close_up.pieces(key, j, dark);
+    let pieces = s.close_up.pieces(key, j, dark, variant);
     let view: ViewKey = (
-        (key, j.id.clone(), dark),
+        (key, j.id.clone(), dark, variant),
         [
             s.yaw.to_bits(),
             s.pitch.to_bits(),
@@ -602,7 +610,16 @@ pub fn paint(
     painter.text(
         rect.left_top() + egui::vec2(6.0, 6.0),
         egui::Align2::LEFT_TOP,
-        format!("joint {} — drag to turn, scroll to zoom", j.id),
+        if s.tool == crate::detail_tools::DetailTool::RotateMember {
+            format!(
+                "joint {} — Rotate member: click a member, drag it sideways to roll it ({}° \
+                 steps); drag elsewhere to turn the view",
+                j.id,
+                (s.steps.roll.to_degrees() * 10.0).round() / 10.0
+            )
+        } else {
+            format!("joint {} — drag to turn, scroll to zoom", j.id)
+        },
         egui::FontId::proportional(11.0),
         text,
     );
@@ -650,16 +667,7 @@ pub fn plate_at<'a>(
     rect: egui::Rect,
     pos: egui::Pos2,
 ) -> Option<&'a ohl_structure_link::PlateDetail> {
-    let reach = ohl_structure_link::reach(j);
-    let k = f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(s.zoom).exp();
-    let r = rotation(s.yaw, s.pitch);
-    let at = |p: [f64; 3]| {
-        let q = turn(&r, sub(p, j.position));
-        (
-            rect.center() + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32),
-            q[2],
-        )
-    };
+    let at = screen_of(j, s, rect);
     j.plates
         .iter()
         .filter(|p| p.outline.len() >= 3)
@@ -677,6 +685,106 @@ pub fn plate_at<'a>(
         })
         .max_by(|a, b| a.1.total_cmp(&b.1))
         .map(|x| x.0)
+}
+
+/// The close-up's scale, points per metre, of `j` zoomed `zoom` in `rect`.
+fn scale_of(j: &JointDetail, zoom: f32, rect: egui::Rect) -> f64 {
+    let reach = ohl_structure_link::reach(j);
+    f64::from(rect.width().min(rect.height())) / (2.4 * reach) * f64::from(zoom).exp()
+}
+
+/// Where a point (structure's axes) is drawn in the close-up of `j` in
+/// `rect` as `s` turns it, and its depth (larger: nearer the viewer).
+fn screen_of(
+    j: &JointDetail,
+    s: &crate::joint_panel::JointPanel,
+    rect: egui::Rect,
+) -> impl Fn([f64; 3]) -> (egui::Pos2, f64) {
+    let k = scale_of(j, s.zoom, rect);
+    let r = rotation(s.yaw, s.pitch);
+    let (o, c) = (j.position, rect.center());
+    move |p: [f64; 3]| {
+        let q = turn(&r, sub(p, o));
+        (c + egui::vec2((q[0] * k) as f32, (-q[1] * k) as f32), q[2])
+    }
+}
+
+/// Member `ia` of `j`'s axis as drawn in the close-up: from where its
+/// steel starts out to the drawing's reach.
+pub fn axis_on_screen(
+    j: &JointDetail,
+    s: &crate::joint_panel::JointPanel,
+    rect: egui::Rect,
+    ia: usize,
+) -> [egui::Pos2; 2] {
+    let a = &j.arrivals[ia];
+    let at = screen_of(j, s, rect);
+    let length = a.length.min(ohl_structure_link::reach(j));
+    let start = ohl_structure_link::steel_start(a).min(length);
+    [start, length].map(|t| at(add3(add3(j.position, a.offset), scale3(a.direction, t))).0)
+}
+
+/// The member of `j` with a cross-section drawn under `pos` in the
+/// close-up (its axis within 10 points, or within its drawn half width),
+/// the nearest to it first: what Rotate member picks.
+pub fn member_at(
+    j: &JointDetail,
+    s: &crate::joint_panel::JointPanel,
+    rect: egui::Rect,
+    pos: egui::Pos2,
+) -> Option<usize> {
+    let k = scale_of(j, s.zoom, rect);
+    j.arrivals
+        .iter()
+        .enumerate()
+        .filter_map(|(ia, a)| {
+            let p = a.profile.as_ref()?;
+            let half = p
+                .outline
+                .iter()
+                .map(|q| q[0].hypot(q[1]))
+                .fold(0.0, f64::max);
+            let [e0, e1] = axis_on_screen(j, s, rect, ia);
+            let seg = e1 - e0;
+            let t = ((pos - e0).dot(seg) / seg.length_sq().max(1e-6)).clamp(0.0, 1.0);
+            let dist = pos.distance(e0 + seg * t);
+            (dist <= ((half * k) as f32).max(10.0)).then_some((ia, dist))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|x| x.0)
+}
+
+/// Joint `j` with member `member` rolled a further `delta` radians about
+/// its axis, as the file would give it after the turn: its section's axes
+/// (y′ = cos δ·y + sin δ·z, z′ = −sin δ·y + cos δ·z, the roll's own
+/// convention, [`ohl_structure_link::flat_roll`]) and its bolts turned
+/// with it about its axis. Rotate member's preview while dragging; the
+/// plates and the other members stay — they follow once the roll is set
+/// and the details are worked out again.
+pub fn rolled(j: &JointDetail, member: &str, delta: f64) -> JointDetail {
+    let mut out = j.clone();
+    let (sd, cd) = delta.sin_cos();
+    for a in out.arrivals.iter_mut().filter(|a| a.member == member) {
+        let Some(p) = a.profile.as_mut() else {
+            continue;
+        };
+        let [x, y, z] = p.axes;
+        let y2: [f64; 3] = std::array::from_fn(|i| cd * y[i] + sd * z[i]);
+        let z2: [f64; 3] = std::array::from_fn(|i| -sd * y[i] + cd * z[i]);
+        // A vector's parts along x, y, z kept on x, y′, z′.
+        let vec = |v: [f64; 3]| -> [f64; 3] {
+            let (s, u, w) = (dot(v, x), dot(v, y), dot(v, z));
+            std::array::from_fn(|i| s * x[i] + u * y2[i] + w * z2[i])
+        };
+        let centre = add3(j.position, a.offset);
+        let point = |q: [f64; 3]| add3(centre, vec(sub(q, centre)));
+        a.bolt_points = a.bolt_points.iter().map(|q| point(*q)).collect();
+        a.other_points = a.other_points.iter().map(|q| point(*q)).collect();
+        a.bolt_axis = vec(a.bolt_axis);
+        a.other_axis = vec(a.other_axis);
+        p.axes = [x, y2, z2];
+    }
+    out
 }
 
 /// `pos` inside the polygon `poly` (screen, either turning).
@@ -889,6 +997,64 @@ mod tests {
     }
 }
 
+/// Rotate member's preview (owner 2026-11-07): the member's section and
+/// its bolts turned about its axis — the bolts keep their distance from it
+/// and along it, a quarter turn takes y to z, no turn changes nothing, the
+/// other members stay; the preview has pieces of its own (a variant), the
+/// joint's kept.
+#[cfg(test)]
+mod roll_preview_tests {
+    #[test]
+    fn a_member_rolled_turns_its_section_and_bolts_only() {
+        let lib = ohl_structure_link::section_library(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../libraries/sections/example-sections.ohlsec"),
+        )
+        .unwrap();
+        let d =
+            ohl_structure_link::joint_details(&super::timing::heavy(), &lib, &Default::default())
+                .unwrap();
+        let j = d.joint("N2").unwrap();
+        let ia = j
+            .arrivals
+            .iter()
+            .position(|a| a.profile.is_some() && !a.bolt_points.is_empty())
+            .expect("a member with bolts");
+        let a = &j.arrivals[ia];
+        assert_eq!(&super::rolled(j, &a.member, 0.0), j);
+        let r = super::rolled(j, &a.member, std::f64::consts::FRAC_PI_2);
+        let b = &r.arrivals[ia];
+        let (p0, p1) = (a.profile.as_ref().unwrap(), b.profile.as_ref().unwrap());
+        assert_eq!(p1.axes[0], p0.axes[0]);
+        assert!((0..3).all(|i| (p1.axes[1][i] - p0.axes[2][i]).abs() < 1e-12));
+        assert!((0..3).all(|i| (p1.axes[2][i] + p0.axes[1][i]).abs() < 1e-12));
+        let centre = super::add3(j.position, a.offset);
+        for (q0, q1) in a.bolt_points.iter().zip(&b.bolt_points) {
+            let (v0, v1) = (super::sub(*q0, centre), super::sub(*q1, centre));
+            let x = p0.axes[0];
+            assert!((super::dot(v0, x) - super::dot(v1, x)).abs() < 1e-12);
+            assert!((super::norm(v0) - super::norm(v1)).abs() < 1e-12);
+        }
+        assert!(
+            a.bolt_points
+                .iter()
+                .zip(&b.bolt_points)
+                .any(|(q0, q1)| q0 != q1)
+        );
+        for (k, (x, y)) in j.arrivals.iter().zip(&r.arrivals).enumerate() {
+            if k != ia && x.member != a.member {
+                assert_eq!(x, y);
+            }
+        }
+        // Its own pieces: the joint's are cut again only once it is back.
+        let mut c = super::CloseUpCache::default();
+        c.pieces((1, 0), j, false, 0);
+        c.pieces((1, 0), &r, false, 7);
+        c.pieces((1, 0), &r, false, 7);
+        assert_eq!(c.builds, 2);
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod timing {
     /// A heavier joint: every member bolted, a plate with three members.
@@ -920,7 +1086,7 @@ pub(crate) mod timing {
                 eframe::egui::pos2(0.0, 0.0),
                 eframe::egui::vec2(800.0, 600.0),
             );
-            super::paint(ui.painter(), rect, j, panel, key, false);
+            super::paint(ui.painter(), rect, j, panel, key, false, 0);
         });
         out.textures_delta.clear();
     }
@@ -997,7 +1163,7 @@ pub(crate) mod timing {
                         eframe::egui::pos2(0.0, 0.0),
                         eframe::egui::vec2(800.0, 600.0),
                     );
-                    super::paint(ui.painter(), rect, j, &mut panel, (0, 0), false);
+                    super::paint(ui.painter(), rect, j, &mut panel, (0, 0), false, 0);
                 });
                 out.textures_delta.clear();
                 let _ = ctx.tessellate(out.shapes, 1.0);
@@ -1012,7 +1178,7 @@ pub(crate) mod timing {
                         eframe::egui::pos2(0.0, 0.0),
                         eframe::egui::vec2(800.0, 600.0),
                     );
-                    super::paint(ui.painter(), rect, j, &mut panel, (0, 0), false);
+                    super::paint(ui.painter(), rect, j, &mut panel, (0, 0), false, 0);
                 });
                 out.textures_delta.clear();
                 let _ = ctx.tessellate(out.shapes, 1.0);

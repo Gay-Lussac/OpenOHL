@@ -75,6 +75,16 @@ pub struct JointPanel {
     pub tool: crate::detail_tools::DetailTool,
     /// A member end being dragged with Member end.
     pub drag: Option<crate::detail_tools::EndDrag>,
+    /// What Member end or Move bolt has picked (a click picks, a drag
+    /// moves only what is picked).
+    pub tool_pick: Option<crate::detail_tools::ToolPick>,
+    /// The steps Member end and Rotate member snap to (kept between runs).
+    pub steps: crate::detail_tools::ToolSteps,
+    /// The member Rotate member has picked.
+    pub roll_pick: Option<String>,
+    /// How far the picked member has been dragged sideways, points (a roll
+    /// in the making, [`crate::detail_tools::roll_steps`]).
+    pub roll_drag: Option<f32>,
     /// The joint the Detail view goes back to from a member (‹ Joint,
     /// Escape): the one shown before.
     pub back: Option<String>,
@@ -563,7 +573,12 @@ impl StructureApp {
                 }
             }
             let leg = ohl_structure_link::flat_leg(&m);
-            crate::detail_tools::strip(ui, self.joints.tool, leg.is_some());
+            crate::detail_tools::strip(
+                ui,
+                self.joints.tool,
+                leg.is_some() && !self.joints.tool.in_close_up(),
+                &mut self.joints.steps,
+            );
             let ends: Vec<(String, String)> = m
                 .ends
                 .iter()
@@ -592,13 +607,20 @@ impl StructureApp {
                     &fit,
                     &response,
                     self.joints.tool,
-                    &mut self.joints.drag,
+                    (
+                        &mut self.joints.drag,
+                        &mut self.joints.tool_pick,
+                        self.joints.steps,
+                    ),
                     &painter,
                     &rules,
                 );
                 self.apply_joint_acts(acts, details);
             }
-            crate::detail_tools::hotbar(ui, rect, &mut self.joints.tool, leg.is_some());
+            let has_leg = leg.is_some();
+            crate::detail_tools::hotbar(ui, rect, &mut self.joints.tool, &|t| {
+                has_leg && !t.in_close_up()
+            });
             self.offer_window(ui.ctx(), details);
             if back.is_some() {
                 self.detail_back(back);
@@ -661,10 +683,12 @@ impl StructureApp {
                 {
                     self.save_face(&view, "pdf");
                 }
-            } else if ui.button("Reset view").clicked() {
-                self.joints.yaw = 0.0;
-                self.joints.pitch = 0.0;
-                self.joints.zoom = 0.0;
+            } else {
+                if ui.button("Reset view").clicked() {
+                    self.joints.yaw = 0.0;
+                    self.joints.pitch = 0.0;
+                    self.joints.zoom = 0.0;
+                }
             }
             let plates: Vec<(String, Vec<[f64; 3]>)> = j
                 .plates
@@ -692,7 +716,34 @@ impl StructureApp {
         if !plate_acts.is_empty() {
             self.apply_joint_acts(std::mem::take(&mut plate_acts), details);
         }
-        crate::detail_tools::strip(ui, self.joints.tool, self.joints.drawn == Drawn::Face);
+        // The member Rotate member picked: its roll row too (typed, quarter
+        // turns, Lay flat).
+        if self.joints.drawn == Drawn::CloseUp
+            && self.joints.tool == crate::detail_tools::DetailTool::RotateMember
+            && let Some(m) = self
+                .joints
+                .roll_pick
+                .clone()
+                .filter(|m| j.arrivals.iter().any(|a| &a.member == m))
+            && let Some(t) = self.file.as_ref().map(|f| f.structure_arc())
+        {
+            let ends = crate::roll_ui::flat_ends(details, &m);
+            let roll = crate::roll_ui::roll_of(&t, &m);
+            let mut out = None;
+            ui.horizontal(|ui| {
+                ui.strong(format!("Member {m}"));
+                out = crate::roll_ui::roll_control(ui, &m, roll, &ends);
+            });
+            if let Some(r) = out {
+                self.apply_joint_acts(vec![crate::joint_tools::Act::Roll(m, r)], details);
+            }
+        }
+        // The face view's tools there, Rotate member in the close-up.
+        if self.joints.drawn == Drawn::Face && self.joints.tool.in_close_up() {
+            self.joints.tool = crate::detail_tools::DetailTool::Edit;
+        }
+        let active = (self.joints.drawn == Drawn::Face) != self.joints.tool.in_close_up();
+        crate::detail_tools::strip(ui, self.joints.tool, active, &mut self.joints.steps);
         let size = ui.available_size().max(egui::vec2(120.0, 120.0));
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
         self.joints.view_rect = Some(rect);
@@ -700,7 +751,40 @@ impl StructureApp {
         painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
         match self.joints.drawn {
             Drawn::CloseUp => {
-                if response.dragged() {
+                let mut roll_set = None;
+                let rotating = self.joints.tool == crate::detail_tools::DetailTool::RotateMember;
+                if rotating {
+                    // A click picks a member, a drag on the picked one rolls it.
+                    if (response.clicked() || response.drag_started())
+                        && let Some(pos) = response.interact_pointer_pos()
+                    {
+                        let hit = crate::close_up::member_at(j, &self.joints, rect, pos)
+                            .map(|ia| j.arrivals[ia].member.clone());
+                        if crate::detail_tools::press(
+                            &mut self.joints.roll_pick,
+                            hit,
+                            response.clicked(),
+                            response.drag_started(),
+                        ) {
+                            self.joints.roll_drag = Some(0.0);
+                        }
+                    }
+                } else {
+                    self.joints.roll_drag = None;
+                }
+                if let Some(dx) = self.joints.roll_drag.as_mut() {
+                    *dx += response.drag_delta().x;
+                    if response.drag_stopped() || !response.dragged() {
+                        let turn = crate::detail_tools::roll_steps(*dx, self.joints.steps.roll);
+                        if turn != 0.0
+                            && let Some(m) = self.joints.roll_pick.clone()
+                            && let Some(t) = self.file.as_ref().map(|f| f.structure_arc())
+                        {
+                            roll_set = Some((m.clone(), crate::roll_ui::roll_of(&t, &m) + turn));
+                        }
+                        self.joints.roll_drag = None;
+                    }
+                } else if response.dragged() {
                     let d = response.drag_delta();
                     self.joints.yaw += d.x * 0.01;
                     self.joints.pitch = (self.joints.pitch + d.y * 0.01).clamp(-1.5, 1.5);
@@ -711,7 +795,60 @@ impl StructureApp {
                 }
                 let key = self.joints.details.as_ref().map_or((0, 0), |d| d.0);
                 let dark = ui.visuals().dark_mode;
-                crate::close_up::paint(&painter, rect, j, &mut self.joints, key, dark);
+                // While a roll is dragged: the joint with the member turned
+                // (its own pieces, a variant of its own).
+                let turn = self.joints.roll_drag.map_or(0.0, |dx| {
+                    crate::detail_tools::roll_steps(dx, self.joints.steps.roll)
+                });
+                let preview = self
+                    .joints
+                    .roll_pick
+                    .as_deref()
+                    .filter(|_| turn != 0.0)
+                    .map(|m| crate::close_up::rolled(j, m, turn));
+                let variant = preview.as_ref().map_or(0, |_| turn.to_bits());
+                let shown = preview.as_ref().unwrap_or(j);
+                crate::close_up::paint(&painter, rect, shown, &mut self.joints, key, dark, variant);
+                if rotating {
+                    let pick = self
+                        .joints
+                        .roll_pick
+                        .as_deref()
+                        .and_then(|m| shown.arrivals.iter().position(|a| a.member == m));
+                    let blue = crate::detail_tools::PICKED;
+                    if let Some(ia) = pick {
+                        let ends = crate::close_up::axis_on_screen(shown, &self.joints, rect, ia);
+                        painter.line_segment(ends, egui::Stroke::new(3.0, blue));
+                        let words = if turn != 0.0 {
+                            format!("{} {:+.0}°", shown.arrivals[ia].member, turn.to_degrees())
+                        } else {
+                            format!(
+                                "{} picked: drag it sideways to roll it",
+                                shown.arrivals[ia].member
+                            )
+                        };
+                        // Under the view's own line, where it is never cut.
+                        painter.text(
+                            rect.left_top() + egui::vec2(6.0, 24.0),
+                            egui::Align2::LEFT_TOP,
+                            words,
+                            egui::FontId::proportional(12.0),
+                            blue,
+                        );
+                    }
+                    if self.joints.roll_drag.is_none()
+                        && let Some(pos) = response.hover_pos()
+                        && let Some(ia) = crate::close_up::member_at(j, &self.joints, rect, pos)
+                        && Some(ia) != pick
+                    {
+                        let ends = crate::close_up::axis_on_screen(j, &self.joints, rect, ia);
+                        painter
+                            .line_segment(ends, egui::Stroke::new(1.5, blue.gamma_multiply(0.8)));
+                    }
+                }
+                if let Some((m, r)) = roll_set {
+                    self.apply_joint_acts(vec![crate::joint_tools::Act::Roll(m, r)], details);
+                }
                 // A plate under the pointer: its thickness and more.
                 if let Some(pos) = response.hover_pos()
                     && !response.dragged()
@@ -784,7 +921,11 @@ impl StructureApp {
                     &fit,
                     &response,
                     self.joints.tool,
-                    &mut self.joints.drag,
+                    (
+                        &mut self.joints.drag,
+                        &mut self.joints.tool_pick,
+                        self.joints.steps,
+                    ),
                     &painter,
                     &rules,
                 );
@@ -819,12 +960,19 @@ impl StructureApp {
                 self.apply_joint_acts(acts, details);
             }
         }
-        crate::detail_tools::hotbar(
-            ui,
-            rect,
-            &mut self.joints.tool,
-            self.joints.drawn == Drawn::Face,
-        );
+        // Every tool offered: one of the face view's taken in the close-up
+        // shows the face view, Rotate member taken in the face view the
+        // close-up (Edit stays where it is).
+        let before = self.joints.tool;
+        crate::detail_tools::hotbar(ui, rect, &mut self.joints.tool, &|_| true);
+        let now = self.joints.tool;
+        if now != before {
+            if now.in_close_up() {
+                self.joints.drawn = Drawn::CloseUp;
+            } else if now != crate::detail_tools::DetailTool::Edit {
+                self.joints.drawn = Drawn::Face;
+            }
+        }
         self.offer_window(ui.ctx(), details);
     }
 

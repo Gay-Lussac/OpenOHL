@@ -54,16 +54,19 @@ pub enum DetailTool {
     MoveBolt,
     /// A member dragged: where its steel stops, its end's shift.
     MemberEnd,
+    /// A member dragged sideways in the close-up: rolled about its axis.
+    RotateMember,
 }
 
 impl DetailTool {
     /// Every tool, in the toolbar's order.
-    pub const ALL: [DetailTool; 5] = [
+    pub const ALL: [DetailTool; 6] = [
         DetailTool::Edit,
         DetailTool::AddBolt,
         DetailTool::MoveBolt,
         DetailTool::RemoveBolt,
         DetailTool::MemberEnd,
+        DetailTool::RotateMember,
     ];
 
     /// Its icon (of `assets/icons/tools/`).
@@ -75,6 +78,7 @@ impl DetailTool {
             DetailTool::RemoveBolt => Icon::RemoveBolt,
             DetailTool::MoveBolt => Icon::MoveBolt,
             DetailTool::MemberEnd => Icon::MemberEnd,
+            DetailTool::RotateMember => Icon::RotateMember,
         }
     }
 
@@ -91,6 +95,7 @@ impl DetailTool {
             DetailTool::RemoveBolt => "Remove bolt",
             DetailTool::MoveBolt => "Move bolt",
             DetailTool::MemberEnd => "Member end",
+            DetailTool::RotateMember => "Rotate member",
         }
     }
 
@@ -110,18 +115,160 @@ impl DetailTool {
                  are marked red, the clause on hover"
             }
             DetailTool::MoveBolt => {
-                "Drag a bolt: it moves, snapped as Add bolt places it (the code's distances kept; \
-                 a new gauge line offered when there is no room)"
+                "Click a bolt: it is picked (ringed blue); drag the picked bolt: it moves, snapped \
+                 as Add bolt places it (the code's distances kept; a new gauge line offered when \
+                 there is no room). A drag started on another bolt picks it and moves nothing"
             }
             DetailTool::RemoveBolt => "Click a bolt: it goes",
             DetailTool::MemberEnd => {
-                "Drag a member: along it, where its steel stops; across it (the face view), its \
-                 end shifted sideways to fit — its force then passes beside the work point, an \
-                 eccentricity the analysis takes"
+                "Click a member: its end is picked (drawn blue); drag the picked member: along \
+                 it, where its steel stops; across it (the face view), its end shifted sideways \
+                 to fit — its force then passes beside the work point, an eccentricity the \
+                 analysis takes. A drag started on another member picks it and moves nothing"
+            }
+            DetailTool::RotateMember => {
+                "Click a member: it is picked (its axis drawn blue, its roll above the drawing); \
+                 drag the picked member sideways: it rolls about its axis, half a degree a point \
+                 in steps of the tool's step, drawn turned as you drag, set when let go (one \
+                 undo step, the member's roll). A drag started on another member picks it and \
+                 turns nothing; a drag on nothing turns the view"
             }
         }
     }
+
+    /// Where it acts: Rotate member in the joint's close-up, the others in
+    /// the face view and the member view.
+    pub fn in_close_up(self) -> bool {
+        self == DetailTool::RotateMember
+    }
 }
+
+/// The steps the Detail view's drag tools snap to (owner 2026-11-07: "the
+/// rotation should be 5 degrees by default and for the end 5 mm as today
+/// but there should be a tool parameter somewhere in the app where it can
+/// be changed"): set in the strip above the drawing while the tool is
+/// held, kept between runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ToolSteps {
+    /// Member end: where the steel stops and the end's shift, m.
+    pub end: f64,
+    /// Rotate member: the roll, radians.
+    pub roll: f64,
+}
+
+impl Default for ToolSteps {
+    fn default() -> Self {
+        Self {
+            end: 0.005,
+            roll: 5.0_f64.to_radians(),
+        }
+    }
+}
+
+/// Where the steps are kept: "end mm,roll degrees".
+const STEPS_KEY: &str = "detail_tool_steps";
+
+impl ToolSteps {
+    /// The step's range, mm, for Member end.
+    pub const END_MM: std::ops::RangeInclusive<f64> = 0.5..=100.0;
+    /// The step's range, degrees, for Rotate member.
+    pub const ROLL_DEG: std::ops::RangeInclusive<f64> = 0.5..=90.0;
+
+    /// As kept by [`ToolSteps::save`] (none kept, or out of range: the
+    /// default).
+    pub fn load(storage: Option<&dyn eframe::Storage>) -> Self {
+        let d = Self::default();
+        let Some(text) = storage.and_then(|s| s.get_string(STEPS_KEY)) else {
+            return d;
+        };
+        let mut it = text.split(',').map(|x| x.trim().parse::<f64>().ok());
+        let end = it
+            .next()
+            .flatten()
+            .filter(|x| Self::END_MM.contains(x))
+            .map_or(d.end, |x| x / 1000.0);
+        let roll = it
+            .next()
+            .flatten()
+            .filter(|x| Self::ROLL_DEG.contains(x))
+            .map_or(d.roll, f64::to_radians);
+        Self { end, roll }
+    }
+
+    /// Kept in `storage`.
+    pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        storage.set_string(
+            STEPS_KEY,
+            format!("{},{}", self.end * 1000.0, self.roll.to_degrees()),
+        );
+    }
+}
+
+/// `x` to the nearest multiple of `step` (`step` 0 or less: `x`).
+pub fn round_to(x: f64, step: f64) -> f64 {
+    if step > 0.0 {
+        (x / step).round() * step
+    } else {
+        x
+    }
+}
+
+/// What Member end or Move bolt has picked (owner 2026-11-07: "with a
+/// simple click highlight the member clicked and then click and drag edits
+/// the end of the member; same for the tools that move bolts").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolPick {
+    /// A member's end at a joint (Member end).
+    End {
+        /// The member.
+        member: String,
+        /// The joint.
+        joint: String,
+    },
+    /// A bolt (Move bolt): its member end and its place among its bolts.
+    Bolt {
+        /// The member.
+        member: String,
+        /// The joint.
+        joint: String,
+        /// Its place among the end's bolts.
+        index: usize,
+    },
+}
+
+/// A press of Member end, Move bolt or Rotate member on `hit` (what is
+/// under the pointer): a click picks it (nothing there: nothing picked); a
+/// drag moves only what is picked — one started on something else picks
+/// that and moves nothing, one started on nothing does nothing. Whether
+/// the drag moves what it started on.
+pub fn press<T: PartialEq>(
+    pick: &mut Option<T>,
+    hit: Option<T>,
+    clicked: bool,
+    drag_started: bool,
+) -> bool {
+    if clicked {
+        *pick = hit;
+        return false;
+    }
+    if drag_started && let Some(h) = hit {
+        if pick.as_ref() == Some(&h) {
+            return true;
+        }
+        *pick = Some(h);
+    }
+    false
+}
+
+/// Rotate member's turn for a sideways drag of `dx` points: half a degree
+/// a point, in steps of `step` (radians).
+pub fn roll_steps(dx: f32, step: f64) -> f64 {
+    round_to((f64::from(dx) * 0.5).to_radians(), step)
+}
+
+/// The colour of what a tool has picked, and of its outline under the
+/// pointer.
+pub const PICKED: egui::Color32 = egui::Color32::from_rgb(90, 150, 230);
 
 /// A member end being dragged with Member end.
 #[derive(Debug, Clone, PartialEq)]
@@ -242,7 +389,7 @@ fn mark_breaches(
 /// The strip above the drawing, as the 3D view's: the tool held and what
 /// a click does with it; `active`: the tools act in this drawing (not the
 /// close-up).
-pub fn strip(ui: &mut egui::Ui, tool: DetailTool, active: bool) {
+pub fn strip(ui: &mut egui::Ui, tool: DetailTool, active: bool, steps: &mut ToolSteps) {
     ui.horizontal_wrapped(|ui| {
         ui.add(
             tool.icon()
@@ -250,11 +397,46 @@ pub fn strip(ui: &mut egui::Ui, tool: DetailTool, active: bool) {
                 .tint(ui.visuals().text_color()),
         );
         ui.strong(tool.name()).on_hover_text(tool.help());
+        // The tool's step, where it has one (kept between runs).
+        let tip = "The step the drag snaps to (kept between runs)";
+        match tool {
+            DetailTool::MemberEnd => {
+                let mut mm = steps.end * 1000.0;
+                let r = ui.add(
+                    egui::DragValue::new(&mut mm)
+                        .range(ToolSteps::END_MM)
+                        .speed(0.5)
+                        .max_decimals(1)
+                        .prefix("step ")
+                        .suffix(" mm"),
+                );
+                if r.on_hover_text(tip).changed() {
+                    steps.end = mm / 1000.0;
+                }
+            }
+            DetailTool::RotateMember => {
+                let mut deg = steps.roll.to_degrees();
+                let r = ui.add(
+                    egui::DragValue::new(&mut deg)
+                        .range(ToolSteps::ROLL_DEG)
+                        .speed(0.5)
+                        .max_decimals(1)
+                        .prefix("step ")
+                        .suffix("°"),
+                );
+                if r.on_hover_text(tip).changed() {
+                    steps.roll = deg.to_radians();
+                }
+            }
+            _ => {}
+        }
         let text = if active {
             tool.help()
+        } else if tool.in_close_up() {
+            "Rotate member acts in the joint's close-up"
         } else {
-            "The tools act in the face view and the member view (the close-up is turned and \
-             zoomed only)"
+            "The bolt and member end tools act in the face view and the member view; Rotate \
+             member in the joint's close-up"
         };
         ui.label(egui::RichText::new(text).small().weak());
     });
@@ -262,8 +444,13 @@ pub fn strip(ui: &mut egui::Ui, tool: DetailTool, active: bool) {
 
 /// The Detail view's toolbar over the bottom of its drawing `rect`, as the
 /// 3D view's hotbar: a click on a slot holds its tool (Escape: Edit
-/// again); `active` false: shown, not usable (the close-up).
-pub fn hotbar(ui: &mut egui::Ui, rect: egui::Rect, tool: &mut DetailTool, active: bool) {
+/// again); a tool `active` says no to: shown, not usable there.
+pub fn hotbar(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    tool: &mut DetailTool,
+    active: &dyn Fn(DetailTool) -> bool,
+) {
     let n = DetailTool::ALL.len() as f32;
     let bar = egui::Rect::from_center_size(
         egui::pos2(rect.center().x, rect.bottom() - 30.0),
@@ -275,17 +462,19 @@ pub fn hotbar(ui: &mut egui::Ui, rect: egui::Rect, tool: &mut DetailTool, active
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
         |ui| {
             ui.spacing_mut().item_spacing.x = 3.0;
-            ui.add_enabled_ui(active, |ui| {
-                for t in DetailTool::ALL {
+            for t in DetailTool::ALL {
+                ui.add_enabled_ui(active(t), |ui| {
                     let r = crate::tools::slot_frame(ui, Some(t.slot()), *tool == t, None)
-                        .on_disabled_hover_text(
-                            "The tools act in the face view and the member view",
-                        );
+                        .on_disabled_hover_text(if t.in_close_up() {
+                            "Rotate member acts in the joint's close-up"
+                        } else {
+                            "The tool acts in the face view and the member view"
+                        });
                     if r.clicked() {
                         *tool = t;
                     }
-                }
-            });
+                });
+            }
         },
     );
 }
@@ -442,7 +631,7 @@ pub fn face_act(
     fit: &FaceFit,
     response: &egui::Response,
     tool: DetailTool,
-    drag: &mut Option<EndDrag>,
+    (drag, pick, steps): (&mut Option<EndDrag>, &mut Option<ToolPick>, ToolSteps),
     painter: &egui::Painter,
     rules: &Rules,
 ) -> Vec<Act> {
@@ -510,11 +699,22 @@ pub fn face_act(
     let pointer = response.interact_pointer_pos().or(response.hover_pos());
     match tool {
         DetailTool::MemberEnd => {
-            if response.drag_started()
+            let end_of = |ia: usize| ToolPick::End {
+                member: j.arrivals[ia].member.clone(),
+                joint: j.id.clone(),
+            };
+            if (response.clicked() || response.drag_started())
                 && let Some(q) = response.interact_pointer_pos()
             {
                 let v = fit.back(q);
-                if let Some(ia) = hit_member(v) {
+                let hit = hit_member(v);
+                if press(
+                    pick,
+                    hit.map(end_of),
+                    response.clicked(),
+                    response.drag_started(),
+                ) && let Some(ia) = hit
+                {
                     let a = &j.arrivals[ia];
                     *drag = Some(EndDrag {
                         member: a.member.clone(),
@@ -525,11 +725,56 @@ pub fn face_act(
                     });
                 }
             }
+            // The member picked, drawn blue; the one under the pointer, a
+            // thin outline (what a click would pick).
+            let draw = |ia: usize, picked: bool| {
+                let a = &j.arrivals[ia];
+                let (s0, d) = line(a);
+                let t0 = a.cut.value.unwrap_or(0.0);
+                let t1 = a.length.min(reach);
+                let half = a
+                    .profile
+                    .as_ref()
+                    .and_then(|p| p.angle)
+                    .map_or(0.03, |g| g.b.max(g.h) / 2.0);
+                let w = ((2.0 * half * fit.scale()) as f32).max(6.0);
+                let ends = [
+                    fit.at([s0[0] + d[0] * t0, s0[1] + d[1] * t0]),
+                    fit.at([s0[0] + d[0] * t1, s0[1] + d[1] * t1]),
+                ];
+                let stroke = if picked {
+                    egui::Stroke::new(w, PICKED.gamma_multiply(0.45))
+                } else {
+                    egui::Stroke::new(1.5, PICKED.gamma_multiply(0.8))
+                };
+                painter.line_segment(ends, stroke);
+                if picked {
+                    painter.text(
+                        ends[1] + egui::vec2(6.0, -6.0),
+                        egui::Align2::LEFT_BOTTOM,
+                        format!("{} picked: drag it", a.member),
+                        egui::FontId::proportional(11.0),
+                        PICKED,
+                    );
+                }
+            };
+            if let Some(ToolPick::End { member, joint }) = pick.as_ref()
+                && joint == &j.id
+                && let Some(ia) = j.arrivals.iter().position(|a| &a.member == member)
+            {
+                draw(ia, true);
+            }
+            if drag.is_none()
+                && let Some(q) = response.hover_pos()
+                && let Some(ia) = hit_member(fit.back(q))
+            {
+                draw(ia, false);
+            }
             if let (Some(d), Some(q)) = (drag.as_mut(), pointer) {
                 d.now = fit.back(q);
                 let a = j.arrivals.iter().find(|a| a.member == d.member);
                 if let Some(a) = a {
-                    let (s_along, s_across) = moved(a, d, &line, [r, u]);
+                    let (s_along, s_across) = moved(a, d, &line, [r, u], steps.end);
                     let text = format!(
                         "{}: steel stops {:.0} mm from the work point, shift {:+.0} mm",
                         a.member,
@@ -553,16 +798,28 @@ pub fn face_act(
                 && let Some(d) = drag.take()
                 && let Some(a) = j.arrivals.iter().find(|a| a.member == d.member)
             {
-                let (cut, shift) = moved(a, &d, &line, [r, u]);
+                let (cut, shift) = moved(a, &d, &line, [r, u], steps.end);
                 acts.push(Act::CutShift(d.member.clone(), d.joint.clone(), cut, shift));
             }
         }
         DetailTool::MoveBolt => {
-            if response.drag_started()
+            let bolt_of = |(ia, ib): (usize, usize)| ToolPick::Bolt {
+                member: j.arrivals[ia].member.clone(),
+                joint: j.id.clone(),
+                index: ib,
+            };
+            if (response.clicked() || response.drag_started())
                 && let Some(q) = response.interact_pointer_pos()
             {
                 let v = fit.back(q);
-                if let Some((ia, ib)) = hit_bolt(v) {
+                let hit = hit_bolt(v);
+                if press(
+                    pick,
+                    hit.map(bolt_of),
+                    response.clicked(),
+                    response.drag_started(),
+                ) && let Some((ia, ib)) = hit
+                {
                     let a = &j.arrivals[ia];
                     *drag = Some(EndDrag {
                         member: a.member.clone(),
@@ -572,6 +829,33 @@ pub fn face_act(
                         bolt: Some(ib),
                     });
                 }
+            }
+            // The bolt picked, ringed blue; the one under the pointer, a
+            // thin ring.
+            let ring = |ia: usize, ib: usize, picked: bool| {
+                let a = &j.arrivals[ia];
+                if let Some(p) = a.bolt_points.get(ib) {
+                    let rad = a.bolts.value.as_ref().map_or(0.008, |b| b.diameter) / 2.0;
+                    let r = ((rad * fit.scale()) as f32).max(3.0) + if picked { 5.0 } else { 3.0 };
+                    let stroke = egui::Stroke::new(if picked { 2.5 } else { 1.2 }, PICKED);
+                    painter.circle_stroke(fit.at(to(*p)), r, stroke);
+                }
+            };
+            if let Some(ToolPick::Bolt {
+                member,
+                joint,
+                index,
+            }) = pick.as_ref()
+                && joint == &j.id
+                && let Some(ia) = j.arrivals.iter().position(|a| &a.member == member)
+            {
+                ring(ia, *index, true);
+            }
+            if drag.is_none()
+                && let Some(q) = response.hover_pos()
+                && let Some((ia, ib)) = hit_bolt(fit.back(q))
+            {
+                ring(ia, ib, false);
             }
             if let (Some(d), Some(q)) = (drag.as_mut(), pointer) {
                 d.now = fit.back(q);
@@ -655,7 +939,7 @@ pub fn face_act(
                         ));
                     }
                 }
-                DetailTool::MemberEnd | DetailTool::MoveBolt => {}
+                DetailTool::MemberEnd | DetailTool::MoveBolt | DetailTool::RotateMember => {}
             }
         }
     }
@@ -683,18 +967,24 @@ pub fn face_act(
 /// drag's part along the member; the shift by its part along the shift's
 /// direction as the face shows it (none when that direction is square to
 /// the face).
-fn moved(a: &Arrival, d: &EndDrag, line: &DrawnLine<'_>, axes: [[f64; 3]; 2]) -> (f64, f64) {
+fn moved(
+    a: &Arrival,
+    d: &EndDrag,
+    line: &DrawnLine<'_>,
+    axes: [[f64; 3]; 2],
+    step: f64,
+) -> (f64, f64) {
     let (_, dir) = line(a);
     let delta = sub2(d.now, d.from);
     let ds = dot2(delta, dir) / dot2(dir, dir).max(1e-12);
-    let cut = round5mm((a.cut.value.unwrap_or(0.0) + ds).max(0.0));
+    let cut = round_to((a.cut.value.unwrap_or(0.0) + ds).max(0.0), step);
     let shift = match a.shift.1 {
         Some(u) => {
             let dot3 = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
             let u2 = [dot3(u, axes[0]), dot3(u, axes[1])];
             let l2 = dot2(u2, u2);
             if l2 > 0.04 {
-                round5mm(a.shift.0 + dot2(delta, u2) / l2)
+                round_to(a.shift.0 + dot2(delta, u2) / l2, step)
             } else {
                 a.shift.0
             }
@@ -803,7 +1093,7 @@ pub fn member_act(
     fit: &MemberFit,
     response: &egui::Response,
     tool: DetailTool,
-    drag: &mut Option<EndDrag>,
+    (drag, pick, steps): (&mut Option<EndDrag>, &mut Option<ToolPick>, ToolSteps),
     painter: &egui::Painter,
     rules: &Rules,
 ) -> Vec<Act> {
@@ -814,8 +1104,16 @@ pub fn member_act(
     let end_of = |end: usize| m.ends[end].as_ref();
     match tool {
         DetailTool::MemberEnd => {
-            if response.drag_started()
+            // An end is picked by a click on its half of the member.
+            let hit = |v: [f64; 2]| {
+                end_of(end_at(v[0])).map(|(j, a)| ToolPick::End {
+                    member: a.member.clone(),
+                    joint: j.clone(),
+                })
+            };
+            if (response.clicked() || response.drag_started())
                 && let Some(v) = response.interact_pointer_pos().and_then(|q| fit.back(q))
+                && press(pick, hit(v), response.clicked(), response.drag_started())
                 && let Some((j, a)) = end_of(end_at(v[0]))
             {
                 *drag = Some(EndDrag {
@@ -826,13 +1124,59 @@ pub fn member_act(
                     bolt: None,
                 });
             }
+            // The end picked (its half of the member) drawn blue; under the
+            // pointer, an outline.
+            let half = |end: usize, picked: bool| {
+                let (x0, x1) = if end == 0 {
+                    (0.0, m.length / 2.0)
+                } else {
+                    (m.length / 2.0, m.length)
+                };
+                let r = egui::Rect::from_two_pos(
+                    egui::pos2(fit.x_of(x0), fit.y_of(0.0)),
+                    egui::pos2(fit.x_of(x1), fit.y_of(leg.width)),
+                )
+                .expand(4.0);
+                if picked {
+                    painter.rect_filled(r, 3.0, PICKED.gamma_multiply(0.18));
+                    painter.rect_stroke(
+                        r,
+                        3.0,
+                        egui::Stroke::new(2.0, PICKED),
+                        egui::StrokeKind::Outside,
+                    );
+                } else {
+                    painter.rect_stroke(
+                        r,
+                        3.0,
+                        egui::Stroke::new(1.0, PICKED.gamma_multiply(0.7)),
+                        egui::StrokeKind::Outside,
+                    );
+                }
+            };
+            for end in 0..2 {
+                if let Some((j, a)) = end_of(end)
+                    && pick.as_ref()
+                        == Some(&ToolPick::End {
+                            member: a.member.clone(),
+                            joint: j.clone(),
+                        })
+                {
+                    half(end, true);
+                }
+            }
+            if drag.is_none()
+                && let Some(v) = response.hover_pos().and_then(|q| fit.back(q))
+            {
+                half(end_at(v[0]), false);
+            }
             if let (Some(d), Some(v)) = (
                 drag.as_mut(),
                 response.interact_pointer_pos().and_then(|q| fit.back(q)),
             ) {
                 d.now = v;
                 let end = end_at(d.from[0]);
-                let cut = round5mm(from_joint(end, v[0]).max(0.0));
+                let cut = round_to(from_joint(end, v[0]).max(0.0), steps.end);
                 painter.text(
                     egui::pos2(fit.x_of(v[0]), fit.y_of(leg.width) - 6.0),
                     egui::Align2::CENTER_BOTTOM,
@@ -846,7 +1190,7 @@ pub fn member_act(
                 && let Some((_, a)) = end_of(end_at(d.from[0]))
             {
                 let end = end_at(d.from[0]);
-                let cut = round5mm(from_joint(end, d.now[0]).max(0.0));
+                let cut = round_to(from_joint(end, d.now[0]).max(0.0), steps.end);
                 acts.push(Act::CutShift(
                     d.member.clone(),
                     d.joint.clone(),
@@ -873,18 +1217,67 @@ pub fn member_act(
                     .min_by(|x, y| x.1.total_cmp(&y.1))
                     .map(|x| (end, x.0))
             };
-            if response.drag_started()
-                && let Some(v) = response.interact_pointer_pos().and_then(|q| fit.back(q))
-                && let Some((end, ib)) = near(v)
-                && let Some((j, a)) = end_of(end)
-            {
-                *drag = Some(EndDrag {
+            let bolt_of = |(end, ib): (usize, usize)| {
+                end_of(end).map(|(j, a)| ToolPick::Bolt {
                     member: a.member.clone(),
                     joint: j.clone(),
-                    from: v,
-                    now: v,
-                    bolt: Some(ib),
-                });
+                    index: ib,
+                })
+            };
+            if (response.clicked() || response.drag_started())
+                && let Some(v) = response.interact_pointer_pos().and_then(|q| fit.back(q))
+            {
+                let hit = near(v);
+                if press(
+                    pick,
+                    hit.and_then(bolt_of),
+                    response.clicked(),
+                    response.drag_started(),
+                ) && let Some((end, ib)) = hit
+                    && let Some((j, a)) = end_of(end)
+                {
+                    *drag = Some(EndDrag {
+                        member: a.member.clone(),
+                        joint: j.clone(),
+                        from: v,
+                        now: v,
+                        bolt: Some(ib),
+                    });
+                }
+            }
+            // The bolt picked, ringed blue; under the pointer, a thin ring.
+            let ring = |end: usize, ib: usize, picked: bool| {
+                if let Some((_, a)) = end_of(end)
+                    && let Some(q) = a.bolt_flat.get(ib)
+                {
+                    let along = if end == 0 { q[0] } else { m.length - q[0] };
+                    let rad = a.bolts.value.as_ref().map_or(0.008, |b| b.diameter) / 2.0;
+                    let r = ((rad * fit.scale()) as f32).max(3.0) + if picked { 5.0 } else { 3.0 };
+                    painter.circle_stroke(
+                        egui::pos2(fit.x_of(along), fit.y_of(q[1])),
+                        r,
+                        egui::Stroke::new(if picked { 2.5 } else { 1.2 }, PICKED),
+                    );
+                }
+            };
+            for end in 0..2 {
+                if let Some((j, a)) = end_of(end)
+                    && let Some(ToolPick::Bolt {
+                        member,
+                        joint,
+                        index,
+                    }) = pick.as_ref()
+                    && member == &a.member
+                    && joint == j
+                {
+                    ring(end, *index, true);
+                }
+            }
+            if drag.is_none()
+                && let Some(v) = response.hover_pos().and_then(|q| fit.back(q))
+                && let Some((end, ib)) = near(v)
+            {
+                ring(end, ib, false);
             }
             if let (Some(d), Some(v)) = (
                 drag.as_mut(),
@@ -987,7 +1380,7 @@ pub fn member_act(
                         }
                     }
                 }
-                DetailTool::MemberEnd | DetailTool::MoveBolt => {}
+                DetailTool::MemberEnd | DetailTool::MoveBolt | DetailTool::RotateMember => {}
             }
         }
     }
@@ -1015,4 +1408,99 @@ pub fn member_act(
         }
     }
     acts
+}
+
+#[cfg(test)]
+mod pick_tests {
+    use super::{ToolPick, press, roll_steps};
+
+    fn end(m: &str) -> Option<ToolPick> {
+        Some(ToolPick::End {
+            member: m.into(),
+            joint: "N2".into(),
+        })
+    }
+
+    /// Pick before drag (owner 2026-11-07): a click picks what is under the
+    /// pointer (nothing: nothing picked); a drag moves only what is picked;
+    /// one started on something else picks it and moves nothing; one
+    /// started on nothing keeps the pick and moves nothing.
+    #[test]
+    fn a_click_picks_and_only_the_picked_is_dragged() {
+        let mut pick = None;
+        // A drag on a member not picked: picked, not moved.
+        assert!(!press(&mut pick, end("D1"), false, true));
+        assert_eq!(pick, end("D1"));
+        // Dragged again: now it moves.
+        assert!(press(&mut pick, end("D1"), false, true));
+        // A drag on another: that one picked, nothing moved.
+        assert!(!press(&mut pick, end("H1"), false, true));
+        assert_eq!(pick, end("H1"));
+        // A drag on nothing: the pick kept, nothing moved.
+        assert!(!press(&mut pick, None, false, true));
+        assert_eq!(pick, end("H1"));
+        // A click picks; a click on nothing drops the pick.
+        assert!(!press(&mut pick, end("D1"), true, false));
+        assert_eq!(pick, end("D1"));
+        assert!(!press(&mut pick, None, true, false));
+        assert_eq!(pick, None);
+        // A bolt is its own pick: the same member's bolts apart.
+        let bolt = |i| ToolPick::Bolt {
+            member: "D1".into(),
+            joint: "N2".into(),
+            index: i,
+        };
+        press(&mut pick, Some(bolt(0)), true, false);
+        assert!(!press(&mut pick, Some(bolt(1)), false, true));
+        assert!(press(&mut pick, Some(bolt(1)), false, true));
+    }
+
+    /// The tools' steps: 5 mm and 5° unless set; kept between runs, a
+    /// value out of range read as the default.
+    #[test]
+    fn the_steps_are_kept_between_runs() {
+        use super::ToolSteps;
+        #[derive(Default)]
+        struct Kept(std::collections::HashMap<String, String>);
+        impl eframe::Storage for Kept {
+            fn get_string(&self, key: &str) -> Option<String> {
+                self.0.get(key).cloned()
+            }
+            fn set_string(&mut self, key: &str, value: String) {
+                self.0.insert(key.into(), value);
+            }
+            fn remove_string(&mut self, key: &str) {
+                self.0.remove(key);
+            }
+            fn flush(&mut self) {}
+        }
+        let d = ToolSteps::default();
+        assert!((d.end - 0.005).abs() < 1e-12);
+        assert!((d.roll.to_degrees() - 5.0).abs() < 1e-12);
+        assert_eq!(ToolSteps::load(None), d);
+        let mut kept = Kept::default();
+        let set = ToolSteps {
+            end: 0.01,
+            roll: 15.0_f64.to_radians(),
+        };
+        set.save(&mut kept);
+        let back = ToolSteps::load(Some(&kept));
+        assert!((back.end - 0.01).abs() < 1e-12);
+        assert!((back.roll.to_degrees() - 15.0).abs() < 1e-9);
+        kept.0.insert("detail_tool_steps".into(), "0,400".into());
+        assert_eq!(ToolSteps::load(Some(&kept)), d);
+        assert!((super::round_to(0.0237, 0.01) - 0.02).abs() < 1e-12);
+        assert!((roll_steps(60.0, 15.0_f64.to_radians()).to_degrees() - 30.0).abs() < 1e-9);
+    }
+
+    /// Rotate member turns half a degree a point, in 5° steps.
+    #[test]
+    fn a_sideways_drag_rolls_in_five_degree_steps() {
+        let deg = |dx: f32| roll_steps(dx, 5.0_f64.to_radians()).to_degrees();
+        assert_eq!(deg(0.0), 0.0);
+        assert_eq!(deg(4.0), 0.0);
+        assert!((deg(6.0) - 5.0).abs() < 1e-9);
+        assert!((deg(-30.0) + 15.0).abs() < 1e-9);
+        assert!((deg(180.0) - 90.0).abs() < 1e-9);
+    }
 }

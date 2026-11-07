@@ -1457,3 +1457,282 @@ fn the_values_are_drawn_and_a_plate_in_a_grip_is_drawn() {
     }
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Rotate member in the joint's close-up (owner 2026-11-07: "a tool to
+/// rotate a member that would be directly seen in the 3d configuration of
+/// the joint"): a click picks a member (its roll row shown); a drag on
+/// another member picks that one and turns nothing; a sideways drag on the
+/// picked one sets its roll in 5° steps when let go, one undo step; a drag
+/// on nothing turns the view.
+#[test]
+fn rotate_member_picks_then_rolls_in_the_close_up() {
+    let path = copy_of("type-02.ohls", "rotate-member");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    h.state_mut().open_in_detail(Handle::Joint("N2".into()));
+    h.state_mut().focus(Panel::JointView);
+    h.run_steps(3);
+    // Taken from the hotbar under the drawing.
+    h.get_by_label("slot: Rotate member").click();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().joints.tool,
+        crate::detail_tools::DetailTool::RotateMember
+    );
+    let roll = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>, m: &str| {
+        let t = h.state().file.as_ref().unwrap().structure();
+        ohl_structure_edit::member_roll(t.members.iter().find(|x| x.id == m).unwrap()).to_degrees()
+    };
+    // A point on each member's axis that picks it.
+    let d = h.state_mut().joint_details().unwrap();
+    let j = d.as_ref().as_ref().unwrap().joint("N2").unwrap().clone();
+    let rect = h.state().joints.view_rect.expect("the close-up drawn");
+    let on = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>, m: &str| {
+        let ia = j.arrivals.iter().position(|a| a.member == m).unwrap();
+        (1..10)
+            .map(|k| {
+                let [a, b] = crate::close_up::axis_on_screen(&j, &h.state().joints, rect, ia);
+                a + (b - a) * (k as f32 / 10.0)
+            })
+            .find(|q| crate::close_up::member_at(&j, &h.state().joints, rect, *q) == Some(ia))
+            .unwrap_or_else(|| panic!("a point picking {m}"))
+    };
+    let drag = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>,
+                from: eframe::egui::Pos2,
+                by: eframe::egui::Vec2| {
+        h.hover_at(from);
+        h.run();
+        h.drag_at(from);
+        h.run();
+        for k in 1..=4 {
+            h.hover_at(from + by * (k as f32 / 4.0));
+            h.run();
+        }
+        h.drop_at(from + by);
+        h.run_steps(2);
+    };
+    // A click picks D1: its roll row.
+    let p = on(&h, "D1");
+    h.hover_at(p);
+    h.run();
+    h.drag_at(p);
+    h.run();
+    h.drop_at(p);
+    h.run_steps(2);
+    assert_eq!(h.state().joints.roll_pick.as_deref(), Some("D1"));
+    h.get_by_label("Member D1");
+    // A drag on H1, not picked: picked, nothing turned.
+    let q = on(&h, "H1");
+    drag(&mut h, q, eframe::egui::vec2(60.0, 0.0));
+    assert_eq!(h.state().joints.roll_pick.as_deref(), Some("H1"));
+    assert_eq!(roll(&h, "H1"), 0.0);
+    // Dragged again, 60 points to the right: +30°, seen while dragged,
+    // set when let go.
+    let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
+    let save = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>, name: &str| {
+        if let Some(dir) = &shots {
+            h.run_steps(2);
+            h.render().unwrap().save(dir.join(name)).unwrap();
+        }
+    };
+    save(&mut h, "rotate-member-picked.png");
+    let q = on(&h, "H1");
+    h.hover_at(q);
+    h.run();
+    h.drag_at(q);
+    h.run();
+    for k in 1..=4 {
+        h.hover_at(q + eframe::egui::vec2(15.0 * k as f32, 0.0));
+        h.run();
+    }
+    assert_eq!(roll(&h, "H1"), 0.0, "set only when let go");
+    save(&mut h, "rotate-member-turning.png");
+    h.drop_at(q + eframe::egui::vec2(60.0, 0.0));
+    h.run_steps(2);
+    assert!((roll(&h, "H1") - 30.0).abs() < 1e-9, "{}", roll(&h, "H1"));
+    assert_eq!(h.state().joints.roll_drag, None);
+    h.get_by_label("Undo").click();
+    h.run_steps(2);
+    assert_eq!(roll(&h, "H1"), 0.0);
+    // Its step set to 15° (the strip above the drawing): the same drag
+    // turns 30° in two steps; 40 points (20°) to one step.
+    h.state_mut().joints.steps.roll = 15.0_f64.to_radians();
+    let q = on(&h, "H1");
+    drag(&mut h, q, eframe::egui::vec2(40.0, 0.0));
+    assert!((roll(&h, "H1") - 15.0).abs() < 1e-9, "{}", roll(&h, "H1"));
+    h.get_by_label("Undo").click();
+    h.run_steps(2);
+    // A drag on nothing turns the view.
+    let yaw = h.state().joints.yaw;
+    let empty = rect.center() + eframe::egui::vec2(rect.width() * 0.3, rect.height() * 0.3);
+    assert_eq!(
+        crate::close_up::member_at(&j, &h.state().joints, rect, empty),
+        None
+    );
+    drag(&mut h, empty, eframe::egui::vec2(40.0, 0.0));
+    assert!(h.state().joints.yaw != yaw);
+    assert_eq!(roll(&h, "H1"), 0.0);
+    // A face view tool taken from the hotbar shows the face view; Rotate
+    // member taken there the close-up again.
+    h.get_by_label("slot: Move bolt").click();
+    h.run_steps(2);
+    assert_eq!(h.state().joints.drawn, crate::joint_panel::Drawn::Face);
+    h.get_by_label("slot: Rotate member").click();
+    h.run_steps(2);
+    assert_eq!(h.state().joints.drawn, crate::joint_panel::Drawn::CloseUp);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// Pick before drag in the face view (owner 2026-11-07: "it should
+/// highlight the bolt before dragging it moves it"): with Move bolt a drag
+/// on a bolt not picked picks it and moves nothing; a second drag on it
+/// moves it (one undo step). Member end alike: a click picks the member's
+/// end, a drag on another member's picks that and changes nothing.
+#[test]
+fn the_face_view_picks_before_it_drags() {
+    use crate::detail_tools::{DetailTool, ToolPick};
+    let path = copy_of("type-02.ohls", "pick-then-drag");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    h.state_mut().open_in_detail(Handle::Joint("N2".into()));
+    h.state_mut().focus(Panel::JointView);
+    h.state_mut().joints.drawn = crate::joint_panel::Drawn::Face;
+    h.state_mut().joints.tool = DetailTool::MoveBolt;
+    h.run_steps(3);
+    let text = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state().file.as_ref().unwrap().text_ref().to_owned()
+    };
+    let d = h.state_mut().joint_details().unwrap();
+    let j = d.as_ref().as_ref().unwrap().joint("N2").unwrap().clone();
+    let face = ohl_structure_link::faces_of(&j)[0].clone();
+    let rect = h.state().joints.view_rect.expect("the face view drawn");
+    let view = ohl_structure_link::face_view(&j, &face);
+    let fit = crate::detail_tools::FaceFit::new(rect, view.bounds);
+    let [r, u, _] = ohl_structure_link::face_axes(&face);
+    let at = |p: [f64; 3]| {
+        let q: [f64; 3] = std::array::from_fn(|k| p[k] - j.position[k]);
+        let dot = |a: [f64; 3]| a[0] * q[0] + a[1] * q[1] + a[2] * q[2];
+        fit.at([dot(r), dot(u)])
+    };
+    let drag = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>,
+                from: eframe::egui::Pos2,
+                by: eframe::egui::Vec2| {
+        h.hover_at(from);
+        h.run();
+        h.drag_at(from);
+        h.run();
+        for k in 1..=4 {
+            h.hover_at(from + by * (k as f32 / 4.0));
+            h.run();
+        }
+        h.drop_at(from + by);
+        h.run_steps(2);
+    };
+    // A bolt: its end's last one (the farthest out, room to move it on).
+    let (ia, a) = j
+        .arrivals
+        .iter()
+        .enumerate()
+        .find(|(_, a)| a.bolt_points.len() >= 2)
+        .expect("a member end with bolts");
+    let ib = a.bolt_points.len() - 1;
+    let bolt = at(a.bolt_points[ib]);
+    let out = at(std::array::from_fn(|k| {
+        a.bolt_points[ib][k] + a.direction[k] * 0.06
+    })) - bolt;
+    let before = text(&h);
+    drag(&mut h, bolt, out);
+    assert_eq!(
+        text(&h),
+        before,
+        "a drag on a bolt not picked moves nothing"
+    );
+    assert_eq!(
+        h.state().joints.tool_pick,
+        Some(ToolPick::Bolt {
+            member: a.member.clone(),
+            joint: "N2".into(),
+            index: ib
+        })
+    );
+    drag(&mut h, bolt, out);
+    assert_ne!(text(&h), before, "the picked bolt moved");
+    h.get_by_label("Undo").click();
+    h.run_steps(2);
+    assert_eq!(text(&h), before);
+    // Member end: a click on a member picks its end; a drag on another
+    // member's picks that one and changes nothing.
+    h.state_mut().joints.tool = DetailTool::MemberEnd;
+    h.run_steps(2);
+    let mid = |ia: usize| {
+        let a = &j.arrivals[ia];
+        let t = (a.cut.value.unwrap_or(0.0) + a.length.min(ohl_structure_link::reach(&j))) / 2.0;
+        at(std::array::from_fn(|k| {
+            j.position[k] + a.offset[k] + a.direction[k] * t
+        }))
+    };
+    let other = (0..j.arrivals.len())
+        .find(|&k| k != ia && j.arrivals[k].profile.is_some())
+        .unwrap();
+    h.hover_at(mid(ia));
+    h.run();
+    h.drag_at(mid(ia));
+    h.run();
+    h.drop_at(mid(ia));
+    h.run_steps(2);
+    assert_eq!(
+        h.state().joints.tool_pick,
+        Some(ToolPick::End {
+            member: a.member.clone(),
+            joint: "N2".into()
+        })
+    );
+    drag(&mut h, mid(other), eframe::egui::vec2(20.0, 20.0));
+    assert_eq!(text(&h), before);
+    assert_eq!(
+        h.state().joints.tool_pick,
+        Some(ToolPick::End {
+            member: j.arrivals[other].member.clone(),
+            joint: "N2".into()
+        })
+    );
+    if let Some(dir) = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from)
+    {
+        h.hover_at(mid(ia));
+        h.run_steps(3);
+        h.render()
+            .unwrap()
+            .save(dir.join("member-end-picked.png"))
+            .unwrap();
+        h.state_mut().joints.tool = DetailTool::MoveBolt;
+        h.state_mut().joints.tool_pick = Some(ToolPick::Bolt {
+            member: a.member.clone(),
+            joint: "N2".into(),
+            index: ib,
+        });
+        h.run_steps(3);
+        h.render()
+            .unwrap()
+            .save(dir.join("bolt-picked.png"))
+            .unwrap();
+    }
+    std::fs::remove_dir_all(dir).ok();
+}

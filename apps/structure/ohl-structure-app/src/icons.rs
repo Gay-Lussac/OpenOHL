@@ -58,12 +58,14 @@ pub enum Icon {
     RemoveBolt,
     /// The Detail view's Member end tool.
     MemberEnd,
+    /// The Detail view's Rotate member tool.
+    RotateMember,
 }
 
 impl Icon {
     /// Every icon (the tests check each file).
     #[cfg(test)]
-    pub const ALL: [Icon; 19] = [
+    pub const ALL: [Icon; 20] = [
         Icon::AddJoint,
         Icon::AddMember,
         Icon::PointOnJoint,
@@ -83,6 +85,7 @@ impl Icon {
         Icon::MoveBolt,
         Icon::RemoveBolt,
         Icon::MemberEnd,
+        Icon::RotateMember,
     ];
 
     /// Its file's name (without `.svg`).
@@ -107,6 +110,7 @@ impl Icon {
             Icon::MoveBolt => "move-bolt",
             Icon::RemoveBolt => "remove-bolt",
             Icon::MemberEnd => "member-end",
+            Icon::RotateMember => "rotate-member",
         }
     }
 
@@ -137,6 +141,7 @@ impl Icon {
             Icon::MoveBolt => icon!("move-bolt"),
             Icon::RemoveBolt => icon!("remove-bolt"),
             Icon::MemberEnd => icon!("member-end"),
+            Icon::RotateMember => icon!("rotate-member"),
         }
     }
 
