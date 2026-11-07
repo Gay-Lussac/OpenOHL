@@ -551,6 +551,16 @@ stringing tables, key map, notes, legend, scale bar and north arrow, pens;
 what](sheet-templates.md#which-drawing-uses-what) shows each plan and what it
 takes from the template.
 
+The **Plans** window is laid out as the Plan and profile sheets window: a
+line saying what it makes, then the same rows in the same order —
+**Template** and **Route** (here only shown: set in Plan and profile
+sheets, the button **Plan and profile sheets…** opens it), **Paper**,
+**Scale**, the plan's own rows (**Under it**: the project's drawings,
+orthophotos, the corridor), **Formats** and **Folder** (none chosen: the
+sheets' folder) — then its own sections (the plan set's drawings, the
+phase plan's alignments drawn together) and **Export** at the bottom.
+Each window keeps its own settings.
+
 
 - **Route plan** — the whole route **north up** at a small scale
   (1:5000 to 1:25 000, 1:10 000 by default), over the project's drawings

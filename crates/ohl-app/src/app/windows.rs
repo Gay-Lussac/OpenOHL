@@ -770,6 +770,9 @@ pub(super) fn tool_windows(
     }
     r.plans.keep(&mut r.model, ctx);
     r.plans.ui(ctx, &r.model, r.case, r.drawings.settings());
+    if std::mem::take(&mut r.plans.open_sheets) {
+        r.drawings.open();
+    }
     measuring_frame(ctx, r);
     if let Some((path, text)) = r.case_groups.ui(ctx, &r.model)
         && r.write_table_file(&path, &text)

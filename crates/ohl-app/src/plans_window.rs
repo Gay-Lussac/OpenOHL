@@ -18,7 +18,11 @@ use crate::drawings::{
 };
 use crate::model::Model;
 use crate::survey_io::Job;
+use ohl_drawing::export::Format;
 use ohl_drawing::plan_set::PlanSet;
+
+/// The formats the plans are written in.
+const FORMATS: [Format; 4] = [Format::Pdf, Format::Svg, Format::Png, Format::Dxf];
 
 /// The papers offered.
 const PAPERS: [&str; 5] = ["A0", "A1", "A2", "A3", "A4"];
@@ -42,8 +46,8 @@ pub struct PlansWindow {
     pub photo: bool,
     /// The corridor drawn (at the drawings' line width).
     pub corridor: bool,
-    /// Formats: `pdf`, `svg`, `png`, `dxf`.
-    pub formats: Vec<String>,
+    /// Formats: PDF, SVG, PNG, DXF.
+    pub formats: Vec<Format>,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why the last start failed.
@@ -66,6 +70,9 @@ pub struct PlansWindow {
     /// The phase plans of alignments drawn together (owner, 2026-11-03),
     /// kept in the project (`app.phase_plans.<line>`).
     pub groups: Vec<PhaseGroup>,
+    /// The Plan and profile sheets window asked for (its template and
+    /// route are set there).
+    pub open_sheets: bool,
     kept: crate::check_ui::Kept,
 }
 
@@ -83,7 +90,7 @@ impl Default for PlansWindow {
             drawings: true,
             photo: true,
             corridor: true,
-            formats: vec!["pdf".into()],
+            formats: vec![Format::Pdf],
             out: None,
             error: None,
             job: None,
@@ -93,6 +100,7 @@ impl Default for PlansWindow {
             one_pdf: false,
             waiting: false,
             groups: Vec::new(),
+            open_sheets: false,
             kept: Default::default(),
         }
     }
@@ -299,80 +307,48 @@ impl PlansWindow {
         }
         let mut open = true;
         let mut start = false;
-        egui::Window::new("Plans")
-            .open(&mut open)
-            .collapsible(false)
-            .default_width(460.0)
-            .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Plans beside the plan-and-profile sheets, for every route, with the \
-                         sheet template, title fields and routes of Plans & sheets › Plan and profile sheets….",
-                    )
-                    .small()
-                    .weak(),
-                );
-                ui.horizontal(|ui| {
-                    for k in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
-                        if ui
-                            .selectable_label(!self.set_mode && self.kind == k, k.title())
-                            .clicked()
-                        {
-                            self.kind = k;
-                            self.set_mode = false;
-                        }
-                    }
+        let offers = crate::sheet_ui::offers_kept(model, &drawings.plugin_templates);
+        let template = offers
+            .iter()
+            .find(|o| o.key == drawings.sheet.template)
+            .map_or(drawings.sheet.template.clone(), |o| {
+                format!("{} › {}", o.group, o.name)
+            });
+        let routes = model.line.alignment_views();
+        let route = match drawings.route.and_then(|k| routes.get(k)) {
+            Some(r) => format!("{} {}", r.id, r.name),
+            None => "every route".into(),
+        };
+        crate::export_form::window(ctx, "Plans", &mut open, |ui| {
+            crate::export_form::intro(
+                ui,
+                "North-up plans beside the plan-and-profile sheets, for every route, with the \
+                 sheet template, routes and title fields of Plans & sheets › Plan and profile \
+                 sheets.",
+            );
+            ui.horizontal(|ui| {
+                for k in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
                     if ui
-                        .selectable_label(self.set_mode, "Plan set")
-                        .on_hover_text(
-                            "Several drawings in one go, as a plugin's plan set lists them",
-                        )
+                        .selectable_label(!self.set_mode && self.kind == k, k.title())
                         .clicked()
                     {
-                        self.set_mode = true;
-                    }
-                });
-                if self.set_mode {
-                    if self.sets.is_empty() {
-                        ui.label("No plugin in use gives a plan set.");
-                    }
-                    let shown = self
-                        .sets
-                        .get(self.set)
-                        .map_or("—".to_owned(), |(p, n, _)| format!("{p} / {n}"));
-                    egui::ComboBox::from_id_salt("plans-set")
-                        .selected_text(shown)
-                        .show_ui(ui, |ui| {
-                            for (k, (p, n, _)) in self.sets.iter().enumerate() {
-                                ui.selectable_value(&mut self.set, k, format!("{p} / {n}"));
-                            }
-                        });
-                    match self.sets.get(self.set).map(|x| &x.2) {
-                        Some(Ok(set)) => {
-                            ui.label(egui::RichText::new(&set.description).small());
-                            for d in &set.drawings {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "• {}{}{}{}",
-                                        d.kind.as_str(),
-                                        d.template
-                                            .as_ref()
-                                            .map_or(String::new(), |t| format!(", template {t}")),
-                                        d.page.as_ref().map_or(String::new(), |p| format!(", {p}")),
-                                        d.scale.map_or(String::new(), |s| format!(", 1:{s}"))
-                                    ))
-                                    .small(),
-                                );
-                            }
-                        }
-                        Some(Err(e)) => {
-                            crate::menu::error_label(ui, e);
-                        }
-                        None => {}
+                        self.kind = k;
+                        self.set_mode = false;
                     }
                 }
-                ui.label(
-                    egui::RichText::new(match self.kind {
+                if ui
+                    .selectable_label(self.set_mode, "Plan set")
+                    .on_hover_text("Several drawings in one go, as a plugin's plan set lists them")
+                    .clicked()
+                {
+                    self.set_mode = true;
+                }
+            });
+            ui.label(
+                egui::RichText::new(if self.set_mode {
+                    "Several drawings in one go, as a plugin's plan set lists them."
+                } else {
+                    match self.kind {
                         PlanKind::Route => {
                             "The whole route north up at a small scale, over the project's \
                              drawings (e.g. municipal boundaries) and orthophotos: the axis, \
@@ -389,95 +365,120 @@ impl PlansWindow {
                              with its circuit (numbered, a key) and phase — only where the \
                              arrangement changes; between, \"arrangement unchanged\"."
                         }
-                    })
-                    .small(),
-                );
-                if !self.set_mode && self.kind == PlanKind::Phase {
-                    self.groups_ui(ui, model);
-                    ui.separator();
+                    }
+                })
+                .small(),
+            );
+            ui.add_space(4.0);
+            crate::export_form::grid(ui, "plans-settings", |ui| {
+                let go = Some("Plan and profile sheets…");
+                // Both set in the sheets window: one way there.
+                if crate::export_form::shown_row(ui, "Template", &template, go) {
+                    self.open_sheets = true;
                 }
-                egui::Grid::new("plans-settings")
-                    .num_columns(2)
-                    .spacing([10.0, 6.0])
-                    .show(ui, |ui| {
-                        if !self.set_mode {
-                            ui.label("Paper");
-                            egui::ComboBox::from_id_salt("plans-paper")
-                                .selected_text(self.page.as_str())
-                                .show_ui(ui, |ui| {
-                                    for p in PAPERS {
-                                        ui.selectable_value(&mut self.page, p.to_owned(), p);
-                                    }
-                                });
-                            ui.end_row();
-                        }
-                        if !self.set_mode && self.kind != PlanKind::Phase {
-                            ui.label("Scale 1:");
-                            let (scale, range) = if self.kind == PlanKind::Route {
-                                (&mut self.route_scale, 5000.0..=25_000.0)
-                            } else {
-                                (&mut self.situation_scale, 500.0..=2000.0)
-                            };
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(scale).range(range).speed(50.0),
-                            );
-                            ui.end_row();
-                            ui.label("Under it");
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut self.drawings, "the project's drawings");
-                                ui.checkbox(&mut self.photo, "orthophotos");
-                                ui.checkbox(&mut self.corridor, "the corridor");
-                            });
-                            ui.end_row();
-                        }
-                        ui.label("Formats");
-                        ui.horizontal(|ui| {
-                            for f in ["pdf", "svg", "png", "dxf"] {
-                                let mut on = self.formats.iter().any(|x| x == f);
-                                if ui.checkbox(&mut on, f.to_uppercase()).changed() {
-                                    if on {
-                                        self.formats.push(f.into());
-                                    } else {
-                                        self.formats.retain(|x| x != f);
-                                    }
-                                }
+                crate::export_form::shown_row(ui, "Route", &route, None);
+                if self.set_mode {
+                    ui.label("Plan set");
+                    let shown = self
+                        .sets
+                        .get(self.set)
+                        .map_or("—".to_owned(), |(p, n, _)| format!("{p} / {n}"));
+                    egui::ComboBox::from_id_salt("plans-set")
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            for (k, (p, n, _)) in self.sets.iter().enumerate() {
+                                ui.selectable_value(&mut self.set, k, format!("{p} / {n}"));
                             }
                         });
-                        ui.end_row();
-                        if self.set_mode {
-                            ui.label("");
-                            ui.checkbox(&mut self.one_pdf, "also as one PDF")
-                                .on_hover_text(
-                                    "Every sheet of the set's drawings, in the set's order, in \
-                                     one PDF named after the set, besides the files of the \
-                                     formats ticked (a drawing without paper is not in it)",
-                                );
-                            ui.end_row();
-                        }
-                        ui.label("Folder");
-                        ui.horizontal(|ui| {
-                            if ui.button("Choose…").clicked()
-                                && let Some(p) = rfd::FileDialog::new().pick_folder()
-                            {
-                                self.out = Some(p);
+                    ui.end_row();
+                } else {
+                    ui.label("Paper");
+                    egui::ComboBox::from_id_salt("plans-paper")
+                        .selected_text(self.page.as_str())
+                        .show_ui(ui, |ui| {
+                            for p in PAPERS {
+                                ui.selectable_value(&mut self.page, p.to_owned(), p);
                             }
-                            let shown = self
-                                .out
-                                .as_ref()
-                                .or(drawings.out.as_ref())
-                                .map_or("—".to_owned(), |p| p.display().to_string());
-                            ui.label(egui::RichText::new(shown).small());
                         });
-                        ui.end_row();
+                    ui.end_row();
+                }
+                if !self.set_mode && self.kind != PlanKind::Phase {
+                    ui.label("Scale");
+                    ui.horizontal(|ui| {
+                        ui.label("1:");
+                        let (scale, range) = if self.kind == PlanKind::Route {
+                            (&mut self.route_scale, 5000.0..=25_000.0)
+                        } else {
+                            (&mut self.situation_scale, 500.0..=2000.0)
+                        };
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(scale).range(range).speed(50.0),
+                        );
                     });
-                if let Some(e) = &self.error {
-                    crate::menu::error_label(ui, e);
+                    ui.end_row();
+                    ui.label("Under it");
+                    ui.horizontal_wrapped(|ui| {
+                        ui.checkbox(&mut self.drawings, "the project's drawings");
+                        ui.checkbox(&mut self.photo, "orthophotos");
+                        ui.checkbox(&mut self.corridor, "the corridor");
+                    });
+                    ui.end_row();
                 }
-                start = ui
-                    .add_enabled(self.job.is_none(), egui::Button::new("Export"))
-                    .clicked();
+                crate::export_form::formats_row(ui, &FORMATS, &mut self.formats);
+                if self.set_mode {
+                    ui.label("");
+                    ui.checkbox(&mut self.one_pdf, "also as one PDF")
+                        .on_hover_text(
+                            "Every sheet of the set's drawings, in the set's order, in one PDF \
+                             named after the set, besides the files of the formats ticked (a \
+                             drawing without paper is not in it)",
+                        );
+                    ui.end_row();
+                }
+                crate::export_form::folder_row(
+                    ui,
+                    &mut self.out,
+                    drawings
+                        .out
+                        .as_ref()
+                        .map(|p| (p, "Plan and profile sheets'")),
+                );
             });
+            // The window's own sections, below the settings.
+            if self.set_mode {
+                if self.sets.is_empty() {
+                    ui.label("No plugin in use gives a plan set.");
+                }
+                match self.sets.get(self.set).map(|x| &x.2) {
+                    Some(Ok(set)) => {
+                        ui.label(egui::RichText::new(&set.description).small());
+                        for d in &set.drawings {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "• {}{}{}{}",
+                                    d.kind.as_str(),
+                                    d.template
+                                        .as_ref()
+                                        .map_or(String::new(), |t| format!(", template {t}")),
+                                    d.page.as_ref().map_or(String::new(), |p| format!(", {p}")),
+                                    d.scale.map_or(String::new(), |s| format!(", 1:{s}"))
+                                ))
+                                .small(),
+                            );
+                        }
+                    }
+                    Some(Err(e)) => {
+                        crate::menu::error_label(ui, e);
+                    }
+                    None => {}
+                }
+            } else if self.kind == PlanKind::Phase {
+                ui.separator();
+                self.groups_ui(ui, model);
+            }
+            start = crate::export_form::footer(ui, self.error.as_deref(), self.job.is_some());
+        });
         // Its weather cases solved first ([`Self::wanted`]): the export
         // starts once they are.
         let unsolved: Vec<String> = self
@@ -512,11 +513,7 @@ impl PlansWindow {
                     self.error = Some("tick a format".into());
                 }
                 Some(out) if self.set_mode => {
-                    let formats: Vec<ohl_drawing::export::Format> = self
-                        .formats
-                        .iter()
-                        .filter_map(|f| ohl_drawing::export::Format::parse(f))
-                        .collect();
+                    let formats = self.formats.clone();
                     match self.sets.get(self.set) {
                         Some((plugin, name, Ok(set))) => {
                             let one_pdf = self.one_pdf;
@@ -555,11 +552,7 @@ impl PlansWindow {
                     {
                         w.route = None;
                     }
-                    w.formats = self
-                        .formats
-                        .iter()
-                        .filter_map(|f| ohl_drawing::export::Format::parse(f))
-                        .collect();
+                    w.formats = self.formats.clone();
                     let req = self.request();
                     match Input::for_plans(model, case, &w, out, &req) {
                         Ok(input) => {

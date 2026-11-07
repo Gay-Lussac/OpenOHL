@@ -391,3 +391,64 @@ fn the_menus_are_grouped_by_task() {
     // (The tick menu stays open on a tick.)
     h.get_by_label("150 %");
 }
+
+/// The plan windows look alike (owner, 2026-11-07: "make sure that the
+/// menu for the plans look similar … but each keep their own parameters
+/// and functionality"): Plans & sheets › Plans and Plans & sheets › Plan
+/// and profile sheets both have the rows Template, Route, Paper, Scale,
+/// Formats and Folder and an Export button; each keeps its own (the
+/// plans their scale and what lies under them, the sheets their sheet
+/// breaks and side profiles). The Plans window says the template and
+/// route it takes and leads to where they are set. With a GPU and
+/// OHL_RENDER_PNG set, both windows saved as images.
+#[test]
+fn the_plan_windows_look_alike() {
+    let gpu = ohl_render::headless_device().is_ok();
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let model = synthetic_project("ui-review-plan-windows");
+    let mut h = builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    let shared = [
+        "Template", "Route", "Paper", "Scale", "Formats", "Folder", "Export",
+    ];
+    let save = |h: &mut Harness<'static, App>, name: &str| {
+        if gpu && let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") {
+            h.run_steps(8);
+            let image = h.render().unwrap();
+            let path = std::path::PathBuf::from(dir).join(name);
+            crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        }
+    };
+    // The Plans window, on the situation plans.
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .plans
+        .show(crate::drawings::PlanKind::Situation);
+    // A window opened is sized first, drawn after.
+    h.run_steps(6);
+    for row in shared {
+        h.get_by_label(row);
+    }
+    h.get_by_label("Under it");
+    assert!(h.query_by_label("Sheet breaks").is_none());
+    save(&mut h, "plans-window.png");
+    // Its template row leads to the Plan and profile sheets window.
+    h.get_all_by_label("Plan and profile sheets…")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    h.state_mut().ready().unwrap().plans.open = false;
+    // A window opened is sized first, drawn after.
+    h.run_steps(6);
+    for row in shared {
+        h.get_by_label(row);
+    }
+    h.get_by_label("Sheet breaks");
+    assert!(h.query_by_label("Under it").is_none());
+    save(&mut h, "sheets-window.png");
+}

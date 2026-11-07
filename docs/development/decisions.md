@@ -18,6 +18,12 @@ of Parts A, B and C).
 - Tool steps (owner: "the rotation should be 5 degrees by default and for the end 5 mm as today but there should be a tool parameter somewhere in the app where it can be changed"): a **step** field in the strip above the drawing while Member end (mm, 0.5–100) or Rotate member (degrees, 0.5–90) is held, kept between runs with the window's arrangement (`ToolSteps`). Add bolt and Move bolt keep their placement by the code's distances (along to 5 mm), unchanged.
 - Built, in active development, not approved yet.
 
+**The plan windows laid out alike (owner, 2026-11-07)**
+
+- Owner: "make sure that the menu for the plans look similar … to ease the user experience. But each keep their own parameters and functionality".
+- Plans & sheets › Plan and profile sheets… and Plans & sheets › Plans share one layout (`export_form`): the same frame (width, scrolled above 85 % of the window), an intro line, one settings grid with Template, Route, Paper, Scale first, each window's own rows, Formats (ticks in a row, each format's description on hover) and Folder (**Choose…**) last, the window's own sections, then the error and **Export**. The sheets window's rows Sheets/Scales are now Paper/Scale; its folder moved into the grid. The Plans window shows the template and route it takes (set in the sheets window, a button there). Settings unchanged in each.
+- The sheets window's scroll area now takes the height allowed (it stopped at egui's default minimum before).
+
 **One name for the plan-and-profile sheets window (owner, 2026-11-07)**
 
 - Owner: the menu Plans & sheets › Drawings… and the profile view's Sheets menu open the same window; the names should be the same.

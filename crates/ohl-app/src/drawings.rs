@@ -2091,512 +2091,479 @@ impl DrawingsWindow {
         let offers = crate::sheet_ui::offers_kept(model, &self.plugin_templates);
         let template =
             crate::sheet_ui::resolve_kept(model, &self.sheet.template, &self.plugin_templates);
-        let max_height = (ctx.content_rect().height() * 0.85).max(300.0);
-        egui::Window::new("Plan and profile sheets")
-            .open(open)
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-              egui::ScrollArea::vertical()
-                .id_salt("drawings-scroll")
-                .max_height(max_height)
-                .show(ui, |ui| {
-                egui::Grid::new("drawings-grid")
-                    .num_columns(2)
-                    .spacing([12.0, 6.0])
-                    .show(ui, |ui| {
-                        ui.label("Template");
-                        ui.vertical(|ui| {
-                            if let Some(a) =
-                                crate::sheet_ui::template_ui(ui, &mut self.sheet, &offers)
-                            {
-                                *action = Some(a);
-                            }
-                            if let Err(e) = &template {
-                                crate::menu::error_label(ui, e);
-                            }
-                        });
-                        ui.end_row();
+        crate::export_form::window(ctx, "Plan and profile sheets", open, |ui| {
+            crate::export_form::intro(
+                ui,
+                "Plan-and-profile sheets and profile exports of the routes. The plans \
+                     (Plans & sheets › Plans) take this window's template, routes and title \
+                     fields.",
+            );
+            crate::export_form::grid(ui, "drawings-grid", |ui| {
+                ui.label("Template");
+                ui.vertical(|ui| {
+                    if let Some(a) = crate::sheet_ui::template_ui(ui, &mut self.sheet, &offers) {
+                        *action = Some(a);
+                    }
+                    if let Err(e) = &template {
+                        crate::menu::error_label(ui, e);
+                    }
+                });
+                ui.end_row();
 
-                        ui.label("Route");
-                        let name = |k: Option<usize>| match k.and_then(|k| routes.get(k)) {
-                            Some(r) => format!("{} {}", r.id, r.name),
-                            None => "every route".into(),
-                        };
-                        egui::ComboBox::from_id_salt("drawings-route")
-                            .selected_text(name(self.route))
+                ui.label("Route");
+                let name = |k: Option<usize>| match k.and_then(|k| routes.get(k)) {
+                    Some(r) => format!("{} {}", r.id, r.name),
+                    None => "every route".into(),
+                };
+                egui::ComboBox::from_id_salt("drawings-route")
+                    .selected_text(name(self.route))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.route, None, name(None));
+                        for k in 0..routes.len() {
+                            ui.selectable_value(&mut self.route, Some(k), name(Some(k)));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Paper");
+                let template_page = template
+                    .as_ref()
+                    .ok()
+                    .and_then(|t| t.page())
+                    .map(|p| format!("the template's: {}", p.name));
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        let fixed = |p: &str| format!("{p}, split at structures");
+                        egui::ComboBox::from_id_salt("drawings-page")
+                            .selected_text(match self.page.as_str() {
+                                "" => "one continuous drawing".to_owned(),
+                                "template" => template_page
+                                    .clone()
+                                    .unwrap_or("the template's (none: choose one)".into()),
+                                "optimised" => "optimised from the ticked sizes".to_owned(),
+                                p => p.to_owned(),
+                            })
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut self.route, None, name(None));
-                                for k in 0..routes.len() {
-                                    ui.selectable_value(&mut self.route, Some(k), name(Some(k)));
+                                ui.selectable_value(
+                                    &mut self.page,
+                                    String::new(),
+                                    "one continuous drawing",
+                                );
+                                if let Some(t) = &template_page {
+                                    ui.selectable_value(
+                                        &mut self.page,
+                                        "template".into(),
+                                        fixed(t),
+                                    );
+                                }
+                                ui.selectable_value(
+                                    &mut self.page,
+                                    "optimised".into(),
+                                    "optimised: size and orientation from the ticked sizes",
+                                );
+                                for p in self.paper_sizes.clone() {
+                                    ui.selectable_value(&mut self.page, p.clone(), fixed(&p));
                                 }
                             });
-                        ui.end_row();
-
-                        ui.label("Formats");
-                        ui.vertical(|ui| {
-                            for f in Format::ALL {
-                                let mut on = self.formats.contains(&f);
-                                if ui
-                                    .checkbox(&mut on, f.name().to_uppercase())
-                                    .on_hover_text(f.description())
-                                    .changed()
-                                {
-                                    self.formats.retain(|x| *x != f);
-                                    if on {
-                                        self.formats.push(f);
+                        if self.page != "optimised" {
+                            ui.add_enabled(
+                                !self.page.is_empty(),
+                                egui::Checkbox::new(&mut self.sheet.portrait, "portrait"),
+                            );
+                        }
+                    });
+                    if self.page == "optimised" {
+                        ui.horizontal(|ui| {
+                            egui::ComboBox::from_id_salt("drawings-orientation")
+                                .selected_text(
+                                    ORIENTATIONS
+                                        .iter()
+                                        .find(|(k, _)| *k == self.paper_orientation)
+                                        .map_or("landscape or portrait", |(_, t)| *t),
+                                )
+                                .show_ui(ui, |ui| {
+                                    for (k, t) in ORIENTATIONS {
+                                        ui.selectable_value(
+                                            &mut self.paper_orientation,
+                                            k.to_owned(),
+                                            t,
+                                        );
                                     }
-                                }
-                            }
-                        });
-                        ui.end_row();
-
-                        ui.label("Sheets");
-                        let template_page = template
-                            .as_ref()
-                            .ok()
-                            .and_then(|t| t.page())
-                            .map(|p| format!("the template's: {}", p.name));
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                let fixed = |p: &str| format!("{p}, split at structures");
-                                egui::ComboBox::from_id_salt("drawings-page")
-                                    .selected_text(match self.page.as_str() {
-                                        "" => "one continuous drawing".to_owned(),
-                                        "template" => template_page
-                                            .clone()
-                                            .unwrap_or("the template's (none: choose one)".into()),
-                                        "optimised" => "optimised from the ticked sizes".to_owned(),
-                                        p => p.to_owned(),
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(
-                                            &mut self.page,
-                                            String::new(),
-                                            "one continuous drawing",
-                                        );
-                                        if let Some(t) = &template_page {
-                                            ui.selectable_value(
-                                                &mut self.page,
-                                                "template".into(),
-                                                fixed(t),
-                                            );
-                                        }
-                                        ui.selectable_value(
-                                            &mut self.page,
-                                            "optimised".into(),
-                                            "optimised: size and orientation from the ticked sizes",
-                                        );
-                                        for p in self.paper_sizes.clone() {
-                                            ui.selectable_value(&mut self.page, p.clone(), fixed(&p));
-                                        }
-                                    });
-                                if self.page != "optimised" {
-                                    ui.add_enabled(
-                                        !self.page.is_empty(),
-                                        egui::Checkbox::new(&mut self.sheet.portrait, "portrait"),
-                                    );
-                                }
-                            });
-                            if self.page == "optimised" {
-                                ui.horizontal(|ui| {
-                                    egui::ComboBox::from_id_salt("drawings-orientation")
-                                        .selected_text(
-                                            ORIENTATIONS
-                                                .iter()
-                                                .find(|(k, _)| *k == self.paper_orientation)
-                                                .map_or("landscape or portrait", |(_, t)| *t),
-                                        )
-                                        .show_ui(ui, |ui| {
-                                            for (k, t) in ORIENTATIONS {
-                                                ui.selectable_value(
-                                                    &mut self.paper_orientation,
-                                                    k.to_owned(),
-                                                    t,
-                                                );
-                                            }
-                                        });
-                                    ui.checkbox(&mut self.mixed_sizes, "different sizes allowed")
-                                        .on_hover_text(
-                                            "A route's sheets may take different sizes of one \
-                                             standard (e.g. A3 and A4), to use less paper",
-                                        );
-                                    ui.add_enabled(
-                                        self.route.is_none() && routes.len() > 1,
-                                        egui::Checkbox::new(
-                                            &mut self.same_paper,
-                                            "same paper on every route",
-                                        ),
-                                    );
                                 });
-                                ui.label(
-                                    egui::RichText::new(
-                                        "Chosen per route: the fewest warnings, then the least \
+                            ui.checkbox(&mut self.mixed_sizes, "different sizes allowed")
+                                .on_hover_text(
+                                    "A route's sheets may take different sizes of one \
+                                             standard (e.g. A3 and A4), to use less paper",
+                                );
+                            ui.add_enabled(
+                                self.route.is_none() && routes.len() > 1,
+                                egui::Checkbox::new(
+                                    &mut self.same_paper,
+                                    "same paper on every route",
+                                ),
+                            );
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "Chosen per route: the fewest warnings, then the least \
                                          paper (fuller sheets), then the fewest sheets. The \
                                          scales stay as set.",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
-                                ui.horizontal(|ui| {
-                                    if ui
-                                        .button("Compare sizes")
-                                        .on_hover_text(
-                                            "Every candidate for the first route drawn, best first",
-                                        )
-                                        .clicked()
-                                    {
-                                        self.paper_report = Some(self.compare_papers(model, case));
-                                    }
-                                    if self.paper_report.is_some() && ui.button("Hide").clicked() {
-                                        self.paper_report = None;
-                                    }
-                                });
-                                match &self.paper_report {
-                                    Some(Ok(lines)) => {
-                                        egui::ScrollArea::vertical()
-                                            .id_salt("drawings-paper-report")
-                                            .max_height(120.0)
-                                            .show(ui, |ui| {
-                                                for l in lines {
-                                                    ui.label(egui::RichText::new(l).small());
-                                                }
-                                            });
-                                    }
-                                    Some(Err(e)) => {
-                                        crate::menu::error_label(ui, e);
-                                    }
-                                    None => {}
-                                }
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button("Compare sizes")
+                                .on_hover_text(
+                                    "Every candidate for the first route drawn, best first",
+                                )
+                                .clicked()
+                            {
+                                self.paper_report = Some(self.compare_papers(model, case));
                             }
-                            egui::CollapsingHeader::new(format!(
-                                "Paper sizes ({} ticked)",
-                                self.paper_sizes.len()
-                            ))
-                            .id_salt("drawings-paper-sizes")
-                            .show(ui, |ui| {
-                                paper_sizes_ui(ui, &mut self.paper_sizes);
-                            });
+                            if self.paper_report.is_some() && ui.button("Hide").clicked() {
+                                self.paper_report = None;
+                            }
                         });
-                        ui.end_row();
-
-                        ui.label("Scales");
-                        ui.horizontal(|ui| {
-                            ui.label("horizontal 1:");
-                            crate::style::field(ui,
-                                egui::DragValue::new(&mut self.hscale)
-                                    .range(10.0..=100_000.0)
-                                    .speed(10.0),
-                            );
-                            ui.label("vertical 1:");
-                            crate::style::field(ui,
-                                egui::DragValue::new(&mut self.vscale)
-                                    .range(10.0..=100_000.0)
-                                    .speed(10.0),
-                            );
-                        });
-                        ui.end_row();
-
-                        ui.label("Line width");
-                        ui.horizontal(|ui| {
-                            ui.label("±");
-                            crate::style::field(ui,
-                                egui::DragValue::new(&mut self.line_width)
-                                    .range(LINE_WIDTHS)
-                                    .suffix(" m")
-                                    .speed(1.0),
-                            )
-                            .on_hover_text(LINE_WIDTH_HELP);
-                        });
-                        ui.end_row();
-
-                        ui.label("Sheet breaks");
-                        ui.horizontal(|ui| {
-                            crate::style::field(ui,
-                                egui::DragValue::new(&mut self.break_clearance)
-                                    .range(0.0..=ohl_drawing::MAX_BREAK_CLEARANCE_MM)
-                                    .suffix(" mm")
-                                    .speed(0.1)
-                                    .max_decimals(1),
-                            )
-                            .on_hover_text(
-                                "Clearance on paper between a sheet break and what is drawn \
-                                 of every other structure (0 to 20 mm)",
-                            );
-                            ui.label("on paper clear of other structures");
-                        });
-                        ui.end_row();
-
-                        ui.label("Stations");
-                        ui.horizontal(|ui| {
-                            ui.checkbox(&mut self.range, "from");
-                            ui.add_enabled(
-                                self.range,
-                                egui::DragValue::new(&mut self.from).suffix(" m").speed(5.0),
-                            );
-                            ui.label("to");
-                            ui.add_enabled(
-                                self.range,
-                                egui::DragValue::new(&mut self.to).suffix(" m").speed(5.0),
-                            );
-                        });
-                        ui.end_row();
-
-                        ui.label("Clearance line");
-                        ui.horizontal(|ui| {
-                            let mut on = self.clearance.is_some();
-                            let chosen =
-                                chosen_ground_rules(&self.ground_rules, self.ground_rule.as_deref());
-                            let rule = ground_rule_clearance(&chosen, &model.line);
-                            let from_rule = self.clearance_rule && rule.is_some();
-                            ui.add_enabled(!from_rule, egui::Checkbox::new(&mut on, "ground +"));
-                            let mut c = self.clearance.unwrap_or(7.0);
-                            ui.add_enabled(
-                                on && !from_rule,
-                                egui::DragValue::new(&mut c)
-                                    .range(0.0..=100.0)
-                                    .suffix(" m")
-                                    .speed(0.1),
-                            );
-                            self.clearance = on.then_some(c);
-                            // Which ground rule (owner, 2026-10-24): the
-                            // largest for each circuit, or one by name.
-                            let names: Vec<String> =
-                                self.ground_rules.iter().map(|r| r.name.clone()).collect();
-                            if !names.is_empty() {
-                                let shown = self
-                                    .ground_rule
-                                    .clone()
-                                    .filter(|n| names.contains(n))
-                                    .unwrap_or_else(|| "the largest for each circuit".into());
-                                egui::ComboBox::from_id_salt("drawings-ground-rule")
-                                    .selected_text(shown)
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(
-                                            &mut self.ground_rule,
-                                            None,
-                                            "the largest for each circuit",
-                                        );
-                                        for n in &names {
-                                            ui.selectable_value(
-                                                &mut self.ground_rule,
-                                                Some(n.clone()),
-                                                n,
-                                            );
+                        match &self.paper_report {
+                            Some(Ok(lines)) => {
+                                egui::ScrollArea::vertical()
+                                    .id_salt("drawings-paper-report")
+                                    .max_height(120.0)
+                                    .show(ui, |ui| {
+                                        for l in lines {
+                                            ui.label(egui::RichText::new(l).small());
                                         }
-                                    })
-                                    .response
-                                    .on_hover_text(
-                                        "The ground rule the clearance line and the lines below \
+                                    });
+                            }
+                            Some(Err(e)) => {
+                                crate::menu::error_label(ui, e);
+                            }
+                            None => {}
+                        }
+                    }
+                    egui::CollapsingHeader::new(format!(
+                        "Paper sizes ({} ticked)",
+                        self.paper_sizes.len()
+                    ))
+                    .id_salt("drawings-paper-sizes")
+                    .show(ui, |ui| {
+                        paper_sizes_ui(ui, &mut self.paper_sizes);
+                    });
+                });
+                ui.end_row();
+
+                ui.label("Scale");
+                ui.horizontal(|ui| {
+                    ui.label("horizontal 1:");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.hscale)
+                            .range(10.0..=100_000.0)
+                            .speed(10.0),
+                    );
+                    ui.label("vertical 1:");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.vscale)
+                            .range(10.0..=100_000.0)
+                            .speed(10.0),
+                    );
+                });
+                ui.end_row();
+
+                ui.label("Line width");
+                ui.horizontal(|ui| {
+                    ui.label("±");
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.line_width)
+                            .range(LINE_WIDTHS)
+                            .suffix(" m")
+                            .speed(1.0),
+                    )
+                    .on_hover_text(LINE_WIDTH_HELP);
+                });
+                ui.end_row();
+
+                ui.label("Sheet breaks");
+                ui.horizontal(|ui| {
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut self.break_clearance)
+                            .range(0.0..=ohl_drawing::MAX_BREAK_CLEARANCE_MM)
+                            .suffix(" mm")
+                            .speed(0.1)
+                            .max_decimals(1),
+                    )
+                    .on_hover_text(
+                        "Clearance on paper between a sheet break and what is drawn \
+                                 of every other structure (0 to 20 mm)",
+                    );
+                    ui.label("on paper clear of other structures");
+                });
+                ui.end_row();
+
+                ui.label("Stations");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.range, "from");
+                    ui.add_enabled(
+                        self.range,
+                        egui::DragValue::new(&mut self.from).suffix(" m").speed(5.0),
+                    );
+                    ui.label("to");
+                    ui.add_enabled(
+                        self.range,
+                        egui::DragValue::new(&mut self.to).suffix(" m").speed(5.0),
+                    );
+                });
+                ui.end_row();
+
+                ui.label("Clearance line");
+                ui.horizontal(|ui| {
+                    let mut on = self.clearance.is_some();
+                    let chosen =
+                        chosen_ground_rules(&self.ground_rules, self.ground_rule.as_deref());
+                    let rule = ground_rule_clearance(&chosen, &model.line);
+                    let from_rule = self.clearance_rule && rule.is_some();
+                    ui.add_enabled(!from_rule, egui::Checkbox::new(&mut on, "ground +"));
+                    let mut c = self.clearance.unwrap_or(7.0);
+                    ui.add_enabled(
+                        on && !from_rule,
+                        egui::DragValue::new(&mut c)
+                            .range(0.0..=100.0)
+                            .suffix(" m")
+                            .speed(0.1),
+                    );
+                    self.clearance = on.then_some(c);
+                    // Which ground rule (owner, 2026-10-24): the
+                    // largest for each circuit, or one by name.
+                    let names: Vec<String> =
+                        self.ground_rules.iter().map(|r| r.name.clone()).collect();
+                    if !names.is_empty() {
+                        let shown = self
+                            .ground_rule
+                            .clone()
+                            .filter(|n| names.contains(n))
+                            .unwrap_or_else(|| "the largest for each circuit".into());
+                        egui::ComboBox::from_id_salt("drawings-ground-rule")
+                            .selected_text(shown)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.ground_rule,
+                                    None,
+                                    "the largest for each circuit",
+                                );
+                                for n in &names {
+                                    ui.selectable_value(&mut self.ground_rule, Some(n.clone()), n);
+                                }
+                            })
+                            .response
+                            .on_hover_text(
+                                "The ground rule the clearance line and the lines below \
                                          the lowest conductor take: one of the project's, or for \
                                          each circuit the largest of its voltage",
-                                    );
-                            }
-                            if let Some((d, name)) = rule {
-                                ui.checkbox(
-                                    &mut self.clearance_rule,
-                                    format!("from the ground rule \"{name}\" ({d} m)"),
-                                )
-                                .on_hover_text(
-                                    "The project's clearance rule for the ground (Checks › \
+                            );
+                    }
+                    if let Some((d, name)) = rule {
+                        ui.checkbox(
+                            &mut self.clearance_rule,
+                            format!("from the ground rule \"{name}\" ({d} m)"),
+                        )
+                        .on_hover_text(
+                            "The project's clearance rule for the ground (Checks › \
                                      Ground clearances, else the rule file chosen): its largest \
                                      vertical distance over the line's voltages",
-                                );
-                            }
-                        });
-                        ui.end_row();
+                        );
+                    }
+                });
+                ui.end_row();
 
-                        ui.label("Side profiles");
-                        ui.horizontal_wrapped(|ui| {
-                            let mut gone = None;
-                            for (k, o) in self.side_offsets.iter_mut().enumerate() {
-                                crate::style::field(ui,
-                                    egui::DragValue::new(o)
-                                        .range(-2000.0..=2000.0)
-                                        .suffix(" m")
-                                        .speed(0.5),
-                                )
-                                .on_hover_text("Offset from the axis, right positive");
-                                if ui.small_button("×").on_hover_text("Leave it out").clicked() {
-                                    gone = Some(k);
-                                }
-                            }
-                            if let Some(k) = gone {
-                                self.side_offsets.remove(k);
-                            }
-                            if ui
-                                .small_button("+")
-                                .on_hover_text("A ground profile beside the axis (dashed)")
-                                .clicked()
-                            {
-                                let next = self.side_offsets.last().map_or(10.0, |o| -o);
-                                self.side_offsets.push(next);
-                            }
-                        });
-                        ui.end_row();
+                ui.label("Side profiles");
+                ui.horizontal_wrapped(|ui| {
+                    let mut gone = None;
+                    for (k, o) in self.side_offsets.iter_mut().enumerate() {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(o)
+                                .range(-2000.0..=2000.0)
+                                .suffix(" m")
+                                .speed(0.5),
+                        )
+                        .on_hover_text("Offset from the axis, right positive");
+                        if ui.small_button("×").on_hover_text("Leave it out").clicked() {
+                            gone = Some(k);
+                        }
+                    }
+                    if let Some(k) = gone {
+                        self.side_offsets.remove(k);
+                    }
+                    if ui
+                        .small_button("+")
+                        .on_hover_text("A ground profile beside the axis (dashed)")
+                        .clicked()
+                    {
+                        let next = self.side_offsets.last().map_or(10.0, |o| -o);
+                        self.side_offsets.push(next);
+                    }
+                });
+                ui.end_row();
 
-                        ui.label("Plan across");
-                        ui.horizontal(|ui| {
-                            let mut on = self.plan_scale.is_some();
-                            ui.checkbox(&mut on, "own scale 1:")
-                                .on_hover_text(
-                                    "The plan across the line at its own scale (along it the \
+                ui.label("Plan across");
+                ui.horizontal(|ui| {
+                    let mut on = self.plan_scale.is_some();
+                    ui.checkbox(&mut on, "own scale 1:").on_hover_text(
+                        "The plan across the line at its own scale (along it the \
                                      horizontal scale, to line up with the profile)",
-                                );
-                            let mut k = self.plan_scale.unwrap_or(self.hscale / 2.0);
-                            ui.add_enabled(
-                                on,
-                                egui::DragValue::new(&mut k)
-                                    .range(10.0..=100_000.0)
-                                    .speed(10.0),
-                            );
-                            self.plan_scale = on.then_some(k);
-                        });
-                        ui.end_row();
+                    );
+                    let mut k = self.plan_scale.unwrap_or(self.hscale / 2.0);
+                    ui.add_enabled(
+                        on,
+                        egui::DragValue::new(&mut k)
+                            .range(10.0..=100_000.0)
+                            .speed(10.0),
+                    );
+                    self.plan_scale = on.then_some(k);
+                });
+                ui.end_row();
 
-                        ui.label("Logos");
-                        ui.vertical(|ui| {
-                            let mut gone = None;
-                            for (k, (file, width)) in self.logos.iter_mut().enumerate() {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        file.file_name()
-                                            .map_or(String::new(), |n| {
-                                                n.to_string_lossy().into_owned()
-                                            }),
-                                    )
-                                    .on_hover_text(file.display().to_string());
-                                    crate::style::field(ui,
-                                        egui::DragValue::new(width)
-                                            .range(1.0..=500.0)
-                                            .suffix(" mm")
-                                            .speed(0.5),
-                                    );
-                                    if ui.small_button("×").clicked() {
-                                        gone = Some(k);
-                                    }
-                                });
-                            }
-                            if let Some(k) = gone {
-                                self.logos.remove(k);
-                            }
-                            if ui
-                                .button("Add a logo…")
-                                .on_hover_text("SVG, PNG or JPEG, in the title block")
-                                .clicked()
-                                && let Some(file) = rfd::FileDialog::new()
-                                    .add_filter("Images", &["svg", "png", "jpg", "jpeg"])
-                                    .pick_file()
-                            {
-                                self.logos.push((file, 30.0));
-                            }
-                        });
-                        ui.end_row();
-
-                        ui.label("Elevations");
+                ui.label("Logos");
+                ui.vertical(|ui| {
+                    let mut gone = None;
+                    for (k, (file, width)) in self.logos.iter_mut().enumerate() {
                         ui.horizontal(|ui| {
-                            let e = &mut self.elevations;
-                            egui::ComboBox::from_id_salt("drawings-elevations")
-                                .selected_text(e.place.key())
-                                .show_ui(ui, |ui| {
-                                    for p in ohl_drawing::ElevationPlace::ALL {
-                                        ui.selectable_value(&mut e.place, p, p.key());
-                                    }
-                                })
-                                .response
-                                .on_hover_text(
-                                    "Each structure seen along the line on the plan, at the \
-                                     horizontal scale, a leader from where it stands \
-                                     (layer OHL_ELEVATIONS)",
-                                );
-                            let on = e.place != ohl_drawing::ElevationPlace::Off;
-                            ui.label("base");
-                            ui.add_enabled(
-                                on,
-                                egui::DragValue::new(&mut e.offset_mm)
-                                    .range(ELEVATION_OFFSETS)
+                            ui.label(
+                                file.file_name()
+                                    .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                            )
+                            .on_hover_text(file.display().to_string());
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(width)
+                                    .range(1.0..=500.0)
                                     .suffix(" mm")
                                     .speed(0.5),
-                            )
-                            .on_hover_text("From the line to the elevation's base, on paper");
-                            ui.label("at");
-                            ui.add_enabled(
-                                on,
-                                egui::DragValue::new(&mut e.rotation_deg)
-                                    .range(-180.0..=180.0)
-                                    .suffix("°")
-                                    .speed(1.0),
-                            )
-                            .on_hover_text(
-                                "Angle between the line and the elevation's height \
-                                 (90°: standing perpendicular to the line)",
                             );
+                            if ui.small_button("×").clicked() {
+                                gone = Some(k);
+                            }
                         });
-                        ui.end_row();
-
-                        ui.label("PNG");
-                        crate::style::field(ui,
-                            egui::DragValue::new(&mut self.dpi)
-                                .range(30.0..=600.0)
-                                .suffix(" dpi"),
-                        );
-                        ui.end_row();
-                    });
-                if let Ok(t) = &template {
-                    sheet_sections(ui, &mut self.sheet, t, model);
-                }
-                ui.horizontal(|ui| {
-                    let mut on = self.sheet_preview.is_some();
-                    ui.checkbox(&mut on, "Preview sheet")
-                        .on_hover_text(
-                            "One sheet as the export draws it, in a window of its own (its \
-                             route and sheet chosen there too)",
-                        );
-                    let mut n = self.sheet_preview.unwrap_or(self.preview_sheet).max(1);
-                    crate::style::field(ui, egui::DragValue::new(&mut n).range(1..=999).prefix("sheet "));
-                    self.preview_sheet = n;
-                    self.sheet_preview = on.then_some(n);
-                });
-                ui.checkbox(&mut self.profile_only, "the profile alone (no plan)");
-                ui.checkbox(
-                    &mut self.all_cases,
-                    "the other solved weather cases too (dashed)",
-                );
-                if !self.markers.is_empty() {
-                    ui.checkbox(
-                        &mut self.markers_on,
-                        format!(
-                            "the violations of the last clearance check ({}) as markers",
-                            self.markers.len()
-                        ),
-                    );
-                }
-                ui.checkbox(preview_on, PREVIEW_TICK)
-                    .on_hover_text(PREVIEW_HELP);
-                ui.horizontal(|ui| {
-                    if ui.button("Folder…").clicked()
-                        && let Some(dir) = rfd::FileDialog::new().pick_folder()
-                    {
-                        self.out = Some(dir);
                     }
-                    ui.label(
-                        self.out
-                            .as_ref()
-                            .map_or("no folder chosen".into(), |p| p.display().to_string()),
+                    if let Some(k) = gone {
+                        self.logos.remove(k);
+                    }
+                    if ui
+                        .button("Add a logo…")
+                        .on_hover_text("SVG, PNG or JPEG, in the title block")
+                        .clicked()
+                        && let Some(file) = rfd::FileDialog::new()
+                            .add_filter("Images", &["svg", "png", "jpg", "jpeg"])
+                            .pick_file()
+                    {
+                        self.logos.push((file, 30.0));
+                    }
+                });
+                ui.end_row();
+
+                ui.label("Elevations");
+                ui.horizontal(|ui| {
+                    let e = &mut self.elevations;
+                    egui::ComboBox::from_id_salt("drawings-elevations")
+                        .selected_text(e.place.key())
+                        .show_ui(ui, |ui| {
+                            for p in ohl_drawing::ElevationPlace::ALL {
+                                ui.selectable_value(&mut e.place, p, p.key());
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "Each structure seen along the line on the plan, at the \
+                                     horizontal scale, a leader from where it stands \
+                                     (layer OHL_ELEVATIONS)",
+                        );
+                    let on = e.place != ohl_drawing::ElevationPlace::Off;
+                    ui.label("base");
+                    ui.add_enabled(
+                        on,
+                        egui::DragValue::new(&mut e.offset_mm)
+                            .range(ELEVATION_OFFSETS)
+                            .suffix(" mm")
+                            .speed(0.5),
+                    )
+                    .on_hover_text("From the line to the elevation's base, on paper");
+                    ui.label("at");
+                    ui.add_enabled(
+                        on,
+                        egui::DragValue::new(&mut e.rotation_deg)
+                            .range(-180.0..=180.0)
+                            .suffix("°")
+                            .speed(1.0),
+                    )
+                    .on_hover_text(
+                        "Angle between the line and the elevation's height \
+                                 (90°: standing perpendicular to the line)",
                     );
                 });
-                ui.label(
-                    egui::RichText::new(
-                        "DXF: R12 sheets in mm, plus the plan in project coordinates and the \
+                ui.end_row();
+
+                ui.label("PNG");
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut self.dpi)
+                        .range(30.0..=600.0)
+                        .suffix(" dpi"),
+                );
+                ui.end_row();
+
+                crate::export_form::formats_row(ui, &Format::ALL, &mut self.formats);
+                crate::export_form::folder_row(ui, &mut self.out, None);
+            });
+            if let Ok(t) = &template {
+                sheet_sections(ui, &mut self.sheet, t, model);
+            }
+            ui.horizontal(|ui| {
+                let mut on = self.sheet_preview.is_some();
+                ui.checkbox(&mut on, "Preview sheet").on_hover_text(
+                    "One sheet as the export draws it, in a window of its own (its \
+                             route and sheet chosen there too)",
+                );
+                let mut n = self.sheet_preview.unwrap_or(self.preview_sheet).max(1);
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut n).range(1..=999).prefix("sheet "),
+                );
+                self.preview_sheet = n;
+                self.sheet_preview = on.then_some(n);
+            });
+            ui.checkbox(&mut self.profile_only, "the profile alone (no plan)");
+            ui.checkbox(
+                &mut self.all_cases,
+                "the other solved weather cases too (dashed)",
+            );
+            if !self.markers.is_empty() {
+                ui.checkbox(
+                    &mut self.markers_on,
+                    format!(
+                        "the violations of the last clearance check ({}) as markers",
+                        self.markers.len()
+                    ),
+                );
+            }
+            ui.checkbox(preview_on, PREVIEW_TICK)
+                .on_hover_text(PREVIEW_HELP);
+            ui.label(
+                egui::RichText::new(
+                    "DXF: R12 sheets in mm, plus the plan in project coordinates and the \
                          profile (station × exaggerated height) in metres. PDF: a page per \
                          sheet. CSV/XML: the profile's numbers.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                if let Some(lines) = &self.isoclearance {
-                    let mut keep = true;
-                    ui.horizontal(|ui| {
+                )
+                .small()
+                .weak(),
+            );
+            if let Some(lines) = &self.isoclearance {
+                let mut keep = true;
+                ui.horizontal(|ui| {
                         ui.label(format!(
                             "Isoclearance lines of Checks › Vegetation: {} on the plan (OHL_ISOCLEARANCE)",
                             lines.0.len()
@@ -2605,29 +2572,25 @@ impl DrawingsWindow {
                             keep = false;
                         }
                     });
-                    if !keep {
-                        self.isoclearance = None;
+                if !keep {
+                    self.isoclearance = None;
+                }
+            }
+            if crate::export_form::footer(ui, self.error.as_deref(), false) {
+                match Input::new(model, case, self) {
+                    Ok(input) => {
+                        self.error = None;
+                        job = Some(Job::start(
+                            "Exporting drawings".into(),
+                            false,
+                            ctx,
+                            move |report| run(&input, report),
+                        ));
                     }
+                    Err(e) => self.error = Some(e),
                 }
-                if let Some(e) = &self.error {
-                    crate::menu::error_label(ui, e);
-                }
-                if ui.button("Export").clicked() {
-                    match Input::new(model, case, self) {
-                        Ok(input) => {
-                            self.error = None;
-                            job = Some(Job::start(
-                                "Exporting drawings".into(),
-                                false,
-                                ctx,
-                                move |report| run(&input, report),
-                            ));
-                        }
-                        Err(e) => self.error = Some(e),
-                    }
-                }
-                });
-            });
+            }
+        });
         job
     }
 }
