@@ -143,11 +143,11 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
 }
 
 /// Plans & sheets (owner: OHL-Design UI review, 2026-10-26: the drawings
-/// out of File › Export): the sheets (Drawings…), the route, situation and
+/// out of File › Export): the sheets (Plan and profile sheets…), the route, situation and
 /// phase plans, a plan set, the bill of materials.
 pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
     if ui
-        .button("Drawings…")
+        .button("Plan and profile sheets…")
         .on_hover_text(
             "Plan and profile sheets and profile exports of the routes: SVG, DXF, PDF, PNG, \
              CSV, XML, at chosen scales and station range",

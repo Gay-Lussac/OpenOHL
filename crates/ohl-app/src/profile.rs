@@ -586,7 +586,9 @@ impl ProfileView {
             }
             ui.separator();
             // Ticks keep it open.
-            crate::menu::options_menu(ui, "Sheets", |ui| drawings.preview_menu(ui));
+            crate::menu::options_menu(ui, "Plan and profile sheets", |ui| {
+                drawings.preview_menu(ui)
+            });
         });
         // The line width: the drawings' (one setting).
         let depth = drawings.line_width();
@@ -679,7 +681,7 @@ impl ProfileView {
                 ui.label(
                     egui::RichText::new(
                         "Sheet preview: the export writes one continuous drawing (no sheet \
-                         format chosen in Plans & sheets › Drawings…)",
+                         format chosen in Plans & sheets › Plan and profile sheets…)",
                     )
                     .small()
                     .weak(),
@@ -706,8 +708,8 @@ impl ProfileView {
                 let page = p.paper.as_deref().unwrap_or("");
                 ui.label(
                     egui::RichText::new(format!(
-                        "Sheet preview: {} sheet(s) {page}, {} warning(s) — as File › Export › \
-                         Drawings… writes them",
+                        "Sheet preview: {} sheet(s) {page}, {} warning(s) — as Plans & sheets › \
+                         Plan and profile sheets… writes them",
                         sheets.len(),
                         warnings.len()
                     ))

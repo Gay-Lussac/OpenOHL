@@ -345,7 +345,11 @@ fn the_menus_are_grouped_by_task() {
     }
     h.get_by_label("Plans & sheets").click();
     h.run();
-    for item in ["Drawings…", "Plan set…", "Bill of materials ⏵"] {
+    for item in [
+        "Plan and profile sheets…",
+        "Plan set…",
+        "Bill of materials ⏵",
+    ] {
         h.get_by_label(item);
     }
     assert!(h.query_by_label_contains("Route").is_some());
@@ -354,7 +358,7 @@ fn the_menus_are_grouped_by_task() {
     // went to Plans & sheets.
     crate::tests::submenu(&mut h, "File", "Export");
     h.get_by_label("The line…");
-    assert!(h.query_by_label("Drawings…").is_none());
+    assert!(h.query_by_label("Plan and profile sheets…").is_none());
     close(&mut h);
     close(&mut h);
     // A tool held from Edit › Tools.

@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Export › Plans (owner, 2026-10-24: a menu of their own, apart from the
+//! Plans & sheets › Plans (owner, 2026-10-24: a menu of their own, apart from the
 //! plan-and-profile sheets): the **route plan** and the **situation
 //! plans** (north up, over the project's drawings and orthophotos) and the
 //! **phase plan** (the structures where the phase arrangement changes),
-//! written for every route of the Drawings window with its sheet template
+//! written for every route of the Plan and profile sheets window with its sheet template
 //! and title fields ([`crate::drawings::run_plans`]).
 
 use std::path::PathBuf;
@@ -246,7 +246,7 @@ impl PlansWindow {
     }
 
     /// The weather cases the plans asked for draw in (their templates'
-    /// and the Drawings window's per circuit): solved while the window is
+    /// and the Plan and profile sheets window's per circuit): solved while the window is
     /// open, the export waiting for them. The phase plan, a schematic,
     /// takes the case shown and needs none.
     pub fn wanted(&self, model: &Model, drawings: &crate::drawings::DrawingsWindow) -> Vec<usize> {
@@ -279,7 +279,7 @@ impl PlansWindow {
         v
     }
 
-    /// The window; `drawings` the Drawings window's settings (routes,
+    /// The window; `drawings` the Plan and profile sheets window's settings (routes,
     /// template, title fields, cases) the plans are made with.
     pub fn ui(
         &mut self,
@@ -307,7 +307,7 @@ impl PlansWindow {
                 ui.label(
                     egui::RichText::new(
                         "Plans beside the plan-and-profile sheets, for every route, with the \
-                         sheet template, title fields and routes of Plans & sheets › Drawings….",
+                         sheet template, title fields and routes of Plans & sheets › Plan and profile sheets….",
                     )
                     .small()
                     .weak(),
@@ -549,7 +549,7 @@ impl PlansWindow {
                 Some(out) => {
                     let mut w = drawings.clone();
                     // Alignments drawn together: every route read (the
-                    // Drawings window's one route aside).
+                    // Plan and profile sheets window's one route aside).
                     if self.kind == PlanKind::Phase
                         && self.groups.iter().any(|g| !g.alignments.is_empty())
                     {
@@ -584,9 +584,9 @@ impl PlansWindow {
 mod tests {
     use super::*;
 
-    /// Export › Plans on the example line: the route plan, the situation
+    /// Plans & sheets › Plans on the example line: the route plan, the situation
     /// plans and the phase plan written as PDF for every route, with the
-    /// Drawings window's settings.
+    /// Plan and profile sheets window's settings.
     #[test]
     fn the_plans_are_written() {
         let model = crate::tests::synthetic();

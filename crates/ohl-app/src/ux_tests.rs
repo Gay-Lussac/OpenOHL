@@ -413,7 +413,7 @@ fn tool_windows_dock_and_still_close_with_their_tool() {
     );
 }
 
-/// File › Export › Drawings… with a sheet template: the window shows the
+/// Plans & sheets › Plan and profile sheets… with a sheet template: the window shows the
 /// template, its values, the versions and its options; a sheet is
 /// previewed in a window of its own, as the export draws it.
 #[test]
