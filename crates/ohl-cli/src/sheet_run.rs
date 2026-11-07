@@ -47,11 +47,16 @@ fn project_templates(project: &Path) -> Vec<Found> {
         .collect()
 }
 
-/// The templates of the library folder (`libraries/sheet-templates`).
+/// The templates of the library folder (`libraries/sheet-templates`):
+/// its copy of the built-in template, unchanged, is not listed twice (it
+/// is there to be copied).
 fn library_templates() -> Vec<Found> {
     let dir = ohl_core::files::shipped_library(KIND);
     ohl_core::files::files_with_extension(&dir, EXTENSION)
         .into_iter()
+        .filter(|p| {
+            std::fs::read_to_string(p).map_or(true, |t| t != ohl_drawing::template::BUILTIN)
+        })
         .map(|p| Found {
             source: "library".into(),
             name: p

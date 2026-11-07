@@ -459,7 +459,19 @@ pub fn clearance(command: ClearanceCommand) -> Result<(), String> {
             let mut rows = String::from(
                 "case,method,section,span,other_section,other_span,distance_m,required_m,overlap,at_fraction,major_m,minor_m,other_major_m,other_minor_m,x,y,z\n",
             );
-            for case in chosen.iter().filter(|c| params.applies(&c.name)) {
+            let applying: Vec<_> = chosen.iter().filter(|c| params.applies(&c.name)).collect();
+            if applying.is_empty() {
+                return Err(format!(
+                    "no weather case to run: the parameters' cases ({}) match none of those chosen ({})",
+                    params.cases.join(", "),
+                    chosen
+                        .iter()
+                        .map(|c| c.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            for case in applying {
                 let started = Instant::now();
                 // By the parameters' calculation (2026-11-01; none: each
                 // section's own).
