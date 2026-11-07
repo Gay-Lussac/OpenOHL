@@ -1,0 +1,18 @@
+[package]
+name = "ohl-ui"
+description = "OpenOHL's look and widgets shared by OHL-Design and OHL-Structure: no model, no engine (docs/development/ui-shared.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+eframe.workspace = true
+log = "0.4"
+# The artwork's SVG files rasterised (pure Rust).
+resvg = { version = "0.48", default-features = false }
+
+[lints]
+workspace = true

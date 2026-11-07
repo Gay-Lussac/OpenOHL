@@ -978,35 +978,7 @@ impl StructureApp {
     }
 }
 
-/// The colour of a good result (nothing wrong): a green readable on the
-/// dark and the light theme (errors and warnings take the theme's own
-/// colours), as in OHL-Design.
-pub(crate) fn ok_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode {
-        egui::Color32::LIGHT_GREEN
-    } else {
-        egui::Color32::from_rgb(0, 120, 40)
-    }
-}
-
-/// An error in the theme's error colour; long ones scroll in a box of
-/// fixed height, so the window and its buttons stay in reach.
-pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) {
-    let text: egui::RichText = text.into();
-    let raw = text.text();
-    if raw.len() <= 300 && raw.lines().count() <= 4 {
-        ui.colored_label(ui.visuals().error_fg_color, text);
-        return;
-    }
-    let id = egui::Id::new(("error", raw.len(), raw.lines().next().unwrap_or("")));
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        egui::ScrollArea::vertical()
-            .id_salt(id)
-            .max_height(120.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| ui.colored_label(ui.visuals().error_fg_color, text));
-    });
-}
+pub(crate) use ohl_ui::messages::{error_label, ok_color};
 
 impl eframe::App for StructureApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
@@ -1017,7 +989,7 @@ impl eframe::App for StructureApp {
             &crate::layout::DOCK_VERSION,
         );
         self.recent.save(storage);
-        eframe::set_value(storage, crate::style::SCALE_KEY, &self.ui_scale);
+        crate::style::save_scale(storage, self.ui_scale);
         self.hotbar.save(storage);
     }
 
@@ -1050,7 +1022,7 @@ impl eframe::App for StructureApp {
         self.continuous_window(&ctx);
         self.status_bar(ui);
         self.notices.observe(&self.message, ctx.input(|i| i.time));
-        self.notices.ui(&ctx);
+        self.notices.ui(&ctx, crate::notices::TICK);
         self.windows(&ctx);
         if self.file.is_some() {
             egui::Panel::top("header").show(ui, |ui| self.header(ui));

@@ -23,6 +23,7 @@ ohl-structure-loads.workspace = true
 ohl-structure-link.workspace = true
 ohl-structure-export.workspace = true
 ohl-render.workspace = true
+ohl-ui.workspace = true
 # Plugins (Plugins › Plugin manager, design codes): a core crate, the
 # settings shared with the line application.
 ohl-plugins.workspace = true
@@ -35,9 +36,6 @@ clap.workspace = true
 toml_edit = "0.25"
 # Native file dialogs (Open, Save as).
 rfd = "0.17"
-# The artwork of assets/ (action icons, the mark, the window icon) drawn
-# from its SVG files: already used by ohl-drawing.
-resvg = { version = "0.48", default-features = false }
 log = "0.4"
 env_logger = "0.11"
 

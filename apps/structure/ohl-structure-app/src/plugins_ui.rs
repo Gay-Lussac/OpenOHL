@@ -794,7 +794,9 @@ impl StructureApp {
                                     }
                                 });
                         }
-                        Some(Err(e)) => error_label(ui, e.as_str()),
+                        Some(Err(e)) => {
+                            error_label(ui, e.as_str());
+                        }
                     }
                 }
                 if let Some((t, error)) = &p.status {
@@ -944,7 +946,9 @@ impl StructureApp {
                             take = Some(r.clone());
                         }
                     }
-                    Some(Err(e)) => error_label(ui, e.as_str()),
+                    Some(Err(e)) => {
+                        error_label(ui, e.as_str());
+                    }
                     None => {}
                 }
             });

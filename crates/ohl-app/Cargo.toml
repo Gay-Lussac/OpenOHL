@@ -49,13 +49,11 @@ toml_edit = "0.25"
 rfd = "0.17"
 ohl-drawing.workspace = true
 ohl-render.workspace = true
+ohl-ui.workspace = true
 eframe.workspace = true
 egui_dock.workspace = true
 clap.workspace = true
 png = "0.18"
-# The artwork of assets/ (tool icons, the mark, the window icon) drawn
-# from its SVG files: already used by ohl-drawing.
-resvg = { version = "0.48", default-features = false }
 log = "0.4"
 env_logger = "0.11"
 # The Python console (Plugins › Python console): an embedded interpreter.

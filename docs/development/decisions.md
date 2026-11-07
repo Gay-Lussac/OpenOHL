@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-11-07
 
+**A shared UI crate, `ohl-ui` (owner, 2026-11-07)**
+
+- The owner approved the plan of 2026-10-27 and adding the crate to what
+  `ohl-structure-app` may use. Built: the look, messages, notices, long tables,
+  the drawing of the artwork, the glyph test's helpers. Not moved yet: the
+  hotbar's drawing, the check footer ([A shared UI crate](ui-shared.md)).
+- Meant to change nothing visible, except that OHL-Structure's box for long
+  errors is now 160 points high as OHL-Design's (120 before), the small
+  differences being kept as parameters.
+
 **The sheet templates explained with drawings** (owner, 2026-11-07: "make
 sure the templates for the plans and all the parameters … are clearly
 explained and with graphical illustrations"). The guide

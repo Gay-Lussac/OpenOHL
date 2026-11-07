@@ -657,7 +657,9 @@ impl StructureApp {
                         .color(egui::Color32::from_rgb(80, 230, 200)),
                     );
                 }
-                Err(e) => error_label(ui, e.as_str()),
+                Err(e) => {
+error_label(ui, e.as_str());
+}
             }
             ui.horizontal(|ui| {
                 if ui

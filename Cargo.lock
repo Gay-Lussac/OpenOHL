@@ -3960,11 +3960,11 @@ dependencies = [
  "ohl-structures-fe",
  "ohl-terrain",
  "ohl-thermal",
+ "ohl-ui",
  "ohl-weather",
  "png",
  "pyo3",
  "pyo3-build-config",
- "resvg",
  "rfd",
  "rusqlite",
  "serde",
@@ -4325,7 +4325,7 @@ dependencies = [
  "ohl-structure-link",
  "ohl-structure-loads",
  "ohl-structures",
- "resvg",
+ "ohl-ui",
  "rfd",
  "serde",
  "toml 0.9.12+spec-1.1.0",
@@ -4452,6 +4452,15 @@ dependencies = [
  "ohl-weather",
  "serde",
  "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "ohl-ui"
+version = "0.0.2"
+dependencies = [
+ "eframe",
+ "log",
+ "resvg",
 ]
 
 [[package]]

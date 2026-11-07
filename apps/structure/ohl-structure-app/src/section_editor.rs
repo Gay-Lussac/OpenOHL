@@ -715,7 +715,9 @@ impl StructureApp {
                             });
                     });
             }
-            Err(e) => error_label(ui, e.as_str()),
+            Err(e) => {
+                error_label(ui, e.as_str());
+            }
         }
         for w in &check.warnings {
             ui.colored_label(ui.visuals().warn_fg_color, w);

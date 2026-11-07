@@ -34,7 +34,8 @@ Rules:
   `ohl-clearance`, `ohl-structures-fe`, `ohl-weather` and `ohl-cables`;
   the other application crates use the model and format crates
   (`ohl-core`, `ohl-structures`, `ohl-sections`) directly, and
-  `ohl-structure-app` also `ohl-render` and `ohl-plugins` (the link
+  `ohl-structure-app` also `ohl-render`, `ohl-plugins` and `ohl-ui` (the
+  look and widgets only; owner, 2026-11-07) (the link
   re-exports what they need of the engines, e.g. the usage
   classification `classify_usage`, `NEAR_FULL`).
 - Plugins reach the application only through `ohl-plugins` (a core

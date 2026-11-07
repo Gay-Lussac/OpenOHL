@@ -529,10 +529,11 @@ impl StructureApp {
         options_menu(ui, "Display options", |ui| self.display_options(ui));
         ui.separator();
         options_menu(ui, "UI scale", |ui| {
-            for s in crate::style::SCALES {
-                ui.radio_value(&mut self.ui_scale, s, format!("{:.0} %", s * 100.0))
-                    .on_hover_text("The size of the whole window's text and controls (kept)");
-            }
+            ohl_ui::style::scale_menu(
+                ui,
+                &mut self.ui_scale,
+                Some("The size of the whole window's text and controls (kept)"),
+            );
         });
         if item(
             ui,

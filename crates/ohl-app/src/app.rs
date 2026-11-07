@@ -2201,8 +2201,12 @@ impl eframe::App for App {
                     });
                 });
                 // The message also as a notice (errors stay until closed).
-                self.notices.observe(&ready.status, ctx.input(|i| i.time));
-                self.notices.ui(&ctx);
+                self.notices.observe_with(
+                    &ready.status,
+                    ctx.input(|i| i.time),
+                    crate::notices::plain,
+                );
+                self.notices.ui(&ctx, crate::notices::TICK);
                 let mut commands: Vec<crate::menu::Command> = Vec::new();
                 egui::Panel::top("top").show(ui, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {

@@ -692,7 +692,9 @@ impl StructureApp {
                 if let Some(p) = &c.pole {
                     match p {
                         Ok(p) => pole_ui(ui, p),
-                        Err(e) => error_label(ui, format!("{}: pole check: {e}", c.name)),
+                        Err(e) => {
+                            error_label(ui, format!("{}: pole check: {e}", c.name));
+                        }
                     }
                 }
                 match &c.fe {
@@ -700,7 +702,9 @@ impl StructureApp {
                         frame = offset_moments_ui(ui, r, &t);
                         case_ui(ui, r, (self.results.generation, self.results.shown));
                     }
-                    Some(Err(e)) => error_label(ui, format!("{}: {e}", c.name)),
+                    Some(Err(e)) => {
+                        error_label(ui, format!("{}: {e}", c.name));
+                    }
                     None => {}
                 }
             });
