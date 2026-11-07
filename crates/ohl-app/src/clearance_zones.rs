@@ -178,6 +178,10 @@ pub struct ZoneWindow {
     /// What the views draw of this window: shown (open with a report),
     /// the report's generation.
     drawn: Option<(bool, u64)>,
+    /// Tests: the check's thread holds its report until Stop (so a test
+    /// of Stop cannot see the run end first, however loaded the machine).
+    #[cfg(test)]
+    pub hold_report: bool,
 }
 
 /// A rule's distance not set yet (the placeholder of a window's first
@@ -238,6 +242,8 @@ impl ZoneWindow {
             stamp: Default::default(),
             rules_hash: (None, None),
             generation: 0,
+            #[cfg(test)]
+            hold_report: false,
             drawn: None,
             points: 0,
             estimate: String::new(),
@@ -491,6 +497,8 @@ impl ZoneWindow {
         let points = cloud.as_ref().map_or(0, |_| rule_points(model, &rules));
         self.stamp.started(model.revision());
         self.rules_hash.0 = Some(self.settings_hash());
+        #[cfg(test)]
+        let hold = self.hold_report;
         std::thread::spawn(move || {
             let started = Instant::now();
             let surfaces = named.read();
@@ -518,6 +526,11 @@ impl ZoneWindow {
                 rep
             });
             local.finish(LOCAL.1, started.elapsed());
+            // Tests: held until Stop (two minutes at most).
+            #[cfg(test)]
+            while hold && !c.is_cancelled() && started.elapsed() < Duration::from_secs(120) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
             let _ = tx.send(r);
             ctx.request_repaint();
         });

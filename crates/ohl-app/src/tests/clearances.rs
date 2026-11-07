@@ -411,6 +411,9 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
         let w = &mut r.radial_clearances;
         w.rules.clear();
         w.file = Some(dir.join("rules.ohlr"));
+        // The run's report held until Stop: under a loaded machine's
+        // test suite the run could otherwise end before Stop is clicked.
+        w.hold_report = true;
         // The swing arc: its ground check takes a while.
         w.wind = ohl_clearance::WindSteps {
             stepped: false,
@@ -475,7 +478,12 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
     let r = harness.state_mut().ready().unwrap();
     // Free at once: no run, no result taken from it.
     assert!(matches!(r.radial_clearances.result(), (None, false)));
-    harness.run();
+    // Stepped, not run to rest: the stopped thread's last repaint request
+    // can come at any frame.
+    harness.run_steps(4);
+    let r = harness.state_mut().ready().unwrap();
+    // Still free: the stopped run's report was dropped.
+    assert!(matches!(r.radial_clearances.result(), (None, false)));
     assert!(
         harness
             .query_by_label_contains("stopped: the previous results are kept")
