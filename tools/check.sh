@@ -7,7 +7,9 @@
 # keeps `main` green). Runs what CI runs, stopping at the first failure:
 # formatting, both clippy runs, the WebAssembly plugins the tests need,
 # every test (plugin and GPU tests required, not skipped), rustdoc, the
-# book, the documentation links, the validation benchmarks. Prints one
+# book, the documentation links, the validation benchmarks, every plugin
+# checked (`ohl plugin check`) and a plugin of every kind built from its
+# template. Prints one
 # line per step (`fmt-ok`, `clippy1-ok`, …, `218 cases: 218 passed, 0
 # failed`) and `check-ok` at the end.
 #
@@ -110,10 +112,34 @@ if [ -f "$PRIVATE/plugins.txt" ]; then
         d="$HERE/$d"
         (cd "$d" && env -u CARGO_TARGET_DIR $C build -q --release --target wasm32-wasip2 \
             && env -u CARGO_TARGET_DIR $C test -q 2>&1 | grep "test result" \
-            && env -u CARGO_TARGET_DIR $C clippy -q --target wasm32-wasip2 -- -D warnings) \
+            && env -u CARGO_TARGET_DIR $C clippy -q --target wasm32-wasip2 -- -D warnings \
+            && "$OUT/debug/ohl" plugin check . > /dev/null) \
             && echo "$(basename "$d")-ok" || { echo "$(basename "$d")-FAILED"; exit 1; }
     done
 fi
+
+# Every plugin of the repository as the applications will use it (ADR-0012).
+PLUGIN_DIRS=$(for d in plugins/examples/* plugins/tests/* plugins/codes/*; do
+    [ -f "$d/ohl-plugin.toml" ] && echo "$d"
+done)
+# shellcheck disable=SC2086
+"$OUT/debug/ohl" plugin check $PLUGIN_DIRS > "$OUT/plugin-check.log" 2>&1 \
+    && echo plugins-checked || { grep -B3 FAILED "$OUT/plugin-check.log" | head -30; echo plugin-check-FAILED; exit 1; }
+
+# A plugin of every kind from its template: written, formatted, built and
+# linted on its own, and checked (ADR-0012: the templates stay usable).
+TEMPLATES="$OUT/plugin-templates"
+rm -rf "${TEMPLATES:?}"
+for k in minimal design-code check io terrain project sheet-templates wire-colours system-styles member-capacity field-presets; do
+    t="$TEMPLATES/$k"
+    ("$OUT/debug/ohl" plugin new "my-$k" --kind "$k" --out "$t" > /dev/null \
+        && cd "$t" && $C fmt --check \
+        && env -u CARGO_TARGET_DIR $C build -q --release --target wasm32-wasip2 \
+        && env -u CARGO_TARGET_DIR $C clippy -q --release --target wasm32-wasip2 -- -D warnings \
+        && "$OUT/debug/ohl" plugin check . > /dev/null) || { echo "plugin-template-FAILED $k"; exit 1; }
+done
+rm -rf "${TEMPLATES:?}"
+echo plugin-templates-ok
 
 sh "$HERE/tools/prune-target.sh" "$OUT"
 [ "$OUT" = "$HERE/target" ] || [ ! -d "$HERE/target" ] || sh "$HERE/tools/prune-target.sh" "$HERE/target"

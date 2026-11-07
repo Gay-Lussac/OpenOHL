@@ -1098,6 +1098,41 @@ enum PluginCommand {
         /// Directory containing `ohl-plugin.toml`.
         dir: PathBuf,
     },
+    /// Check a plugin folder as the applications will use it, before
+    /// sharing it: the manifest (interface version, permissions, extension
+    /// points), the entry, every extension point it lists loaded and called
+    /// once with invented input, the exports it has against those it lists.
+    /// Exit status 1 when something is in error.
+    Check {
+        /// Directories containing `ohl-plugin.toml` (one or more).
+        #[arg(required = true)]
+        dirs: Vec<PathBuf>,
+    },
+    /// Write a new plugin's folder from a template: its manifest,
+    /// Cargo.toml, the plugin interface's WIT files and a skeleton of
+    /// `src/lib.rs` that builds (wasm32-wasip2) and passes `ohl plugin
+    /// check`.
+    New {
+        /// The plugin's name: lower-case letters, digits and -.
+        name: String,
+        /// What it offers: minimal, design-code, check, io, terrain,
+        /// project, sheet-templates, wire-colours, system-styles,
+        /// member-capacity or field-presets.
+        #[arg(long, default_value = "minimal")]
+        kind: String,
+        /// The folder to write (new or empty; default: the name).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Write the plugin interface's WIT files this program is built with
+    /// (plugin.wit, code.wit) into a folder: what a plugin is built against.
+    Wit {
+        /// The folder (created).
+        out: PathBuf,
+    },
+    /// List the extension points, the world a plugin of each is built for
+    /// and what the applications ask it.
+    Points,
 }
 
 fn main() -> ExitCode {
@@ -1191,9 +1226,13 @@ fn main() -> ExitCode {
         Some(Command::Structures {
             command: StructuresCommand::Report(args),
         }) => structure_app_run::report(&args),
-        Some(Command::Plugin {
-            command: PluginCommand::Info { dir },
-        }) => plugin_info(&dir),
+        Some(Command::Plugin { command }) => match command {
+            PluginCommand::Info { dir } => plugin_info(&dir),
+            PluginCommand::Check { dirs } => plugin_check(&dirs),
+            PluginCommand::New { name, kind, out } => plugin_new(&name, &kind, out),
+            PluginCommand::Wit { out } => plugin_wit(&out),
+            PluginCommand::Points => plugin_points(),
+        },
         Some(Command::Formats { plugin }) => report(io_run::formats(&plugin)),
         Some(Command::Code { command }) => report(code_run::run(command)),
         Some(Command::Surface { command }) => report(surface::run(command)),
@@ -3126,6 +3165,100 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool
             ExitCode::FAILURE
         }
     }
+}
+
+/// `ohl plugin check`: each folder's report; failure when one is in error.
+fn plugin_check(dirs: &[PathBuf]) -> ExitCode {
+    use ohl_plugins::sdk::Level;
+    let host = match ohl_plugins::WasmHost::new() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut failed = 0;
+    for dir in dirs {
+        if dirs.len() > 1 {
+            println!("{}", dir.display());
+        }
+        let report = host.check_plugin(dir);
+        for (level, text) in &report.lines {
+            let mark = match level {
+                Level::Ok => "ok   ",
+                Level::Note => "     ",
+                Level::Warning => "warn ",
+                Level::Error => "ERROR",
+            };
+            println!("{mark} {text}");
+        }
+        println!(
+            "{}: {} error(s), {} warning(s)",
+            if report.passed() { "passed" } else { "FAILED" },
+            report.count(Level::Error),
+            report.count(Level::Warning)
+        );
+        if !report.passed() {
+            failed += 1;
+        }
+    }
+    if failed == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// `ohl plugin new`: a new plugin's folder from a template.
+fn plugin_new(name: &str, kind: &str, out: Option<PathBuf>) -> ExitCode {
+    let dir = out.unwrap_or_else(|| PathBuf::from(name));
+    match ohl_plugins::sdk::new_plugin(&dir, name, kind) {
+        Ok(files) => {
+            for f in files {
+                println!("wrote {}", f.display());
+            }
+            println!(
+                "next: cd {} && cargo build --release --target wasm32-wasip2 && ohl plugin check .",
+                dir.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `ohl plugin wit`: the interface's WIT files into a folder.
+fn plugin_wit(out: &std::path::Path) -> ExitCode {
+    match ohl_plugins::sdk::write_wit(out) {
+        Ok(files) => {
+            for f in files {
+                println!("wrote {}", f.display());
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {}: {e}", out.display());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `ohl plugin points`: the extension points and their worlds.
+fn plugin_points() -> ExitCode {
+    let (major, minor) = ohl_plugins::SDK_VERSION;
+    println!("plugin interface {major}.{minor}");
+    println!("{:<16} {:<24} what the applications ask", "point", "world");
+    for p in ohl_plugins::sdk::EXTENSION_POINTS {
+        println!("{:<16} {:<24} {}", p.name, p.world, p.what);
+    }
+    println!(
+        "{:<16} {:<24} the minimal world, to start from",
+        "(none)", "plugin"
+    );
+    ExitCode::SUCCESS
 }
 
 fn plugin_info(dir: &std::path::Path) -> ExitCode {

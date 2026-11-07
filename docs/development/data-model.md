@@ -129,7 +129,12 @@ of before 2026-10-18 (the `ols` extensions `.ols`, `.ols.json`, `.olsw`,
 `ols-line`, plugin manifests `ols-plugin.toml`, `OLS_…` environment
 variables) are no longer read: removed 2026-10-26 before the first
 release (roadmap U12). Plugins of the `ols:plugin` interface (sdk 0.2)
-are refused. Kept on purpose, being on-disk or protocol names rather
+are refused. The plugin interface's versions and what keeps them
+(2026-11-07): the manifest's `sdk = "0.3"` is the version; the WIT
+package keeps the name `ohl:plugin@0.1.0` until a breaking change; the
+released interface is frozen in `crates/ohl-plugins/wit-frozen/0.3/` and
+compared on every check ([ADR-0012](../adr/0012-plugin-interface-versions.md);
+nothing a plugin sees changed with it). Kept on purpose, being on-disk or protocol names rather
 than readers of old files: the project table `ols_meta`, the ALPN
 `ols/2`, the data folders `OLS CAD` / `OLS Structure` and the window
 storage keys `ols-structure-…` (and the web client's `ols.…` browser

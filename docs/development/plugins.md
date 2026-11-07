@@ -52,6 +52,81 @@ under the [Mozilla Public License 2.0](https://github.com/Gay-Lussac/OpenOHL/blo
 a plugin built on them may keep any licence, a closed one included.
 OpenOHL itself is under the AGPL-3.0-or-later
 ([ADR-0011](../adr/0011-license-agpl.md)).
+## Start a plugin, check it, keep it working
+
+*Built 2026-11-07, in active development (not approved yet);
+[ADR-0012](../adr/0012-plugin-interface-versions.md).*
+
+A plugin is built outside this repository from the interface files the
+program carries. Four commands:
+
+```bash
+ohl plugin points                              # the extension points and their worlds
+ohl plugin new my-colours --kind wire-colours  # a new plugin's folder
+cd my-colours
+rustup target add wasm32-wasip2                # once
+cargo build --release --target wasm32-wasip2
+ohl plugin check .                             # as the applications will use it
+ohl plugin wit wit                             # the interface files of this program, again
+```
+
+**`ohl plugin new NAME --kind KIND`** writes a folder (`--out`, default the
+name; new or empty) with the manifest, `Cargo.toml` (`wit-bindgen`, built
+on its own), the interface's WIT files in `wit/`, a README and a skeleton
+`src/lib.rs` that builds and passes the check: each function answers
+"nothing yet" until filled in. The kinds are `minimal` (the `plugin`
+world, no extension point) and each extension point:
+
+| Kind | World | What the applications ask it |
+|---|---|---|
+| `design-code` | `code-plugin` | weather and load cases from the user's parameter file |
+| `check` | `check-plugin` | checks of the line (Checks menu), with their value tables |
+| `io` | `io-plugin` | file formats to export the line to or import it from |
+| `terrain` | `terrain-plugin` | terrain surfaces read from a file |
+| `project` | `project-plugin` | whole projects read from another program's files |
+| `sheet-templates` | `sheet-template-plugin` | sheet templates (or files named in the manifest) |
+| `wire-colours` | `wire-colour-plugin` | a colour per wire group |
+| `system-styles` | `system-style-plugin` | a colour, line codes and phase angles per system |
+| `member-capacity` | `member-capacity-plugin` | member capacities by a design method |
+| `field-presets` | `field-preset-plugin` | cuts and places for the fields, and their reports |
+
+A plugin offering more than one point builds a world of its own that
+includes others, e.g. `plugins/tests/wire-colours`: `include
+ohl:plugin/wire-colour-plugin@0.1.0; export
+ohl:plugin/system-styles@0.1.0;`, and lists both points.
+
+**`ohl plugin check DIR…`** reads the manifest (interface version,
+permissions, extension points it knows), finds the entry (or says to
+build it), loads the plugin in the world of each point it lists and calls
+each once with invented input, within the limits it is given: a design
+code generates from its own parameter template, a check lists its checks,
+wire colours and system styles answer one invented group or system,
+member capacities list their methods, sheet templates, plan sets and class
+schemes are read. It compares the exports with the points listed (an
+export no point names is never asked; a point without its export is an
+error) and the name and version `describe` gives with the manifest's. One
+line each, `ok`, `warn` or `ERROR`; the exit status is 1 when something is
+in error.
+
+**The interface version.** A manifest's `sdk = "0.3"` is the interface
+version the plugin is built for; the host loads only its own (0.3) before
+1.0. The WIT package keeps its name `ohl:plugin@0.1.0`, the name every
+import and export of a built plugin carries: it changes only with a
+breaking change, and is then made to match. Additions (a new interface,
+world, optional export, extension point or optional manifest key) keep
+0.3, and a plugin built before loads unchanged. What counts as breaking,
+and how long older versions are loaded from 1.0:
+[ADR-0012](../adr/0012-plugin-interface-versions.md).
+
+**Kept working.** `crates/ohl-plugins/wit-frozen/0.3/` is a copy of
+interface 0.3, never edited; a test fails when the live interface drops
+or changes any of its types, functions or worlds' exports.
+`crates/ohl-plugins/tests/compat-0.3/` holds one plugin of each world as
+built (`tools/plugin_fixtures.sh`, rebuilt only on purpose); a test loads
+each and checks it. The full check (`tools/check.sh`) also runs `ohl
+plugin check` on every plugin of the repository, and makes a plugin of
+every kind from its template, builds and checks it.
+
 ## Where plugins are found, and the shared settings
 
 Both desktop applications — the line application `ohl-design` (OHL-Design)
@@ -76,7 +151,7 @@ plugins are the line application's. See
 
 ## WebAssembly plugins
 
-The interface is defined in WIT: `crates/ohl-plugins/wit/plugin.wit`. A Rust example lives in `plugins/examples/hello-wasm`:
+The interface is defined in WIT: `crates/ohl-plugins/wit/plugin.wit` and `code.wit` (`ohl plugin wit DIR` writes them). Start a new plugin with `ohl plugin new` ([above](#start-a-plugin-check-it-keep-it-working)). A Rust example lives in `plugins/examples/hello-wasm`:
 
 ```bash
 rustup target add wasm32-wasip2

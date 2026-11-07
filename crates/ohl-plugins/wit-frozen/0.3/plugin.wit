@@ -1,0 +1,520 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// The plugin interface stays MPL-2.0 while OpenOHL is AGPL-3.0-or-later
+// (ADR-0011): a plugin built on it may keep any licence.
+
+// OpenOHL plugin interface (ADR-0003).
+//
+// This is the stable contract between OpenOHL and WebAssembly plugins.
+// Breaking changes require a new major version of the package.
+
+package ohl:plugin@0.1.0;
+
+/// Types shared by all plugins.
+interface types {
+    /// Identity of a plugin, reported to the host when it is loaded.
+    record plugin-info {
+        /// Unique plugin name, e.g. "acme-marker-balls".
+        name: string,
+        /// Plugin version (semantic versioning).
+        version: string,
+        /// One-line description.
+        description: string,
+    }
+}
+
+/// Minimal world every WebAssembly plugin implements.
+///
+/// Extension-point interfaces (cable models, design codes, checks, …) will be
+/// added as further exports in later versions.
+world plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// Example numeric entry point: total load of a uniformly distributed
+    /// load `load-per-meter` (N/m) over `span-length` (m), in N.
+    export span-load: func(load-per-meter: f64, span-length: f64) -> f64;
+}
+
+/// Types of file-format plugins (exporters and importers).
+interface io-types {
+    /// What a format does.
+    enum direction {
+        /// Writes a file from a (solved) model.
+        exporter,
+        /// Reads a file into a line.
+        importer,
+    }
+
+    /// A file format provided by a plugin.
+    record format {
+        /// Unique id, e.g. "geojson".
+        id: string,
+        /// One-line description.
+        description: string,
+        /// File extension, without the dot.
+        extension: string,
+        /// Exporter or importer.
+        direction: direction,
+    }
+}
+
+/// World of file-format plugins: export a solved model, import a file.
+///
+/// The export model is JSON (format "ohl-export-model", documented in the
+/// OpenOHL plugin guide): the line file, its coordinate system and, per
+/// weather case, the solved wires as polylines.
+world io-plugin {
+    use types.{plugin-info};
+    use io-types.{format};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// The formats this plugin provides.
+    export formats: func() -> list<format>;
+
+    /// Writes the model in format `format` (an exporter's id); `options`
+    /// are key/value pairs given by the user.
+    export export-model: func(format: string, model: string, options: list<tuple<string, string>>) -> result<list<u8>, string>;
+
+    /// Reads `data` in format `format` (an importer's id) and returns a line
+    /// file (.ohl.json) as JSON.
+    export import-file: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<string, string>;
+}
+
+/// Types of terrain plugins.
+interface terrain-types {
+    /// A terrain surface (TIN): points as x, y, z one after the other
+    /// (metres, x east, y north, z up), triangles as three point indices
+    /// each (from 0).
+    record surface {
+        /// Name (e.g. from the file).
+        name: string,
+        /// x0, y0, z0, x1, y1, z1, …
+        points: list<f64>,
+        /// a0, b0, c0, a1, b1, c1, …
+        triangles: list<u32>,
+    }
+}
+
+/// World of terrain plugins: read terrain surfaces (TINs) from files.
+world terrain-plugin {
+    use types.{plugin-info};
+    use io-types.{format};
+    use terrain-types.{surface};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// The surface formats this plugin reads (importers).
+    export formats: func() -> list<format>;
+
+    /// Reads the surfaces of `data` in format `format`.
+    export import-surfaces: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<list<surface>, string>;
+}
+
+/// Types of project plugins.
+interface project-types {
+    /// A library file of the project (as OpenOHL writes them).
+    record library-file {
+        /// Library kind: "cables" (.ohlw), "weather" (.ohlwc),
+        /// "loadcases" (.ohllc), "structures" (.ohls), "insulators"
+        /// (.ohli), "rules" (.ohlr), "galloping" (.ohlg), "ambient"
+        /// (.ohlta), "costs" (.ohlcost), "poles" (.ohlp), "femodels"
+        /// (.ohlfe).
+        kind: string,
+        /// File name, with its extension.
+        name: string,
+        /// The file's text (TOML).
+        text: string,
+    }
+
+    /// A project read from another program's file.
+    record project {
+        /// The line, as a line file (.ohl.json) in JSON.
+        line: string,
+        /// Its libraries.
+        libraries: list<library-file>,
+        /// What was read, what was left out or assumed (shown to the user).
+        notes: list<string>,
+    }
+}
+
+/// World of project plugins: read a whole project (line and libraries)
+/// from another program's file.
+world project-plugin {
+    use types.{plugin-info};
+    use io-types.{format};
+    use project-types.{project};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    /// The project formats this plugin reads (importers).
+    export formats: func() -> list<format>;
+
+    /// Reads a project from `data` in format `format`.
+    export import-project: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<project, string>;
+}
+
+/// Sheet templates a plugin offers as presets: page, title block, logos,
+/// band rows, legend, key map, the styles of the line's kinds and
+/// versions — everything of a plan and profile sheet (optional export of
+/// any plugin, extension point `sheet-templates`). Added in interface
+/// version 0.3 without changing anything else: plugins built before load
+/// as they are, and give none.
+interface sheet-templates {
+    /// An image a template names (`image = "logo.svg"` in a title block
+    /// cell).
+    record sheet-image {
+        /// The name the template uses, e.g. "logo.svg".
+        name: string,
+        /// "image/svg+xml", "image/png" or "image/jpeg".
+        media-type: string,
+        /// The file's bytes.
+        bytes: list<u8>,
+    }
+
+    /// A sheet template preset.
+    record sheet-template {
+        /// Name, unique among the plugin's templates (e.g. "a1-standard").
+        name: string,
+        /// What it is for, shown before it is chosen.
+        description: string,
+        /// The template, as a sheet template file (.ohlsheet, TOML,
+        /// format `ohl-sheet-template`).
+        template: string,
+        /// The images it names.
+        images: list<sheet-image>,
+    }
+
+    /// The plugin's sheet templates. The error says why there are none.
+    sheet-templates: func() -> result<list<sheet-template>, string>;
+}
+
+/// A plugin that gives sheet templates only (extension point
+/// `sheet-templates`).
+world sheet-template-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export sheet-templates;
+}
+
+/// The `sheet-templates` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world sheet-templates-export {
+    export sheet-templates;
+}
+
+/// Wire colours a plugin suggests (optional export of any plugin,
+/// extension point `wire-colours`), e.g. a utility's colour table by
+/// owner, voltage, frequency and phase. The host sends one group per
+/// circuit and phase of the line and applies what comes back only when
+/// the user asks (Line › Sections › Wire colours from a plugin…), as the
+/// sections' own colours. Added 2026-10-27 to interface version 0.3
+/// without changing anything else: plugins built before load as they are,
+/// and give none.
+interface wire-colours {
+    /// The sections of one circuit and phase, with what is known about
+    /// their electrical system.
+    record wire-group {
+        /// The circuit's name ("": none).
+        circuit: string,
+        /// The phase label (e.g. "L1", "UU"; "": none).
+        phase: string,
+        /// The electrical system's id; none: earthed (earth wire, OPGW).
+        system: option<string>,
+        /// The system's name ("" without one).
+        system-name: string,
+        /// Who owns the system (free text, "" without one).
+        owner: string,
+        /// Its number in the owner's register ("" without one).
+        number: string,
+        /// Nominal voltage, kV (none: earthed).
+        voltage-kv: option<f64>,
+        /// AC frequency, Hz (none: not given, or DC).
+        frequency-hz: option<f64>,
+        /// Direct current.
+        dc: bool,
+        /// The plugin's own column values on the system and the group's
+        /// sections (column name, value; the section's value when both
+        /// give one).
+        fields: list<tuple<string, string>>,
+        /// How many sections the group has.
+        sections: u32,
+    }
+
+    /// One colour per group, in the order given: "#rrggbb", or none (no
+    /// suggestion: the section keeps its colour). The error says why
+    /// there are none.
+    wire-colours: func(groups: list<wire-group>) -> result<list<option<string>>, string>;
+}
+
+/// A plugin that suggests wire colours only (extension point
+/// `wire-colours`).
+world wire-colour-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export wire-colours;
+}
+
+/// The `wire-colours` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world wire-colours-export {
+    export wire-colours;
+}
+
+/// Styles a plugin suggests for the line's electrical systems (optional
+/// export of any plugin, extension point `system-styles`), e.g. a
+/// utility's table of circuit colours, the line codes that tell a
+/// system's phases apart when wires are drawn by system, and the phase
+/// angles. Applied only when the user asks (Line › Sections › Wire colours
+/// from a plugin…). Added 2026-10-27 to interface version 0.3 without
+/// changing anything else: plugins built before load as they are, and give
+/// none.
+interface system-styles {
+    /// An electrical system of the line.
+    record system-info {
+        /// Its id.
+        id: string,
+        /// Its name.
+        name: string,
+        /// Who owns it ("" without one).
+        owner: string,
+        /// Its number in the owner's register ("" without one).
+        number: string,
+        /// Nominal voltage, kV.
+        voltage-kv: f64,
+        /// AC frequency, Hz (none: not given, or DC).
+        frequency-hz: option<f64>,
+        /// Direct current.
+        dc: bool,
+        /// Its phases' labels, in order.
+        phases: list<string>,
+        /// The plugin's own column values on the system (column name,
+        /// value).
+        fields: list<tuple<string, string>>,
+        /// How many sections carry it.
+        sections: u32,
+    }
+
+    /// What is suggested for one phase (none: left as it is).
+    record phase-style {
+        /// Line code when wires are drawn by system: `-` solid, else dots
+        /// and dashes repeated (e.g. `.-`).
+        code: option<string>,
+        /// Phase angle, degrees (AC).
+        angle-deg: option<f64>,
+    }
+
+    /// What is suggested for one system.
+    record system-style {
+        /// Its colour, "#rrggbb" (none: left as it is).
+        color: option<string>,
+        /// Per phase, in the order given (fewer: the rest left as they
+        /// are).
+        phases: list<phase-style>,
+    }
+
+    /// One style per system, in the order given. The error says why there
+    /// are none.
+    system-styles: func(systems: list<system-info>) -> result<list<system-style>, string>;
+}
+
+/// A plugin that suggests system styles only (extension point
+/// `system-styles`).
+world system-style-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export system-styles;
+}
+
+/// The `system-styles` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world system-styles-export {
+    export system-styles;
+}
+
+/// Field presets a plugin gives (optional export of any plugin, extension
+/// point `field-presets`; owner 2026-10-31: the core extension points for
+/// a building plugin): from the points the host gathers as the
+/// manifest's `[field-input]` table asks (LiDAR points of some class
+/// roles, the ground thinned, survey points of some codes, near the line)
+/// and the solved model, the plugin decides where vertical cuts across
+/// the line and given points are needed; the host runs the magnetic or
+/// electric field there and hands the results back (`ohl-field-results`
+/// JSON) for the plugin's report files, one cut at a time and then the
+/// rest (2026-11-02; changed in place: the export came after the last
+/// release). A pure function like every plugin: no host callbacks. Added
+/// 2026-10-31 to interface version 0.3 without changing anything else:
+/// plugins built before load as they are, and give none.
+interface field-presets {
+    /// A point the host gathered, metres in the line's coordinate system.
+    record input-point {
+        /// Easting, m.
+        x: f64,
+        /// Northing, m.
+        y: f64,
+        /// Elevation, m.
+        z: f64,
+        /// The LiDAR class (0 for a survey point).
+        class: u8,
+        /// A survey point's feature code ("" for a LiDAR point).
+        code: string,
+        /// A survey point's breakline id ("" for none).
+        line: string,
+    }
+
+    /// What the plugin decides from.
+    record field-input {
+        /// The user's parameters (TOML; the plugin's template when none
+        /// are given).
+        parameters: string,
+        /// The solved model, as the exporters receive it (JSON, format
+        /// `ohl-export-model`): the line and the case the field is run in.
+        model: string,
+        /// The points of the manifest's roles and survey codes.
+        points: list<input-point>,
+        /// The ground: the lowest point of the ground roles per cell, as
+        /// x0, y0, z0, x1, y1, z1, … (m).
+        ground: list<f64>,
+    }
+
+    /// A vertical cut across the line at a station of an alignment, its
+    /// plane perpendicular to the alignment (at an angle point along the
+    /// bisector), as the cross-section panels place theirs (2026-10-31:
+    /// "cuts are made on the alignment").
+    record cut {
+        /// Its label, shown with the results ("": none).
+        label: string,
+        /// The alignment's id (the export model's `line.alignments`).
+        alignment: string,
+        /// m along the alignment from its start (within it).
+        station: f64,
+        /// To either side of the axis, m (above 0).
+        width: f64,
+        /// Above the highest wire crossing the cut, m (0 or more).
+        above: f64,
+        /// Between the cut's points, m (above 0).
+        step: f64,
+    }
+
+    /// A point the field is asked at.
+    record place {
+        /// Its name, unique in the preset.
+        name: string,
+        /// Easting, m.
+        x: f64,
+        /// Northing, m.
+        y: f64,
+        /// Elevation, m; none: `height` above the ground.
+        z: option<f64>,
+        /// Height above the ground, m (when `z` is none).
+        height: option<f64>,
+    }
+
+    /// A building's outline the plugin found (for its report; the host
+    /// only checks it).
+    record outline {
+        /// Its id, unique in the preset.
+        id: string,
+        /// The ring in plan: x0, y0, x1, y1, … (m; three corners or more).
+        ring: list<f64>,
+        /// Its ground elevation, m.
+        ground: f64,
+        /// Its top, m.
+        top: f64,
+    }
+
+    /// A preset: where the field is computed.
+    record field-preset {
+        /// Its name, unique among the presets given.
+        name: string,
+        /// What it is for, in words.
+        description: string,
+        /// The cuts.
+        cuts: list<cut>,
+        /// The points.
+        points: list<place>,
+        /// Levels of the magnetic field's isolines, µT (above 0).
+        levels-ut: list<f64>,
+        /// Levels of the electric field's isolines, kV/m (above 0).
+        levels-kv-m: list<f64>,
+        /// The buildings' outlines.
+        outlines: list<outline>,
+        /// What was assumed or left out, in words (shown to the user).
+        notes: list<string>,
+    }
+
+    /// A file of the report.
+    record out-file {
+        /// Its name, without a folder.
+        name: string,
+        /// Its media type, e.g. "text/csv".
+        media-type: string,
+        /// Its bytes.
+        bytes: list<u8>,
+    }
+
+    /// The plugin's parameters, as a TOML template with their defaults.
+    parameters-template: func() -> string;
+
+    /// The presets for `input`. The error says why there are none.
+    field-presets: func(input: field-input) -> result<list<field-preset>, string>;
+
+    /// What a cut's report gives (2026-11-02).
+    record cut-report {
+        /// The cut's files.
+        files: list<out-file>,
+        /// What the plugin needs of the cut for its summary, in its own
+        /// form (handed back to `report` as it is).
+        summary: string,
+    }
+
+    /// The report files of one cut of the run (2026-11-02: one cut at a
+    /// time, so that a long line's results need not be held at once):
+    /// `cut` is its document (JSON, format `ohl-field-cut`: its place,
+    /// each field's grid and isolines, the plan's points and sections
+    /// along it), `plan` the field plan template (JSON, format
+    /// `ohl-field-plan`, its logos as data URIs; "" for none). Called
+    /// once per cut, before `report`. The error says why there are none.
+    report-cut: func(parameters: string, plan: string, preset: field-preset, cut: string) -> result<cut-report, string>;
+
+    /// The report files of `preset` (as the host checked it) besides the
+    /// cuts': from the run's `results` (JSON, format
+    /// `ohl-field-results-set`: one document per field computed, magnetic
+    /// first; each cut without its grids, its `span` in their place) and
+    /// the `summary` of each cut's report, in the cuts' order. The error
+    /// says why there are none.
+    report: func(parameters: string, plan: string, preset: field-preset, results: string, cuts: list<string>) -> result<list<out-file>, string>;
+}
+
+/// A plugin that gives field presets only (extension point
+/// `field-presets`).
+world field-preset-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export field-presets;
+}
+
+/// The `field-presets` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world field-presets-export {
+    export field-presets;
+}

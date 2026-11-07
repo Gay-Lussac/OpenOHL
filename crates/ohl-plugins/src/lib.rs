@@ -38,6 +38,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 pub mod field_presets;
+pub mod sdk;
 pub mod settings;
 pub use field_presets::{
     FIELD_PRESETS, FIELD_PRESETS_EXPORT, FieldInput, FieldInputTable, FieldPreset, InputPoint,
@@ -2033,8 +2034,17 @@ impl WasmHost {
             }
         }
         if worlds.is_empty() {
-            info = Some(self.load(dir)?.describe()?);
-            worlds.push("plugin");
+            // A world of its plain `describe` and an interface (sheet
+            // templates, wire colours, system styles, member capacities),
+            // or the minimal one: its `describe` alone, whatever the world.
+            info = Some(self.describe_plain(dir)?);
+            let world = manifest
+                .plugin
+                .extension_points
+                .iter()
+                .find_map(|e| sdk::extension_point(e))
+                .map_or("plugin", |p| p.world);
+            worlds.push(world);
         }
         let info = info.unwrap_or_else(|| PluginInfo {
             name: manifest.plugin.name.clone(),
@@ -2046,6 +2056,26 @@ impl WasmHost {
             info,
             details,
         })
+    }
+}
+
+impl WasmHost {
+    /// The plugin in `dir` described by its `describe` export, in any
+    /// world that has it (`func() -> plugin-info`).
+    fn describe_plain(&self, dir: &Path) -> Result<PluginInfo, PluginError> {
+        let mut p = self.prepare(dir, None)?;
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let describe = instance
+            .get_typed_func::<(), (PluginInfo,)>(&mut p.store, "describe")
+            .map_err(|e| classify(e, &p.manifest, "describe", p.limits))?;
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let (info,) = describe
+            .call(&mut p.store, ())
+            .map_err(|e| classify(e, &p.manifest, "describe", p.limits))?;
+        Ok(info)
     }
 }
 

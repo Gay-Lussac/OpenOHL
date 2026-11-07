@@ -10,6 +10,22 @@ of Parts A, B and C).
 
 ## 2026-11-07
 
+**The plugin SDK: templates, a check, versions kept (owner, 2026-11-07)**
+
+- The owner chose four improvements: `ohl plugin new` (a plugin of any
+  kind from a template, building outside the repository), `ohl plugin
+  check`, a compatibility guard, and the versioning rules written down
+  ([ADR-0012](../adr/0012-plugin-interface-versions.md), proposed). The
+  interface's two numbers stay as they are (owner: "leave as is, document
+  it"): `sdk = "0.3"` is the version, the WIT package `ohl:plugin@0.1.0`
+  changes only with a breaking change.
+- Found on the way: `ohl plugin info` failed on a plugin offering only
+  sheet templates, wire colours or member capacities (it fell back to the
+  minimal world, which asks `span-load`); it now describes any world by
+  its `describe`. The applications were not affected.
+- Every plugin of the repository and the owner's private ones pass `ohl
+  plugin check` unchanged; nothing a plugin implements changed.
+
 **A shared UI crate, `ohl-ui` (owner, 2026-11-07)**
 
 - The owner approved the plan of 2026-10-27 and adding the crate to what

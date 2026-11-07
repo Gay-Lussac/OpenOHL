@@ -1562,6 +1562,15 @@ owner.
 
 ### Phase 6 — Ecosystem & 1.0
 - [ ] Stable plugin SDK (semantic versioning, compatibility guarantees) — GitHub issue #34
+  *(2026-11-07, built, in active development (not approved yet)): the
+  versioning rules written down
+  ([ADR-0012](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/adr/0012-plugin-interface-versions.md),
+  proposed); a compatibility guard (the 0.3 interface frozen and compared
+  on every check, one plugin of each world kept as built and loaded by the
+  tests); `ohl plugin new` (a plugin of any kind from a template, built
+  outside the repository), `ohl plugin check`, `ohl plugin wit`, `ohl
+  plugin points`. Still open: 1.0 itself, and how long the host loads the
+  previous major version from then.*
 - [ ] Plugin registry / index — GitHub issue #34
 - [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-07: 27 theory pages and 236 validation cases, a report from `ohl validate --report`; not complete)*
 - [ ] Translations (i18n)

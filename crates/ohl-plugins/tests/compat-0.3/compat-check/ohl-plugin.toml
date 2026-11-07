@@ -1,0 +1,12 @@
+[plugin]
+name = "compat-check"
+version = "0.1.0"
+description = "A new plugin: checks of the line (Checks menu), with their value tables"
+sdk = "0.3"            # the plugin interface version it is built for
+tier = "wasm"
+entry = "plugin.wasm"
+extension-points = ["check"]
+
+[permissions]             # everything denied by default
+network = false
+filesystem = []

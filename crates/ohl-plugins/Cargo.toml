@@ -15,5 +15,9 @@ toml.workspace = true
 wasmtime = { version = "49", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "49", default-features = false, features = ["p2"] }
 
+[dev-dependencies]
+# The compatibility test compares the interface with its frozen copies.
+wit-parser = "0.258"
+
 [lints]
 workspace = true

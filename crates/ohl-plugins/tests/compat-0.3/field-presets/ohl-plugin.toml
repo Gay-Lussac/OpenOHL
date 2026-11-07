@@ -1,0 +1,16 @@
+[plugin]
+name = "field-presets"
+version = "0.1.0"
+description = "Test plugin: invented field presets for the synthetic double-circuit example (fixed cuts and points; not a building analysis)"
+sdk = "0.3"
+tier = "wasm"
+entry = "plugin.wasm"
+extension-points = ["field-presets"]
+
+[field-input]
+roles = ["building"]
+ground-roles = ["ground"]
+ground-cell = "2 m"
+survey-codes = ["BLD*"]
+reach = "100 m"
+max-points = 10000

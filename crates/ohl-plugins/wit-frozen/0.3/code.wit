@@ -1,0 +1,414 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// The plugin interface stays MPL-2.0 while OpenOHL is AGPL-3.0-or-later
+// (ADR-0011): a plugin built on it may keep any licence.
+
+// OpenOHL design-code plugin interface (ADR-0003), part of package
+// ohl:plugin (declared in plugin.wit).
+//
+// A design-code plugin turns the user's parameter file (TOML, every value
+// taken from the standard and its national annex by the user) into weather
+// cases and load cases, and may give presets of the clearance windows
+// and (optional export `rule-presets`) presets of any clearance rule set.
+// OpenOHL ships no code tables.
+
+/// Types of design-code plugins.
+interface code-types {
+    /// Identity of a design-code plugin.
+    record code-info {
+        /// Unique plugin name, e.g. "en50341".
+        name: string,
+        /// Plugin version (semantic versioning).
+        version: string,
+        /// One line: the code and what is generated.
+        description: string,
+        /// A parameter file to start from (TOML, every value a placeholder
+        /// to be replaced from the standard), its schema in comments.
+        parameters-template: string,
+    }
+
+    /// The clearance window a preset is for.
+    enum clearance-measure {
+        /// Vertical clearances… (the zone under the wire).
+        vertical,
+        /// Radial clearances… (the direct 3D distance).
+        radial,
+    }
+
+    /// A preset of a clearance window (Vertical clearances…, Radial
+    /// clearances…): its rules and the weather cases they name, loaded in
+    /// one click; the user may change both afterwards.
+    record clearance-preset {
+        /// Name, unique among the plugin's presets (e.g. "vertical").
+        name: string,
+        /// The window it is for.
+        measure: clearance-measure,
+        /// The rules, as a clearance rule file (.ohlr, TOML, format
+        /// `ohl-clearance-rules`), with its `[wind]` and `[check]` tables
+        /// (the wind steps and sides, the circuits, the calculation
+        /// method, the search distance).
+        rules: string,
+        /// The weather cases its rules name, as a weather case file
+        /// (.ohlwc, TOML).
+        weather-cases: string,
+    }
+
+    /// What a design code generated from a parameter file.
+    record generated {
+        /// Weather cases, as a weather case file (.ohlwc, TOML).
+        weather-cases: string,
+        /// Load cases, as a load case file (.ohllc, TOML); each names one
+        /// of the weather cases.
+        load-cases: string,
+        /// What was generated, assumed or left out (shown to the user).
+        notes: list<string>,
+        /// Presets of the clearance windows (none: an empty list).
+        clearance-presets: list<clearance-preset>,
+    }
+}
+
+/// World of design-code plugins (extension point `design-code`).
+world code-plugin {
+    use code-types.{code-info, generated, clearance-preset, clearance-measure};
+
+    /// Describes the plugin and its parameter file.
+    export describe: func() -> code-info;
+
+    /// Weather cases and load cases from a parameter file's text (TOML);
+    /// the error says what is wrong with the file.
+    export generate: func(parameters: string) -> result<generated, string>;
+}
+
+/// Wind factors for structures from a design code (optional for a
+/// design-code plugin: one built without it gives none, and OpenOHL keeps
+/// its generic drag factor and no shielding). Added in interface version
+/// 0.3 without changing anything else: plugins built before load as they
+/// are.
+interface structure-wind {
+    /// The code's wind factors for structures from the user's parameter
+    /// file (TOML, as `generate` reads it), as a section library file
+    /// (`.ohlsec`, TOML) holding only a `[wind]` table: `source`, `drag`
+    /// (a factor per profile shape: `equal_angle`, `circular_hollow`, …),
+    /// `face_drag` (a lattice face's drag factor by its solidity ratio)
+    /// and `shielding` (the factor on a face behind another by the
+    /// solidity ratio of the face in front, and the spacing ratio), each
+    /// optional. OpenOHL finds the faces, their solidity and which face is
+    /// behind which; the plugin gives only the numbers of its code, from
+    /// the parameter file. None: the code gives none. The error says what
+    /// is wrong with the parameter file.
+    structure-wind: func(parameters: string) -> result<option<string>, string>;
+}
+
+/// A design-code plugin that also gives wind factors for structures
+/// (extension point `design-code`).
+world code-wind-plugin {
+    include code-plugin;
+    export structure-wind;
+}
+
+/// Presets of any clearance rule set — ground, objects (LiDAR classes),
+/// crossings, wire to wire — from a design code (optional for a
+/// design-code plugin: one built without it gives none). Added in
+/// interface version 0.3 without changing anything else: plugins built
+/// before load as they are. The presets of the two clearance windows stay
+/// in `generated` (`clearance-presets`).
+interface rule-presets {
+    /// A preset of clearance rules.
+    record rule-preset {
+        /// Name, unique among the plugin's rule presets (e.g. "ground").
+        name: string,
+        /// What it holds and where its values come from, in words (the
+        /// articles of the code), shown before it is loaded.
+        description: string,
+        /// The rules, as a clearance rule file (.ohlr, TOML, format
+        /// `ohl-clearance-rules`): any targets (`ground`, `points`,
+        /// `same_line`, `other_lines`), each distance a distance, a table
+        /// by voltage (`{ by_voltage = [[up to kV, distance], …] }`) or a
+        /// base plus an amount per kV
+        /// (`{ base = …, per_kv = …, above_kv = … }`).
+        rules: string,
+        /// The weather cases its rules name, as a weather case file
+        /// (.ohlwc, TOML); empty when its rules name none (every case).
+        weather-cases: string,
+    }
+
+    /// The code's rule presets from the user's parameter file (TOML, as
+    /// `generate` reads it). `parameters` is empty when the user has
+    /// given none: a plugin whose presets come from its own data gives
+    /// them anyway, one that needs the file says so in the error. The
+    /// error says what is wrong with the parameter file.
+    rule-presets: func(parameters: string) -> result<list<rule-preset>, string>;
+}
+
+/// A design-code plugin that also gives wind factors for structures and
+/// rule presets (extension point `design-code`).
+world code-rules-plugin {
+    include code-wind-plugin;
+    export rule-presets;
+}
+
+/// The `rule-presets` export alone: how the host finds it in any
+/// design-code plugin (not a world to build plugins for).
+world rule-presets-export {
+    export rule-presets;
+}
+
+/// A check run by a plugin (extension point `check`): OpenOHL measures
+/// the line (the conductors, their pairs, stations along them: the
+/// geometry), the plugin holds the values and the rules and says what is
+/// required at each station. The first such check: the distance between
+/// conductors in the span (`phase-distance`).
+interface check {
+    /// A table of a check's values, shown to the user (and edited by an
+    /// admin, cell by cell, through `edit-value`).
+    record value-table {
+        /// Title.
+        title: string,
+        /// What it holds, in words.
+        note: string,
+        /// Column titles.
+        columns: list<string>,
+        /// Rows of cell texts.
+        rows: list<list<string>>,
+        /// Which columns may be edited.
+        editable: list<bool>,
+    }
+
+    /// A choice the user makes before a run (e.g. a diagram).
+    record choice {
+        /// Title.
+        title: string,
+        /// What it chooses.
+        help: string,
+        /// The options.
+        options: list<string>,
+        /// The option taken unless chosen.
+        default: u32,
+    }
+
+    /// A check the plugin runs.
+    record check-info {
+        /// Its id: what OpenOHL measures for it (`phase-distance`).
+        id: string,
+        /// Title in the Checks menu.
+        title: string,
+        /// Its submenu of the Checks menu, outer first.
+        menu: list<string>,
+        /// How the computation is done, shown in the check's window.
+        explanation: string,
+        /// Its values file (TOML) as shipped: values from the code, read
+        /// and edited through `value-tables` / `edit-value`.
+        values: string,
+        /// Extension of a values file (without the dot).
+        values-extension: string,
+        /// Choices before a run.
+        choices: list<choice>,
+        /// Plugin columns (`plugin.name`) the check's window shows per
+        /// circuit to be set there.
+        circuit-columns: list<string>,
+    }
+
+    /// A pair of conductors as OpenOHL measured it (`phase-distance`):
+    /// what the rules need besides the stations.
+    record conductor-pair {
+        /// In one electrical system (or towards an earth wire).
+        same-system: bool,
+        /// Both hang between the same two structures.
+        same-span: bool,
+        /// Nominal voltage of each conductor, kV (none: an earth wire).
+        kv: tuple<option<f64>, option<f64>>,
+        /// Plugin columns' values of each conductor's section
+        /// (`plugin.name`, value).
+        fields: tuple<list<tuple<string, string>>, list<tuple<string, string>>>,
+        /// Mean conductor height of the span, m above sea level.
+        altitude: f64,
+        /// Diameter of each conductor, mm.
+        diameter-mm: tuple<f64, f64>,
+        /// Mass of each conductor, kg/m.
+        mass-kg-m: tuple<f64, f64>,
+        /// Spacers join them in the span: the largest sag of each between
+        /// its spacer clamps (and its span's clamps), m.
+        spacer-sag: option<tuple<f64, f64>>,
+    }
+
+    /// What the plugin requires along a pair.
+    record evaluated {
+        /// Per station, `per-station` values: the required distance (m)
+        /// first, then the check's own (shown with the worst station).
+        values: list<f64>,
+        /// How many values per station.
+        per-station: u32,
+        /// The rule applied, in words (e.g. "2.2.1").
+        rule: string,
+    }
+
+    /// The checks the plugin runs.
+    checks: func() -> list<check-info>;
+
+    /// The values of `values` (a values file's text) as tables.
+    value-tables: func(check: string, values: string) -> result<list<value-table>, string>;
+
+    /// `values` with cell (`table`, `row`, `column`) set to `text`: the
+    /// new file's text, or what is wrong.
+    edit-value: func(check: string, values: string, table: u32, row: u32, column: u32, text: string) -> result<string, string>;
+
+    /// What is required at each station of a pair. `stations`: per
+    /// station 6 numbers — distance (m), system angle β from the vertical
+    /// (°), each conductor's local sag (m), each one's string length l_k
+    /// there (m).
+    evaluate: func(check: string, values: string, choices: list<u32>, pair: conductor-pair, stations: list<f64>) -> result<evaluated, string>;
+}
+
+/// World of check plugins (extension point `check`).
+world check-plugin {
+    export check;
+}
+
+/// A design-code plugin that also runs checks.
+world code-check-plugin {
+    include code-plugin;
+    export check;
+}
+
+/// A design-code plugin that also runs checks and gives rule presets.
+world code-check-rules-plugin {
+    include code-check-plugin;
+    export rule-presets;
+}
+
+/// The weather a check plugin suggests for one of its checks (optional
+/// export, looked for by the host on its own; 2026-10-27): the window of
+/// that check ticks the project's weather case matching it when it opens
+/// with none chosen (e.g. a code's unequal wind check at 10 °C and 650 Pa).
+/// Added to interface version 0.3 without changing anything else: plugins
+/// built before load as they are, and suggest none.
+interface check-weather {
+    /// A weather case to look for among the project's.
+    record weather-hint {
+        /// Temperature, °C.
+        temperature-c: f64,
+        /// Wind pressure, Pa.
+        wind-pa: f64,
+        /// With ice (else none).
+        ice: bool,
+    }
+
+    /// The weather suggested for check `check` (its id), if any.
+    check-weather: func(check: string) -> option<weather-hint>;
+}
+
+/// The `check-weather` export alone: how the host finds it in any check
+/// plugin (not a world to build plugins for).
+world check-weather-export {
+    export check-weather;
+}
+
+/// Member capacities from a design method (optional export of any
+/// plugin, extension point `member-capacity`; 2026-10-27): the structure
+/// check sends each member of a solved structure model — its section,
+/// material, length, design data and forces — and takes the compression
+/// and tension capacities the method gives; OpenOHL computes the usage
+/// (force over capacity times the strength factor). The core has a
+/// method of its own (ASCE 10-97) and a simple check; a plugin adds
+/// others. Added to interface version 0.3 without changing anything
+/// else: plugins built before load as they are, and give none.
+interface member-capacity {
+    /// A method the plugin gives.
+    record method-info {
+        /// Its name, as the user chooses it (e.g. "my-code-2024").
+        name: string,
+        /// What it is and where its rules come from, in words.
+        description: string,
+    }
+
+    /// One member, SI units (m, N, Pa), the forces of one load case.
+    record member-input {
+        /// Its id.
+        id: string,
+        /// `truss`, `frame`, `cable` or `tension` (tension only).
+        kind: string,
+        /// The profile's shape (`equal_angle`, `unequal_angle`,
+        /// `circular_hollow`, `general`, …; "" without a profile).
+        shape: string,
+        /// The profile's dimensions by name (`h`, `b`, `t`, `r`, `d`,
+        /// `tw`, `tf`), m.
+        dimensions: list<tuple<string, f64>>,
+        /// Area, m².
+        area: f64,
+        /// Second moment about the section's y, m⁴.
+        iy: f64,
+        /// Second moment about the section's z, m⁴.
+        iz: f64,
+        /// The minor principal second moment, m⁴.
+        iv: f64,
+        /// Elastic section modulus about y, m³ (none: not given).
+        wy: option<f64>,
+        /// Elastic section modulus about z, m³ (none: not given).
+        wz: option<f64>,
+        /// Young's modulus, Pa.
+        e: f64,
+        /// Yield strength, Pa (none: not given).
+        fy: option<f64>,
+        /// Ultimate tensile strength, Pa (none: not given).
+        fu: option<f64>,
+        /// The member's length, m.
+        length: f64,
+        /// Its effective length factor `k`.
+        k: f64,
+        /// Its effective length, m (none: k × length).
+        lk: option<f64>,
+        /// Its design data as a TOML table (the keys of
+        /// `[member.design]`, lengths in m and forces in N as plain
+        /// numbers, stresses in Pa; `crossing` the partner's id); "" for
+        /// none.
+        design: string,
+        /// Axial force, N, tension positive.
+        axial: f64,
+        /// End moments about the local y and z at its first and second
+        /// joint: my-i, mz-i, my-j, mz-j, N·m.
+        moments: list<f64>,
+        /// The crossing partner's axial force in this load case, N (none:
+        /// no partner).
+        partner-axial: option<f64>,
+    }
+
+    /// What the method gives for one member.
+    record member-result {
+        /// Compression capacity, N (none: the method gives none).
+        compression: option<f64>,
+        /// What governs it, in words (e.g. "KL/r 85").
+        compression-governs: string,
+        /// Tension capacity, N (none: the method gives none).
+        tension: option<f64>,
+        /// What governs it, in words (e.g. "net section").
+        tension-governs: string,
+        /// Notes for this member (assumptions, limits), in words.
+        notes: list<string>,
+    }
+
+    /// The methods the plugin gives.
+    methods: func() -> list<method-info>;
+
+    /// The capacities of `members` (one result each, in order) by method
+    /// `method`, for a load case of strength factor `strength`. The error
+    /// says why there are none.
+    member-capacities: func(method: string, strength: f64, members: list<member-input>) -> result<list<member-result>, string>;
+}
+
+/// A plugin that gives member capacities only (extension point
+/// `member-capacity`).
+world member-capacity-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export member-capacity;
+}
+
+/// The `member-capacity` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world member-capacity-export {
+    export member-capacity;
+}
