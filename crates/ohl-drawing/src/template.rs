@@ -541,9 +541,9 @@ impl Default for NorthArrowSpec {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScaleBarSpec {
-    /// `"bottom"` (in the bottom row, beside the title block), `"plan"`,
-    /// `"profile"` (in the panel's lower left corner) or `"off"`
-    /// (default).
+    /// `"bottom"` (in the bottom row, beside the title block), `"plan"`
+    /// (the panel's lower left corner), `"profile"` (its upper left
+    /// corner) or `"off"` (default).
     #[serde(default = "off")]
     pub place: String,
     /// The lengths shown: along the line (horizontal scale) and, for the

@@ -249,6 +249,35 @@ fn in_svg(text: &str) -> String {
     )
 }
 
+/// The revision table: the heading at the bottom, the newest revision at
+/// the top, the oldest next to the heading.
+#[test]
+fn the_newest_revision_is_at_the_top() {
+    let t = template(&example_text());
+    let mut o = options(t);
+    o.fields
+        .revisions
+        .push(Revision::parse("B;2026-11-02;second issue;AB;CD"));
+    let mut d = main_route(&o);
+    d.set_case("t");
+    let svg = sheets(&d, &o, &page_format("A1").unwrap())[0].svg();
+    let y_of = |text: &str| -> f64 {
+        let end = svg.find(&format!(">{text}<")).expect(text);
+        let start = svg[..end].rfind("<text").unwrap();
+        let tag = &svg[start..end];
+        let from = tag.find(" y=\"").unwrap() + 4;
+        let to = from + tag[from..].find('"').unwrap();
+        tag[from..to].parse().unwrap()
+    };
+    let (newest, oldest, heading) = (
+        y_of("second issue"),
+        y_of("first issue"),
+        y_of("Description"),
+    );
+    assert!(newest < oldest, "{newest} {oldest}");
+    assert!(oldest < heading, "{oldest} {heading}");
+}
+
 /// Regression (sheet defect 3): every legend entry the export makes and
 /// the panels' titles take the template's words (`[legend.labels]`, with
 /// their placeholders; `[layout] plan_title`, `profile_title`); English

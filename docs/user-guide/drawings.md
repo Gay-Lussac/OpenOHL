@@ -543,7 +543,11 @@ Beside the plan-and-profile sheets (2026-10-24, the owner's request,
 roadmap O14; built, in active development (not approved yet)), three
 plans in a menu of their own, **Export › Plans**, each written for every
 route with the sheet template, title fields, routes and cases of Export ›
-Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
+Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF. A template sets their
+frame, title block and words only; [Which drawing uses
+what](sheet-templates.md#which-drawing-uses-what) shows each plan and what it
+takes from the template.
+
 
 - **Route plan** — the whole route **north up** at a small scale
   (1:5000 to 1:25 000, 1:10 000 by default), over the project's drawings
@@ -599,11 +603,14 @@ The drawings come within 1 km of the line in full detail (5 cm), north
 up; the orthophotos are read at the template's background resolution.
 
 From the command line: `ohl drawing … --plans route,situation,phase`
-(`--route-plan-scale`, `--situation-scale`; the sheets' `--page`, else
-A3) writes `<route>-route-plan`, `-situation-plan`, `-phase-plan` beside
+(`--route-plan-scale`, `--situation-scale`; the paper of `--page`, else the
+template's, else A3) writes `<route>-route-plan`, `-situation-plan`, `-phase-plan` beside
 the sheets (the project's drawings and orthophotos read for them).
 
 ### Plan sets
+
+![A plan set file's four drawings and the files they write, and the one PDF of the
+set](../images/sheet-templates/plan-set.svg)
 
 **Plans & sheets › Plan set…** (2026-10-24) writes several drawings in one
 go, as a **plan set** lists them — a plugin's (its manifest's
@@ -630,6 +637,18 @@ kind = "situation"
 page = "A1"
 scale = 1000               # 1:500 to 1:2000 (route plan: 1:5000 to 1:25 000)
 ```
+
+| Key | Values | Default | What it does |
+|---|---|---|---|
+| `format`, `version` | `"ohl-plan-set"`, `1` | Required | The file's kind |
+| `name` | Text | Required | Its name, and the one PDF's |
+| `description` | Text | Empty | What it is for, shown in the window |
+| `[[drawing]]` | At least one | | A drawing to write, in this order |
+| `kind` | `"sheets"`, `"route"`, `"situation"`, `"phase"` | Required | Which drawing |
+| `template` | A [sheet template](sheet-templates.md)'s name | The one chosen for the drawings | Its template, the plugin's own first |
+| `page` | A standard paper size | The one chosen; the plans: A3 | Its paper |
+| `scale` | 1:… | The one chosen, or the plan's usual | Sheets: horizontal, 1:10 to 1:100 000. Route plan: 1:5000 to 1:25 000. Situation plans: 1:500 to 1:2000. Phase plan: none |
+| `vertical_scale` | 1:… | The one chosen | Sheets only, up to 1:100 000; refused on a plan |
 
 Each drawing is written as before (the sheets as `<route>-sheet-NN`,
 the plans as `<route>-situation-plan` …), in the formats ticked. A set

@@ -1148,15 +1148,14 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
         // The corridor's edges either side of the axis.
         if let Some(half) = m.corridor.filter(|x| *x > 0.0) {
             for side in [-1.0, 1.0] {
+                // Both ends of each piece, or the last piece is lost.
                 let edge: Vec<[f64; 2]> = line
                     .windows(2)
-                    .map(|p| {
+                    .flat_map(|p| {
                         let (dx, dy) = (p[1][0] - p[0][0], p[1][1] - p[0][1]);
                         let l = dx.hypot(dy).max(1e-9);
-                        to([
-                            p[0][0] + side * half * dy / l,
-                            p[0][1] - side * half * dx / l,
-                        ])
+                        let (ox, oy) = (side * half * dy / l, -side * half * dx / l);
+                        [p[0], p[1]].map(|q| to([q[0] + ox, q[1] + oy]))
                     })
                     .collect();
                 for run in clip(edge) {
@@ -1376,6 +1375,34 @@ mod tests {
     /// on a sheet, north up; the situation plan at 1:1000 needs more
     /// sheets than the route plan at 1:10 000; the sheets overlap; a
     /// drawing near the line is drawn, its text too.
+    /// The corridor's edges go on to the line's end: each piece of the
+    /// centreline gives both its ends (the last one used to be lost, half
+    /// a short route at a small scale).
+    #[test]
+    fn the_corridor_reaches_the_end_of_the_line() {
+        let d = main_route(&Options::default());
+        let page = crate::page_format("A3").unwrap();
+        let half = 50.0;
+        let m = MapPlan::new(MapKind::Route, Some(half));
+        let plan = map_plan(&d, &Options::default(), &page, &m);
+        let along = |layer: crate::model::Layer| {
+            let xs = plan[0].drawing.items.iter().filter_map(|i| match i {
+                crate::model::Item::Path(p) if p.layer == layer => Some(&p.points),
+                _ => None,
+            });
+            xs.flatten()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                    (lo.min(p[0]), hi.max(p[0]))
+                })
+        };
+        let axis = along(crate::model::Layer::Centreline);
+        let edges = along(crate::model::Layer::Corridor);
+        let on_paper = half * 1000.0 / m.scale;
+        assert!(axis.1 > axis.0, "{axis:?}");
+        assert!(edges.0 <= axis.0 + on_paper, "{edges:?} {axis:?}");
+        assert!(edges.1 >= axis.1 - on_paper, "{edges:?} {axis:?}");
+    }
+
     #[test]
     fn the_route_and_situation_plans_cover_the_line() {
         let mut d = main_route(&Options::default());

@@ -8,6 +8,33 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-07
+
+**The sheet templates explained with drawings** (owner, 2026-11-07: "make
+sure the templates for the plans and all the parameters … are clearly
+explained and with graphical illustrations"). The guide
+[Sheet templates](../user-guide/sheet-templates.md) is rewritten: a section per
+part of a template, each key with its values, default and effect, and drawings
+made by `tools/sheet_template_figures.py`, most of them real sheets of the
+invented example line drawn by `ohl drawing`, so that they follow the program.
+New: which drawing uses which part of a template, found by changing each part
+and comparing the files. The route, situation and phase plans take the frame,
+the title block, the fields and the words; their north arrow, scale bar, short
+legend and pens are the program's. No format changed.
+
+Two defects found by looking at the drawings, fixed:
+
+- **The corridor on the route and situation plans** lost the last piece of the
+  centreline: each piece gave only its start. On a short route at a small scale
+  that was half the route. Each piece now gives both its ends.
+- **The revision table** drew the oldest revision at the top, against what the
+  guide and the code said. Now the newest is at the top, the oldest next to the
+  heading.
+
+Left as they are, said in the guide: `{heading}` ends in ": plan and profile" on
+the plans too (write `{plan_kind}` and `{route_name}`); scale bars' `lengths` long
+at a large scale overrun their 70 × 16 mm box in the bottom row.
+
 ## 2026-11-05
 
 **Radial ground clearances within the reach; `ohl zones` progress**

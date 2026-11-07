@@ -369,8 +369,8 @@ pub(crate) fn revisions(
     let h = spec.row_height.0;
     let size = spec.size.0;
     let rows: Vec<&crate::Revision> = o.fields.revisions.iter().rev().take(spec.rows).collect();
-    // Rows from the top: the newest first, the heading at the bottom (next
-    // to the title block).
+    // The heading at the bottom (next to the title block), the rows up from
+    // it: the oldest next to the heading, the newest at the top.
     let heading_y = r[1] + r[3] - h;
     let mut x = r[0];
     for col in &spec.columns {
@@ -397,7 +397,7 @@ pub(crate) fn revisions(
             &title,
         ));
         for (k, rev) in rows.iter().enumerate() {
-            let y = heading_y - h * (k as f64 + 1.0);
+            let y = heading_y - h * (rows.len() - k) as f64;
             let text = fill(&col.value, &|n, f| {
                 rev.get(n).map(str::to_owned).or_else(|| values.get(n, f))
             });
