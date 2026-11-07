@@ -51,14 +51,21 @@ def ground(x, y):
 # Road across span T4-T5: a 2 m embankment, 8 m wide at the top, along
 # x = 1090 (its slopes run to the grid points 10 m either side).
 ROAD_X, HALF_WIDTH, BANK = 1090.0, 4.0, 2.0
-rows = ["x,y,z,code,line"]
-for i in range(-5, 67):
-    for j in range(-8, 32):
-        x, y = i * 20.0, j * 20.0
-        rows.append(f"{x:.2f},{y:.2f},{ground(x, y):.3f},GND,")
-for side, dx in (("left", -HALF_WIDTH), ("right", HALF_WIDTH)):
-    for j in range(-8, 32):
-        x, y = ROAD_X + dx, j * 20.0
-        rows.append(f"{x:.2f},{y:.2f},{ground(x, y) + BANK:.3f},ROAD,road-{side}")
-(HERE / "synthetic-survey.csv").write_text("\n".join(rows) + "\n")
-print(f"wrote {len(rows) - 1} points")
+
+
+def write():
+    rows = ["x,y,z,code,line"]
+    for i in range(-5, 67):
+        for j in range(-8, 32):
+            x, y = i * 20.0, j * 20.0
+            rows.append(f"{x:.2f},{y:.2f},{ground(x, y):.3f},GND,")
+    for side, dx in (("left", -HALF_WIDTH), ("right", HALF_WIDTH)):
+        for j in range(-8, 32):
+            x, y = ROAD_X + dx, j * 20.0
+            rows.append(f"{x:.2f},{y:.2f},{ground(x, y) + BANK:.3f},ROAD,road-{side}")
+    (HERE / "synthetic-survey.csv").write_text("\n".join(rows) + "\n")
+    print(f"wrote {len(rows) - 1} points")
+
+
+if __name__ == "__main__":
+    write()
