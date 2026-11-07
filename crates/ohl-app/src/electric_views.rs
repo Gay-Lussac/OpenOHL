@@ -37,15 +37,15 @@ impl ElectricFieldWindow {
     /// too: they carry charge), listed once per version of the line and
     /// case.
     fn piece_stats(&mut self, model: &Model) -> PieceStats {
-        let key = (model.line_version, self.case);
-        if let Some((k, s)) = &self.pieces_seen
+        let key = (model.line_version, self.common.case);
+        if let Some((k, s)) = &self.common.pieces_seen
             && *k == key
         {
             return *s;
         }
-        let spans = self.spans(model);
-        let st = piece_stats(model, &spans, self.case, true);
-        self.pieces_seen = Some((key, st));
+        let spans = self.common.spans(model);
+        let st = piece_stats(model, &spans, self.common.case, true);
+        self.common.pieces_seen = Some((key, st));
         st
     }
 
@@ -53,7 +53,7 @@ impl ElectricFieldWindow {
     /// magnetic field's short measurement times [`IMAGES`] made slower by
     /// [`SUSTAINED`]; and where it comes from.
     fn rate(&self) -> (f64, &'static str) {
-        match self.rate {
+        match self.common.rate {
             Some(r) => (r, "at the last run's speed"),
             None => (
                 magnetic::seconds_per_piece_point() * IMAGES * SUSTAINED,
@@ -66,7 +66,7 @@ impl ElectricFieldWindow {
     pub(super) fn views_ui(&mut self, ui: &mut egui::Ui, model: &Model, spans: &Spans) {
         let st = self.piece_stats(model);
         let (rate, rate_from) = self.rate();
-        let pieces = match self.piece_length {
+        let pieces = match self.common.piece_length {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
@@ -116,7 +116,7 @@ impl ElectricFieldWindow {
                     fine: self.tile,
                     ..Default::default()
                 }
-                .tiles(self.width);
+                .tiles(self.common.width);
                 let text = if !self.tiled {
                     "Only on the tiled floor (Ground): with the plane under each point the \
                      structures are not modelled."
@@ -144,13 +144,13 @@ impl ElectricFieldWindow {
                 ui.end_row();
                 ui.label("Wire pieces");
                 ui.horizontal(|ui| {
-                    let mut finer = self.piece_length.is_some();
+                    let mut finer = self.common.piece_length.is_some();
                     ui.radio_value(&mut finer, false, "as solved");
                     ui.radio_value(&mut finer, true, "at most");
                     if !finer {
-                        self.piece_length = None;
+                        self.common.piece_length = None;
                     } else {
-                        let l = self.piece_length.get_or_insert(1.0);
+                        let l = self.common.piece_length.get_or_insert(1.0);
                         crate::style::field(
                             ui,
                             egui::DragValue::new(l).range(0.1..=50.0).speed(0.1).suffix(" m"),
@@ -165,7 +165,7 @@ impl ElectricFieldWindow {
                     st.longest,
                     st.off * 1e3
                 );
-                let text = match self.piece_length {
+                let text = match self.common.piece_length {
                     Some(l) if st.longest > 0.0 => {
                         let parts = (st.longest / l).ceil().max(1.0);
                         let off = st.off / (parts * parts);
@@ -200,15 +200,15 @@ impl ElectricFieldWindow {
                 );
                 ui.end_row();
                 // The profiles' and points' time.
-                let across = (2.0 * self.width / self.step.max(0.01)).round() + 1.0;
-                let profiles = match self.stations {
-                    Stations::EverySpan => self.span_pick.chosen(model, spans).0.len().max(1) as f64,
+                let across = (2.0 * self.common.width / self.common.step.max(0.01)).round() + 1.0;
+                let profiles = match self.common.stations {
+                    Stations::EverySpan => self.common.span_pick.chosen(model, spans).0.len().max(1) as f64,
                     Stations::One { .. } => 1.0,
                     Stations::Beside { .. } => {
-                        2.0 * self.span_pick.chosen(model, spans).0.len().max(1) as f64
+                        2.0 * self.common.span_pick.chosen(model, spans).0.len().max(1) as f64
                     }
                 };
-                let given = self.points.as_ref().map_or(0, |p| p.1.len()) as f64;
+                let given = self.common.points.as_ref().map_or(0, |p| p.1.len()) as f64;
                 let points = profiles * across + given;
                 ui.label("Profiles");
                 crate::check_help::explain(
@@ -225,21 +225,21 @@ impl ElectricFieldWindow {
             });
         // The drawing of the model: the pieces of a span.
         let per_span =
-            (st.span() / self.piece_length.unwrap_or(st.longest).max(0.1)).ceil() as usize;
+            (st.span() / self.common.piece_length.unwrap_or(st.longest).max(0.1)).ceil() as usize;
         crate::field_help::pieces(ui, per_span);
     }
 
     /// Section 5: the levels drawn, the cuts coloured by band, and the
     /// field in any cross-section panel opened.
     fn levels_ui(&mut self, ui: &mut egui::Ui, rate: f64, rate_from: &str, pieces: f64) {
-        crate::field_help::cut(ui, self.in_cuts.unwrap_or(1.0));
+        crate::field_help::cut(ui, self.common.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.label(egui::RichText::new("Levels drawn (kV/m, display only: none is a limit)").small());
         let mut remove = None;
         egui::Grid::new("electric-field-levels")
             .spacing([8.0, 2.0])
             .show(ui, |ui| {
-                for (k, l) in self.levels.iter_mut().enumerate() {
+                for (k, l) in self.common.levels.iter_mut().enumerate() {
                     ui.checkbox(&mut l.on, "");
                     crate::style::field(
                         ui,
@@ -260,51 +260,51 @@ impl ElectricFieldWindow {
                 }
             });
         if let Some(k) = remove {
-            self.levels.remove(k);
+            self.common.levels.remove(k);
         }
         ui.horizontal(|ui| {
             if ui.small_button("+ level").clicked() {
-                let v = self.levels.last().map_or(1.0, |l| l.value * 2.0);
-                self.levels.push(Level {
+                let v = self.common.levels.last().map_or(1.0, |l| l.value * 2.0);
+                self.common.levels.push(Level {
                     value: v,
                     rgb: [180, 90, 220],
                     on: true,
                 });
             }
-            if let Some(l) = self.limit
-                && !self.levels.iter().any(|x| x.value == l)
+            if let Some(l) = self.common.limit
+                && !self.common.levels.iter().any(|x| x.value == l)
                 && ui.small_button(format!("+ the limit ({l} kV/m)")).clicked()
             {
-                self.levels.push(Level {
+                self.common.levels.push(Level {
                     value: l,
                     rgb: [230, 50, 50],
                     on: true,
                 });
             }
-            ui.checkbox(&mut self.fill, "colour the cuts by band");
+            ui.checkbox(&mut self.common.fill, "colour the cuts by band");
         });
         egui::Grid::new("electric-field-views")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 // The cross-section panels.
-                if self.panel.job.running() {
+                if self.common.panel.job.running() {
                     ui.label("");
-                    self.panel.progress_ui(ui);
+                    self.common.panel.progress_ui(ui);
                     ui.end_row();
                 }
                 ui.label("Cross-sections");
                 ui.horizontal(|ui| {
-                    let mut on = self.in_cuts.is_some();
+                    let mut on = self.common.in_cuts.is_some();
                     ui.checkbox(&mut on, "also in any cross-section panel I open, every")
                         .on_hover_text(
                             "Besides the cuts asked in the table: the field in every \
                              cross-section panel you open (C), computed when it opens or moves",
                         );
                     if !on {
-                        self.in_cuts = None;
+                        self.common.in_cuts = None;
                     } else {
-                        let s = self.in_cuts.get_or_insert(1.0);
+                        let s = self.common.in_cuts.get_or_insert(1.0);
                         crate::style::field(
                             ui,
                             egui::DragValue::new(s).range(0.05..=10.0).speed(0.05).suffix(" m"),
@@ -312,7 +312,7 @@ impl ElectricFieldWindow {
                     }
                 });
                 ui.end_row();
-                if let Some(step) = self.in_cuts {
+                if let Some(step) = self.common.in_cuts {
                     let points = (100.0 / step + 1.0) * (70.0 / step + 1.0);
                     ui.label("");
                     crate::check_help::explain(
@@ -342,29 +342,29 @@ impl ElectricFieldWindow {
     pub(super) fn sizes_ui(&mut self, ui: &mut egui::Ui, model: &Model, spans: &Spans) {
         let st = self.piece_stats(model);
         let (rate, rate_from) = self.rate();
-        let pieces = match self.piece_length {
+        let pieces = match self.common.piece_length {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
-        let n_levels = field_overlay::shown(&self.levels).len().max(1) as f64;
+        let n_levels = field_overlay::shown(&self.common.levels).len().max(1) as f64;
         // The cuts as the engine places them (on the alignment); why the
         // others cannot be.
-        let (placed, unplaced) = self.span_pick.cut_places(model, spans);
+        let (placed, unplaced) = self.common.span_pick.cut_places(model, spans);
         let cuts = placed.len();
-        let runs = self.span_pick.volume_runs(model, spans);
+        let runs = self.common.span_pick.volume_runs(model, spans);
         let ticked: usize = runs.iter().map(|r| r.1).sum();
         egui::Grid::new("electric-field-sizes")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 // 2D: the cuts; 3D: the volumes (owner, 2026-11-01).
-                if self.planes {
+                if self.common.planes {
                     ui.label("2D cuts");
                     ui.horizontal(|ui| {
                         ui.label("±");
                         crate::style::field(
                             ui,
-                            egui::DragValue::new(&mut self.cut_width)
+                            egui::DragValue::new(&mut self.common.cut_width)
                                 .range(5.0..=500.0)
                                 .speed(1.0)
                                 .suffix(" m"),
@@ -372,7 +372,7 @@ impl ElectricFieldWindow {
                         ui.label("every");
                         crate::style::field(
                             ui,
-                            egui::DragValue::new(&mut self.cut_step)
+                            egui::DragValue::new(&mut self.common.cut_step)
                                 .range(0.05..=10.0)
                                 .speed(0.05)
                                 .suffix(" m"),
@@ -380,7 +380,7 @@ impl ElectricFieldWindow {
                         ui.label("up to");
                         crate::style::field(
                             ui,
-                            egui::DragValue::new(&mut self.cut_above)
+                            egui::DragValue::new(&mut self.common.cut_above)
                                 .range(0.0..=100.0)
                                 .speed(0.5)
                                 .suffix(" m"),
@@ -389,7 +389,7 @@ impl ElectricFieldWindow {
                     });
                     ui.end_row();
                     let points =
-                        (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
+                        (2.0 * self.common.cut_width / self.common.cut_step + 1.0) * (70.0 / self.common.cut_step + 1.0);
                     ui.label("");
                     crate::check_help::explain(
                         ui,
@@ -418,9 +418,9 @@ impl ElectricFieldWindow {
                 } else {
                     ui.label("Volumes");
                     ui.horizontal(|ui| {
-                        let v = self.volume.get_or_insert(VolumeSetup {
+                        let v = self.common.volume.get_or_insert(VolumeSetup {
                             step: 2.0,
-                            width: self.width,
+                            width: self.common.width,
                         });
                         ui.label(format!(
                             "{ticked} span(s) with Volume ticked ({} volume(s)), ±",
@@ -443,11 +443,11 @@ impl ElectricFieldWindow {
                         );
                     });
                     ui.end_row();
-                    if let (Some(v), true) = (&self.volume, ticked > 0) {
+                    if let (Some(v), true) = (&self.common.volume, ticked > 0) {
                         let n = ticked as f64;
                         let full =
                             n * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
-                        let share = self.volume_share.unwrap_or(0.5);
+                        let share = self.common.volume_share.unwrap_or(0.5);
                         let t = full * share * pieces * rate;
                         ui.label("");
                         crate::check_help::explain(
@@ -461,7 +461,7 @@ impl ElectricFieldWindow {
                                 st.span(),
                                 full / 1e6,
                                 share * 100.0,
-                                if self.volume_share.is_some() {
+                                if self.common.volume_share.is_some() {
                                     "as in the last run"
                                 } else {
                                     "a guess until a run"
@@ -481,7 +481,7 @@ impl ElectricFieldWindow {
                         // laptops of 16 to 32 GB): its memory said before Run.
                         if self.tiled {
                             let longest = runs.iter().map(|r| r.1).max().unwrap_or(1);
-                            let width = self.volume.as_ref().map_or(self.width, |v| v.width);
+                            let width = self.common.volume.as_ref().map_or(self.common.width, |v| v.width);
                             let (parts, tiles) = electric::volume_parts(
                                 st.span() * longest as f64,
                                 width,
@@ -543,35 +543,38 @@ impl ElectricFieldWindow {
     /// 2026-10-31: a summary beside Run): the spans ticked, the profiles,
     /// the cuts, the volumes.
     pub(super) fn summary(&mut self, model: &Model) -> String {
-        let spans = self.spans(model);
-        let n = self.span_pick.chosen(model, &spans).0.len();
-        let profiles = match (self.planes && self.profiles, &self.stations) {
+        let spans = self.common.spans(model);
+        let n = self.common.span_pick.chosen(model, &spans).0.len();
+        let profiles = match (
+            self.common.planes && self.common.profiles,
+            &self.common.stations,
+        ) {
             (false, _) => 0,
             (true, Stations::EverySpan) => n,
             (true, Stations::Beside { .. }) => 2 * n,
             (true, Stations::One { .. }) => 1,
         };
-        let (cuts, volumes) = if self.planes {
-            (self.span_pick.cuts_asked(model, &spans).len(), 0)
+        let (cuts, volumes) = if self.common.planes {
+            (self.common.span_pick.cuts_asked(model, &spans).len(), 0)
         } else {
-            (0, self.span_pick.volume_runs(model, &spans).len())
+            (0, self.common.span_pick.volume_runs(model, &spans).len())
         };
         let st = self.piece_stats(model);
         let (rate, _) = self.rate();
-        let pieces = match self.piece_length {
+        let pieces = match self.common.piece_length {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
-        let across = (2.0 * self.width / self.step.max(0.01)).round() + 1.0;
-        let cut_points =
-            (2.0 * self.cut_width / self.cut_step + 1.0) * (70.0 / self.cut_step + 1.0);
+        let across = (2.0 * self.common.width / self.common.step.max(0.01)).round() + 1.0;
+        let cut_points = (2.0 * self.common.cut_width / self.common.cut_step + 1.0)
+            * (70.0 / self.common.cut_step + 1.0);
         let mut seconds = (profiles as f64 * across + cuts as f64 * cut_points) * pieces * rate;
         if self.tiled {
             let floor = electric::TiledFloor {
                 fine: self.tile,
                 ..Default::default()
             };
-            seconds += profiles as f64 * self.floor_seconds(floor.tiles(self.width));
+            seconds += profiles as f64 * self.floor_seconds(floor.tiles(self.common.width));
             seconds += cuts as f64
                 * self.floor_seconds(
                     electric::TiledFloor {
@@ -579,13 +582,14 @@ impl ElectricFieldWindow {
                         coarse: self.cut_tile.max(8.0),
                         ..Default::default()
                     }
-                    .tiles(self.cut_width),
+                    .tiles(self.common.cut_width),
                 );
         }
-        if let Some(v) = &self.volume
+        if let Some(v) = &self.common.volume
             && volumes > 0
         {
             let ticked: usize = self
+                .common
                 .span_pick
                 .volume_runs(model, &spans)
                 .iter()
@@ -593,9 +597,9 @@ impl ElectricFieldWindow {
                 .sum();
             let full =
                 ticked as f64 * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
-            seconds += full * self.volume_share.unwrap_or(0.5) * pieces * rate;
+            seconds += full * self.common.volume_share.unwrap_or(0.5) * pieces * rate;
         }
-        if self.planes {
+        if self.common.planes {
             format!(
                 "2D · {n} span(s) · {cuts} cut(s) · {profiles} profile(s) — {}",
                 duration(seconds)
@@ -613,17 +617,17 @@ impl ElectricFieldWindow {
         meshes: &[(f64, Arc<Mesh>)],
     ) {
         let mut mesh_at = meshes.iter();
-        let levels = field_overlay::shown(&self.levels);
+        let levels = field_overlay::shown(&self.common.levels);
         if m.volumes.is_empty()
-            && self.panel.done.is_empty()
-            && !self.panel.job.running()
-            && self.panel.error.is_none()
+            && self.common.panel.done.is_empty()
+            && !self.common.panel.job.running()
+            && self.common.panel.error.is_none()
         {
             return;
         }
         ui.separator();
         ui.strong("Views");
-        self.panel.progress_ui(ui);
+        self.common.panel.progress_ui(ui);
         let small = |ui: &mut egui::Ui, t: String| {
             ui.label(egui::RichText::new(t).small());
         };
@@ -656,7 +660,7 @@ impl ElectricFieldWindow {
                 );
             }
         }
-        for c in &self.panel.done {
+        for c in &self.common.panel.done {
             small(
                 ui,
                 format!(
@@ -684,7 +688,7 @@ impl ElectricFieldWindow {
                 }
             }
         }
-        if let Some(e) = &self.panel.error {
+        if let Some(e) = &self.common.panel.error {
             crate::menu::error_label(ui, e.as_str());
         }
     }
@@ -698,27 +702,27 @@ impl ElectricFieldWindow {
         model: &Model,
         ctx: &egui::Context,
     ) {
-        self.panel.job.poll();
-        if let Some(r) = self.panel.job.result.take() {
+        self.common.panel.job.poll();
+        if let Some(r) = self.common.panel.job.result.take() {
             match r {
                 Ok(list) => {
-                    self.panel.done.extend(list);
-                    self.panel.error = None;
+                    self.common.panel.done.extend(list);
+                    self.common.panel.error = None;
                 }
-                Err(e) => self.panel.error = Some(e),
+                Err(e) => self.common.panel.error = Some(e),
             }
-            self.panel.generation += 1;
+            self.common.panel.generation += 1;
         }
         let (Some(step), Some((charges, radius, ground_model, cut_tile))) =
-            (self.in_cuts, self.charges.clone())
+            (self.common.in_cuts, self.charges.clone())
         else {
-            if !self.panel.done.is_empty() {
-                self.panel.done.clear();
-                self.panel.generation += 1;
+            if !self.common.panel.done.is_empty() {
+                self.common.panel.done.clear();
+                self.common.panel.generation += 1;
             }
             return;
         };
-        let run = self.job.generation;
+        let run = self.common.job.generation;
         let keys: Vec<PanelKey> = panels
             .iter()
             .map(|(p, w, h)| PanelKey {
@@ -730,29 +734,29 @@ impl ElectricFieldWindow {
                 run,
             })
             .collect();
-        let before = self.panel.done.len();
-        self.panel.done.retain(|c| keys.contains(&c.key));
-        if self.panel.done.len() != before {
-            self.panel.generation += 1;
+        let before = self.common.panel.done.len();
+        self.common.panel.done.retain(|c| keys.contains(&c.key));
+        if self.common.panel.done.len() != before {
+            self.common.panel.generation += 1;
         }
         let missing: Vec<PanelKey> = keys
             .into_iter()
-            .filter(|k| !self.panel.done.iter().any(|c| c.key == *k))
+            .filter(|k| !self.common.panel.done.iter().any(|c| c.key == *k))
             .collect();
-        if missing.is_empty() || self.panel.job.running() {
+        if missing.is_empty() || self.common.panel.job.running() {
             return;
         }
         // The ground as the run took it: the terrain's, else straight
         // between the structures' feet.
         let terrain = model.ground_for_checks();
         let feet = electric::feet_ground(&model.line);
-        let levels: Vec<f64> = field_overlay::shown(&self.levels)
+        let levels: Vec<f64> = field_overlay::shown(&self.common.levels)
             .iter()
             .map(|l| l.value)
             .collect();
         let progress = Arc::new(field_views::Progress::default());
-        self.panel.progress = Some(progress.clone());
-        self.panel.job.start(ctx, move || {
+        self.common.panel.progress = Some(progress.clone());
+        self.common.panel.job.start(ctx, move || {
             let ground = |x: f64, y: f64| {
                 terrain
                     .as_ref()
@@ -837,28 +841,28 @@ impl ElectricFieldWindow {
     /// open or closed, out of date or not).
     pub fn overlay_change(&mut self, model: &Model) -> Option<Overlay> {
         let stale = self.out_of_date(model).is_some();
-        let levels = field_overlay::shown(&self.levels);
+        let levels = field_overlay::shown(&self.common.levels);
         let key = (
-            self.open,
-            self.job.generation,
-            self.panel.generation,
+            self.common.open,
+            self.common.job.generation,
+            self.common.panel.generation,
             serde_json::to_string(&levels).unwrap_or_default(),
-            self.fill,
+            self.common.fill,
             stale,
-            format!("{:?}", self.hidden),
+            format!("{:?}", self.common.hidden),
         );
-        if self.drawn.as_ref() == Some(&key) {
+        if self.common.drawn.as_ref() == Some(&key) {
             return None;
         }
-        self.drawn = Some(key);
+        self.common.drawn = Some(key);
         let mut o = Overlay {
             stale,
             ..Default::default()
         };
-        if !self.open {
+        if !self.common.open {
             return Some(o);
         }
-        if let Some(Ok(a)) = &self.job.result {
+        if let Some(Ok(a)) = &self.common.job.result {
             // The meshes in order, each volume's levels one after another.
             let per = a
                 .field
@@ -866,7 +870,7 @@ impl ElectricFieldWindow {
                 .first()
                 .map_or(1, |v| v.values.surfaces.len().max(1));
             for (i, (level, mesh)) in a.meshes.iter().enumerate() {
-                if self.hidden.contains(&("Volume", i / per)) {
+                if self.common.hidden.contains(&("Volume", i / per)) {
                     continue;
                 }
                 if let Some(l) = levels.iter().find(|l| l.value == *level) {
@@ -876,16 +880,22 @@ impl ElectricFieldWindow {
             // The cuts asked in the table (owner, 2026-10-31): drawn in
             // their planes, so a panel opened there (Open cut) shows them.
             for (k, c) in a.field.cuts.iter().enumerate() {
-                if self.hidden.contains(&("Cut", k)) {
+                if self.common.hidden.contains(&("Cut", k)) {
                     continue;
                 }
-                o.cuts
-                    .push(field_overlay::cut_drawing(&c.values, &levels, self.fill));
+                o.cuts.push(field_overlay::cut_drawing(
+                    &c.values,
+                    &levels,
+                    self.common.fill,
+                ));
             }
         }
-        for c in &self.panel.done {
-            o.cuts
-                .push(field_overlay::cut_drawing(&c.values, &levels, self.fill));
+        for c in &self.common.panel.done {
+            o.cuts.push(field_overlay::cut_drawing(
+                &c.values,
+                &levels,
+                self.common.fill,
+            ));
         }
         Some(o)
     }

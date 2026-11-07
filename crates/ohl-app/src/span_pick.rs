@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use eframe::egui;
 
-use crate::magnetic_field::Spans;
+use crate::field_common::Spans;
 
 /// A span by its first and last structure.
 type SpanIds = (String, String);

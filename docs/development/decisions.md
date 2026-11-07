@@ -20,6 +20,16 @@ of Parts A, B and C).
   errors is now 160 points high as OHL-Design's (120 before), the small
   differences being kept as parameters.
 
+**The field windows share their setup (owner, 2026-11-07)**
+
+- The Electric and the Magnetic field windows were two copies of about 2,300
+  lines each. What they have word for word is now one module, `field_common`:
+  the setup's inputs and how they are kept in the project (the same JSON keys
+  as before), the span and profile setup, the profile plot, the notes of a
+  run, the small getters and setters. Each window keeps its own physics:
+  voltages and the floor, or currents, circuit ends and the cut-off; its
+  settings, results and views. Meant to change nothing the user sees.
+
 **The sheet templates explained with drawings** (owner, 2026-11-07: "make
 sure the templates for the plans and all the parameters … are clearly
 explained and with graphical illustrations"). The guide

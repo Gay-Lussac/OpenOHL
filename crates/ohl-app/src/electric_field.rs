@@ -25,7 +25,7 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui;
 use ohl_electrical::electric::{self, CircuitVoltage, ElectricField, Settings};
-use ohl_electrical::magnetic::{self, GivenPoint, Model as FieldModel, Progress, StationSpec};
+use ohl_electrical::magnetic::{self, Model as FieldModel, Progress, StationSpec};
 use ohl_line::electrical::SystemKind;
 
 #[path = "electric_views.rs"]
@@ -33,20 +33,16 @@ pub mod views;
 
 use crate::check_help as help;
 use crate::check_ui;
+use crate::field_common::{
+    self, FieldShared, FieldStart, KeepStep, Spans, Stations, StoredCommon, beside_stations,
+};
 use crate::field_overlay::Level;
-use crate::field_results::{self, FieldRequest, ResultRow, RowAction};
-use crate::job::{Job, save_csv};
-use crate::magnetic_field::views::{PanelCuts, PieceStats, VolumeSetup};
-use crate::magnetic_field::{Spans, Stations, beside_stations, profiles_ui};
+use crate::field_results::{self, ResultRow, RowAction};
+use crate::job::save_csv;
+#[cfg(test)]
+use crate::magnetic_field::views::VolumeSetup;
 use crate::model::Model;
-use crate::span_pick::{Columns, CutAt, SpanPick};
 use ohl_session::reports::CheckReport;
-
-/// A span by its first and last structure.
-type SpanIds = (String, String);
-
-/// What its results are computed from ([`crate::revision`]).
-pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE_GROUND;
 
 /// The answer: the field and the weather case.
 #[derive(Debug, Clone)]
@@ -129,29 +125,12 @@ pub fn default_levels() -> Vec<Level> {
 
 /// The Electric field window.
 pub struct ElectricFieldWindow {
-    /// Shown.
-    pub open: bool,
-    /// The weather case (index into the model's cases).
-    pub case: usize,
+    /// What both field windows have (reached through `Deref` from outside).
+    pub common: FieldShared<Answer>,
+
     /// The voltage between phases given per circuit (by its label), kV;
     /// a circuit not here: its system's nominal.
     voltages: BTreeMap<String, f64>,
-    /// The jumpers carry their phase's charge.
-    jumpers: bool,
-    height: f64,
-    width: f64,
-    step: f64,
-    stations: Stations,
-    /// The spans ticked for the profiles (every span's).
-    span_pick: SpanPick,
-    limit: Option<f64>,
-    /// The profiles' model: 2D (infinite line charges), else 3D.
-    two_d: bool,
-    /// What a run makes (owner, 2026-11-01): 2D — the cuts and, with
-    /// `profiles`, the profiles; else 3D — the volumes only.
-    planes: bool,
-    /// 2D: the profiles (and the points) too.
-    profiles: bool,
     /// The ground plane under a point is fitted over this distance, m.
     ground_radius: f64,
     /// The ground a tiled conducting floor (the default; owner,
@@ -173,101 +152,43 @@ pub struct ElectricFieldWindow {
     volume_margin: f64,
     /// 3D: the stretches each span is cut into (2026-11-01).
     stretches: usize,
-    /// Points read from a CSV file, and its name.
-    points: Option<(String, Vec<GivenPoint>)>,
-    /// The cuts and places set up by Checks › Electrical › Buildings
-    /// (owner, 2026-11-03), run with the window's own.
-    buildings: Option<crate::field_preset::Preset>,
-    /// The points file's text (kept in the project).
-    points_text: Option<String>,
-    /// The project setting's key and the inputs as last read or written
-    /// (none: not read yet).
-    saved: Option<(String, String)>,
-    /// The weather case came from the project (opening keeps it).
-    case_kept: bool,
-    /// Why the last points file could not be read.
-    points_error: Option<String>,
-    /// The profile shown in the plot.
-    shown: usize,
-    /// Scroll the results to the plot (its row's button clicked).
-    reveal: bool,
-    /// The run's progress and Stop.
-    progress: Option<Arc<Progress>>,
-    /// The run.
-    pub(crate) job: Job<Answer>,
-    /// The line's spans (first and last structure), by the line's version.
-    spans: Option<(u64, Spans)>,
-    /// The inputs are written into the project at the next frame (a run
-    /// started, the window closed).
-    commit: bool,
-    /// The longest piece of a wire, m (none: as solved).
-    piece_length: Option<f64>,
-    /// The levels drawn, kV/m.
-    levels: Vec<Level>,
-    /// The cuts coloured by band.
-    pub(crate) fill: bool,
-    /// The field in the cross-section panels: the step, m.
-    in_cuts: Option<f64>,
-    /// The volumes' step (their spans: ticked in the table).
-    volume: Option<VolumeSetup>,
-    /// The cuts asked in the table (owner, 2026-10-31): ± this across, m;
-    /// every this, m; up to this over the highest wire, m.
-    cut_width: f64,
-    cut_step: f64,
-    cut_above: f64,
     /// 2D: the conductor surface gradients at the spans' lowest points and
     /// ends too (owner, 2026-11-04: "only for the 2D cuts for the noise").
     gradient: bool,
-    /// What the window asks of the application (a cut opened, the 3D
-    /// view turned to a volume), taken each frame.
-    pub requests: Vec<FieldRequest>,
-    /// The panels' cuts.
-    panel: PanelCuts,
-    /// Seconds per piece and point of the last run here.
-    rate: Option<f64>,
-    /// The share of a volume's lattice the last run computed.
-    volume_share: Option<f64>,
     /// The floors' solves of the last run against their expected time.
     floor_speed: Option<f64>,
-    /// The wires' pieces, by line version and case.
-    pieces_seen: Option<((u64, usize), PieceStats)>,
-    /// The overlay as last handed out.
-    drawn: Option<(bool, u64, u64, String, bool, bool, String)>,
-    /// Save in Performed checks.
-    saving: crate::field_saved::Saving,
-    /// A report saved: the command the app applies.
-    pub apply: Option<(String, ohl_session::Command)>,
-    /// How the wires are solved for a run (owner, 2026-11-01; none: each
-    /// section's own, the case as shown).
-    calculation: ohl_clearance::calculation::Calc,
-    /// Per electrical system its own weather case and calculation
-    /// (owner, 2026-11-01).
-    per_system: crate::field_systems::PerSystem,
-    /// Where the ground comes from (owner, 2026-11-01).
-    ground_from: crate::field_ground::FieldGround,
-    /// The outputs of the run unticked in its list (not drawn).
-    pub(crate) hidden: field_results::Hidden,
     /// The last run's charges (3D) and its ground plane's radius.
     charges: Option<(Arc<electric::Charges3d>, f64, electric::GroundModel, f64)>,
+}
+
+impl std::ops::Deref for ElectricFieldWindow {
+    type Target = FieldShared<Answer>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+
+impl std::ops::DerefMut for ElectricFieldWindow {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.common
+    }
 }
 
 impl Default for ElectricFieldWindow {
     fn default() -> Self {
         let d = Settings::default();
         Self {
-            open: false,
-            case: 0,
+            common: FieldShared::new(FieldStart {
+                jumpers: d.jumpers,
+                height: d.height,
+                width: d.width,
+                step: d.step,
+                levels: default_levels(),
+                volume_width: 50.0,
+                cut_width: 60.0,
+            }),
             voltages: BTreeMap::new(),
-            jumpers: d.jumpers,
-            height: d.height,
-            width: d.width,
-            step: d.step,
-            stations: Stations::EverySpan,
-            span_pick: SpanPick::default(),
-            limit: None,
-            two_d: false,
-            planes: true,
-            profiles: true,
             ground_radius: d.ground_radius,
             tiled: true,
             steel: false,
@@ -277,45 +198,8 @@ impl Default for ElectricFieldWindow {
             volume_tile: 8.0,
             volume_margin: electric::VOLUME_MARGIN,
             stretches: electric::STRETCHES,
-            points: None,
-            buildings: None,
-            points_text: None,
-            saved: None,
-            case_kept: false,
-            points_error: None,
-            shown: 0,
-            reveal: false,
-            progress: None,
-            job: Job::default(),
-            spans: None,
-            commit: false,
-            piece_length: None,
-            levels: default_levels(),
-            fill: true,
-            in_cuts: None,
-            volume: Some(VolumeSetup {
-                step: 2.0,
-                width: 50.0,
-            }),
-            cut_width: 60.0,
-            // 1 m (owner, 2026-11-01: quicker at the same accuracy where it
-            // matters: the low levels' isolines within 0.03 %, measured).
-            cut_step: 1.0,
-            cut_above: crate::magnetic_field::views::ABOVE,
             gradient: true,
-            requests: Vec::new(),
-            panel: PanelCuts::default(),
-            rate: None,
-            volume_share: None,
             floor_speed: None,
-            pieces_seen: None,
-            drawn: None,
-            hidden: Default::default(),
-            calculation: None,
-            per_system: Default::default(),
-            ground_from: Default::default(),
-            saving: Default::default(),
-            apply: None,
             charges: None,
         }
     }
@@ -332,28 +216,12 @@ const WINDOW: &str = "electric-field-window";
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 struct Stored {
-    case: Option<String>,
+    /// What both field windows keep.
+    #[serde(flatten)]
+    common: StoredCommon,
+
     /// kV between phases per circuit label (absent: the nominal).
     voltages: BTreeMap<String, f64>,
-    jumpers: Option<bool>,
-    height: Option<f64>,
-    width: Option<f64>,
-    step: Option<f64>,
-    /// One span's stations: its structures and the place in it (none:
-    /// every span at its lowest point).
-    span: Option<(String, String, Option<f64>)>,
-    /// Profiles beside the structures: the distance into the spans, m
-    /// (2026-10-31).
-    beside: Option<f64>,
-    /// The spans on an alignment unticked and those on none ticked.
-    spans_off: Vec<(String, String)>,
-    spans_on: Vec<(String, String)>,
-    limit: Option<f64>,
-    two_d: bool,
-    /// 2D (cuts, profiles) or 3D (volumes) (2026-11-01; absent: 2D).
-    planes: Option<bool>,
-    /// 2D: the profiles too (absent: yes).
-    profiles: Option<bool>,
     ground_radius: Option<f64>,
     tiled: Option<bool>,
     /// The structures' steel earthed (2026-10-31).
@@ -365,86 +233,16 @@ struct Stored {
     volume_margin: Option<f64>,
     /// 3D: the stretches per span (2026-11-01; absent: the default).
     stretches: Option<usize>,
-    /// The points file's name and text.
-    points: Option<(String, String)>,
-    /// The buildings' preset (2026-11-03).
-    buildings: Option<crate::field_preset::Preset>,
-    piece_length: Option<f64>,
-    levels: Option<Vec<Level>>,
-    fill: Option<bool>,
-    in_cuts: Option<f64>,
-    /// A volume: its first and last spans and the step.
-    volume: Option<(SpanIds, SpanIds, f64)>,
-    /// A volume over the spans ticked: its step (2026-10-30; `volume`
-    /// before: its spans now the ticked ones, its step read).
-    volume_step: Option<f64>,
-    /// The volumes' half width (2026-11-01; before: the profiles').
-    volume_width: Option<f64>,
-    /// How the wires are solved (2026-11-01; none: each section's own).
-    calculation: Option<ohl_line::condition::Calculation>,
-    /// Per system (id; "": the earthed wires) its weather case by name
-    /// and calculation (2026-11-01; absent: the window's).
-    per_system: crate::field_systems::PerSystem,
-    /// Where the ground comes from (2026-11-01; absent: the checks').
-    ground_from: crate::field_ground::FieldGround,
-    /// Per span the stations of its 2D cuts (2026-10-31).
-    cuts: Vec<(SpanIds, Vec<CutAt>)>,
-    /// The spans with a volume (2026-10-31).
-    volume_spans: Vec<SpanIds>,
-    /// The cuts' half width, step and reach over the highest wire, m.
-    cut_width: Option<f64>,
-    cut_step: Option<f64>,
-    cut_above: Option<f64>,
     /// 2D: the surface gradients too (2026-11-04; absent: yes).
     gradient: Option<bool>,
 }
 
 impl ElectricFieldWindow {
-    /// The line's spans by their first and last structure, listed once per
-    /// version of the line.
-    fn spans(&mut self, model: &Model) -> Spans {
-        if let Some((v, list)) = &self.spans
-            && *v == model.line_version
-        {
-            return list.clone();
-        }
-        let list: Spans = Arc::new(
-            ohl_electrical::cross_section::line_spans(&model.line)
-                .into_iter()
-                .map(|s| (s.from, s.to))
-                .collect(),
-        );
-        self.spans = Some((model.line_version, list.clone()));
-        list
-    }
-
     /// The inputs as kept in the project.
     fn stored(&mut self, model: &Model) -> Stored {
-        let spans = self.spans(model);
-        let span = match &self.stations {
-            Stations::EverySpan | Stations::Beside { .. } => None,
-            Stations::One { span, fraction } => spans
-                .get(*span)
-                .map(|(from, to)| (from.clone(), to.clone(), *fraction)),
-        };
         Stored {
-            case: model.cases.get(self.case).map(|c| c.case.name.clone()),
+            common: self.common.stored_common(model),
             voltages: self.voltages.clone(),
-            jumpers: Some(self.jumpers),
-            height: Some(self.height),
-            width: Some(self.width),
-            step: Some(self.step),
-            span,
-            beside: match self.stations {
-                Stations::Beside { distance } => Some(distance),
-                _ => None,
-            },
-            spans_off: self.span_pick.off.iter().cloned().collect(),
-            spans_on: self.span_pick.on.iter().cloned().collect(),
-            limit: self.limit,
-            two_d: self.two_d,
-            planes: Some(self.planes),
-            profiles: Some(self.profiles),
             ground_radius: Some(self.ground_radius),
             tiled: Some(self.tiled),
             steel: self.steel,
@@ -453,32 +251,23 @@ impl ElectricFieldWindow {
             volume_tile: Some(self.volume_tile),
             volume_margin: Some(self.volume_margin),
             stretches: Some(self.stretches),
-            points: match (&self.points, &self.points_text) {
-                (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
-                _ => None,
-            },
-            buildings: self.buildings.clone(),
-            piece_length: self.piece_length,
-            levels: Some(self.levels.clone()),
-            fill: Some(self.fill),
-            in_cuts: self.in_cuts,
-            volume: None,
-            volume_step: self.volume.as_ref().map(|v| v.step),
-            volume_width: self.volume.as_ref().map(|v| v.width),
-            calculation: self.calculation,
-            per_system: self.per_system.clone(),
-            ground_from: self.ground_from.clone(),
-            cuts: self
-                .span_pick
-                .cuts
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            volume_spans: self.span_pick.volume.iter().cloned().collect(),
-            cut_width: Some(self.cut_width),
-            cut_step: Some(self.cut_step),
-            cut_above: Some(self.cut_above),
             gradient: Some(self.gradient),
+        }
+    }
+
+    /// Reads the inputs from the project when not read yet for the line
+    /// worked on, and writes them into it when they changed — once a run
+    /// starts or the window closes, not while a value is dragged or typed.
+    /// A project this user cannot change keeps them for the session.
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        match self.common.keep_step(model, ctx, SETTING) {
+            KeepStep::Nothing => {}
+            KeepStep::Read => self.load(model),
+            KeepStep::Write(key) => {
+                let stored = self.stored(model);
+                self.common
+                    .write_inputs(model, key, &stored, "electric field inputs");
+            }
         }
     }
 
@@ -495,48 +284,16 @@ impl ElectricFieldWindow {
             .and_then(|t| serde_json::from_str(t).ok())
             .unwrap_or_default();
         self.take(model, st);
-        self.saved = serde_json::to_string(&self.stored(model))
+        self.common.saved = serde_json::to_string(&self.stored(model))
             .ok()
             .map(|json| (key, json));
     }
 
     /// Takes inputs kept (in the project or with a saved run).
     fn take(&mut self, model: &Model, st: Stored) {
+        self.common.take_common(model, st.common);
         let d = Self::default();
-        self.calculation = st.calculation;
-        self.per_system = st.per_system.clone();
-        self.ground_from = st.ground_from.clone();
-        self.case_kept = false;
-        if let Some(k) = st
-            .case
-            .as_ref()
-            .and_then(|n| model.cases.iter().position(|c| &c.case.name == n))
-        {
-            self.case = k;
-            self.case_kept = true;
-        }
         self.voltages = st.voltages;
-        self.jumpers = st.jumpers.unwrap_or(d.jumpers);
-        self.height = st.height.unwrap_or(d.height);
-        self.width = st.width.unwrap_or(d.width);
-        self.step = st.step.unwrap_or(d.step);
-        let spans = self.spans(model);
-        self.span_pick.off = st.spans_off.into_iter().collect();
-        self.span_pick.on = st.spans_on.into_iter().collect();
-        self.stations = st
-            .span
-            .and_then(|(from, to, fraction)| {
-                spans
-                    .iter()
-                    .position(|(a, b)| *a == from && *b == to)
-                    .map(|span| Stations::One { span, fraction })
-            })
-            .or(st.beside.map(|distance| Stations::Beside { distance }))
-            .unwrap_or_default();
-        self.limit = st.limit;
-        self.two_d = st.two_d;
-        self.planes = st.planes.unwrap_or(true);
-        self.profiles = st.profiles.unwrap_or(true);
         self.ground_radius = st.ground_radius.unwrap_or(d.ground_radius);
         self.tiled = st.tiled.unwrap_or(d.tiled);
         self.steel = st.steel;
@@ -545,75 +302,7 @@ impl ElectricFieldWindow {
         self.volume_tile = st.volume_tile.unwrap_or(d.volume_tile);
         self.volume_margin = st.volume_margin.unwrap_or(d.volume_margin);
         self.stretches = st.stretches.unwrap_or(d.stretches);
-        self.piece_length = st.piece_length;
-        self.levels = st.levels.unwrap_or(d.levels);
-        self.fill = st.fill.unwrap_or(d.fill);
-        self.in_cuts = st.in_cuts;
-        self.volume = Some(VolumeSetup {
-            step: st.volume_step.or(st.volume.map(|v| v.2)).unwrap_or(2.0),
-            width: st.volume_width.unwrap_or(self.width),
-        });
-        self.span_pick.cuts = st.cuts.into_iter().collect();
-        self.span_pick.volume = st.volume_spans.into_iter().collect();
-        self.cut_width = st.cut_width.unwrap_or(d.cut_width);
-        self.cut_step = st.cut_step.unwrap_or(d.cut_step);
-        self.cut_above = st.cut_above.unwrap_or(d.cut_above);
         self.gradient = st.gradient.unwrap_or(d.gradient);
-        self.buildings = st.buildings.clone();
-        (self.points, self.points_text, self.points_error) = match st.points {
-            Some((name, text)) => match magnetic::parse_points(&text) {
-                Ok(p) => (Some((name, p)), Some(text), None),
-                Err(e) => (
-                    None,
-                    None,
-                    Some(format!("{name} (kept in the project): {e}")),
-                ),
-            },
-            None => (None, None, None),
-        };
-    }
-
-    /// Reads the inputs from the project when not read yet for the line
-    /// worked on, and writes them into it when they changed — once a run
-    /// starts or the window closes, not while a value is dragged or typed.
-    /// A project this user cannot change keeps them for the session.
-    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
-        let Some(line) = model.session().map(|s| s.current_line().to_owned()) else {
-            return;
-        };
-        let key = format!("{SETTING}.{line}");
-        if self.saved.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.load(model);
-            return;
-        }
-        if !self.commit
-            || ctx.input(|i| i.pointer.any_down())
-            || ctx.memory(|m| m.focused().is_some())
-        {
-            return;
-        }
-        self.commit = false;
-        let Ok(json) = serde_json::to_string(&self.stored(model)) else {
-            return;
-        };
-        if self.saved.as_ref().is_some_and(|(_, j)| *j == json) {
-            return;
-        }
-        let op = ohl_server::Op::SetSetting {
-            key: key.clone(),
-            value: Some(json.clone()),
-        };
-        // (Read-only for this user: kept for the session.)
-        let _ = model.project_op("electric field inputs", op);
-        self.saved = Some((key, json));
-    }
-
-    /// Opens the window on the weather case shown.
-    pub fn show(&mut self, case: usize) {
-        if !self.open && !self.case_kept {
-            self.case = case;
-        }
-        self.open = true;
     }
 
     /// The steel counted ([`steel_of`]): structures with members, members,
@@ -670,95 +359,16 @@ impl ElectricFieldWindow {
     /// Ticks span `k` only (tests).
     #[cfg(test)]
     pub fn tick_only(&mut self, model: &Model, k: usize) {
-        let spans = self.spans(model);
-        self.span_pick.only(model, &spans, k);
+        let spans = self.common.spans(model);
+        self.common.span_pick.only(model, &spans, k);
         // Its volume ticked too (the tests' volume over one span).
-        self.span_pick.volume.insert(spans[k].clone());
+        self.common.span_pick.volume.insert(spans[k].clone());
     }
 
-    /// Asks a 2D cut in span `k` at `at` (tests).
-    #[cfg(test)]
-    pub fn add_cut(&mut self, model: &Model, k: usize, at: CutAt) {
-        let spans = self.spans(model);
-        self.span_pick
-            .cuts
-            .entry(spans[k].clone())
-            .or_default()
-            .push(at);
-    }
-
-    /// The span table's state (tests): the spans ticked.
-    #[cfg(test)]
-    pub fn ticked_spans(&mut self, model: &Model) -> Vec<usize> {
-        let spans = self.spans(model);
-        let (mut c, _) = self.span_pick.chosen(model, &spans);
-        c.sort_unstable();
-        c
-    }
-
-    /// Section 3 (owner, 2026-10-31, validated): the span table — which
-    /// spans, and in each its profile, the stations of its 2D cuts and its
-    /// volume —, where the profiles are taken and how wide, and (3D) the
-    /// sizes of the cuts and volumes.
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let spans = self.spans(model);
-        crate::magnetic_field::method_ui(ui, &mut self.planes, &mut self.profiles);
-        self.span_pick.table(
-            ui,
-            "electric-field",
-            model,
-            &spans,
-            Columns {
-                profile: self.planes && self.profiles,
-                cuts: self.planes,
-                volume: !self.planes,
-            },
-        );
-        if self.planes && self.profiles {
-            self.profiles_setup_ui(ui, &spans);
-        }
+        let spans = self.common.spans(model);
+        self.common.spans_ui(ui, "electric-field", model, &spans);
         self.sizes_ui(ui, model, &spans);
-    }
-
-    /// The profiles: where and how wide (2D, profiles asked).
-    fn profiles_setup_ui(&mut self, ui: &mut egui::Ui, spans: &Spans) {
-        egui::Grid::new("electric-field-profiles-setup")
-            .num_columns(2)
-            .spacing([10.0, 4.0])
-            .show(ui, |ui| {
-                ui.label("Profiles");
-                profiles_ui(ui, "electric-field", &mut self.stations, spans);
-                ui.end_row();
-                ui.label("Across");
-                ui.horizontal(|ui| {
-                    ui.label("±");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.width)
-                            .range(1.0..=2000.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.step)
-                            .range(0.1..=50.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                    ui.label("at");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.height)
-                            .range(0.0..=200.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                    ui.label("above the ground");
-                });
-                ui.end_row();
-            });
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile, cut
@@ -792,7 +402,7 @@ impl ElectricFieldWindow {
                 max: format!("{largest:.2} kV/m"),
                 note: "at the wires; isolines at the levels".into(),
                 button: "Open cut",
-                action: field_results::open_cut(c, self.cut_width),
+                action: field_results::open_cut(c, self.common.cut_width),
                 drawn: Some(k),
             });
         }
@@ -841,67 +451,33 @@ impl ElectricFieldWindow {
     /// volumes' step `volume` m (their spans: [`Self::tick_only`]).
     #[cfg(test)]
     pub fn set_views(&mut self, cuts: Option<f64>, volume: Option<f64>) {
-        self.in_cuts = cuts;
-        self.volume = volume.map(|step| VolumeSetup {
+        self.common.in_cuts = cuts;
+        self.common.volume = volume.map(|step| VolumeSetup {
             step,
-            width: self.width,
+            width: self.common.width,
         });
         // A volume asked: 3D (2026-11-01: 3D makes the volumes only).
-        self.planes = volume.is_none();
+        self.common.planes = volume.is_none();
     }
 
     /// The views (tests): the panels' and the volume's step.
     #[cfg(test)]
     pub fn views(&self) -> (Option<f64>, Option<f64>) {
-        (self.in_cuts, self.volume.as_ref().map(|v| v.step))
-    }
-
-    /// The panels' cuts computed (tests).
-    #[cfg(test)]
-    pub fn panel_cuts_done(&self) -> usize {
-        self.panel.done.len()
+        (
+            self.common.in_cuts,
+            self.common.volume.as_ref().map(|v| v.step),
+        )
     }
 
     /// The panels' cuts' values, kV/m (tests).
     #[cfg(test)]
     pub fn panel_values(&self) -> Vec<Arc<ohl_electrical::field_views::CutValues>> {
-        self.panel.done.iter().map(|c| c.values.clone()).collect()
-    }
-
-    /// The limit, kV/m (tests).
-    #[cfg(test)]
-    pub fn limit(&self) -> Option<f64> {
-        self.limit
-    }
-
-    /// Sets the buildings' preset (Checks › Electrical › Buildings).
-    pub fn set_buildings(&mut self, preset: Option<crate::field_preset::Preset>) {
-        self.buildings = preset;
-        self.commit = true;
-    }
-
-    /// The buildings' preset set up (tests).
-    #[cfg(test)]
-    pub fn buildings(&self) -> Option<&crate::field_preset::Preset> {
-        self.buildings.as_ref()
-    }
-
-    /// Sets the limit, kV/m.
-    pub fn set_limit(&mut self, limit: Option<f64>) {
-        self.limit = limit;
-    }
-
-    /// What the last run was computed from that changed since, in words
-    /// (`None`: nothing, or no answer).
-    pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        if !matches!(self.job.result, Some(Ok(_))) {
-            return None;
-        }
-        // A saved run: compared with the line by its own state.
-        match &self.saving.stale {
-            Some(s) => Some(s.clone()),
-            None => self.job.stamp.out_of_date(model, USES),
-        }
+        self.common
+            .panel
+            .done
+            .iter()
+            .map(|c| c.values.clone())
+            .collect()
     }
 
     /// A circuit's voltage between phases: given, else its system's
@@ -921,14 +497,14 @@ impl ElectricFieldWindow {
 
     /// The settings as the engine takes them.
     fn settings(&mut self, model: &Model) -> Settings {
-        let spans = self.spans(model);
+        let spans = self.common.spans(model);
         let steel = if self.steel {
             steel_of(model)
         } else {
             (Vec::new(), Vec::new())
         };
-        let stations = match &self.stations {
-            Stations::EverySpan => match self.span_pick.chosen(model, &spans) {
+        let stations = match &self.common.stations {
+            Stations::EverySpan => match self.common.span_pick.chosen(model, &spans) {
                 (_, true) => Vec::new(),
                 (chosen, false) => chosen
                     .into_iter()
@@ -949,13 +525,13 @@ impl ElectricFieldWindow {
                 .into_iter()
                 .collect(),
             Stations::Beside { distance } => {
-                let (mut chosen, _) = self.span_pick.chosen(model, &spans);
+                let (mut chosen, _) = self.common.span_pick.chosen(model, &spans);
                 chosen.sort_unstable();
                 beside_stations(model, &spans, &chosen, *distance)
             }
         };
         Settings {
-            model: if self.two_d {
+            model: if self.common.two_d {
                 FieldModel::TwoD
             } else {
                 FieldModel::ThreeD
@@ -968,30 +544,31 @@ impl ElectricFieldWindow {
                     kv,
                 })
                 .collect(),
-            height: self.height,
-            width: self.width,
-            step: self.step,
+            height: self.common.height,
+            width: self.common.width,
+            step: self.common.step,
             stations,
-            profiles: self.planes && self.profiles,
+            profiles: self.common.planes && self.common.profiles,
             // The CSV's points with the profiles; the buildings' places
             // in any 2D run.
             points: {
-                let mut v = if self.planes && self.profiles {
-                    self.points
+                let mut v = if self.common.planes && self.common.profiles {
+                    self.common
+                        .points
                         .as_ref()
                         .map(|p| p.1.clone())
                         .unwrap_or_default()
                 } else {
                     Vec::new()
                 };
-                if self.planes
-                    && let Some(b) = &self.buildings
+                if self.common.planes
+                    && let Some(b) = &self.common.buildings
                 {
                     v.extend(b.points());
                 }
                 v
             },
-            limit_kv_m: self.limit,
+            limit_kv_m: self.common.limit,
             ground_radius: self.ground_radius,
             ground_model: if self.tiled {
                 electric::GroundModel::Tiled(electric::TiledFloor {
@@ -1005,31 +582,33 @@ impl ElectricFieldWindow {
             volume_tile: self.volume_tile,
             volume_margin: self.volume_margin,
             stretches: self.stretches,
-            jumpers: self.jumpers,
-            piece_length: self.piece_length,
+            jumpers: self.common.jumpers,
+            piece_length: self.common.piece_length,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
             // cuts it should be asked at which stations we want one").
-            cuts: if !self.planes {
+            cuts: if !self.common.planes {
                 Vec::new()
             } else {
-                self.span_pick
+                self.common
+                    .span_pick
                     .cut_places(model, &spans)
                     .0
                     .into_iter()
                     .map(|at| magnetic::CutSpec {
                         at,
-                        width: self.cut_width,
-                        above: self.cut_above,
-                        step: self.cut_step,
+                        width: self.common.cut_width,
+                        above: self.common.cut_above,
+                        step: self.common.cut_step,
                         label: None,
                     })
-                    .chain(self.buildings.iter().flat_map(|b| b.cut_specs()))
+                    .chain(self.common.buildings.iter().flat_map(|b| b.cut_specs()))
                     .collect()
             },
             // A volume: one along each run of spans following each other
             // with Volume ticked (continuous across the line angles).
-            volumes: match (&self.volume, self.planes) {
+            volumes: match (&self.common.volume, self.common.planes) {
                 (Some(v), false) => self
+                    .common
                     .span_pick
                     .volume_runs(model, &spans)
                     .into_iter()
@@ -1044,11 +623,14 @@ impl ElectricFieldWindow {
                 _ => Vec::new(),
             },
             levels: crate::field_preset::with_levels(
-                crate::field_overlay::shown(&self.levels)
+                crate::field_overlay::shown(&self.common.levels)
                     .iter()
                     .map(|l| l.value)
                     .collect(),
-                self.buildings.as_ref().map(|b| b.levels_kv_m.as_slice()),
+                self.common
+                    .buildings
+                    .as_ref()
+                    .map(|b| b.levels_kv_m.as_slice()),
             ),
             steel: steel.0,
             steel_left_out: steel.1,
@@ -1058,13 +640,14 @@ impl ElectricFieldWindow {
     /// Starts a run on the case's solved sections.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
         // The inputs run with: kept in the project (the next frame).
-        self.commit = true;
-        let Some(solved) = model.cases.get(self.case) else {
-            self.job.result = Some(Err("no weather case in the model".into()));
+        self.common.commit = true;
+        let Some(solved) = model.cases.get(self.common.case) else {
+            self.common.job.result = Some(Err("no weather case in the model".into()));
             return;
         };
         // By the window's calculation: the case solved for the run.
-        let line = ohl_clearance::calculation::line_for(&model.line, self.calculation).into_owned();
+        let line =
+            ohl_clearance::calculation::line_for(&model.line, self.common.calculation).into_owned();
         let library = model.library.clone();
         let mut shapes = solved.shapes.clone();
         let mut jumpers = solved.jumpers.clone();
@@ -1072,31 +655,36 @@ impl ElectricFieldWindow {
         // A case the app has not solved yet (it solves a case when it is
         // shown): solved for the run, in the background (2026-10-31: the
         // run took no wire and gave 0 kV/m).
-        let unsolved = !solved.solved_for(model.wind) || self.calculation.is_some();
+        let unsolved = !solved.solved_for(model.wind) || self.common.calculation.is_some();
         // The systems in cases or calculations of their own (2026-11-01).
-        let plan =
-            crate::field_systems::plan(model, &self.per_system, &solved.case, self.calculation);
+        let plan = crate::field_systems::plan(
+            model,
+            &self.common.per_system,
+            &solved.case,
+            self.common.calculation,
+        );
         let wind = model.wind;
         // The ground chosen (2026-11-01), read in the background.
-        let ground_source = crate::field_ground::source(model, &self.ground_from);
+        let ground_source = crate::field_ground::source(model, &self.common.ground_from);
         let settings = self.settings(model);
         // Each kind of output its own step, one after another (owner,
         // 2026-11-01: "not all at once and clearly separated").
         let steps = steps_of(&settings);
         // The surface gradients of the 2D cross-sections (2026-11-04):
         // the profiles' spans, their lowest points and both ends.
-        let gradient_settings =
-            (self.planes && self.gradient).then(|| ohl_electrical::surface_gradient::Settings {
+        let gradient_settings = (self.common.planes && self.gradient).then(|| {
+            ohl_electrical::surface_gradient::Settings {
                 voltages: settings.voltages.clone(),
                 stations: settings.stations.clone(),
                 ..Default::default()
-            });
+            }
+        });
         let progress = Arc::new(Progress::default());
-        self.progress = Some(progress.clone());
+        self.common.progress = Some(progress.clone());
         // A new run's outputs all drawn.
-        self.hidden.clear();
-        self.saving.stale = None;
-        self.job.start_at(ctx, model.revision(), move || {
+        self.common.hidden.clear();
+        self.common.saving.stale = None;
+        self.common.job.start_at(ctx, model.revision(), move || {
             if unsolved {
                 progress.set_stage(format!("solving the weather case {}", case.name));
                 let s = crate::model::Solved::with_wind(&line, &library, case.clone(), wind);
@@ -1159,39 +747,14 @@ impl ElectricFieldWindow {
             // images.
             let work = progress.total.load(Ordering::Relaxed) as f64
                 * charges.as_ref().map_or(0, |c| c.count()) as f64;
-            // One warning for the sections the case does not hold (owner,
-            // 2026-10-31: not one line each).
-            let missing: Vec<&str> = line
-                .sections
-                .iter()
-                .map(|s| s.id.as_str())
-                .filter(|id| !shapes.iter().any(|s| s.section == *id))
-                .collect();
-            if !missing.is_empty() {
-                // The engine's own note per cross-section, said once here.
-                field
-                    .notes
-                    .retain(|n| !n.ends_with(": not solved, left out"));
-                let shown: Vec<&str> = missing.iter().take(5).copied().collect();
-                field.notes.insert(
-                    0,
-                    format!(
-                        "{} section(s) not solved in this case, left out: {}{}",
-                        missing.len(),
-                        shown.join(", "),
-                        if missing.len() > 5 { ", …" } else { "" }
-                    ),
-                );
-            }
-            for n in per_notes.into_iter().rev().chain(ground_note) {
-                field.notes.insert(0, n);
-            }
-            if g.is_none() {
-                field.notes.push(
-                    "ground: straight between the structures' feet and level across (no terrain surface)"
-                        .into(),
-                );
-            }
+            field_common::add_run_notes(
+                &mut field.notes,
+                &line,
+                &shapes,
+                per_notes,
+                ground_note,
+                g.is_some(),
+            );
             let meshes = crate::magnetic_field::views::take_meshes(&mut field.volumes);
             Ok(Answer {
                 field,
@@ -1209,14 +772,15 @@ impl ElectricFieldWindow {
     /// Gives system `key` its own weather case (tests).
     #[cfg(test)]
     pub fn set_system_case(&mut self, key: &str, case: &str) {
-        self.per_system
+        self.common
+            .per_system
             .insert(key.to_owned(), (Some(case.to_owned()), None));
     }
 
     /// Sets the name a run is saved as (tests).
     #[cfg(test)]
     pub fn set_save_name(&mut self, name: &str) {
-        self.saving.name = name.to_owned();
+        self.common.saving.name = name.to_owned();
     }
 
     /// The saved run `r` shown: its inputs set, its field and surfaces,
@@ -1242,11 +806,12 @@ impl ElectricFieldWindow {
             .get("radius")
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(self.ground_radius);
-        self.job.stop();
-        self.job
+        self.common.job.stop();
+        self.common
+            .job
             .stamp
             .set(crate::revision::saved_revision(&r.parameters, model));
-        self.job.result = Some(Ok(Answer {
+        self.common.job.result = Some(Ok(Answer {
             field,
             case,
             charges: None,
@@ -1259,19 +824,19 @@ impl ElectricFieldWindow {
                 .get("gradient")
                 .and_then(|g| serde_json::from_value(g.clone()).ok()),
         }));
-        self.job.generation += 1;
-        self.hidden.clear();
+        self.common.job.generation += 1;
+        self.common.hidden.clear();
         self.charges = None;
-        self.saving.stale = crate::field_saved::changed_since(r, model);
-        self.saving.name = r.id.clone();
-        self.open = true;
+        self.common.saving.stale = crate::field_saved::changed_since(r, model);
+        self.common.saving.name = r.id.clone();
+        self.common.open = true;
         Ok(())
     }
 
     /// The run shown as report `name` of the performed checks.
     fn check_report(&mut self, model: &Model, name: &str) -> Result<CheckReport, String> {
         let inputs = self.stored(model);
-        let Some(Ok(a)) = &self.job.result else {
+        let Some(Ok(a)) = &self.common.job.result else {
             return Err("run it first".into());
         };
         let (mut results, triangles) = crate::field_saved::results(&a.case, &a.field, &a.meshes)?;
@@ -1307,45 +872,45 @@ impl ElectricFieldWindow {
             (crate::field_saved::ELECTRIC_CHECK_ID, "Electric field"),
             name,
             summary,
-            crate::field_saved::parameters(&inputs, self.job.stamp.loads_per(model)),
+            crate::field_saved::parameters(&inputs, self.common.job.stamp.loads_per(model)),
             results,
         )
     }
 
     /// The window.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) {
-        let generation = self.job.generation;
-        self.job.poll();
-        if !self.job.running() {
+        let generation = self.common.job.generation;
+        self.common.job.poll();
+        if !self.common.job.running() {
             // The floors' speed here for the estimates (the time a floor
             // takes on this computer against the one measured).
-            if let Some(f) = self.progress.take().and_then(|p| p.floor_speed()) {
+            if let Some(f) = self.common.progress.take().and_then(|p| p.floor_speed()) {
                 self.floor_speed = Some(f);
             }
         }
-        if self.job.generation != generation {
+        if self.common.job.generation != generation {
             // A new answer: its charges for the panels, its speed and its
             // volumes' share for the estimates.
             self.charges = None;
-            if let Some(Ok(a)) = &self.job.result {
+            if let Some(Ok(a)) = &self.common.job.result {
                 self.charges = a
                     .charges
                     .clone()
                     .map(|c| (c, a.radius, a.ground_model, self.cut_tile));
-                if let Some(t) = self.job.took
+                if let Some(t) = self.common.job.took
                     && a.work > 0.0
                 {
-                    self.rate = Some(t.as_secs_f64() / a.work);
+                    self.common.rate = Some(t.as_secs_f64() / a.work);
                 }
                 let (c, f) = a.field.volumes.iter().fold((0usize, 0usize), |s, v| {
                     (s.0 + v.values.computed, s.1 + v.values.full)
                 });
                 if f > 0 {
-                    self.volume_share = Some(c as f64 / f as f64);
+                    self.common.volume_share = Some(c as f64 / f as f64);
                 }
             }
         }
-        if !self.open {
+        if !self.common.open {
             return;
         }
         let mut open = true;
@@ -1369,12 +934,13 @@ impl ElectricFieldWindow {
                     .any(|c| self.voltage(model, c).is_some_and(|v| v > 0.0))
                 {
                     Some("every circuit voltage-free: give one a voltage (2 Scope)".to_owned())
-                } else if matches!(self.stations, Stations::EverySpan | Stations::Beside { .. })
-                    && {
-                        let spans = self.spans(model);
-                        self.span_pick.chosen(model, &spans).0.is_empty()
-                    }
-                {
+                } else if matches!(
+                    self.common.stations,
+                    Stations::EverySpan | Stations::Beside { .. }
+                ) && {
+                    let spans = self.common.spans(model);
+                    self.common.span_pick.chosen(model, &spans).0.is_empty()
+                } {
                     Some("no span ticked (3 Spans)".to_owned())
                 } else {
                     None
@@ -1383,8 +949,8 @@ impl ElectricFieldWindow {
                     ui,
                     WINDOW,
                     None,
-                    self.job.generation,
-                    why.is_some() && !self.job.running(),
+                    self.common.job.generation,
+                    why.is_some() && !self.common.job.running(),
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
@@ -1406,9 +972,9 @@ impl ElectricFieldWindow {
                             crate::field_help::profile(
                                 ui,
                                 crate::field_help::Field::Electric,
-                                self.width,
-                                self.step,
-                                self.height,
+                                self.common.width,
+                                self.common.step,
+                                self.common.height,
                             );
                             crate::field_help::sources(
                                 ui,
@@ -1420,7 +986,7 @@ impl ElectricFieldWindow {
                         check_ui::section(ui, 2, "Scope", None);
                         check_ui::ScopePicker::new(WINDOW, &model.line)
                             .route_of(model)
-                            .cases(check_ui::Cases::One(&names, &mut self.case))
+                            .cases(check_ui::Cases::One(&names, &mut self.common.case))
                             .ui(ui);
                         // How the wires are solved (owner, 2026-11-01).
                         ui.horizontal(|ui| {
@@ -1428,7 +994,7 @@ impl ElectricFieldWindow {
                             crate::rule_table::calculation_combo(
                                 ui,
                                 "field-calculation",
-                                &mut self.calculation,
+                                &mut self.common.calculation,
                             );
                             ui.label(
                                 egui::RichText::new(
@@ -1440,13 +1006,13 @@ impl ElectricFieldWindow {
                                 .weak(),
                             );
                         });
-                        crate::field_systems::ui(ui, WINDOW, model, &mut self.per_system);
-                        crate::field_ground::ui(ui, WINDOW, model, &mut self.ground_from);
+                        crate::field_systems::ui(ui, WINDOW, model, &mut self.common.per_system);
+                        crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);
                         self.spans_ui(ui, model);
-                        let spans = self.spans(model);
+                        let spans = self.common.spans(model);
                         self.views_ui(ui, model, &spans);
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
@@ -1457,10 +1023,10 @@ impl ElectricFieldWindow {
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
-                    let running = self.progress.as_ref().map(|p| {
+                    let running = self.common.progress.as_ref().map(|p| {
                         let total = p.total.load(Ordering::Relaxed).max(1);
                         let done = p.done.load(Ordering::Relaxed);
-                        let elapsed = self.job.elapsed().unwrap_or_default();
+                        let elapsed = self.common.job.elapsed().unwrap_or_default();
                         let mut pr =
                             check_ui::Progress::with_left(elapsed, p.seconds_left(elapsed));
                         let stage = p.stage();
@@ -1477,7 +1043,7 @@ impl ElectricFieldWindow {
                         hover: "Compute the field from the wires as solved in the weather case \
                                 chosen",
                         scope: None,
-                        info: Some(match self.job.took {
+                        info: Some(match self.common.job.took {
                             Some(t) => format!("{} · last run {t:.1?}", self.summary(model)),
                             None => self.summary(model),
                         }),
@@ -1485,7 +1051,7 @@ impl ElectricFieldWindow {
                     match check_ui::run_footer(ui, f, |_| {}) {
                         check_ui::Action::Run => run = true,
                         check_ui::Action::Stop => {
-                            if let Some(p) = &self.progress {
+                            if let Some(p) = &self.common.progress {
                                 p.cancel.store(true, Ordering::Relaxed);
                             }
                         }
@@ -1495,10 +1061,10 @@ impl ElectricFieldWindow {
             },
         );
         // Closed: its inputs kept in the project (the next frame).
-        if self.open && !open {
-            self.commit = true;
+        if self.common.open && !open {
+            self.common.commit = true;
         }
-        self.open = open;
+        self.common.open = open;
         if run {
             self.start(model, ctx);
         }
@@ -1593,15 +1159,15 @@ impl ElectricFieldWindow {
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Profiles by");
-                ui.add_enabled_ui(self.planes && self.profiles, |ui| {
+                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.two_d, false, "3D")
+                        ui.selectable_value(&mut self.common.two_d, false, "3D")
                             .on_hover_text(
                                 "The wires as solved (sag, line angles, the line's length) and the \
                          jumpers as pieces of uniform charge over the ground (a tiled \
                          conducting floor by default, 4 Model)",
                             );
-                        ui.selectable_value(&mut self.two_d, true, "2D")
+                        ui.selectable_value(&mut self.common.two_d, true, "2D")
                         .on_hover_text(
                             "Infinite line charges where the wires cross the profile, over level \
                          ground at the cross-section: not valid near a line angle, a structure \
@@ -1613,7 +1179,7 @@ impl ElectricFieldWindow {
                 ui.label("");
                 help::explain(
                     ui,
-                    if self.two_d {
+                    if self.common.two_d {
                         "2D: a profile's points in a moment; the sag along the span, the line \
                          angles and the jumpers not seen (under the lowest point close to 3D on \
                          a long level span)."
@@ -1630,7 +1196,7 @@ impl ElectricFieldWindow {
                 // The conductor surface gradient (owner, 2026-11-04: 2D
                 // only, for the noise).
                 ui.label("Surface gradient");
-                ui.add_enabled_ui(self.planes, |ui| {
+                ui.add_enabled_ui(self.common.planes, |ui| {
                     ui.checkbox(
                         &mut self.gradient,
                         "2D, per span: lowest point and both ends",
@@ -1640,7 +1206,7 @@ impl ElectricFieldWindow {
                 ui.end_row();
                 {
                     ui.label("Jumpers");
-                    ui.checkbox(&mut self.jumpers, "carry their phase's charge")
+                    ui.checkbox(&mut self.common.jumpers, "carry their phase's charge")
                         .on_hover_text(
                             "A jumper at a section's end at that section's charge per metre, as \
                              solved in the weather case (3D). Off: left out (not conservative \
@@ -1723,16 +1289,20 @@ impl ElectricFieldWindow {
                             fine: self.tile,
                             ..Default::default()
                         };
-                        let tiles = floor.tiles(self.width);
-                        let volume_width = self.volume.as_ref().map_or(self.width, |v| v.width);
-                        let floors = match self.stations {
+                        let tiles = floor.tiles(self.common.width);
+                        let volume_width = self
+                            .common
+                            .volume
+                            .as_ref()
+                            .map_or(self.common.width, |v| v.width);
+                        let floors = match self.common.stations {
                             Stations::EverySpan => {
-                                let spans = self.spans(model);
-                                self.span_pick.chosen(model, &spans).0.len()
+                                let spans = self.common.spans(model);
+                                self.common.span_pick.chosen(model, &spans).0.len()
                             }
                             Stations::Beside { .. } => {
-                                let spans = self.spans(model);
-                                2 * self.span_pick.chosen(model, &spans).0.len()
+                                let spans = self.common.spans(model);
+                                2 * self.common.span_pick.chosen(model, &spans).0.len()
                             }
                             Stations::One { .. } => 1,
                         };
@@ -1761,7 +1331,7 @@ impl ElectricFieldWindow {
                                     coarse: self.cut_tile.max(8.0),
                                     ..Default::default()
                                 }
-                                .tiles(self.width),
+                                .tiles(self.common.width),
                                 magnetic_duration(
                                     self.floor_seconds(
                                         electric::TiledFloor {
@@ -1769,7 +1339,7 @@ impl ElectricFieldWindow {
                                             coarse: self.cut_tile.max(8.0),
                                             ..Default::default()
                                         }
-                                        .tiles(self.width)
+                                        .tiles(self.common.width)
                                     )
                                 ),
                                 electric::Floor::tiles_under(
@@ -1812,15 +1382,15 @@ impl ElectricFieldWindow {
                 }
                 ui.label("Limit");
                 ui.horizontal(|ui| {
-                    let mut given = self.limit.is_some();
+                    let mut given = self.common.limit.is_some();
                     ui.checkbox(&mut given, "given").on_hover_text(
                         "Your limit, kV/m: the margin at every point. None is built in (an \
                          ordinance's values come from its parameter file)",
                     );
                     if !given {
-                        self.limit = None;
+                        self.common.limit = None;
                     } else {
-                        let l = self.limit.get_or_insert(5.0);
+                        let l = self.common.limit.get_or_insert(5.0);
                         crate::style::field(
                             ui,
                             egui::DragValue::new(l)
@@ -1852,27 +1422,29 @@ impl ElectricFieldWindow {
                                 let name = path
                                     .file_name()
                                     .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                                self.points = Some((name, p));
-                                self.points_text = Some(text);
-                                self.points_error = None;
+                                self.common.points = Some((name, p));
+                                self.common.points_text = Some(text);
+                                self.common.points_error = None;
                             }
-                            Err(e) => self.points_error = Some(format!("{}: {e}", path.display())),
+                            Err(e) => {
+                                self.common.points_error = Some(format!("{}: {e}", path.display()))
+                            }
                         }
                     }
-                    if let Some((name, p)) = &self.points {
+                    if let Some((name, p)) = &self.common.points {
                         ui.label(format!("{} points from {name}", p.len()));
                         if ui.small_button("Clear").clicked() {
-                            self.points = None;
-                            self.points_text = None;
+                            self.common.points = None;
+                            self.common.points_text = None;
                         }
                     }
                 });
                 ui.end_row();
-                if crate::field_preset::row(ui, &mut self.buildings, self.planes) {
-                    self.commit = true;
+                if crate::field_preset::row(ui, &mut self.common.buildings, self.common.planes) {
+                    self.common.commit = true;
                 }
             });
-        if let Some(e) = &self.points_error {
+        if let Some(e) = &self.common.points_error {
             crate::menu::error_label(ui, e.as_str());
         }
     }
@@ -1885,28 +1457,29 @@ impl ElectricFieldWindow {
         run: &mut bool,
     ) {
         // The outputs listed first (owner, 2026-10-31): a click shows one.
-        if let Some(Ok(a)) = &self.job.result {
+        if let Some(Ok(a)) = &self.common.job.result {
             let rows = self.output_rows(model, a);
-            match field_results::list(ui, "electric-field", &rows, &mut self.hidden) {
+            match field_results::list(ui, "electric-field", &rows, &mut self.common.hidden) {
                 Some(RowAction::Plot(k)) => {
-                    self.shown = k;
-                    self.reveal = true;
+                    self.common.shown = k;
+                    self.common.reveal = true;
                 }
-                Some(RowAction::Ask(r)) => self.requests.push(r),
+                Some(RowAction::Ask(r)) => self.common.requests.push(r),
                 _ => {}
             }
             ui.separator();
         }
         // Save in Performed checks (owner, 2026-11-01).
-        if matches!(self.job.result, Some(Ok(_)))
-            && let Some(name) = self.saving.ui(ui, model)
+        if matches!(self.common.job.result, Some(Ok(_)))
+            && let Some(name) = self.common.saving.ui(ui, model)
         {
             let r = self.check_report(model, &name).map(|report| {
-                self.apply = Some((format!("saved the electric field {name}"), report.put()));
+                self.common.apply =
+                    Some((format!("saved the electric field {name}"), report.put()));
             });
-            self.saving.outcome(&name, &r);
+            self.common.saving.outcome(&name, &r);
         }
-        let answer = match &self.job.result {
+        let answer = match &self.common.job.result {
             None => {
                 ui.label("Run to compute the field.");
                 return;
@@ -1918,7 +1491,7 @@ impl ElectricFieldWindow {
             Some(Ok(a)) => a,
         };
         if let Some(what) = stale {
-            *run |= crate::revision::banner(ui, what, !self.job.running());
+            *run |= crate::revision::banner(ui, what, !self.common.job.running());
         }
         let m = &answer.field;
         ui.horizontal(|ui| {
@@ -1985,26 +1558,44 @@ impl ElectricFieldWindow {
         self.views_results_ui(ui, m, &answer.meshes);
         if !m.profiles.is_empty() {
             ui.separator();
-            self.shown = self.shown.min(m.profiles.len() - 1);
+            self.common.shown = self.common.shown.min(m.profiles.len() - 1);
             let header = ui
                 .horizontal(|ui| {
                     ui.strong("Profile");
                     let name =
                         |p: &electric::Profile| format!("{}–{} at {:.1} m", p.from, p.to, p.at);
                     egui::ComboBox::from_id_salt("electric-field-profile")
-                        .selected_text(name(&m.profiles[self.shown]))
+                        .selected_text(name(&m.profiles[self.common.shown]))
                         .show_ui(ui, |ui| {
                             for (k, p) in m.profiles.iter().enumerate() {
-                                ui.selectable_value(&mut self.shown, k, name(p));
+                                ui.selectable_value(&mut self.common.shown, k, name(p));
                             }
                         });
                 })
                 .response
                 .rect;
-            let drawn = plot(ui, &m.profiles[self.shown], m.limit_kv_m);
+            let drawn = {
+                let p = &m.profiles[self.common.shown];
+                let values: Vec<(f64, f64)> =
+                    p.points.iter().map(|q| (q.offset, q.e_kv_m)).collect();
+                field_common::plot(
+                    ui,
+                    &field_common::ProfilePlot {
+                        values: &values,
+                        faint: None,
+                        axis: "E kV/m",
+                        unit: "kV/m",
+                        hover: &|k| {
+                            let q = &p.points[k];
+                            format!("{:.1} m: {:.4} kV/m", q.offset, q.e_kv_m)
+                        },
+                    },
+                    m.limit_kv_m,
+                )
+            };
             // The list's Show plot (2026-11-01: the plot sat below the
             // notes and views, out of sight): the results scroll to it.
-            if std::mem::take(&mut self.reveal) {
+            if std::mem::take(&mut self.common.reveal) {
                 ui.scroll_to_rect(header.union(drawn), Some(egui::Align::TOP));
             }
             help::list(
@@ -2024,12 +1615,12 @@ impl ElectricFieldWindow {
                             for (k, p) in m.profiles.iter().enumerate() {
                                 if ui
                                     .selectable_label(
-                                        k == self.shown,
+                                        k == self.common.shown,
                                         format!("{}–{}", p.from, p.to),
                                     )
                                     .clicked()
                                 {
-                                    self.shown = k;
+                                    self.common.shown = k;
                                 }
                                 ui.label(format!("{:.1}", p.at));
                                 ui.label(format!("{:.3}", p.max_kv_m));
@@ -2178,132 +1769,6 @@ fn margin(ui: &mut egui::Ui, m: Option<f64>) {
             ui.label("—");
         }
     }
-}
-
-/// A profile's plot: E against the distance from the axis, the limit as a
-/// dashed line, the value under the pointer.
-fn plot(ui: &mut egui::Ui, p: &electric::Profile, limit: Option<f64>) -> egui::Rect {
-    let width = ui.available_width().clamp(300.0, 900.0);
-    let (response, painter) = ui.allocate_painter(egui::vec2(width, 240.0), egui::Sense::hover());
-    let r = response.rect;
-    let v = ui.visuals();
-    let text = v.text_color();
-    let faint = v.weak_text_color();
-    let line = v.hyperlink_color;
-    let font = egui::FontId::proportional(11.0);
-    let frame = egui::Rect::from_min_max(
-        r.min + egui::vec2(48.0, 8.0),
-        r.max - egui::vec2(10.0, 24.0),
-    );
-    painter.rect_stroke(
-        frame,
-        0.0,
-        egui::Stroke::new(1.0, faint),
-        egui::StrokeKind::Inside,
-    );
-    let (Some(first), Some(last)) = (p.points.first(), p.points.last()) else {
-        return r;
-    };
-    let (x0, x1) = (first.offset, last.offset.max(first.offset + 1e-9));
-    let top = p
-        .points
-        .iter()
-        .map(|q| q.e_kv_m)
-        .fold(limit.unwrap_or(0.0), f64::max)
-        .max(1e-6)
-        * 1.1;
-    let to_screen = |x: f64, y: f64| {
-        egui::pos2(
-            frame.left() + ((x - x0) / (x1 - x0)) as f32 * frame.width(),
-            frame.bottom() - (y / top) as f32 * frame.height(),
-        )
-    };
-    // Ticks: 5 across, 4 up.
-    for k in 0..=4 {
-        let x = x0 + (x1 - x0) * f64::from(k) / 4.0;
-        let at = to_screen(x, 0.0);
-        painter.line_segment(
-            [at, egui::pos2(at.x, frame.top())],
-            egui::Stroke::new(0.5, faint.gamma_multiply(0.4)),
-        );
-        painter.text(
-            egui::pos2(at.x, frame.bottom() + 3.0),
-            egui::Align2::CENTER_TOP,
-            format!("{x:.0}"),
-            font.clone(),
-            faint,
-        );
-        let y = top * f64::from(k) / 4.0;
-        let at = to_screen(x0, y);
-        painter.line_segment(
-            [at, egui::pos2(frame.right(), at.y)],
-            egui::Stroke::new(0.5, faint.gamma_multiply(0.4)),
-        );
-        painter.text(
-            egui::pos2(frame.left() - 4.0, at.y),
-            egui::Align2::RIGHT_CENTER,
-            format!("{y:.2}"),
-            font.clone(),
-            faint,
-        );
-    }
-    painter.text(
-        egui::pos2(frame.left() + 4.0, frame.top() + 2.0),
-        egui::Align2::LEFT_TOP,
-        "E kV/m",
-        font.clone(),
-        text,
-    );
-    painter.text(
-        egui::pos2(frame.right(), r.bottom()),
-        egui::Align2::RIGHT_BOTTOM,
-        "m from the axis (right +)",
-        font.clone(),
-        faint,
-    );
-    let e: Vec<egui::Pos2> = p
-        .points
-        .iter()
-        .map(|q| to_screen(q.offset, q.e_kv_m))
-        .collect();
-    painter.add(egui::Shape::line(e, egui::Stroke::new(2.0, line)));
-    if let Some(l) = limit {
-        let y = to_screen(x0, l).y;
-        painter.extend(egui::Shape::dashed_line(
-            &[egui::pos2(frame.left(), y), egui::pos2(frame.right(), y)],
-            egui::Stroke::new(1.0, v.warn_fg_color),
-            6.0,
-            4.0,
-        ));
-        painter.text(
-            egui::pos2(frame.right() - 4.0, y - 2.0),
-            egui::Align2::RIGHT_BOTTOM,
-            format!("limit {l} kV/m"),
-            font.clone(),
-            v.warn_fg_color,
-        );
-    }
-    if let Some(pos) = response.hover_pos()
-        && frame.contains(pos)
-    {
-        let x = x0 + f64::from((pos.x - frame.left()) / frame.width()) * (x1 - x0);
-        if let Some(q) = p
-            .points
-            .iter()
-            .min_by(|a, b| (a.offset - x).abs().total_cmp(&(b.offset - x).abs()))
-        {
-            let at = to_screen(q.offset, q.e_kv_m);
-            painter.circle_filled(at, 3.0, line);
-            painter.text(
-                at + egui::vec2(6.0, -6.0),
-                egui::Align2::LEFT_BOTTOM,
-                format!("{:.1} m: {:.4} kV/m", q.offset, q.e_kv_m),
-                font,
-                text,
-            );
-        }
-    }
-    r
 }
 
 /// A run's steps (owner, 2026-11-01): 2D — the cuts (the charges in 3D),

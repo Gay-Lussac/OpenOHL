@@ -41,6 +41,7 @@ mod drawings;
 mod edit;
 mod editors;
 mod electric_field;
+mod field_common;
 mod field_ground;
 mod field_help;
 mod field_overlay;

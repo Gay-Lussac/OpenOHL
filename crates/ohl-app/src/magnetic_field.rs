@@ -27,8 +27,8 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui;
 use ohl_electrical::magnetic::{
-    self, CircuitCurrent, GivenPoint, Heights2d, MagneticField, Model as FieldModel, Progress,
-    Settings, StationSpec,
+    self, CircuitCurrent, Heights2d, MagneticField, Model as FieldModel, Progress, Settings,
+    StationSpec,
 };
 
 #[path = "magnetic_views.rs"]
@@ -36,16 +36,16 @@ pub mod views;
 
 use crate::check_help as help;
 use crate::check_ui;
-use crate::field_overlay::Level;
-use crate::field_results::{self, FieldRequest, ResultRow, RowAction};
-use crate::job::{Job, save_csv};
+use crate::field_common::{
+    self, FieldShared, FieldStart, KeepStep, Spans, Stations, StoredCommon, beside_stations,
+};
+use crate::field_results::{self, ResultRow, RowAction};
+use crate::job::save_csv;
 use crate::model::Model;
-use crate::span_pick::{Columns, CutAt, SpanPick};
 use ohl_session::reports::CheckReport;
-use views::{Above, PanelCuts, PieceStats, VolumeSetup};
-
-/// What its results are computed from ([`crate::revision`]).
-pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE_GROUND;
+use views::Above;
+#[cfg(test)]
+use views::VolumeSetup;
 
 /// The answer: the field and the weather case.
 #[derive(Debug, Clone)]
@@ -62,152 +62,14 @@ pub struct Answer {
     pub work: f64,
 }
 
-/// Where the profiles are taken.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) enum Stations {
-    /// Every span at its lowest point.
-    #[default]
-    EverySpan,
-    /// One span (index into the line's spans), at its lowest point or a
-    /// fraction of it.
-    One { span: usize, fraction: Option<f64> },
-    /// Beside the structures (owner, 2026-10-31: where the steel matters):
-    /// in each span ticked, `distance` into it from both ends (a span not
-    /// twice as long: its middle).
-    Beside { distance: f64 },
-}
-
-/// The profiles of [`Stations::Beside`] over the spans `chosen`
-/// (indices into `spans`): `distance` into each from both ends, along the
-/// line in plan.
-pub(crate) fn beside_stations(
-    model: &Model,
-    spans: &Spans,
-    chosen: &[usize],
-    distance: f64,
-) -> Vec<StationSpec> {
-    let mut out = Vec::new();
-    for &k in chosen {
-        let (from, to) = &spans[k];
-        let at = |id: &str| model.line.structure(id).map(|s| s.position);
-        let (Some(a), Some(b)) = (at(from), at(to)) else {
-            continue;
-        };
-        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
-        let spec = |fraction: f64| StationSpec {
-            from: from.clone(),
-            to: to.clone(),
-            fraction: Some(fraction),
-        };
-        if len > 2.0 * distance && len > 0.0 {
-            out.push(spec(distance / len));
-            out.push(spec(1.0 - distance / len));
-        } else {
-            out.push(spec(0.5));
-        }
-    }
-    out
-}
-
-/// The Profiles row: at each ticked span's lowest point, beside the
-/// structures, or one span (at its lowest point or a place in it).
-pub(crate) fn profiles_ui(ui: &mut egui::Ui, id: &str, stations: &mut Stations, spans: &Spans) {
-    ui.horizontal(|ui| {
-        #[derive(PartialEq, Clone, Copy)]
-        enum Kind {
-            Lowest,
-            Beside,
-            One,
-        }
-        let mut kind = match stations {
-            Stations::EverySpan => Kind::Lowest,
-            Stations::Beside { .. } => Kind::Beside,
-            Stations::One { .. } => Kind::One,
-        };
-        ui.radio_value(
-            &mut kind,
-            Kind::Lowest,
-            "at each ticked span's lowest point",
-        );
-        ui.radio_value(&mut kind, Kind::Beside, "beside its structures")
-            .on_hover_text(
-                "In each span ticked, a profile this far into it from each of its structures \
-                 (where the structures' steel and the wires near them matter)",
-            );
-        ui.radio_value(&mut kind, Kind::One, "one span");
-        match kind {
-            Kind::Lowest => *stations = Stations::EverySpan,
-            Kind::Beside => {
-                if !matches!(stations, Stations::Beside { .. }) {
-                    *stations = Stations::Beside { distance: 10.0 };
-                }
-                if let Stations::Beside { distance } = stations {
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(distance)
-                            .range(1.0..=500.0)
-                            .speed(0.5)
-                            .suffix(" m"),
-                    );
-                    ui.label("into the span");
-                }
-            }
-            Kind::One => {
-                if !matches!(stations, Stations::One { .. }) {
-                    *stations = Stations::One {
-                        span: 0,
-                        fraction: None,
-                    };
-                }
-                if let Stations::One { span, fraction } = stations {
-                    *span = (*span).min(spans.len().saturating_sub(1));
-                    let name = |k: usize| {
-                        spans
-                            .get(k)
-                            .map_or(String::new(), |(a, b)| format!("{a}–{b}"))
-                    };
-                    egui::ComboBox::from_id_salt((id, "span"))
-                        .selected_text(name(*span))
-                        .show_ui(ui, |ui| {
-                            for k in 0..spans.len() {
-                                ui.selectable_value(span, k, name(k));
-                            }
-                        });
-                    let mut lowest = fraction.is_none();
-                    ui.checkbox(&mut lowest, "at its lowest point");
-                    if lowest {
-                        *fraction = None;
-                    } else {
-                        let f = fraction.get_or_insert(0.5);
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(f).range(0.0..=1.0).speed(0.01),
-                        )
-                        .on_hover_text(
-                            "The place in the span from its first structure along the line (0–1)",
-                        );
-                    }
-                }
-            }
-        }
-    });
-}
-
 /// Every circuit's end points: its label and the structures.
 type CircuitEnds = Vec<(String, Vec<String>)>;
 
-/// A span by its first and last structure.
-type SpanIds = (String, String);
-
-/// The line's spans by their first and last structure.
-pub(crate) type Spans = Arc<Vec<(String, String)>>;
-
 /// The Magnetic field window.
 pub struct MagneticFieldWindow {
-    /// Shown.
-    pub open: bool,
-    /// The weather case (index into the model's cases).
-    pub case: usize,
+    /// What both field windows have (reached through `Deref` from outside).
+    pub common: FieldShared<Answer>,
+
     /// Current (A) and reverse per circuit, by its label.
     currents: BTreeMap<String, (f64, bool)>,
     /// The circuits given by their end points (owner, 2026-10-29): per
@@ -220,169 +82,55 @@ pub struct MagneticFieldWindow {
     /// The earth wires as a network through the structures' earthing,
     /// the structures carrying current.
     towers: bool,
-    /// The jumpers carry their phase's current.
-    jumpers: bool,
-    height: f64,
-    width: f64,
-    step: f64,
-    stations: Stations,
-    /// The spans ticked for the profiles (every span's).
-    span_pick: SpanPick,
-    limit: Option<f64>,
-    /// The profiles' model: 2D (infinite straight conductors), else 3D.
-    two_d: bool,
     mean_heights: bool,
-    /// What a run makes (owner, 2026-11-01): 2D — the cuts and, with
-    /// `profiles`, the profiles; else 3D — the volumes only.
-    planes: bool,
-    /// 2D: the profiles (and the points) too.
-    profiles: bool,
-    /// Points read from a CSV file, and its name.
-    points: Option<(String, Vec<GivenPoint>)>,
-    /// The cuts and places set up by Checks › Electrical › Buildings
-    /// (owner, 2026-11-03), run with the window's own.
-    buildings: Option<crate::field_preset::Preset>,
-    /// The points file's text (kept in the project).
-    points_text: Option<String>,
-    /// The project setting's key and the inputs as last read or written
-    /// (none: not read yet).
-    saved: Option<(String, String)>,
-    /// The weather case came from the project (opening keeps it).
-    case_kept: bool,
-    /// Why the last points file could not be read.
-    points_error: Option<String>,
-    /// The profile shown in the plot.
-    shown: usize,
-    /// Scroll the results to the plot (its row's button clicked).
-    reveal: bool,
-    /// The run's progress and Stop.
-    progress: Option<Arc<Progress>>,
-    /// The run.
-    pub(crate) job: Job<Answer>,
-    /// The line's spans (first and last structure), by the line's version
-    /// they were listed for: listed again only when the line changes (they
-    /// take every section's place along the alignments).
-    spans: Option<(u64, Spans)>,
-    /// The inputs are written into the project at the next frame (a run
-    /// started, the window closed; owner, 2026-10-28: not at every change,
-    /// the page stays quick).
-    commit: bool,
-    /// The longest piece of a wire, m (none: as solved).
-    piece_length: Option<f64>,
     /// Cuts and volumes take the wires within this distance only, m.
     modelled_within: Option<f64>,
-    /// The levels drawn.
-    levels: Vec<Level>,
-    /// The cuts coloured by band.
-    pub(crate) fill: bool,
     /// The isolines from above' step (their spans: ticked in the table).
     above: Option<Above>,
-    /// The field in the cross-section panels: the step, m.
-    in_cuts: Option<f64>,
-    /// The volumes' step (their spans: ticked in the table).
-    volume: Option<VolumeSetup>,
-    /// The cuts asked in the table (owner, 2026-10-31): ± this across, m;
-    /// every this, m; up to this over the highest wire, m.
-    cut_width: f64,
-    cut_step: f64,
-    cut_above: f64,
-    /// What the window asks of the application (a cut opened, the 3D
-    /// view turned to a volume), taken each frame.
-    pub requests: Vec<FieldRequest>,
-    /// The panels' cuts.
-    panel: PanelCuts,
-    /// Seconds per piece and point of the last run here.
-    rate: Option<f64>,
-    /// The share of a volume's lattice the last run computed.
-    volume_share: Option<f64>,
     /// The levels the last run was asked (their order in its reports).
     run_levels: Vec<f64>,
-    /// The wires' pieces, by line version and case.
-    pieces_seen: Option<((u64, usize), PieceStats)>,
-    /// The overlay as last handed out.
-    drawn: Option<(bool, u64, u64, String, bool, bool, String)>,
-    /// Save in Performed checks.
-    saving: crate::field_saved::Saving,
-    /// A report saved: the command the app applies.
-    pub apply: Option<(String, ohl_session::Command)>,
-    /// How the wires are solved for a run (owner, 2026-11-01; none: each
-    /// section's own, the case as shown).
-    calculation: ohl_clearance::calculation::Calc,
-    /// Per electrical system its own weather case and calculation
-    /// (owner, 2026-11-01).
-    per_system: crate::field_systems::PerSystem,
-    /// Where the ground comes from (owner, 2026-11-01).
-    ground_from: crate::field_ground::FieldGround,
-    /// The outputs of the run unticked in its list (not drawn).
-    pub(crate) hidden: field_results::Hidden,
     /// The last run's wires (3D).
     wires: Option<Arc<magnetic::Wires3d>>,
+}
+
+impl std::ops::Deref for MagneticFieldWindow {
+    type Target = FieldShared<Answer>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+
+impl std::ops::DerefMut for MagneticFieldWindow {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.common
+    }
 }
 
 impl Default for MagneticFieldWindow {
     fn default() -> Self {
         Self {
-            open: false,
-            case: 0,
+            common: FieldShared::new(FieldStart {
+                jumpers: true,
+                height: 1.0,
+                width: magnetic::WIDTH,
+                step: 1.0,
+                levels: crate::field_overlay::default_levels(),
+                volume_width: magnetic::WIDTH,
+                cut_width: magnetic::WIDTH,
+            }),
             currents: BTreeMap::new(),
             ends: BTreeMap::new(),
             ends_seen: None,
             earth_wires: false,
             towers: true,
-            jumpers: true,
-            height: 1.0,
-            width: magnetic::WIDTH,
-            step: 1.0,
-            stations: Stations::EverySpan,
-            span_pick: SpanPick::default(),
-            limit: None,
-            two_d: false,
-            planes: true,
-            profiles: true,
             mean_heights: false,
-            points: None,
-            buildings: None,
-            points_text: None,
-            saved: None,
-            case_kept: false,
-            points_error: None,
-            shown: 0,
-            reveal: false,
-            progress: None,
-            job: Job::default(),
-            spans: None,
-            commit: false,
-            piece_length: None,
             // 2 km (owner, 2026-11-01, the defaults reviewed: measured on
             // a 28 km line 0.03 % off the whole line, ten times quicker;
             // each run says what was left out).
             modelled_within: Some(CUTOFF),
-            levels: crate::field_overlay::default_levels(),
-            fill: true,
             above: Some(Above { step: 2.0 }),
-            in_cuts: None,
-            volume: Some(VolumeSetup {
-                step: 2.0,
-                width: magnetic::WIDTH,
-            }),
-            cut_width: magnetic::WIDTH,
-            // 1 m (owner, 2026-11-01: quicker at the same accuracy where it
-            // matters: the low levels' isolines within 0.03 %, measured).
-            cut_step: 1.0,
-            cut_above: views::ABOVE,
-            requests: Vec::new(),
-            panel: PanelCuts::default(),
-            rate: None,
-            volume_share: None,
             run_levels: Vec::new(),
-            pieces_seen: None,
-            drawn: None,
-            hidden: Default::default(),
-            calculation: None,
-            per_system: Default::default(),
-            ground_from: Default::default(),
-            saving: Default::default(),
-            apply: None,
             wires: None,
         }
     }
@@ -403,150 +151,55 @@ pub const CUTOFF: f64 = 2000.0;
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 struct Stored {
-    case: Option<String>,
+    /// What both field windows keep.
+    #[serde(flatten)]
+    common: StoredCommon,
+
     currents: BTreeMap<String, (f64, bool)>,
     ends: BTreeMap<String, Vec<(String, Option<f64>)>>,
     earth_wires: bool,
     towers: Option<bool>,
-    jumpers: Option<bool>,
-    height: Option<f64>,
-    width: Option<f64>,
-    step: Option<f64>,
-    /// One span's stations: its structures and the place in it (none:
-    /// every span at its lowest point).
-    span: Option<(String, String, Option<f64>)>,
-    /// Profiles beside the structures: the distance into the spans, m
-    /// (2026-10-31).
-    beside: Option<f64>,
-    /// The spans on an alignment unticked and those on none ticked.
-    spans_off: Vec<(String, String)>,
-    spans_on: Vec<(String, String)>,
-    limit: Option<f64>,
-    two_d: bool,
     mean_heights: bool,
-    /// 2D (cuts, profiles) or 3D (volumes) (2026-11-01; absent: 2D).
-    planes: Option<bool>,
-    /// 2D: the profiles too (absent: yes).
-    profiles: Option<bool>,
-    /// The points file's name and text.
-    points: Option<(String, String)>,
-    /// The buildings' preset (2026-11-03).
-    buildings: Option<crate::field_preset::Preset>,
-    piece_length: Option<f64>,
     modelled_within: Option<f64>,
     /// The cut-off as kept since 2026-11-01: 0 the whole line, else the
     /// distance, m (absent: `modelled_within` as before).
     modelled: Option<f64>,
-    levels: Option<Vec<Level>>,
-    fill: Option<bool>,
     /// Isolines from above: (formerly one span; none: the spans ticked)
     /// and the step.
     above: Option<(Option<(String, String)>, f64)>,
-    in_cuts: Option<f64>,
-    /// A volume: its first and last spans and the step.
-    volume: Option<(SpanIds, SpanIds, f64)>,
-    /// A volume over the spans ticked: its step (2026-10-30; `volume`
-    /// before: its spans now the ticked ones, its step read).
-    volume_step: Option<f64>,
-    /// The volumes' half width (2026-11-01; before: the profiles').
-    volume_width: Option<f64>,
-    /// How the wires are solved (2026-11-01; none: each section's own).
-    calculation: Option<ohl_line::condition::Calculation>,
-    /// Per system (id; "": the earthed wires) its weather case by name
-    /// and calculation (2026-11-01; absent: the window's).
-    per_system: crate::field_systems::PerSystem,
-    /// Where the ground comes from (2026-11-01; absent: the checks').
-    ground_from: crate::field_ground::FieldGround,
-    /// Per span the stations of its 2D cuts (2026-10-31).
-    cuts: Vec<(SpanIds, Vec<CutAt>)>,
-    /// The spans with a volume and with isolines from above (2026-10-31).
-    volume_spans: Vec<SpanIds>,
-    above_spans: Vec<SpanIds>,
-    /// The cuts' half width, step and reach over the highest wire, m.
-    cut_width: Option<f64>,
-    cut_step: Option<f64>,
-    cut_above: Option<f64>,
+    above_spans: Vec<(String, String)>,
 }
 
 impl MagneticFieldWindow {
-    /// The line's spans by their first and last structure, listed once per
-    /// version of the line.
-    fn spans(&mut self, model: &Model) -> Spans {
-        if let Some((v, list)) = &self.spans
-            && *v == model.line_version
-        {
-            return list.clone();
-        }
-        let list: Spans = Arc::new(
-            ohl_electrical::cross_section::line_spans(&model.line)
-                .into_iter()
-                .map(|s| (s.from, s.to))
-                .collect(),
-        );
-        self.spans = Some((model.line_version, list.clone()));
-        list
-    }
-
     /// The inputs as kept in the project.
     fn stored(&mut self, model: &Model) -> Stored {
-        let spans = self.spans(model);
-        let span = match &self.stations {
-            Stations::EverySpan | Stations::Beside { .. } => None,
-            Stations::One { span, fraction } => spans
-                .get(*span)
-                .map(|(from, to)| (from.clone(), to.clone(), *fraction)),
-        };
         Stored {
-            case: model.cases.get(self.case).map(|c| c.case.name.clone()),
+            common: self.common.stored_common(model),
             currents: self.currents.clone(),
             ends: self.ends.clone(),
             earth_wires: self.earth_wires,
             towers: Some(self.towers),
-            jumpers: Some(self.jumpers),
-            height: Some(self.height),
-            width: Some(self.width),
-            step: Some(self.step),
-            span,
-            beside: match self.stations {
-                Stations::Beside { distance } => Some(distance),
-                _ => None,
-            },
-            spans_off: self.span_pick.off.iter().cloned().collect(),
-            spans_on: self.span_pick.on.iter().cloned().collect(),
-            limit: self.limit,
-            two_d: self.two_d,
-            planes: Some(self.planes),
-            profiles: Some(self.profiles),
             mean_heights: self.mean_heights,
-            points: match (&self.points, &self.points_text) {
-                (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
-                _ => None,
-            },
-            buildings: self.buildings.clone(),
-            piece_length: self.piece_length,
             modelled_within: self.modelled_within,
             modelled: Some(self.modelled_within.unwrap_or(0.0)),
-            levels: Some(self.levels.clone()),
-            fill: Some(self.fill),
             above: self.above.as_ref().map(|a| (None, a.step)),
-            in_cuts: self.in_cuts,
-            volume: None,
-            volume_step: self.volume.as_ref().map(|v| v.step),
-            volume_width: self.volume.as_ref().map(|v| v.width),
-            calculation: self.calculation,
-            per_system: self.per_system.clone(),
-            ground_from: self.ground_from.clone(),
-            cuts: self
-                .span_pick
-                .cuts
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            volume_spans: self.span_pick.volume.iter().cloned().collect(),
-            above_spans: self.span_pick.above.iter().cloned().collect(),
-            cut_width: Some(self.cut_width),
-            cut_step: Some(self.cut_step),
-            cut_above: Some(self.cut_above),
+            above_spans: self.common.span_pick.above.iter().cloned().collect(),
+        }
+    }
+
+    /// Reads the inputs from the project when not read yet for the line
+    /// worked on, and writes them into it when they changed — once a run
+    /// starts or the window closes, not while a value is dragged or typed.
+    /// A project this user cannot change keeps them for the session.
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        match self.common.keep_step(model, ctx, SETTING) {
+            KeepStep::Nothing => {}
+            KeepStep::Read => self.load(model),
+            KeepStep::Write(key) => {
+                let stored = self.stored(model);
+                self.common
+                    .write_inputs(model, key, &stored, "magnetic field inputs");
+            }
         }
     }
 
@@ -568,26 +221,15 @@ impl MagneticFieldWindow {
                 ..Stored::default()
             });
         self.take(model, st);
-        self.saved = serde_json::to_string(&self.stored(model))
+        self.common.saved = serde_json::to_string(&self.stored(model))
             .ok()
             .map(|json| (key, json));
     }
 
     /// Takes inputs kept (in the project or with a saved run).
     fn take(&mut self, model: &Model, st: Stored) {
+        self.common.take_common(model, st.common);
         let d = Self::default();
-        self.calculation = st.calculation;
-        self.per_system = st.per_system.clone();
-        self.ground_from = st.ground_from.clone();
-        self.case_kept = false;
-        if let Some(k) = st
-            .case
-            .as_ref()
-            .and_then(|n| model.cases.iter().position(|c| &c.case.name == n))
-        {
-            self.case = k;
-            self.case_kept = true;
-        }
         // A current of 0 A along the line was written for every circuit
         // shown before the systems had an operating current (2026-11-04):
         // left out, so that the circuit takes its system's (none: 0 A).
@@ -599,107 +241,17 @@ impl MagneticFieldWindow {
         self.ends = st.ends;
         self.earth_wires = st.earth_wires;
         self.towers = st.towers.unwrap_or(d.towers);
-        self.jumpers = st.jumpers.unwrap_or(d.jumpers);
-        self.height = st.height.unwrap_or(d.height);
-        self.width = st.width.unwrap_or(d.width);
-        self.step = st.step.unwrap_or(d.step);
-        let spans = self.spans(model);
-        self.span_pick.off = st.spans_off.into_iter().collect();
-        self.span_pick.on = st.spans_on.into_iter().collect();
-        self.stations = st
-            .span
-            .and_then(|(from, to, fraction)| {
-                spans
-                    .iter()
-                    .position(|(a, b)| *a == from && *b == to)
-                    .map(|span| Stations::One { span, fraction })
-            })
-            .or(st.beside.map(|distance| Stations::Beside { distance }))
-            .unwrap_or_default();
-        self.limit = st.limit;
-        self.piece_length = st.piece_length;
         // Kept since 2026-11-01 (0: the whole line); before, as it was.
         self.modelled_within = match st.modelled {
             Some(d) if d > 0.0 => Some(d),
             Some(_) => None,
             None => st.modelled_within,
         };
-        self.levels = st.levels.unwrap_or(d.levels);
-        self.fill = st.fill.unwrap_or(d.fill);
         self.above = Some(Above {
             step: st.above.map_or(2.0, |(_, step)| step),
         });
-        self.in_cuts = st.in_cuts;
-        self.volume = Some(VolumeSetup {
-            step: st.volume_step.or(st.volume.map(|v| v.2)).unwrap_or(2.0),
-            width: st.volume_width.unwrap_or(self.width),
-        });
-        self.span_pick.cuts = st.cuts.into_iter().collect();
-        self.span_pick.volume = st.volume_spans.into_iter().collect();
-        self.span_pick.above = st.above_spans.into_iter().collect();
-        self.cut_width = st.cut_width.unwrap_or(d.cut_width);
-        self.cut_step = st.cut_step.unwrap_or(d.cut_step);
-        self.cut_above = st.cut_above.unwrap_or(d.cut_above);
-        self.two_d = st.two_d;
-        self.planes = st.planes.unwrap_or(true);
-        self.profiles = st.profiles.unwrap_or(true);
+        self.common.span_pick.above = st.above_spans.into_iter().collect();
         self.mean_heights = st.mean_heights;
-        self.buildings = st.buildings.clone();
-        (self.points, self.points_text, self.points_error) = match st.points {
-            Some((name, text)) => match magnetic::parse_points(&text) {
-                Ok(p) => (Some((name, p)), Some(text), None),
-                Err(e) => (
-                    None,
-                    None,
-                    Some(format!("{name} (kept in the project): {e}")),
-                ),
-            },
-            None => (None, None, None),
-        };
-    }
-
-    /// Reads the inputs from the project when not read yet for the line
-    /// worked on, and writes them into it when they changed — once a run
-    /// starts or the window closes (owner, 2026-10-28: not at every change
-    /// on the page), not while a value is dragged or typed. A project this
-    /// user cannot change keeps them for the session.
-    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
-        let Some(line) = model.session().map(|s| s.current_line().to_owned()) else {
-            return;
-        };
-        let key = format!("{SETTING}.{line}");
-        if self.saved.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.load(model);
-            return;
-        }
-        if !self.commit
-            || ctx.input(|i| i.pointer.any_down())
-            || ctx.memory(|m| m.focused().is_some())
-        {
-            return;
-        }
-        self.commit = false;
-        let Ok(json) = serde_json::to_string(&self.stored(model)) else {
-            return;
-        };
-        if self.saved.as_ref().is_some_and(|(_, j)| *j == json) {
-            return;
-        }
-        let op = ohl_server::Op::SetSetting {
-            key: key.clone(),
-            value: Some(json.clone()),
-        };
-        // (Read-only for this user: kept for the session.)
-        let _ = model.project_op("magnetic field inputs", op);
-        self.saved = Some((key, json));
-    }
-
-    /// Opens the window on the weather case shown.
-    pub fn show(&mut self, case: usize) {
-        if !self.open && !self.case_kept {
-            self.case = case;
-        }
-        self.open = true;
     }
 
     /// Sets a circuit's current, A (tests).
@@ -730,32 +282,12 @@ impl MagneticFieldWindow {
     /// Ticks span `k` only (tests).
     #[cfg(test)]
     pub fn tick_only(&mut self, model: &Model, k: usize) {
-        let spans = self.spans(model);
-        self.span_pick.only(model, &spans, k);
+        let spans = self.common.spans(model);
+        self.common.span_pick.only(model, &spans, k);
         // Its volume and isolines from above ticked too (the tests' views
         // over one span).
-        self.span_pick.volume.insert(spans[k].clone());
-        self.span_pick.above.insert(spans[k].clone());
-    }
-
-    /// Asks a 2D cut in span `k` at `at` (tests).
-    #[cfg(test)]
-    pub fn add_cut(&mut self, model: &Model, k: usize, at: CutAt) {
-        let spans = self.spans(model);
-        self.span_pick
-            .cuts
-            .entry(spans[k].clone())
-            .or_default()
-            .push(at);
-    }
-
-    /// The span table's state (tests): the spans ticked.
-    #[cfg(test)]
-    pub fn ticked_spans(&mut self, model: &Model) -> Vec<usize> {
-        let spans = self.spans(model);
-        let (mut c, _) = self.span_pick.chosen(model, &spans);
-        c.sort_unstable();
-        c
+        self.common.span_pick.volume.insert(spans[k].clone());
+        self.common.span_pick.above.insert(spans[k].clone());
     }
 
     /// Sets the views (tests): isolines from above every `above` m, the
@@ -764,13 +296,13 @@ impl MagneticFieldWindow {
     #[cfg(test)]
     pub fn set_views(&mut self, above: Option<f64>, cuts: Option<f64>, volume: Option<f64>) {
         self.above = above.map(|step| Above { step });
-        self.in_cuts = cuts;
-        self.volume = volume.map(|step| VolumeSetup {
+        self.common.in_cuts = cuts;
+        self.common.volume = volume.map(|step| VolumeSetup {
             step,
-            width: self.width,
+            width: self.common.width,
         });
         // A volume asked: 3D (2026-11-01: 3D makes the volumes only).
-        self.planes = volume.is_none();
+        self.common.planes = volume.is_none();
     }
 
     /// The views (tests): from above, the panels, the volume's step.
@@ -778,15 +310,9 @@ impl MagneticFieldWindow {
     pub fn views(&self) -> (Option<f64>, Option<f64>, Option<f64>) {
         (
             self.above.as_ref().map(|a| a.step),
-            self.in_cuts,
-            self.volume.as_ref().map(|v| v.step),
+            self.common.in_cuts,
+            self.common.volume.as_ref().map(|v| v.step),
         )
-    }
-
-    /// The panels' cuts computed (tests).
-    #[cfg(test)]
-    pub fn panel_cuts_done(&self) -> usize {
-        self.panel.done.len()
     }
 
     /// The earth wires carrying their induced currents (tests).
@@ -802,47 +328,11 @@ impl MagneticFieldWindow {
         self.ends.insert(label.to_owned(), ends);
     }
 
-    /// The limit, µT (tests).
-    #[cfg(test)]
-    pub fn limit(&self) -> Option<f64> {
-        self.limit
-    }
-
-    /// Sets the buildings' preset (Checks › Electrical › Buildings).
-    pub fn set_buildings(&mut self, preset: Option<crate::field_preset::Preset>) {
-        self.buildings = preset;
-        self.commit = true;
-    }
-
-    /// The buildings' preset set up (tests).
-    #[cfg(test)]
-    pub fn buildings(&self) -> Option<&crate::field_preset::Preset> {
-        self.buildings.as_ref()
-    }
-
-    /// Sets the limit, µT.
-    pub fn set_limit(&mut self, limit: Option<f64>) {
-        self.limit = limit;
-    }
-
-    /// What the last run was computed from that changed since, in words
-    /// (`None`: nothing, or no answer).
-    pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        if !matches!(self.job.result, Some(Ok(_))) {
-            return None;
-        }
-        // A saved run: compared with the line by its own state.
-        match &self.saving.stale {
-            Some(s) => Some(s.clone()),
-            None => self.job.stamp.out_of_date(model, USES),
-        }
-    }
-
     /// The settings as the engine takes them.
     fn settings(&mut self, model: &Model) -> Settings {
-        let spans = self.spans(model);
-        let stations = match &self.stations {
-            Stations::EverySpan => match self.span_pick.chosen(model, &spans) {
+        let spans = self.common.spans(model);
+        let stations = match &self.common.stations {
+            Stations::EverySpan => match self.common.span_pick.chosen(model, &spans) {
                 (_, true) => Vec::new(),
                 (chosen, false) => chosen
                     .into_iter()
@@ -863,13 +353,13 @@ impl MagneticFieldWindow {
                 .into_iter()
                 .collect(),
             Stations::Beside { distance } => {
-                let (mut chosen, _) = self.span_pick.chosen(model, &spans);
+                let (mut chosen, _) = self.common.span_pick.chosen(model, &spans);
                 chosen.sort_unstable();
                 beside_stations(model, &spans, &chosen, *distance)
             }
         };
         Settings {
-            model: if self.two_d {
+            model: if self.common.two_d {
                 FieldModel::TwoD
             } else {
                 FieldModel::ThreeD
@@ -902,40 +392,42 @@ impl MagneticFieldWindow {
                 .collect(),
             earth_wires: self.earth_wires,
             towers: self.towers,
-            jumpers: self.jumpers,
-            height: self.height,
-            width: self.width,
-            step: self.step,
+            jumpers: self.common.jumpers,
+            height: self.common.height,
+            width: self.common.width,
+            step: self.common.step,
             stations,
-            profiles: self.planes && self.profiles,
+            profiles: self.common.planes && self.common.profiles,
             // No isolines from above (owner, 2026-11-01: dropped).
             grids: Vec::new(),
             grid_step: None,
-            piece_length: self.piece_length,
+            piece_length: self.common.piece_length,
             modelled_within: self.modelled_within,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
             // cuts it should be asked at which stations we want one").
-            cuts: if !self.planes {
+            cuts: if !self.common.planes {
                 Vec::new()
             } else {
-                self.span_pick
+                self.common
+                    .span_pick
                     .cut_places(model, &spans)
                     .0
                     .into_iter()
                     .map(|at| magnetic::CutSpec {
                         at,
-                        width: self.cut_width,
-                        above: self.cut_above,
-                        step: self.cut_step,
+                        width: self.common.cut_width,
+                        above: self.common.cut_above,
+                        step: self.common.cut_step,
                         label: None,
                     })
-                    .chain(self.buildings.iter().flat_map(|b| b.cut_specs()))
+                    .chain(self.common.buildings.iter().flat_map(|b| b.cut_specs()))
                     .collect()
             },
             // A volume: one along each run of spans following each other
             // with Volume ticked (continuous across the line angles).
-            volumes: match (&self.volume, self.planes) {
+            volumes: match (&self.common.volume, self.common.planes) {
                 (Some(v), false) => self
+                    .common
                     .span_pick
                     .volume_runs(model, &spans)
                     .into_iter()
@@ -950,44 +442,49 @@ impl MagneticFieldWindow {
                 _ => Vec::new(),
             },
             levels: crate::field_preset::with_levels(
-                crate::field_overlay::shown(&self.levels)
+                crate::field_overlay::shown(&self.common.levels)
                     .iter()
                     .map(|l| l.value)
                     .collect(),
-                self.buildings.as_ref().map(|b| b.levels_ut.as_slice()),
+                self.common
+                    .buildings
+                    .as_ref()
+                    .map(|b| b.levels_ut.as_slice()),
             ),
             // The CSV's points with the profiles; the buildings' places
             // in any 2D run.
             points: {
-                let mut v = if self.planes && self.profiles {
-                    self.points
+                let mut v = if self.common.planes && self.common.profiles {
+                    self.common
+                        .points
                         .as_ref()
                         .map(|p| p.1.clone())
                         .unwrap_or_default()
                 } else {
                     Vec::new()
                 };
-                if self.planes
-                    && let Some(b) = &self.buildings
+                if self.common.planes
+                    && let Some(b) = &self.common.buildings
                 {
                     v.extend(b.points());
                 }
                 v
             },
-            limit_ut: self.limit,
+            limit_ut: self.common.limit,
         }
     }
 
     /// Starts a run on the case's solved sections.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
         // The inputs run with: kept in the project (the next frame).
-        self.commit = true;
-        let Some(solved) = model.cases.get(self.case) else {
-            self.job.result = Some(Err("no weather case in the model".into()));
+        self.common.commit = true;
+        let Some(solved) = model.cases.get(self.common.case) else {
+            self.common.job.result = Some(Err("no weather case in the model".into()));
             return;
         };
         // By the window's calculation: the case solved for the run.
-        let line = ohl_clearance::calculation::line_for(&model.line, self.calculation).into_owned();
+        let line =
+            ohl_clearance::calculation::line_for(&model.line, self.common.calculation).into_owned();
         let library = model.library.clone();
         let mut shapes = solved.shapes.clone();
         let mut jumpers = solved.jumpers.clone();
@@ -995,13 +492,17 @@ impl MagneticFieldWindow {
         // A case the app has not solved yet (it solves a case when it is
         // shown): solved for the run, in the background (2026-10-31: the
         // run took no wire and gave 0 kV/m).
-        let unsolved = !solved.solved_for(model.wind) || self.calculation.is_some();
+        let unsolved = !solved.solved_for(model.wind) || self.common.calculation.is_some();
         // The systems in cases or calculations of their own (2026-11-01).
-        let plan =
-            crate::field_systems::plan(model, &self.per_system, &solved.case, self.calculation);
+        let plan = crate::field_systems::plan(
+            model,
+            &self.common.per_system,
+            &solved.case,
+            self.common.calculation,
+        );
         let wind = model.wind;
         // The ground chosen (2026-11-01), read in the background.
-        let ground_source = crate::field_ground::source(model, &self.ground_from);
+        let ground_source = crate::field_ground::source(model, &self.common.ground_from);
         let settings = self.settings(model);
         // Each kind of output its own step, one after another (owner,
         // 2026-11-01: "not all at once and clearly separated"): the cuts
@@ -1010,11 +511,11 @@ impl MagneticFieldWindow {
         let steps = steps_of(&settings);
         self.run_levels = settings.levels.clone();
         let progress = Arc::new(Progress::default());
-        self.progress = Some(progress.clone());
+        self.common.progress = Some(progress.clone());
         // A new run's outputs all drawn.
-        self.hidden.clear();
-        self.saving.stale = None;
-        self.job.start_at(ctx, model.revision(), move || {
+        self.common.hidden.clear();
+        self.common.saving.stale = None;
+        self.common.job.start_at(ctx, model.revision(), move || {
             if unsolved {
                 progress.set_stage(format!("solving the weather case {}", case.name));
                 let s = crate::model::Solved::with_wind(&line, &library, case.clone(), wind);
@@ -1068,39 +569,14 @@ impl MagneticFieldWindow {
             let mut field = field.ok_or("nothing asked: tick a span, a cut or a volume")?;
             let work = progress.total.load(Ordering::Relaxed) as f64
                 * wires.as_ref().map_or(0, |w| w.count()) as f64;
-            // One warning for the sections the case does not hold (owner,
-            // 2026-10-31: not one line each).
-            let missing: Vec<&str> = line
-                .sections
-                .iter()
-                .map(|s| s.id.as_str())
-                .filter(|id| !shapes.iter().any(|s| s.section == *id))
-                .collect();
-            if !missing.is_empty() {
-                // The engine's own note per cross-section, said once here.
-                field
-                    .notes
-                    .retain(|n| !n.ends_with(": not solved, left out"));
-                let shown: Vec<&str> = missing.iter().take(5).copied().collect();
-                field.notes.insert(
-                    0,
-                    format!(
-                        "{} section(s) not solved in this case, left out: {}{}",
-                        missing.len(),
-                        shown.join(", "),
-                        if missing.len() > 5 { ", …" } else { "" }
-                    ),
-                );
-            }
-            for n in per_notes.into_iter().rev().chain(ground_note) {
-                field.notes.insert(0, n);
-            }
-            if g.is_none() {
-                field.notes.push(
-                    "ground: straight between the structures' feet and level across (no terrain surface)"
-                        .into(),
-                );
-            }
+            field_common::add_run_notes(
+                &mut field.notes,
+                &line,
+                &shapes,
+                per_notes,
+                ground_note,
+                g.is_some(),
+            );
             let meshes = views::take_meshes(&mut field.volumes);
             Ok(Answer {
                 field,
@@ -1125,30 +601,31 @@ impl MagneticFieldWindow {
                 "Saved without its volumes' surfaces (too large): run it again to see them.".into(),
             );
         }
-        self.job.stop();
-        self.job
+        self.common.job.stop();
+        self.common
+            .job
             .stamp
             .set(crate::revision::saved_revision(&r.parameters, model));
-        self.job.result = Some(Ok(Answer {
+        self.common.job.result = Some(Ok(Answer {
             field,
             case,
             wires: None,
             meshes,
             work: 0.0,
         }));
-        self.job.generation += 1;
-        self.hidden.clear();
+        self.common.job.generation += 1;
+        self.common.hidden.clear();
         self.wires = None;
-        self.saving.stale = crate::field_saved::changed_since(r, model);
-        self.saving.name = r.id.clone();
-        self.open = true;
+        self.common.saving.stale = crate::field_saved::changed_since(r, model);
+        self.common.saving.name = r.id.clone();
+        self.common.open = true;
         Ok(())
     }
 
     /// The run shown as report `name` of the performed checks.
     fn check_report(&mut self, model: &Model, name: &str) -> Result<CheckReport, String> {
         let inputs = self.stored(model);
-        let Some(Ok(a)) = &self.job.result else {
+        let Some(Ok(a)) = &self.common.job.result else {
             return Err("run it first".into());
         };
         let (results, triangles) = crate::field_saved::results(&a.case, &a.field, &a.meshes)?;
@@ -1180,38 +657,38 @@ impl MagneticFieldWindow {
             (crate::field_saved::MAGNETIC_CHECK_ID, "Magnetic field"),
             name,
             summary,
-            crate::field_saved::parameters(&inputs, self.job.stamp.loads_per(model)),
+            crate::field_saved::parameters(&inputs, self.common.job.stamp.loads_per(model)),
             results,
         )
     }
 
     /// The window.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) {
-        let generation = self.job.generation;
-        self.job.poll();
-        if !self.job.running() {
-            self.progress = None;
+        let generation = self.common.job.generation;
+        self.common.job.poll();
+        if !self.common.job.running() {
+            self.common.progress = None;
         }
-        if self.job.generation != generation {
+        if self.common.job.generation != generation {
             // A new answer: its wires for the panels, its speed and its
             // volumes' share for the estimates.
             self.wires = None;
-            if let Some(Ok(a)) = &self.job.result {
+            if let Some(Ok(a)) = &self.common.job.result {
                 self.wires = a.wires.clone();
-                if let Some(t) = self.job.took
+                if let Some(t) = self.common.job.took
                     && a.work > 0.0
                 {
-                    self.rate = Some(t.as_secs_f64() / a.work);
+                    self.common.rate = Some(t.as_secs_f64() / a.work);
                 }
                 let (c, f) = a.field.volumes.iter().fold((0usize, 0usize), |s, v| {
                     (s.0 + v.values.computed, s.1 + v.values.full)
                 });
                 if f > 0 {
-                    self.volume_share = Some(c as f64 / f as f64);
+                    self.common.volume_share = Some(c as f64 / f as f64);
                 }
             }
         }
-        if !self.open {
+        if !self.common.open {
             return;
         }
         let mut open = true;
@@ -1238,12 +715,13 @@ impl MagneticFieldWindow {
                         .any(|e| e.1.is_some_and(|a| a != 0.0))
                 {
                     Some("give a circuit a current (2 Scope)".to_owned())
-                } else if matches!(self.stations, Stations::EverySpan | Stations::Beside { .. })
-                    && {
-                        let spans = self.spans(model);
-                        self.span_pick.chosen(model, &spans).0.is_empty()
-                    }
-                {
+                } else if matches!(
+                    self.common.stations,
+                    Stations::EverySpan | Stations::Beside { .. }
+                ) && {
+                    let spans = self.common.spans(model);
+                    self.common.span_pick.chosen(model, &spans).0.is_empty()
+                } {
                     Some("no span ticked (3 Spans)".to_owned())
                 } else {
                     None
@@ -1254,8 +732,8 @@ impl MagneticFieldWindow {
                     ui,
                     WINDOW,
                     None,
-                    self.job.generation,
-                    why.is_some() && !self.job.running(),
+                    self.common.job.generation,
+                    why.is_some() && !self.common.job.running(),
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
@@ -1273,9 +751,9 @@ impl MagneticFieldWindow {
                             crate::field_help::profile(
                                 ui,
                                 crate::field_help::Field::Magnetic,
-                                self.width,
-                                self.step,
-                                self.height,
+                                self.common.width,
+                                self.common.step,
+                                self.common.height,
                             );
                             crate::field_help::sources(
                                 ui,
@@ -1290,7 +768,7 @@ impl MagneticFieldWindow {
                         check_ui::section(ui, 2, "Scope", None);
                         check_ui::ScopePicker::new(WINDOW, &model.line)
                             .route_of(model)
-                            .cases(check_ui::Cases::One(&names, &mut self.case))
+                            .cases(check_ui::Cases::One(&names, &mut self.common.case))
                             .ui(ui);
                         // How the wires are solved (owner, 2026-11-01).
                         ui.horizontal(|ui| {
@@ -1298,7 +776,7 @@ impl MagneticFieldWindow {
                             crate::rule_table::calculation_combo(
                                 ui,
                                 "field-calculation",
-                                &mut self.calculation,
+                                &mut self.common.calculation,
                             );
                             ui.label(
                                 egui::RichText::new(
@@ -1310,8 +788,8 @@ impl MagneticFieldWindow {
                                 .weak(),
                             );
                         });
-                        crate::field_systems::ui(ui, WINDOW, model, &mut self.per_system);
-                        crate::field_ground::ui(ui, WINDOW, model, &mut self.ground_from);
+                        crate::field_systems::ui(ui, WINDOW, model, &mut self.common.per_system);
+                        crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
                         check_ui::section(ui, 3, "Spans and what to compute in each", None);
@@ -1326,10 +804,10 @@ impl MagneticFieldWindow {
                     }),
                 }
                 help::footer(ui, WINDOW, |ui| {
-                    let running = self.progress.as_ref().map(|p| {
+                    let running = self.common.progress.as_ref().map(|p| {
                         let total = p.total.load(Ordering::Relaxed).max(1);
                         let done = p.done.load(Ordering::Relaxed);
-                        let elapsed = self.job.elapsed().unwrap_or_default();
+                        let elapsed = self.common.job.elapsed().unwrap_or_default();
                         let mut pr =
                             check_ui::Progress::with_left(elapsed, p.seconds_left(elapsed));
                         let stage = p.stage();
@@ -1346,7 +824,7 @@ impl MagneticFieldWindow {
                         hover: "Compute the field from the wires as solved in the weather case \
                                 chosen",
                         scope: None,
-                        info: Some(match self.job.took {
+                        info: Some(match self.common.job.took {
                             Some(t) => format!("{} · last run {t:.1?}", self.summary(model)),
                             None => self.summary(model),
                         }),
@@ -1354,7 +832,7 @@ impl MagneticFieldWindow {
                     match check_ui::run_footer(ui, f, |_| {}) {
                         check_ui::Action::Run => run = true,
                         check_ui::Action::Stop => {
-                            if let Some(p) = &self.progress {
+                            if let Some(p) = &self.common.progress {
                                 p.cancel.store(true, Ordering::Relaxed);
                             }
                         }
@@ -1364,10 +842,10 @@ impl MagneticFieldWindow {
             },
         );
         // Closed: its inputs kept in the project (the next frame).
-        if self.open && !open {
-            self.commit = true;
+        if self.common.open && !open {
+            self.common.commit = true;
         }
-        self.open = open;
+        self.common.open = open;
         if run {
             self.start(model, ctx);
         }
@@ -1577,17 +1055,17 @@ impl MagneticFieldWindow {
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Profiles by");
-                ui.add_enabled_ui(self.planes && self.profiles, |ui| {
+                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.two_d, false, "3D")
+                        ui.selectable_value(&mut self.common.two_d, false, "3D")
                             .on_hover_text(FieldModel::ThreeD.describe());
-                        ui.selectable_value(&mut self.two_d, true, "2D")
+                        ui.selectable_value(&mut self.common.two_d, true, "2D")
                         .on_hover_text(
                             "Infinite straight parallel conductors: not valid near a line angle \
                              over 5°, near crossings, or on spans between differently arranged \
                              structures (warned)",
                         );
-                        if self.two_d {
+                        if self.common.two_d {
                             ui.checkbox(&mut self.mean_heights, "wires at the span's mean height")
                             .on_hover_text(
                                 "Off: the wires where they cross the profile (at the lowest point \
@@ -1620,7 +1098,7 @@ impl MagneticFieldWindow {
                 ui.end_row();
                 {
                     ui.label("Jumpers");
-                    ui.checkbox(&mut self.jumpers, "carry their phase's current")
+                    ui.checkbox(&mut self.common.jumpers, "carry their phase's current")
                         .on_hover_text(
                             "A jumper between two section ends of one phase carries that phase's \
                              current, as solved in the weather case (3D). Off: left out (not \
@@ -1631,16 +1109,16 @@ impl MagneticFieldWindow {
                 }
                 ui.label("Limit");
                 ui.horizontal(|ui| {
-                    let mut given = self.limit.is_some();
+                    let mut given = self.common.limit.is_some();
                     ui.checkbox(&mut given, "given").on_hover_text(
                         "Your limit, µT: the margin at every point and the limit line's \
                              extent per profile. None is built in (an ordinance's values come \
                              from its parameter file)",
                     );
                     if !given {
-                        self.limit = None;
+                        self.common.limit = None;
                     } else {
-                        let l = self.limit.get_or_insert(1.0);
+                        let l = self.common.limit.get_or_insert(1.0);
                         crate::style::field(
                             ui,
                             egui::DragValue::new(l)
@@ -1672,94 +1150,37 @@ impl MagneticFieldWindow {
                                 let name = path
                                     .file_name()
                                     .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                                self.points = Some((name, p));
-                                self.points_text = std::fs::read_to_string(&path).ok();
-                                self.points_error = None;
+                                self.common.points = Some((name, p));
+                                self.common.points_text = std::fs::read_to_string(&path).ok();
+                                self.common.points_error = None;
                             }
-                            Err(e) => self.points_error = Some(format!("{}: {e}", path.display())),
+                            Err(e) => {
+                                self.common.points_error = Some(format!("{}: {e}", path.display()))
+                            }
                         }
                     }
-                    if let Some((name, p)) = &self.points {
+                    if let Some((name, p)) = &self.common.points {
                         ui.label(format!("{} points from {name}", p.len()));
                         if ui.small_button("Clear").clicked() {
-                            self.points = None;
-                            self.points_text = None;
+                            self.common.points = None;
+                            self.common.points_text = None;
                         }
                     }
                 });
                 ui.end_row();
-                if crate::field_preset::row(ui, &mut self.buildings, self.planes) {
-                    self.commit = true;
+                if crate::field_preset::row(ui, &mut self.common.buildings, self.common.planes) {
+                    self.common.commit = true;
                 }
             });
-        if let Some(e) = &self.points_error {
+        if let Some(e) = &self.common.points_error {
             crate::menu::error_label(ui, e.as_str());
         }
     }
 
-    /// Section 3 (owner, 2026-10-31, validated): the span table — which
-    /// spans, and in each its profile, the stations of its 2D cuts, its
-    /// volume and its isolines from above —, where the profiles are taken
-    /// and how wide, and (3D) the sizes of the cuts, volumes and grids.
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let spans = self.spans(model);
-        method_ui(ui, &mut self.planes, &mut self.profiles);
-        self.span_pick.table(
-            ui,
-            "magnetic-field",
-            model,
-            &spans,
-            Columns {
-                profile: self.planes && self.profiles,
-                cuts: self.planes,
-                volume: !self.planes,
-            },
-        );
-        if self.planes && self.profiles {
-            self.profiles_setup_ui(ui, &spans);
-        }
+        let spans = self.common.spans(model);
+        self.common.spans_ui(ui, "magnetic-field", model, &spans);
         self.sizes_ui(ui, model, &spans);
-    }
-
-    /// The profiles: where and how wide (2D, profiles asked).
-    fn profiles_setup_ui(&mut self, ui: &mut egui::Ui, spans: &Spans) {
-        egui::Grid::new("magnetic-field-profiles-setup")
-            .num_columns(2)
-            .spacing([10.0, 4.0])
-            .show(ui, |ui| {
-                ui.label("Profiles");
-                profiles_ui(ui, "magnetic-field", &mut self.stations, spans);
-                ui.end_row();
-                ui.label("Across");
-                ui.horizontal(|ui| {
-                    ui.label("±");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.width)
-                            .range(1.0..=2000.0)
-                            .speed(1.0)
-                            .suffix(" m"),
-                    );
-                    ui.label("every");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.step)
-                            .range(0.1..=50.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                    ui.label("at");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut self.height)
-                            .range(0.0..=200.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
-                    ui.label("above the ground");
-                });
-                ui.end_row();
-            });
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile,
@@ -1793,7 +1214,7 @@ impl MagneticFieldWindow {
                 max: format!("{largest:.1} µT"),
                 note: "at the wires; isolines at the levels".into(),
                 button: "Open cut",
-                action: field_results::open_cut(c, self.cut_width),
+                action: field_results::open_cut(c, self.common.cut_width),
                 drawn: Some(k),
             });
         }
@@ -1867,28 +1288,29 @@ impl MagneticFieldWindow {
         run: &mut bool,
     ) {
         // The outputs listed first (owner, 2026-10-31): a click shows one.
-        if let Some(Ok(a)) = &self.job.result {
+        if let Some(Ok(a)) = &self.common.job.result {
             let rows = self.output_rows(model, a);
-            match field_results::list(ui, "magnetic-field", &rows, &mut self.hidden) {
+            match field_results::list(ui, "magnetic-field", &rows, &mut self.common.hidden) {
                 Some(RowAction::Plot(k)) => {
-                    self.shown = k;
-                    self.reveal = true;
+                    self.common.shown = k;
+                    self.common.reveal = true;
                 }
-                Some(RowAction::Ask(r)) => self.requests.push(r),
+                Some(RowAction::Ask(r)) => self.common.requests.push(r),
                 _ => {}
             }
             ui.separator();
         }
         // Save in Performed checks (owner, 2026-11-01).
-        if matches!(self.job.result, Some(Ok(_)))
-            && let Some(name) = self.saving.ui(ui, model)
+        if matches!(self.common.job.result, Some(Ok(_)))
+            && let Some(name) = self.common.saving.ui(ui, model)
         {
             let r = self.check_report(model, &name).map(|report| {
-                self.apply = Some((format!("saved the magnetic field {name}"), report.put()));
+                self.common.apply =
+                    Some((format!("saved the magnetic field {name}"), report.put()));
             });
-            self.saving.outcome(&name, &r);
+            self.common.saving.outcome(&name, &r);
         }
-        let answer = match &self.job.result {
+        let answer = match &self.common.job.result {
             None => {
                 ui.label("Run to compute the field.");
                 return;
@@ -1900,7 +1322,7 @@ impl MagneticFieldWindow {
             Some(Ok(a)) => a,
         };
         if let Some(what) = stale {
-            *run |= crate::revision::banner(ui, what, !self.job.running());
+            *run |= crate::revision::banner(ui, what, !self.common.job.running());
         }
         let m = &answer.field;
         ui.horizontal(|ui| {
@@ -1960,26 +1382,48 @@ impl MagneticFieldWindow {
         self.views_results_ui(ui, m, &answer.meshes);
         if !m.profiles.is_empty() {
             ui.separator();
-            self.shown = self.shown.min(m.profiles.len() - 1);
+            self.common.shown = self.common.shown.min(m.profiles.len() - 1);
             let header = ui
                 .horizontal(|ui| {
                     ui.strong("Profile");
                     let name =
                         |p: &magnetic::Profile| format!("{}–{} at {:.1} m", p.from, p.to, p.at);
                     egui::ComboBox::from_id_salt("magnetic-field-profile")
-                        .selected_text(name(&m.profiles[self.shown]))
+                        .selected_text(name(&m.profiles[self.common.shown]))
                         .show_ui(ui, |ui| {
                             for (k, p) in m.profiles.iter().enumerate() {
-                                ui.selectable_value(&mut self.shown, k, name(p));
+                                ui.selectable_value(&mut self.common.shown, k, name(p));
                             }
                         });
                 })
                 .response
                 .rect;
-            let drawn = plot(ui, &m.profiles[self.shown], m.limit_ut);
+            let drawn = {
+                let p = &m.profiles[self.common.shown];
+                let values: Vec<(f64, f64)> = p.points.iter().map(|q| (q.offset, q.b_ut)).collect();
+                let major: Vec<(f64, f64)> =
+                    p.points.iter().map(|q| (q.offset, q.major_ut)).collect();
+                field_common::plot(
+                    ui,
+                    &field_common::ProfilePlot {
+                        values: &values,
+                        faint: Some(&major),
+                        axis: "B µT",
+                        unit: "µT",
+                        hover: &|k| {
+                            let q = &p.points[k];
+                            format!(
+                                "{:.1} m: {:.4} µT (largest over the cycle {:.4})",
+                                q.offset, q.b_ut, q.major_ut
+                            )
+                        },
+                    },
+                    m.limit_ut,
+                )
+            };
             // The list's Show plot (2026-11-01: the plot sat below the
             // notes and views, out of sight): the results scroll to it.
-            if std::mem::take(&mut self.reveal) {
+            if std::mem::take(&mut self.common.reveal) {
                 ui.scroll_to_rect(header.union(drawn), Some(egui::Align::TOP));
             }
             help::list(
@@ -2007,12 +1451,12 @@ impl MagneticFieldWindow {
                             for (k, p) in m.profiles.iter().enumerate() {
                                 if ui
                                     .selectable_label(
-                                        k == self.shown,
+                                        k == self.common.shown,
                                         format!("{}–{}", p.from, p.to),
                                     )
                                     .clicked()
                                 {
-                                    self.shown = k;
+                                    self.common.shown = k;
                                 }
                                 ui.label(format!("{:.1}", p.at));
                                 ui.label(format!("{:.1}", p.along_line));
@@ -2042,7 +1486,7 @@ impl MagneticFieldWindow {
                         });
                 },
             );
-            for w in &m.profiles[self.shown].warnings {
+            for w in &m.profiles[self.common.shown].warnings {
                 ui.label(
                     egui::RichText::new(w)
                         .small()
@@ -2107,145 +1551,6 @@ impl MagneticFieldWindow {
     }
 }
 
-/// A profile's plot: B (and the cycle's largest value, fainter) against
-/// the distance from the axis, the limit as a dashed line, the value under
-/// the pointer.
-fn plot(ui: &mut egui::Ui, p: &magnetic::Profile, limit: Option<f64>) -> egui::Rect {
-    let width = ui.available_width().clamp(300.0, 900.0);
-    let (response, painter) = ui.allocate_painter(egui::vec2(width, 240.0), egui::Sense::hover());
-    let r = response.rect;
-    let v = ui.visuals();
-    let text = v.text_color();
-    let faint = v.weak_text_color();
-    let line = v.hyperlink_color;
-    let font = egui::FontId::proportional(11.0);
-    let frame = egui::Rect::from_min_max(
-        r.min + egui::vec2(48.0, 8.0),
-        r.max - egui::vec2(10.0, 24.0),
-    );
-    painter.rect_stroke(
-        frame,
-        0.0,
-        egui::Stroke::new(1.0, faint),
-        egui::StrokeKind::Inside,
-    );
-    let (Some(first), Some(last)) = (p.points.first(), p.points.last()) else {
-        return r;
-    };
-    let (x0, x1) = (first.offset, last.offset.max(first.offset + 1e-9));
-    let top = p
-        .points
-        .iter()
-        .map(|q| q.b_ut)
-        .fold(limit.unwrap_or(0.0), f64::max)
-        .max(1e-6)
-        * 1.1;
-    let to_screen = |x: f64, y: f64| {
-        egui::pos2(
-            frame.left() + ((x - x0) / (x1 - x0)) as f32 * frame.width(),
-            frame.bottom() - (y / top) as f32 * frame.height(),
-        )
-    };
-    // Ticks: 5 across, 4 up.
-    for k in 0..=4 {
-        let x = x0 + (x1 - x0) * f64::from(k) / 4.0;
-        let at = to_screen(x, 0.0);
-        painter.line_segment(
-            [at, egui::pos2(at.x, frame.top())],
-            egui::Stroke::new(0.5, faint.gamma_multiply(0.4)),
-        );
-        painter.text(
-            egui::pos2(at.x, frame.bottom() + 3.0),
-            egui::Align2::CENTER_TOP,
-            format!("{x:.0}"),
-            font.clone(),
-            faint,
-        );
-        let y = top * f64::from(k) / 4.0;
-        let at = to_screen(x0, y);
-        painter.line_segment(
-            [at, egui::pos2(frame.right(), at.y)],
-            egui::Stroke::new(0.5, faint.gamma_multiply(0.4)),
-        );
-        painter.text(
-            egui::pos2(frame.left() - 4.0, at.y),
-            egui::Align2::RIGHT_CENTER,
-            format!("{y:.2}"),
-            font.clone(),
-            faint,
-        );
-    }
-    painter.text(
-        egui::pos2(frame.left() + 4.0, frame.top() + 2.0),
-        egui::Align2::LEFT_TOP,
-        "B µT",
-        font.clone(),
-        text,
-    );
-    painter.text(
-        egui::pos2(frame.right(), r.bottom()),
-        egui::Align2::RIGHT_BOTTOM,
-        "m from the axis (right +)",
-        font.clone(),
-        faint,
-    );
-    let major: Vec<egui::Pos2> = p
-        .points
-        .iter()
-        .map(|q| to_screen(q.offset, q.major_ut))
-        .collect();
-    painter.add(egui::Shape::line(
-        major,
-        egui::Stroke::new(1.0, line.gamma_multiply(0.45)),
-    ));
-    let b: Vec<egui::Pos2> = p
-        .points
-        .iter()
-        .map(|q| to_screen(q.offset, q.b_ut))
-        .collect();
-    painter.add(egui::Shape::line(b, egui::Stroke::new(2.0, line)));
-    if let Some(l) = limit {
-        let y = to_screen(x0, l).y;
-        painter.extend(egui::Shape::dashed_line(
-            &[egui::pos2(frame.left(), y), egui::pos2(frame.right(), y)],
-            egui::Stroke::new(1.0, v.warn_fg_color),
-            6.0,
-            4.0,
-        ));
-        painter.text(
-            egui::pos2(frame.right() - 4.0, y - 2.0),
-            egui::Align2::RIGHT_BOTTOM,
-            format!("limit {l} µT"),
-            font.clone(),
-            v.warn_fg_color,
-        );
-    }
-    if let Some(pos) = response.hover_pos()
-        && frame.contains(pos)
-    {
-        let x = x0 + f64::from((pos.x - frame.left()) / frame.width()) * (x1 - x0);
-        if let Some(q) = p
-            .points
-            .iter()
-            .min_by(|a, b| (a.offset - x).abs().total_cmp(&(b.offset - x).abs()))
-        {
-            let at = to_screen(q.offset, q.b_ut);
-            painter.circle_filled(at, 3.0, line);
-            painter.text(
-                at + egui::vec2(6.0, -6.0),
-                egui::Align2::LEFT_BOTTOM,
-                format!(
-                    "{:.1} m: {:.4} µT (largest over the cycle {:.4})",
-                    q.offset, q.b_ut, q.major_ut
-                ),
-                font,
-                text,
-            );
-        }
-    }
-    r
-}
-
 /// A run's steps (owner, 2026-11-01): 2D — the cuts (the wires in 3D),
 /// then the profiles and points (by their model); 3D — the volumes. Each
 /// with what it computes in words; none empty.
@@ -2292,21 +1597,4 @@ fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
         ));
     }
     out
-}
-
-/// What a run makes (owner, 2026-11-01): **2D** — the cuts at the
-/// stations asked in the span table and, ticked, the profiles; **3D** —
-/// the volumes only. Shared by the Magnetic and the Electric field.
-pub(crate) fn method_ui(ui: &mut egui::Ui, planes: &mut bool, profiles: &mut bool) {
-    ui.horizontal(|ui| {
-        ui.label("Make");
-        ui.selectable_value(planes, true, "2D: cuts and profiles")
-            .on_hover_text("Isolines in vertical cuts at the stations asked (+ station in the table), and the profiles across the spans if ticked");
-        ui.selectable_value(planes, false, "3D: volumes")
-            .on_hover_text("The surfaces of the levels around the wires over the spans with Volume ticked");
-        if *planes {
-            ui.checkbox(profiles, "profiles too")
-                .on_hover_text("The field across each span ticked, at a height above the ground (and the points from CSV)");
-        }
-    });
 }
