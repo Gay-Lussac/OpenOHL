@@ -1,7 +1,7 @@
 # Magnetic field
 
 *Built, in active development, not approved yet* (roadmap O18 step 4,
-first slice, 2026-10-27). Implemented in `crates/ohl-electrical`
+first slice). Implemented in `crates/ohl-electrical`
 (`magnetic`). Used by `ohl electrical magnetic` and Checks › Electrical ›
 Magnetic field… ([Electrical: magnetic
 field](../user-guide/analyses.md#electrical-magnetic-field)).
@@ -77,11 +77,11 @@ brackets). "Time" is the effect on how long a run takes.
 | Jumpers: carry their phase's current | on | near the structures; off: **not conservative** there (`--no-jumpers`) | a few more pieces |
 | Limit: given | none (1 µT when ticked) | the margin and the limit line's width | none |
 | Points from CSV… | none | the field at each point | in proportion to the points |
-| **3 Spans** › Make | 2D: cuts and profiles | 2D: the cuts asked and (*profiles too*) the profiles; 3D: the volumes only (2026-11-01) | each kind a step of its own |
+| **3 Spans** › Make | 2D: cuts and profiles | 2D: the cuts asked and (*profiles too*) the profiles; 3D: the volumes only | each kind a step of its own |
 | **3 Spans** › the span table | spans on an alignment ticked, others not | where profiles, cuts and volumes are computed | in proportion to the spans |
 | Profiles | at each ticked span's lowest point | or *beside its structures* (10 m into the span), or *one span* (its lowest point or a place 0–1 along it) | per profile |
-| Across: ± / every / at | ± 100 m (50 m until 2026-11-02), every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
-| 2D cuts at (+ station) / ± / every / up to | none; ± 100 m (60 m until 2026-11-02), every 1 m (0.5 m until 2026-11-01), up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
+| Across: ± / every / at | ± 100 m, every 1 m, 1 m above the ground | the profile's width, spacing and height | in proportion to the points |
+| 2D cuts at (+ station) / ± / every / up to | none; ± 100 m, every 1 m, up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
 | Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
 | **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
 | Modelled: the whole line / wires within (`--modelled-within`) | wires within 2 000 m in the window (2026-11-01; the whole line before, and in `ohl`) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
@@ -145,7 +145,7 @@ The pieces' fields are summed per component as phasors.
   some millimetres: 64 pieces per span or part of a span, e.g. 7 m pieces
   and 4 mm on a 450 m span at H/w = 1700 m); the field moves by about that
   share of the distance (0.04 % at 10 m). Neither conservative nor not.
-  **Shorter pieces** on request (`Settings.piece_length`, 2026-10-29): each
+  **Shorter pieces** on request (`Settings.piece_length`): each
   solver piece cut into equal parts no longer than asked, the new points
   on the average of the two quadratics through the piece's ends and a
   neighbouring point (parameter: the length along the polyline); half the
@@ -238,8 +238,7 @@ angles). This is the governing state the guide describes (2.4.1 and
 8.1.4); real operation is unbalanced — **Assumption** as the guide asks,
 neither conservative nor not in general.
 
-- **At its end points** (owner, 2026-10-29: "inputs and outputs for each
-  end point of the circuit"): a circuit's end points are the structures
+- **At its end points**: a circuit's end points are the structures
   where its sections end without going on to another of them (each
   phase's sections joined where they meet, by its jumpers); at each the
   current into the line (out: negative; one end may take the rest).
@@ -273,7 +272,7 @@ DC systems are left out (a static field; said).
 ## Which way the currents flow
 
 A circuit's current flows on through its sections and the jumpers
-joining them (2026-10-29): the sections joined by jumpers are oriented
+joining them: the sections joined by jumpers are oriented
 alike (a jumper from one's last point to another's first: the same way;
 last to last or first to first: opposite ways), and each such chain is
 turned so that it runs along the line over most of its length (span by
@@ -299,7 +298,7 @@ method and soil resistivity):
 **Simplification**: the towers' earthing (footing resistances) and the
 earth wires' ends are not modelled; near the ends of a line and with high
 footing resistances the real currents are smaller. Hence, since
-2026-10-29 (owner: "include … the pylons' steel to improve accuracy"),
+2026-10-29,
 **through the structures' earthing**:
 
 ![Four structures and three spans: the earth wire bonded at every structure at its voltage V_n, each structure leading V_n/R_n into the ground; in each span the earth wire current I_e driven by the phases and the voltage difference; Kirchhoff's current law at every structure](../images/theory/m-earth-network.svg)
@@ -375,13 +374,11 @@ nor not in general (the images oppose their sources' near fields).
   default — the lowest point of its lowest phase conductor — or a place
   in a span), square to the span's axis, ±100 m every 1 m, at a height
   above the ground (1 m by default). The ground — *Ground from*
-  (2026-11-01): the surface of the checks, a terrain surface (TIN layer)
+ : the surface of the checks, a terrain surface (TIN layer)
   of the project, or the survey's ground points along the spans made into
   a surface for the run; without any, straight between the structures'
   feet and level across (**Simplification**).
-- **What a run makes** (2026-11-01, owner: "the 3D method to only make
-  the volumes … 2D where you can setup cuts … and also ask if we want the
-  profiles"): **2D** — the cuts asked and, asked, the profiles and
+- **What a run makes**: **2D** — the cuts asked and, asked, the profiles and
   points; **3D** — the volumes only. Each kind is a step of its own, one
   after another: the cuts and the volumes from the wires in 3D, the
   profiles by their model (3D or 2D). The wires from the window's weather
@@ -391,13 +388,12 @@ nor not in general (the images oppose their sources' near fields).
   its system's.
 - **Grids** on a horizontal plane at that height over a span, their own
   step (`grid_step`): the levels' isolines from above — in the engine and
-  `ohl`; the window no longer offers them (2026-11-01).
-- **Vertical cuts across the line** (2026-10-29): a grid in a vertical
+  `ohl`; the window no longer offers them.
+- **Vertical cuts across the line**: a grid in a vertical
   plane, ± the width, from the lowest ground under it to some metres over
   the highest wire, every step; every point computed (also under the
   ground; the drawing stops at the ground, straight between the
-  columns). **The plane** (owner, 2026-10-31: "cuts are made on the
-  alignment not the circuits or span"): at a station of an alignment,
+  columns). **The plane**: at a station of an alignment,
   vertical and perpendicular to the alignment there; within 1 cm of an
   alignment point (an angle point) along the **bisector** of the two
   directions, as a structure stands — the same placement as a
@@ -415,7 +411,7 @@ nor not in general (the images oppose their sources' near fields).
   else straight between the feet of the span the plane crosses at the
   axis. The cross-section panels' own cuts (computed whenever a panel
   opens) take the panel's plane as it is.
-- **Volumes** (2026-10-29): the isosurfaces of the levels in a box over a
+- **Volumes**: the isosurfaces of the levels in a box over a
   span (± the width, from the lowest ground under it to some metres over
   the highest wire), see below.
 - **Given points** (e.g. places of sensitive use) from a CSV file: x, y and
@@ -438,12 +434,12 @@ Every value at a grid or lattice point is the field computed in full;
 precision; the wires modelled are the user's choice, with its effect
 measured):
 
-- **Isolines** (marching squares): where a level crosses a cell's edge,
+- **Isolines** (marching squares, the two-dimensional case of W. E. Lorensen and H. E. Cline, "Marching cubes: a high resolution 3D surface construction algorithm", *Computer Graphics* (SIGGRAPH '87) 21 (4), 1987, pp. 163–169): where a level crosses a cell's edge,
   placed by the logarithm of the two values (a field falls about as a
   power of the distance, so its logarithm is closer to straight between
   points), straight across the cell; a saddle decided by the cell's
   mean.
-- **Isosurfaces** (marching tetrahedra: each lattice cube cut into six
+- **Isosurfaces** (marching tetrahedra, A. Doi and A. Koide, "An efficient method of triangulating equi-valued surfaces by using tetrahedral cells", *IEICE Transactions on Information and Systems* E74-D (1), 1991, pp. 214–224: each lattice cube cut into six
   tetrahedra around its diagonal, so neighbouring cubes split their
   faces alike and the surface has no cracks), the crossings placed as
   above.
@@ -455,7 +451,7 @@ measured):
   between coarse points), and, again and again, in every cell beyond a
   face of a fine cell that a level crosses (the surface is followed until
   it closes or leaves the box; tested: no holes but at the box's sides).
-  **In parts** (2026-11-01): a long volume's lattice is walked along its
+  **In parts**: a long volume's lattice is walked along its
   run in parts of whole coarse cells, at most some 20 million points
   (160 MB) held at once; two parts share the plane where they meet, the
   next starting from the values the one before computed there and
@@ -468,7 +464,7 @@ measured):
   from every wire and more than 10 % off the values around it, is not
   found — it would be smaller than a coarse cell. On a real span about
   half the fine lattice was computed. **Thin pieces left out**
-  (2026-10-31): a connected piece of a surface at most 2 steps across in
+ : a connected piece of a surface at most 2 steps across in
   two directions and at most 20 steps long is a stretch of a tube thinner
   than the lattice (round an earth wire at 5 kV/m: centimetres), met only
   where a lattice point happens to lie inside it; drawn, such pieces were
@@ -501,7 +497,7 @@ measured):
 
 ## Cut-offs and grids (measured)
 
-(Owner, 2026-11-01: "give indications on the cutoffs and the improvement
+(Owner: "give indications on the cutoffs and the improvement
 with better grids … keep it quick enough".) Every value at a point is
 computed in full, from every piece of every wire summed; what a setting
 changes is **which wires are summed** (the cut-off) or **where the
@@ -529,11 +525,11 @@ line's phases nearly cancel only far away: a short cut-off leaves out
 much. On a 28 km line, 2 km left the cuts within 0.03 % and made a
 volume ten times quicker — the cut-off is for long lines, at a distance
 of a kilometre or more, and each run says what it changed. **2 km is the
-window's default since 2026-11-01** (the defaults reviewed for accuracy
+window's default** (the defaults reviewed for accuracy
 and speed: 0.03 % for ten times the speed); a line shorter than that is
 modelled whole all the same.
 
-**On a real line** (2026-11-02): a 27 km 220 kV line of five circuits
+**On a real line**: a 27 km 220 kV line of five circuits
 (1000 A in each, assumed), 34 cuts along it — every kilometre and one
 at each line angle over 25°, ±150 m every 1 m — against the whole line.
 The points of 1 µT or more:
@@ -557,7 +553,7 @@ the time.
 lay 52 to 76 m from the axis on one side in most cuts and 90 m in the
 cut along the bisector of a 49° angle: at the former ±50 m it reached
 the edge of 30 of the 34 cuts, cut short. **Profiles, cuts and volumes
-reach ±100 m by default since 2026-11-02**: the 34 cuts took 7.9 s
+reach ±100 m by default**: the 34 cuts took 7.9 s
 against 6.1 s at ±50 m (the project's reading and the wires' solving
 included). Volumes twice as wide take about twice as long. Where a higher current or a lower level reaches farther, widen
 it: a level that touches the edge of a cut is cut short there. The
@@ -575,7 +571,7 @@ levels' isolines are small circles.
 |---|---|---|---|---|---|---|
 | 0.25 m | 96 681 | 0.00 % | 0.00 % | 0.01 / 0.40 % | 0.09 / 0.16 % | 49 ms |
 | 0.5 m | 24 341 | 0.00 % | 0.01 % | 0.46 / 1.5 % | 0.33 / 0.61 % | 12 ms |
-| **1 m (default since 2026-11-01)** | 6 171 | 0.01 % | 0.03 % | 1.0 / 6.8 % | 1.3 / 2.9 % | 3 ms |
+| **1 m (default)** | 6 171 | 0.01 % | 0.03 % | 1.0 / 6.8 % | 1.3 / 2.9 % | 3 ms |
 | 2 m | 1 586 | 0.03 % | 0.12 % | 5.0 / 32 % | 2.9 / 10 % | 1 ms |
 
 (The isolines' points off their level: nine in ten / the largest.) The
@@ -603,114 +599,7 @@ see [Cuts, volumes and what they are drawn with](#cuts-volumes-and-what-they-are
 
 ## Performance
 
-What a computation costs and what was done to make it quicker without
-changing a computed value (owner, 2026-10-29: "make sure to check the
-performance"). Measured on 2026-10-29 on the owner's laptop (10 cores:
-8 performance, 2 efficiency; release build).
-
-**The cost.** Every point asks every straight piece of every wire:
-the time is the points × the pieces × the time of one piece at one
-point. The line the measurements were made on: 28 km, 7 circuits, 77
-spans — **124 000 pieces** (the solver's, every subconductor's).
-
-**One piece at one point, one core:**
-
-| Arrangement | ns |
-|---|---|
-| piece by piece (`segment_field` summed) | 9.4 |
-| per polyline (each vertex's distance once for the two pieces meeting there) | 4.7 |
-
-Both give the same field within rounding (largest relative difference
-\\( 3\cdot10^{-15} \\) on the test line, \\( 10^{-12} \\) required by the
-tests).
-
-**On all cores, sustained.** A laptop's cores slow down under full load:
-a test line of 640 pieces went from 1 280 000 points/s in the first
-second to about 600 000 points/s after 5 s, and stayed there. So a run of more than a few seconds goes at
-about half the speed of a short measurement; the window's estimates use
-the last run's speed, or a short measurement halved before the first run.
-
-**What made it quicker** (each leaves every computed value as it was):
-
-1. The sum per polyline (above): half the time per piece.
-2. Points taken in **blocks of 64**: each wire's pieces are read once
-   for the block and stay in the processor's cache, instead of the whole
-   line's 7 MB of pieces being read again for every point.
-3. The threads **take blocks in turn** instead of an equal share each,
-   so the quicker cores take more of them.
-4. A volume's **fine lattice only where a surface passes** (above):
-   about half of it on a real span.
-
-![Point by point, every point reads all the line's pieces; in blocks of 64 points each wire's pieces are read once for the block; the blocks wait in a queue and each thread takes the next](../images/theory/field-blocks.svg)
-
-**Measured on the real line** (1000 A per circuit; one span of about
-400 m, ±50 m, from the ground to 10 m over the highest wire; levels 1,
-10 and 100 µT; times of the whole command, the line's solution included,
-about 1.4 s):
-
-| What | Points computed | Wires modelled | Time |
-|---|---|---|---|
-| 77 profiles of 101 points (every span) | 7 800 | whole line | 3.5 s |
-| one profile, a cut at 1 m (after 1.–3.) | 9 600 | whole line | 2.2 s |
-| one profile, a cut at 0.5 m (after 1.–3.) | 38 000 | whole line | 10 s |
-| volume at 4 m (and a cut at 0.5 m), before 2. and 3. | 79 000 | whole line | 20 s |
-| volume at 2 m (and a cut at 0.5 m), before 2. and 3. | 326 000 | whole line | 85 s |
-| volume at 2 m, after | 326 000 | whole line | 67–70 s |
-| volume at 2 m and a cut at 0.5 m | 326 000 + 38 000 | within 2 km (17 000 pieces) | 6 s |
-| volume at 1 m | 1 740 000 of 4 400 000 | within 2 km | 63 s |
-
-**What the wires modelled change** (`modelled_within`; the whole line's
-field computed again at 200 points of the cut or volume):
-
-| Within | Pieces (cut / volume) | Largest change (cut / volume) |
-|---|---|---|
-| 500 m | 4 900 / 7 900 | 0.55 % / 0.32 % |
-| 1 km | 10 200 / 11 500 | 0.085 % / 0.080 % |
-| 2 km | 15 700 / 17 200 | 0.024 % / 0.028 % |
-
-**What the volume's step changes** (how far the surfaces lie off their
-levels, at 200 points each: nine in ten within / at most):
-
-| Step | 1 µT | 10 µT | 100 µT |
-|---|---|---|---|
-| 4 m | 0.16 % / 0.7 % | 2.5 % / 28 % | 71 % / 595 % |
-| 2 m | 0.05 % / 0.2 % | 0.94 % / 27 % | 15 % / 55 % |
-| 1 m | 0.01 % / 0.0 % | 0.27 % / 21 % | 3.7 % / 11 % |
-
-The worst points lie next to the conductors, where the field bends
-sharply between lattice points; the 100 µT surface (a tube of some 2 m
-around each conductor) needs a step well under its radius.
-
-**Not done, and why:**
-- **Leaving out the far wires by default** — it changes computed values
-  (a little: see above); it is the user's choice, with its effect
-  measured at every run. The whole line stays the default (quality
-  before speed).
-- **Approximating far wires** (a multipole or a coarser wire far away) —
-  it would change computed values without the user choosing it.
-- **The GPU** — the field sums currents that cancel far from the line
-  (a balanced three-phase line falls as \\( 1/d^2 \\)); single precision,
-  all most GPUs offer, would lose digits there.
-
-**Continuity between the views' tiles** (2026-10-29). The values are
-continuous: every point sums the same pieces of the whole line (or the
-same within the distance asked). The drawings are laid on **one path
-along a run of spans** (spans following each other along the line):
-grids from above and volumes take each run whole, the stations along its
-straights, the offsets across them, and at a line angle the offset along
-the bisector, mitred (the offset point lies its offset from both
-straights), the direction turning evenly along each straight from one
-end's to the other's — so the lattice bends with the line, without the
-gap on the outside of an angle and the overlap on its inside that boxes
-per span left, and the isolines and surfaces run through the structures
-unbroken (tested on a bent path: a tube around a bent wire closed but at
-the path's ends). Where the offsets would fold over themselves (a very
-sharp angle and a wide band) the run is refused with a narrower width
-asked for. A level met exactly at a lattice point gives that point's
-vertex to every edge through it (no crack; tested).
-
-The structures' magnetic permeability is not modelled (above); the
-jumpers and the structures' currents are.
+How the computation is made fast, with its measured times: [Performance](../development/performance.md#magnetic-field-performance).
 
 ## The choices and why
 

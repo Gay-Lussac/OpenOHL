@@ -195,7 +195,8 @@ ohl code template --plugin plugins/codes/en50341 --out my-line.toml
 # … fill in my-line.toml from the standard …
 ohl code generate --plugin plugins/codes/en50341 --params my-line.toml \
     --weather my-line.ohlwc --load-cases my-line.ohllc
-ohl line line.ohl.json --weather my-line.ohlwc --load-cases my-line.ohllc --loads-csv loads.csv
+ohl line examples/synthetic-line/synthetic-line-typed.ohl.json --weather my-line.ohlwc \
+    --load-cases my-line.ohllc --loads-csv loads.csv
 ```
 
 `generate` checks both files as OpenOHL reads them (and that each load
@@ -291,6 +292,6 @@ sections it is told about (one case per section), or leaves the cases to
 the user. The core solves the section with that wire gone, the strings
 at its ends swung to the spans left, and gives the loads (with
 `"every"`, the worst of each component and the span giving it). Not
-modelled (in the [theory](../theory/wirefe.md#a-broken-wire-2026-10-25)):
+modelled (in the [theory](../theory/wirefe.md#a-broken-wire)):
 the dynamic impact (the factor above), a single subconductor of a
 bundle broken (the whole phase is).

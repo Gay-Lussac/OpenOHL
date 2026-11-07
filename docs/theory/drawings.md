@@ -30,7 +30,7 @@ band rows. Its **vertical scale is never changed**. On each sheet:
    drawn whole when they fit (else from their lowest point, a little
    ground below, the top cut) and the **ground is cut** at the panel's
    bottom, a break mark and `ground cut, lowest 1 234 m` written where
-   it is lowest (2026-10-28). The wires matter more than a valley floor
+   it is lowest. The wires matter more than a valley floor
    far below them; the warning says what was cut.
 
 The profile is never empty, and the ground is on the sheet (cut only

@@ -207,10 +207,15 @@ simplified one).*
 Two kinds of drawing beside the plan-and-profile sheets, and a way to
 export a whole set of plans in one go, each kind with templates (built
 in, and as plugin presets — a utility's own templates in its plugin).
+*2026-11-07 (owner: the plans' templates "similar as for the profiles";
+built, in active development (not approved yet)): the plans draw the
+template's revision and stringing tables, key map, notes, legend, scale
+bar and north arrow placement and pens as the sheets do; the title
+block's revision follows the revision table.*
 *Built 2026-10-24, in active development (not approved yet): the route
-plan, the situation plans and the phase plan (Export › Plans, `ohl
+plan, the situation plans and the phase plan (Plans & sheets › Plans, `ohl
 drawing --plans`), see [Drawings](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/drawings.md#plans-route-plan-situation-plans-phase-plan);
-and plan sets from plugins (Export › Plans › Plan set…, `.ohlset`,
+and plan sets from plugins (Plans & sheets › Plans › Plan set…, `.ohlset`,
 the plugin manifest's `[[plan-set]]`); *built 2026-10-25, in active
 development (not approved yet):* one PDF of a set (Plan set… › also as
 one PDF, `--set-pdf`) and `ohl drawing --set FILE|PLUGIN/NAME`, a set's
@@ -848,7 +853,7 @@ the plugin's own tests.
 - [x] Thermal rating at a current (owner, 2026-11-04 — *built 2026-11-04, in active development, not approved yet*): a system's operating current in the line file (version 13); Checks › Thermal rating in four pages with Setup and Results — Ampacity, Temperature at a current (steady, per ambient case, heat terms on hover), Step change (the transient as a table and a plot), Clearance (the clearance-limited temperature, or the clearance at the current's temperature: pass or fail per section, drawn in the views); `ohl thermal clearance-check` *(the bundle shares the current equally; the steady temperature, not the transient's, in the clearance check)*
 - [x] Optimum (automatic) structure spotting — cost-based optimisation: dynamic programming over candidate stations × types/extensions (ground clearance of a design catenary, allowable wind/weight spans, alignment points, forbidden zones); `ohl spot`, Tools › Spot structures (proposal as a new line file) *(clearance under the centreline only, one tension for the route)*
 - [x] Galloping ellipses, blowout, phase-to-phase / circuit-to-circuit clearances — base: ellipses by user coefficients (`.ohlg`; Davison / RUS / CIGRE TB 322 forms, no coefficients shipped), swept along the span, per span pair (`ohl clearance galloping`, app window); blown-out wires against the right of way (`ohl clearance row`); `circuits = same|different` on wire rules with case pairs
-- [x] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF (`ohl drawing`, File › Export drawings): one format-free drawing model written as SVG, R12 DXF (sheets in mm, plan in project coordinates, profile by station × exaggerated height), vector PDF (a page per sheet) and PNG *(base: no DWG written — the R12 DXF imports into DWG-based programs; DXF has ACI colours, no line weights, SVG logos as outlines, no raster logos; PDF uses the standard Helvetica fonts)*; since 2026-10-20 the title block, page and styles from sheet templates (`.ohlsheet`, plugin presets), built, in active development (not approved yet)
+- [x] Drafting: plan & profile sheets, title blocks, DXF/DWG-compatible output, PDF (`ohl drawing`, Plans & sheets › Plan and profile sheets): one format-free drawing model written as SVG, R12 DXF (sheets in mm, plan in project coordinates, profile by station × exaggerated height), vector PDF (a page per sheet) and PNG *(base: no DWG written — the R12 DXF imports into DWG-based programs; DXF has ACI colours, no line weights, SVG logos as outlines, no raster logos; PDF uses the standard Helvetica fonts)*; since 2026-10-20 the title block, page and styles from sheet templates (`.ohlsheet`, plugin presets), built, in active development (not approved yet)
 - [x] Profile exports: ground/wire/clearance profiles with configurable scales and station ranges — DXF, PDF, SVG, CSV/XML, images (DESIGN_GOALS §8) — `--from`/`--to`, `--hscale 1:2000 --vscale 1:200`, `--profile-only`; profile XML documented in the user guide *(base: one weather case solid and the others dashed, as in the drawings)*
 - [x] Bill of materials & cost estimation: structures by type/extension, insulator assemblies, cut lengths per wire type (bundles, jumpers), spacers/dampers by rule, priced with a `.ohlcost` file (missing prices listed); `ohl bom` (text, CSV, JSON), Checks › Bill of materials
 

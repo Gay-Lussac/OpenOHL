@@ -1,7 +1,7 @@
 # Lightning shielding
 
 *Built, in active development (not approved yet).* The lightning
-shielding check (owner, 2026-10-31): Checks › Electrical › Lightning
+shielding check: Checks › Electrical › Lightning
 shielding… in OHL-Design and `ohl lightning` (`crates/ohl-electrical`:
 `lightning`; the rules in `crates/ohl-clearance`: `lightning`). How to
 use it: [OHL-Design › Lightning shielding](../user-guide/desktop-app.md#lightning-shielding)
@@ -23,7 +23,7 @@ each of n equal steps**, n = ⌈span length / step⌉, the step being the
 rule's (5 m by default). In each cut:
 
 - the **wires** where they cross it, as solved in the rule's weather
-  case and each section's calculation — since 2026-11-01 the shielding
+  case and each section's calculation — the shielding
   wires may hang in weather cases of their own (`shield_cases`: e.g. the
   phases hot from their load current, the earth wires at the air
   temperature), and the phases and the shielding wires may each be

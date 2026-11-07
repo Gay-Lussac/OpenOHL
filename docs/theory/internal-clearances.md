@@ -12,6 +12,8 @@ and [the desktop application](../user-guide/desktop-app.md#internal-clearances).
 
 ## What is measured
 
+![A structure seen along the line: a suspension string swung by the wind towards the body, the conductor at its clamp with an electrified grading ring, grounded fittings at the string's top, and the smallest distance from the electrified parts to the nearest member against the required distance](../images/theory/internal-clearance.svg)
+
 At each structure with a body (detail level 2 or 3), in each weather case
 of a rule, as solved (the strings' swing included):
 
@@ -20,7 +22,7 @@ of a rule, as solved (the strings' swing included):
   subconductor by subconductor;
 - its **jumpers**;
 - its strings' **live ends** (their wire points, as points);
-- the **electrified volumes** on its strings (second part, 2026-10-25).
+- the **electrified volumes** on its strings (second part).
 
 Each against **every member** of the body and against the **grounded
 volumes** of every string at the structure. Electrified parts are not
@@ -152,10 +154,10 @@ line: each leg carries the assembly's volumes.
 A rule gives the weather cases, the voltages, the parts and the distance
 to keep — fixed, by voltage or by a formula — and optionally **another in
 the cases with wind** (`distance_wind`: a wind pressure above 0; owner,
-2026-10-19). With **Use local conditions** ticked (2026-11-03) the cases
+2026-10-19). With **Use local conditions** ticked the cases
 are solved again on the line with the structures' wind for clearances
 and wire ice on their spans, and a structure's **wind study** is taken
-there (2026-11-04, below). No distance is built in.
+there (below). No distance is built in.
 
 ## Wind study at a structure
 
@@ -188,3 +190,22 @@ farther in its box than the nearest found so far is not looked at. A
 structure takes milliseconds; one budget step is taken per structure in
 each case and rule, and the run stops at the time limit (the command
 line's `--time-limit`, the window's ten minutes) with what it says.
+
+## Validation
+
+Unit tests in `crates/ohl-clearance/src/internal.rs`, on invented
+geometry:
+
+- `nearest_on_a_synthetic_body`: a vertical member with a wire 3 m from
+  it, and a box member with a wire 2 m from its face: the exact
+  distances, to the member's line and to its surface.
+- `the_example_line`: on the example line, a vertical member 2 m beside
+  each wire point: every part found, the string ends 2 m off, the
+  conductors that less their radius; the other structures listed as
+  level 1; overrides taking a structure out of a case; a required
+  distance by voltage.
+- `the_volumes_on_the_strings`: the volumes placed on a solved string
+  (the horns, the yoke of a double string once, its top fittings twice),
+  a shape overridden as insulated left out, the distance with wind.
+- `internal_rules_in_a_rule_file`: the rule tables read and written
+  back, their defaults, bad values refused.

@@ -10,6 +10,66 @@ of Parts A, B and C).
 
 ## 2026-11-07
 
+**Joint tools pick before they drag; Rotate member in the close-up (owner, 2026-11-07)**
+
+- Owner: "the tool to move the end of a member is difficult to use as it's not always understandable on which member it's active … with a simple click highlight the member clicked and then click and drag edits the end of the member. same for the tools that move bolts … a tool to rotate a member that would be directly seen in the 3d configuration of the joint".
+- Member end and Move bolt (face view and member view): a click picks the member end or bolt under the pointer (drawn blue; a thin outline on what a click would pick); a drag moves only what is picked; a drag started on something else picks it and moves nothing. One rule for the three tools (`detail_tools::press`), unit-tested.
+- Rotate member, a tool of the Detail view's hotbar (owner: "the rotation tool should also go in the hotbar … not at the top"), acting in the joint's close-up: click picks a member (its axis blue, its Roll row shown); a sideways drag on it turns its roll, half a degree a point in steps, drawn turned while dragged (the member's section and bolts turned about its axis, `close_up::rolled`, pieces cut for that preview apart from the joint's); let go sets the roll (`Act::Roll`, one undo step). The plates and other members are worked out again once it is set, not during the drag. A tool taken from the hotbar in the other view switches the joint to the view it acts in (Rotate member: the close-up; the bolt and end tools: the face view; Edit stays).
+- Tool steps (owner: "the rotation should be 5 degrees by default and for the end 5 mm as today but there should be a tool parameter somewhere in the app where it can be changed"): a **step** field in the strip above the drawing while Member end (mm, 0.5–100) or Rotate member (degrees, 0.5–90) is held, kept between runs with the window's arrangement (`ToolSteps`). Add bolt and Move bolt keep their placement by the code's distances (along to 5 mm), unchanged.
+- Built, in active development, not approved yet.
+
+**One name for the plan-and-profile sheets window (owner, 2026-11-07)**
+
+- Owner: the menu Plans & sheets › Drawings… and the profile view's Sheets menu open the same window; the names should be the same.
+- Now **Plan and profile sheets** everywhere: the menu item (Plans & sheets › Plan and profile sheets…), the window's title, the profile view's menu above the view and its button to open the window. The docs and help texts that still said File › Export › Drawings… or Export › Plans (the menus before Plans & sheets) say Plans & sheets.
+
+**Theory and commands made clear and illustrated (owner, 2026-11-07)**
+
+- Owner: "make sure the full theory is clear and illustrated and same for
+  the commands in the docs". After an audit of the 27 theory pages and
+  the 98 commands: stale statements corrected (the wind on the structure
+  bodies takes a direction; the member checks by code exist), a broken
+  formula fixed, dates and decision quotes taken out of the method text
+  (they are here), the speed measurements of three pages moved to
+  [Performance](performance.md), nine figures added (the coordinate
+  conventions, an angle's axes, a gusset plate's bolt group and a fillet
+  weld, laps and splices, a polygonal shaft, wires and their images, the
+  charge simulation, internal clearances, a pole's buckling length),
+  validation sections for the joint and internal clearance pages, method
+  sources checked and cited (Marquardt; Lorensen and Cline; Doi and
+  Koide). The commands' examples run on the example line and an example
+  project made from it, with what they print.
+- Still without a primary source (left as the pages say): the
+  catenary and ruling span (no textbook cited), the non-linear curves'
+  practice, the jumpers' bending stiffness factor, the structure wind's
+  solidity and shielding terms, Markt and Mengele's formula.
+- **An invented LiDAR tile** (owner: "add a small synthetic LAS tile for
+  the examples"): `examples/synthetic-line/synthetic-lidar.las` (39 000
+  points, LAS 1.2), made by `make_synthetic_lidar.py` from the example's
+  ground and its wires solved at 15 °C, with trees placed so that the
+  vegetation checks find grow-in and fall-in and a house; the `lidar` and
+  `pointcloud` commands have examples on it.
+- `ohl clearance galloping` says which cases it has when `--case` names
+  none of the parameter file's; `ohl sheet-templates` no longer lists the
+  library's unchanged copy of the built-in template twice.
+
+**The plans take the template as the sheets do (owner, 2026-11-07)**
+
+- Owner: "the template capabilities for the situation plans have to be
+  similar as for the profiles (with plan head, logo, revision and so on)".
+  The route, situation and phase plans now draw the template's revision
+  and stringing tables, key map, notes and legend where it places them,
+  and every line in the template's pen of its layer; the route and
+  situation plans its corridor width and pen. The plans' drawing area
+  makes room for them.
+- A plan always has a north arrow and a scale bar (the phase plan, not to
+  scale, neither): placed by the template (`[scale_bar] place = "bottom"`,
+  its first length; `[north_arrow]` size) or, as before, in the plan's
+  corners; `"off"` does not remove them from a plan.
+- The title block's `{revision}` is the newest revision of the revision
+  table unless the user gives the field a value (before: the field's
+  default, "A", whatever the table).
+
 **The plugin SDK: templates, a check, versions kept (owner, 2026-11-07)**
 
 - The owner chose four improvements: `ohl plugin new` (a plugin of any
@@ -6514,7 +6574,7 @@ and 103 s for the points, radial 264 s and 101 s; after: 65 s, 12 s,
   parameters (results unchanged); tests of the check as before set them
   explicitly. Reading taken (not stated by the owner): the "search
   distance" is the corridor half width (`--corridor`, the window's
-  "search ± m"). ([theory](../theory/lidar-analysis.md#danger-trees-2026-10-20),
+  "search ± m"). ([theory](../theory/lidar-analysis.md#danger-trees),
   [user guide](../user-guide/analyses.md))
 - **Unbalanced ice as a weather case; a weather case per span in the
   section solver** (owner: "the extra ice should just be like another
@@ -6541,7 +6601,7 @@ and 103 s for the points, radial 264 s and 101 s; after: 65 s, 12 s,
   the span ice too. Example line, S1's second span: rime ice with wind,
   the case's ice on the span, blown 7.3 m across its axis (3.7 m before),
   its lowest point 0.67 m higher; glaze ice without wind 3 cm lower (the
-  marker ball's ice). ([theory](../theory/wirefe.md#a-weather-case-per-span-2026-10-20))
+  marker ball's ice). ([theory](../theory/wirefe.md#a-weather-case-per-span))
 - **Results out of date** (owner's decision for point edits, extended to
   line edits so the rule is the same): a result computed on demand keeps
   the revision it was computed from — a content hash of the line (with
@@ -6625,7 +6685,7 @@ and 103 s for the points, radial 264 s and 101 s; after: 65 s, 12 s,
   [plugins](plugins.md#rule-presets))
 - **Danger trees built** (in active development, not approved): the
   method below as written, with these changes and readings
-  ([theory](../theory/lidar-analysis.md#danger-trees-2026-10-20)):
+  ([theory](../theory/lidar-analysis.md#danger-trees)):
   within the fall sector the distance is \(|q - H| - L\) (negative
   inside: by how much the tree reaches past the wire) instead of
   \(\max(0, \ldots)\) — same verdict, the margins as before; the
@@ -6666,7 +6726,7 @@ and 103 s for the points, radial 264 s and 101 s; after: 65 s, 12 s,
   with the wire hot, blown left and right, and along its swing arc (a
   rigid swing about the attachment points' axis, the largest radius);
   an optional unbalanced-ice case per span; isoclearance lines over the
-  corridor for one case or the worst. ([theory](../theory/lidar-analysis.md#danger-trees-2026-10-20))
+  corridor for one case or the worst. ([theory](../theory/lidar-analysis.md#danger-trees))
 - **Licence:** OpenOHL is under the **AGPL-3.0-or-later** (forks and
   modified versions, also those offered as a network service, stay open
   under the same licence). The plugin interface (`crates/ohl-plugins/wit/`)

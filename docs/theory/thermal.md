@@ -239,7 +239,7 @@ long one with LiDAR points; the budget counts every solution
 (`limit::default_budget`) and stops after 30 minutes; the desktop app can
 cancel. The ampacity at the limit then follows per ambient case.
 
-**The clearance at a current** (2026-11-04, `limit::clearance_at`) is the
+**The clearance at a current** (`limit::clearance_at`) is the
 same solve and check at one temperature per section: the steady
 temperature of [the heat balance](#heat-balance) at the section's current
 (per phase, shared equally by a bundle's subconductors — **assumed**, as

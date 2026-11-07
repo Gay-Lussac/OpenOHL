@@ -207,8 +207,7 @@ the main line. The web client shows the main line.
 Other project lines can be drawn on the plan and profile sheets with the
 line worked on, each in a **role** (existing, project, to be removed,
 decommissioned …) the sheet template styles — e.g. the existing line
-thin, the new one thick, what is removed in its own colour: File › Export
-› Drawings… › **Versions of the line, roles**, or `ohl drawing PROJECT.ohl
+thin, the new one thick, what is removed in its own colour: Plans & sheets › Plan and profile sheets… › **Versions of the line, roles**, or `ohl drawing PROJECT.ohl
 --version "as built=existing"`. See [Sheet
 templates](sheet-templates.md#versions-of-the-line-kinds-and-roles).
 
@@ -236,13 +235,15 @@ then on are kept as differences.
 ## On the command line
 
 ```bash
-ohl project branch project.ohl "stage 1" --user ben          # a new line from the one the file opens on
-ohl project checkout project.ohl "stage 1" --user ben        # the commands act on it from now on
-ohl project apply project.ohl --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
-ohl project checkout project.ohl main --user ana             # back to the main line
-ohl project branch project.ohl                               # list the lines (branches) and tags
-ohl project branch project.ohl "stage 1" --delete --confirm --user ben
-ohl project history project.ohl                              # the revisions with their lines and tags
+# on the example project (Project files › The example project) with the user ben
+# (ohl project user example.ohl --by tester ben designer):
+ohl project branch example.ohl "stage 1" --user ben          # a new line from the one the file opens on
+ohl project checkout example.ohl "stage 1" --user ben        # the commands act on it from now on
+ohl project apply example.ohl --user ben '{"op": "move_structure", "id": "T6", "position": [660, 280, 504]}'
+ohl project checkout example.ohl main --user tester             # back to the main line
+ohl project branch example.ohl                               # list the lines (branches) and tags
+ohl project branch example.ohl "stage 1" --delete --confirm --user ben
+ohl project history example.ohl                              # the revisions with their lines and tags
 ```
 
 `checkout` also sets the line the file opens on; nothing else changes.

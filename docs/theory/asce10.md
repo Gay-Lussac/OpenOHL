@@ -19,7 +19,7 @@ factor Ψ for metric use (Ψ = 1 for ksi, 2.62 for MPa); the program
 computes in SI with \\( f_y \\) in MPa where Ψ appears.
 
 **Where it is used.** `[analysis] capacity = "asce10-97"`, the default
-since 2026-10-27 (owner: "for the tower the ASCE 10-97 should be an
+(owner: "for the tower the ASCE 10-97 should be an
 option in the core, if safer even the default"). Every checked truss or
 frame member whose material has a yield strength gets a compression and a
 tension capacity from this page; the usage is the force over the capacity
@@ -55,6 +55,8 @@ The compression capacity is \\( N_c = F_a A \\) (3.6), not above the
 connection's bolt shear and bearing (Section 4). Step by step:
 
 ### 1. Slenderness \\( L/r \\)
+
+![An equal-leg angle in cross-section: legs b, thickness t, root radius r, the flat width w = b − t − r; the centroid G with the geometric axes y and z; the principal axes u (major) and v (minor, along the axis of symmetry)](../images/theory/angle-section.svg)
 
 \\[ \frac{L}{r} = \max\left( \frac{\rho_y L}{r_y},\ \frac{\rho_z L}{r_z},\ \frac{\rho_v L}{r_v} \right) \\]
 
@@ -325,12 +327,12 @@ in the shear plane").
   placed, and mark the bolts that break them ([below](#minimum-distances-of-bolts));
   attachment holes (4.6) and bolts in tension (4.3.3, 4.3.4) are not
   checked. The gusset plates' own bearing, block shear, net section and
-  distances are checked per case since 2026-11-04 ([below](#plates-and-welds)).
+  distances are checked per case ([below](#plates-and-welds)).
 
 ### Minimum distances of bolts
 
 `asce10::bolt_minimums`, used through `bolt_rules::rules` by the bolt
-layout form and the Add / Move bolt tools (2026-11-03), with \\( d \\) the
+layout form and the Add / Move bolt tools, with \\( d \\) the
 bolt diameter, \\( t \\) the connected thickness, \\( f_u \\) its tensile
 strength and \\( P \\) the force one bolt transmits:
 
@@ -390,7 +392,7 @@ the curves' none / one end / both ends. Decided per end in this order:
 
 **Conservative:** an end with no `[[connection]]` is never worked out: a
 tower without connection data keeps its members' design data and the
-assumptions (owner, 2026-11-02). Eccentric and not restrained give the
+assumptions. Eccentric and not restrained give the
 largest \\( KL/r \\).
 
 **Not on the safe side** where they govern:
@@ -432,7 +434,7 @@ said in what governs (`[assumed: …]`):
 
 ## Plates and welds
 
-The gusset plates (2026-11-04) are checked per case with the analysis'
+The gusset plates are checked per case with the analysis'
 member forces ([Gusset plates and their welds](joint-plates.md)): per
 member bolting onto a plate its bearing on the plate (4.4), the plate's
 block shear by Eq. 3.10-1 (stated for angles: applied to the plate's
@@ -478,7 +480,7 @@ Unsafe where one of them governs; the standard's clause is the reference.
   (`member_ends_tests`); the section properties against hand values
   (`ohl_sections` tests).
 - Compared privately with a tower design program's capacities on a real
-  line's 73 towers (2026-10-27): compression within 0.5 % on 95.5 % of the
+  line's 73 towers: compression within 0.5 % on 95.5 % of the
   members, tension within 0.5 % on 95.3 %; the differences were the
   program's assumptions on the safe side
   ([structure analysis](structures-fe.md#member-capacity-methods)).

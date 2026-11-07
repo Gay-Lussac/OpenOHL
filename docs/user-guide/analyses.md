@@ -1,4 +1,4 @@
-# Galloping, blowout, vegetation and as-built wires
+# Analyses of the line
 
 Analyses of a solved line beyond the clearance rules: galloping ellipses,
 the conductor jump when the ice drops, blown-out wires against the right of way, LiDAR classification, vegetation
@@ -10,6 +10,10 @@ of the desktop app's **Checks** menu. The methods are in the theory manual:
 [Ice shedding](../theory/ice-shedding.md),
 [LiDAR analyses](../theory/lidar-analysis.md),
 [Safety volumes](../theory/safety-volumes.md).
+
+**The examples on this page** run on the example line that ships with
+OpenOHL (invented): in the repository, `cd examples/synthetic-line` first.
+The output shown is what they print.
 
 The commands share the options of `ohl line` for the model: the line or
 project file, `--library`, `--structures`, `--insulators`; and for weather
@@ -35,6 +39,17 @@ properties say why it did not solve and where the drawn shape comes from.
 ohl clearance galloping synthetic-line.ohl.json \
     --weather weather-cases.ohlwc --params galloping-example.ohlg --csv galloping.csv
 ```
+
+```text
+galloping: Example galloping ellipses (invented values) — 2 methods
+case "glaze ice": 8 wire pairs × methods checked, 0 overlapping, 0 below the required clearance
+  single loop (example)  S1 span 1        S2 span 1            5.28 m (required 0.30 m) at 50 % (ellipses 11.50 × 4.60, 16.87 × 6.75 m)
+  single loop (example)  S1 span 3        S2 span 3            6.18 m (required 0.30 m) at 50 % (ellipses 10.32 × 4.13, 15.39 × 6.16 m)
+```
+
+The parameter file names the weather cases its wires gallop in
+(`cases = ["glaze*"]`): with `--case` naming none of them, the command
+says which cases it has and runs nothing.
 
 Every pair of wires between the same two structures, by every method of the
 parameter file, in each weather case the file applies to: the smallest
@@ -105,6 +120,17 @@ ohl ice-shedding synthetic-line.ohl.json --weather weather-cases.ohlwc \
     --rules ice-shedding-rules.ohlr --csv ice-shedding.csv
 ```
 
+```text
+rule                     case             section  span other     rise m  jump m before m  after m  required status
+Every span               glaze ice        S1          2 S2          1.32    2.64    11.30    11.00      2.00 pass
+One span                 glaze ice        S2          2 S1          6.60   13.21    11.30    11.31      2.00 pass
+```
+
+A row per rule, iced case and span that sheds: how far the wire rises
+when its ice drops, the jump (the rise times the rule's factor), its
+distance to the nearest other wire before and after, and the rule's
+required distance.
+
 The rules are tables of a rule file (`.ohlr`), beside or instead of its
 clearance rules:
 
@@ -158,7 +184,13 @@ checks](#the-library-of-performed-checks)).
 
 ```bash
 ohl clearance row synthetic-line.ohl.json --weather weather-cases.ohlwc \
-    --case "high wind" --half-width 10 --csv row.csv
+    --case "high wind" --half-width 20 --csv row.csv
+```
+
+```text
+case "high wind": 10 wires, 0 beyond the right of way (left 20 m, right 20 m)
+  S2 span 1          right   -8.27 m  left   19.17 m  0.83 m inside
+  S2 span 2          right   -8.16 m  left   17.43 m  2.57 m inside
 ```
 
 How far each wire swings to the right and to the left of its route's
@@ -322,6 +354,27 @@ replace one of that name). Points are held in memory: classify a corridor
 poles and wires get vegetation classes: check the result.
 
 ## Vegetation and danger trees
+
+On the example line and its invented LiDAR tile (`synthetic-lidar.las`,
+made by `make_synthetic_lidar.py`: tall trees beside span T1–T2, a tree
+under span T4–T5, a stand beside the branch):
+
+```bash
+ohl lidar vegetation synthetic-line.ohl.json --lidar synthetic-lidar.las \
+    --weather weather-cases.ohlwc --fall-in --growth 0.3 --years 5
+```
+
+```text
+504 points within 6.50 m (clearance 5.00 + growth 1.50 + buffer 0.00), 1003 points of trees that could fall in (root ball 0.05, allowance 2.00 m)
+  span                grow-in  fall-in  nearest m case, position             fall margin m case, position
+  S1 span 0               417      633       1.21 high wind, right                   -8.58 max temperature, case
+  S2 span 0                 0      342       9.41 high wind, right                   -6.02 rime ice + wind, right
+  S2 span 3                87       28       2.72 max temperature, case              -1.21 max temperature, case
+```
+
+The trees beside span T1–T2 come within 1.21 m of its wire blown to the
+right in high wind, and some could fall onto it (a negative fall margin:
+by 8.58 m). With a point cloud kept in a project:
 
 ```bash
 ohl lidar vegetation line.ohl.json --pointcloud project.ohl#scan \
@@ -574,9 +627,9 @@ Opened from there, the panel shows it with its layers, and says *out of
 date* when the line (its objects and library files), the LiDAR points or
 the ground changed since it was saved.
 
-See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees-2026-10-20).
+See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees).
 
-## Safety volumes for work near the line (2026-10-20)
+## Safety volumes for work near the line
 
 *Built, in active development (not approved yet).* The space within a
 distance of the wires in every position of the weather cases chosen —
@@ -706,7 +759,18 @@ it, and says when none is set):
 Heights in KML are the line's (above its height datum), not corrected to
 a geoid: see the theory.
 
-**From the command line:**
+**From the command line:** on the example line, 5 m around the wires in
+the high wind case (about 40 s in a debug build):
+
+```bash
+ohl safety-volume synthetic-line.ohl.json --weather weather-cases.ohlwc \
+    --case "high wind" --distance 5 --out volumes
+```
+
+It writes `volumes/safety-volume.dxf` and `.ifc`, one closed mesh per
+circuit and phase, and says that it writes no `.prj` and no KMZ: the
+example's coordinate system ("local (invented)") is not an EPSG one.
+With every option, on a line in a real coordinate system:
 
 ```bash
 ohl safety-volume line.ohl.json --weather cases.ohlwc --case "high wind" --case "max temperature" \
@@ -738,8 +802,21 @@ See the theory: [Safety volumes](../theory/safety-volumes.md).
 ## As-built wires
 
 ```bash
-ohl lidar fit-wires line.ohl.json --pointcloud project.ohl#scan --csv as-built.csv
+ohl lidar fit-wires synthetic-line.ohl.json --lidar synthetic-lidar.las
 ```
+
+```text
+  span               points   rms m     sag m   model m    Δsag m    Δmid m       °C
+  S1 span 0             515   0.030     7.388     7.388     0.000     0.003     15.0
+  S1 span 1             575   0.033     8.874     8.869     0.005     0.031     15.1
+  S2 span 1             573   0.029    13.724    13.729    -0.005     0.002     14.8
+fitted 10 of 10 spans; temperature at the survey: mean 15.0 °C over 10 spans
+```
+
+The example tile's wire points were made from the wires solved at 15 °C
+(with 3 cm of noise): the fit finds that temperature again. With a point
+cloud kept in a project: `ohl lidar fit-wires line.ohl.json --pointcloud
+project.ohl#scan --csv as-built.csv`.
 
 For each span: a catenary fitted to the points of the wire classes
 (`--role`, default `conductor` and `shield_wire`) near the span's vertical
@@ -841,6 +918,8 @@ first slice, 2026-10-27). The magnetic flux density (µT, the rms of the
 vector) of the line's currents, from the wires where they hang in a
 weather case. Methods, assumptions (each marked conservative or not) and
 validation: [Magnetic field](../theory/magnetic-field.md).
+
+![The 3D view of the example line's first span with the magnetic field's 1 µT surface around its wires, as the Magnetic field window draws it](../images/user-guide/magnetic-field-3d.png)
 
 **What it needs:** the sections' systems and phases (Line › Electrical
 systems; the circuits are the phases of a system in one named circuit;
@@ -1344,6 +1423,8 @@ of the line's voltages, from the wires where they hang in a weather case.
 Methods, assumptions (each marked conservative or not) and validation:
 [Electric field](../theory/electric-field.md).
 
+![The Electric field window on the example line: the profiles across each span with their largest field, and the plot of one against a limit of 5 kV/m](../images/user-guide/electric-field-window.png)
+
 **What it needs:** the sections' systems and phases (Line › Electrical
 systems; the circuits are the phases of a system in one named circuit;
 sections of no system are earth wires, at earth potential) and the
@@ -1481,14 +1562,40 @@ ohl electrical gradient LINE.ohl.json|PROJECT.ohl [--voltage CIRCUIT=KV]… \
     [--subconductors] [--csv FILE]
 ```
 
-prints per cross-section (span, station, lowest/start/end/given, the
+On the example line at 220 kV:
+
+```bash
+ohl electrical gradient synthetic-line.ohl.json --voltage '*=220' --terrain synthetic-survey.csv
+```
+
+```text
+T1–T2 at 152.8 m (lowest); potential error 2e-6
+  section      circuit        phase   kV earth   n     avg max       max       M–M
+  S1           Example 1      L1        127.02   1      12.541    12.541    12.517
+  S2           Example 1      L2        127.02   1      12.962    12.962    12.948
+```
+
+It prints per cross-section (span, station, lowest/start/end/given, the
 simulation's potential error) a row per bundle — section, circuit,
 phase, kV to earth, subconductors, average maximum, maximum,
 Markt–Mengele — and with `--subconductors` each subconductor's largest
 gradient, its angle (from the horizontal, 90° the top) and mean; `--csv`
 writes every subconductor.
 
-**On the command line:** `ohl electrical electric LINE.ohl.json|PROJECT.ohl`
+**On the command line**, a profile across the span T2–T3 in 2D at
+220 kV:
+
+```bash
+ohl electrical electric synthetic-line.ohl.json --two-d --voltage '*=220' \
+    --profile T2:T3 --terrain synthetic-survey.csv
+```
+
+```text
+profile          station m   max kV/m      at m ground off m
+T2–T3                185.0     4.6270      -7.0         2.30
+```
+
+In general `ohl electrical electric LINE.ohl.json|PROJECT.ohl`
 with the voltages, profiles, points, cuts and volumes as options
 (`ohl electrical electric --help`); as for the magnetic field, cuts are
 placed at an alignment station and may carry a label (`--cut

@@ -157,7 +157,7 @@ millisecond):
 | 1 (the span's mean) | +0.31 % | +7.0 % | +3.0 % |
 | 4 | −0.56 % | +1.2 % | −0.22 % |
 | 8 | −0.10 % | +0.16 % | −0.03 % |
-| 16 (until 2026-11-01) | −0.013 % | +0.034 % | −0.003 % |
+| 16 | −0.013 % | +0.034 % | −0.003 % |
 | **24 (default)** | −0.002 % | +0.004 % | −0.002 % |
 | 32 | 0.000 % | +0.009 % | +0.001 % |
 
@@ -209,8 +209,7 @@ evaluated numerically (Simpson, \\( 10^{-8} \\)).
 
 The ground is a perfect conductor at zero potential: at power frequency
 the earth's conductivity is high enough for the electric field. Two
-models; the **tiled floor is the default** (owner, 2026-10-29: "keep the
-tiled implementation").
+models; the **tiled floor is the default**.
 
 ![Left: in a hollow, the plane fitted under the point and the charge's image in it; the hollow's sides are not seen. Right: the tiled floor follows the terrain and carries induced charges](../images/theory/e-ground-models.svg)
 
@@ -247,7 +246,7 @@ tiles:
   tiles some 0.8 s). The LU grows with the tiles' cube, the rest with
   their square. Two floors are solved side by side; on a real line 4
   spans' profiles took 4.5 s.
-- **Memory** (owner, 2026-10-31: laptops of 16 to 32 GB). A floor takes
+- **Memory** (owner: laptops of 16 to 32 GB). A floor takes
   16 bytes per pair of tiles while it is solved (its table and its
   factors): 0.35 GB at 4 660 tiles. As many floors are solved side by
   side as 1 GB holds (at most 2). A floor over **2 GB** (some 11 000
@@ -255,8 +254,7 @@ tiles:
   A volume's floor grows with its run: 2 850 tiles for one 300 m span,
   5 360 for three (0.45 GB); the window says the longest run's before
   Run.
-- **A volume in parts** (owner, 2026-11-01: "split only when it doesn't
-  fit, margin by distance"). A volume whose one floor would take more
+- **A volume in parts**. A volume whose one floor would take more
   than 2 GB is no longer refused: its run is cut into equal parts about
   as long as the margin, and each part gets a floor of its own — square
   tiles on a plan grid along the part, every tile whose centre lies
@@ -309,10 +307,8 @@ tiles:
   tiles 8 m (default) 0.78 % (0.13 s), 4 m 0.79 %, 2 m 0.79 % (0.47 s): a
   cut's floor has converged at 8 m (its largest values are near the
   wires, where the floor counts least), finer tiles only take longer.
-  The defaults kept on that ground (2026-11-01).
-- **The ground's elevation** — *Ground from* (2 Scope; owner, 2026-11-01:
-  "choose which TIN layer it uses and if none exist which survey data to
-  use to make it"): the **surface of the checks** (Line › Terrain; the
+  The defaults kept on that ground.
+- **The ground's elevation** — *Ground from* (2 Scope): the **surface of the checks** (Line › Terrain; the
   default), any **terrain surface** (TIN layer) of the project, or the
   **survey's ground points** — the point cloud's classes with the role
   *ground* within a distance of the spans (250 m by default), the lowest
@@ -324,7 +320,7 @@ tiles:
 
 ### The structures' steel (optional)
 
-Off by default (owner, 2026-10-31); only on the tiled floor in 3D.
+Off by default; only on the tiled floor in 3D.
 
 - Each structure's members — its type's at detail levels 2 and 3, else
   its own stick drawing; a pole's centreline — are cut into **pieces of
@@ -360,14 +356,13 @@ all charges in that plane, with the opposite sign. The images' field at
 back (a reflection keeps every distance): one more sum, no system to
 solve.
 
-Why it was built (owner, 2026-10-29, asked "what's easier and actually
-better"): it is continuous along the line (no seam at a structure, as a
+Why it was built: it is continuous along the line (no seam at a structure, as a
 plane per span would leave), exact for level or evenly sloping ground,
 and as costly as one more sum. **Simplification on uneven ground**: in a
 hollow or on a ridge the real ground is not the plane. The comparison
 below made the tiled floor the default.
 
-### The plane against the tiled floor (2026-10-29)
+### The plane against the tiled floor
 
 The owner asked for "a comparison with a tiled floor … in a valley area
 as well as flatland" on a few extracts of a real line. The reference: the
@@ -439,7 +434,7 @@ turned with it.
 
 ## Where: profiles, cuts and volumes
 
-As for the [magnetic field](magnetic-field.md#where) (2026-11-01): a run
+As for the [magnetic field](magnetic-field.md#where): a run
 makes **2D** — the cuts asked and, asked, the profiles and points — or
 **3D** — the volumes only, each kind a step of its own (the cuts and
 volumes from the charges in 3D, the profiles by their model). The wires
@@ -452,8 +447,7 @@ solved once.
   by default.
 - **Cuts** are vertical planes at a **station of an alignment**,
   perpendicular to it; at an angle point along the bisector, as a
-  structure stands (owner, 2026-10-31: "cuts are made on the alignment
-  not the circuits or span"). The same plane as the cross-section view
+  structure stands. The same plane as the cross-section view
   opened at that station (one implementation). A span on no alignment
   can have no cut (said).
 
@@ -499,7 +493,7 @@ hvlbuzz's twelve round every subconductor), 0.003 % on single wires, with
 and without an earth wire
 ([validation](../validation/textbook.md#the-2d-fields-against-hvlbuzz-benchmarkselectricalhvlbuzztoml)).
 
-And the line's own profile (2026-10-31): the example double circuit at
+And the line's own profile: the example double circuit at
 the middle of T1–T2, its 2D profile against hvlbuzz on the same
 cross-section within 0.2 % at every point (tested; from the span's mean
 cross-section it was 3.6 % low at the axis); the 3D profile's largest

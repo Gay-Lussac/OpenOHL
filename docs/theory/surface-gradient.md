@@ -63,6 +63,8 @@ maximum. In a noise formula with a term \\( 120\log_{10} g \\), 4 % in
 
 ## The method: a charge simulation
 
+![One subconductor of radius r with eight line charges inside on a circle of radius a = 0.3 r, eight collocation points on its surface and the 360 points where the gradient is evaluated; and a bundle's subconductors over perfectly conducting ground with their images](../images/theory/charge-simulation.svg)
+
 The charge simulation method (Singer, Steinbigler and Weiss, 1974)
 replaces the surface charge of each conductor by line charges inside it,
 chosen so that the potential at points on its surface equals its
@@ -102,7 +104,7 @@ each cross-section).
 ## How many charges and where
 
 Measured (`cargo test -p ohl-electrical --release convergence_table --
---ignored --nocapture`, 2026-11-04) on the closed forms and on the
+--ignored --nocapture`) on the closed forms and on the
 cross-sections of the validation: A, B, C (hvlbuzz's three, below) and
 D, a 420 kV flat circuit of four-conductor bundles (0.45 m, 31.8 mm) at
 18 m with two earth wires. For the closed forms the relative error of
@@ -134,7 +136,7 @@ converges too, more slowly than at 0.3 r on these geometries (case A:
 
 **The default: 0.3 r and 8 charges** — the smallest count within 0.05 %
 of 64 on every benchmark (the cross-sections A–D within 0.01 %, the
-closed forms within 0.03 %; the owner's rule, 2026-11-04). More charges
+closed forms within 0.03 %; the owner's rule). More charges
 are a setting (`--charges`; 12 brings the cross-sections to 1e-6). The
 time (release build): under 1 ms per cross-section for A–C and 1 ms for D
 with 8 charges, 9–90 ms with 64. Only a cylinder nearly touching its
@@ -171,7 +173,7 @@ out of the formula, raises one side) — not conservative there.
 
 ## Where
 
-**2D cross-sections only** (the owner, 2026-11-04): per span at its
+**2D cross-sections only**: per span at its
 **lowest point** (the lowest phase conductor's) and at **both ends** —
 at the structures, the first cross-section every wire of the span reaches
 (with strain strings: where the conductor leaves the string); or at the
@@ -304,7 +306,7 @@ in a source that could be read (to add).
   Apparatus and Systems*, vol. PAS-93, no. 5, pp. 1660–1668, September
   1974, doi:[10.1109/TPAS.1974.293898](https://doi.org/10.1109/TPAS.1974.293898)
   — the charge simulation method (bibliographic data verified in
-  Crossref, 2026-11-04).
+  Crossref).
 - G. Markt and B. Mengele — the bundle formula that bears their names.
   Their original publication has not been read yet: the formula is
   derived on this page instead, and its primary source is still to be

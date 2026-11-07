@@ -192,7 +192,7 @@ force, the far ones none.
   in the library has no area (said in its row). Exact: the member wind
   above, with the code's factors.
 - OHL-Structure's **wind on the body** of a load case
-  (`[[load_case.structure.wind]]`, 2026-10-25): this member wind, the
+  (`[[load_case.structure.wind]]`): this member wind, the
   same factors and faces, for the case's direction (left, right, ahead,
   back or 45° between them) and pressure × factor; a row per member.
   With ice given as a radial thickness \\( t \\) in the same case, each
@@ -202,7 +202,7 @@ force, the far ones none.
   an angle's open side as if filled. **Simplification:** the faces'
   solidity ratios and the shielding stay those of the bare members.
 
-## Direction, ice and snow on the structure (2026-11-03)
+## Direction, ice and snow on the structure
 
 Implemented in `crates/ohl-loads/src/options.rs` (`WindDirection`,
 `StructureOptions`, `IceOn`, `SnowOn`, `snow_load`),
@@ -249,7 +249,7 @@ the structure bodies' only.
 
 A radial thickness \\( t \\) (the case's, or each structure's local
 `structure_ice` — also, without ice of the case's own, in a case taking
-the local conditions whose weather case has ice, 2026-11-04) of density \\( \rho \\) (the case's `ice_density`, else
+the local conditions whose weather case has ice) of density \\( \rho \\) (the case's `ice_density`, else
 the weather case's; without either the case is refused — no density is
 assumed).
 
@@ -319,7 +319,7 @@ axis) are data for the reports; the allowable loads at the attachments
 own body's ice and snow (unsafe where they do not). Exact: the
 fe or pole check.
 
-**In OHL-Structure** (2026-11-03, a placed structure's cases of the
+**In OHL-Structure** (a placed structure's cases of the
 line's load case library): the same ice (thickness all round each
 member's outline, its density) and snow (q on each member's plan,
 \\( d\,L\,\sin\varphi \\)) on the members of its model, times the vertical

@@ -309,7 +309,7 @@ the views redrawn once the edits settle (500 ms), the old one shown
 meanwhile.
 
 Then (2026-10-24, from the same review): the sheet templates the
-Export drawings window and the sheet preview ask for every frame kept for
+Plan and profile sheets window and the sheet preview ask for every frame kept for
 a second and while the project's libraries are unchanged (they were read
 and parsed from their files twice a frame); the profile's corridor (the
 survey points, LiDAR points and 3D drawings projected onto the line)
@@ -423,3 +423,291 @@ Guidelines:
 - `dev` (debug builds and tests): the workspace's crates with line tables only (`debug = "line-tables-only"`: backtraces keep their files and lines, the build folder is several GB smaller and links are faster), the dependencies optimised (`opt-level = 2`) without debug information. For a debugger session with variables, build with `CARGO_PROFILE_DEV_DEBUG=true`.
 - `release`: what is shipped (thin LTO, one codegen unit): the slowest to build.
 - `bench-fast`: release optimisation without LTO, 16 codegen units — for local timing runs (`cargo test --profile bench-fast -p ohl-clearance --test zone_speed -- --ignored --nocapture`), much faster to build; its numbers are close to `release` but not the shipped binary's. Results do not depend on the profile.
+
+## Magnetic field: performance
+
+*Moved here from the theory page [magnetic-field.md](../theory/magnetic-field.md) on 2026-11-07: how the computation is made fast, with its measured times.*
+
+What a computation costs and what was done to make it quicker without
+changing a computed value (owner, 2026-10-29: "make sure to check the
+performance"). Measured on 2026-10-29 on the owner's laptop (10 cores:
+8 performance, 2 efficiency; release build).
+
+**The cost.** Every point asks every straight piece of every wire:
+the time is the points × the pieces × the time of one piece at one
+point. The line the measurements were made on: 28 km, 7 circuits, 77
+spans — **124 000 pieces** (the solver's, every subconductor's).
+
+**One piece at one point, one core:**
+
+| Arrangement | ns |
+|---|---|
+| piece by piece (`segment_field` summed) | 9.4 |
+| per polyline (each vertex's distance once for the two pieces meeting there) | 4.7 |
+
+Both give the same field within rounding (largest relative difference
+\\( 3\cdot10^{-15} \\) on the test line, \\( 10^{-12} \\) required by the
+tests).
+
+**On all cores, sustained.** A laptop's cores slow down under full load:
+a test line of 640 pieces went from 1 280 000 points/s in the first
+second to about 600 000 points/s after 5 s, and stayed there. So a run of more than a few seconds goes at
+about half the speed of a short measurement; the window's estimates use
+the last run's speed, or a short measurement halved before the first run.
+
+**What made it quicker** (each leaves every computed value as it was):
+
+1. The sum per polyline (above): half the time per piece.
+2. Points taken in **blocks of 64**: each wire's pieces are read once
+   for the block and stay in the processor's cache, instead of the whole
+   line's 7 MB of pieces being read again for every point.
+3. The threads **take blocks in turn** instead of an equal share each,
+   so the quicker cores take more of them.
+4. A volume's **fine lattice only where a surface passes** (above):
+   about half of it on a real span.
+
+![Point by point, every point reads all the line's pieces; in blocks of 64 points each wire's pieces are read once for the block; the blocks wait in a queue and each thread takes the next](../images/theory/field-blocks.svg)
+
+**Measured on the real line** (1000 A per circuit; one span of about
+400 m, ±50 m, from the ground to 10 m over the highest wire; levels 1,
+10 and 100 µT; times of the whole command, the line's solution included,
+about 1.4 s):
+
+| What | Points computed | Wires modelled | Time |
+|---|---|---|---|
+| 77 profiles of 101 points (every span) | 7 800 | whole line | 3.5 s |
+| one profile, a cut at 1 m (after 1.–3.) | 9 600 | whole line | 2.2 s |
+| one profile, a cut at 0.5 m (after 1.–3.) | 38 000 | whole line | 10 s |
+| volume at 4 m (and a cut at 0.5 m), before 2. and 3. | 79 000 | whole line | 20 s |
+| volume at 2 m (and a cut at 0.5 m), before 2. and 3. | 326 000 | whole line | 85 s |
+| volume at 2 m, after | 326 000 | whole line | 67–70 s |
+| volume at 2 m and a cut at 0.5 m | 326 000 + 38 000 | within 2 km (17 000 pieces) | 6 s |
+| volume at 1 m | 1 740 000 of 4 400 000 | within 2 km | 63 s |
+
+**What the wires modelled change** (`modelled_within`; the whole line's
+field computed again at 200 points of the cut or volume):
+
+| Within | Pieces (cut / volume) | Largest change (cut / volume) |
+|---|---|---|
+| 500 m | 4 900 / 7 900 | 0.55 % / 0.32 % |
+| 1 km | 10 200 / 11 500 | 0.085 % / 0.080 % |
+| 2 km | 15 700 / 17 200 | 0.024 % / 0.028 % |
+
+**What the volume's step changes** (how far the surfaces lie off their
+levels, at 200 points each: nine in ten within / at most):
+
+| Step | 1 µT | 10 µT | 100 µT |
+|---|---|---|---|
+| 4 m | 0.16 % / 0.7 % | 2.5 % / 28 % | 71 % / 595 % |
+| 2 m | 0.05 % / 0.2 % | 0.94 % / 27 % | 15 % / 55 % |
+| 1 m | 0.01 % / 0.0 % | 0.27 % / 21 % | 3.7 % / 11 % |
+
+The worst points lie next to the conductors, where the field bends
+sharply between lattice points; the 100 µT surface (a tube of some 2 m
+around each conductor) needs a step well under its radius.
+
+**Not done, and why:**
+- **Leaving out the far wires by default** — it changes computed values
+  (a little: see above); it is the user's choice, with its effect
+  measured at every run. The whole line stays the default (quality
+  before speed).
+- **Approximating far wires** (a multipole or a coarser wire far away) —
+  it would change computed values without the user choosing it.
+- **The GPU** — the field sums currents that cancel far from the line
+  (a balanced three-phase line falls as \\( 1/d^2 \\)); single precision,
+  all most GPUs offer, would lose digits there.
+
+**Continuity between the views' tiles**. The values are
+continuous: every point sums the same pieces of the whole line (or the
+same within the distance asked). The drawings are laid on **one path
+along a run of spans** (spans following each other along the line):
+grids from above and volumes take each run whole, the stations along its
+straights, the offsets across them, and at a line angle the offset along
+the bisector, mitred (the offset point lies its offset from both
+straights), the direction turning evenly along each straight from one
+end's to the other's — so the lattice bends with the line, without the
+gap on the outside of an angle and the overlap on its inside that boxes
+per span left, and the isolines and surfaces run through the structures
+unbroken (tested on a bent path: a tube around a bent wire closed but at
+the path's ends). Where the offsets would fold over themselves (a very
+sharp angle and a wide band) the run is refused with a narrower width
+asked for. A level met exactly at a lattice point gives that point's
+vertex to every edge through it (no crack; tested).
+
+The structures' magnetic permeability is not modelled (above); the
+jumpers and the structures' currents are.
+
+## LiDAR clearance checks: how they are made fast
+
+*Moved here from the theory page [lidar-analysis.md](../theory/lidar-analysis.md) on 2026-11-07: how the computation is made fast, with its measured times.*
+
+LiDAR surveys hold \\( 10^7 \\) to \\( 10^8 \\) points per line, and every
+vegetation point meets every position of every case. The work is kept to
+the points and wires that can matter; the numbers computed are never
+coarsened.
+
+- **Only what can reach.** A point is compared only with the spans within
+  its *reach*: \\( c_{\text{req}} + g + b \\) for grow-in, and the tallest
+  tree looked for plus its root ball plus \\( A \\) for fall-in. Spans are
+  indexed once per position on a plan grid (cells of about the reach), so
+  a point meets the few spans near it, not the line.
+  As built: each span is indexed once with all its positions (cells of a
+  quarter of the reach, at least 10 m).
+- **One bound per span before the exact distance.** Each span's positions
+  (hot, left, right and the swing arc) fit in a capsule about its axis of
+  radius \\( \max R + \) reach; a point outside it is rejected with one
+  distance to a segment. Only points inside get the exact distances
+  above, each a closed form (no iteration).
+  As built: then a bound from **bands** — for every 20 m along the axis,
+  how far from the axis and in which directions about it each position
+  (and all of the span's together) lies; a position is worked out only if
+  its bound can beat the best found. The nearest piece of a solved wire is
+  looked for outward from the point's place along the axis, stopping when
+  the places alone are further than the best. (The fall-in distance to a
+  wire over the hinge circle is found by the Newton steps above, on an arc
+  by the bound along the circle — not closed forms.)
+- **Cases share the work.** Positions of all cases are gathered per span;
+  the point is looked up once and compared with all its span's positions.
+  The smallest margin found so far bounds the rest: a case cannot make a
+  point worse once its distance exceeds the current worst by the reach.
+  As built for fall-in: a tree is worked out fully (circle, resting angle,
+  shelter) only when its bound is below 0 (it may count) or below the
+  span's worst fall so far (it may be reported); a tree that becomes the
+  span's nearest point or enters its worst list is worked out fully
+  then. Counts never depend on it (a bound from 0 up never counts).
+- **Ground once per point.** The height above the ground (for fall-in)
+  comes from the terrain surface once per point; the fall sector's resting
+  angle \\( \theta_{\min} \\) is computed only for points that are near
+  enough, by stepping along the fall direction at the TIN's resolution.
+- **Unbalanced ice only where trees are.** A span is solved with its own
+  ice only if vegetation points lie within its reach (most spans over
+  fields have none). Spans are independent: they are solved in parallel.
+- **Isoclearance by refinement.** \\( c \\) is first computed on a coarse
+  grid (e.g. 8 m). Because \\( c \\) cannot change faster than the distance
+  moved, a coarse cell whose corner values all exceed the highest line
+  drawn by more than its diagonal (times \\( \sqrt{1 + m^2} \\)) cannot hold
+  a drawn line and is not refined. Only cells near the wires or near
+  low clearance are refined to \\( \delta \\). As built: \\( m \\) is the
+  steepest triangle near the cell; rows of cells in parallel.
+- **Parallel by tiles.** Points are read tile by tile from the project's
+  point cloud (its spatial chunks) and the tiles are processed in
+  parallel; results are merged per span. As built: the points are read
+  chunk by chunk into memory (13 bytes a point, whole millimetres), then
+  checked in blocks of 65 536 points (about a stored chunk) on every
+  core (the standard library's scoped threads, as the rest of the code);
+  the results merged per span in a fixed order (the same answer whatever
+  the threads).
+- **Expected cost:** about 1 µs per vegetation point and position set
+  today; with the swing arc and a few dozen cases, a line of \\( 10^8 \\)
+  points (a third of them vegetation) is expected in minutes on a
+  10-core computer, and an isoclearance drawing of a 50 km corridor in
+  seconds. Exit clauses: a time limit per run, reported, never a partial
+  result shown as complete.
+
+  **Measured** (an invented 10 km line of 25 spans, three phases and an
+  earth wire, a million invented vegetation points over ±60 m — a cleared
+  strip of ±12 m and trees up to 28 m beyond, an unusually dense share of
+  danger trees: 2–12 % of the points; a 10-core computer; the
+  ignored test `danger_speed`): one case as before (k = 0) 0.4–0.7 µs a
+  point on one thread, 0.08–0.18 µs on ten; one case with k = 0.1
+  0.6–1.0 µs (0.1–0.2); one windy case with left, right and the swing arc,
+  k = 0.1: 6–12 µs (0.9–2.1); twenty windy cases with their arcs (6000
+  positions): 31–90 µs (4.6–14) — most of it the fall-in of danger trees
+  against the arcs (the search along the hinge circle). Isoclearance of
+  the 10 km corridor (±60 m, lines every 5 m to 40 m, 1 m grid refined
+  from 8 m) for the twenty cases: 6–9 s (1.6 million clearances, most
+  cells refined: lines run all along a corridor of that width) — a 50 km
+  corridor about half a minute, not seconds; one case is about ten times
+  faster. On a real line (930 spans of its sections, about 37 km of
+corridor ±60 m, 18.7 million vegetation points of 100 million, 10
+cores): one case as before, the check 1 s (0.05 µs a point); three cases
+— hot, windy with left, right and the swing arcs, iced with unbalanced
+ice on every span (930 solves) — with k = 0.1 and A = 2 m: the solves
+13–23 s, the check 21–34 s (1.1–1.8 µs a point), the isoclearance
+lines 13–14 s (9 million clearances). Exit clauses: `--time-limit` (default an hour) for a run in the
+  command line, an hour in the application, checked between blocks and
+  rows: an error, never a partial result.
+
+## Clearances: how they are made fast
+
+*Moved here from the theory page [clearances.md](../theory/clearances.md) on 2026-11-07: how the computation is made fast, with its measured times.*
+
+Speed work coarsens nothing computed: every change below gives the
+results of before **bit for bit** (`checks::reference`, the tests
+`the_point_check_gives_the_results_of_before` and
+`the_ground_check_gives_the_results_of_before`, on the example line in
+five wind positions, with bundles, 30 000 invented points and ties on
+whole metres; the earlier code is kept for them).
+
+- **One measure.** A window checks one measure; the other is no longer
+  worked out for every point and piece.
+- **Bounds before the exact distance.** A wire piece is passed over
+  without its exact distance when the distance to its bounding box (in
+  plan within the zone's width, for the vertical) shows that it can give
+  neither a smaller clearance than the smallest found nor one below the
+  required clearance. Equal clearances keep the first found, as before.
+- **The highest ground per cell** (`checks::GroundMax`, 5 m cells in
+  tiles of 64 × 64): a piece (radially a sample every 0.5 m) whose lowest
+  point is higher above the highest ground near it than the smallest
+  clearance so far (and the required clearance) is passed over — for the
+  radial, the ground within \\( r = \sqrt{(t + a)^2 + (s/2)^2} \\) of the
+  sample (\\( t \\) the threshold, \\( a \\) the allowance, \\( s \\) the
+  sample spacing): a triangle nearer in plan is under that ground, one
+  farther is more than \\( r \\) away.
+- **The reach for the ground, radially**. The radial
+  clearance to the ground is kept within the reach \\( R \\) (the
+  requirement plus `search_margin`) only, as for the points; a wire
+  below the ground always counts. A piece or sample more than \\( R \\)
+  above the highest ground within \\( R \\) of it in plan is passed
+  over. Before, the smallest clearance so far was the threshold, so a
+  wire tens of metres above a valley — every swing-arc line of its span,
+  every 0.5 m — searched some 2000 triangles of a fine surface each, for
+  a lowest outside the reach that was not exact either (the search
+  stopped at \\( R \\) in plan).
+- **The last sample's distance**. The distance to a
+  surface changes by at most the distance moved, so a sample's lies
+  within \\( d \pm m \\) of the last one searched (\\( d \\) its
+  distance, \\( m \\) the distance between them): the upper bound
+  narrows the search radius, the lower one passes over samples that
+  cannot come below the threshold or within the reach — the same
+  results.
+- **Every core.** The ground check checks the wires in parallel; the
+  points are read in blocks of 65 536, each block's stretches worked out
+  on every core from the results so far and the results applied in the
+  points' order (the same results as one point at a time). The solves
+  were already spread over the cores, one wind position each.
+
+Measured before and after on the invented long line (10 Pa steps, 131
+solves, 10⁶ points; one run after the other on the same shared
+computer):
+
+| | before | after |
+|---|---|---|
+| solves | 68 s | 65 s (unchanged) |
+| vertical, ground | 91 s | 12 s |
+| vertical, points | 103 s (10 000 points a second) | 17 s (58 000 a second) |
+| radial, ground | 264 s | 44 s |
+| radial, points | 101 s | 15 s |
+| the lowest clearances | 13.953, 0.000, 13.975, −0.015 m | the same |
+
+A vertical check of the ground and of 10⁶ points with 10 Pa steps: 262 s
+before, 94 s after, 8 s on the swing arc. With 10⁷ points the points'
+time grows tenfold (about 20 minutes before, 4 after, 16 s on the arc,
+extrapolated). With fine steps on a long line the **solves** are now
+the larger part: one solve of every section per pressure and side,
+spread over the cores — the swing arc is the remedy.
+
+Ideas left out: *warm-starting each pressure's solve from the previous
+one* — the solver stops at its tolerance, so a different start gives a
+different (equally valid) position: not the same numbers. *Solving only
+the sections near candidate points* — a ground rule has the ground under
+every span, and which LiDAR points are near a wire is known only after
+the solve; a bound from the still and full positions would rest on the
+rigid-swing simplification. *Ignoring the depth and comparing each point
+with the line's points only* (the owner's suggestion for the vertical) —
+the vertical clearance is the wire's height over the point's plan
+position: taking the nearest polyline point instead of the piece over it
+would change the numbers by up to the rise of a piece over half its
+length (centimetres on a slope), and the depth is a setting of the rule;
+the speed comes instead from the plan box test, which looks at exactly
+the pieces within the width.

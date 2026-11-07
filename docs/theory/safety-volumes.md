@@ -1,4 +1,4 @@
-# Safety volumes (2026-10-20)
+# Safety volumes
 
 *Built, in active development (not approved yet). The owner's request of
 2026-10-20: a volume around the lines, from weather cases and a distance
@@ -9,7 +9,7 @@ mesh and its simplification), `ohl_io::safety_volume` (the files).*
 ## The envelope
 
 For each wire (a circuit's phase through all its sections), each
-circuit or each electrical system (its circuits together, 2026-10-21),
+circuit or each electrical system (its circuits together),
 the safety volume is the set of points within a distance of the
 wire in any of its positions:
 
@@ -19,12 +19,12 @@ wire in any of its positions:
   chosen as solved by the line's solver (still air as it is; a windy case
   blown to the left and to the right at its full pressure), and as asked
   for, every **wind step** (still air and every intermediate pressure) and
-  the **swing arc** (since 2026-10-21 a band: the solid swept by the
+  the **swing arc** (a band: the solid swept by the
   span swinging rigidly about its attachment axis between the two
   blowouts, at every radius from the smallest to the largest of the
   three) — the positions of the danger-tree check
   ([LiDAR analyses › Wire positions checked](lidar-analysis.md#wire-positions-checked)) —
-  and, since 2026-10-21, the **jumpers** at their solved positions in
+  and, the **jumpers** at their solved positions in
   each of those solves (blown left and right, every step, still air) and,
   with the swing arc, on a **swing band of their own** about the line
   through their two end clamps (still air then inside the band).
@@ -56,7 +56,7 @@ volume is **continuous at the structures** (a dead end, a branch).
 *The check by hand at a dead end: without the jumper the tubes leave a gap of 4 m, with it the volume is one piece.*
 
 The **swing arc** contributes every point within \\( D_k + m_b \\) of the
-band (\\( m_b \\) its margin, 0.15 m by default; since 2026-10-21 a
+band (\\( m_b \\) its margin, 0.15 m by default; a
 parameter — the window's **band margin**, `--band-margin` — recorded
 with a saved run: a smaller value is less safe and on the user's
 responsibility): at a place \\( s \\) along the
@@ -73,7 +73,7 @@ beyond the band's ends and beyond the span's ends the volume is rounded
 
 *The band of the check by hand and its volume at mid-span, to scale.*
 
-A **jumper's band** (2026-10-21, the owner's decision) is the same
+A **jumper's band** is the same
 closed form about the axis through the jumper's two end clamps (blown to
 the left, the first solve; `positions::jumper_band`), from the smallest
 to the largest radius of its three positions, widened by a margin of its
@@ -119,7 +119,7 @@ fittings; an option may add them later): at a structure the volume is
 the union of the sections' and the jumpers' tubes.
 
 The wires taken are those of the electrical systems, circuits or spans
-ticked (2026-10-21); a wire's system is that of its section. By span,
+ticked; a wire's system is that of its section. By span,
 only the positions of the spans ticked are taken (so the volume ends
 within the distance of their ends), and a jumper's only when the spans
 at both its ends are ticked. Grouping
@@ -127,7 +127,7 @@ changes only which positions one mesh holds: each wire keeps the
 distance \\( d(U) \\) of its own system's voltage, so a volume per circuit
 or per system is the union of its wires' volumes (meshed as one).
 The wires without a system — earthed wires and any section without
-one — are one group since 2026-10-21 (the owner's decision,
+one — are one group (the owner's decision,
 `safety_volume::NO_SYSTEM`, "(no system)"): a row of the systems to
 tick (`--system none`), and per system one volume of that name. They
 keep the distance at 0 kV and are never given the distance of a system
@@ -142,7 +142,7 @@ level \\( f = \varepsilon_0 \\) of
 \\[ f(x) = \min_i \big(\operatorname{dist}(x, P_i) - r_i\big) \\]
 
 (\\( P_i \\) the segments and arc triangles, \\( r_i \\) their radii) by
-**marching tetrahedra** on a cubic grid of cell \\( h \\): each cube cut
+**marching tetrahedra** (A. Doi and A. Koide, "An efficient method of triangulating equi-valued surfaces by using tetrahedral cells", *IEICE Transactions on Information and Systems* E74-D (1), 1991, pp. 214–224; after the marching cubes of W. E. Lorensen and H. E. Cline, "Marching cubes: a high resolution 3D surface construction algorithm", *Computer Graphics* (SIGGRAPH '87) 21 (4), 1987, pp. 163–169) on a cubic grid of cell \\( h \\): each cube cut
 into six tetrahedra about its diagonal, the same in every cube, so the
 mesh is closed and every edge has exactly two triangles. A grid corner is
 inside when \\( f \le \varepsilon_0 \\); each vertex is found on its edge
@@ -251,13 +251,13 @@ outward.
 - `the_volume_s_positions_include_the_jumpers` (the example line, high
   wind, swing arc, a band margin of 0.4 m and a jumper band margin of
   0.25 m): the branch's jumper is taken blown left, blown right and on
-  its own swing band (2026-10-21) with its own margin, every span's band
+  its own swing band with its own margin, every span's band
   with the spans'; the danger-tree check's positions leave jumpers out,
   as before.
 - `chosen_and_grouped_by_system`: two earth wires of two circuits make
   one volume "(no system)" per system, and ticking "(no system)" takes
-  them alone (2026-10-21).
-- Validation `jumperband-001`, `-002`, `-003` (2026-10-21): a jumper's
+  them alone.
+- Validation `jumperband-001`, `-002`, `-003`: a jumper's
   band about its end clamps blown to the left, by hand, with the
   jumpers' default margin 0 and a margin of 0.35 m entered
   (`benchmarks/clearance/danger-trees.toml`).

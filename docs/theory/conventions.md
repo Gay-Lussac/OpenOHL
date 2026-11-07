@@ -42,6 +42,12 @@ Where a calculation does not follow the physics exactly, the theory pages say so
 - **Conservative:** the calculation deliberately errs on the safe side. The label says what is assumed, why it is on the safe side, and what the exact treatment would be.
 - **Simplification:** the calculation simplifies in a way that is not known to be on the safe side, or is on the unsafe side. The label says what is simplified, which way the error can go, and what the exact treatment would be.
 
+Some pages use these other words for the same:
+
+- **Conservative assumption**, **on the safe side**: as **Conservative**.
+- **Not on the safe side**, **Limitation (not on the safe side)**: as **Simplification**, the error known to be on the unsafe side.
+- **Assumption** (the electrical pages): a modelling choice, said with which way it errs where that is known; the electrical results are not design checks in themselves.
+
 "Safe side" always refers to a named result (a clearance, a usage, a tension); an assumption can be conservative for one result and not for another, and the label then says which. Results must be verified by a qualified engineer either way.
 
 ## Numerical exit clauses
@@ -49,6 +55,8 @@ Where a calculation does not follow the physics exactly, the theory pages say so
 Every iterative method documented in this manual states its convergence criterion and its iteration and time limits. When a limit is reached the calculation fails with an explanation instead of returning an unconverged value (see [Performance and time budgets](../development/performance.md)).
 
 ## Coordinate conventions
+
+![In plan: the project axes x east and y north; a route through T1, T2 and T3 with the station measured along it and a point at a positive offset to the right looking ahead; at T2 the structure's x axis to the right and y axis ahead, and orientation_deg from east to x, counter-clockwise; the wind from the left or the right. Beside it, the angles around a structure as shown in the application, clockwise from ahead.](../images/theory/conventions-axes.svg)
 
 - **Project coordinates**: a projected coordinate system in metres (the line's `crs`, e.g. `EPSG:2056`); x east, y north, z up. Heights are kept as given — usually orthometric — and no geoid model is applied ([Coordinate systems](../user-guide/coordinates.md)).
 - **Stations and offsets**: stations are measured along a route's alignment (or its structures); offsets are positive to the right looking ahead ([Line files](../user-guide/line-file.md)).
@@ -58,9 +66,9 @@ Every iterative method documented in this manual states its convergence criterio
 
   **Conservative for the transverse loads and the side clearances only:** every span takes the case's full pressure square to itself, whatever its direction. A real wind blows from one direction, so a span at an angle to it takes less (the part normal to it): the transverse load on every span and its swing to the side are the largest any wind of that pressure gives. Exact: one wind direction per case, each span loaded by the part of it normal to the span.
 
-  **Limitation (not on the safe side): there is no wind along the line or at an angle to it.** Every case's wind blows across the line, on the wires and on the structures' own bodies (the bands, the member wind, the pole). A wind at an angle to the line loads a structure **along** the line too — on its body, and through the wires at an angle structure — and a square lattice body on two faces at once; such cases can govern the legs and the longitudinal bracing, and none of them is produced. The longitudinal loads of the structures therefore hold no wind, and members governed by along-line or diagonal wind are not checked for it. Exact: a wind direction per load case (each span loaded by the part normal to it, each body by direction) — later (owner, 2026-10-26); until then such cases must be checked otherwise.
+  **Limitation (not on the safe side): the wires take no wind along the line or at an angle to it.** Every case's wind on the wires and jumpers blows across the line, from the case's side. A wind at an angle to the line loads a structure **along** the line through the wires at an angle structure too; those longitudinal wire loads are not produced. The structure **bodies** do take a direction: a load case may give the wind's direction on them (`[case.structure]`, [Wind on structures](structure-wind.md#the-winds-direction)), so a square lattice body loaded on two faces at once, or along the line, can be checked; without a direction their wind blows across the line as the wires'. Exact: a wind direction per load case for the wires too, each span loaded by the part normal to it.
 
   **Simplification:** one wind pressure per weather case, at every height and along every span. Real wind grows with the height above the ground and varies along a span. The error goes either way: the case's pressure must be chosen for the heights it stands for (a design code's height and span factors belong in the weather cases). Exact: a pressure by height (and a span factor) per wire point.
 
-  A jumper takes the case's full pressure square to each of its pieces, as the spans do, pushed to the case's side of the line (owner-approved fix, 2026-10-26; before, only the part of the across-line wind normal to it, by \\( \cos^2 \\) of the angle between the wind and its normal, so a jumper across the line took almost none). **Conservative**, for the same reason as the spans: a wind along the line would blow a jumper across it out fully. Exact: a wind direction per case.
+  A jumper takes the case's full pressure square to each of its pieces, as the spans do, pushed to the case's side of the line. **Conservative**, for the same reason as the spans: a wind along the line would blow a jumper across it out fully. Exact: a wind direction per case.
 - **Structure loads** are given in the line's axes (x, y, z) and in the structure's axes: transverse, longitudinal (ahead) and vertical (down) — see [Load cases](../user-guide/loads.md).

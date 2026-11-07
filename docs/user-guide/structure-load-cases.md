@@ -172,7 +172,7 @@ longitudinal × 1.0 at every point (without A3) · self weight × 1.35 ·
 wind on the body from the left, 650 Pa × 1.5 · ice 20 mm (900 kg/m³) on
 every member × 1.0 · 2 kN down at A1* (`ohl_structure_loads::describe`).
 
-### From any angle, and snow (2026-11-03)
+### From any angle, and snow
 
 `from` in `[[load_case.structure.wind]]` may be an angle in degrees —
 the angle the wind comes from, 0 from the right, 90 from ahead, 180 from
@@ -185,7 +185,7 @@ theirs is written as its name). Mirror wind turns θ into 180° − θ.
 its length projected on the ground, a vertical member none — down; rows
 of source `snow`, numbered from 5001. The line's load cases with snow on
 the structures give it ([The line's load cases: the
-library](structure-app.md#the-lines-load-cases-the-library-2026-11-03)).
+library](structure-app.md#the-lines-load-cases-the-library)).
 
 ## Convert and Mirror wind
 

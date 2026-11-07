@@ -112,6 +112,9 @@ ohl thermal clearance-limit synthetic-line.ohl.json --terrain synthetic-survey.c
     --ambient thermal-ambient.ohlta --method cigre601 --csv limits.csv
 ```
 
+With `--weather`, `--case` is needed: it names the base case whose
+temperature is varied.
+
 ```
 clearance-limited temperature of 3 sections (0–150 °C, ±0.5 °C; base case "max temperature"; 1.8s):
   S1           acsr-drake-26-7      above 150 °C

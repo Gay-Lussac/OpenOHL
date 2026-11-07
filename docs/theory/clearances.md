@@ -23,7 +23,7 @@ Every clearance is to the conductor's surface ([Clearance](../user-guide/terrain
 
 *The two measures: the vertical within the zone's width, measured straight up; the radial, the shortest distance (schematic).*
 
-### The vertical: straight below, drawn vertical (2026-10-22)
+### The vertical: straight below, drawn vertical
 
 The owner's decision of 2026-10-22: a vertical rule checks only the
 targets straight under (over) the wire, within the zone's width, and
@@ -45,8 +45,7 @@ test `the_vertical_checks_only_the_band_and_is_drawn_vertical`):
   nearest in plan): \\( z_{\text{wire}} - z_{\text{target}} \\) for a
   target below (to the lowest subconductor of a bundle, less the
   conductor's radius), above: the reverse. On a piece sloping at
-  \\( \beta \\) both are measured **vertically** (2026-10-26, physics
-  review): a vertical meets the round surface \\( r/\cos\beta \\) from the
+  \\( \beta \\) both are measured **vertically**: a vertical meets the round surface \\( r/\cos\beta \\) from the
   axis, and a subconductor \\( d \\) below the axis (square to it) lies
   \\( d/\cos\beta \\) below it at the same plan position — at most the
   offset plus the piece's own rise (a vertical through a steep piece
@@ -106,12 +105,12 @@ alone or together:
   beyond), each solved by the line's solver: the wires' own positions,
   strings and clamps where they really swing, the sag of each pressure.
   Exact at the pressures solved, blind between two of them.
-- **Swing arc** (2026-10-20, the danger-tree check's arc,
+- **Swing arc** (the danger-tree check's arc,
   [LiDAR analyses › Wire positions checked](lidar-analysis.md#wire-positions-checked),
   the same code `positions::SwingArc`): each span swung as one about
   its attachment axis (the line through the string tops, at a dead end
   the clamps) between still air and the full blowouts of the sides
-  chosen — since 2026-10-21 a **band**: every radius from the smallest
+  chosen — a **band**: every radius from the smallest
   to the largest of theirs, \\( r = \min(R_L, R_0, R_R) \\) to
   \\( R = \max(R_L, R_0, R_R) \\), at each place along the span, from the
   smallest to the largest of their angles. Three solves per windy case
@@ -133,7 +132,7 @@ alone or together:
   windows' **band margin**, `ohl zones --band-margin`): a smaller value
   is less safe and on the user's responsibility.
 
-  **Jumpers** (2026-10-21): the jumpers a rule checks (`wires` jumpers or
+  **Jumpers**: the jumpers a rule checks (`wires` jumpers or
   both) have a band of their own, about the line through their two end
   clamps (blown to the left, the first solve), from the smallest to the
   largest radius of their three positions (`positions::jumper_band`),
@@ -287,7 +286,7 @@ far, nor below the required clearance, is passed over (its bound from the
 highest ground near it, as below): the counts and the lowest clearance
 are those of every angle checked in full.
 
-## Wire to wire on the swing arc (2026-10-28)
+## Wire to wire on the swing arc
 
 The Clearances window (wire clearances) checks the line's own wires
 against each other on the swing arc too (owner, 2026-10-28;
@@ -340,7 +339,7 @@ example):
 within 14 m of the wires; rules of 7 m to the ground and to the points;
 the solves of this small line take a millisecond each):
 
-| | wind steps, 50 Pa | swing arc (band, 2026-10-21) | swing arc (before) |
+| | wind steps, 50 Pa | swing arc (band) | swing arc (before) |
 |---|---|---|---|
 | solves | 25 | 3 | 3 |
 | vertical: solved, checked | 17 ms, 13 ms | 5 ms, 159 ms | 5 ms, 103 ms |
@@ -350,7 +349,7 @@ the solves of this small line take a millisecond each):
 10⁶ points; rules of 7 m to the ground and 5 m to the points; a shared
 computer, ± 20 %):
 
-| | steps, 10 Pa | steps, 50 Pa | swing arc (band, 2026-10-21) | swing arc (before) |
+| | steps, 10 Pa | steps, 50 Pa | swing arc (band) | swing arc (before) |
 |---|---|---|---|---|
 | solves | 131: 56 s | 27: 12 s | 3: 1.5 s | 3: 1.3 s |
 | vertical, ground | 7.1 s | 2.1 s | 9.4 s | 5.9 s |
@@ -381,7 +380,7 @@ radially, with the ground, 29 s against 113 s and 19 s).
   number of positions; the arc keeps them at three.
 - **What the arc gains.** It covers every angle between the blowouts
   continuously; the steps see the wire only at the pressures they solve
-  and are blind between two of them. Since 2026-10-21 it takes every
+  and are blind between two of them. it takes every
   radius between the smallest and the largest of the three positions,
   widened by its margin (**Conservative** for targets on every side, see
   above).
@@ -412,84 +411,6 @@ outside the band itself; the arc alone missed them by up to 1.53 m:
 - **Both together** (the steps and the arc) check the steps' positions
   and the arc: the smaller of the two at every span.
 
-## How it is made fast (2026-10-20)
+## How it is made fast
 
-Speed work coarsens nothing computed: every change below gives the
-results of before **bit for bit** (`checks::reference`, the tests
-`the_point_check_gives_the_results_of_before` and
-`the_ground_check_gives_the_results_of_before`, on the example line in
-five wind positions, with bundles, 30 000 invented points and ties on
-whole metres; the earlier code is kept for them).
-
-- **One measure.** A window checks one measure; the other is no longer
-  worked out for every point and piece.
-- **Bounds before the exact distance.** A wire piece is passed over
-  without its exact distance when the distance to its bounding box (in
-  plan within the zone's width, for the vertical) shows that it can give
-  neither a smaller clearance than the smallest found nor one below the
-  required clearance. Equal clearances keep the first found, as before.
-- **The highest ground per cell** (`checks::GroundMax`, 5 m cells in
-  tiles of 64 × 64): a piece (radially a sample every 0.5 m) whose lowest
-  point is higher above the highest ground near it than the smallest
-  clearance so far (and the required clearance) is passed over — for the
-  radial, the ground within \\( r = \sqrt{(t + a)^2 + (s/2)^2} \\) of the
-  sample (\\( t \\) the threshold, \\( a \\) the allowance, \\( s \\) the
-  sample spacing): a triangle nearer in plan is under that ground, one
-  farther is more than \\( r \\) away.
-- **The reach for the ground, radially** (2026-11-05). The radial
-  clearance to the ground is kept within the reach \\( R \\) (the
-  requirement plus `search_margin`) only, as for the points; a wire
-  below the ground always counts. A piece or sample more than \\( R \\)
-  above the highest ground within \\( R \\) of it in plan is passed
-  over. Before, the smallest clearance so far was the threshold, so a
-  wire tens of metres above a valley — every swing-arc line of its span,
-  every 0.5 m — searched some 2000 triangles of a fine surface each, for
-  a lowest outside the reach that was not exact either (the search
-  stopped at \\( R \\) in plan).
-- **The last sample's distance** (2026-11-05). The distance to a
-  surface changes by at most the distance moved, so a sample's lies
-  within \\( d \pm m \\) of the last one searched (\\( d \\) its
-  distance, \\( m \\) the distance between them): the upper bound
-  narrows the search radius, the lower one passes over samples that
-  cannot come below the threshold or within the reach — the same
-  results.
-- **Every core.** The ground check checks the wires in parallel; the
-  points are read in blocks of 65 536, each block's stretches worked out
-  on every core from the results so far and the results applied in the
-  points' order (the same results as one point at a time). The solves
-  were already spread over the cores, one wind position each.
-
-Measured before and after on the invented long line (10 Pa steps, 131
-solves, 10⁶ points; one run after the other on the same shared
-computer):
-
-| | before | after |
-|---|---|---|
-| solves | 68 s | 65 s (unchanged) |
-| vertical, ground | 91 s | 12 s |
-| vertical, points | 103 s (10 000 points a second) | 17 s (58 000 a second) |
-| radial, ground | 264 s | 44 s |
-| radial, points | 101 s | 15 s |
-| the lowest clearances | 13.953, 0.000, 13.975, −0.015 m | the same |
-
-A vertical check of the ground and of 10⁶ points with 10 Pa steps: 262 s
-before, 94 s after, 8 s on the swing arc. With 10⁷ points the points'
-time grows tenfold (about 20 minutes before, 4 after, 16 s on the arc,
-extrapolated). With fine steps on a long line the **solves** are now
-the larger part: one solve of every section per pressure and side,
-spread over the cores — the swing arc is the remedy.
-
-Ideas left out: *warm-starting each pressure's solve from the previous
-one* — the solver stops at its tolerance, so a different start gives a
-different (equally valid) position: not the same numbers. *Solving only
-the sections near candidate points* — a ground rule has the ground under
-every span, and which LiDAR points are near a wire is known only after
-the solve; a bound from the still and full positions would rest on the
-rigid-swing simplification. *Ignoring the depth and comparing each point
-with the line's points only* (the owner's suggestion for the vertical) —
-the vertical clearance is the wire's height over the point's plan
-position: taking the nearest polyline point instead of the piece over it
-would change the numbers by up to the rise of a piece over half its
-length (centimetres on a slope), and the depth is a setting of the rule;
-the speed comes instead from the plan box test, which looks at exactly
-the pieces within the width.
+How the computation is made fast, with its measured times: [Performance](../development/performance.md#clearances-how-they-are-made-fast).

@@ -44,6 +44,8 @@ a share of a resistance.
 
 ## The bolt group in the plate
 
+![Left: a member in tension bolted onto a gusset plate by two gauge lines of three bolts, with the pitch p, the span between the outer lines, the end distance e1 to the plate's edge in the force's direction, the edge distance e2, and the block shear path: two shear planes along the outer gauge lines and the tension plane between them. Right: a fillet weld between plates at θ with its throat a and contact width s](../images/theory/joint-plate.svg)
+
 From the bolts where Joint details places them (the connection's layout
 or bolt points, in the plate's plane):
 
@@ -199,3 +201,21 @@ shown in Results and the largest over the cases), the 3D view marks each
 joint with plates by its worst usage (the members' colours: orange from
 90 %, red above 100 %), the structure report lists every part's largest
 usage over the cases and the governing case.
+
+## Validation
+
+Unit tests in `crates/ohl-structures-fe/src/plates.rs`, by hand on
+invented data:
+
+- `asce10_plate_by_hand`: four M16 bolts (hole 18 mm, punched 19.6 mm)
+  in two lines 60 mm apart, two to a line 50 mm apart, 40 mm to the
+  plate's edge, a 10 mm S355 plate: bearing 489.6 kN, block shear
+  514.3 kN, net section 286.84 kN (ASCE 10-97).
+- `sia263_plate_by_hand`: the same plate by SIA 263: bearing 493.2 kN,
+  block shear 267.1 kN (82) and 449.3 kN (83), gross and net section
+  405.7 kN and 308.4 kN.
+- `a_fillet_weld_by_sia263`: a 6 mm fillet weld 220 mm long between
+  plates at 90°: 323.1 kN (87) and 424.1 kN (88); by ASCE 10-97 not
+  checked (it has no weld rule), and said.
+- `a_weld_carries_the_larger_resultant`, `rays_reach_the_outline`: the
+  force a weld carries and the plate's outline.

@@ -10,7 +10,9 @@ the ground, the wires, the structures, where sheets end — stays the same whate
 the template.
 
 The same template serves the plan-and-profile sheets and the route, situation and
-phase plans, but **the plans use only part of it**: see [Which drawing uses
+phase plans: the plans take its frame, title block, revision and stringing tables,
+key map, notes, legend, scale bar, north arrow and pens as the sheets do; what only a
+profile has (bands, panels, sag labels) they leave out. See [Which drawing uses
 what](#which-drawing-uses-what).
 
 Every drawing on this page was drawn by OpenOHL from a small template and the
@@ -26,7 +28,7 @@ You rarely write a template from nothing:
    `examples/sheet-templates/example-a1.ohlsheet`, which uses **every key**, each
    explained in a comment, with invented values.
 2. Change what you need. A table you leave out keeps its default.
-3. In the app: File › Export › Drawings… › **Load file…**. On the command line:
+3. In the app: Plans & sheets › Plan and profile sheets… › **Load file…**. On the command line:
    `ohl drawing … --sheet-template my.ohlsheet`.
 
 ## A sheet at a glance
@@ -59,9 +61,12 @@ plan](#drawings-and-orthophotos-under-the-plan).
 
 ## Which drawing uses what
 
-The three plans draw their content themselves, so a template changes only their
-frame, title block and words. This table was checked by changing each part of a
-template and comparing the files written.
+The three plans draw their content themselves (the line seen from above, or its
+phases) and take the template's page furniture as the sheets do (2026-11-07). Two
+things a plan always has: a north arrow and a scale bar (the phase plan, not to
+scale, neither) — where the template places them and at its size and length, else in
+the plan's corners. This table was checked by changing each part of a template and
+comparing the files written (built, in active development, not approved yet).
 
 | Part of the template | Plan-and-profile sheets | Route and situation plans | Phase plan |
 |---|---|---|---|
@@ -70,12 +75,15 @@ template and comparing the files written.
 | `[title_block]` and its cells, `[[image]]` | yes | yes | yes |
 | `[[field]]`, `[if_empty]` | yes | yes | yes |
 | `[text] colour` | yes | yes | yes |
-| `[layers]` | [the layers with lines](#pens-by-layer) | `OHL_FRAME` only | `OHL_FRAME` only |
+| `[layers]` | [the layers with lines](#pens-by-layer) | the layers with lines (corridor, centreline, wires, structures, legend, frame) | the layers with lines |
 | `[legend.labels]` | yes | `axis`, `corridor_near`, `plan_route`, `plan_situation` | `phase_…`, `plan_phase` |
-| `[layout]`, `[[band]]`, `[[note]]` | yes | no | no |
-| `[legend]` place and size, `[key_map]`, `[north_arrow]`, `[scale_bar]` | yes | no: their own north arrow, scale bar and short legend, always drawn | no |
-| `[revisions]`, `[stringing_table]`, `[sag_labels]`, `[elevations]` | yes | no | no |
-| `[corridor]`, `[centreline]`, `[line_styles]`, `[roles]`, `[conductor_clearance]`, `[lidar]` | yes | no | no |
+| `[revisions]`, `[stringing_table]`, `[key_map]`, `[[note]]` | yes | yes | yes |
+| `[legend]` place and size | yes | yes (else their legend in the plan's lower left) | no (no legend entries: the circuits' table instead) |
+| `[scale_bar]` | yes | place `"bottom"`: in the bottom row; the first of `lengths`; else the plan's lower left | no (not to scale) |
+| `[north_arrow]` | yes | its `size` when placed; always drawn, top right | no |
+| `[corridor]` | yes | `width` (else the drawings' line width) and `pen` | no |
+| `[layout]`, `[[band]]`, `[sag_labels]`, `[elevations]` | yes | no (no profile) | no |
+| `[centreline]`, `[line_styles]`, `[roles]`, `[conductor_clearance]`, `[lidar]` | yes | no | no |
 | `[plan_background]` | yes | no: their own drawings and photo ticks | no |
 | `[cases]` | yes | yes (the wires drawn) | no: the case shown |
 
@@ -111,8 +119,7 @@ Several drawings in one go, each with its own template: [Plan sets](drawings.md#
 ## Where templates come from
 
 - **Built in**: `default`.
-- **The project**: templates kept in the project line (File › Export ›
-  Drawings… › **Load file…**), their images embedded: the project travels
+- **The project**: templates kept in the project line (Plans & sheets › Plan and profile sheets… › **Load file…**), their images embedded: the project travels
   whole. Each project line has its own (they are library files of kind
   `sheet-templates`).
 - **The library folder**: `libraries/sheet-templates/*.ohlsheet` (shipped,
@@ -349,6 +356,7 @@ Texts take placeholders, `{name}` or `{name:format}`, filled in on each sheet.
 | `heading` | The drawing's heading: the route, then what the drawing is | `Route main — Main route: plan and profile`; on a plan `… : route plan` |
 | `title`, `title1`–`title3` | The title lines; `title` all of them | |
 | `plan_kind` | What the drawing is, in the template's words | `route plan` |
+| `revision` | The newest revision of the revision table, unless you give the field a value | `B` |
 | `sheet`, `sheets` | This sheet's number, how many | `2`, `5` |
 | `from`, `to` | The stations it covers | `0+640.0` |
 | `from_structure`, `to_structure` | The structures it starts and ends at | `T3` |

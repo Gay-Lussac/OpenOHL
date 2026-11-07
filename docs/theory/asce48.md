@@ -11,13 +11,13 @@ Structures*, American Society of Civil Engineers (2020), Section 5.2
 (members). Clause and equation numbers below are the standard's. ASCE
 10-97 (the tower check, [its page](asce10.md)) covers latticed structures
 only and has no rule for tubes; ASCE/SEI 48 is its companion for poles
-(owner, 2026-11-03).
+(owner).
 
 **Where it is used.** A pole (`.ohlp`, or `[pole]` in a structure file)
 of material `steel`, hollow (a `wall`), with its `yield` stress and **no
 capacity given** (no `[[capacity]]` table, `moment_capacity` or
 `fibre_stress`): its shaft is checked by this page at the pole check's 41
-heights — unless the pole names `code = "sia263-2013"` (2026-11-03):
+heights — unless the pole names `code = "sia263-2013"`:
 then by [SIA 263](sia263.md#steel-pole-shafts). A given capacity keeps the moment check of the
 [structure analysis](structures-fe.md#pole-check) page, as before. A
 `[pole]` naming a `section` takes the yield stress of that section's
@@ -36,6 +36,8 @@ and the wind on the shaft above:
 | torsion \\( T \\) | \\( \sum (x_i F_{y,i} - y_i F_{x,i}) \\) of the loads above |
 
 ## Section properties
+
+![A 12-sided shaft in section: D across the flats, the wall t, the inside bend radius r, the flat width w less the bends, and c to a corner](../images/theory/polygon-shaft.svg)
 
 A regular polygon of \\( n \\) sides, \\( D \\) across flats (outside),
 wall \\( t \\), or a round tube of outside diameter \\( D \\): area \\( A \\)

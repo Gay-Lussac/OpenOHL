@@ -6,13 +6,15 @@ violation markers) and above it the plan, straightened along the route so
 that it lines up with the profile. The same drawings are written as SVG,
 DXF, PDF and PNG; the profile's numbers as CSV and XML.
 
+![A plan-and-profile sheet of the example line on A1, drawn by `ohl drawing` with the example sheet template: the plan, the profile with the wires of two weather cases and the clearance line, the band rows, the key map, the scale bars, the legend, the revision table and the title block](../images/user-guide/plan-and-profile-sheet.png)
+
 **Profile first, sheets on top.** The profile is one **continuous** view
 along the route: the desktop app's Profile page works on it, with no sheet
 breaks, and an export without `--page` writes it as one continuous
 drawing. **Sheets** are a separate, optional layer on top of it, for
 exports: the sheet format, the scales and where the sheets break belong
 to the export settings only (`ohl drawing … --page`, `ohl line --drawings
-… --page`, Plans & sheets › Drawings… in the app) and never change the
+… --page`, Plans & sheets › Plan and profile sheets… in the app) and never change the
 profile view or any computed number. The app can show them over its views
 (the [sheet preview](#sheet-preview), off by default).
 
@@ -151,7 +153,7 @@ checks) is a separate setting and is not changed by it.
 ## Elevations
 
 On request (`--elevations above|below`, or **Elevations** in the
-app's Export drawings window; off by default) the plan carries each
+app's Plan and profile sheets window; off by default) the plan carries each
 structure's **elevation** beside the line, so its shape can be read on
 the sheet next to where it stands:
 
@@ -448,7 +450,7 @@ A simple, open format for the same numbers (version 1):
 
 ## In the desktop app
 
-**Plans & sheets › Drawings…** opens a window: the **sheet template**
+**Plans & sheets › Plan and profile sheets…** opens a window: the **sheet template**
 (Built-in, Project, Library or a plugin's; **Load file…** keeps a
 `.ohlsheet` in the project, **Save as file…** writes the one chosen),
 route (or every route), formats, sheets (one continuous drawing, the
@@ -541,10 +543,11 @@ the export writes one continuous drawing.
 
 Beside the plan-and-profile sheets (2026-10-24, the owner's request,
 roadmap O14; built, in active development (not approved yet)), three
-plans in a menu of their own, **Export › Plans**, each written for every
-route with the sheet template, title fields, routes and cases of Export ›
-Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF. A template sets their
-frame, title block and words only; [Which drawing uses
+plans in a menu of their own, **Plans & sheets › Plans**, each written for every
+route with the sheet template, title fields, routes and cases of Plans & sheets › Plan and profile sheets…, on the paper chosen, in PDF, SVG, PNG or DXF. The template sets
+their page as the sheets' (2026-11-07): frame, title block, revision and
+stringing tables, key map, notes, legend, scale bar and north arrow, pens;
+[Which drawing uses
 what](sheet-templates.md#which-drawing-uses-what) shows each plan and what it
 takes from the template.
 
@@ -552,9 +555,9 @@ takes from the template.
 - **Route plan** — the whole route **north up** at a small scale
   (1:5000 to 1:25 000, 1:10 000 by default), over the project's drawings
   (e.g. municipal boundaries) and orthophotos: the line's axis, its wires,
-  its structures numbered, the corridor (at the drawings' line width), a
-  north arrow, a scale bar and a legend, in the template's frame and
-  title block. The sheets follow the route, each taking what fits.
+  its structures numbered, the corridor (the template's width, else the
+  drawings' line width), a north arrow, a scale bar and a legend, in the
+  template's page. The sheets follow the route, each taking what fits.
 - **Situation plans** — the same at a large scale (1:500 to 1:2000,
   1:1000 by default), the sheets overlapping (a tenth of their width),
   over the cadastral survey loaded as a drawing (its lines and its texts,
@@ -586,7 +589,7 @@ takes from the template.
 
   **Alignments in one plan** (2026-11-03; built, in active development,
   not approved yet): by default each route's alignment gets its own
-  phase plan. In Export › Plans › Phase plan, **Add a plan of several**
+  phase plan. In Plans & sheets › Plans › Phase plan, **Add a plan of several**
   gives a plan its name and the routes and alignments drawn in it,
   ticked (a route's tick takes all its alignments): they are drawn one
   after the other in the line's order, a structure ending one and

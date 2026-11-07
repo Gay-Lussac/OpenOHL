@@ -1,7 +1,7 @@
 # Wire tensions
 
 *Built, in active development (not approved yet).* The wire tension
-check (owner, 2026-10-22): Checks › Wire tensions… in OHL-Design and
+check: Checks › Wire tensions… in OHL-Design and
 `ohl tensions` (`crates/ohl-clearance`: `tension`). How to use it:
 [OHL-Design › Wire tensions](../user-guide/desktop-app.md#wire-tensions)
 and [Wire tension rules](../user-guide/terrain.md#wire-tension-rules-tension_rule).

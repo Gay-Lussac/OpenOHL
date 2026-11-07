@@ -12,6 +12,10 @@ ohl crs transform --from EPSG:2056 --to EPSG:4326 2600000 1200000
 ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
 ```
 
+`ohl crs line` needs a line whose `crs` is a real coordinate system (an
+EPSG code or a proj4 string); the example line's, "local (invented)", is
+not one, so it cannot be transformed.
+
 - **Geographic** coordinates are longitude, latitude in degrees.
 - **Heights are kept** by default: line, survey and LiDAR heights are
   usually orthometric (above a geoid) and no geoid model is applied.

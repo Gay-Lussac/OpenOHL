@@ -5,14 +5,31 @@ A project file is one SQLite database (ADR-0004) holding the line model, its
 (`.ohl.json`) stay the open exchange format: import them into a project,
 export the project back.
 
+### The example project
+
+The examples on this page and on [Versions](versions.md) run on a project
+made from the example line that ships with OpenOHL (an invented line), in
+the repository's folder:
+
 ```bash
-ohl project import line.ohl.json --into project.ohl --user ana   # ana becomes admin
-ohl project user project.ohl --by ana ben designer
-ohl project apply project.ohl --user ben '{"op": "move_structure", "id": "T4", "position": [940.0, 52.1, 510.0]}'
-ohl project undo project.ohl --user ben
-ohl project log project.ohl
-ohl project export project.ohl --out line.ohl.json
-ohl line project.ohl --temperature 80          # every command taking a line file takes a project too
+ohl project import examples/synthetic-line/synthetic-line.ohl.json --into example.ohl --user tester
+ohl surface import examples/synthetic-line/synthetic-survey.csv --into example.ohl --user tester
+```
+
+```text
+imported "Synthetic example line (invented coordinates)": 7 structures, 3 sections, 1 jumpers into example.ohl
+entry 1: 30 object(s) changed; sections to recalculate: S1, S2, S3
+  synthetic-survey: 2960 points, 5694 triangles
+```
+
+The first user of a project (`tester`) is its admin. Then:
+
+```bash
+ohl project user example.ohl --by tester ben designer      # a second user
+ohl project apply example.ohl --user ben '{"op": "move_structure", "id": "T4", "position": [945.0, 52.1, 510.0]}'
+ohl project log example.ohl                                # the log, numbered
+ohl project export example.ohl --out example.ohl.json      # back to a line file
+ohl line example.ohl --temperature 80     # every command taking a line file takes a project too
 ```
 
 **`ohl line` and `ohl zones` read the project's libraries.** Given a
@@ -134,6 +151,15 @@ those 28 in 4.6 ms (command, log and solve), against 11.7 ms for all 554.
 - **Revisions, branches, merges and reviews** of the project: see
   [Versions, branches and reviews](versions.md).
 
+```bash
+ohl project undo example.ohl --user ben              # ben's last command reversed
+ohl project redo example.ohl --user ben              # and done again
+ohl project rollback example.ohl 4 --user tester     # admin: entry 4 reversed
+ohl project rollback example.ohl 1 --after --user tester   # back to just after entry 1
+```
+
+A rollback that would change nothing says `nothing to roll back`.
+
 ## Point clouds
 
 Every point of every tile is imported, except points flagged *withheld*
@@ -141,6 +167,26 @@ Every point of every tile is imported, except points flagged *withheld*
 structure of the line is imported too — it may hold a substation at the
 line's end or another structure worth having — but the import warns about
 it, in case it belongs to another project.
+
+On the example project (above), with the invented LiDAR tile of the
+example line:
+
+```bash
+ohl pointcloud import examples/synthetic-line/synthetic-lidar.las --into example.ohl
+ohl pointcloud info example.ohl
+ohl line example.ohl --pointcloud example.ohl --temperature 80 \
+  --rules examples/synthetic-line/clearance-rules.ohlr        # its ground from the cloud
+```
+
+```text
+imported 38984 points from 1 tiles into "lidar" in example.ohl; cloud now 38984 points
+"lidar": 38984 points, 64 m chunks, scale 0.001 m — classes: ASPRS LAS 1.4 standard classes
+    2        29884  Ground                                           ground
+    5         2160  High vegetation                                  vegetation
+   14         5760  Wire - conductor (phase)                         conductor
+```
+
+In general:
 
 ```bash
 ohl pointcloud import TILES_DIR --into project.ohl --name lidar-2025 \

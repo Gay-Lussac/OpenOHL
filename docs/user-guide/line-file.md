@@ -78,11 +78,12 @@ What hangs on a structure is given explicitly (each point, wire point and string
 - **Attachment points** (`points`): labelled points on the structure where strings hang. On a structure with a type each is linked to a **joint** of the type (version 7, 2026-10-21): the type's points as the type links them; a point of the structure's own may give `"joint"` (the joint's id) and `"offset"` (`[x, y, z]`, m, in the structure's axes: x to the right of the line, y ahead, z up — from the joint to the point, a rigid link whose moment the structure analysis applies). Its `position` is then the joint's as placed plus the offset (turned with the structure); the position written is kept while it agrees to 1 µm. A point written before (no `joint`) takes the type's point of its label (its offset the difference: it stays where it was), or a joint at its position. A point whose joint the type no longer has, or one written `"unlinked": true`, is **unlinked**: it stays at its `position`, and the structure's loads are refused until it is linked again (`ohl structures link`, or the session command `link_point`). `ohl structures points` lists the links. On a structure without a type each point is its own joint.
 
   ```bash
-  ohl structures points line.ohl.json --structure T2                    # its points, joints, offsets, unlinked ones
-  ohl structures points line.ohl.json --structure T2 --to D2 --extension +3   # how they match another type's joints
-  ohl structures link line.ohl.json --structure T2 --point A1 --joint J14 --offset 0,0,-0.5 --out line.ohl.json
-  ohl structures link line.ohl.json --structure T2 --point A1 --nearest --out line.ohl.json
-  ohl structures link line.ohl.json --structure T2 --point A1 --unlink --out line.ohl.json
+  # in examples/synthetic-line (the example line with structure types):
+  ohl structures points synthetic-line-typed.ohl.json --structure T2               # its points, joints, offsets, unlinked ones
+  ohl structures points synthetic-line-typed.ohl.json --structure T2 --to type-03  # how they match another type's joints
+  ohl structures link synthetic-line-typed.ohl.json --structure T2 --point A1 --nearest --out linked.ohl.json
+  ohl structures link synthetic-line-typed.ohl.json --structure T2 --point A1 --joint A1 --offset 0,0,-0.5 --out linked.ohl.json
+  ohl structures link synthetic-line-typed.ohl.json --structure T2 --point A1 --unlink --out linked.ohl.json
   ```
 - **Wire points** (`wires`): where strings meet and where wires are clamped. A wire point with a **`set`** number is where a section or jumper ends (sections and jumpers name it by structure and set, unique on the structure). A wire point no string reaches is **fixed** to the structure (a wire clamped directly). Its `position` is where it is in still air: the strings' lengths are the distances from their tops to it. A **`weight`** (N) hangs at it: a counterweight under the clamp (a string's own `weight` is spread along the string, half to each end).
 - **Strings** (`strings`): straight members from a **top** — a point, *or another string's wire point* — to a wire point. Strings combine, so any assembly is built from single strings ([drawing](glossary.md#strings)):
@@ -192,7 +193,7 @@ Some spans see another wind than the weather case gives (an exposed ridge, a she
 "wind_factors": [{ "span": 1, "factor": 1.2 }, { "span": 2, "factor": 1.2 }, { "span": 5, "factor": 0.7 }]
 ```
 
-A span not listed takes the case's wind (factor 1). Everywhere the case's wind acts on the wires the factor follows: the wire's blowout and tensions, the strings (the larger factor of their two spans), the jumpers (the largest at their structures), the structure loads, the clearances' blowout and swing arc, the distance under unequal wind (each span steps up to its own wind), the wind span of the allowable-spans check. The ruling-span method (one tension for all spans) takes the section's largest factor on every span. What is simplified — the same factor on every case with wind (ice with wind too), the structures' own wind not scaled — is in the [theory](../theory/wirefe.md#local-winds-per-span-2026-10-25).
+A span not listed takes the case's wind (factor 1). Everywhere the case's wind acts on the wires the factor follows: the wire's blowout and tensions, the strings (the larger factor of their two spans), the jumpers (the largest at their structures), the structure loads, the clearances' blowout and swing arc, the distance under unequal wind (each span steps up to its own wind), the wind span of the allowable-spans check. The ruling-span method (one tension for all spans) takes the section's largest factor on every span. What is simplified — the same factor on every case with wind (ice with wind too), the structures' own wind not scaled — is in the [theory](../theory/wirefe.md#local-winds-per-span).
 
 A span keeps its factor when structures are put in or taken out of the section elsewhere; a span split or joined takes the case's wind again. Written only when given: a line with local winds is written as version 9, without as before.
 

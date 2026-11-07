@@ -18,6 +18,8 @@ the safe side**.
 
 ## Three ways two members meet
 
+![Top, in section: a member end lapped onto another angle on its outside face, on its inside face, or nested heel into heel. Bottom: the plies a bolt passes through: a lap with one shear plane, a splice between two covers with two, a continuous member with no bolt](../images/theory/laps-splices.svg)
+
 - **Lapped** (`face`): a member end bolted directly onto another member's
   leg — on its outside face (the default), its inside face, or **nested**,
   an angle heel into heel inside the other. The bolts pass through two
@@ -108,7 +110,7 @@ across the group, its end and edge distances
 covers on that leg **by area**, each cover's thickness times its width
 across the member over the covers' together:
 
-\[ N_c = N\,rac{t_c\,b_c}{\sum_k t_k\,b_k} \]
+\\[ N_c = N\,\frac{t_c\,b_c}{\sum_k t_k\,b_k} \\]
 
 That is the share of covers straining alike (the same steel, the bolts
 in their holes): **an assumption**, said in the results. It is **not on
@@ -121,3 +123,20 @@ covers, 61 and 46 mm wide, 57 % and 43 %.
 
 A cover's steel is its material's; none given, the weakest of the
 members bolting onto the splice (assumed, said).
+
+## Validation
+
+Unit tests in `crates/ohl-structures-fe/src/member_ends_tests.rs`, on
+invented data:
+
+- `a_splice_gives_its_shear_planes`: a splice with covers on both faces
+  of the long leg gives two shear planes per bolt, one cover one; given
+  on the bolts, as given and the difference said.
+- `the_bolts_bear_on_the_thinner_leg_they_bolt_onto`: a 6 mm diagonal
+  bolted onto a 4 mm leg: the bearing on the leg governs,
+  2 × 1.5 × 510 MPa × 16 mm × 4 mm = 97.92 kN (ASCE 10-97 4.4), below the
+  bolts' 120 kN and the diagonal's own 146.88 kN.
+- `a_continuous_leg_has_no_connection_at_the_joint`: a continuous member
+  is concentric there and has no connection to check.
+- `both_legs_bolted_hole_each_leg`: an angle bolted by both legs has a
+  hole in each leg per gauge line.

@@ -1,7 +1,7 @@
 # Line parameters
 
 *Built, in active development, not approved yet* (roadmap O18, steps 0
-and 1, 2026-10-27). Implemented in `crates/ohl-electrical`: the line's
+and 1). Implemented in `crates/ohl-electrical`: the line's
 cross-sections, then per span the phase matrices per unit length, and
 along the line per circuit. Used by `ohl electrical parameters` and Checks
 › Electrical › Line parameters… ([Electrical: line
@@ -53,6 +53,8 @@ the ground (elevation, slope across, soil resistivity). Other lines' wires
 in the corridor have a place in it and are not filled yet.
 
 ## Series impedance
+
+![A span's cross-section: wires i and j at heights h_i and h_j, the image j' of wire j below the ground, the distances d_ij and D'_ij, the complex-depth plane; and a bundle of four subconductors on a circle of radius R with spacing s, replaced by one equivalent wire at its centre](../images/theory/line-parameters.svg)
 
 Per unit length between wires \\( i \\) and \\( j \\) above a homogeneous
 earth (J. R. Carson, "Wave propagation in overhead wires with ground

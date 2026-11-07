@@ -79,7 +79,7 @@ Options:
 The safety volumes around the wires (Checks › Safety volumes, `ohl
 safety-volume`) are written by their own export as DXF (with a `.prj`),
 IFC4 with `IfcMapConversion` and KML/KMZ: see
-[Safety volumes](analyses.md#safety-volumes-for-work-near-the-line-2026-10-20).
+[Safety volumes](analyses.md#safety-volumes-for-work-near-the-line).
 
 ## Import
 

@@ -600,7 +600,7 @@ cargo run --release -p ohl-cli -- line LINE.ohl.json --lidar TILES_DIR \
 | `--max-edge M` | Longest triangle side (default 50 m): no ground is invented across larger gaps. |
 | `--thin M` | Optional: keep the lowest ground point per M × M cell. |
 
-`ohl lidar info PATH --classes [--scheme FILE]` lists the tiles and counts the points of every class, with the scheme's names and roles.
+`ohl lidar info PATH --classes [--scheme FILE]` lists the tiles and counts the points of every class, with the scheme's names and roles (`ohl lidar info examples/synthetic-line/synthetic-lidar.las --classes`: the example's invented tile, ground, vegetation, a building and wire points).
 
 ### Class schemes (`.ohlc`)
 
@@ -745,11 +745,13 @@ Reading, building and storing run in the background. With a project joined on a 
 From the command line:
 
 ```bash
-ohl surface list project.ohl
-ohl surface import ground.xml --into project.ohl --user ann [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
-ohl surface export project.ohl "ground" ground.xml
-ohl surface rename project.ohl "ground" "survey 2026" --user ann
-ohl surface delete project.ohl "ground" --user ann
+# on the example project (Project files › The example project):
+ohl surface list example.ohl
+ohl surface rename example.ohl synthetic-survey "survey 2026" --user tester
+ohl surface export example.ohl "survey 2026" ground.xml
+ohl surface delete example.ohl "survey 2026" --user tester
+# in general:
+ohl surface import ground.xml --into example.ohl --user tester [--name N] [--format F] [--option max_edge=50] [--plugin DIR] [--replace]
 ohl surface formats [--plugin DIR]
 ```
 

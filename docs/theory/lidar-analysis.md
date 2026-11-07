@@ -86,13 +86,13 @@ axis: [Clearance](../user-guide/terrain.md#clearance)):
 
 Per wire: the counts, the nearest point, the tree with the smallest fall-in
 margin, and the worst points by margin (the smaller of the clearance margin
-and the fall-in margin). Since 2026-10-20 this is the special case of the
+and the fall-in margin). this is the special case of the
 danger-tree check below (one case as it is, no root ball, no allowance, no
 buffer), with the same results; how the points meet the wires is described
 there (about 0.5 µs a point on one core).
 
 
-## Danger trees (2026-10-20)
+## Danger trees
 
 *Built, in active development (not approved yet). The two checks above
 are extended: trees falling about their root ball, the wire anywhere along
@@ -137,7 +137,7 @@ wind is solved with the wind **from the left and from the right**.
   radius \\( R_L(s) \\) blown to the left, \\( \varphi_0(s), R_0(s) \\) in
   still air, \\( \varphi_R(s), R_R(s) \\) blown to the right (angles about
   \\( \mathbf u \\) from the downward vertical, positive to the right).
-  Since 2026-10-21 (the owner's decision) the "arc" at \\( s \\) is a
+  The "arc" at \\( s \\) is a
   **band**: the annular sector of centre \\( C(s) \\) from the smallest
   radius \\( r(s) = \min(R_L, R_0, R_R) \\) to the largest
   \\( R(s) = \max(R_L, R_0, R_R) \\), from \\( \varphi_L \\) to
@@ -162,7 +162,7 @@ wind is solved with the wind **from the left and from the right**.
   side, 0.15 m by default (`positions::BAND_MARGIN`; every distance to it
   taken \\( m \\) smaller, as if the conductor were that much thicker),
   because the band alone does not quite hold every intermediate
-  position. Since 2026-10-21 (the owner's decision) \\( m \\) is a
+  position. \\( m \\) is a
   **parameter**: the default is the measured worst excess below plus an
   allowance, and the user may change it — in the vegetation panel, the
   clearance windows and the safety volumes (**band margin**), the rule
@@ -183,7 +183,7 @@ wind is solved with the wind **from the left and from the right**.
   outer side, where the arc alone was already conservative (the price of
   one margin for every side). Exact: a solve at every pressure.
 
-  **Jumpers** (2026-10-21, the owner's decision): where jumpers are
+  **Jumpers**: where jumpers are
   taken — the safety volumes, and the vertical and radial clearance
   checks for the rules that check jumpers (the danger-tree check leaves
   jumpers out) — each jumper with the swing arc on has a band of its own,
@@ -255,7 +255,7 @@ wind is solved with the wind **from the left and from the right**.
   bound (the bundle's outer envelope), where the polylines take each
   subconductor.
 
-- **Wind steps (optional, 2026-10-20):** a windy case of full pressure
+- **Wind steps (optional):** a windy case of full pressure
   \\( P \\) is also solved in still air and at every intermediate pressure
   \\( p_k = k\,\Delta p < P \\) (\\( \Delta p \\) the step; at most 200
   steps, the step made larger beyond), from the sides chosen (both, left
@@ -270,12 +270,12 @@ wind is solved with the wind **from the left and from the right**.
   of each pressure), exact at the pressures solved but blind between two
   steps.
 
-  The same arc (the same code) is, since 2026-10-20, an option of the
+  The same arc (the same code) is, an option of the
   vertical and radial clearance checks, beside their wind steps; there
   its vertical distance is defined as well
   ([Vertical and radial clearances](clearances.md#the-vertical-distance-to-the-arc)),
   and the safety volumes take it too
-  ([Safety volumes](safety-volumes.md)): the band (2026-10-21) changes
+  ([Safety volumes](safety-volumes.md)): the band changes
   all three together.
 
   Check by hand (`wind_steps_of_the_example_line`): a wire hangs in the
@@ -289,7 +289,7 @@ wind is solved with the wind **from the left and from the right**.
   its neighbours, so its suspension strings swing into it and it sags
   further. The span is solved in a **weather case of its own** and the
   section's other spans in the section's case — the section solver's
-  [weather case per span](wirefe.md#a-weather-case-per-span-2026-10-20):
+  [weather case per span](wirefe.md#a-weather-case-per-span):
   a full weather case on that span (its temperature, its ice weight, the
   wind on its iced diameter, the ice and wind on the bodies on it, its
   iced surface radius).
@@ -359,7 +359,7 @@ the next cut, \\( b \\) a buffer (e.g. for the survey's accuracy). The margin
 is the difference; the worst position (hot, left, right or on the arc) is
 reported.
 
-As built (2026-10-20): \\( c_{\text{req}} \\) is one distance or a
+As built: \\( c_{\text{req}} \\) is one distance or a
 required clearance by voltage, as the clearance rules write it — a table "up to
 kV → distance" (the first row whose voltage is not exceeded; above the
 last row its distance, **on the unsafe side**: a warning in the report
@@ -425,12 +425,12 @@ beyond it would stand at nearly 90° and stop the trunk at once; from
 sector. With \\( k = 0 \\) the two are the same.
 
 **The ground stops the trunk — not conservative against a rule that
-ignores the ground** (owner's decision, 2026-11-05: kept). A tool that
+ignores the ground**. A tool that
 lets the trunk rotate on through the slope (as compared on a real line:
 another program's falling trees found a wire 2.4 m below the trees'
 bases, beside a steep slope) flags trees whose fall the ground would
 stop. OpenOHL keeps the physical stop by default: a tree does not fall
-through the ground. **An option** (2026-11-05, off by default, *the
+through the ground. **An option** (off by default, *the
 trunk turns on through the ground*; `fall_through_ground`) counts it as
 such programs do: \\( \theta_{\min} = -90° \\) whatever the ground, the
 trunk turning on down to straight below its hinge — on level ground
@@ -511,7 +511,7 @@ where the ground or the vegetation comes closest. A tree of height
 (\\( k = 0 \\), level ground).
 
 \\( c \\) is computed on a grid of the corridor (spacing \\( \delta \\), e.g.
-1 m) and contoured by marching squares with linear interpolation between
+1 m) and contoured by marching squares (the two-dimensional case of W. E. Lorensen and H. E. Cline, "Marching cubes: a high resolution 3D surface construction algorithm", *Computer Graphics* 21 (4), 1987, pp. 163–169) with linear interpolation between
 nodes (a saddle cell split by its centre's value).
 
 **Simplification:** a contour is placed by linear interpolation between
@@ -557,7 +557,7 @@ plan (layer OHL_ISOCLEARANCE). *Left for later:* the check's points in the
 cross-section view (the application's cut panel does not show them
 yet).
 
-Since 2026-10-20 the check also keeps **every** grow-in and fall-in point
+the check also keeps **every** grow-in and fall-in point
 found (with the position each was found against and a tree's base), not
 only the worst; the application lists them in its CSV, draws them all
 (the grow-in points as dots, the danger trees as trunks, in the user's
@@ -567,92 +567,7 @@ the profile mark one point a pixel, nothing computed is coarsened.
 
 ### How it is made fast
 
-LiDAR surveys hold \\( 10^7 \\) to \\( 10^8 \\) points per line, and every
-vegetation point meets every position of every case. The work is kept to
-the points and wires that can matter; the numbers computed are never
-coarsened.
-
-- **Only what can reach.** A point is compared only with the spans within
-  its *reach*: \\( c_{\text{req}} + g + b \\) for grow-in, and the tallest
-  tree looked for plus its root ball plus \\( A \\) for fall-in. Spans are
-  indexed once per position on a plan grid (cells of about the reach), so
-  a point meets the few spans near it, not the line.
-  As built: each span is indexed once with all its positions (cells of a
-  quarter of the reach, at least 10 m).
-- **One bound per span before the exact distance.** Each span's positions
-  (hot, left, right and the swing arc) fit in a capsule about its axis of
-  radius \\( \max R + \) reach; a point outside it is rejected with one
-  distance to a segment. Only points inside get the exact distances
-  above, each a closed form (no iteration).
-  As built: then a bound from **bands** — for every 20 m along the axis,
-  how far from the axis and in which directions about it each position
-  (and all of the span's together) lies; a position is worked out only if
-  its bound can beat the best found. The nearest piece of a solved wire is
-  looked for outward from the point's place along the axis, stopping when
-  the places alone are further than the best. (The fall-in distance to a
-  wire over the hinge circle is found by the Newton steps above, on an arc
-  by the bound along the circle — not closed forms.)
-- **Cases share the work.** Positions of all cases are gathered per span;
-  the point is looked up once and compared with all its span's positions.
-  The smallest margin found so far bounds the rest: a case cannot make a
-  point worse once its distance exceeds the current worst by the reach.
-  As built for fall-in: a tree is worked out fully (circle, resting angle,
-  shelter) only when its bound is below 0 (it may count) or below the
-  span's worst fall so far (it may be reported); a tree that becomes the
-  span's nearest point or enters its worst list is worked out fully
-  then. Counts never depend on it (a bound from 0 up never counts).
-- **Ground once per point.** The height above the ground (for fall-in)
-  comes from the terrain surface once per point; the fall sector's resting
-  angle \\( \theta_{\min} \\) is computed only for points that are near
-  enough, by stepping along the fall direction at the TIN's resolution.
-- **Unbalanced ice only where trees are.** A span is solved with its own
-  ice only if vegetation points lie within its reach (most spans over
-  fields have none). Spans are independent: they are solved in parallel.
-- **Isoclearance by refinement.** \\( c \\) is first computed on a coarse
-  grid (e.g. 8 m). Because \\( c \\) cannot change faster than the distance
-  moved, a coarse cell whose corner values all exceed the highest line
-  drawn by more than its diagonal (times \\( \sqrt{1 + m^2} \\)) cannot hold
-  a drawn line and is not refined. Only cells near the wires or near
-  low clearance are refined to \\( \delta \\). As built: \\( m \\) is the
-  steepest triangle near the cell; rows of cells in parallel.
-- **Parallel by tiles.** Points are read tile by tile from the project's
-  point cloud (its spatial chunks) and the tiles are processed in
-  parallel; results are merged per span. As built: the points are read
-  chunk by chunk into memory (13 bytes a point, whole millimetres), then
-  checked in blocks of 65 536 points (about a stored chunk) on every
-  core (the standard library's scoped threads, as the rest of the code);
-  the results merged per span in a fixed order (the same answer whatever
-  the threads).
-- **Expected cost:** about 1 µs per vegetation point and position set
-  today; with the swing arc and a few dozen cases, a line of \\( 10^8 \\)
-  points (a third of them vegetation) is expected in minutes on a
-  10-core computer, and an isoclearance drawing of a 50 km corridor in
-  seconds. Exit clauses: a time limit per run, reported, never a partial
-  result shown as complete.
-
-  **Measured** (an invented 10 km line of 25 spans, three phases and an
-  earth wire, a million invented vegetation points over ±60 m — a cleared
-  strip of ±12 m and trees up to 28 m beyond, an unusually dense share of
-  danger trees: 2–12 % of the points; a 10-core computer; the
-  ignored test `danger_speed`): one case as before (k = 0) 0.4–0.7 µs a
-  point on one thread, 0.08–0.18 µs on ten; one case with k = 0.1
-  0.6–1.0 µs (0.1–0.2); one windy case with left, right and the swing arc,
-  k = 0.1: 6–12 µs (0.9–2.1); twenty windy cases with their arcs (6000
-  positions): 31–90 µs (4.6–14) — most of it the fall-in of danger trees
-  against the arcs (the search along the hinge circle). Isoclearance of
-  the 10 km corridor (±60 m, lines every 5 m to 40 m, 1 m grid refined
-  from 8 m) for the twenty cases: 6–9 s (1.6 million clearances, most
-  cells refined: lines run all along a corridor of that width) — a 50 km
-  corridor about half a minute, not seconds; one case is about ten times
-  faster. On a real line (930 spans of its sections, about 37 km of
-corridor ±60 m, 18.7 million vegetation points of 100 million, 10
-cores): one case as before, the check 1 s (0.05 µs a point); three cases
-— hot, windy with left, right and the swing arcs, iced with unbalanced
-ice on every span (930 solves) — with k = 0.1 and A = 2 m: the solves
-13–23 s, the check 21–34 s (1.1–1.8 µs a point), the isoclearance
-lines 13–14 s (9 million clearances). Exit clauses: `--time-limit` (default an hour) for a run in the
-  command line, an hour in the application, checked between blocks and
-  rows: an error, never a partial result.
+How the computation is made fast, with its measured times: [Performance](../development/performance.md#lidar-clearance-checks-how-they-are-made-fast).
 
 ## As-built wires
 

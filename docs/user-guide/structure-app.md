@@ -615,7 +615,8 @@ at once, the Detail view in front, its details in front on the left
   its material's steel (else the member's), the member end's force and
   bolts (ASCE 10-97 4.5, SIA 263 Table 17; with the simple check, the end's own end and
   edge distances, else 1.5 bolt diameters, assumed) — as the IFC export
-  lays it); drag to turn it, scroll to zoom, **Reset view**. Bolts are
+  lays it); drag to turn it, scroll to zoom, **Reset view**; the tool
+  **Rotate member** (below) rolls a member here. Bolts are
   drawn on angles only. Every face is drawn in small pieces sorted by
   their own depth, so the bolts stay in sight from every side (before
   2026-11-03 a member's long faces could hide the heads when turned);
@@ -933,8 +934,14 @@ end distance is measured from where the steel stops.
 **The Detail view's tools** (2026-11-03: a toolbar over the bottom of the
 drawing, as the 3D view's hotbar — click a slot to hold its tool — and
 above the drawing the tool held with what a click does, as the 3D view's
-strip; the tools act in the face view and the member view, the close-up
-shows them greyed; Escape goes back to Edit):
+strip; Rotate member acts in the close-up, the others in the face view
+and the member view — a tool taken in the other view switches the joint
+to the view it acts in; Escape goes back to Edit). **Member end**,
+**Move bolt** and **Rotate member** pick before they drag: a click picks the member end or the bolt
+under the pointer — the end drawn blue, the bolt ringed blue, with a thin
+outline on what a click would pick — and a drag moves only what is
+picked; a drag started on something else picks that and moves nothing,
+so it is always clear what a drag will change:
 
 - **Edit**: a **bolt** clicked — its properties at the top of the details
   below (its place, its kind, the library bolt's values, whether it keeps
@@ -957,12 +964,23 @@ shows them greyed; Escape goes back to Edit):
   lines) — written only when you confirm ("Add the line and the bolt");
   where there is no room at all, it says why. With the simple check
   (no code) the bolt goes on the nearest line, along to 5 mm;
-- **Move bolt**: drag a bolt — it moves and is placed as Add bolt places
-  it (in the face view along the member only; in the member view along
-  and across);
+- **Move bolt**: click a bolt to pick it, then drag it — it moves and is
+  placed as Add bolt places it (in the face view along the member only;
+  in the member view along and across);
 - **Remove bolt**: a bolt clicked goes;
-- **Member end**: drag a member — along it, where its steel stops; across
-  it (in the face view), its end's shift;
+- **Member end**: click a member to pick its end (in the member view, a
+  click on its half picks that end), then drag it — along it, where its
+  steel stops; across it (in the face view), its end's shift; both
+  snapped to the tool's **step** (5 mm unless set in the strip above the
+  drawing while the tool is held; kept between runs);
+- **Rotate member** (the close-up): click a member to pick it — its axis
+  drawn blue, its **Roll** row above the drawing (degrees, quarter turns,
+  Lay flat) — then drag it sideways: it rolls about its axis, half a
+  degree a point snapped to the tool's **step** (5° unless set in the
+  strip; kept between runs), the member and its bolts drawn turned as
+  you drag (the plates and the other members follow once it is set); let
+  go, the roll is set (one undo step, the member's `roll`). A drag on
+  nothing turns the view;
 - **Plate around the bolts** (above the drawing, when a plate has no
   outline in the file): the outline it is drawn with — round its bolts
   with the code's distances kept — written into the file, to be edited;
@@ -1165,7 +1183,7 @@ were read and from where.
 **Arrows** draws the loads of the case shown in the view, ending at
 their point (a member's at its middle), **m per kN** long.
 
-### The line's load cases: the library (2026-11-03)
+### The line's load cases: the library
 
 Owner, 2026-11-03: "The library's cases" (built, in active development,
 not approved yet). A placed structure opened from the line gets **its set
@@ -1333,10 +1351,21 @@ usage per check and writes `<name>.members.csv` beside the page.
 results — the applications talk, the crates stay apart:
 
 ```bash
-ohl structure analyse tower.ohls --sections libraries/sections --extension +3
-ohl structure report tower.ohls --case wind -o tower-report.html
-ohl structure analyse tower.ohls --json     # the tool's JSON reply as it is
+ohl structures analyse examples/synthetic-line/Structures/type-02.ohls
+ohl structures analyse examples/synthetic-line/Structures/type-02.ohls --case wind --json
+ohl structures report examples/synthetic-line/Structures/type-02.ohls -o type-02-report.html
 ```
+
+The first prints the largest usage per check and case, what governs and
+what was assumed (`ohl structure` is the same command):
+
+```text
+type-02 — as written (by ohl-structure-report 0.0.2)
+members: 42.2 % in case model (member m177 (compression 9.9 kN of 23.5 kN (KL/r 297) [assumed: …]))
+  wind: members 5.1 % — member m2 (compression 9.4 kN of 183.1 kN (KL/r 130) [assumed: …])
+```
+
+The report writes `type-02-report.html` and `type-02-report.members.csv`.
 
 `ohl` starts `ohl-structure-report --request -` — the program
 `OHL_STRUCTURE_REPORT` names, else the one next to `ohl` (or in the

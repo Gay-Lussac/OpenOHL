@@ -8,8 +8,7 @@ shedding… in OHL-Design and `ohl ice-shedding` (`crates/ohl-clearance`:
 `ice_shedding`). How to use it: [Ice
 shedding](../user-guide/analyses.md#ice-shedding-the-conductor-jump-when-the-ice-drops).
 
-The method built is the **simplified** one (owner, 2026-11-02: "Let's go
-with the simplified for now"). A **dynamic time-domain solve** of the
+The method built is the **simplified** one. A **dynamic time-domain solve** of the
 section with the ice removed (in one span or several) is not built; the
 rule's `method` field leaves room for it as a second method beside this
 one.
@@ -30,9 +29,7 @@ with \\( k \\) the rule's **rebound factor**: \\( k = 1 \\) is the bare
 wire at rest, \\( k > 1 \\) its overshoot. The jump reported is the
 largest \\( k\,\Delta \\) over the span.
 
-**The default factor: 2** (owner, 2026-11-02: "keep a logical rebound
-factor for now, will be decided later … can be changed as a
-parameter"). When a load is removed at once from an undamped elastic
+**The default factor: 2**. When a load is removed at once from an undamped elastic
 system, it swings about its new rest position with the amplitude of the
 change: its farthest point is twice the static displacement. A wire is
 damped (by the air, its strands, its supports) and its spans exchange

@@ -2271,7 +2271,492 @@ def ice_jump():
     return f
 
 
-FIGURES = [catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
+# =====================================================================================
+# Conventions
+# =====================================================================================
+def conventions_axes():
+    f = Fig("conventions-axes", 960, 470, "Coordinates, stations, offsets and angles",
+            "Left, in plan: the project axes x east and y north; a route's alignment through "
+            "the structures T1, T2 and T3, ahead towards the upper left, with the station s "
+            "measured along it and a point at a positive offset o to the right looking ahead; at "
+            "T2 the structure's axes, x to the right of the line and y ahead, and orientation_deg, "
+            "the direction of its x axis counter-clockwise from east; the wind from the left or "
+            "the right looking ahead. Right: the angles around a structure as the application "
+            "shows them, clockwise seen from above: ahead at ahead_deg, right at ahead + 90°, back "
+            "at + 180°, left at + 270°.")
+    f.text(20, 26, "In plan (north up)", "t")
+    ox, oy = 40, 440
+    f.arrow(ox, oy, ox + 70, oy, "ink", 1.6, 8)
+    f.arrow(ox, oy, ox, oy - 70, "ink", 1.6, 8)
+    f.text(ox + 76, oy + 4, "x (east)")
+    f.text(ox + 8, oy - 66, "y (north)")
+    T1, T2, T3 = (560, 400), (360, 270), (130, 200)
+    f.poly([T1, T2, T3], "inkl")
+    for name, (x, y), dx in (("T1", T1, 14), ("T2", T2, -30), ("T3", T3, -12)):
+        f.add(f'<rect x="{x - 6}" y="{y - 6}" width="12" height="12" class="ap"/>')
+        f.text(x + dx, y + 24, name)
+    L1, L2 = math.dist(T1, T2), math.dist(T2, T3)
+
+    def along(d):
+        if d <= L1:
+            u = d / L1
+            return (T1[0] + u * (T2[0] - T1[0]), T1[1] + u * (T2[1] - T1[1])), ((T2[0] - T1[0]) / L1, (T2[1] - T1[1]) / L1)
+        u = (d - L1) / L2
+        return (T2[0] + u * (T3[0] - T2[0]), T2[1] + u * (T3[1] - T2[1])), ((T3[0] - T2[0]) / L2, (T3[1] - T2[1]) / L2)
+
+    # station s, drawn just left of the alignment (looking ahead)
+    def left_of(d, k):
+        (x, y), (ux, uy) = along(d)
+        return (x + k * uy, y - k * ux)
+    st = [left_of(L1 * 1.3 * t / 40, 16) for t in range(41)]
+    f.poly(st, "acc")
+    f.arrow(st[-3][0], st[-3][1], st[-1][0], st[-1][1], "acc", 1.8, 9)
+    f.text(st[12][0] - 8, st[12][1] + 22, "station s", "e")
+    # a point at offset o > 0, to the right looking ahead
+    (ex, ey), (ux, uy) = along(L1 * 1.3)
+    rx, ry = -uy, ux
+    P = (ex + 80 * rx, ey + 80 * ry)
+    f.path(f"M{ex:.1f},{ey:.1f} L{P[0]:.1f},{P[1]:.1f}", "thin ds")
+    f.dot(ex, ey, 3.5, "acc")
+    f.dot(P[0], P[1], 4.5, "wire")
+    f.text(P[0] + 10, P[1] - 6, "offset o > 0: to the right")
+    f.text(P[0] + 10, P[1] + 10, "looking ahead", "lab")
+    # the structure's axes at T2: y ahead (the bisector), x to the right
+    a1 = math.atan2(T2[1] - T1[1], T2[0] - T1[0])
+    a2 = math.atan2(T3[1] - T2[1], T3[0] - T2[0])
+    ab = (a1 + a2) / 2
+    yx, yy = math.cos(ab), math.sin(ab)
+    xx, xy = -yy, yx
+    f.arrow(T2[0], T2[1], T2[0] + 64 * yx, T2[1] + 64 * yy, "wire", 2.0, 9)
+    f.text(T2[0] + 68 * yx - 2, T2[1] + 68 * yy - 16, "y (ahead)", "e")
+    f.arrow(T2[0], T2[1], T2[0] + 64 * xx, T2[1] + 64 * xy, "wire", 2.0, 9)
+    f.text(T2[0] + 68 * xx + 4, T2[1] + 68 * xy - 4, "x (right)")
+    f.path(f"M{T2[0]},{T2[1]} L{T2[0] + 96},{T2[1]}", "thin dt")
+    phi = -math.degrees(math.atan2(xy, xx))   # counter-clockwise from east
+    f.arc(T2[0], T2[1], 46, -phi, 0, "", "stroke:var(--acc);stroke-width:1.6;fill:none")
+    f.text(T2[0] + 54, T2[1] - 30, "orientation_deg")
+    f.text(T2[0] + 54, T2[1] - 14, "(counter-clockwise", "lab")
+    f.text(T2[0] + 54, T2[1] + 2, "from east to x)", "lab")
+    # wind from either side, looking ahead
+    (mx, my), (ux2, uy2) = along(L1 * 0.35)
+    rx2, ry2 = -uy2, ux2
+    for side, lab in ((1, "wind from the right"), (-1, "wind from the left")):
+        sx, sy = mx + side * (120 if side > 0 else 90) * rx2, my + side * (120 if side > 0 else 90) * ry2
+        f.arrow(sx, sy, mx + side * 34 * rx2, my + side * 34 * ry2, "muted", 1.6, 8, dash=True)
+        f.text(sx + 6, sy + (-8 if side > 0 else -6), lab, "lab" if side > 0 else "lab e")
+    # the display angles
+    cx, cy, r = 800, 250, 90
+    f.text(660, 26, "Angles around a structure", "t")
+    f.text(660, 44, "(display only, clockwise seen from above)", "lab")
+    f.add(f'<circle cx="{cx}" cy="{cy}" r="{r}" class="thin"/>')
+    for name, deg in (("ahead = ahead_deg", -90), ("right = + 90°", 0), ("back = + 180°", 90), ("left = + 270°", 180)):
+        x, y = cx + r * math.cos(math.radians(deg)), cy + r * math.sin(math.radians(deg))
+        f.arrow(cx, cy, x, y, "wire" if deg == -90 else "ink", 1.6, 8)
+        if deg == -90:
+            f.text(cx, cy - r - 12, name, "c")
+        elif deg == 90:
+            f.text(cx, cy + r + 22, name, "c")
+        elif deg == 0:
+            f.text(cx + r + 8, cy + 20, name, "e")
+        else:
+            f.text(cx - r - 8, cy + 20, name)
+    f.arc(cx, cy, 52, -80, -12, "", "stroke:var(--acc);stroke-width:1.6;fill:none")
+    a0, a = math.radians(-18), math.radians(-10)
+    f.arrow(cx + 52 * math.cos(a0), cy + 52 * math.sin(a0), cx + 52 * math.cos(a), cy + 52 * math.sin(a), "acc", 1.6, 8)
+    f.text(cx + 30, cy - 58, "clockwise", "lab")
+    return f
+
+# =====================================================================================
+# Steel members: an angle's axes and widths
+# =====================================================================================
+def angle_section():
+    f = Fig("angle-section", 790, 430, "An angle's axes and widths",
+            "An equal-leg angle in cross-section, legs b, thickness t, root radius r: the flat "
+            "width w = b − t − r from the edge of the root fillet to the leg's tip (local "
+            "buckling); the centroid G with the geometric axes y and z parallel to the legs; the "
+            "principal axes, u the major across the axis of symmetry and v the minor along it "
+            "through the heel, about which the radius of gyration r_v is the smallest.")
+    f.text(20, 26, "A single angle in cross-section", "t")
+    k = 3.0                       # px per mm
+    b, t, r = 80.0, 9.0, 10.0     # mm (invented)
+    hx, hy = 150, 360             # the heel
+    X = lambda mm: hx + mm * k
+    Y = lambda mm: hy - mm * k
+    # the outline with the root fillet
+    fillet = [(t + r - r * math.sin(math.radians(a)), t + r - r * math.cos(math.radians(a))) for a in range(0, 91, 10)]
+    outline = [(0, 0), (b, 0), (b, t), (t + r, t)] + fillet + [(t, b), (0, b)]
+    f.poly([(X(x), Y(y)) for x, y in outline], "box", close=True)
+    # centroid of the equal angle without its fillet (a sketch)
+    e = (b * b + b * t - t * t) / (2 * (2 * b - t))
+    G = (X(e), Y(e))
+    f.dot(G[0], G[1], 3.5)
+    f.text(G[0] - 10, G[1] - 8, "G", "e")
+    # geometric axes
+    f.arrow(G[0] - 60, G[1], X(b) + 50, G[1], "muted", 1.2, 7)
+    f.text(X(b) + 56, G[1] + 4, "y")
+    f.arrow(G[0], G[1] + 60, G[0], Y(b) - 40, "muted", 1.2, 7)
+    f.text(G[0] + 6, Y(b) - 44, "z")
+    # principal axes: v along the symmetry line through the heel, u across it
+    L = 150
+    c = math.cos(math.radians(45))
+    f.arrow(G[0] - L * c, G[1] + L * c, G[0] + L * c * 1.15, G[1] - L * c * 1.15, "wire", 1.8, 9)
+    f.text(G[0] + L * c * 1.15 + 6, G[1] - L * c * 1.15 - 4, "v (minor)")
+    f.text(G[0] + L * c * 1.15 + 6, G[1] - L * c * 1.15 + 12, "the axis of symmetry", "lab")
+    f.arrow(G[0] - L * c, G[1] - L * c, G[0] + L * c, G[1] + L * c, "acc", 1.8, 9)
+    f.text(G[0] + L * c + 6, G[1] + L * c + 4, "u (major)")
+    # dimensions
+    f.hdim2(X(0), X(b), Y(0) + 26, "b", above=False)
+    f.vdim2(X(0) - 26, Y(0), Y(b), "b", left=True)
+    f.vdim2(X(b) + 22, Y(0), Y(t), "t")
+    f.hdim2(X(t + r), X(b), Y(t) - 22, "w = b − t − r")
+    f.label(X(t + r * 0.3), Y(t + r * 0.3), X(t + 34), Y(t + 34), "root radius r")
+    # what each page measures
+    x = 500
+    f.text(x, 80, "Slenderness: L/r about y, z and v", "")
+    f.text(x, 98, "(r_v the smallest radius of gyration)", "lab")
+    f.text(x, 130, "Local buckling of a leg: w/t", "")
+    f.text(x, 148, "(ASCE 10-97 3.7.3, the longer leg)", "lab")
+    f.text(x, 180, "Section class: the leg's outstand", "")
+    f.text(x, 198, "(SIA 263 Table 5b, the larger leg h/t)", "lab")
+    f.text(x, 230, "An angle bolted by one leg is loaded", "")
+    f.text(x, 248, "off its centroid G (eccentric end)", "lab")
+    return f
+
+
+# =====================================================================================
+# Joints: a gusset plate's bolt group and a fillet weld
+# =====================================================================================
+def joint_plate():
+    f = Fig("joint-plate", 900, 430, "A gusset plate's bolt group and a fillet weld",
+            "Left: a member bolted onto a gusset plate by two gauge lines of three bolts, the "
+            "member in tension pulling away from the joint: the pitch p between bolts on a "
+            "line, the span between the outer lines, the end distance e_1 from the bolts to "
+            "the plate's edge in the force's direction, the edge distance e_2 across, and the "
+            "block that tears out: two shear planes along the outer gauge lines from the "
+            "edge to the innermost bolt and the tension plane between them. Right: a fillet "
+            "weld between two plates at the angle θ, its throat a (the height of the inscribed "
+            "triangle) and its contact width s = a / cos(θ/2).")
+    f.text(20, 26, "The bolt group in the plate", "t")
+    # the plate (a polygon) and the member arriving from the right
+    plate = [(70, 330), (70, 120), (200, 70), (420, 110), (420, 330)]
+    f.poly(plate, "box", close=True)
+    f.text(84, 316, "gusset plate", "lab")
+    # the member: two lines, coming from the right, over the plate up to x = 160
+    y0, y1 = 170, 280
+    f.add(f'<rect x="150" y="{y0}" width="330" height="{y1 - y0}" '
+          'style="fill:var(--wire);fill-opacity:.12;stroke:var(--wire);stroke-width:1.6"/>')
+    f.arrow(440, (y0 + y1) / 2, 520, (y0 + y1) / 2, "wire", 2.2, 10)
+    f.text(526, (y0 + y1) / 2 + 4, "N (tension)")
+    # bolts: two gauge lines, three a line
+    gl = [195, 255]
+    xs = [215, 275, 335]
+    for g in gl:
+        f.path(f"M150,{g} L480,{g}", "thin dt")
+        for x in xs:
+            f.add(f'<circle cx="{x}" cy="{g}" r="7" style="fill:var(--bg);stroke:var(--ink);stroke-width:1.8"/>')
+    # dimensions: pitch, span, e1 (bolt to the plate edge in the force direction), e2
+    f.hdim2(xs[0], xs[1], gl[0] - 16, "p")
+    f.vdim2(xs[2] + 50, gl[0], gl[1], "span")
+    f.hdim2(xs[-1], 420, gl[1] + 34, "e_{1}", above=False)
+    f.vdim2(xs[0] - 30, 330, gl[1], "e_{2}", left=True)
+    # block shear: shear planes along the outer gauge lines, edge to innermost bolt; tension plane
+    for g in gl:
+        f.path(f"M{xs[0]},{g} L420,{g}", "", "stroke:var(--acc);stroke-width:2.6;fill:none")
+    f.path(f"M{xs[0]},{gl[0]} L{xs[0]},{gl[1]}", "", "stroke:var(--acc);stroke-width:2.6;fill:none;stroke-dasharray:6 4")
+    f.text(240, 372, "block shear: two shear planes (along the", "lab")
+    f.text(240, 388, "outer gauge lines) and the tension plane", "lab")
+    f.text(240, 404, "(dashed) between them", "lab")
+    # the weld
+    x0, y0w = 640, 300
+    f.text(620, 26, "A fillet weld (in section)", "t")
+    f.path(f"M{x0},{y0w} L{x0 + 210},{y0w}", "st")
+    f.path(f"M{x0},{y0w} L{x0},{y0w - 210}", "st")
+    f.add(f'<rect x="{x0 - 14}" y="{y0w - 210}" width="14" height="224" class="box"/>')
+    f.add(f'<rect x="{x0 - 14}" y="{y0w}" width="224" height="14" class="box"/>')
+    leg = 90
+    f.poly([(x0, y0w), (x0 + leg, y0w), (x0, y0w - leg)], "", "fill:var(--acc);fill-opacity:.25;stroke:var(--acc);stroke-width:1.6", close=True)
+    # throat: from the root, square to the face
+    f.path(f"M{x0},{y0w} L{x0 + leg / 2},{y0w - leg / 2}", "", "stroke:var(--ink);stroke-width:1.6")
+    f.text(x0 + leg / 2 + 6, y0w - leg / 2 - 4, "a (throat)")
+    f.hdim2(x0, x0 + leg, y0w + 34, "s", above=False)
+    f.vdim2(x0 - 30, y0w, y0w - leg, "s", left=True)
+    f.arc(x0, y0w, 30, -90, 0, "", "stroke:var(--muted);stroke-width:1.2;fill:none")
+    f.text(x0 + 36, y0w - 26, "θ", "i")
+    f.text(620, 370, "s = a / cos(θ/2); at θ = 90°: s = a√2", "")
+    f.text(620, 388, "(the inscribed triangle taken isosceles)", "lab")
+    return f
+
+
+def laps_splices():
+    f = Fig("laps-splices", 900, 500, "Laps, splices and continuous members",
+            "Top, in section: a member end lapped onto another angle's leg on its outside face, "
+            "on its inside face out along the leg, or nested heel into heel inside it. Bottom: "
+            "the plies a bolt passes through and its shear planes: a lap, two legs, one plane; "
+            "a splice, a leg between an outer and an inner cover, two planes; a continuous "
+            "member runs on through the joint with no bolt.")
+    f.text(20, 26, "How an end meets the other member (in section)", "t")
+    f.text(20, 46, "grey: the member bolted onto; orange: the end lapped onto it; black: a bolt", "lab")
+
+    def angle(x, y, b, t, fx=1, fy=1, cls="box", style=""):
+        pts = [(0, 0), (b, 0), (b, t), (t, t), (t, b), (0, b)]
+        f.poly([(x + fx * px, y - fy * py) for px, py in pts], cls, style, close=True)
+
+    other = "fill:var(--wire);fill-opacity:.18;stroke:var(--wire);stroke-width:1.6"
+    bolt = "stroke:var(--ink);stroke-width:3"
+    # outside face: B's leg under A's horizontal leg (B hangs below)
+    angle(50, 190, 100, 10)
+    angle(66, 200, 80, 10, 1, -1, "", other)
+    f.path("M126,170 L126,220", "", bolt)
+    f.text(110, 310, "on its outside face", "c")
+    # inside face: B on A's horizontal leg, out along it, turned away from the heel
+    angle(330, 190, 100, 10)
+    angle(425, 180, 60, 10, -1, 1, "", other)
+    f.path("M405,160 L405,200", "", bolt)
+    f.text(390, 310, "on its inside face", "c")
+    # nested: B inside A, heel into heel
+    angle(620, 190, 100, 10)
+    angle(630, 180, 80, 10, 1, 1, "", other)
+    f.path("M690,160 L690,200", "", bolt)
+    f.text(670, 310, "nested, heel into heel", "c")
+    # plies and shear planes
+    f.text(20, 350, "The plies a bolt passes through, and its shear planes", "t")
+
+    def stack(x, plies, label, bolted):
+        y = 378
+        for name, h, st in plies:
+            f.add(f'<rect x="{x}" y="{y}" width="140" height="{h}" style="{st}"/>')
+            f.text(x + 150, y + h / 2 + 4, name, "lab")
+            y += h
+        if bolted:
+            f.path(f"M{x + 70},368 L{x + 70},{y + 10}", "", "stroke:var(--ink);stroke-width:4")
+            yy = 378
+            for _, h, _ in plies[:-1]:
+                yy += h
+                f.path(f"M{x - 12},{yy} L{x + 152},{yy}", "", "stroke:var(--acc);stroke-width:2;stroke-dasharray:6 4")
+        f.text(x + 70, 456, label, "c")
+    grey = "fill:var(--fill);stroke:var(--muted);stroke-width:1"
+    stack(40, [("leg of the end", 18, other), ("leg bolted onto", 18, grey)], "lap: one shear plane", True)
+    stack(330, [("outer cover", 14, grey), ("leg", 18, other), ("inner cover", 14, grey)], "splice: two shear planes", True)
+    stack(620, [("running on", 18, other)], "continuous: no bolt", False)
+    f.text(330, 480, "dashed: a shear plane", "lab")
+    return f
+
+def polygon_shaft():
+    f = Fig("polygon-shaft", 820, 440, "A polygonal pole shaft in section",
+            "A 12-sided steel pole shaft in cross-section: D across the flats (outside), the wall "
+            "t, the inside bend radius r at each corner, the flat width w of the inside face less "
+            "the bends, and c, the farthest fibre at a corner, D / (2 cos(π/n)).")
+    f.text(20, 26, "A polygonal shaft in section (n = 12)", "t")
+    n, cx, cy = 12, 250, 230
+    R_flat = 160.0          # half of D across flats, px
+    t = 16.0
+    def poly_pts(half_flat):
+        rc = half_flat / math.cos(math.pi / n)
+        return [(cx + rc * math.cos(math.pi / n * (2 * k + 1)), cy + rc * math.sin(math.pi / n * (2 * k + 1))) for k in range(n)]
+    outer, inner = poly_pts(R_flat), poly_pts(R_flat - t)
+    d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in outer) + " Z M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in reversed(inner)) + " Z"
+    f.add(f'<path d="{d}" style="fill:var(--fill);stroke:var(--ink);stroke-width:1.6;fill-rule:evenodd"/>')
+    # D across flats
+    f.hdim2(cx - R_flat, cx + R_flat, cy + R_flat + 34, "D (across flats, outside)", above=False)
+    f.path(f"M{cx - R_flat},{cy} L{cx - R_flat},{cy + R_flat + 40} M{cx + R_flat},{cy} L{cx + R_flat},{cy + R_flat + 40}", "thin dt")
+    # wall t at the right flat
+    f.hdim2(cx + R_flat - t, cx + R_flat, cy - 10, "t")
+    # c to a corner
+    corner = outer[0]
+    f.path(f"M{cx},{cy} L{corner[0]:.1f},{corner[1]:.1f}", "acc")
+    f.dot(cx, cy, 3)
+    f.text((cx + corner[0]) / 2 - 30, (cy + corner[1]) / 2 + 30, "c = D / (2 cos(π/n))")
+    # the flat width w on one inside face (the upper right one), less the bends
+    a, b = inner[9], inner[10]
+    mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+    ux, uy = (b[0] - a[0]), (b[1] - a[1])
+    L = math.hypot(ux, uy); ux, uy = ux / L, uy / L
+    nx, ny = (mx - cx), (my - cy); nl = math.hypot(nx, ny); nx, ny = nx / nl, ny / nl
+    bend = 12
+    p0 = (a[0] + ux * bend - nx * 18, a[1] + uy * bend - ny * 18)
+    p1 = (b[0] - ux * bend - nx * 18, b[1] - uy * bend - ny * 18)
+    f.arrow(p0[0], p0[1], p1[0], p1[1], "muted", 1.1, 7, both=True)
+    f.text(p1[0] + 8, p1[1] + 22, "w: the flat less the bends")
+    f.label(a[0] + 2, a[1] + 2, a[0] - 60, a[1] - 40, "inside bend radius r", end=True)
+    x = 520
+    f.text(x, 90, "w = (D − 2t) tan(π/n) − 2 r tan(π/n)", "")
+    f.text(x, 108, "(r at most 4t; none given: corners", "lab")
+    f.text(x, 124, "sharp, the widest flat: conservative)", "lab")
+    f.text(x, 160, "Local buckling of the flats: w/t", "")
+    f.text(x, 178, "(5.2.3.2.1, the permitted stresses)", "lab")
+    f.text(x, 214, "c, the farthest fibre: the bending", "")
+    f.text(x, 232, "stress Mc/I at a corner", "lab")
+    return f
+
+
+def line_parameters():
+    f = Fig("line-parameters", 900, 470, "Wires, images and bundles",
+            "Left: a span's cross-section with two wires i and j at their offsets and heights "
+            "h_i, h_j above the ground, the image j′ of wire j as far below the ground surface "
+            "as j is above it, the distance d_ij between the wires and D′_ij from i to the "
+            "image; dashed, the plane at the complex depth p of the complex-depth method. "
+            "Right: a bundle of four subconductors on a circle of radius R, spacing s, replaced "
+            "by one equivalent wire at its centre.")
+    f.text(20, 26, "A span's cross-section (looking along the line)", "t")
+    g = 250                     # the ground surface
+    f.path(f"M40,{g} L560,{g}", "gnd")
+    f.text(548, g - 6, "ground", "e lab")
+    i, j = (180, 90), (420, 150)
+    jp = (j[0], 2 * g - j[1])
+    f.ring(i[0], i[1], 7)
+    f.ring(j[0], j[1], 7)
+    f.text(i[0] - 12, i[1] - 10, "i", "e i")
+    f.text(j[0] + 12, j[1] - 10, "j", "i")
+    f.add(f'<circle cx="{jp[0]}" cy="{jp[1]}" r="7" style="fill:none;stroke:var(--wire);stroke-width:1.6;stroke-dasharray:3 3"/>')
+    f.text(jp[0] + 12, jp[1] + 4, "j′ (image)", "i")
+    f.path(f"M{i[0]},{i[1]} L{j[0]},{j[1]}", "acc")
+    f.text((i[0] + j[0]) / 2, (i[1] + j[1]) / 2 - 10, "d_{ij}", "c")
+    f.path(f"M{i[0]},{i[1]} L{jp[0]},{jp[1]}", "acc ds")
+    f.text((i[0] + jp[0]) / 2 - 16, (i[1] + jp[1]) / 2 + 4, "D′_{ij}", "e")
+    f.vdim2(i[0] - 40, g, i[1], "h_{i}", left=True)
+    f.vdim2(j[0] + 50, g, j[1], "h_{j}")
+    f.vdim2(j[0] + 50, g, jp[1], "h_{j}")
+    f.path(f"M40,{g + 160} L560,{g + 160}", "thin ds")
+    f.text(548, g + 154, "complex depth p (complex-depth method)", "e lab")
+    # a bundle
+    bx, by, R = 750, 170, 60
+    f.text(640, 26, "A bundle of n = 4", "t")
+    f.add(f'<circle cx="{bx}" cy="{by}" r="{R}" class="thin" style="stroke-dasharray:4 3"/>')
+    pts = [(bx + R * math.cos(math.radians(45 + 90 * k)), by + R * math.sin(math.radians(45 + 90 * k))) for k in range(4)]
+    for x, y in pts:
+        f.ring(x, y, 6)
+    f.path(f"M{pts[2][0]},{pts[2][1] - 14} L{pts[3][0]},{pts[3][1] - 14}", "thin")
+    f.hdim2(pts[2][0], pts[3][0], pts[2][1] - 22, "s")
+    f.path(f"M{bx},{by} L{pts[0][0]},{pts[0][1]}", "inkl")
+    f.text(bx + 30, by + 14, "R", "i")
+    f.dot(bx, by, 4, "acc")
+    f.text(bx, by + R + 40, "R = s / (2 sin(π/n))", "c")
+    f.text(bx, by + R + 60, "one equivalent wire at the centre:", "c lab")
+    f.text(bx, by + R + 78, "GMR_{eq} = (n GMR R^{n−1})^{1/n}", "c")
+    return f
+
+
+def charge_simulation():
+    f = Fig("charge-simulation", 900, 440, "The charge simulation",
+            "Left: one subconductor of radius r in cross-section, n = 8 line charges q_j inside "
+            "it on a circle of radius a = 0.3 r and 8 collocation points on its surface at the "
+            "same angles, where the potential is made equal to the wire's voltage; the field is "
+            "then evaluated at 360 points round the surface. Right: the subconductors of a "
+            "bundle over perfectly conducting ground, each charge's image as far below the "
+            "ground as the charge is above it.")
+    f.text(20, 26, "One subconductor (n = 8 charges)", "t")
+    cx, cy, r = 220, 230, 140
+    a = 0.3 * r
+    f.add(f'<circle cx="{cx}" cy="{cy}" r="{r}" style="fill:var(--fill);stroke:var(--ink);stroke-width:1.8"/>')
+    f.add(f'<circle cx="{cx}" cy="{cy}" r="{a}" class="thin" style="stroke-dasharray:3 3"/>')
+    for k in range(8):
+        t = 2 * math.pi * k / 8
+        f.dot(cx + a * math.cos(t), cy + a * math.sin(t), 4, "acc")
+        px, py = cx + r * math.cos(t), cy + r * math.sin(t)
+        f.add(f'<path d="M{px - 6:.1f},{py - 6:.1f} L{px + 6:.1f},{py + 6:.1f} M{px - 6:.1f},{py + 6:.1f} L{px + 6:.1f},{py - 6:.1f}" style="stroke:var(--wire);stroke-width:2"/>')
+    for k in range(0, 360, 6):
+        t = math.radians(k)
+        f.add(f'<circle cx="{cx + (r + 9) * math.cos(t):.1f}" cy="{cy + (r + 9) * math.sin(t):.1f}" r="1.1" style="fill:var(--muted)"/>')
+    f.path(f"M{cx},{cy} L{cx + r},{cy}", "thin")
+    f.text(cx + r * 0.65, cy + 16, "r", "i")
+    f.path(f"M{cx},{cy} L{cx + a * math.cos(math.radians(-45)):.1f},{cy + a * math.sin(math.radians(-45)):.1f}", "thin")
+    f.text(cx - a - 10, cy - a - 8, "a = 0.3 r", "e")
+    f.text(400, 120, "● line charge q_{j} (inside)", "")
+    f.text(400, 142, "× collocation point (surface):", "")
+    f.text(400, 160, "potential = the wire's voltage", "lab")
+    f.text(400, 186, "· the 360 points where the", "")
+    f.text(400, 204, "gradient is evaluated", "lab")
+    # bundle over ground with images
+    gx, g = 620, 250
+    f.text(600, 26, "A bundle over the ground", "t")
+    f.path(f"M{gx},{g} L{gx + 260},{g}", "gnd")
+    f.text(gx + 256, g - 6, "ground (perfect conductor)", "e lab")
+    for dx in (-30, 30):
+        x, y = gx + 130 + dx, 110
+        f.ring(x, y, 9)
+        f.add(f'<circle cx="{x}" cy="{2 * g - y}" r="9" style="fill:none;stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 3"/>')
+    f.text(gx + 130, 90, "subconductors", "c")
+    f.text(gx + 130, 2 * g - 110 + 32, "their images (−q)", "c lab")
+    f.vdim2(gx + 220, g, 110, "h")
+    f.vdim2(gx + 220, g, 2 * g - 110, "h")
+    return f
+
+
+def internal_clearance():
+    f = Fig("internal-clearance", 900, 470, "Internal clearances at a structure",
+            "A structure's body and crossarm seen along the line: a suspension string swung by "
+            "the wind towards the body, its live end and the conductor at the clamp, an "
+            "electrified grading ring there (a torus) and grounded fittings at its top. Each "
+            "electrified part's smallest distance to the nearest "
+            "member of the body, against the rule's required distance; the grounded fittings "
+            "are measured against the electrified parts, not against the body.")
+    f.text(20, 26, "At a structure, in a weather case (seen along the line)", "t")
+    # body: two legs and bracing, a crossarm to the right
+    lx, rx, top, bot = 150, 250, 70, 440
+    f.path(f"M{lx},{bot} L{lx + 20},{top} M{rx},{bot} L{rx - 20},{top}", "st")
+    for y0 in range(100, 440, 60):
+        f.path(f"M{lx + 18 - (y0 - top) * 0.054},{y0} L{rx - 18 + (y0 + 60 - top) * 0.054},{y0 + 60}", "thin")
+        f.path(f"M{rx - 18 + (y0 - top) * 0.054},{y0} L{lx + 18 - (y0 + 60 - top) * 0.054},{y0 + 60}", "thin")
+    ay = 130
+    f.path(f"M{rx - 22},{ay} L560,{ay} L{rx - 22},{ay + 40}", "st")
+    f.text(568, ay + 4, "crossarm")
+    # the string, swung towards the body by the wind
+    sx, sy = 500, ay
+    ang = math.radians(28)
+    Ls = 150
+    ex, ey = sx - Ls * math.sin(ang), sy + Ls * math.cos(ang)
+    gf.string(f, sx, sy, ex, ey)
+    f.add(f'<rect x="{sx - 7}" y="{sy}" width="14" height="10" class="box"/>')
+    f.text(sx + 12, sy + 22, "grounded fittings", "lab")
+    f.ring(ex, ey, 6)
+    f.add(f'<ellipse cx="{ex:.1f}" cy="{ey - 6:.1f}" rx="26" ry="8" style="fill:none;stroke:var(--acc);stroke-width:2.4"/>')
+    f.text(ex + 32, ey - 2, "grading ring (electrified)")
+    f.text(ex + 32, ey + 18, "live end, conductor at the clamp", "lab")
+    f.text(ex + 32, ey + 34, "(the string swung by the wind)", "lab")
+    f.arrow(700, 330, 600, 330, "muted", 1.6, 8, dash=True)
+    f.text(706, 334, "wind")
+    # distances to the nearest member
+    def near(px, py, qx, qy, s, dy=0):
+        f.arrow(px, py, qx, qy, "acc", 1.4, 7, both=True)
+        f.text((px + qx) / 2, (py + qy) / 2 - 8 + dy, s, "c")
+    near(ex - 26, ey - 6, rx - 4, ey - 6, "")
+    f.text(ex - 40, ey - 22, "d ≥ required?", "e")
+    f.text(600, 380, "One row per structure, case and part:", "")
+    f.text(600, 398, "its smallest distance, the member it is", "lab")
+    f.text(600, 414, "nearest, the required distance", "lab")
+    return f
+
+
+def pole_buckling():
+    f = Fig("pole-buckling", 760, 430, "A pole's buckling length",
+            "A tapered wood pole fixed at the ground line, free at its top, height H above the "
+            "ground: it buckles as half of a pin-ended column twice as long, so its buckling "
+            "length is L_K = 2H; the slenderness takes the radius of gyration i = D/4 of the "
+            "diameter D at mid-height.")
+    f.text(20, 26, "A cantilever pole: L_{K} = 2H", "t")
+    cx, g, top = 200, 380, 90
+    d0, d1 = 30, 16
+    f.add(f'<path class="box" d="M{cx - d0 / 2},{g} L{cx - d1 / 2},{top} L{cx + d1 / 2},{top} L{cx + d0 / 2},{g} Z"/>')
+    ground(f, 80, 360, g)
+    f.add(f'<rect x="{cx - 60}" y="{g}" width="120" height="30" class="fi"/>')
+    f.text(cx + 66, g + 22, "fixed at the ground line", "lab")
+    # the buckled shape (a quarter sine) and its mirrored continuation
+    pts = [(cx + 60 * (1 - math.cos(math.pi / 2 * (g - y) / (g - top))), y) for y in range(g, top - 1, -6)]
+    f.poly(pts, "acc")
+    f.vdim2(cx - 70, g, top, "H", left=True)
+    mid = (g + top) / 2
+    f.path(f"M{cx - 50},{mid} L{cx + 50},{mid}", "thin dt")
+    f.text(cx - 78, mid - 6, "mid-height: D, i = D/4", "e lab")
+    x = 420
+    f.text(x, 120, "Fixed at the foot, free at the top:", "")
+    f.text(x, 138, "half of a pin-ended column 2H long", "lab")
+    f.text(x, 176, "L_{K} = 2H,  λ = L_{K} / i,  i = D/4", "")
+    f.text(x, 194, "(D at mid-height: a tapered pole,", "lab")
+    f.text(x, 210, "approximate either way)", "lab")
+    return f
+
+
+FIGURES = [conventions_axes, angle_section, joint_plate, laps_splices, polygon_shaft, line_parameters, charge_simulation, internal_clearance, pole_buckling, catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
            shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, lidar_classes,
