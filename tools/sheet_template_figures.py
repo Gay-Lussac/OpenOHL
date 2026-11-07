@@ -1034,8 +1034,10 @@ def fig_plans(r, out, theme):
         y = 34
         f.text(w + 34, y, "Taken from the template", 14, "o k")
         y += 22
-        for t in ["[page] margin", "[frame] border, padding", "[title_block] and its cells",
-                  "[[field]], [if_empty], [[image]]", "[text] colour", "[layers] OHL_FRAME", "the paper's format"]:
+        for t in ["[page] margin, the paper's format", "[frame] border, padding",
+                  "[title_block] and its cells", "[[field]], [if_empty], [[image]]", "[text] colour",
+                  "[revisions], [stringing_table],", "  [key_map], [[note]]", "[legend] place and size",
+                  "[layers]: the pen of every line"]:
             f.text(w + 34, y, t, 12, "c")
             y += 18
         for t in side[0]:
@@ -1051,12 +1053,15 @@ def fig_plans(r, out, theme):
             f.leader(12 + mx * k, 12 + my * k, 12 + tx * k, 12 + ty * k, cls)
         f.write(out, name, theme)
 
-    sheet("plan-route", route, [], (['[legend.labels] axis,', '  corridor_near, plan_route'],
-                                    ["north up, north arrow, scale bar", "legend beside the scale bar",
-                                     "the line's axis, the wires,", "  the structures numbered",
-                                     "the corridor's pen; its width is", "  the drawings' line width",
+    sheet("plan-route", route, [], (['[corridor] width and pen', '[scale_bar] place, lengths',
+                                     '[north_arrow] size', '[legend.labels] axis,', '  corridor_near, plan_route'],
+                                    ["north up; a north arrow and a scale", "  bar always (where the template",
+                                     "  does not place them: the corners)", "the line's axis, the wires,",
+                                     "  the structures numbered", "the corridor: the drawings' line", "  width unless the template gives one",
                                      "the scale (1:5000 to 1:25 000)"]))
-    sheet("plan-situation", situation, [], (['[legend.labels] axis,', '  corridor_near, plan_situation'],
+    sheet("plan-situation", situation, [], (['[corridor] width and pen', '[scale_bar] place, lengths',
+                                             '[north_arrow] size', '[legend.labels] axis,',
+                                             '  corridor_near, plan_situation'],
                                             ["as the route plan, at 1:500 to 1:2000", "the sheets overlap by a tenth",
                                              "over the cadastral survey (a", "  drawing) and the orthophotos,",
                                              "  under a white veil of 0.4"]))

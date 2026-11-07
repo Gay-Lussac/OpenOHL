@@ -3115,6 +3115,11 @@ fn sheet_values(
     for f in &o.template.fields {
         text.insert(f.key.clone(), f.default.clone());
     }
+    // The revision: the newest of the revision table unless given
+    // (owner, 2026-11-07: the title block's revision follows the table).
+    if let Some(r) = o.fields.revisions.last().filter(|r| !r.index.is_empty()) {
+        text.insert("revision".into(), r.index.clone());
+    }
     for (k, v) in &o.fields.values {
         text.insert(k.clone(), v.clone());
     }
@@ -3593,8 +3598,11 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
 /// its values as a sheet of route `d` from `from` to `to` (between the
 /// structures `ends`) would have them, sheet `number` of `n`, its scale
 /// written `scale` (`{scales}`, the sheets' own scales otherwise wrong
-/// there); and the room above the title block's row (mm) for the plan's
-/// drawing.
+/// there); the room for the plan's drawing (inside the frame, above the
+/// title block and whatever the template stacks on it or puts in the
+/// bottom row); and the rest of the template's furniture, drawn by
+/// [`PlanFurniture::finish`] once the plan is drawn (owner, 2026-11-07:
+/// the plans take the template as the sheets do).
 pub(crate) fn framed_page(
     d: &RouteDrawing,
     o: &Options,
@@ -3603,7 +3611,7 @@ pub(crate) fn framed_page(
     (from, to): (f64, f64),
     ends: (String, String),
     (scale, kind): (&str, &str),
-) -> (Drawing, furniture::Rect, furniture::Values) {
+) -> (Drawing, furniture::Rect, furniture::Values, PlanFurniture) {
     let t = &o.template;
     let paper = Paper::new(d, o, page);
     let sl = SheetLayout {
@@ -3640,13 +3648,163 @@ pub(crate) fn framed_page(
     }
     furniture::title_block(items, t, paper.title_block, &values, &o.logos);
     let inner = paper.inner;
+    // Above the title block, what is stacked on it and the bottom row.
+    let top = [
+        Some(paper.title_block),
+        paper.revisions,
+        paper.stringing_table,
+        paper.legend,
+        paper.key_map,
+        paper.scale_bars,
+    ]
+    .into_iter()
+    .flatten()
+    .map(|r| r[1])
+    .fold(paper.title_block[1], f64::min);
     let room = [
         inner[0],
         inner[1],
         inner[2],
-        (paper.title_block[1] - 3.0 - inner[1]).max(10.0),
+        (top - 3.0 - inner[1]).max(10.0),
     ];
-    (drawing, room, values)
+    let rest = PlanFurniture {
+        paper,
+        room,
+        stations: (from, to),
+    };
+    (drawing, room, values, rest)
+}
+
+/// The template's furniture of a plan's page besides its frame and title
+/// block ([`framed_page`]): drawn by [`PlanFurniture::finish`].
+pub(crate) struct PlanFurniture {
+    paper: Paper,
+    room: furniture::Rect,
+    stations: (f64, f64),
+}
+
+/// What a plan gives its page's furniture.
+pub(crate) struct PlanParts<'a> {
+    /// Its legend's entries.
+    pub legend: &'a crate::style::Legend,
+    /// Its scale: mm per m and how it is written ("1:1000"); none: a
+    /// plan not to scale (the phase plan).
+    pub scale: Option<(f64, String)>,
+    /// North up, an arrow wanted.
+    pub north: bool,
+}
+
+impl PlanFurniture {
+    /// Draws the template's furniture as on the sheets: the revision
+    /// table, the stringing table, the key map and the legend where the
+    /// template places them, its notes; the scale bar and the north arrow
+    /// always (a plan needs them): in the bottom row and at the template's
+    /// size and length when it places them, else in the plan's corners as
+    /// before. A legend the template does not place is drawn in the plan's
+    /// lower left. Returns the warnings (a legend or table that does not
+    /// fit).
+    pub(crate) fn finish(
+        self,
+        items: &mut Vec<Item>,
+        d: &RouteDrawing,
+        o: &Options,
+        values: &furniture::Values,
+        parts: &PlanParts<'_>,
+    ) -> Vec<String> {
+        let t = &o.template;
+        let (paper, room) = (&self.paper, self.room);
+        let (s0, s1) = self.stations;
+        let mut warnings = Vec::new();
+        if let Some(r) = paper.revisions {
+            furniture::revisions(items, t, r, values, o);
+        }
+        if let Some(r) = paper.stringing_table {
+            warnings.extend(furniture::stringing_table(items, t, r, values, d, s0, s1));
+        }
+        if let Some(r) = paper.key_map {
+            furniture::key_map(items, t, r, d, o, s0, s1);
+        }
+        furniture::notes(items, t, paper.inner, room[1] + room[3], values);
+        // The legend: the template's box, else the plan's lower left.
+        match paper.legend {
+            Some(r) if !parts.legend.entries.is_empty() => {
+                warnings.extend(furniture::legend(items, t, r, parts.legend));
+            }
+            Some(_) => {}
+            None => {
+                let size = 1.8;
+                let n = parts.legend.entries.len() as f64;
+                let mut y = room[1] + room[3] - 16.0 - n * size * 1.6;
+                for e in &parts.legend.entries {
+                    let pen = match &e.sample {
+                        crate::style::Sample::Line(p)
+                        | crate::style::Sample::Square(p)
+                        | crate::style::Sample::Circle(p) => p.clone(),
+                        crate::style::Sample::Dots(c, _) => crate::model::Pen::new(*c, 0.5),
+                    };
+                    items.push(path(
+                        Layer::Legend,
+                        vec![[room[0] + 6.0, y - 0.6], [room[0] + 14.0, y - 0.6]],
+                        crate::model::Pen { width: 0.5, ..pen },
+                        None,
+                    ));
+                    items.push(text(
+                        Layer::Legend,
+                        [room[0] + 16.0, y],
+                        size,
+                        Anchor::Start,
+                        e.text.clone(),
+                    ));
+                    y += size * 1.6;
+                }
+            }
+        }
+        if let Some((k, label)) = &parts.scale {
+            let chosen = t.scale_bar.lengths.first().map(|l| l.0);
+            match paper.scale_bars {
+                Some(r) => {
+                    let len = chosen.unwrap_or_else(|| round_length(r[2] - 20.0, *k));
+                    furniture::scale_bar(items, [r[0] + 4.0, r[1] + 6.0], len, *k, label);
+                }
+                None => {
+                    let len = chosen.unwrap_or_else(|| round_length(room[2] / 4.0, *k));
+                    // Under the plan's own legend (it ends 16 mm up).
+                    let y = room[1] + room[3] - 6.0;
+                    furniture::scale_bar(items, [room[0] + 6.0, y], len, *k, label);
+                }
+            }
+        }
+        if parts.north {
+            let size = if t.north_arrow.place == "off" {
+                12.0
+            } else {
+                t.north_arrow.size.0
+            };
+            furniture::north_arrow(
+                items,
+                [room[0] + room[2] - 10.0, room[1] + 6.0 + size],
+                [0.0, -1.0],
+                size,
+                Layer::Labels,
+            );
+        }
+        warnings
+    }
+}
+
+/// A round length for the scale bar: the largest of 1, 2, 5 × 10ⁿ m at
+/// most `max` mm long at `k` mm per m.
+pub(crate) fn round_length(max: f64, k: f64) -> f64 {
+    let mut best = 1.0;
+    for e in 0..6 {
+        for m in [1.0, 2.0, 5.0] {
+            let l = m * 10f64.powi(e);
+            if l * k <= max {
+                best = l;
+            }
+        }
+    }
+    best
 }
 
 /// A text item for the other plans.
@@ -3662,7 +3820,14 @@ pub(crate) fn plan_text(
     if is_bold { bold(item) } else { item }
 }
 
-/// A polyline item for the other plans.
-pub(crate) fn plan_path(layer: Layer, points: Vec<[f64; 2]>, color: &str, width: f64) -> Item {
-    path(layer, points, pen(color, width), None)
+/// A polyline item for the other plans, in the template's pen of its
+/// layer (`[layers]`) over `color` and `width`.
+pub(crate) fn plan_path(
+    t: &crate::template::SheetTemplate,
+    layer: Layer,
+    points: Vec<[f64; 2]>,
+    color: &str,
+    width: f64,
+) -> Item {
+    path(layer, points, t.pen(layer, pen(color, width)), None)
 }

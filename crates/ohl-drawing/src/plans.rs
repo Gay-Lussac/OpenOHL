@@ -14,7 +14,7 @@
 
 use crate::Page;
 use crate::furniture;
-use crate::layout::{framed_page, plan_path, plan_text};
+use crate::layout::{PlanParts, framed_page, plan_path, plan_text};
 use crate::model::{Anchor, Item, Layer};
 use crate::{Options, RouteDrawing, Sheet};
 
@@ -328,13 +328,20 @@ fn track(items: &mut Vec<Item>, points: Vec<[f64; 2]>, pen: crate::model::Pen) {
 }
 
 /// An open arrowhead at `tip`, pointing away from `from`.
-fn arrow(items: &mut Vec<Item>, from: [f64; 2], tip: [f64; 2], color: &str) {
+fn arrow(
+    t: &crate::template::SheetTemplate,
+    items: &mut Vec<Item>,
+    from: [f64; 2],
+    tip: [f64; 2],
+    color: &str,
+) {
     let (dx, dy) = (tip[0] - from[0], tip[1] - from[1]);
     let l = dx.hypot(dy).max(1e-9);
     let (ux, uy) = (dx / l, dy / l);
     let (a, w) = (1.6, 0.8);
     for s in [-1.0, 1.0] {
         items.push(plan_path(
+            t,
             Layer::Wires,
             vec![
                 [tip[0] - ux * a - uy * w * s, tip[1] - uy * a + ux * w * s],
@@ -425,7 +432,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
     } else {
         7.0 + row_h * (circuits.len() + 1) as f64
     };
-    let (_, room, _) = framed_page(
+    let (_, room, _, _) = framed_page(
         d,
         o,
         page,
@@ -461,7 +468,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
         let on = &columns[page_no * per_page..((page_no + 1) * per_page).min(columns.len())];
         let first = &a[on[0].first];
         let last = &a[on[on.len() - 1].last];
-        let (mut drawing, _, _) = framed_page(
+        let (mut drawing, _, values, rest) = framed_page(
             d,
             o,
             page,
@@ -513,7 +520,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
                         let s = if w.offset < 0.0 { -1.0 } else { 1.0 };
                         let tip = [xr + GAP * 0.4, y(i) + s * GAP * 0.45];
                         track(items, vec![[xr, y(i)], tip], pen);
-                        arrow(items, [xr, y(i)], tip, &w.color);
+                        arrow(t, items, [xr, y(i)], tip, &w.color);
                         turned.push((w.circuit.clone(), tip, true));
                     }
                 }
@@ -532,7 +539,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
                         vec![tip, [xl, y(i)]],
                         track_pen(&w.color, dash_of(&w.circuit), 0.3),
                     );
-                    arrow(items, [xl, y(i)], tip, &w.color);
+                    arrow(t, items, [xl, y(i)], tip, &w.color);
                     turned.push((w.circuit.clone(), tip, false));
                 }
                 // From the previous page: from the page's edge at the
@@ -588,7 +595,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
                     false,
                 ));
             }
-            draw_column(items, x, &ys[c.first], [xl, middle]);
+            draw_column(t, items, x, &ys[c.first], [xl, middle]);
             // The column's structures, above the tracks.
             let label = label_of(c);
             for (n, line) in furniture::wrap(&label, size * 1.15, true, COLUMN + GAP - 4.0)
@@ -641,7 +648,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
                         vec![[edge, yy], [tip, yy]],
                         track_pen(&w.color, dash_of(&w.circuit), 0.3),
                     );
-                    arrow(items, [edge, yy], [tip, yy], &w.color);
+                    arrow(t, items, [edge, yy], [tip, yy], &w.color);
                 }
                 let at = if at_line_end {
                     tip + s * 1.2
@@ -746,6 +753,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
             for r in 0..=rows {
                 let yy = top + r as f64 * row_h;
                 items.push(plan_path(
+                    t,
                     Layer::Labels,
                     vec![[x0, yy], [x0 + width, yy]],
                     "#000",
@@ -755,6 +763,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
             let mut cx = x0;
             for (n, (key, w)) in cols.iter().enumerate() {
                 items.push(plan_path(
+                    t,
                     Layer::Labels,
                     vec![[cx, top], [cx, top + rows as f64 * row_h]],
                     "#000",
@@ -809,12 +818,25 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
                 cx += w;
             }
             items.push(plan_path(
+                t,
                 Layer::Labels,
                 vec![[cx, top], [cx, top + rows as f64 * row_h]],
                 "#000",
                 0.3,
             ));
         }
+        // The template's furniture (not to scale: no scale bar or north).
+        let warnings = rest.finish(
+            &mut drawing.items,
+            d,
+            o,
+            &values,
+            &PlanParts {
+                legend: &crate::style::Legend::default(),
+                scale: None,
+                north: false,
+            },
+        );
         out.push(Sheet {
             number: page_no + 1,
             from: first.station,
@@ -822,7 +844,7 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
             structures: (first.structure.clone(), last.structure.clone()),
             page: page.clone(),
             drawing,
-            warnings: Vec::new(),
+            warnings,
         });
     }
     out
@@ -832,7 +854,13 @@ pub fn phase_plan_of(ds: &[&RouteDrawing], o: &Options, page: &Page) -> Vec<Shee
 /// `at`: the earth at its foot (left), the body along the axis, an arm
 /// per level (from the lowest, left, to the highest) across the tracks
 /// of its wires, a dot where each wire hangs (`ys`: their tracks).
-fn draw_column(items: &mut Vec<Item>, x: &Arrangement, ys: &[f64], at: [f64; 2]) {
+fn draw_column(
+    t: &crate::template::SheetTemplate,
+    items: &mut Vec<Item>,
+    x: &Arrangement,
+    ys: &[f64],
+    at: [f64; 2],
+) {
     let mut levels: Vec<f64> = Vec::new();
     for w in &x.wires {
         if !levels.iter().any(|z| (z - w.height).abs() < 1.0) {
@@ -851,6 +879,7 @@ fn draw_column(items: &mut Vec<Item>, x: &Arrangement, ys: &[f64], at: [f64; 2])
     let level = |h: f64| levels.iter().position(|z| (z - h).abs() < 1.0).unwrap_or(0);
     // The earth: a bar across, hatched on its outer side.
     items.push(plan_path(
+        t,
         Layer::Structures,
         vec![[foot, at[1] - 2.5], [foot, at[1] + 2.5]],
         "#000",
@@ -859,6 +888,7 @@ fn draw_column(items: &mut Vec<Item>, x: &Arrangement, ys: &[f64], at: [f64; 2])
     for q in 0..4 {
         let yy = at[1] - 2.0 + q as f64 * 1.4;
         items.push(plan_path(
+            t,
             Layer::Structures,
             vec![[foot, yy], [foot - 1.0, yy + 1.0]],
             "#000",
@@ -867,6 +897,7 @@ fn draw_column(items: &mut Vec<Item>, x: &Arrangement, ys: &[f64], at: [f64; 2])
     }
     // The body, to the highest arm.
     items.push(plan_path(
+        t,
         Layer::Structures,
         vec![[foot, at[1]], [x_of(n - 1), at[1]]],
         "#000",
@@ -883,6 +914,7 @@ fn draw_column(items: &mut Vec<Item>, x: &Arrangement, ys: &[f64], at: [f64; 2])
         let lo = on.iter().copied().fold(at[1], f64::min);
         let hi = on.iter().copied().fold(at[1], f64::max);
         items.push(plan_path(
+            t,
             Layer::Structures,
             vec![[x_of(l), lo - 0.6], [x_of(l), hi + 0.6]],
             "#000",
@@ -1025,21 +1057,6 @@ fn map_frames(line: &[[f64; 2]], w: f64, h: f64, overlap: f64) -> Vec<[f64; 2]> 
     out
 }
 
-/// A round length for the scale bar: the largest of 1, 2, 5 × 10ⁿ m at
-/// most `max` mm long at `k` mm per m.
-fn round_length(max: f64, k: f64) -> f64 {
-    let mut best = 1.0;
-    for e in 0..6 {
-        for m in [1.0, 2.0, 5.0] {
-            let l = m * 10f64.powi(e);
-            if l * k <= max {
-                best = l;
-            }
-        }
-    }
-    best
-}
-
 /// The route or situation plan of route `d` on pages of `page`: north
 /// up at `m.scale`, the sheets along the route (overlapping), each with
 /// the project's drawings and orthophotos as asked, the corridor, the
@@ -1051,7 +1068,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
     }
     let k = 1000.0 / m.scale; // mm per m
     let scale_text = format!("1:{}", crate::template::format_number(m.scale, ""));
-    let (_, room, _) = framed_page(
+    let (_, room, _, _) = framed_page(
         d,
         o,
         page,
@@ -1084,7 +1101,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
             .fold(f64::NEG_INFINITY, f64::max);
         let first = on.iter().min_by(|a, b| a.station.total_cmp(&b.station));
         let last = on.iter().max_by(|a, b| a.station.total_cmp(&b.station));
-        let (mut drawing, _, _) = framed_page(
+        let (mut drawing, _, values, rest) = framed_page(
             d,
             o,
             page,
@@ -1100,7 +1117,13 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
             (&scale_text, m.kind.label_key()),
         );
         let items = &mut drawing.items;
-        let mut legend: Vec<(String, String)> = Vec::new();
+        let mut legend = crate::style::Legend::default();
+        let line_entry = |color: &str| {
+            crate::style::Sample::Line(crate::model::Pen::new(
+                crate::model::Color::parse(color).unwrap_or(crate::model::Color::BLACK),
+                0.5,
+            ))
+        };
         if let (Some(veil), Some(photo)) = (m.photo, &d.photo)
             && let Some(img) = crate::background::north_up_photo(
                 photo,
@@ -1112,7 +1135,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
             )
         {
             items.push(img);
-            legend.push(("#bbb".into(), photo.name.clone()));
+            legend.add(line_entry("#bbb"), photo.name.clone());
         }
         let clip = |pts: Vec<[f64; 2]>| crate::model::clip_polyline(&pts, room);
         if m.drawings {
@@ -1142,11 +1165,20 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
                         }));
                     }
                 }
-                legend.push(("#8c8c8c".into(), dr.name.clone()));
+                legend.add(line_entry("#8c8c8c"), dr.name.clone());
             }
         }
         // The corridor's edges either side of the axis.
-        if let Some(half) = m.corridor.filter(|x| *x > 0.0) {
+        // The template's corridor (`[corridor] width`) when it gives one,
+        // else the plan's (the drawings' line width), in its pen.
+        let corridor_pen = t.pen(
+            Layer::Corridor,
+            t.corridor.pen.over(crate::model::Pen::new(
+                crate::model::Color::parse("#2a7").unwrap_or(crate::model::Color::BLACK),
+                0.25,
+            )),
+        );
+        if let Some(half) = o.corridor.or(m.corridor).filter(|x| *x > 0.0) {
             for side in [-1.0, 1.0] {
                 // Both ends of each piece, or the last piece is lost.
                 let edge: Vec<[f64; 2]> = line
@@ -1159,11 +1191,17 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
                     })
                     .collect();
                 for run in clip(edge) {
-                    items.push(plan_path(Layer::Corridor, run, "#2a7", 0.25));
+                    items.push(Item::Path(crate::model::Path {
+                        layer: Layer::Corridor,
+                        points: run,
+                        closed: false,
+                        pen: corridor_pen.clone(),
+                        title: None,
+                    }));
                 }
             }
-            legend.push((
-                "#2a7".into(),
+            legend.add(
+                crate::style::Sample::Line(corridor_pen.clone()),
                 t.legend.label(
                     "corridor_near",
                     &[
@@ -1171,15 +1209,15 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
                         ("width", &crate::template::format_number(half, "")),
                     ],
                 ),
-            ));
+            );
         }
         for run in clip(line.iter().map(|p| to(*p)).collect()) {
-            items.push(plan_path(Layer::Centreline, run, "#000", 0.25));
+            items.push(plan_path(t, Layer::Centreline, run, "#000", 0.25));
         }
-        legend.push(("#000".into(), t.legend.label("axis", &[])));
+        legend.add(line_entry("#000"), t.legend.label("axis", &[]));
         for tr in d.wires.iter().filter(|x| x.dash.is_none()) {
             for run in clip(tr.xy.iter().map(|p| to(*p)).collect()) {
-                items.push(plan_path(Layer::Wires, run, &tr.color, 0.18));
+                items.push(plan_path(t, Layer::Wires, run, &tr.color, 0.18));
             }
         }
         for s in &d.structures {
@@ -1189,6 +1227,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
             }
             let r = 0.9;
             items.push(plan_path(
+                t,
                 Layer::Structures,
                 vec![
                     [p[0] - r, p[1] - r],
@@ -1209,40 +1248,19 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
                 true,
             ));
         }
-        // North arrow (top right), scale bar (bottom left), legend.
-        furniture::north_arrow(
+        // The template's furniture: revisions, key map, notes, legend,
+        // the scale bar and the north arrow.
+        let warnings = rest.finish(
             items,
-            [room[0] + room[2] - 10.0, room[1] + 18.0],
-            [0.0, -1.0],
-            12.0,
-            Layer::Labels,
+            d,
+            o,
+            &values,
+            &PlanParts {
+                legend: &legend,
+                scale: Some((k, scale_text.clone())),
+                north: true,
+            },
         );
-        let len = round_length(room[2] / 4.0, k);
-        furniture::scale_bar(
-            items,
-            [room[0] + 6.0, room[1] + room[3] - 6.0],
-            len,
-            k,
-            &format!("1:{}", crate::template::format_number(m.scale, "")),
-        );
-        let mut y = room[1] + room[3] - 16.0 - legend.len() as f64 * size * 1.6;
-        for (color, name) in &legend {
-            items.push(plan_path(
-                Layer::Legend,
-                vec![[room[0] + 6.0, y - 0.6], [room[0] + 14.0, y - 0.6]],
-                color,
-                0.5,
-            ));
-            items.push(plan_text(
-                Layer::Legend,
-                [room[0] + 16.0, y],
-                size,
-                Anchor::Start,
-                name.clone(),
-                false,
-            ));
-            y += size * 1.6;
-        }
         out.push(Sheet {
             number: q + 1,
             from: if s0.is_finite() { s0 } else { 0.0 },
@@ -1253,7 +1271,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
             ),
             page: page.clone(),
             drawing,
-            warnings: Vec::new(),
+            warnings,
         });
     }
     out

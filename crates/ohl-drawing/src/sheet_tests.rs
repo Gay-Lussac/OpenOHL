@@ -807,3 +807,54 @@ fn the_ground_clearance_row_gives_the_reserve_to_the_limit() {
     }
     assert!(found > 0, "no reserve written");
 }
+
+/// The route, situation and phase plans take the template as the sheets
+/// do (owner, 2026-11-07): the example template's revision table (its
+/// newest revision in the title block), legend box, key map and notes on
+/// each plan's page; the route and situation plans with their scale bar
+/// and north arrow.
+#[test]
+fn the_plans_take_the_templates_furniture() {
+    let t = template(&example_text());
+    let mut o = options(t);
+    o.fields
+        .revisions
+        .push(Revision::parse("B;2026-11-07;second issue;AB;CD"));
+    let mut d = main_route(&o);
+    d.set_case("t");
+    let page = page_format("A1").unwrap();
+    let route = crate::plans::map_plan(
+        &d,
+        &o,
+        &page,
+        &crate::plans::MapPlan::new(crate::plans::MapKind::Route, Some(40.0)),
+    );
+    let phase = crate::plans::phase_plan(&d, &o, &page);
+    assert!(!route.is_empty() && !phase.is_empty());
+    for s in route.iter().chain(&phase) {
+        let svg = s.svg();
+        assert!(svg.contains(">second issue<"), "the revision table");
+        assert!(svg.contains(">first issue<"));
+        let layers: Vec<Layer> = s
+            .drawing
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Path(p) => Some(p.layer),
+                Item::Text(t) => Some(t.layer),
+                _ => None,
+            })
+            .collect();
+        // (The phase plan has no legend entries: no legend box.)
+        for l in [Layer::Revisions, Layer::KeyMap] {
+            assert!(layers.contains(&l), "{} missing", l.name());
+        }
+    }
+    // The title block's revision: the newest of the table.
+    let tb = route[0].svg();
+    assert!(tb.contains(">B<"), "revision B in the title block");
+    // The route plan's legend in the template's box (its title), its
+    // scale bar written at its own scale.
+    assert!(tb.contains(">Legend<"));
+    assert!(tb.contains("1:10000"), "the plan's scale");
+}
