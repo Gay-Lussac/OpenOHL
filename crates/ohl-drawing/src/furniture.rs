@@ -949,6 +949,18 @@ pub(crate) fn scale_lengths(t: &SheetTemplate, o: &Options) -> (f64, f64) {
     )
 }
 
+/// The size of the scale bars' box in the bottom row, mm: 70 × 16 at
+/// least, more when the bars need it (a long bar along the line keeps clear
+/// of the bar up, a tall one stays inside the box).
+pub(crate) fn scale_bars_size(t: &SheetTemplate, o: &Options) -> (f64, f64) {
+    let (hl, vl) = scale_lengths(t, o);
+    let along = hl * 1000.0 / o.horizontal_scale;
+    let up = vl * 1000.0 / o.vertical_scale;
+    // Along: 4 mm in, the bar, 8 mm to the bar up, 8 mm for it and its
+    // text; up: 3 mm under its foot, 3 mm over its top for its text.
+    ((along + 20.0).max(70.0), (up + 6.0).max(16.0))
+}
+
 /// Draws the scale bars in the box `r` (the bottom row).
 pub(crate) fn scale_bars_in(items: &mut Vec<Item>, t: &SheetTemplate, o: &Options, r: Rect) {
     let (hl, vl) = scale_lengths(t, o);

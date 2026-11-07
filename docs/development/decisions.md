@@ -30,6 +30,16 @@ of Parts A, B and C).
   voltages and the floor, or currents, circuit ends and the cut-off; its
   settings, results and views. Meant to change nothing the user sees.
 
+**Plan headings and the scale bars' box (owner, 2026-11-07)**
+
+- `{heading}` on the route, situation and phase plans says what the plan is,
+  in the template's words (`… : route plan`), no longer "plan and profile".
+- The scale bars' box in the bottom row grows with its bars (70 × 16 mm at
+  least): a long bar along the line no longer crosses the bar up, and a tall
+  bar up stays inside the box. Even the lengths chosen by default needed it
+  (the bar up, about 20 mm, overran the 16 mm box), so the bottom row of such
+  sheets is a few millimetres taller and the panels that much lower.
+
 **The sheet templates explained with drawings** (owner, 2026-11-07: "make
 sure the templates for the plans and all the parameters … are clearly
 explained and with graphical illustrations"). The guide

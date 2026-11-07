@@ -2343,21 +2343,28 @@ pub(crate) fn scales_text(o: &Options) -> String {
     t
 }
 
-/// The heading of the drawings.
+/// The heading of the plan-and-profile drawings: the route, then what the
+/// drawing is.
 fn heading(d: &RouteDrawing, o: &Options) -> String {
+    heading_of(
+        d,
+        if o.plan {
+            "plan and profile"
+        } else {
+            "profile"
+        },
+    )
+}
+
+/// The heading of a drawing of `d` that is `what`: "Route main — Main
+/// route: route plan".
+fn heading_of(d: &RouteDrawing, what: &str) -> String {
     let name = if d.name.trim().is_empty() || d.name == d.route {
         format!("Route {}", d.route)
     } else {
         format!("Route {} — {}", d.route, d.name)
     };
-    format!(
-        "{name}: {}",
-        if o.plan {
-            "plan and profile"
-        } else {
-            "profile"
-        }
-    )
+    format!("{name}: {what}")
 }
 
 /// Station range of the continuous drawing: the options' range, else the
@@ -2796,8 +2803,11 @@ impl Paper {
         if t.legend.place == "bottom" {
             legend = Some(place(legend_w.unwrap_or(120.0), t.legend.height.0));
         }
-        let scale_bars = matches!(t.scale_bar.place.as_str(), "bottom" | "title_block")
-            .then(|| place(70.0, 16.0));
+        let scale_bars =
+            matches!(t.scale_bar.place.as_str(), "bottom" | "title_block").then(|| {
+                let (w, h) = furniture::scale_bars_size(t, o);
+                place(w, h)
+            });
         // Beside the title block: the row must end before it.
         let row_end = x - dir * 3.0;
         let bottom_row_overlap = (!full
@@ -3609,9 +3619,12 @@ pub(crate) fn framed_page(
     };
     let mut values = sheet_values(d, o, page, &sl, n);
     values.text.insert("scales".into(), scale.to_owned());
+    let plan_kind = o.template.legend.label(kind, &[]);
+    // The heading says what the plan is, not "plan and profile".
     values
         .text
-        .insert("plan_kind".into(), o.template.legend.label(kind, &[]));
+        .insert("heading".into(), heading_of(d, &plan_kind));
+    values.text.insert("plan_kind".into(), plan_kind);
     let mut drawing = Drawing::sheet(page.width, page.height);
     let items = &mut drawing.items;
     for b in &t.frame.border {

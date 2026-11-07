@@ -1264,6 +1264,18 @@ mod tests {
     use super::*;
     use crate::tests::main_route;
 
+    /// A plan's heading says what it is (the template's words), not "plan
+    /// and profile".
+    #[test]
+    fn a_plans_heading_says_what_it_is() {
+        let o = Options::default();
+        let d = main_route(&o);
+        let svg = phase_plan(&d, &o, &crate::page_format("A3").unwrap())[0].svg();
+        let kind = o.template.legend.label("plan_phase", &[]);
+        assert!(svg.contains(&format!(": {kind}<")), "{kind}");
+        assert!(!svg.contains("plan and profile"));
+    }
+
     /// The example line's phase plan: every structure on the line has its
     /// wires; each run with the same arrangement one column, every
     /// structure in one; a transposition starts a column; the sheets

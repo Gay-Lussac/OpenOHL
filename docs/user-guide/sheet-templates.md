@@ -101,8 +101,9 @@ write:
   are yours, [`plan_sheets`, `plan_route` …](#the-templates-words));
 - `{scales}` for the scale: each plan writes its own there, while `{hscale}` and
   `{vscale}` stay the sheets' scales;
-- `{route_name}` rather than `{heading}`: `{heading}` ends in ": plan and profile",
-  even on a plan.
+- `{heading}` says what each drawing is: ": plan and profile" on the sheets,
+  ": route plan", ": phase plan" … on the plans, in the same words as
+  `{plan_kind}`.
 
 How the plans are chosen and what they contain: [Plans](drawings.md#plans-route-plan-situation-plans-phase-plan).
 Several drawings in one go, each with its own template: [Plan sets](drawings.md#plan-sets).
@@ -345,7 +346,7 @@ Texts take placeholders, `{name}` or `{name:format}`, filled in on each sheet.
 |---|---|---|
 | `project`, `line` | The project, the project line | |
 | `route`, `route_name` | The route's id and name | `main`, `Main route` |
-| `heading` | The drawing's heading | `Route main — Main route: plan and profile` |
+| `heading` | The drawing's heading: the route, then what the drawing is | `Route main — Main route: plan and profile`; on a plan `… : route plan` |
 | `title`, `title1`–`title3` | The title lines; `title` all of them | |
 | `plan_kind` | What the drawing is, in the template's words | `route plan` |
 | `sheet`, `sheets` | This sheet's number, how many | `2`, `5` |
@@ -424,9 +425,10 @@ that sheet. Number 11 in the [drawing above](#a-sheet-at-a-glance).
 | `place` | `"bottom"`, `"plan"`, `"profile"`, `"off"` | `"off"` | `"bottom"`: the bottom row, along and up. `"plan"`: the plan's lower left corner, along only. `"profile"`: the profile's upper left corner, along and up |
 | `lengths` | `["100 m", "10 m"]` | Chosen from the scales | What each shows: along the line, and up. Chosen: round lengths of about 40 mm along and 20 mm up |
 
-In the bottom row the scales have a box of 70 × 16 mm. Lengths you give are drawn at
-true scale whatever that box holds, so at 1:1000 a bar of `"100 m"` is 100 mm long and
-crosses the vertical one: choose shorter lengths, or leave them out.
+In the bottom row the scales have a box of 70 × 16 mm at least. It grows with the bars,
+which are drawn at true scale: at 1:1000 a bar of `"100 m"` is 100 mm long and its box
+120 mm wide, so the bar along the line ends before the bar up; a bar up taller than the
+box makes it taller. A larger box leaves less room for the panels.
 
 ## The key map
 

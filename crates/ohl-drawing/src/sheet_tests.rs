@@ -11,6 +11,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::furniture;
 use crate::model::{Anchor, Color, Item, Layer};
 use crate::template::SheetTemplate;
 use crate::tests::{main_route, solved};
@@ -276,6 +277,35 @@ fn the_newest_revision_is_at_the_top() {
     );
     assert!(newest < oldest, "{newest} {oldest}");
     assert!(oldest < heading, "{oldest} {heading}");
+}
+
+/// The scale bars' box in the bottom row grows with long bars: the bar
+/// along the line ends before the bar up, which stays inside the box.
+#[test]
+fn long_scale_bars_get_room() {
+    let t = template(&example_text());
+    assert_eq!(t.scale_bar.place, "bottom");
+    let o = options(t.clone());
+    let (hl, vl) = furniture::scale_lengths(&t, &o);
+    let (w, h) = furniture::scale_bars_size(&t, &o);
+    let along = hl * 1000.0 / o.horizontal_scale;
+    let up = vl * 1000.0 / o.vertical_scale;
+    // As drawn in a box of w × h at its upper left corner (0, 0).
+    let along_end = 4.0 + along;
+    let up_x = w - 8.0;
+    let up_top = h - 3.0 - up;
+    assert!(along_end < up_x - 3.0, "{along_end} {up_x}");
+    assert!(up_top >= 2.0, "{up_top}");
+    // The lengths chosen: the box's 70 mm along; up as tall as its bar
+    // (about 20 mm) needs.
+    let mut chosen = (*t).clone();
+    chosen.scale_bar.lengths.clear();
+    let o2 = options(Arc::new(chosen.clone()));
+    let (_, vl) = furniture::scale_lengths(&chosen, &o2);
+    assert_eq!(
+        furniture::scale_bars_size(&chosen, &o2),
+        (70.0, (vl * 1000.0 / o2.vertical_scale + 6.0).max(16.0))
+    );
 }
 
 /// Regression (sheet defect 3): every legend entry the export makes and
