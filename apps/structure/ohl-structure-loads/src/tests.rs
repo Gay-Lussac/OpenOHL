@@ -553,6 +553,13 @@ members = ["m1"]
     let r = row(&t, "body wind", 1, "m1");
     assert_eq!((r.force, r.source), ([-1200.0, 0.0, 0.0], Source::Line));
     assert_eq!(r.area, Some(2.0));
+    // On the bare area, no drag factor: said not on the safe side.
+    assert!(
+        r.note
+            .contains("NOT ON THE SAFE SIDE: the pressure on the member's area without a drag"),
+        "{}",
+        r.note
+    );
     assert_eq!(
         row(&t, "body wind", 1, "m2").missing.as_deref(),
         Some("no area")

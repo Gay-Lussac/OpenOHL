@@ -243,8 +243,12 @@ force, the far ones none.
   **Conservative:** that `pressure` acts along its direction with the
   area width × length × \\( \sin\theta \\) — more than the cross-flow
   force above (\\( \sin^2\theta \\)) for a member at an angle to the
-  wind — and nothing is shielded. **Simplification:** no drag factor (1),
-  which can be lower than a code's (unsafe); a member whose cross-section is not
+  wind — and nothing is shielded. **Simplification, not on the safe
+  side:** no drag factor (1), which can be lower than a code's (unsafe);
+  for the line's wind pressure (`structure_wind`, `structure_wind_factored`)
+  each row says so (*NOT ON THE SAFE SIDE: the pressure on the member's
+  area without a drag factor (1) …*, 2026-11-08); a `pressure` typed in a
+  recipe is the user's (a drag in it is theirs to give). A member whose cross-section is not
   in the library has no area (said in its row). Exact: the member wind
   above, with the code's factors.
 - OHL-Structure's **wind on the body** of a load case

@@ -12,6 +12,9 @@ self_weight = true
 # Bolts, gusset plates and galvanising on the members' steel (invented
 # for the example; a real design gives its own).
 dead_load_factor = 1.2
+# The profiles' drag factor for the member wind (invented for the
+# example; a design code's comes with its [wind] table or here).
+drag = 1.8
 
 [[material]]
 id = "steel"

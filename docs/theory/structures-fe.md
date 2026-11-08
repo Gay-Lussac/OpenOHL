@@ -222,7 +222,7 @@ A member whose cross-section comes from the cross-section library has a profile;
 
 **Conservative:** the member wind is put half on each joint, so the rest of the structure is exact; the member's own bending under it is taken in its check as \\( F L/8 \\) (\\( F \\) its wind force; the simply supported member's, on the safe side; [above](#member-usage)) — before 2026-11-08 it was left out. Exact: the load as consistent nodal loads with its fixed-end moments.
 
-**Simplification:** without wind factors, the generic drag factor 1 on every profile. A design code's drag factor for a profile or a lattice face can be higher, so the wind can be low (unsafe) — give the factors (below). Exact: the code's drag factors.
+**Simplification, not on the safe side:** without wind factors, the generic drag factor 1 on every profile. A design code's drag factor for a profile or a lattice face can be higher, so the wind can be low (unsafe) — give the factors (below). **Said where it applies** (2026-11-08): unless the model gives `[analysis] drag`, every member wind whose members take the generic factor says *NOT ON THE SAFE SIDE: n member(s) take the drag factor 1 — no drag factor given for their shape … and no [analysis] drag* with the first ten. A drag the user gives is the user's value, not said. Exact: the code's drag factors.
 
 Without wind factors in the cross-section library that is all: one drag factor, no shielding. With them (a `[wind]` table, from a design-code plugin or the user) \\( c_d \\) becomes the drag of the profile's shape or of its lattice face by its solidity ratio, and the members of a face behind another take a shielding factor: see [Wind on lattice structures](structure-wind.md) for the faces, their solidity ratios and which members are shielded.
 
@@ -284,7 +284,7 @@ unfactored). In OHL-Structure it is the case's self-weight factor (the
 recipe's `self_weight`). `ohl structures pole`, which reads factored loads
 from a CSV without a case, keeps factor 1.
 
-**Simplification:** without a modulus \\( E \\) there is no P-Delta amplification at all: the moments are first order (unsafe for a slender pole under vertical load). Exact: the pole's modulus given.
+**Simplification, not on the safe side:** without a modulus \\( E \\) there is no P-Delta amplification at all: the moments are first order (unsafe for a slender pole under vertical load). **Said where it applies** (2026-11-08): the pole's result reads `[not on the safe side: P-Delta not computed (no elasticity given for the pole or its material): the moments are first order, low by the amplification]` and is not shown as passing (violet in OHL-Structure, "not all checked" in the line application). Exact: the pole's modulus given.
 
 **A hollow steel shaft with its yield stress and no capacity given** is checked by ASCE/SEI 48-19 instead (local buckling of the flats or the tube, combined axial, bending, shear and torsion stresses at each height): [Steel pole shafts by ASCE/SEI 48-19](asce48.md).
 

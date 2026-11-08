@@ -914,7 +914,41 @@ impl<'a> MemberWindSetup<'a> {
         if !out.members.is_empty() {
             out.notes.push(self.plates_note(&out));
         }
+        if let Some(n) = self.drag_note(&out) {
+            out.notes.push(n);
+        }
         out
+    }
+
+    /// The members taking the generic drag factor while none was given
+    /// (1: below a code's for most profiles), said not on the safe side.
+    fn drag_note(&self, out: &MemberWind) -> Option<String> {
+        if self.model.analysis.drag_given {
+            return None;
+        }
+        let generic: Vec<&str> = out
+            .members
+            .iter()
+            .filter(|r| r.drag_from == DragFrom::Generic)
+            .map(|r| self.model.members[r.member].id.as_str())
+            .collect();
+        (!generic.is_empty()).then(|| {
+            let mut first = generic
+                .iter()
+                .take(10)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
+            if generic.len() > 10 {
+                first.push_str(", …");
+            }
+            format!(
+                "{NOT_SAFE_WIND}: {} member(s) take the drag factor 1 — no drag factor given for \
+                 their shape ([wind] of the cross-section library) and no [analysis] drag; a \
+                 code's drag factor for the profile may be larger: {first}",
+                generic.len()
+            )
+        })
     }
 
     /// The gusset plates in words: their wind, or — none given — that

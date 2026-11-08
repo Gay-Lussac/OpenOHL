@@ -13,7 +13,7 @@
 //! [analysis]
 //! nonlinear = true          # P-Delta (default); false: first order
 //! self_weight = true        # members' weight (default)
-//! drag = 1.0                # member wind: drag factor on the profiles (default 1)
+//! drag = 1.0                # member wind: drag factor on the profiles (none: 1, said not on the safe side)
 //! stabilise = true          # hold joint directions without stiffness (default)
 //! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
 //! single_angle_moments = false  # true: a single angle's frame end moments in its usage (version 4)
@@ -123,8 +123,8 @@ struct AnalysisFile {
     nonlinear: bool,
     #[serde(default = "yes")]
     self_weight: bool,
-    #[serde(default = "one")]
-    drag: f64,
+    #[serde(default)]
+    drag: Option<f64>,
     #[serde(default = "yes")]
     stabilise: bool,
     #[serde(default)]
@@ -140,7 +140,7 @@ impl Default for AnalysisFile {
         Self {
             nonlinear: true,
             self_weight: true,
-            drag: 1.0,
+            drag: None,
             stabilise: true,
             dead_load_factor: None,
             single_angle_moments: false,
@@ -685,8 +685,11 @@ pub struct Analysis {
     pub nonlinear: bool,
     /// Members' self-weight.
     pub self_weight: bool,
-    /// Drag factor of the member wind on the profiles.
+    /// Drag factor of the member wind on the profiles (none given: 1).
     pub drag: f64,
+    /// The drag factor given (none given: 1 — said not on the safe side
+    /// on the members that take it, [`crate::wind`]).
+    pub drag_given: bool,
     /// Joint stabilisation ([`crate::stabilise`]) when the model would
     /// otherwise be a mechanism.
     pub stabilise: bool,
@@ -753,6 +756,7 @@ impl Default for Analysis {
             nonlinear: true,
             self_weight: true,
             drag: 1.0,
+            drag_given: false,
             stabilise: true,
             dead_load_factor: 1.0,
             dead_load_given: false,
@@ -999,7 +1003,8 @@ impl Model {
             analysis: Analysis {
                 nonlinear: file.analysis.nonlinear,
                 self_weight: file.analysis.self_weight,
-                drag: file.analysis.drag,
+                drag: file.analysis.drag.unwrap_or(1.0),
+                drag_given: file.analysis.drag.is_some(),
                 stabilise: file.analysis.stabilise,
                 dead_load_factor: file.analysis.dead_load_factor.unwrap_or(1.0),
                 dead_load_given: file.analysis.dead_load_factor.is_some(),

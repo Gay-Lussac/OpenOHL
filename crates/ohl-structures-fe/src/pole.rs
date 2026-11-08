@@ -789,7 +789,36 @@ pub fn check_pole(
 /// weight in the finite-element check; physics review 2026-10-26: with
 /// the attachment loads factored and the pole's weight not, the P-Delta
 /// ratio came out a little low).
+///
+/// Without P-Delta — the pole has no elasticity, or `p_delta` is off —
+/// the moments are first order: unsafe by the amplification, said in what
+/// governs (`[not on the safe side: …]`, 2026-11-08).
 pub fn check_pole_factored(
+    pole: &Pole,
+    loads: &[PoleLoad],
+    wind: [f64; 2],
+    strength: f64,
+    self_weight: f64,
+    p_delta: bool,
+    budget: &Budget,
+) -> Result<PoleCheck, String> {
+    let mut c = check_pole_first(pole, loads, wind, strength, self_weight, p_delta, budget)?;
+    let why = match (p_delta, pole.elasticity) {
+        (true, Some(_)) => None,
+        (true, None) => Some("no elasticity given for the pole or its material"),
+        (false, _) => Some("P-Delta turned off"),
+    };
+    if let Some(why) = why {
+        c.governs.push_str(&format!(
+            " {} P-Delta not computed ({why}): the moments are first order, low by the \
+             amplification]",
+            crate::check::NOT_SAFE
+        ));
+    }
+    Ok(c)
+}
+
+fn check_pole_first(
     pole: &Pole,
     loads: &[PoleLoad],
     wind: [f64; 2],

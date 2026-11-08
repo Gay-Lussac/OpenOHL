@@ -10,6 +10,17 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Drag factor 1, bare-area pressures and poles without P-Delta said (safe-side audit, 2026-11-08)**
+
+A member wind whose members take the generic drag factor 1 without
+`[analysis] drag` given says so, not on the safe side (a given drag is
+the user's value; the model records `drag_given`). The load table's rows
+of the line's wind pressure on a member's bare area say they have no drag
+factor. A pole checked without P-Delta (no elasticity, or P-Delta off)
+is marked `[not on the safe side: …]` and never shown as passing. The
+example tower gives an invented `drag = 1.8`.
+([Structures](../theory/structures-fe.md), [safe side](safe-side.md))
+
 **Wind: solidity within bounds, gusset plates in the wind (safe-side audit, 2026-11-08)**
 
 Following the owner's safe-side rule: a lattice face's solidity ratio

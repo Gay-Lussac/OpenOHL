@@ -140,7 +140,34 @@ fn a_solid_wall_checks_as_no_wall() {
             assert_eq!(a.moment, r.moment);
             assert_eq!(a.amplification, r.amplification);
         }
+        // Without P-Delta the moments are first order: said not on the
+        // safe side (2026-11-08); with it, not.
+        assert_eq!(
+            crate::check::not_safe(&a.governs),
+            !p_delta,
+            "{}",
+            a.governs
+        );
     }
+    // No elasticity: P-Delta asked for but not computed, said why.
+    let stiffless = Pole {
+        elasticity: None,
+        ..none.clone()
+    };
+    let g = check_pole(
+        &stiffless,
+        &loads,
+        [-700.0, 0.0],
+        0.9,
+        true,
+        &default_budget(),
+    )
+    .unwrap()
+    .governs;
+    assert!(
+        crate::check::not_safe(&g) && g.contains("no elasticity given"),
+        "{g}"
+    );
     // Solid with a section: solid, the section's material for the rest.
     let lib = SectionLibrary::parse(
         "[[material]]\nid = \"m\"\nelasticity = \"12 GPa\"\ndensity = \"700 kg/m3\"\n\

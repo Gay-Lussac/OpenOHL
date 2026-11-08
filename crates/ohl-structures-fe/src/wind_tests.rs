@@ -227,7 +227,29 @@ fn a_gusset_plate_takes_wind_at_its_joint() {
     assert!(
         !w.notes
             .iter()
-            .any(|n| n.starts_with("NOT ON THE SAFE SIDE"))
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: gusset"))
+    );
+    // No drag factor given: every member with a wind row (33) takes 1,
+    // said not on the safe
+    // side; with [analysis] drag given, not said.
+    assert!(
+        w.notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: 33 member(s) take the drag factor 1")),
+        "{:?}",
+        w.notes
+    );
+    let lib = SectionLibrary::parse(LIBRARY).unwrap();
+    let given = Model::parse_with(
+        &tower().replace("[analysis]\n", "[analysis]\ndrag = 1.0\n"),
+        &lib,
+    )
+    .unwrap();
+    let w = MemberWindSetup::new(&given, None).wind(1000.0, [0.5, 3f64.sqrt() / 2.0, 0.0]);
+    assert!(
+        !w.notes.iter().any(|n| n.contains("take the drag factor 1")),
+        "{:?}",
+        w.notes
     );
     // The members' own forces are as without the plate.
     assert_eq!(w.member_forces().len(), w.members.len());

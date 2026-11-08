@@ -649,10 +649,12 @@ impl Analyses {
                 Ok(c) => Check {
                     method: Method::Pole,
                     usage: c.usage,
+                    // Without P-Delta (no elasticity): not all on the
+                    // safe side, never shown as passing.
+                    not_safe: usize::from(ohl_structures_fe::check::not_safe(&c.governs)),
                     governs: format!("pole {}: {}", pole.id, c.governs),
                     incomplete: false,
                     approximate: false,
-                    not_safe: 0,
                 },
                 Err(e) => Check {
                     method: Method::Pole,

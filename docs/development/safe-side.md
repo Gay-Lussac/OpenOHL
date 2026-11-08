@@ -41,9 +41,9 @@ theory page. Status: **done** (with the date), **open**.
 | Where | Value | Said where it applies | Status |
 |---|---|---|---|
 | [Structures](../theory/structures-fe.md) | Dead-load factor (bolts, plates in the self-weight) | "NOT ON THE SAFE SIDE: no dead-load factor given" in every run's notes | done 2026-11-08 |
-| [Structures](../theory/structures-fe.md), [Wind on structures](../theory/structure-wind.md) | Drag factors of the profiles and faces; a load recipe's pressure without them | Per structure and per case, "not on the safe side" | open (batch 2) |
+| [Structures](../theory/structures-fe.md), [Wind on structures](../theory/structure-wind.md) | Drag factors of the profiles and faces; a load recipe's pressure without them | Every member wind with members on the generic drag 1 and no `[analysis] drag` given: "NOT ON THE SAFE SIDE: n member(s) take the drag factor 1 …"; each load-table row of the line's wind pressure on a member's bare area | done 2026-11-08 |
 | [Wind on structures](../theory/structure-wind.md) | Wind band areas per direction | Per structure on cases blowing ahead or at an angle | open (batch 2) |
-| [Structures](../theory/structures-fe.md) | A pole's modulus E (P-Delta) | In the pole's result and report | open (batch 2) |
+| [Structures](../theory/structures-fe.md) | A pole's modulus E (P-Delta) | In the pole's result ("[not on the safe side: P-Delta not computed …]"), never shown as passing | done 2026-11-08 |
 | [Internal clearances](../theory/internal-clearances.md) | A string's volumes | Per row where a string has none | open (batch 2) |
 | [Thermal](../theory/thermal.md) | Steel-core magnetic heating in the AC resistance | Per section of a steel-cored conductor | open (batch 3) |
 | [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | On the clamp loads while not given | open (batch 3) |

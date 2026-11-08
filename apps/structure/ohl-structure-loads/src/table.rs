@@ -1019,7 +1019,19 @@ fn surface_rows(
             Source::Recipe,
             String::new(),
         ),
-        Some(Ok((p, d, origin))) => (p, d, Source::Line, origin),
+        // The line's wind pressure on the bare area: no drag factor
+        // (1), said not on the safe side (2026-11-08); the wind on the
+        // body takes the drag factors.
+        Some(Ok((p, d, origin))) => (
+            p,
+            d,
+            Source::Line,
+            format!(
+                "{origin}; NOT ON THE SAFE SIDE: the pressure on the member's area without a \
+                 drag factor (1) — the wind on the body ([[load_case.structure.wind]]) takes \
+                 the profiles' drag factors"
+            ),
+        ),
         Some(Err(why)) => {
             return ids
                 .into_iter()
