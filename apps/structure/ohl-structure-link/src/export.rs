@@ -407,7 +407,7 @@ pub fn export_joints(
             };
             let shift = body.get(a.member.as_str()).copied().unwrap_or([0.0; 3]);
             let dia = b.diameter;
-            for (p, axis) in a.bolts_with_axes() {
+            for (p, axis, grip) in a.bolts_with_axes() {
                 s.bolts.push(ExportBolt {
                     joint: j.id.clone(),
                     member: a.member.clone(),
@@ -418,7 +418,7 @@ pub fn export_joints(
                     hole: b.hole,
                     grade: b.grade.clone(),
                     bolt: b.bolt.clone(),
-                    grip: a.grip,
+                    grip,
                     sizes: [
                         b.drawn[0].unwrap_or(flats * dia),
                         b.drawn[1].unwrap_or(head * dia),

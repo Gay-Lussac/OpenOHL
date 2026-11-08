@@ -65,9 +65,9 @@ pub use joint_sheet::{
 };
 pub use joints::{
     Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, CoverDetail, FLAT_OFF,
-    JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Profile,
-    Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, joint_details,
-    part_chains, similar_joints,
+    JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Problem,
+    Profile, Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, bolted_onto,
+    joint_details, part_chains, similar_joints,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,

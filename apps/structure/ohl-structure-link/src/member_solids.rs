@@ -330,8 +330,8 @@ pub fn bolt_solids(d: &JointDetails) -> Vec<BoltSolid> {
             let Some(b) = &a.bolts.value else { continue };
             let assumed = a.gauges.source == crate::Source::Assumed
                 || a.pitch.source == crate::Source::Assumed;
-            for (p, axis) in a.bolts_with_axes() {
-                let polys = crate::bolt_faces(p, axis, b.diameter, a.grip, b.drawn);
+            for (p, axis, grip) in a.bolts_with_axes() {
+                let polys = crate::bolt_faces(p, axis, b.diameter, grip, b.drawn);
                 // Its middle, on its axis: each face's normal away from it
                 // (across the axis for the sides, along it for the ends).
                 let all: Vec<[f64; 3]> = polys.iter().flat_map(|f| f.0.iter().copied()).collect();

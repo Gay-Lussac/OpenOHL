@@ -107,6 +107,23 @@ pub enum Act {
         Vec<[f64; 2]>,
         Option<ohl_structure_edit::connection_edits::FieldValue>,
     ),
+    /// A member end's bolts on each leg and the leg it bolts by (a bolt
+    /// moved to the other leg, 2026-11-08), the bolts' kind when it gives
+    /// none yet.
+    LegBolts {
+        /// The member.
+        member: String,
+        /// The joint.
+        joint: String,
+        /// On the leg bolted.
+        bolted: Vec<[f64; 2]>,
+        /// On the other leg.
+        other: Vec<[f64; 2]>,
+        /// The leg it bolts by (`long`, `short`, `both`; none: as it is).
+        leg: Option<&'static str>,
+        /// The bolts' kind.
+        bolts: Option<ohl_structure_edit::connection_edits::FieldValue>,
+    },
     /// A member end's cut and shift, m (the Member end tool).
     CutShift(String, String, f64, f64),
     /// A plate's outline written as drawn.
@@ -806,6 +823,56 @@ impl StructureApp {
                         "{member} at {joint}: {n} bolt(s) where placed (its layout now their \
                          places; the bolt layout form makes a regular one again)"
                     ),
+                    false,
+                ))
+            }
+            Act::LegBolts {
+                member,
+                joint,
+                bolted,
+                other,
+                leg,
+                bolts,
+            } => {
+                let (n, m) = (bolted.len(), other.len());
+                f.edit(&format!("Bolts of {member} at {joint}"), |doc, _| {
+                    connection_edits::set_bolt_points(
+                        doc,
+                        &member,
+                        &joint,
+                        &bolted,
+                        Some(&other),
+                        bolts.as_ref(),
+                    );
+                    if let Some(l) = leg {
+                        let _ = connection_edits::set_connection_field(
+                            doc,
+                            &member,
+                            &joint,
+                            "leg",
+                            Some(&FieldValue::Word(l.to_owned())),
+                        );
+                    }
+                    // One leg only: no second plate for the other leg.
+                    if m == 0 {
+                        let _ = connection_edits::set_connection_field(
+                            doc,
+                            &member,
+                            &joint,
+                            "other_onto",
+                            None,
+                        );
+                    }
+                });
+                Some((
+                    if m == 0 {
+                        format!(
+                            "{member} at {joint}: {n} bolt(s), one leg ({})",
+                            leg.unwrap_or("as it was")
+                        )
+                    } else {
+                        format!("{member} at {joint}: both legs bolted, {n} + {m} bolt(s)")
+                    },
                     false,
                 ))
             }
@@ -1573,15 +1640,41 @@ fn row(
     .iter()
     .map(|l| l.as_str().to_owned())
     .collect();
-    if let Some(v) = choice(
-        ui,
-        ("leg", m, jid),
-        tinted(ui, &a.leg, shown(&a.leg, |l| l.as_str().to_owned())),
-        &legs,
-        a.leg.source.words(),
-    ) {
-        acts.push(field("leg", v.map(FieldValue::Word)));
-    }
+    ui.vertical(|ui| {
+        if let Some(v) = choice(
+            ui,
+            ("leg", m, jid),
+            tinted(ui, &a.leg, shown(&a.leg, |l| l.as_str().to_owned())),
+            &legs,
+            a.leg.source.words(),
+        ) {
+            acts.push(field("leg", v.map(FieldValue::Word)));
+        }
+        // Both legs bolted: the other leg onto a plate of its own
+        // (2026-11-08: two plates at 90°, apart or welded).
+        let plates: Vec<String> = j
+            .plates
+            .iter()
+            .map(|p| p.id.clone())
+            .filter(|p| a.onto.value.as_ref() != Some(p))
+            .collect();
+        if a.leg.value == Some(BoltedLeg::Both) && !plates.is_empty() {
+            let text = match &a.other_onto {
+                Some(o) => egui::RichText::new(format!("other leg: {o}")),
+                None => egui::RichText::new("other leg: same").weak(),
+            };
+            if let Some(v) = choice(
+                ui,
+                ("other-onto", m, jid),
+                text.small(),
+                &plates,
+                "The plate the other leg bolts onto (a second plate at 90°, apart or welded \
+                 to the first); not given: the same as Onto",
+            ) {
+                acts.push(field("other_onto", v.map(FieldValue::Word)));
+            }
+        }
+    });
     // Bolts: the layout window.
     let bolts = tinted(
         ui,

@@ -73,6 +73,15 @@ or bolt points, in the plate's plane):
 
 The bolts are taken to share the force equally (ASCE 10-97 4.1).
 
+**A member bolted onto two plates** (both legs bolted, the other leg onto
+a plate of its own — `other_onto`, two plates at 90°, apart or welded;
+2026-11-08): each plate is checked for the member's force times its share
+of the end's bolts, \( n_\text{plate} / n_\text{end} \) — the same equal
+sharing among the end's bolts (**an assumption**, said in the check: it
+holds when the legs are alike in stiffness and the bolts slip alike; it is
+**not on the safe side** for a plate whose leg draws more of the force, and
+neither standard gives the split between an angle's two legs).
+
 ## ASCE 10-97
 
 | Check | Resistance | Source |

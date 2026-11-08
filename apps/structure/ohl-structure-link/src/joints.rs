@@ -251,6 +251,13 @@ pub struct Arrival {
     /// The other leg's bolts' axis: normal to that leg, towards its own
     /// side (where the heads are).
     pub other_axis: [f64; 3],
+    /// Both legs bolted, the other leg onto a plate of its own
+    /// (`other_onto`, 2026-11-08: two plates at 90°, apart or welded);
+    /// none: both legs onto `onto`.
+    pub other_onto: Option<String>,
+    /// What the other leg's bolts clamp, m (as `grip`): that leg's
+    /// thickness and its plate's.
+    pub other_grip: [f64; 2],
     /// A modelling member (`check = false`).
     pub modelling: bool,
     /// Its leg bolted against the face it bolts onto (a plate's, a leg's
@@ -274,17 +281,127 @@ pub struct Arrival {
     pub misfit: bool,
     /// Notes on it ("one end eccentric, which not said"…).
     pub notes: Vec<String>,
+    /// What does not fit, each in words (also in `notes`) and in a form a
+    /// fix can be found for (2026-11-08: the Problems list).
+    pub problems: Vec<(Problem, String)>,
+}
+
+/// Something about a member end that does not fit, as the fixes take it
+/// (OHL-Structure's Problems list tries them on a copy, owner
+/// 2026-11-08: "the joint is giving a lot of errors and i would like to
+/// have a tool to help resolve errors").
+#[derive(Debug, Clone, PartialEq)]
+pub enum Problem {
+    /// Nested in `host`, which it cannot be (no profile, not two angles,
+    /// not in line).
+    NotNestable {
+        /// The member it is nested in.
+        host: String,
+    },
+    /// Nested in `host`, its legs across the host's (turn it).
+    NestTurned {
+        /// The member it is nested in.
+        host: String,
+    },
+    /// Nested in `host`, a leg too wide for the host's.
+    NestTooWide {
+        /// The member it is nested in.
+        host: String,
+    },
+    /// Nested in `host`, an edge distance too short: the largest gauge
+    /// that keeps both parts' edge distances, m.
+    NestEdge {
+        /// The member it is nested in.
+        host: String,
+        /// The largest gauge, m.
+        gauge_max: f64,
+    },
+    /// Nested in `host`, its end distance in its own leg short by
+    /// `short`, m.
+    NestEnd {
+        /// The member it is nested in.
+        host: String,
+        /// How much too short, m.
+        short: f64,
+    },
+    /// Nested in `host`, whose cut given leaves too little end distance.
+    HostCut {
+        /// The member it is nested in.
+        host: String,
+    },
+    /// Its outstanding leg would pass through the leg of `onto`.
+    ThroughLeg {
+        /// The member it bolts onto.
+        onto: String,
+    },
+    /// Its leg bolted lies `off` degrees off the face it bolts onto; a
+    /// turn of `turn` (radians, added to its roll) lays it flat.
+    NotFlat {
+        /// What it bolts onto.
+        onto: String,
+        /// The turn, radians.
+        turn: f64,
+    },
 }
 
 impl Arrival {
-    /// Every bolt of this end where it is with its axis: those of the leg
-    /// bolted, then (both legs bolted) the other leg's.
-    pub fn bolts_with_axes(&self) -> impl Iterator<Item = ([f64; 3], [f64; 3])> + '_ {
+    /// Every bolt of this end where it is with its axis and what it
+    /// clamps: those of the leg bolted, then (both legs bolted) the other
+    /// leg's.
+    pub fn bolts_with_axes(&self) -> impl Iterator<Item = ([f64; 3], [f64; 3], [f64; 2])> + '_ {
         self.bolt_points
             .iter()
-            .map(|p| (*p, self.bolt_axis))
-            .chain(self.other_points.iter().map(|p| (*p, self.other_axis)))
+            .map(|p| (*p, self.bolt_axis, self.grip))
+            .chain(
+                self.other_points
+                    .iter()
+                    .map(|p| (*p, self.other_axis, self.other_grip)),
+            )
     }
+
+    /// Its other leg as an end of its own bolted onto `other_onto`: that
+    /// leg's bolts, axis and grip as the leg bolted (none: no
+    /// `other_onto`). What a plate gathers of the members on it.
+    pub fn other_leg(&self) -> Option<Arrival> {
+        let o = self.other_onto.clone()?;
+        Some(Arrival {
+            onto: Valued::of(o, Source::Given),
+            bolt_points: self.other_points.clone(),
+            bolt_flat: self.other_flat.clone(),
+            bolt_axis: self.other_axis,
+            grip: self.other_grip,
+            leg_y: !self.leg_y,
+            other_points: Vec::new(),
+            other_flat: Vec::new(),
+            other_onto: None,
+            bolts: Valued {
+                value: self.bolts.value.clone().map(|mut b| {
+                    b.count = self.other_points.len() as u32;
+                    b
+                }),
+                source: self.bolts.source,
+            },
+            ..self.clone()
+        })
+    }
+}
+
+/// The member ends bolted onto part `id` (a plate or splice) at a joint:
+/// those whose leg bolted is on it, then the other legs of those whose
+/// `other_onto` it is ([`Arrival::other_leg`]).
+pub fn bolted_onto<'a>(arrivals: &'a [Arrival], id: &str) -> Vec<std::borrow::Cow<'a, Arrival>> {
+    use std::borrow::Cow;
+    arrivals
+        .iter()
+        .filter(|a| a.onto.value.as_deref() == Some(id))
+        .map(Cow::Borrowed)
+        .chain(
+            arrivals
+                .iter()
+                .filter(|a| a.other_onto.as_deref() == Some(id))
+                .filter_map(|a| a.other_leg().map(Cow::Owned)),
+        )
+        .collect()
 }
 
 /// How complete a joint's details are.
@@ -578,12 +695,15 @@ pub fn joint_details(
                 other_points: Vec::new(),
                 other_flat: Vec::new(),
                 other_axis: [0.0, 1.0, 0.0],
+                other_onto: None,
+                other_grip: [0.0, 0.0],
                 modelling: design.is_some_and(|(_, _, check)| !check),
                 flat: None,
                 sits: Valued::none(),
                 continuous: t.continuous_with(&m.id, &n.id).map(str::to_owned),
                 misfit: false,
                 notes: Vec::new(),
+                problems: Vec::new(),
             });
         }
         let plates_here: Vec<&ohl_structures::connections::TypePlate> =
@@ -633,6 +753,14 @@ pub fn joint_details(
                     .is_some_and(|o| nested.get(&a.member).is_some_and(|v| v.contains(o)));
                 place_bolts(a, at, c, &snapshot, &seats, host);
                 a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
+                a.other_grip = match a
+                    .other_onto
+                    .as_ref()
+                    .and_then(|o| plates_here.iter().find(|p| &p.id == o))
+                {
+                    Some(p) => [a.grip[0], p.thickness.si()],
+                    None => a.grip,
+                };
                 a.flat = flat_of(a, &snapshot, &seats);
                 if let Some(f) = a.flat
                     && f.off > FLAT_OFF
@@ -644,10 +772,18 @@ pub fn joint_details(
                     } else {
                         "leg of"
                     };
-                    a.notes.push(format!(
+                    let text = format!(
                         "{}: bolted face {:.0}° off the {what} {o} — turn it",
                         a.member, f.off
+                    );
+                    a.problems.push((
+                        Problem::NotFlat {
+                            onto: o.clone(),
+                            turn: f.turn,
+                        },
+                        text.clone(),
                     ));
+                    a.notes.push(text);
                 }
             }
         }
@@ -758,6 +894,12 @@ fn condition(
         _ => Valued::none(),
     };
     a.leg_y = leg_along_y(a, all, seats);
+    // Both legs bolted, the other onto a plate of its own (2026-11-08;
+    // what does not apply is said in the connection notes).
+    a.other_onto = c
+        .and_then(|c| c.other_onto.clone())
+        .filter(|o| a.leg.value == Some(BoltedLeg::Both) && plates.iter().any(|p| &p.id == o))
+        .filter(|o| a.onto.value.as_ref() != Some(o));
     // An assumed leg is the one that lies flat (the drawing's).
     if a.leg.source == Assumed
         && let Some(g) = a.profile.as_ref().and_then(|p| p.angle)
@@ -1477,6 +1619,12 @@ fn nested_here(t: &StructureType, joint: &str, all: &[Arrival]) -> BTreeMap<Stri
 type PartRules<'a> = dyn Fn(&Arrival, Option<(f64, Option<f64>)>) -> Option<ohl_structures_fe::bolt_rules::BoltRules>
     + 'a;
 
+/// `p` added to `list` (once), its words to fill in.
+fn t_of(list: &mut Vec<(Problem, String)>, p: Problem) -> &mut String {
+    list.push((p, String::new()));
+    &mut list.last_mut().expect("pushed").1
+}
+
 /// The fit of each member nested in another at a joint (`nested`, by the
 /// member they nest in), in words in its notes, a misfit flagged: each
 /// leg at most the other's less its thickness and root radius; the end
@@ -1512,11 +1660,13 @@ fn nest_fit(
                 continue;
             };
             let mut notes = Vec::new();
+            let mut problems: Vec<(Problem, String)> = Vec::new();
             let mut misfit = false;
             for (wi, wo) in n.legs {
                 let most = wo - h.t - h.r;
                 if wi > most + 1e-6 {
                     misfit = true;
+                    problems.push((Problem::NestTooWide { host: host.clone() }, String::new()));
                     notes.push(format!(
                         "nested in {host}: its {:.0} mm leg does not fit {host}'s {:.0} mm leg (at \
                          most {:.0} − {:.0} − {:.0} = {:.0} mm: the leg less its thickness and \
@@ -1562,9 +1712,18 @@ fn nest_fit(
                         format!("{host}'s leg ({:.0} mm)", mm(h.t)),
                     ),
                 ];
+                // The largest gauge keeping both edge distances.
+                let gauge_max = (wi - ki.across).min(wo - h.t - ko.across);
                 for (have, need, what) in edges {
                     if have < need - 5e-4 {
                         misfit = true;
+                        problems.push((
+                            Problem::NestEdge {
+                                host: host.clone(),
+                                gauge_max,
+                            },
+                            String::new(),
+                        ));
                         notes.push(format!(
                             "nested in {host}: edge distance {:.0} mm in {what}, {:.0} mm needed",
                             mm(have),
@@ -1574,6 +1733,13 @@ fn nest_fit(
                 }
                 if first - cut < ki.along - 5e-4 {
                     misfit = true;
+                    problems.push((
+                        Problem::NestEnd {
+                            host: host.clone(),
+                            short: ki.along - (first - cut),
+                        },
+                        String::new(),
+                    ));
                     notes.push(format!(
                         "nested in {host}: end distance {:.0} mm in its own leg, {:.0} mm needed",
                         mm(first - cut),
@@ -1586,6 +1752,7 @@ fn nest_fit(
                         let have = -o.cut.value.unwrap_or(0.0) - last;
                         if have < ko.along - 5e-4 {
                             misfit = true;
+                            problems.push((Problem::HostCut { host: host.clone() }, String::new()));
                             notes.push(format!(
                                 "nested in {host}: end distance {:.0} mm in {host}'s leg (its cut \
                                  given), {:.0} mm needed",
@@ -1602,6 +1769,12 @@ fn nest_fit(
             }
             let x = &mut arrivals[ik];
             x.misfit |= misfit;
+            // Each problem in the words of its note (the notes in the
+            // order the problems were found; the heel's note has none).
+            let mut said = notes.iter().filter(|t| !t.contains("taken as ground"));
+            for (p, t) in problems {
+                *t_of(&mut x.problems, p) = said.next().cloned().unwrap_or(t);
+            }
             x.notes.extend(notes);
         }
         let h = &mut arrivals[hk];
@@ -1709,6 +1882,13 @@ fn place_bolts(
             }
             Err(why) => {
                 a.misfit = true;
+                let host = o.member.clone();
+                let p = if why.contains("do not lie along") {
+                    Problem::NestTurned { host }
+                } else {
+                    Problem::NotNestable { host }
+                };
+                a.problems.push((p, why.clone()));
                 a.notes.push(why);
             }
         },
@@ -1725,11 +1905,15 @@ fn place_bolts(
                 flipped = s.flipped;
                 if s.flipped {
                     a.misfit = true;
-                    a.notes.push(format!(
-                        "on the {} face of {}'s leg its outstanding leg would pass through that                          leg: turn it (its roll), or choose the other face",
+                    let onto = a.onto.value.clone().unwrap_or_default();
+                    let text = format!(
+                        "on the {} face of {onto}'s leg its outstanding leg would pass through \
+                         that leg: turn it (its roll), or choose the other face",
                         s.face.as_str(),
-                        a.onto.value.as_deref().unwrap_or("?")
-                    ));
+                    );
+                    a.problems
+                        .push((Problem::ThroughLeg { onto }, text.clone()));
+                    a.notes.push(text);
                 }
                 seated = Some(s.offset);
             } else if let Some(f) = f {
@@ -2070,11 +2254,14 @@ fn plate(
     seat: Option<&PlateSeat>,
     rules: &dyn Fn(&Arrival) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
 ) -> PlateDetail {
-    let onto: Vec<&Arrival> = arrivals
-        .iter()
-        .filter(|a| a.onto.value.as_deref() == Some(p.id.as_str()))
-        .collect();
-    let members = onto.iter().map(|a| a.member.clone()).collect();
+    let gathered = bolted_onto(arrivals, &p.id);
+    let onto: Vec<&Arrival> = gathered.iter().map(|a| a.as_ref()).collect();
+    let mut members: Vec<String> = Vec::new();
+    for a in &onto {
+        if !members.contains(&a.member) {
+            members.push(a.member.clone());
+        }
+    }
     let kept: Vec<(&Arrival, Keep, String)> = onto
         .iter()
         .filter(|a| !a.bolt_points.is_empty())

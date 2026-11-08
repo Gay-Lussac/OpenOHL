@@ -63,6 +63,12 @@ pub struct Hole {
     pub end: usize,
     /// Its place partly assumed (for the drawing).
     pub assumed: bool,
+    /// On the other leg (both legs bolted; `across` from the heel on
+    /// that leg), drawn folded out below the heel.
+    pub other: bool,
+    /// Its place in its end's bolts of its leg (`Arrival::bolt_flat`, or
+    /// `other_flat` when on the other leg).
+    pub index: usize,
 }
 
 /// The member's leg bolted laid flat: its length, its width and its
@@ -73,6 +79,9 @@ pub struct FlatLeg {
     pub length: f64,
     /// The leg's width, m.
     pub width: f64,
+    /// The other leg's width, m (2026-11-08: drawn folded out below the
+    /// heel, so bolts can be moved to it).
+    pub other_width: f64,
     /// The holes.
     pub holes: Vec<Hole>,
     /// Per end (first, second): the end distance, the pitch and the gauge
@@ -87,6 +96,7 @@ pub struct FlatLeg {
 /// measured from each joint), where its steel stops at each end.
 pub fn flat_leg(m: &MemberEnds) -> Option<FlatLeg> {
     let mut width = None;
+    let mut other_width = 0.0;
     let mut holes = Vec::new();
     let mut layout = [None, None];
     let mut cuts = [0.0; 2];
@@ -95,22 +105,30 @@ pub fn flat_leg(m: &MemberEnds) -> Option<FlatLeg> {
         let Some(g) = a.profile.as_ref().and_then(|p| p.angle) else {
             continue;
         };
-        width = width.or(Some(if a.leg_y { g.b } else { g.h }));
+        if width.is_none() {
+            width = Some(if a.leg_y { g.b } else { g.h });
+            other_width = if a.leg_y { g.h } else { g.b };
+        }
         cuts[k] = a.cut.value.unwrap_or(0.0);
         let Some(b) = &a.bolts.value else { continue };
         let assumed =
             [a.gauges.source, a.pitch.source, a.end_distance.source].contains(&Source::Assumed);
-        for q in &a.bolt_flat {
-            holes.push(Hole {
-                // From the member's first joint: the second end's measured
-                // back from its far end.
-                along: if k == 0 { q[0] } else { m.length - q[0] },
-                across: q[1],
-                hole: b.hole.unwrap_or(b.diameter),
-                bolt: b.diameter,
-                end: k,
-                assumed,
-            });
+        let legs = [(&a.bolt_flat, false), (&a.other_flat, true)];
+        for (flat, other) in legs {
+            for (index, q) in flat.iter().enumerate() {
+                holes.push(Hole {
+                    // From the member's first joint: the second end's
+                    // measured back from its far end.
+                    along: if k == 0 { q[0] } else { m.length - q[0] },
+                    across: q[1],
+                    hole: b.hole.unwrap_or(b.diameter),
+                    bolt: b.diameter,
+                    end: k,
+                    assumed,
+                    other,
+                    index,
+                });
+            }
         }
         if let (Some(e), Some(p), Some(g0)) = (
             a.end_distance.value,
@@ -123,6 +141,7 @@ pub fn flat_leg(m: &MemberEnds) -> Option<FlatLeg> {
     Some(FlatLeg {
         length: m.length,
         width: width?,
+        other_width,
         holes,
         layout,
         cuts,

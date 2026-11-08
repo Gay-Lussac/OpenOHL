@@ -52,6 +52,8 @@ pub enum Drawn {
 pub struct JointPanel {
     /// The details, for (file revision, libraries stamp).
     details: Option<((u64, u64), Details)>,
+    /// The fixes of the joint shown's problems, found in the background.
+    pub fixes: crate::joint_fixes::Finder,
     /// The joint shown (follows the selection).
     pub joint: Option<String>,
     /// The face of the face view (none: the joint's first).
@@ -287,6 +289,8 @@ impl StructureApp {
             return;
         }
         ui.add_space(4.0);
+        // What does not fit here, with the fixes that work (2026-11-08).
+        self.problems_box(ui, details, &chosen);
         // What the Detail view's Edit tool picked (a bolt, a plate).
         self.picked_box(ui, details);
         if j.arrivals.iter().any(|a| {
@@ -579,6 +583,7 @@ impl StructureApp {
                 leg.is_some() && !self.joints.tool.in_close_up(),
                 &mut self.joints.steps,
             );
+            self.other_leg_button(ui, details);
             let ends: Vec<(String, String)> = m
                 .ends
                 .iter()
@@ -744,6 +749,7 @@ impl StructureApp {
         }
         let active = (self.joints.drawn == Drawn::Face) != self.joints.tool.in_close_up();
         crate::detail_tools::strip(ui, self.joints.tool, active, &mut self.joints.steps);
+        self.other_leg_button(ui, details);
         let size = ui.available_size().max(egui::vec2(120.0, 120.0));
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
         self.joints.view_rect = Some(rect);
@@ -1242,5 +1248,158 @@ fn rules_caption(ui: &mut egui::Ui, rules: &crate::detail_tools::Rules) {
                 .small()
                 .weak(),
         );
+    }
+}
+
+impl crate::app::StructureApp {
+    /// **Problems** of joint `joint` (owner, 2026-11-08: "a tool to help
+    /// resolve errors"): each member end's in words, red, with the fixes
+    /// that worked when tried on a copy of the structure (each a button:
+    /// one undo step; its hover: the joint's problems before and after).
+    fn problems_box(&mut self, ui: &mut egui::Ui, details: &JointDetails, joint: &str) {
+        let n = crate::joint_fixes::problems(details, joint).len();
+        if n == 0 {
+            return;
+        }
+        let Some(f) = self.file.as_ref() else {
+            return;
+        };
+        let key = (f.revision(), self.libs_stamp, joint.to_owned());
+        let input = if self.joints.fixes.needs(&key) {
+            let text = f.text_ref().to_owned();
+            let sections = self.loads.sections.clone();
+            let bolts = self.bolt_library().0.clone();
+            Some((text, sections, bolts))
+        } else {
+            None
+        };
+        let ctx = ui.ctx().clone();
+        let found = self.joints.fixes.get(key, input, &ctx).map(<[_]>::to_vec);
+        let mut apply = None;
+        egui::CollapsingHeader::new(
+            egui::RichText::new(format!("Problems ({n})")).color(ui.visuals().error_fg_color),
+        )
+        .id_salt("joint-problems")
+        .default_open(true)
+        .show(ui, |ui| {
+            let Some(found) = found else {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("trying the fixes on a copy…");
+                });
+                return;
+            };
+            for p in &found {
+                ui.horizontal_wrapped(|ui| {
+                    ui.colored_label(ui.visuals().error_fg_color, format!("{}:", p.member));
+                    ui.label(egui::RichText::new(&p.text).small());
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_space(12.0);
+                    if p.fixes.is_empty() {
+                        ui.label(
+                            egui::RichText::new("no fix found that works: change it by hand")
+                                .small()
+                                .weak(),
+                        );
+                    }
+                    for (fix, before, after) in &p.fixes {
+                        if ui
+                            .small_button(&fix.label)
+                            .on_hover_text(format!(
+                                "Tried on a copy: the joint's problems {before}, after it {after}; one \
+                                 undo step"
+                            ))
+                            .clicked()
+                        {
+                            apply = Some(fix.clone());
+                        }
+                    }
+                });
+            }
+        });
+        if let Some(fix) = apply
+            && let Some(f) = self.file.as_mut()
+        {
+            f.edit(&fix.label, |doc, _| {
+                for c in &fix.changes {
+                    c.apply(doc);
+                }
+            });
+            self.message = Some((format!("{joint}: {}", fix.label), false));
+        }
+    }
+}
+
+impl crate::app::StructureApp {
+    /// With Move bolt and a bolt picked on an angle: **To the other leg**
+    /// (key L; owner, 2026-11-08: "moving single bolts to the other leg"),
+    /// the bolt where it was along and across, the end then bolted by both
+    /// legs (or by the one left); the bolt stays picked, so L takes it
+    /// back.
+    fn other_leg_button(&mut self, ui: &mut egui::Ui, details: &ohl_structure_link::JointDetails) {
+        use crate::detail_tools::{DetailTool, ToolPick};
+        if self.joints.tool != DetailTool::MoveBolt {
+            return;
+        }
+        let Some(ToolPick::Bolt {
+            member,
+            joint,
+            index,
+        }) = self.joints.tool_pick.clone()
+        else {
+            return;
+        };
+        let Some(a) = details
+            .joint(&joint)
+            .and_then(|j| j.arrivals.iter().find(|a| a.member == member))
+            .cloned()
+        else {
+            return;
+        };
+        if a.profile.as_ref().and_then(|p| p.angle).is_none() {
+            return;
+        }
+        let pressed = ui
+            .button("To the other leg (L)")
+            .on_hover_text(
+                "The picked bolt onto the angle's other leg, where it is along the member and \
+                 across from the heel (both legs bolted then)",
+            )
+            .clicked()
+            || (!ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::L)));
+        if !pressed {
+            return;
+        }
+        let n = a.bolt_flat.len();
+        let moved = if index < n {
+            a.bolt_flat.get(index)
+        } else {
+            a.other_flat.get(index - n)
+        }
+        .copied();
+        let Some(act) = crate::detail_tools::to_other_leg(&a, &joint, index) else {
+            return;
+        };
+        // Still picked where it went.
+        if let (crate::joint_tools::Act::LegBolts { bolted, other, .. }, Some(q)) = (&act, moved) {
+            let same = |p: &[f64; 2]| (p[0] - q[0]).abs() < 1e-9;
+            let in_bolted = || bolted.iter().rposition(same);
+            let in_other = || other.iter().rposition(same).map(|k| bolted.len() + k);
+            // Looked for where it went first (a leg left empty swaps).
+            let at = if index < n {
+                in_other().or_else(in_bolted)
+            } else {
+                in_bolted().or_else(in_other)
+            };
+            if let Some(k) = at {
+                self.joints.tool_pick = Some(ToolPick::Bolt {
+                    member: member.clone(),
+                    joint: joint.clone(),
+                    index: k,
+                });
+            }
+        }
+        self.apply_joint_acts(vec![act], details);
     }
 }

@@ -21,9 +21,10 @@ use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 use crate::edits::{array, next_id, raise_version};
 
 /// The fields of a connection a user gives (not its member and joint).
-pub const FIELDS: [&str; 17] = [
+pub const FIELDS: [&str; 18] = [
     "kind",
     "onto",
+    "other_onto",
     "leg",
     "bolts",
     "gauge_lines",
@@ -856,8 +857,10 @@ pub fn remove_plate(doc: &mut DocumentMut, id: &str) {
         .and_then(Item::as_array_of_tables_mut)
     {
         for t in a.iter_mut() {
-            if t.get("onto").and_then(Item::as_str) == Some(id) {
-                t.remove("onto");
+            for k in ["onto", "other_onto"] {
+                if t.get(k).and_then(Item::as_str) == Some(id) {
+                    t.remove(k);
+                }
             }
         }
     }
@@ -1373,8 +1376,10 @@ pub fn remove_splice(doc: &mut DocumentMut, id: &str) {
         .and_then(Item::as_array_of_tables_mut)
     {
         for t in a.iter_mut() {
-            if t.get("onto").and_then(Item::as_str) == Some(id) {
-                t.remove("onto");
+            for k in ["onto", "other_onto"] {
+                if t.get(k).and_then(Item::as_str) == Some(id) {
+                    t.remove(k);
+                }
             }
         }
     }

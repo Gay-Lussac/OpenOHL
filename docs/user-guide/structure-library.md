@@ -184,6 +184,9 @@ edge_distance = "25 mm"
 # bolts onto takes the odd one), each leg's gauges from its own heel;
 # bolt_points are then the bolts of the leg on what it bolts onto, and
 # other_leg_points = [["30 mm", "25 mm"]]   # those of the other leg
+# other_onto = "G2"       # with leg = "both" (2026-11-08): the plate the
+#                         #   other leg bolts onto when not onto's — two
+#                         #   plates at 90°, apart or welded together
 # eccentric = true        # given instead of worked out (one leg bolted)
 # restrained = false      # given instead of worked out (two bolts or more
 #                         #   onto a member stiff enough; never a plate alone)

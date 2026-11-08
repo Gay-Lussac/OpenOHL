@@ -231,9 +231,67 @@ pub enum ToolPick {
         member: String,
         /// The joint.
         joint: String,
-        /// Its place among the end's bolts.
+        /// Its place among the end's bolts: the leg bolted's
+        /// (`Arrival::bolt_flat`), then the other leg's (`other_flat`).
         index: usize,
     },
+}
+
+/// The act that puts `a`'s bolts at `joint` as `bolted` (on the leg
+/// bolted) and `other` (on the other leg), with the leg it then bolts by
+/// (owner, 2026-11-08: "moving single bolts to the other leg"): both
+/// legs when each has bolts; one leg only: that leg (the other leg's
+/// bolts then those of the leg bolted).
+pub(crate) fn leg_bolts(
+    a: &Arrival,
+    joint: &str,
+    mut bolted: Vec<[f64; 2]>,
+    mut other: Vec<[f64; 2]>,
+) -> Act {
+    let name = |along_y: bool| -> Option<&'static str> {
+        let g = a.profile.as_ref()?.angle?;
+        let (mine, theirs) = if along_y { (g.b, g.h) } else { (g.h, g.b) };
+        Some(if mine >= theirs { "long" } else { "short" })
+    };
+    let leg = if !bolted.is_empty() && !other.is_empty() {
+        Some("both")
+    } else if bolted.is_empty() && !other.is_empty() {
+        std::mem::swap(&mut bolted, &mut other);
+        name(!a.leg_y)
+    } else {
+        name(a.leg_y)
+    };
+    let n = (bolted.len() + other.len()) as u32;
+    Act::LegBolts {
+        member: a.member.clone(),
+        joint: joint.to_owned(),
+        bolted,
+        other,
+        leg,
+        bolts: Some(bolts_of(a, n).value()),
+    }
+}
+
+/// The act that moves bolt `index` of `a`'s end at `joint` (its leg
+/// bolted's, then the other leg's: [`ToolPick::Bolt`]) to the other leg,
+/// where it was along the member and across from the heel, kept within
+/// that leg (5 mm from its edge).
+pub(crate) fn to_other_leg(a: &Arrival, joint: &str, index: usize) -> Option<Act> {
+    let g = a.profile.as_ref()?.angle?;
+    let (mut bolted, mut other) = (a.bolt_flat.clone(), a.other_flat.clone());
+    let n = bolted.len();
+    let (from, to, width) = if index < n {
+        (&mut bolted, &mut other, if a.leg_y { g.h } else { g.b })
+    } else {
+        (&mut other, &mut bolted, if a.leg_y { g.b } else { g.h })
+    };
+    let k = if index < n { index } else { index - n };
+    if k >= from.len() {
+        return None;
+    }
+    let q = from.remove(k);
+    to.push([q[0], q[1].clamp(0.0, (width - 0.005).max(0.0))]);
+    Some(leg_bolts(a, joint, bolted, other))
 }
 
 /// A press of Member end, Move bolt or Rotate member on `hit` (what is
@@ -1030,12 +1088,15 @@ impl MemberFit {
         let broken = r0 + r1 < leg.length * 0.999;
         let shown = if broken { r0 + r1 + 0.08 } else { leg.length };
         let margin = 30.0;
+        // Both legs: the leg bolted above the heel, the other folded out
+        // below it (2026-11-08).
+        let tall = leg.width + leg.other_width;
         let k = ((f64::from(rect.width()) - 2.0 * margin) / shown)
-            .min((f64::from(rect.height()) - 2.0 * margin - 30.0) / leg.width.max(1e-3));
+            .min((f64::from(rect.height()) - 2.0 * margin - 30.0) / tall.max(1e-3));
         Self {
             k,
             x0: f64::from(rect.center().x) - shown * k / 2.0,
-            y0: f64::from(rect.center().y) + leg.width * k / 2.0,
+            y0: f64::from(rect.center().y) + (leg.width - leg.other_width) * k / 2.0,
             r0,
             r1,
             broken,
@@ -1065,12 +1126,14 @@ impl MemberFit {
         (self.x0 + s * self.k) as f32
     }
 
-    /// Across the leg (from its heel) to the drawing's y.
+    /// Across the leg (from its heel) to the drawing's y; below 0: the
+    /// other leg folded out, as far from the heel.
     pub fn y_of(&self, across: f64) -> f32 {
         (self.y0 - across * self.k) as f32
     }
 
-    /// A screen point to (along, across); none in the break.
+    /// A screen point to (along, across); none in the break. Across below
+    /// 0: on the other leg, `-across` from the heel.
     pub fn back(&self, q: egui::Pos2) -> Option<[f64; 2]> {
         let s = (f64::from(q.x) - self.x0) / self.k;
         let across = (self.y0 - f64::from(q.y)) / self.k;
@@ -1200,22 +1263,31 @@ pub fn member_act(
             }
         }
         DetailTool::MoveBolt => {
-            // The bolt nearest a point (along the member, across), within
-            // reach: its end and place.
+            // The bolt nearest a point (along the member, across: below
+            // the heel the other leg folded out), within reach: its end
+            // and place (the leg bolted's, then the other leg's).
+            let combined = |h: &ohl_structure_link::Hole| -> Option<(usize, usize)> {
+                let (_, a) = end_of(h.end)?;
+                Some((
+                    h.end,
+                    if h.other {
+                        a.bolt_flat.len() + h.index
+                    } else {
+                        h.index
+                    },
+                ))
+            };
+            let drawn = |h: &ohl_structure_link::Hole| {
+                [h.along, if h.other { -h.across } else { h.across }]
+            };
             let near = |v: [f64; 2]| -> Option<(usize, usize)> {
-                let end = end_at(v[0]);
-                let (_, a) = end_of(end)?;
                 let tol = (8.0 / fit.scale()).max(0.012);
-                a.bolt_flat
+                leg.holes
                     .iter()
-                    .enumerate()
-                    .map(|(ib, q)| {
-                        let along = if end == 0 { q[0] } else { m.length - q[0] };
-                        (ib, (along - v[0]).hypot(q[1] - v[1]))
-                    })
+                    .map(|h| (h, (drawn(h)[0] - v[0]).hypot(drawn(h)[1] - v[1])))
                     .filter(|x| x.1 < tol)
                     .min_by(|x, y| x.1.total_cmp(&y.1))
-                    .map(|x| (end, x.0))
+                    .and_then(|x| combined(x.0))
             };
             let bolt_of = |(end, ib): (usize, usize)| {
                 end_of(end).map(|(j, a)| ToolPick::Bolt {
@@ -1247,18 +1319,17 @@ pub fn member_act(
             }
             // The bolt picked, ringed blue; under the pointer, a thin ring.
             let ring = |end: usize, ib: usize, picked: bool| {
-                if let Some((_, a)) = end_of(end)
-                    && let Some(q) = a.bolt_flat.get(ib)
-                {
-                    let along = if end == 0 { q[0] } else { m.length - q[0] };
-                    let rad = a.bolts.value.as_ref().map_or(0.008, |b| b.diameter) / 2.0;
-                    let r = ((rad * fit.scale()) as f32).max(3.0) + if picked { 5.0 } else { 3.0 };
-                    painter.circle_stroke(
-                        egui::pos2(fit.x_of(along), fit.y_of(q[1])),
-                        r,
-                        egui::Stroke::new(if picked { 2.5 } else { 1.2 }, PICKED),
-                    );
-                }
+                let Some(h) = leg.holes.iter().find(|h| combined(h) == Some((end, ib))) else {
+                    return;
+                };
+                let p = drawn(h);
+                let r =
+                    ((h.bolt / 2.0 * fit.scale()) as f32).max(3.0) + if picked { 5.0 } else { 3.0 };
+                painter.circle_stroke(
+                    egui::pos2(fit.x_of(p[0]), fit.y_of(p[1])),
+                    r,
+                    egui::Stroke::new(if picked { 2.5 } else { 1.2 }, PICKED),
+                );
             };
             for end in 0..2 {
                 if let Some((j, a)) = end_of(end)
@@ -1291,25 +1362,55 @@ pub fn member_act(
                     ],
                     egui::Stroke::new(1.5, egui::Color32::from_rgb(90, 150, 230)),
                 );
+                if (v[1] < 0.0) != (d.from[1] < 0.0) {
+                    painter.text(
+                        egui::pos2(fit.x_of(v[0]), fit.y_of(v[1]) - 10.0),
+                        egui::Align2::CENTER_BOTTOM,
+                        "to the other leg",
+                        egui::FontId::proportional(11.0),
+                        PICKED,
+                    );
+                }
             }
             if response.drag_stopped()
                 && let Some(d) = drag.take()
                 && let Some(ib) = d.bolt
             {
                 let end = end_at(d.from[0]);
-                if let Some((j, a)) = end_of(end)
-                    && ib < a.bolt_flat.len()
-                {
-                    let mut others = a.bolt_flat.clone();
-                    others.remove(ib);
-                    acts.push(place(
-                        a,
-                        j,
-                        rules.get(&(a.member.clone(), j.clone())),
-                        others,
-                        [from_joint(end, d.now[0]), d.now[1]],
-                        true,
-                    ));
+                if let Some((j, a)) = end_of(end) {
+                    let n = a.bolt_flat.len();
+                    let on_other = d.now[1] < 0.0;
+                    let at = [
+                        round5mm(from_joint(end, d.now[0]).max(0.0)),
+                        (d.now[1].abs() * 1000.0).round() / 1000.0,
+                    ];
+                    if ib < n && !on_other {
+                        // On the leg bolted, as before: by the code's rules.
+                        let mut others = a.bolt_flat.clone();
+                        others.remove(ib);
+                        acts.push(place(
+                            a,
+                            j,
+                            rules.get(&(a.member.clone(), j.clone())),
+                            others,
+                            [from_joint(end, d.now[0]), d.now[1]],
+                            true,
+                        ));
+                    } else if ib < n + a.other_flat.len() {
+                        // To or on the other leg (2026-11-08).
+                        let (mut bolted, mut other) = (a.bolt_flat.clone(), a.other_flat.clone());
+                        if ib < n {
+                            bolted.remove(ib);
+                        } else {
+                            other.remove(ib - n);
+                        }
+                        if on_other {
+                            other.push(at);
+                        } else {
+                            bolted.push(at);
+                        }
+                        acts.push(leg_bolts(a, j, bolted, other));
+                    }
                 }
             }
         }
@@ -1344,6 +1445,33 @@ pub fn member_act(
                             acts.push(Act::PickBolt(a.member.clone(), j.clone(), ib));
                         }
                         None => acts.push(Act::OpenLayout(a.member.clone(), j.clone())),
+                    }
+                }
+                // Below the heel: onto the other leg (2026-11-08).
+                DetailTool::AddBolt if v[1] < 0.0 => {
+                    let mut other = a.other_flat.clone();
+                    other.push([
+                        round5mm(from_joint(end, v[0]).max(0.0)),
+                        (-v[1] * 1000.0).round() / 1000.0,
+                    ]);
+                    acts.push(leg_bolts(a, j, a.bolt_flat.clone(), other));
+                }
+                DetailTool::RemoveBolt if v[1] < 0.0 && !a.other_flat.is_empty() => {
+                    let tol = (8.0 / fit.scale()).max(0.012);
+                    let d = |q: &[f64; 2]| {
+                        let along = if end == 0 { q[0] } else { m.length - q[0] };
+                        (along - v[0]).hypot(q[1] + v[1])
+                    };
+                    if let Some((ib, _)) = a
+                        .other_flat
+                        .iter()
+                        .enumerate()
+                        .filter(|x| d(x.1) < tol)
+                        .min_by(|x, y| d(x.1).total_cmp(&d(y.1)))
+                    {
+                        let mut other = a.other_flat.clone();
+                        other.remove(ib);
+                        acts.push(leg_bolts(a, j, a.bolt_flat.clone(), other));
                     }
                 }
                 DetailTool::AddBolt => {

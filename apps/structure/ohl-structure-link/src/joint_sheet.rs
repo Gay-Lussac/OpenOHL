@@ -117,7 +117,7 @@ pub fn reach(d: &JointDetail) -> f64 {
         .arrivals
         .iter()
         .flat_map(|a| a.bolts_with_axes())
-        .map(|(p, _)| dist(p, d.position))
+        .map(|(p, _, _)| dist(p, d.position))
         .fold(0.0, f64::max);
     (far + 0.12).max(0.3)
 }
@@ -332,11 +332,11 @@ fn bolts_and_dimensions(
     let assumed = a.gauges.source == Source::Assumed
         || a.pitch.source == Source::Assumed
         || a.end_distance.source == Source::Assumed;
-    for (p, axis) in a.bolts_with_axes() {
+    for (p, axis, grip) in a.bolts_with_axes() {
         let end_on = dot(axis, towards).abs() > 0.5;
         // The head towards the viewer is drawn last (over the shank).
         let head_near = dot(axis, towards) >= 0.0;
-        let faces = crate::joints::bolt_faces(p, axis, b.diameter, a.grip, b.drawn);
+        let faces = crate::joints::bolt_faces(p, axis, b.diameter, grip, b.drawn);
         let outline = |part: crate::joints::BoltPart| {
             hull(
                 faces

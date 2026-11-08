@@ -1736,3 +1736,156 @@ fn the_face_view_picks_before_it_drags() {
     }
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Owner, 2026-11-08: "moving single bolts to the other leg … the joint is
+/// giving a lot of errors and i would like to have a tool to help resolve
+/// errors … bolted … on 2 different plates". A nested end not in line:
+/// the Joint details' **Problems** list it with fixes tried on a copy;
+/// one clicked, the problem is gone (one undo step). In the member view,
+/// a bolt picked goes **To the other leg** (L): both legs bolted, and back
+/// again. A member on two plates at 90° draws both. With
+/// OHL_JOINT_SCREENSHOTS set, the three saved as images.
+#[test]
+fn problems_are_fixed_bolts_change_leg_and_two_plates_are_drawn() {
+    use crate::detail_tools::{DetailTool, ToolPick};
+    let path = copy_of("type-02.ohls", "problems-legs-plates");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let shots = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS").map(std::path::PathBuf::from);
+    let tower = dir.join("angles.ohls");
+    let nested = ANGLES.replace(
+        "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"",
+        "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\nface = \"nested\"",
+    );
+    std::fs::write(&tower, &nested).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    h.get_by_label_contains("Problems (");
+    // The fixes (tried in the background in the app; here at once).
+    h.run_steps(2);
+    assert!(
+        h.query_all_by_label_contains("instead of nesting")
+            .next()
+            .is_some(),
+        "a fix offered"
+    );
+    if let Some(dir) = &shots {
+        h.run_steps(3);
+        h.render()
+            .unwrap()
+            .save(dir.join("joint-problems.png"))
+            .unwrap();
+    }
+    let before = h.state().file.as_ref().unwrap().text_ref().to_owned();
+    h.get_all_by_label_contains("instead of nesting")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(3);
+    let d = h.state_mut().joint_details().unwrap();
+    let d = d.as_ref().as_ref().unwrap();
+    assert!(
+        crate::joint_fixes::problems(d, "N2").is_empty(),
+        "{:?}",
+        crate::joint_fixes::problems(d, "N2")
+    );
+    h.get_by_label("Undo").click();
+    h.run_steps(2);
+    assert_eq!(h.state().file.as_ref().unwrap().text_ref(), before);
+    // A bolt to the other leg and back, in the member view.
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    h.state_mut().open_in_detail(Handle::Member("D1".into()));
+    h.state_mut().focus(Panel::JointView);
+    h.state_mut().joints.tool = DetailTool::MoveBolt;
+    h.state_mut().joints.tool_pick = Some(ToolPick::Bolt {
+        member: "D1".into(),
+        joint: "N2".into(),
+        index: 2,
+    });
+    h.run_steps(3);
+    h.get_by_label("To the other leg (L)").click();
+    h.run_steps(3);
+    let d1 = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        let d = h.state_mut().joint_details().unwrap();
+        d.as_ref()
+            .as_ref()
+            .unwrap()
+            .joint("N2")
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == "D1")
+            .cloned()
+            .unwrap()
+    };
+    let a = d1(&mut h);
+    assert_eq!(
+        a.leg.value,
+        Some(ohl_structures::connections::BoltedLeg::Both)
+    );
+    assert_eq!((a.bolt_flat.len(), a.other_flat.len()), (2, 1));
+    assert_eq!(
+        h.state().joints.tool_pick,
+        Some(ToolPick::Bolt {
+            member: "D1".into(),
+            joint: "N2".into(),
+            index: 2
+        }),
+        "still picked, on the other leg"
+    );
+    if let Some(dir) = &shots {
+        h.run_steps(3);
+        h.render()
+            .unwrap()
+            .save(dir.join("bolt-other-leg.png"))
+            .unwrap();
+    }
+    // L takes it back: one leg again.
+    h.key_press(eframe::egui::Key::L);
+    h.run_steps(3);
+    let a = d1(&mut h);
+    assert_eq!(
+        a.leg.value,
+        Some(ohl_structures::connections::BoltedLeg::Long)
+    );
+    assert_eq!((a.bolt_flat.len(), a.other_flat.len()), (3, 0));
+    // A member on two plates at 90°: both drawn in the close-up.
+    let two = ANGLES.replace(
+        "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\nleg = \"long\"\nbolts = { count = 3,",
+        "member = \"D1\"\njoint = \"N2\"\nonto = \"G1\"\nother_onto = \"G2\"\nleg = \"both\"\n\
+         bolts = { count = 4,",
+    ) + "\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         \n[[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\nwelded_to = [\"G1\"]\n";
+    assert!(two.contains("other_onto"));
+    std::fs::write(&tower, &two).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    let a = d1(&mut h);
+    assert_eq!(a.other_onto.as_deref(), Some("G2"));
+    let d = h.state_mut().joint_details().unwrap();
+    let j = d.as_ref().as_ref().unwrap().joint("N2").unwrap().clone();
+    let g2 = j.plates.iter().find(|p| p.id == "G2").unwrap();
+    assert!(g2.outline.len() >= 3 && g2.members == ["D1"], "{g2:?}");
+    if let Some(dir) = &shots {
+        h.state_mut().joints.drawn = crate::joint_panel::Drawn::CloseUp;
+        h.state_mut().joints.yaw = 0.5;
+        h.state_mut().joints.zoom = 0.7;
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(dir.join("two-plates.png"))
+            .unwrap();
+    }
+    std::fs::remove_dir_all(dir).ok();
+}

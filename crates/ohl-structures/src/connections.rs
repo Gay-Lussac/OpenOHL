@@ -28,6 +28,9 @@
 //! #   on what it bolts onto first); other_leg_points (2026-11-05) gives
 //! #   the other leg's bolts by hand, as bolt_points (theirs: the leg on
 //! #   what it bolts onto)
+//! # other_onto = "P2"   # with leg = "both" (2026-11-08): the plate the other
+//! #   leg bolts onto, when not the same as onto — a second plate at 90°,
+//! #   or a plate welded to the first (none: both legs onto `onto`)
 //! # eccentric = true / restrained = false   # given instead of worked out
 //! # cut = "40 mm"   # where the steel stops from the work point (none:
 //! #   worked out so it fits); the axis still runs to the work point
@@ -388,6 +391,11 @@ pub struct TypeConnection {
     /// corner).
     #[serde(default)]
     pub other_leg_points: Vec<[Length; 2]>,
+    /// With `leg = "both"`: the plate the other leg bolts onto when not
+    /// `onto` (2026-11-08: a member bolted onto two plates at 90°, apart
+    /// or welded to each other); none: both legs onto `onto`.
+    #[serde(default)]
+    pub other_onto: Option<String>,
     /// Eccentric, given (none: worked out from the leg bolted).
     #[serde(default)]
     pub eccentric: Option<bool>,
@@ -808,6 +816,19 @@ impl StructureType {
                 }
                 if c.bolts.is_some() {
                     out.push(format!("{at}: continuous: its bolts not used"));
+                }
+            }
+            if let Some(o) = &c.other_onto {
+                if c.leg != Some(BoltedLeg::Both) {
+                    out.push(format!(
+                        "{at}: other_onto without leg = \"both\" (kept, not used)"
+                    ));
+                } else if !self.plates.iter().any(|p| &p.id == o && p.joint == c.joint) {
+                    out.push(format!(
+                        "{at}: other_onto {o}: no plate there (a plate only; kept, not used)"
+                    ));
+                } else if c.onto.as_ref() == Some(o) {
+                    out.push(format!("{at}: other_onto {o}: the same as onto"));
                 }
             }
             if !c.other_leg_points.is_empty() && c.leg != Some(BoltedLeg::Both) {

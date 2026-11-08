@@ -966,7 +966,16 @@ so it is always clear what a drag will change:
   (no code) the bolt goes on the nearest line, along to 5 mm;
 - **Move bolt**: click a bolt to pick it, then drag it — it moves and is
   placed as Add bolt places it (in the face view along the member only;
-  in the member view along and across);
+  in the member view along and across). **To the other leg** (a button
+  above the drawing while a bolt is picked, or the key **L**; 2026-11-08)
+  puts the picked bolt on the angle's other leg, where it was along the
+  member and across from the heel (within that leg): the end is then
+  bolted by **both** legs; the last bolt taken off a leg leaves it bolted
+  by the other alone. The bolt stays picked, so L takes it back. In the
+  member view the other leg is drawn **folded out below the heel**: a bolt
+  dragged across the heel line goes onto it, and Add bolt and Remove bolt
+  work there too (the code's distances are marked on the leg bolted
+  only);
 - **Remove bolt**: a bolt clicked goes;
 - **Member end**: click a member to pick its end (in the member view, a
   click on its half picks that end), then drag it — along it, where its
@@ -1039,9 +1048,40 @@ shared (the leg lying on what it bolts onto first), each leg's gauges
 from its own heel; the close-up, the 3D view, the joint sheet and the
 IFC export draw each bolt square to its own leg. The face view and the
 member view show and edit the bolts of the leg lying on what it bolts
-onto; the other leg's are kept as they are when those are edited (as
+onto (the member view both, the other leg folded out below the heel);
+the other leg's are kept as they are when those are edited (as
 `other_leg_points` once the layout becomes places by hand). The check
 counts the holes of both legs in one cross-section.
+
+**Each leg onto its own plate** (2026-11-08; built, in active
+development, not approved yet). With **both**, the Leg cell offers
+**other leg: …**: the plate the other leg bolts onto when it is not the
+same as Onto — a member bolted onto **two plates at 90°**, each leg on
+one, the plates apart or welded to each other (their **Welded to**, as
+for any plates; a welded plate then holds both faces of the member).
+The second plate lies against the other leg and is drawn round that
+leg's bolts; their grip takes its thickness; it lists the member among
+**Members onto it**; and the plate checks take each plate with the
+bolts on it, the member's force shared by the bolts of each leg (an
+assumption, said; [theory](../theory/joint-plates.md)). Not given: both
+legs onto Onto, as before. Set with one leg, or naming no plate there:
+said, not used.
+
+**Problems** (2026-11-08; built, in active development, not approved
+yet). When something at the joint does not fit — a member nested in one
+it is not in line with or turned across, too wide to nest, bolts nearer
+an edge or the end than the code allows in either part, a cut given
+that leaves too little, an outstanding leg through the leg it bolts
+onto, a bolted face off the face it lies on — the Joint details list it
+first, in red, under **Problems (n)**, each with the **fixes that work**:
+the other face, a turn of the member (90°, 180°, the one that lays it
+flat), the largest gauge that keeps both parts' edges, the bolts further
+from the end, nesting the other way, lapping instead of nesting, the cut
+worked out. Each fix is **tried on a copy of the structure first** (in
+the background; "trying the fixes on a copy…" meanwhile) and offered only
+when the joint has fewer problems after it and none is added elsewhere;
+its hover gives the joint's problems before and after. A click makes it
+(one undo step). A problem no fix helps says so: change it by hand.
 
 **The code's distances** (2026-11-03). The member view shows each end's
 minimums in one line above the drawing (`ASCE 10-97: end ≥ 21 mm

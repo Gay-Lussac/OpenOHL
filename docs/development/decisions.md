@@ -10,6 +10,14 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Bolts to the other leg, each leg onto its own plate, a joint's problems fixed (owner, 2026-11-08)**
+
+- Owner: "go ahead with moving single bolts to the other leg also for setting up nested connections, the joint is giving a lot of errors and i would like to have a tool to help resolve errors. and also it can happen that either with a welded plate or with 2 plates that the member is bolted to both with a 90° difference so we should be able to have it bolted on the same welded on both the faces of the member or on 2 different plates if not welded".
+- **To the other leg**: with Move bolt and a bolt picked, a button (key L) puts it on the angle's other leg where it was along and across; the end is then bolted by both legs (the last bolt off a leg: the other leg alone). The member view draws the other leg folded out below the heel: a bolt dragged across the heel line, or added or removed there, is on that leg (`ToolPick::Bolt`'s index: the leg bolted's bolts, then the other leg's; `Act::LegBolts`, one undo step). The code's distances are marked on the leg bolted only.
+- **`other_onto`** (connection, with `leg = "both"`): the plate the other leg bolts onto. That plate lies against the other leg, is drawn round its bolts, their grip takes its thickness, and the plate checks take each plate with its bolts, the member's force shared by the bolts on each — an assumption, marked so in the theory (not on the safe side for a plate whose leg draws more; no standard gives the split). Two plates welded together: a welded plate holding both faces. Data-only: format version unchanged (an optional field).
+- **Problems**: the joint details record each misfit in a form a fix can be found for (`ohl_structure_link::Problem`); OHL-Structure's Joint details list them first with the fixes that worked when tried on a copy of the structure (in the background), each one undo step (`joint_fixes`). Nothing is changed by itself.
+- Built, in active development, not approved yet.
+
 **One window per plan; the sheets are the Profile sheets (owner, 2026-11-08)**
 
 - Owner: "in plans and profile sheets i only have the profile sheets so it should just be named profile sheets. then the menu for route plan, situation plan or phase plan open the same window where i can shift between them which shouldn't be the purpose. i would like to have one menu per type that isn't opening the same window as others and have the window be similar in size and content".

@@ -1307,7 +1307,7 @@ fn both_legs_bolted_put_bolts_on_each_side_of_the_corner() {
     let heel: [f64; 3] = std::array::from_fn(|k| {
         n2.position[k] + a.offset[k] + p.axes[1][k] * g.heel[0] + p.axes[2][k] * g.heel[1]
     });
-    for (q, axis) in a.bolts_with_axes() {
+    for (q, axis, _) in a.bolts_with_axes() {
         let rel: [f64; 3] = std::array::from_fn(|k| q[k] - heel[k]);
         assert!(dot(rel, axis).abs() < 1e-9, "on its leg's outer face");
     }
@@ -1361,4 +1361,139 @@ fn both_legs_bolted_put_bolts_on_each_side_of_the_corner() {
         .find(|a| a.member == "D1")
         .unwrap();
     assert!(a.other_points.is_empty());
+}
+
+/// Owner, 2026-11-08: "a member bolted to both [plates] with a 90°
+/// difference … on 2 different plates if not welded" — both legs bolted,
+/// the leg on `onto` (G1) and the other leg on a plate of its own
+/// (`other_onto`, G2): G2 gathers the other leg's bolts (its outline round
+/// them, square to G1's bolts), their grip takes G2's thickness, and the
+/// plate checks share the member's force by the bolts on each. The same
+/// with G2 welded to G1. A plate that is not there, or one leg bolted:
+/// said, not used.
+#[test]
+fn both_legs_onto_two_plates_at_ninety_degrees() {
+    let two = |welded: bool| {
+        format!(
+            "{TOWER}{}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+             [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"12 mm\"\n{}",
+            AT_N2
+                .replace(
+                    "leg = \"long\"",
+                    "leg = \"both\"\nonto = \"G1\"\nother_onto = \"G2\""
+                )
+                .replace("count = 2,", "count = 4,"),
+            if welded { "welded_to = [\"G1\"]\n" } else { "" }
+        )
+    };
+    let dot = |x: [f64; 3], y: [f64; 3]| (0..3).map(|k| x[k] * y[k]).sum::<f64>();
+    for welded in [false, true] {
+        let text = two(welded);
+        let d = joint_details(&text, &library(), &Default::default()).unwrap();
+        assert!(
+            !d.notes.iter().any(|n| n.contains("other_onto")),
+            "{:?}",
+            d.notes
+        );
+        let n2 = d.joint("N2").unwrap();
+        let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+        assert_eq!(a.other_onto.as_deref(), Some("G2"));
+        assert_eq!((a.bolt_points.len(), a.other_points.len()), (2, 2));
+        assert!(dot(a.bolt_axis, a.other_axis).abs() < 1e-9);
+        // The other leg's bolts clamp that leg and G2.
+        assert!(
+            (a.other_grip[1] - 0.012).abs() < 1e-12,
+            "{:?}",
+            a.other_grip
+        );
+        assert!((a.grip[1] - 0.008).abs() < 1e-12, "{:?}", a.grip);
+        let g1 = n2.plates.iter().find(|p| p.id == "G1").unwrap();
+        let g2 = n2.plates.iter().find(|p| p.id == "G2").unwrap();
+        assert_eq!(g1.members, ["D1"]);
+        assert_eq!(g2.members, ["D1"]);
+        assert!(g2.outline.len() >= 3, "{:?}", g2.notes);
+        for b in &a.other_points {
+            assert!(inside(&g2.outline, a.other_axis, *b));
+        }
+        for b in &a.bolt_points {
+            assert!(inside(&g1.outline, a.bolt_axis, *b));
+        }
+        if welded {
+            assert_eq!(g2.assembly, ["G1", "G2"]);
+        }
+        // The checks: each plate half the force (two bolts of four).
+        let plans =
+            crate::plate_checks::plate_plans(&text, &library(), &Default::default()).unwrap();
+        let shares = plans.bolted_shares("D1");
+        assert_eq!(shares, vec![0.5, 0.5], "welded {welded}");
+    }
+    // One leg bolted, or a plate not there: said, not used.
+    let one = two(false).replace("leg = \"both\"", "leg = \"long\"");
+    let d = joint_details(&one, &library(), &Default::default()).unwrap();
+    assert!(d.notes.iter().any(|n| n.contains("other_onto without leg")));
+    let a = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .cloned()
+        .unwrap();
+    assert!(a.other_onto.is_none());
+    let gone = two(false).replace("other_onto = \"G2\"", "other_onto = \"G9\"");
+    let d = joint_details(&gone, &library(), &Default::default()).unwrap();
+    assert!(
+        d.notes
+            .iter()
+            .any(|n| n.contains("other_onto G9: no plate"))
+    );
+}
+
+/// Each misfit is also a [`crate::Problem`] a fix can be found for
+/// (2026-11-08), in the words of its note: a nested angle too large, one
+/// turned a quarter, bolts too near the edge (with the largest gauge that
+/// keeps both parts' edges), too near the end (by how much).
+#[test]
+fn misfits_are_problems_with_what_a_fix_needs() {
+    use crate::Problem;
+    let kinds = |text: &str| -> Vec<(Problem, String)> {
+        let d = joint_details(text, &nest_library(), &Default::default()).unwrap();
+        at(&d, "N2", "L2").problems.clone()
+    };
+    let wide = kinds(&with_l2("EA-50x5", ""));
+    assert!(
+        wide.iter().any(
+            |(p, t)| matches!(p, Problem::NestTooWide { host } if host == "L1")
+                && t.contains("does not fit")
+        ),
+        "{wide:?}"
+    );
+    let turned = kinds(&with_l2("EA-45x5", "\nroll = \"90 deg\""));
+    assert!(
+        turned
+            .iter()
+            .any(|(p, t)| matches!(p, Problem::NestTurned { .. }) && t.contains("lie along")),
+        "{turned:?}"
+    );
+    // Bolts 40 mm out on a 45 mm leg: too near the edge; the largest gauge
+    // keeping both edges is below 40 mm and above 0.
+    let edge =
+        kinds(&with_l2("EA-45x5", "").replace("gauges = [\"25 mm\"]", "gauges = [\"40 mm\"]"));
+    let g = edge.iter().find_map(|(p, _)| match p {
+        Problem::NestEdge { gauge_max, .. } => Some(*gauge_max),
+        _ => None,
+    });
+    assert!(g.is_some_and(|g| g > 0.0 && g < 0.04), "{edge:?}");
+    // The first bolt 5 mm from the end: short by the code's end distance
+    // less 5 mm.
+    let end = kinds(
+        &with_l2("EA-45x5", "").replace("end_distance = \"25 mm\"", "end_distance = \"5 mm\""),
+    );
+    assert!(
+        end.iter()
+            .any(|(p, _)| matches!(p, Problem::NestEnd { short, .. } if *short > 0.0)),
+        "{end:?}"
+    );
+    // A nest that fits: none.
+    assert!(kinds(&with_l2("EA-45x5", "")).is_empty());
 }

@@ -379,7 +379,18 @@ pub fn paint_member(
     } else {
         vec![(x_of(c0), x_of(c1))]
     };
+    let faint = egui::Stroke::new(1.0, grey);
     for (xa, xz) in &pieces {
+        // The other leg, folded out below the heel (2026-11-08: a bolt
+        // dragged there goes onto it).
+        if leg.other_width > 0.0 {
+            painter.rect_stroke(
+                egui::Rect::from_two_pos(pos(*xa, y_of(0.0)), pos(*xz, y_of(-leg.other_width))),
+                0.0,
+                faint,
+                egui::StrokeKind::Middle,
+            );
+        }
         painter.rect_stroke(
             egui::Rect::from_two_pos(pos(*xa, y_of(0.0)), pos(*xz, y_of(leg.width))),
             0.0,
@@ -396,7 +407,7 @@ pub fn paint_member(
         for dx in [-6.0, 6.0] {
             painter.line_segment(
                 [
-                    pos(xb + dx - 4.0, y_of(-0.01)),
+                    pos(xb + dx - 4.0, y_of(-leg.other_width - 0.01)),
                     pos(xb + dx + 4.0, y_of(leg.width + 0.01)),
                 ],
                 egui::Stroke::new(1.0, grey),
@@ -414,7 +425,10 @@ pub fn paint_member(
     for (end, along) in [(0, 0.0), (1, leg.length)] {
         let x = x_of(along);
         painter.add(egui::Shape::dashed_line(
-            &[pos(x, y_of(-0.02)), pos(x, y_of(leg.width + 0.02))],
+            &[
+                pos(x, y_of(-leg.other_width - 0.02)),
+                pos(x, y_of(leg.width + 0.02)),
+            ],
             egui::Stroke::new(1.0, blue),
             5.0,
             3.0,
@@ -434,7 +448,10 @@ pub fn paint_member(
         }
     }
     for h in &leg.holes {
-        let c = pos(x_of(h.along), y_of(h.across));
+        let c = pos(
+            x_of(h.along),
+            y_of(if h.other { -h.across } else { h.across }),
+        );
         let color = if h.assumed {
             egui::Color32::from_rgb(235, 170, 60)
         } else {
@@ -456,7 +473,7 @@ pub fn paint_member(
             (x_of(leg.length), egui::Align2::RIGHT_TOP)
         };
         painter.text(
-            pos(x, y_of(0.0) + 6.0),
+            pos(x, y_of(-leg.other_width) + 6.0),
             align,
             format!(
                 "{}: e {:.0} · p {:.0} · g {:.0} mm",
@@ -470,9 +487,10 @@ pub fn paint_member(
         );
     }
     title(format!(
-        "member {} — its leg bolted laid flat ({:.0} mm), the heel below; holes and bolts of both \
-         ends",
+        "member {} — its leg bolted laid flat ({:.0} mm) above the heel, the other leg ({:.0} mm) \
+         folded out below it; holes and bolts of both ends",
         m.member,
-        leg.width * 1000.0
+        leg.width * 1000.0,
+        leg.other_width * 1000.0
     ));
 }

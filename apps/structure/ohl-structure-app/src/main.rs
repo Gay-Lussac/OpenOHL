@@ -45,6 +45,7 @@ mod help;
 mod icons;
 mod in_line_tab;
 mod inspector;
+mod joint_fixes;
 mod joint_panel;
 mod joint_sketch;
 mod joint_tools;

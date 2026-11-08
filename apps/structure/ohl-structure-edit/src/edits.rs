@@ -274,6 +274,9 @@ pub(crate) fn remove_connections(doc: &mut DocumentMut, members: &[String], join
                 || s(t, "joint").is_some_and(|j| joints.contains(&j)))
         });
         for t in a.iter_mut() {
+            if s(t, "other_onto").is_some_and(|o| plates_gone.contains(&o)) {
+                t.remove("other_onto");
+            }
             if s(t, "onto").is_some_and(|o| members.contains(&o) || plates_gone.contains(&o)) {
                 t.remove("onto");
                 // One part with a member gone: bolted again.

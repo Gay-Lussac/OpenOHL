@@ -107,7 +107,8 @@ fn the_face_is_chosen_and_a_misfit_said() {
     h.run();
     let b = arrival(&details(&mut h), "D1");
     assert!(b.misfit, "{:?}", b.notes);
-    h.get_by_label_contains("not in line with it");
+    // Said in the notes, and first in Problems (2026-11-08).
+    assert!(h.query_all_by_label_contains("not in line with it").count() >= 1);
     // Undone in one step: the face worked out again.
     h.get_by_label("Undo").click();
     h.run();

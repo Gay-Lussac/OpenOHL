@@ -133,6 +133,22 @@ impl PlatePlans {
     }
 }
 
+impl PlatePlans {
+    /// The shares of `member`'s force its bolted plans take (tests).
+    #[cfg(test)]
+    pub(crate) fn bolted_shares(&self, member: &str) -> Vec<f64> {
+        self.parts
+            .iter()
+            .filter_map(|p| match &p.plan {
+                Plan::Bolted {
+                    member: m, share, ..
+                } if m == member => Some(*share),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 /// The plates' plans of the structure file `text` (its sections in
 /// `library`, its bolts in `bolts`); empty without plates or below level
 /// 3.
@@ -161,13 +177,36 @@ pub fn plate_plans(
         cover_plans(j, &model, library, &mut out.parts);
         for p in &j.plates {
             let (steel, steel_note) = plate_steel(p, j, &model, library);
-            for a in j
-                .arrivals
+            for a in crate::joints::bolted_onto(&j.arrivals, &p.id)
                 .iter()
-                .filter(|a| a.onto.value.as_deref() == Some(p.id.as_str()) && !a.modelling)
+                .filter(|a| !a.modelling)
             {
+                let a = a.as_ref();
                 let mut notes = Vec::new();
                 notes.extend(steel_note.clone());
+                // Both legs bolted onto two plates (`other_onto`,
+                // 2026-11-08): each plate the member's force shared by
+                // its bolts on that leg.
+                let whole = j
+                    .arrivals
+                    .iter()
+                    .find(|x| x.member == a.member && x.end == a.end);
+                let share = match whole {
+                    Some(w) if w.other_onto.is_some() => {
+                        let all = (w.bolt_points.len() + w.other_points.len()).max(1);
+                        let here = a.bolt_points.len() as f64 / all as f64;
+                        notes.push(format!(
+                            "both legs bolted, onto {} and {}: this plate takes {:.0} % of its \
+                             force (its bolts here of all its bolts: an assumption, each bolt \
+                             of the end carrying the same)",
+                            w.onto.value.as_deref().unwrap_or("?"),
+                            w.other_onto.as_deref().unwrap_or("?"),
+                            here * 100.0
+                        ));
+                        here
+                    }
+                    _ => 1.0,
+                };
                 let Some(group) = bolt_group(a, &p.id, &p.outline, j, &model, steel, &mut notes)
                 else {
                     continue;
@@ -191,7 +230,7 @@ pub fn plate_plans(
                         member: a.member.clone(),
                         group,
                         steel,
-                        share: 1.0,
+                        share,
                     },
                     notes,
                 });
@@ -569,7 +608,11 @@ fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<(String, [f64; 3])>; 2
     let members = |plates: &[String]| -> Vec<(String, [f64; 3])> {
         j.arrivals
             .iter()
-            .filter(|x| x.onto.value.as_ref().is_some_and(|o| plates.contains(o)) && !x.modelling)
+            .filter(|x| {
+                (x.onto.value.as_ref().is_some_and(|o| plates.contains(o))
+                    || x.other_onto.as_ref().is_some_and(|o| plates.contains(o)))
+                    && !x.modelling
+            })
             .map(|x| (x.member.clone(), x.direction))
             .collect()
     };
