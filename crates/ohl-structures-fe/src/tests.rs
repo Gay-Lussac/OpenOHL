@@ -808,6 +808,84 @@ fn portal(section: &str, extra: &str) -> String {
     )
 }
 
+/// The clauses not covered, named on the members they apply to
+/// (2026-11-08): the portal's columns (compressed frames) of an I section
+/// under ASCE 10-97 name the effective widths, the amplification, the
+/// lateral-torsional buckling and the shear; under SIA 263 the shear only
+/// (its stability check takes the rest); two angles back to back as
+/// trusses name their stitch bolts (ASCE 10-97) or battens (SIA 263);
+/// a compression resistance given on the member covers the compression
+/// clauses.
+#[test]
+fn clauses_not_covered_are_named_on_the_members() {
+    let lib = ohl_sections::SectionLibrary::parse(&format!(
+        "{LIBRARY}[[section]]\nid = \"I200\"\nshape = \"i_section\"\nmaterial = \"steel\"\n\
+         h = \"200 mm\"\nb = \"100 mm\"\ntw = \"5.6 mm\"\ntf = \"8.5 mm\"\nr = \"12 mm\"\n\
+         [[section]]\nid = \"2L\"\nshape = \"double_angle\"\nmaterial = \"steel\"\n\
+         h = \"60 mm\"\nb = \"60 mm\"\nt = \"6 mm\"\nr = \"8 mm\"\ngap = \"10 mm\"\n"
+    ))
+    .unwrap();
+    let run = |text: &str| {
+        let m = Model::parse_with(text, &lib).unwrap();
+        let loads = Loads {
+            nodal: m.loads.clone(),
+            self_weight: 1.0,
+            ..Default::default()
+        };
+        let (_, u) = analyse(&m, &loads, 1.0, &default_budget()).unwrap();
+        (m, u)
+    };
+    let governs = |m: &Model, u: &[MemberUsage], id: &str| {
+        let k = m.members.iter().position(|x| x.id == id).unwrap();
+        u.iter().find(|x| x.member == k).unwrap().governs.clone()
+    };
+    let (m, u) = run(&portal("I200", ""));
+    let g = governs(&m, &u, "c2");
+    for clause in ["3.9.3", "3.12, 3.13", "3.14", "3.15"] {
+        assert!(
+            g.contains(&format!("(ASCE 10-97 {clause})")),
+            "{clause}: {g}"
+        );
+    }
+    assert!(crate::check::not_safe(&g));
+    let (m, u) = run(&portal("I200", "capacity = \"sia263-2013\"\n"));
+    let g = governs(&m, &u, "c2");
+    assert!(
+        g.contains("(SIA 263 5.1.4, 5.1.7)") && !g.contains("ASCE"),
+        "{g}"
+    );
+    // Two angles back to back as trusses: a two-bar truss, one compressed.
+    let truss = |extra: &str, given: &str| {
+        format!(
+            "[analysis]\nnonlinear = false\nself_weight = false\n{extra}\
+             [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"pinned\"\n\
+             [[node]]\nid = \"B\"\npoint = [4, 0, 0]\nsupport = \"pinned\"\n\
+             [[node]]\nid = \"C\"\npoint = [2, 0, 1]\n\
+             [[member]]\nid = \"a\"\nnodes = [\"A\", \"C\"]\nsection = \"2L\"\n{given}\
+             [[member]]\nid = \"b\"\nnodes = [\"B\", \"C\"]\nsection = \"2L\"\n{given}\
+             [[member]]\nid = \"tie\"\nnodes = [\"A\", \"B\"]\nsection = \"2L\"\n\
+             [[load]]\nnode = \"C\"\nforce = [0, 0, \"-10 kN\"]\n"
+        )
+    };
+    let (m, u) = run(&truss("", ""));
+    assert!(
+        governs(&m, &u, "a")
+            .contains("stitch bolts of the built-up member not checked (ASCE 10-97 3.11)")
+    );
+    assert!(
+        !governs(&m, &u, "tie").contains("3.11"),
+        "in tension: not said"
+    );
+    let (m, u) = run(&truss("capacity = \"sia263-2013\"\n", ""));
+    assert!(governs(&m, &u, "a").contains("(SIA 263 5.5)"));
+    let (m, u) = run(&truss("", "capacity_compression = \"50 kN\"\n"));
+    assert!(
+        !governs(&m, &u, "a").contains("3.11"),
+        "{}",
+        governs(&m, &u, "a")
+    );
+}
+
 /// A member whose section is in the section library gives the same
 /// results as with a `[[section]]` table of the same values; the library
 /// comes first; an unknown id is refused, named.
@@ -854,7 +932,15 @@ fn library_sections_resolve_first() {
             close(x.usage.unwrap(), y.usage.unwrap(), 1e-9),
             "{x:?} {y:?}"
         );
-        assert_eq!(x.governs, y.governs);
+        // The library's tube is known to be one: its effective widths
+        // said not applied (2026-11-08); the table's section has no shape.
+        assert_eq!(
+            x.governs.replace(
+                "effective widths of its elements not applied (ASCE 10-97 3.9.3), ",
+                ""
+            ),
+            y.governs
+        );
     }
     // A table of the same id: the library's is used.
     let shadowed = table.replace("id = \"local\"", "id = \"T200\"");

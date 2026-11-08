@@ -803,16 +803,31 @@ pub fn check_pole_factored(
     budget: &Budget,
 ) -> Result<PoleCheck, String> {
     let mut c = check_pole_first(pole, loads, wind, strength, self_weight, p_delta, budget)?;
-    let why = match (p_delta, pole.elasticity) {
-        (true, Some(_)) => None,
-        (true, None) => Some("no elasticity given for the pole or its material"),
-        (false, _) => Some("P-Delta turned off"),
-    };
-    if let Some(why) = why {
+    let mut not_safe = Vec::new();
+    match (p_delta, pole.elasticity) {
+        (true, Some(_)) => {}
+        (true, None) => not_safe.push(
+            "P-Delta not computed (no elasticity given for the pole or its material): the \
+             moments are first order, low by the amplification"
+                .to_owned(),
+        ),
+        (false, _) => not_safe.push(
+            "P-Delta not computed (P-Delta turned off): the moments are first order, low by \
+             the amplification"
+                .to_owned(),
+        ),
+    }
+    // The clauses that apply but are not covered (2026-11-08).
+    if c.governs.starts_with(crate::sia263::TITLE) {
+        not_safe.push("the pole's buckling as a member not checked (SIA 263 4.5.1)".to_owned());
+    } else if c.governs.starts_with("moment ") {
+        not_safe.push("generic check: shear and torsion not checked (no design code)".to_owned());
+    }
+    if !not_safe.is_empty() {
         c.governs.push_str(&format!(
-            " {} P-Delta not computed ({why}): the moments are first order, low by the \
-             amplification]",
-            crate::check::NOT_SAFE
+            " {} {}]",
+            crate::check::NOT_SAFE,
+            not_safe.join(", ")
         ));
     }
     Ok(c)

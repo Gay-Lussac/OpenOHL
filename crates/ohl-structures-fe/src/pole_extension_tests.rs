@@ -141,10 +141,18 @@ fn a_solid_wall_checks_as_no_wall() {
             assert_eq!(a.amplification, r.amplification);
         }
         // Without P-Delta the moments are first order: said not on the
-        // safe side (2026-11-08); with it, not.
+        // safe side (2026-11-08); with it, not. The generic check (no
+        // design code) says its shear and torsion are not checked.
         assert_eq!(
-            crate::check::not_safe(&a.governs),
+            a.governs.contains("P-Delta not computed"),
             !p_delta,
+            "{}",
+            a.governs
+        );
+        assert!(
+            crate::check::not_safe(&a.governs)
+                && a.governs
+                    .contains("generic check: shear and torsion not checked"),
             "{}",
             a.governs
         );
@@ -602,6 +610,13 @@ fn wood_by_sia265_and_steel_by_sia263() {
     let c = check_pole(&steel, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
     assert!(
         c.governs.starts_with("SIA 263:2013 at 0.0 m"),
+        "{}",
+        c.governs
+    );
+    // Its buckling as a member not covered: named (2026-11-08).
+    assert!(
+        c.governs
+            .contains("the pole's buckling as a member not checked (SIA 263 4.5.1)"),
         "{}",
         c.governs
     );

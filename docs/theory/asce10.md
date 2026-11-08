@@ -448,6 +448,30 @@ standard).
 
 Unsafe where one of them governs; the standard's clause is the reference.
 
+**Said where it applies** (2026-11-08, `check::uncovered_clauses`): a
+member to which one of these applies is marked `[not on the safe side:
+…]` with the clause, and never shown as passing:
+
+- a compressed tube, channel or I section (or two channels): *effective
+  widths of its elements not applied (ASCE 10-97 3.9.3)*;
+- a compressed built-up member (two angles, a star or cross of angles,
+  two channels): *stitch bolts of the built-up member not checked (ASCE
+  10-97 3.11)*;
+- a frame checked with its moments, in compression, whose moments add
+  1 % or more: *compression with bending by the linear sum, without the
+  amplification and C_m (ASCE 10-97 3.12, 3.13)*; an I section, channel
+  or two channels whose major-axis moment adds 1 % or more:
+  *lateral-torsional buckling not checked (ASCE 10-97 3.14)*;
+- a frame whose shear reaches 1 % of \\( A f_y/\sqrt3 \\): *shear … and
+  torsion … not checked (ASCE 10-97 3.15)* (the torsion is given with the
+  shear, not screened alone).
+
+A compression resistance given on the member (`capacity_compression`)
+covers the compression clauses; capacities from a design-code plugin are
+the plugin's. The others below (staggered bracing, \\( K' \\), lipped
+angles, rods and guys, bolts in tension, \\( f_y \\) by thickness) cannot
+be told from the model's data and stay said here only.
+
 - 3.7.4.1 Figure 3.2: legs with staggered bracing (give the length
   ratios); 3.7.4.4: \\( K' \\) for forces varying along the member.
 - 3.8: lipped angles (no lipped profile in the library).

@@ -52,10 +52,12 @@ theory page. Status: **done** (with the date), **open**.
 
 | Where | Limit | Status |
 |---|---|---|
-| [ASCE 10-97](../theory/asce10.md), [SIA 263](../theory/sia263.md), [ASCE/SEI 48-19](../theory/asce48.md), [SIA 265](../theory/sia265.md) | Clauses not covered (effective widths, lateral-torsional buckling, stitch bolts, net section of poles, foundations…): the clause that applies named on the member or pole | open (batch 2) |
-| [SIA 263](../theory/sia263.md) | A pole's buckling as a member (4.5.1) | open (batch 2) |
+| [ASCE 10-97](../theory/asce10.md), [SIA 263](../theory/sia263.md), [ASCE/SEI 48-19](../theory/asce48.md), [SIA 265](../theory/sia265.md) | Clauses not covered: named on the member where the model's data tell they apply (ASCE 10-97 3.9.3, 3.11, 3.12/3.13, 3.14, 3.15; SIA 263 5.5, 5.1.4/5.1.7); the rest (staggered bracing, bolts in tension, a pole's holes, slip joints, base plates, connections, foundations, f_y by thickness) cannot be told from the data and stay said in the theory pages | done 2026-11-08 |
+| [SIA 263](../theory/sia263.md) | A pole's buckling as a member (4.5.1) | On every SIA 263 pole's result | done 2026-11-08 |
 | [ASCE 10-97](../theory/asce10.md) | Restraint decided once per model; minor-axis I/L; the gauge not used; bolts in tension | open (batch 2) |
-| [Structures](../theory/structures-fe.md) | Flexural-torsional buckling of frames; a generic pole check without crossarm wind, shear, torsion or foundation; factors on load components | open (batch 2) |
+| [Structures](../theory/structures-fe.md) | Lateral-torsional buckling of frames (not found by the solve): ASCE 10-97 3.14 named on I sections and channels bent about their major axis; SIA 263 checks it (Annex B) | done 2026-11-08 |
+| [Structures](../theory/structures-fe.md) | A generic pole check without shear or torsion: said on its result | done 2026-11-08 |
+| [Structures](../theory/structures-fe.md) | Factors on load components | open (batch 2) |
 | [Wind on structures](../theory/structure-wind.md) | Snow bridging; allowable loads taken to include the body's ice | open (batch 2) |
 | [Wire FE](../theory/wirefe.md) | Structures rigid in the wire solve (sags low for clearances) | open (batch 3) |
 | [Spotting](../theory/spotting.md), [sag-tension](../theory/sagtension.md) | Ruling span; holes in the terrain bridged | open (batch 3) |

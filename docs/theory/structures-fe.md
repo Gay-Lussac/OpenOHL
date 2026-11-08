@@ -294,7 +294,7 @@ from a CSV without a case, keeps factor 1.
 
 Not included in this generic check: foundation (embedment) check, shear, deflection limits, guyed poles (use an `.ohlfe` model with cables), the wind on crossarms and equipment. Steel shafts checked by [ASCE/SEI 48-19](asce48.md) take shear and torsion into account.
 
-**Simplification:** what is not included is not on the safe side: the wind on crossarms and equipment is missing from the moment (unsafe), and torsion, shear and the foundation are not checked. Exact: their loads at the attachment points, and the checks of the design code.
+**Simplification:** what is not included is not on the safe side: the wind on crossarms and equipment is missing from the moment (unsafe), and torsion, shear and the foundation are not checked. Said on every generic pole check's result (2026-11-08): `[not on the safe side: generic check: shear and torsion not checked (no design code)]`, never shown as passing. Exact: their loads at the attachment points, and the checks of the design code.
 
 ## Validation
 

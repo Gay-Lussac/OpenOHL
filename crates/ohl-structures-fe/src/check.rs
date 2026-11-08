@@ -578,6 +578,9 @@ fn usage_of(
                     ));
                 }
             }
+            if !external {
+                not_safe_notes.extend(uncovered_clauses(model, idx, f, strength));
+            }
             if !not_safe_notes.is_empty() {
                 suffix.push_str(&format!(" {NOT_SAFE} {}]", not_safe_notes.join(", ")));
             }
@@ -685,6 +688,124 @@ fn usage_of(
             }
         }
     }
+}
+
+/// The capacity method's clauses that apply to member `idx` under its
+/// forces `f` but are not covered by the program (2026-11-08): each named,
+/// for the member's `[not on the safe side: …]`. Under ASCE 10-97 and
+/// SIA 263 only (the simple check says it is no design code; a design
+/// code's capacities given are the code's); a resistance given on the
+/// member (`capacity_compression`) covers the compression clauses.
+///
+/// - a compressed tube, channel or I section under ASCE 10-97: its
+///   elements' effective widths (3.9.3) are not applied;
+/// - a compressed built-up member (two angles, a star or cross of angles,
+///   two channels): its stitch bolts or battens (ASCE 10-97 3.11, SIA 263
+///   5.5), each part buckling between them;
+/// - a frame checked with its moments under ASCE 10-97: compression with
+///   bending by the linear sum, without the amplification and C_m (3.12,
+///   3.13); an I section, channel or two channels bent about its major
+///   axis: lateral-torsional buckling (3.14);
+/// - a frame under either: its shear and torsion (ASCE 10-97 3.15, SIA
+///   263 5.1.4, 5.1.7), when the shear reaches 1 % of A·f_y/√3 (the
+///   torsion given with it).
+///
+/// Each only above 1 % of the member's capacity where a share can be
+/// worked out (the moments, the shear), as the moments' notes.
+fn uncovered_clauses(
+    model: &Model,
+    idx: usize,
+    f: &crate::solve::MemberForces,
+    strength: f64,
+) -> Vec<String> {
+    use ohl_sections::Shape;
+    let m = &model.members[idx];
+    let s = &model.sections[m.section];
+    let method = model.analysis.capacity;
+    if method == CapacityMethod::Simple || m.kind == MemberKind::Cable {
+        return Vec::new();
+    }
+    let asce = method == CapacityMethod::Asce10;
+    let shape = s.profile.as_ref().map(|p| &p.shape);
+    let compressed = f.axial < 0.0 && m.capacity_compression.is_none();
+    let mut out = Vec::new();
+    if compressed
+        && asce
+        && matches!(
+            shape,
+            Some(
+                Shape::Channel { .. }
+                    | Shape::ISection { .. }
+                    | Shape::RectangularHollow { .. }
+                    | Shape::CircularHollow { .. }
+                    | Shape::PolygonalHollow { .. }
+                    | Shape::DoubleChannel { .. }
+            )
+        )
+    {
+        out.push("effective widths of its elements not applied (ASCE 10-97 3.9.3)".to_owned());
+    }
+    if compressed
+        && matches!(
+            shape,
+            Some(
+                Shape::DoubleAngle { .. }
+                    | Shape::StarAngle { .. }
+                    | Shape::CrossAngle { .. }
+                    | Shape::DoubleChannel { .. }
+            )
+        )
+    {
+        out.push(if asce {
+            "stitch bolts of the built-up member not checked (ASCE 10-97 3.11)".to_owned()
+        } else {
+            "battens and connectors of the built-up member not checked (SIA 263 5.5)".to_owned()
+        });
+    }
+    let frame = m.is_frame() && !(axial_member(m, s) && !model.analysis.single_angle_moments);
+    if !frame {
+        return out;
+    }
+    let fy = s.yield_strength;
+    let [my, mz] = moments_along(f);
+    let cap_y = s.moment_y.or(s.wy.zip(fy).map(|(w, y)| w * y));
+    let cap_z = s.moment_z.or(s.wz.zip(fy).map(|(w, y)| w * y));
+    let share = |mo: f64, cap: Option<f64>| cap.map_or(0.0, |c| mo / (strength * c));
+    if asce {
+        if f.axial < 0.0 && share(my, cap_y) + share(mz, cap_z) >= ANGLE_MOMENTS_SAID {
+            out.push(
+                "compression with bending by the linear sum, without the amplification and C_m \
+                 (ASCE 10-97 3.12, 3.13)"
+                    .to_owned(),
+            );
+        }
+        if matches!(
+            shape,
+            Some(Shape::ISection { .. } | Shape::Channel { .. } | Shape::DoubleChannel { .. })
+        ) && share(my, cap_y) >= ANGLE_MOMENTS_SAID
+        {
+            out.push("lateral-torsional buckling not checked (ASCE 10-97 3.14)".to_owned());
+        }
+    }
+    let e = &f.end_forces;
+    let shear = e[1].hypot(e[2]).max(e[7].hypot(e[8]));
+    let torsion = e[3].abs().max(e[9].abs());
+    if let Some(fy) = fy {
+        let cap = s.area * fy / 3f64.sqrt();
+        if cap > 0.0 && shear / (strength * cap) >= ANGLE_MOMENTS_SAID {
+            out.push(format!(
+                "shear {:.1} kN and torsion {:.2} kN m not checked ({})",
+                shear / 1000.0,
+                torsion / 1000.0,
+                if asce {
+                    "ASCE 10-97 3.15"
+                } else {
+                    "SIA 263 5.1.4, 5.1.7"
+                }
+            ));
+        }
+    }
+    out
 }
 
 /// Whether a section is a single angle: its profile an `equal_angle` or

@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Clauses not covered named on the members and poles (safe-side audit, 2026-11-08)**
+
+Where the model's data tell that a clause of the capacity method applies
+but the program does not cover it, the member or pole is marked `[not on
+the safe side: …]` with the clause and never shown as passing: ASCE 10-97
+3.9.3 (effective widths of compressed tubes, channels, I sections), 3.11
+(stitch bolts of compressed built-up members), 3.12/3.13 (compression
+with bending without amplification), 3.14 (lateral-torsional buckling of
+I sections and channels), 3.15 (shear and torsion of frames); SIA 263 5.5
+(battens), 5.1.4/5.1.7 (shear, torsion), 4.5.1 (a pole's buckling); the
+generic pole check's shear and torsion. The moment and shear clauses only
+from 1 % of the capacity (as the moments' notes); a compression
+resistance given on the member covers the compression clauses. Clauses
+the data cannot tell (staggered bracing, bolts in tension, a pole's
+holes, connections, foundations) stay said in the theory pages.
+([ASCE 10-97](../theory/asce10.md), [SIA 263](../theory/sia263.md),
+[safe side](safe-side.md))
+
 **Wind bands along the line and strings without volumes said (safe-side audit, 2026-11-08)**
 
 A wind band's load in a case blowing with a part along the line takes
