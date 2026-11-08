@@ -47,7 +47,7 @@ point clouds](../user-guide/project.md).
   those of the code you work to ([Design
   codes](../user-guide/design-codes.md), [Weather
   cases](../user-guide/weather.md)).
-- Drawings: **Plans & sheets › Plan and profile sheets…** ([Drawings and profile
+- Drawings: **Plans & sheets › Profile sheets…** ([Drawings and profile
   exports](../user-guide/drawings.md)).
 - Every menu, page and tool: [OHL-Design, the line
   application](../user-guide/desktop-app.md).

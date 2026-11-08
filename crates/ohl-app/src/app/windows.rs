@@ -764,13 +764,19 @@ pub(super) fn tool_windows(
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
     r.drawings.show(ctx, &mut r.model, r.case);
-    if r.plans.open {
-        let wanted = r.plans.wanted(&r.model, r.drawings.settings());
-        r.model.want(wanted, ctx);
+    // The phase plan keeps its groups in the project; each plan window
+    // apart (owner, 2026-11-08).
+    r.plans.phase.keep(&mut r.model, ctx);
+    let mut sheets = false;
+    for w in r.plans.all() {
+        if w.open {
+            let wanted = w.wanted(&r.model, r.drawings.settings());
+            r.model.want(wanted, ctx);
+        }
+        w.ui(ctx, &r.model, r.case, r.drawings.settings());
+        sheets |= std::mem::take(&mut w.open_sheets);
     }
-    r.plans.keep(&mut r.model, ctx);
-    r.plans.ui(ctx, &r.model, r.case, r.drawings.settings());
-    if std::mem::take(&mut r.plans.open_sheets) {
+    if sheets {
         r.drawings.open();
     }
     measuring_frame(ctx, r);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Plans & sheets › Plan and profile sheets…: the project's drawings and orthophotos
+//! Plans & sheets › Profile sheets…: the project's drawings and orthophotos
 //! under the sheets' plan (2026-10-23), with invented backgrounds along
 //! the example line: the window's ticks over the template's choice, kept
 //! in the drawing settings; the export draws them on their layers, and

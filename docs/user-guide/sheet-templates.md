@@ -9,7 +9,7 @@ block, the revision table, the legend, the key map and more. What is computed �
 the ground, the wires, the structures, where sheets end — stays the same whatever
 the template.
 
-The same template serves the plan-and-profile sheets and the route, situation and
+The same template serves the profile sheets and the route, situation and
 phase plans: the plans take its frame, title block, revision and stringing tables,
 key map, notes, legend, scale bar, north arrow and pens as the sheets do; what only a
 profile has (bands, panels, sag labels) they leave out. See [Which drawing uses
@@ -28,7 +28,7 @@ You rarely write a template from nothing:
    `examples/sheet-templates/example-a1.ohlsheet`, which uses **every key**, each
    explained in a comment, with invented values.
 2. Change what you need. A table you leave out keeps its default.
-3. In the app: Plans & sheets › Plan and profile sheets… › **Load file…**. On the command line:
+3. In the app: Plans & sheets › Profile sheets… › **Load file…**. On the command line:
    `ohl drawing … --sheet-template my.ohlsheet`.
 
 ## A sheet at a glance
@@ -119,7 +119,7 @@ Several drawings in one go, each with its own template: [Plan sets](drawings.md#
 ## Where templates come from
 
 - **Built in**: `default`.
-- **The project**: templates kept in the project line (Plans & sheets › Plan and profile sheets… › **Load file…**), their images embedded: the project travels
+- **The project**: templates kept in the project line (Plans & sheets › Profile sheets… › **Load file…**), their images embedded: the project travels
   whole. Each project line has its own (they are library files of kind
   `sheet-templates`).
 - **The library folder**: `libraries/sheet-templates/*.ohlsheet` (shipped,

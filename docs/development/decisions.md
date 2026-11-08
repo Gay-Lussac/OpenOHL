@@ -8,6 +8,16 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-08
+
+**One window per plan; the sheets are the Profile sheets (owner, 2026-11-08)**
+
+- Owner: "in plans and profile sheets i only have the profile sheets so it should just be named profile sheets. then the menu for route plan, situation plan or phase plan open the same window where i can shift between them which shouldn't be the purpose. i would like to have one menu per type that isn't opening the same window as others and have the window be similar in size and content".
+- Plans & sheets lists **Profile sheets…**; **Route plan…** and **Situation plans…** together; **Phase plan…**; **Plan set…**. Each opens its own window (`plans_window::PlanWindows`) with no tabs to the others, keeping its own paper, scale, formats and folder; the phase plan alone keeps its alignments drawn together in the project, as before.
+- The sheets window, its menu item, the profile view's menu and button are now **Profile sheets** (before: Plan and profile sheets, 2026-11-07).
+- Every plan window is as wide (540 points) and first opens at the same place (top right); the plans offer their formats in the sheets window's order.
+- Built, in active development, not approved yet.
+
 ## 2026-11-07
 
 **Joint tools pick before they drag; Rotate member in the close-up (owner, 2026-11-07)**

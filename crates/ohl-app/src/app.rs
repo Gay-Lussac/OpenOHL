@@ -308,7 +308,7 @@ pub struct Ready {
     pub survey_export: Option<crate::survey_io::ExportDialog>,
     /// An import or export running.
     pub survey_job: Option<crate::survey_io::Job>,
-    /// Plans & sheets › Plan and profile sheets: the window and the export running.
+    /// Plans & sheets › Profile sheets: the window and the export running.
     pub drawings: crate::drawings::Drawings,
     /// Open the project again (after an import).
     pub reopen: bool,
@@ -352,8 +352,9 @@ pub struct Ready {
     pub string_checks: crate::string_checks::StringChecksWindow,
     /// Checks › Wire clearances › Internal clearances….
     pub internal_clearances: crate::internal_clearances::InternalClearancesWindow,
-    /// Plans & sheets › Plans: the route, situation and phase plans.
-    pub plans: crate::plans_window::PlansWindow,
+    /// Plans & sheets › Route plan, Situation plans, Phase plan, Plan set:
+    /// each its own window.
+    pub plans: crate::plans_window::PlanWindows,
     /// Line › Criteria › Weather case groups….
     pub case_groups: crate::case_groups::GroupsWindow,
     /// The measuring tools: picks, the point under the cursor, the

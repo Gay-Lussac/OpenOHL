@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Plans & sheets › Plan and profile sheets: plan and profile sheets and profile exports of
+//! Plans & sheets › Profile sheets: plan and profile sheets and profile exports of
 //! the routes (SVG, DXF, PDF, PNG, CSV, XML) at chosen scales and station
 //! range, written in the background (a progress bar; the views stay
 //! usable). The same files as `ohl drawing`.
@@ -48,7 +48,7 @@ const ORIENTATIONS: [(&str, &str); 3] = [
     ("portrait", "portrait only"),
 ];
 
-/// The Plan and profile sheets window.
+/// The Profile sheets window.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawingsWindow {
     /// Route by index; `None`: every route.
@@ -560,7 +560,7 @@ pub struct PreviewRoute {
     pub curves: Vec<ohl_drawing::curves::Curve>,
 }
 
-/// The export's sheets, as Plans & sheets › Plan and profile sheets… would write them now.
+/// The export's sheets, as Plans & sheets › Profile sheets… would write them now.
 #[derive(Debug, Clone)]
 pub struct Preview {
     /// The sheets' paper in words (none: the export writes one continuous
@@ -1435,7 +1435,7 @@ impl Input {
     }
 }
 
-/// Which of the other plans (Plans & sheets › Plans; owner, 2026-10-24).
+/// Which of the other plans (Plans & sheets › Route plan…, Situation plans…, Phase plan…; owner, 2026-10-24).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlanKind {
     /// The route plan (north up, 1:5000 to 1:25 000).
@@ -1504,7 +1504,7 @@ fn file_safe(name: &str) -> String {
 }
 
 impl Input {
-    /// The export of the other plans: the Plan and profile sheets window's settings
+    /// The export of the other plans: the Profile sheets window's settings
     /// (template, title fields, routes, cases), every project drawing and
     /// the orthophotos read for the route and situation plans.
     pub fn for_plans(
@@ -1715,11 +1715,11 @@ pub fn set_template_key(w: &DrawingsWindow, plugin: &str, name: &str) -> String 
 }
 
 /// What a set's drawing is written with: the export's input, and for a
-/// plan its request (none: the plan-and-profile sheets).
+/// plan its request (none: the profile sheets).
 pub type SetJob = Vec<(String, Input, Option<PlanRequest>)>;
 
 /// The inputs of plan set `set` (of `plugin`): each drawing with the
-/// Plan and profile sheets window's settings, its template, paper and scales over them,
+/// Profile sheets window's settings, its template, paper and scales over them,
 /// written in `formats` into `out`; their sheets kept for the set's one
 /// PDF with `one_pdf` ([`run_plan_set`]). A set's second drawing of a
 /// kind is named apart, `-2` after the route's name, its third `-3` …
@@ -2091,12 +2091,12 @@ impl DrawingsWindow {
         let offers = crate::sheet_ui::offers_kept(model, &self.plugin_templates);
         let template =
             crate::sheet_ui::resolve_kept(model, &self.sheet.template, &self.plugin_templates);
-        crate::export_form::window(ctx, "Plan and profile sheets", open, |ui| {
+        crate::export_form::window(ctx, "Profile sheets", open, |ui| {
             crate::export_form::intro(
                 ui,
-                "Plan-and-profile sheets and profile exports of the routes. The plans \
-                     (Plans & sheets › Plans) take this window's template, routes and title \
-                     fields.",
+                "The routes' profile sheets and profile exports. The route plan, \
+                 situation plans and phase plan take this window's template, routes and \
+                 title fields.",
             );
             crate::export_form::grid(ui, "drawings-grid", |ui| {
                 ui.label("Template");
@@ -3452,7 +3452,7 @@ impl Drawings {
             )
         };
         ui.label(egui::RichText::new(text).small().weak());
-        if ui.button("Plan and profile sheets…").clicked() {
+        if ui.button("Profile sheets…").clicked() {
             self.open();
             ui.close();
         }
@@ -3472,7 +3472,7 @@ pub const PREVIEW_TICK: &str = "Show the export's sheets over the profile and th
 /// What the sheet preview shows.
 const PREVIEW_HELP: &str = "Sheet edges (match lines), sheet numbers and the export's warnings \
      over the continuous profile and the plan, laid out by the export itself with the settings \
-     of Plans & sheets › Plan and profile sheets…; nothing is computed differently";
+     of Plans & sheets › Profile sheets…; nothing is computed differently";
 
 #[cfg(test)]
 mod ground_rule_tests {

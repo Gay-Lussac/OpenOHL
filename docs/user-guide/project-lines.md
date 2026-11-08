@@ -207,7 +207,7 @@ the main line. The web client shows the main line.
 Other project lines can be drawn on the plan and profile sheets with the
 line worked on, each in a **role** (existing, project, to be removed,
 decommissioned …) the sheet template styles — e.g. the existing line
-thin, the new one thick, what is removed in its own colour: Plans & sheets › Plan and profile sheets… › **Versions of the line, roles**, or `ohl drawing PROJECT.ohl
+thin, the new one thick, what is removed in its own colour: Plans & sheets › Profile sheets… › **Versions of the line, roles**, or `ohl drawing PROJECT.ohl
 --version "as built=existing"`. See [Sheet
 templates](sheet-templates.md#versions-of-the-line-kinds-and-roles).
 

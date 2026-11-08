@@ -4,8 +4,8 @@
 
 //! What the plan windows share (owner, 2026-11-07: "make sure that the
 //! menu for the plans look similar … but each keep their own parameters
-//! and functionality"): Plans & sheets › Plan and profile sheets… and
-//! Plans & sheets › Plans › … are laid out alike — a line saying what the
+//! and functionality"): Plans & sheets › Profile sheets…, Route plan…,
+//! Situation plans…, Phase plan… and Plan set… are laid out alike — a line saying what the
 //! window makes, one grid of settings (Template, Route, Paper, Scale first;
 //! then each window's own; Formats and Folder last), the window's own
 //! sections, and the same footer (what went wrong, **Export**).
@@ -15,22 +15,28 @@ use std::path::PathBuf;
 use eframe::egui;
 use ohl_drawing::export::Format;
 
-/// The windows' frame: titled, not collapsible, sized alike, its content
-/// scrolled when taller than 85 % of the window.
+/// The windows' frame: titled, not collapsible, all as wide and first
+/// opened at the same place (top right, owner 2026-11-08: "have the
+/// window be similar in size and content"), its content scrolled when
+/// taller than 85 % of the window.
 pub fn window<R>(
     ctx: &egui::Context,
     title: &str,
     open: &mut bool,
     content: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
-    let max_height = (ctx.content_rect().height() * 0.85).max(300.0);
+    let screen = ctx.content_rect();
+    let max_height = (screen.height() * 0.85).max(300.0);
     egui::Window::new(title)
         .open(open)
         .collapsible(false)
         .resizable(false)
         .default_width(WIDTH)
+        .pivot(egui::Align2::RIGHT_TOP)
+        .default_pos(screen.right_top() + egui::vec2(-8.0, 16.0))
         .show(ctx, |ui| {
             ui.set_min_width(WIDTH);
+            ui.set_max_width(WIDTH);
             egui::ScrollArea::vertical()
                 .id_salt((title, "scroll"))
                 .max_height(max_height)
@@ -44,7 +50,7 @@ pub fn window<R>(
 }
 
 /// The windows' width, points.
-pub const WIDTH: f32 = 480.0;
+pub const WIDTH: f32 = 540.0;
 
 /// What the window makes, a small line at its top.
 pub fn intro(ui: &mut egui::Ui, text: &str) {

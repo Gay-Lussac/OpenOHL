@@ -14,7 +14,7 @@ breaks, and an export without `--page` writes it as one continuous
 drawing. **Sheets** are a separate, optional layer on top of it, for
 exports: the sheet format, the scales and where the sheets break belong
 to the export settings only (`ohl drawing … --page`, `ohl line --drawings
-… --page`, Plans & sheets › Plan and profile sheets… in the app) and never change the
+… --page`, Plans & sheets › Profile sheets… in the app) and never change the
 profile view or any computed number. The app can show them over its views
 (the [sheet preview](#sheet-preview), off by default).
 
@@ -153,7 +153,7 @@ checks) is a separate setting and is not changed by it.
 ## Elevations
 
 On request (`--elevations above|below`, or **Elevations** in the
-app's Plan and profile sheets window; off by default) the plan carries each
+app's Profile sheets window; off by default) the plan carries each
 structure's **elevation** beside the line, so its shape can be read on
 the sheet next to where it stands:
 
@@ -450,7 +450,7 @@ A simple, open format for the same numbers (version 1):
 
 ## In the desktop app
 
-**Plans & sheets › Plan and profile sheets…** opens a window: the **sheet template**
+**Plans & sheets › Profile sheets…** opens a window: the **sheet template**
 (Built-in, Project, Library or a plugin's; **Load file…** keeps a
 `.ohlsheet` in the project, **Save as file…** writes the one chosen),
 route (or every route), formats, sheets (one continuous drawing, the
@@ -541,26 +541,30 @@ the export writes one continuous drawing.
 
 ## Plans: route plan, situation plans, phase plan
 
-Beside the plan-and-profile sheets (2026-10-24, the owner's request,
+Beside the profile sheets (2026-10-24, the owner's request,
 roadmap O14; built, in active development (not approved yet)), three
-plans in a menu of their own, **Plans & sheets › Plans**, each written for every
-route with the sheet template, title fields, routes and cases of Plans & sheets › Plan and profile sheets…, on the paper chosen, in PDF, SVG, PNG or DXF. The template sets
-their page as the sheets' (2026-11-07): frame, title block, revision and
-stringing tables, key map, notes, legend, scale bar and north arrow, pens;
-[Which drawing uses
+plans, each with its own menu item and **its own window** (2026-11-08):
+**Plans & sheets › Route plan…**, **Situation plans…** and **Phase
+plan…**, and **Plan set…** for a plugin's set of drawings. Each is
+written for every route with the sheet template, title fields, routes
+and cases of Plans & sheets › Profile sheets…, on the paper chosen, in
+PDF, SVG, PNG or DXF. The template sets their page as the sheets'
+(2026-11-07): frame, title block, revision and stringing tables, key
+map, notes, legend, scale bar and north arrow, pens; [Which drawing uses
 what](sheet-templates.md#which-drawing-uses-what) shows each plan and what it
 takes from the template.
 
-The **Plans** window is laid out as the Plan and profile sheets window: a
-line saying what it makes, then the same rows in the same order —
-**Template** and **Route** (here only shown: set in Plan and profile
-sheets, the button **Plan and profile sheets…** opens it), **Paper**,
-**Scale**, the plan's own rows (**Under it**: the project's drawings,
-orthophotos, the corridor), **Formats** and **Folder** (none chosen: the
-sheets' folder) — then its own sections (the plan set's drawings, the
-phase plan's alignments drawn together) and **Export** at the bottom.
-Each window keeps its own settings.
-
+Every plan window is laid out as the Profile sheets window, and as wide:
+a line saying what it makes, then the same rows in the same order —
+**Template** and **Route** (here only shown: set in Profile sheets, the
+button **Profile sheets…** opens it), **Paper** (the plan set: **Plan
+set**), **Scale**, the plan's own rows (**Under it**: the project's
+drawings, orthophotos, the corridor), **Formats** and **Folder** (none
+chosen: the sheets' folder) — then its own sections (the plan set's
+drawings, the phase plan's alignments drawn together) and **Export** at
+the bottom. Each window keeps its own settings (paper, scale, formats,
+folder), so the route plan and the situation plans can be on different
+papers.
 
 - **Route plan** — the whole route **north up** at a small scale
   (1:5000 to 1:25 000, 1:10 000 by default), over the project's drawings
@@ -599,7 +603,7 @@ Each window keeps its own settings.
 
   **Alignments in one plan** (2026-11-03; built, in active development,
   not approved yet): by default each route's alignment gets its own
-  phase plan. In Plans & sheets › Plans › Phase plan, **Add a plan of several**
+  phase plan. In Plans & sheets › Phase plan…, **Add a plan of several**
   gives a plan its name and the routes and alignments drawn in it,
   ticked (a route's tick takes all its alignments): they are drawn one
   after the other in the line's order, a structure ending one and
@@ -673,7 +677,7 @@ set with each kind once writes the files a single export would.
 
 **One PDF of the set** (2026-10-25): tick **also as one PDF** in the
 Plan set window (it works with no format ticked too). Every sheet of
-the set's drawings — the plan-and-profile sheets of every route, then
+the set's drawings — the profile sheets of every route, then
 the plans, in the set's order, each drawing for every route — goes into
 one PDF named after the set, `<set name>.pdf` in the output folder,
 besides the files written as above. Only sheets go into it: a
@@ -696,7 +700,7 @@ written in order with its own template (the set's plugin's first, else
 another plugin's of that name, else as `--sheet-template` reads it),
 paper and scales over `--sheet-template`, `--page`, `--hscale`,
 `--vscale`, `--route-plan-scale` and `--situation-scale`; the set's
-plans write no plan-and-profile sheets of their own. `--set` replaces
+plans write no profile sheets of their own. `--set` replaces
 `--plans`; `--set-pdf` writes the one PDF.
 
 Not there yet: links to public map services, the corridor's land use.

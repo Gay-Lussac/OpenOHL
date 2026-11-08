@@ -625,7 +625,7 @@ fn the_usage_page_shows_structures_not_checked() {
 
 /// The sheet preview: off by default; ticked in the Profile page's Sheets
 /// menu (which stays open), it shows the export's sheets over the profile
-/// and the plan — exactly those Plans & sheets › Plan and profile sheets… writes, warnings
+/// and the plan — exactly those Plans & sheets › Profile sheets… writes, warnings
 /// included — and follows the export settings as they change.
 #[test]
 fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
@@ -646,8 +646,8 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
         assert!(r.profile.sheets_drawn.is_empty());
     }
     assert!(harness.query_by_label_contains("Sheet preview:").is_none());
-    // Ticked in the Profile page's Plan and profile sheets menu: the menu stays open.
-    harness.get_by_label("Plan and profile sheets").click();
+    // Ticked in the Profile page's Profile sheets menu: the menu stays open.
+    harness.get_by_label("Profile sheets").click();
     harness.run();
     harness.get_by_label(crate::drawings::PREVIEW_TICK).click();
     harness.run_steps(3);
@@ -773,7 +773,7 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
     harness.get_by_label_contains("the export writes one continuous drawing");
 }
 
-/// Plans & sheets › Plan and profile sheets…: the line width and the break clearance are
+/// Plans & sheets › Profile sheets…: the line width and the break clearance are
 /// export settings, checked before anything is written.
 #[test]
 fn the_export_window_takes_the_line_width_and_break_clearance() {
@@ -808,7 +808,7 @@ fn the_export_window_takes_the_line_width_and_break_clearance() {
     assert_eq!((d.break_clearance, d.line_width), (2.0, 40.0));
 }
 
-/// Plans & sheets › Plan and profile sheets… with a sheet template: a template file loaded
+/// Plans & sheets › Profile sheets… with a sheet template: a template file loaded
 /// is kept in the project (its images embedded) and chosen; its page
 /// taken; a required field left empty refuses the export, naming it;
 /// filled, the sheets carry it; another project line is drawn in its

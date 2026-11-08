@@ -309,7 +309,7 @@ the views redrawn once the edits settle (500 ms), the old one shown
 meanwhile.
 
 Then (2026-10-24, from the same review): the sheet templates the
-Plan and profile sheets window and the sheet preview ask for every frame kept for
+Profile sheets window and the sheet preview ask for every frame kept for
 a second and while the project's libraries are unchanged (they were read
 and parsed from their files twice a frame); the profile's corridor (the
 survey points, LiDAR points and 3D drawings projected onto the line)

@@ -345,20 +345,23 @@ fn the_menus_are_grouped_by_task() {
     }
     h.get_by_label("Plans & sheets").click();
     h.run();
+    // One item per drawing, each its own window (owner, 2026-11-08).
     for item in [
-        "Plan and profile sheets…",
+        "Profile sheets…",
+        "Route plan…",
+        "Situation plans…",
+        "Phase plan…",
         "Plan set…",
         "Bill of materials ⏵",
     ] {
         h.get_by_label(item);
     }
-    assert!(h.query_by_label_contains("Route").is_some());
     close(&mut h);
     // File › Export keeps the line, the points, the libraries; the sheets
     // went to Plans & sheets.
     crate::tests::submenu(&mut h, "File", "Export");
     h.get_by_label("The line…");
-    assert!(h.query_by_label("Plan and profile sheets…").is_none());
+    assert!(h.query_by_label("Profile sheets…").is_none());
     close(&mut h);
     close(&mut h);
     // A tool held from Edit › Tools.
@@ -394,15 +397,17 @@ fn the_menus_are_grouped_by_task() {
 
 /// The plan windows look alike (owner, 2026-11-07: "make sure that the
 /// menu for the plans look similar … but each keep their own parameters
-/// and functionality"): Plans & sheets › Plans and Plans & sheets › Plan
-/// and profile sheets both have the rows Template, Route, Paper, Scale,
-/// Formats and Folder and an Export button; each keeps its own (the
-/// plans their scale and what lies under them, the sheets their sheet
-/// breaks and side profiles). The Plans window says the template and
-/// route it takes and leads to where they are set. With a GPU and
-/// OHL_RENDER_PNG set, both windows saved as images.
+/// and functionality"; 2026-11-08: "one menu per type that isn't opening
+/// the same window as others"): Plans & sheets › Profile sheets, Route
+/// plan, Situation plans and Phase plan each open their own window, all
+/// with the rows Template, Route, Paper, Formats and Folder and an Export
+/// button, the scaled ones a Scale; each keeps its own (the plans their
+/// scale and what lies under them, the sheets their sheet breaks, the
+/// phase plan its alignments drawn together). No plan window offers the
+/// others. With a GPU and OHL_RENDER_PNG set, the windows saved as images.
 #[test]
 fn the_plan_windows_look_alike() {
+    use crate::drawings::PlanKind;
     let gpu = ohl_render::headless_device().is_ok();
     let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
     if gpu {
@@ -411,9 +416,7 @@ fn the_plan_windows_look_alike() {
     let model = synthetic_project("ui-review-plan-windows");
     let mut h = builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     h.run();
-    let shared = [
-        "Template", "Route", "Paper", "Scale", "Formats", "Folder", "Export",
-    ];
+    let shared = ["Template", "Route", "Paper", "Formats", "Folder", "Export"];
     let save = |h: &mut Harness<'static, App>, name: &str| {
         if gpu && let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") {
             h.run_steps(8);
@@ -422,32 +425,57 @@ fn the_plan_windows_look_alike() {
             crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
         }
     };
-    // The Plans window, on the situation plans.
-    h.state_mut()
-        .ready()
-        .unwrap()
-        .plans
-        .show(crate::drawings::PlanKind::Situation);
-    // A window opened is sized first, drawn after.
-    h.run_steps(6);
-    for row in shared {
-        h.get_by_label(row);
+    for (kind, file) in [
+        (PlanKind::Route, "route-plan-window.png"),
+        (PlanKind::Situation, "situation-plans-window.png"),
+        (PlanKind::Phase, "phase-plan-window.png"),
+    ] {
+        h.state_mut().ready().unwrap().plans.of(kind).show();
+        // A window opened is sized first, drawn after.
+        h.run_steps(6);
+        h.get_by_label(kind.title());
+        for row in shared {
+            h.get_by_label(row);
+        }
+        // Only its own plan: no tabs to the others.
+        for other in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
+            if other != kind {
+                assert!(h.query_by_label(other.title()).is_none(), "{other:?}");
+            }
+        }
+        if kind == PlanKind::Phase {
+            h.get_by_label("Add a plan of several");
+            assert!(h.query_by_label("Scale").is_none());
+        } else {
+            h.get_by_label("Scale");
+            h.get_by_label("Under it");
+        }
+        assert!(h.query_by_label("Sheet breaks").is_none());
+        save(&mut h, file);
+        h.state_mut().ready().unwrap().plans.of(kind).open = false;
+        h.run_steps(2);
     }
-    h.get_by_label("Under it");
-    assert!(h.query_by_label("Sheet breaks").is_none());
-    save(&mut h, "plans-window.png");
-    // Its template row leads to the Plan and profile sheets window.
-    h.get_all_by_label("Plan and profile sheets…")
+    // Each keeps its own paper.
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.plans.route.page = "A1".into();
+        assert_eq!(r.plans.situation.page, "A3");
+    }
+    // The template row leads to the Profile sheets window.
+    h.state_mut().ready().unwrap().plans.situation.show();
+    h.run_steps(6);
+    h.get_all_by_label("Profile sheets…")
         .next()
         .unwrap()
         .click();
     h.run_steps(2);
-    h.state_mut().ready().unwrap().plans.open = false;
+    h.state_mut().ready().unwrap().plans.situation.open = false;
     // A window opened is sized first, drawn after.
     h.run_steps(6);
     for row in shared {
         h.get_by_label(row);
     }
+    h.get_by_label("Scale");
     h.get_by_label("Sheet breaks");
     assert!(h.query_by_label("Under it").is_none());
     save(&mut h, "sheets-window.png");

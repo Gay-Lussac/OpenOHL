@@ -537,7 +537,7 @@ manifest):
   A **plan set** (`.ohlset`, [Drawings](../user-guide/drawings.md#plan-sets))
   lists drawings to make in one go — the sheets, the route, situation
   and phase plans — each with a template (by name: the plugin's own
-  first), paper and scales; Plans & sheets › Plans › Plan set… offers the sets
+  first), paper and scales; Plans & sheets › Plan set… offers the sets
   of the plugins in use.
 
 - **Code**: the optional export `sheet-templates` of `plugin.wit`

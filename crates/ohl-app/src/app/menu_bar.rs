@@ -143,14 +143,15 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
 }
 
 /// Plans & sheets (owner: OHL-Design UI review, 2026-10-26: the drawings
-/// out of File › Export): the sheets (Plan and profile sheets…), the route, situation and
-/// phase plans, a plan set, the bill of materials.
+/// out of File › Export; 2026-11-08: one item per drawing, each its own
+/// window): the profile sheets, the route and situation plans, the phase
+/// plan, a plan set, the bill of materials.
 pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
     if ui
-        .button("Plan and profile sheets…")
+        .button("Profile sheets…")
         .on_hover_text(
-            "Plan and profile sheets and profile exports of the routes: SVG, DXF, PDF, PNG, \
-             CSV, XML, at chosen scales and station range",
+            "The routes' profile sheets and profile exports: SVG, DXF, PDF, PNG, CSV, XML, at \
+             chosen scales and station range",
         )
         .clicked()
     {
@@ -160,7 +161,8 @@ pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
         ui.close();
     }
     ui.separator();
-    // The other plans, apart from the sheets (owner, 2026-10-24).
+    // The other plans, apart from the sheets (owner, 2026-10-24), each
+    // its own window (2026-11-08).
     {
         use crate::drawings::PlanKind;
         for (kind, hover) in [
@@ -174,10 +176,6 @@ pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
                 "The route in parts north up at a large scale over the cadastral survey and \
                  orthophotos",
             ),
-            (
-                PlanKind::Phase,
-                "The structures where the phase arrangement changes, each wire labelled",
-            ),
         ] {
             if ui
                 .button(format!("{}…", kind.title()))
@@ -186,9 +184,20 @@ pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
             {
                 let (rules, markers) = drawing_checks(r);
                 r.drawings.set_checks(rules, markers);
-                r.plans.show(kind);
+                r.plans.of(kind).show();
                 ui.close();
             }
+        }
+        ui.separator();
+        if ui
+            .button(format!("{}…", PlanKind::Phase.title()))
+            .on_hover_text("The structures where the phase arrangement changes, each wire labelled")
+            .clicked()
+        {
+            let (rules, markers) = drawing_checks(r);
+            r.drawings.set_checks(rules, markers);
+            r.plans.phase.show();
+            ui.close();
         }
         ui.separator();
         if ui
@@ -202,7 +211,7 @@ pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
             let (rules, markers) = drawing_checks(r);
             r.drawings.set_checks(rules, markers);
             let dirs = r.drawings.template_plugin_dirs().to_vec();
-            r.plans.show_sets(&dirs);
+            r.plans.set.show_sets(&dirs);
             ui.close();
         }
     }

@@ -528,7 +528,7 @@ fn the_design_code_window_opens_from_the_criteria_menu() {
     harness.get_by_label("Generate");
 }
 
-/// Plans & sheets › Plan and profile sheets: the main route's profile from 0+100 to 0+900
+/// Plans & sheets › Profile sheets: the main route's profile from 0+100 to 0+900
 /// as PDF and DXF on A3, every solved case.
 #[test]
 fn drawings_export_in_the_background_job() {

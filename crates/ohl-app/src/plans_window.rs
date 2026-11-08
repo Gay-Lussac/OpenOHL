@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Plans & sheets › Plans (owner, 2026-10-24: a menu of their own, apart from the
-//! plan-and-profile sheets): the **route plan** and the **situation
-//! plans** (north up, over the project's drawings and orthophotos) and the
-//! **phase plan** (the structures where the phase arrangement changes),
-//! written for every route of the Plan and profile sheets window with its sheet template
-//! and title fields ([`crate::drawings::run_plans`]).
+//! Plans & sheets › Route plan…, Situation plans…, Phase plan… and Plan
+//! set… (owner, 2026-10-24: a menu of their own, apart from the profile
+//! sheets; 2026-11-08: "one menu per type that isn't opening the same
+//! window as others"): each its own window ([`PlanWindows`]), laid out as
+//! the others ([`crate::export_form`]). The **route plan** and the
+//! **situation plans** (north up, over the project's drawings and
+//! orthophotos) and the **phase plan** (the structures where the phase
+//! arrangement changes), written for every route of the Profile sheets
+//! window with its sheet template and title fields
+//! ([`crate::drawings::run_plans`]).
 
 use std::path::PathBuf;
 
@@ -22,24 +26,72 @@ use ohl_drawing::export::Format;
 use ohl_drawing::plan_set::PlanSet;
 
 /// The formats the plans are written in.
-const FORMATS: [Format; 4] = [Format::Pdf, Format::Svg, Format::Png, Format::Dxf];
+/// In the Profile sheets window's order.
+const FORMATS: [Format; 4] = [Format::Svg, Format::Dxf, Format::Pdf, Format::Png];
 
 /// The papers offered.
 const PAPERS: [&str; 5] = ["A0", "A1", "A2", "A3", "A4"];
 
-/// The Plans window.
+/// The four plan windows, each opened by its own menu item and keeping
+/// its own settings.
+#[derive(Debug)]
+pub struct PlanWindows {
+    /// Plans & sheets › Route plan….
+    pub route: PlansWindow,
+    /// Plans & sheets › Situation plans….
+    pub situation: PlansWindow,
+    /// Plans & sheets › Phase plan….
+    pub phase: PlansWindow,
+    /// Plans & sheets › Plan set….
+    pub set: PlansWindow,
+}
+
+impl Default for PlanWindows {
+    fn default() -> Self {
+        Self {
+            route: PlansWindow::of(PlanKind::Route),
+            situation: PlansWindow::of(PlanKind::Situation),
+            phase: PlansWindow::of(PlanKind::Phase),
+            set: PlansWindow {
+                set_mode: true,
+                ..PlansWindow::of(PlanKind::Situation)
+            },
+        }
+    }
+}
+
+impl PlanWindows {
+    /// The window of plan `kind`.
+    pub fn of(&mut self, kind: PlanKind) -> &mut PlansWindow {
+        match kind {
+            PlanKind::Route => &mut self.route,
+            PlanKind::Situation => &mut self.situation,
+            PlanKind::Phase => &mut self.phase,
+        }
+    }
+
+    /// Each window.
+    pub fn all(&mut self) -> [&mut PlansWindow; 4] {
+        [
+            &mut self.route,
+            &mut self.situation,
+            &mut self.phase,
+            &mut self.set,
+        ]
+    }
+}
+
+/// A plan window: one plan, or a plugin's plan set.
 #[derive(Debug)]
 pub struct PlansWindow {
     /// Shown.
     pub open: bool,
-    /// The plan.
+    /// The plan (fixed for the window).
     pub kind: PlanKind,
     /// Paper.
     pub page: String,
-    /// The route plan's scale (1:…).
-    pub route_scale: f64,
-    /// The situation plans' scale (1:…).
-    pub situation_scale: f64,
+    /// The plan's scale (1:…).
+    pub scale: f64,
     /// The project's drawings under the route and situation plans.
     pub drawings: bool,
     /// The orthophotos under them.
@@ -54,7 +106,7 @@ pub struct PlansWindow {
     pub error: Option<String>,
     /// The export under way, or done.
     pub job: Option<Job>,
-    /// A plan set exported instead of one plan.
+    /// The plan set window (fixed for the window).
     pub set_mode: bool,
     /// The plugins' plan sets: plugin, name, the set or why it does not
     /// read.
@@ -70,8 +122,8 @@ pub struct PlansWindow {
     /// The phase plans of alignments drawn together (owner, 2026-11-03),
     /// kept in the project (`app.phase_plans.<line>`).
     pub groups: Vec<PhaseGroup>,
-    /// The Plan and profile sheets window asked for (its template and
-    /// route are set there).
+    /// The Profile sheets window asked for (its template and route are
+    /// set there).
     pub open_sheets: bool,
     kept: crate::check_ui::Kept,
 }
@@ -79,14 +131,18 @@ pub struct PlansWindow {
 /// The project setting the phase plans' groups are kept in.
 pub const SETTING: &str = "app.phase_plans";
 
-impl Default for PlansWindow {
-    fn default() -> Self {
+impl PlansWindow {
+    /// The window of plan `kind`, closed.
+    pub fn of(kind: PlanKind) -> Self {
         Self {
             open: false,
-            kind: PlanKind::Situation,
+            kind,
             page: "A3".into(),
-            route_scale: 10_000.0,
-            situation_scale: 1000.0,
+            scale: if kind == PlanKind::Route {
+                10_000.0
+            } else {
+                1000.0
+            },
             drawings: true,
             photo: true,
             corridor: true,
@@ -104,23 +160,27 @@ impl Default for PlansWindow {
             kept: Default::default(),
         }
     }
-}
 
-impl PlansWindow {
-    /// Opens the window on plan `kind`.
-    pub fn show(&mut self, kind: PlanKind) {
-        self.kind = kind;
-        self.set_mode = false;
+    /// Opens the window.
+    pub fn show(&mut self) {
         self.open = true;
     }
 
-    /// Opens the window on the plan sets of the plugins `dirs` (name,
-    /// folder), read now.
+    /// Opens the plan set window on the plan sets of the plugins `dirs`
+    /// (name, folder), read now.
     pub fn show_sets(&mut self, dirs: &[(String, PathBuf)]) {
         self.sets = crate::drawings::plugin_plan_sets(dirs);
         self.set = self.set.min(self.sets.len().saturating_sub(1));
-        self.set_mode = true;
         self.open = true;
+    }
+
+    /// The window's title, its menu item's name.
+    pub fn title(&self) -> &'static str {
+        if self.set_mode {
+            "Plan set"
+        } else {
+            self.kind.title()
+        }
     }
 
     /// The request of the window's settings.
@@ -128,10 +188,7 @@ impl PlansWindow {
         PlanRequest {
             kind: self.kind,
             page: self.page.clone(),
-            scale: match self.kind {
-                PlanKind::Route => self.route_scale,
-                _ => self.situation_scale,
-            },
+            scale: self.scale,
             drawings: self.drawings,
             photo: self.photo,
             corridor: self.corridor,
@@ -254,7 +311,7 @@ impl PlansWindow {
     }
 
     /// The weather cases the plans asked for draw in (their templates'
-    /// and the Plan and profile sheets window's per circuit): solved while the window is
+    /// and the Profile sheets window's per circuit): solved while the window is
     /// open, the export waiting for them. The phase plan, a schematic,
     /// takes the case shown and needs none.
     pub fn wanted(&self, model: &Model, drawings: &crate::drawings::DrawingsWindow) -> Vec<usize> {
@@ -287,7 +344,7 @@ impl PlansWindow {
         v
     }
 
-    /// The window; `drawings` the Plan and profile sheets window's settings (routes,
+    /// The window; `drawings` the Profile sheets window's settings (routes,
     /// template, title fields, cases) the plans are made with.
     pub fn ui(
         &mut self,
@@ -319,34 +376,13 @@ impl PlansWindow {
             Some(r) => format!("{} {}", r.id, r.name),
             None => "every route".into(),
         };
-        crate::export_form::window(ctx, "Plans", &mut open, |ui| {
+        let title = self.title();
+        crate::export_form::window(ctx, title, &mut open, |ui| {
             crate::export_form::intro(
                 ui,
-                "North-up plans beside the plan-and-profile sheets, for every route, with the \
-                 sheet template, routes and title fields of Plans & sheets › Plan and profile \
-                 sheets.",
-            );
-            ui.horizontal(|ui| {
-                for k in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
-                    if ui
-                        .selectable_label(!self.set_mode && self.kind == k, k.title())
-                        .clicked()
-                    {
-                        self.kind = k;
-                        self.set_mode = false;
-                    }
-                }
-                if ui
-                    .selectable_label(self.set_mode, "Plan set")
-                    .on_hover_text("Several drawings in one go, as a plugin's plan set lists them")
-                    .clicked()
-                {
-                    self.set_mode = true;
-                }
-            });
-            ui.label(
-                egui::RichText::new(if self.set_mode {
-                    "Several drawings in one go, as a plugin's plan set lists them."
+                if self.set_mode {
+                    "Several drawings in one go, as a plugin's plan set lists them, with the \
+                     sheet template, routes and title fields of Plans & sheets › Profile sheets."
                 } else {
                     match self.kind {
                         PlanKind::Route => {
@@ -366,12 +402,11 @@ impl PlansWindow {
                              arrangement changes; between, \"arrangement unchanged\"."
                         }
                     }
-                })
-                .small(),
+                },
             );
             ui.add_space(4.0);
-            crate::export_form::grid(ui, "plans-settings", |ui| {
-                let go = Some("Plan and profile sheets…");
+            crate::export_form::grid(ui, title, |ui| {
+                let go = Some("Profile sheets…");
                 // Both set in the sheets window: one way there.
                 if crate::export_form::shown_row(ui, "Template", &template, go) {
                     self.open_sheets = true;
@@ -383,7 +418,7 @@ impl PlansWindow {
                         .sets
                         .get(self.set)
                         .map_or("—".to_owned(), |(p, n, _)| format!("{p} / {n}"));
-                    egui::ComboBox::from_id_salt("plans-set")
+                    egui::ComboBox::from_id_salt((title, "set"))
                         .selected_text(shown)
                         .show_ui(ui, |ui| {
                             for (k, (p, n, _)) in self.sets.iter().enumerate() {
@@ -393,7 +428,7 @@ impl PlansWindow {
                     ui.end_row();
                 } else {
                     ui.label("Paper");
-                    egui::ComboBox::from_id_salt("plans-paper")
+                    egui::ComboBox::from_id_salt((title, "paper"))
                         .selected_text(self.page.as_str())
                         .show_ui(ui, |ui| {
                             for p in PAPERS {
@@ -406,14 +441,16 @@ impl PlansWindow {
                     ui.label("Scale");
                     ui.horizontal(|ui| {
                         ui.label("1:");
-                        let (scale, range) = if self.kind == PlanKind::Route {
-                            (&mut self.route_scale, 5000.0..=25_000.0)
+                        let range = if self.kind == PlanKind::Route {
+                            5000.0..=25_000.0
                         } else {
-                            (&mut self.situation_scale, 500.0..=2000.0)
+                            500.0..=2000.0
                         };
                         crate::style::field(
                             ui,
-                            egui::DragValue::new(scale).range(range).speed(50.0),
+                            egui::DragValue::new(&mut self.scale)
+                                .range(range)
+                                .speed(50.0),
                         );
                     });
                     ui.end_row();
@@ -439,10 +476,7 @@ impl PlansWindow {
                 crate::export_form::folder_row(
                     ui,
                     &mut self.out,
-                    drawings
-                        .out
-                        .as_ref()
-                        .map(|p| (p, "Plan and profile sheets'")),
+                    drawings.out.as_ref().map(|p| (p, "Profile sheets'")),
                 );
             });
             // The window's own sections, below the settings.
@@ -546,7 +580,7 @@ impl PlansWindow {
                 Some(out) => {
                     let mut w = drawings.clone();
                     // Alignments drawn together: every route read (the
-                    // Plan and profile sheets window's one route aside).
+                    // Profile sheets window's one route aside).
                     if self.kind == PlanKind::Phase
                         && self.groups.iter().any(|g| !g.alignments.is_empty())
                     {
@@ -577,9 +611,9 @@ impl PlansWindow {
 mod tests {
     use super::*;
 
-    /// Plans & sheets › Plans on the example line: the route plan, the situation
+    /// The route plan, situation plans and phase plan windows on the example line: the route plan, the situation
     /// plans and the phase plan written as PDF for every route, with the
-    /// Plan and profile sheets window's settings.
+    /// Profile sheets window's settings.
     #[test]
     fn the_plans_are_written() {
         let model = crate::tests::synthetic();
@@ -587,9 +621,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ohl-app-{}-plans", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         for kind in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
-            let mut win = PlansWindow::default();
-            win.show(kind);
-            let req = win.request();
+            let req = PlansWindow::of(kind).request();
             let mut ww = w.clone();
             ww.formats = vec![ohl_drawing::export::Format::Pdf];
             let input = Input::for_plans(&model, 0, &ww, dir.clone(), &req).unwrap();
@@ -619,8 +651,7 @@ mod tests {
         };
         let dir = std::env::temp_dir().join(format!("ohl-app-{}-phase-groups", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut win = PlansWindow::default();
-        win.show(PlanKind::Phase);
+        let mut win = PlansWindow::of(PlanKind::Phase);
         win.groups = vec![PhaseGroup {
             name: "North and south".into(),
             alignments: views.iter().map(|v| v.id.clone()).collect(),
@@ -684,12 +715,11 @@ mod tests {
             );
         }
         let dir = std::env::temp_dir();
-        let mut win = PlansWindow::default();
-        win.show(PlanKind::Situation);
+        let win = PlansWindow::of(PlanKind::Situation);
         assert_eq!(win.wanted(&model, &w), vec![k]);
         let e = Input::for_plans(&model, 0, &w, dir.clone(), &win.request()).err();
         assert!(e.is_some_and(|e| e.contains("being solved")));
-        win.show(PlanKind::Phase);
+        let win = PlansWindow::of(PlanKind::Phase);
         assert!(win.wanted(&model, &w).is_empty());
         assert!(Input::for_plans(&model, 0, &w, dir, &win.request()).is_ok());
     }
