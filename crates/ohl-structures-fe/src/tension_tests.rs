@@ -537,6 +537,27 @@ fn x_panel_compressed_diagonal_carries_its_buckling_load() {
     assert!((sum + H).abs() < 1e-6 * H, "{sum}");
 }
 
+/// Owner, 2026-11-08 ("stay on the safe side"): a bowed member carries
+/// the lower of its elastic buckling load and its design compression
+/// resistance — here an allowable compression of 500 N given, below
+/// N_cr = 829 N: BD carries 500 N, and AC takes the rest (5H/4 − 500 N),
+/// more than with the perfect strut.
+#[test]
+fn a_bowed_member_carries_no_more_than_its_design_resistance() {
+    let mut m = panel(MemberKind::Tension, false);
+    m.sections[0].i_min = 1e-8;
+    m.sections[0].compression = Some(500.0);
+    assert_eq!(crate::solve::buckling_loads(&m)[index(&m, "BD")], 500.0);
+    let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    let bd = &s.members[index(&m, "BD")];
+    assert!(bd.bowed && bd.axial == -500.0, "{bd:?}");
+    assert!(close(axial(&m, &s, "AC"), 1.25 * H - 500.0), "{s:?}");
+    // A design resistance above N_cr: the elastic load, as before.
+    m.sections[0].compression = Some(5000.0);
+    let ncr = std::f64::consts::PI.powi(2) * E * 1e-8 / 25.0;
+    assert_eq!(crate::solve::buckling_loads(&m)[index(&m, "BD")], ncr);
+}
+
 /// A tension-only member compressed less than its buckling load is a
 /// truss: the X panel with stocky diagonals (I = 1000 cm⁴: N_cr = 829 kN
 /// against about 6 kN) solves exactly as with truss diagonals, both
@@ -620,4 +641,39 @@ fn runs_split_ties_then_keep_members_as_the_last_resort() {
     // Two ties split (3 solves), then all four kept (3), one solve.
     assert_eq!((s, passes, kept), ("once", 7, vec![0, 1, 2, 3]));
     assert_eq!(kinds.len(), 2);
+}
+
+/// Owner, 2026-11-08: the X panel's diagonals drawn in halves through a
+/// crossing joint M that nothing else holds: the compressed halves (BM,
+/// MD) say their buckling length is their own while out of the plane it
+/// may be the whole diagonal's — not on the safe side; the stretched
+/// halves, the legs and the top say nothing of it; a length given (`lk`)
+/// takes the note away.
+#[test]
+fn halves_through_an_unbraced_crossing_say_their_length() {
+    let mut m = panel(MemberKind::Truss, true);
+    m.sections[0].i_min = 1e-6;
+    m.sections[0].yield_strength = Some(355e6);
+    let crossings = crate::check::unbraced_crossings(&m);
+    for id in ["AM", "MC", "BM", "MD"] {
+        assert_eq!(crossings[index(&m, id)].as_deref(), Some("M"), "{id}");
+    }
+    for id in ["AD", "BC", "DC"] {
+        assert!(crossings[index(&m, id)].is_none(), "{id}");
+    }
+    let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    let u = member_usage(&m, &s, 1.0);
+    for id in ["BM", "MD"] {
+        let g = &u[index(&m, id)].governs;
+        assert!(
+            axial(&m, &s, id) < 0.0 && crate::check::not_safe(g) && g.contains("crossing at M"),
+            "{id}: {g}"
+        );
+    }
+    for id in ["AM", "MC"] {
+        assert!(!u[index(&m, id)].governs.contains("crossing at M"), "{id}");
+    }
+    let bm = index(&m, "BM");
+    m.members[bm].lk = Some(5.0);
+    assert!(crate::check::unbraced_crossings(&m)[bm].is_none());
 }

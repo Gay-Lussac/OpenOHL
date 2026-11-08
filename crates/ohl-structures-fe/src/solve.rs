@@ -566,11 +566,21 @@ pub const TENSION_TOLERANCE: f64 = 1e-9;
 /// length — as the compression check ([`crate::check::euler_load`]); 0
 /// without a second moment (I_min = 0: slack in compression, as a rope).
 /// 0 for the other kinds.
+///
+/// Capped by its design compression resistance when that is lower
+/// ([`crate::check::design_compression`], 2026-11-08): a real strut,
+/// crooked and yielding, carries less once bowed than the perfect one,
+/// and the rest of the structure then more — on the safe side for the
+/// others.
 pub fn buckling_loads(model: &Model) -> Vec<f64> {
     (0..model.members.len())
         .map(|k| {
             if model.members[k].kind == MemberKind::Tension {
-                crate::check::euler_load(model, k).unwrap_or(0.0)
+                let euler = crate::check::euler_load(model, k).unwrap_or(0.0);
+                match crate::check::design_compression(model, k) {
+                    Some(d) if d < euler => d.max(0.0),
+                    _ => euler,
+                }
             } else {
                 0.0
             }

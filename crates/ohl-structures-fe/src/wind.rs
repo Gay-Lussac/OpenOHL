@@ -542,7 +542,15 @@ impl<'a> MemberWindSetup<'a> {
             {
                 match curve.at(self.faces[f].solidity) {
                     Some(c) => drag = Some((c, DragFrom::Face)),
-                    None => outside_face_drag += 1,
+                    // Outside the table: its largest face drag, or the
+                    // shape's when larger (on the safe side, 2026-11-08;
+                    // before, the shape's or the generic one).
+                    None => {
+                        outside_face_drag += 1;
+                        let top = curve.factor.iter().copied().fold(0.0, f64::max);
+                        let own = self.factors.and_then(|f| f.drag_of(shape)).unwrap_or(0.0);
+                        drag = Some((top.max(own), DragFrom::Face));
+                    }
                 }
             }
             if drag.is_none() {
@@ -669,7 +677,8 @@ impl<'a> MemberWindSetup<'a> {
         if outside_face_drag > 0 {
             drag.push_str(&format!(
                 "; {outside_face_drag} member(s) on faces whose solidity is outside the face \
-                 drag table took their shape's or the generic factor"
+                 drag table took the table's largest face drag (or their shape's when larger: on \
+                 the safe side)"
             ));
         }
         notes.push(drag);

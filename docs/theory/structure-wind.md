@@ -47,12 +47,13 @@ at each joint. Two factors:
   facing the wind: the one facing it most, \\( \max |\hat{\mathbf n}\cdot\hat{\mathbf w}| \\)),
   else the drag of the profile's shape (`drag.<shape>`), else the
   model's generic `drag` (default 1). A face whose solidity is outside the
-  face drag table falls back the same way, and the notes count it.
+  face drag table takes the table's **largest** face drag (or the shape's
+  drag when larger), and the notes count it.
 
-  **Simplification:** that fallback. The shape's drag or the generic 1 can
-  be lower than the face drag the table would give at that solidity
-  (unsafe); the notes say how many members it concerns. Exact: a face
-  drag table covering the solidity ratios of the structure.
+  **Conservative** (2026-11-08; before, the shape's drag or the generic
+  1, which can be lower than the table's at that solidity — not on the
+  safe side): the largest face drag the data give. Exact: a face drag
+  table covering the solidity ratios of the structure.
 - **shielding** \\( \eta \\): 1, unless the member stands behind another
   face (below), then the data's shielding factor
   \\( \eta(\varphi_{front}, e/b) \\).

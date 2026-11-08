@@ -26,11 +26,11 @@ theory page. Status: **done** (with the date), **open**.
 | [Laps and splices](../theory/joint-laps-splices.md) | SIA 263 bearing on the leg bolted onto took the member's own e₁ | The smaller of the member's e₁ and Table 17's minimum; no minimum for the bolt: marked not on the safe side | done 2026-11-08 |
 | [Wind on structures](../theory/structure-wind.md) | A polygonal shaft's ice on the circle's perimeter πD | The polygon's own perimeter, n D tan(π/n) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md) | Frames checked with their end moments only: the moment in the span from their own weight and wind missed | The largest moment along the member (its end forces and self-weight exactly; loads put on its joints, q L² / 8); axial-only members: said when it would add ≥ 1 % | done 2026-11-08 |
-| [Structures](../theory/structures-fe.md) | A bowed (buckled) member keeps carrying its elastic buckling load N_cr, unloading the others | Capped at its design buckling resistance | open (batch 1b) |
+| [Structures](../theory/structures-fe.md) | A bowed (buckled) member keeps carrying its elastic buckling load N_cr, unloading the others | Capped at the lower of N_cr and its design compression resistance | done 2026-11-08 |
 | [Joint plates](../theory/joint-plates.md) | Block shear: tearing towards a side edge of the plate not checked | The side paths checked | open (batch 1b) |
 | [Wind on structures](../theory/structure-wind.md) | Overlaps counted twice in the shielding; gusset plates without wind area | Overlaps once; the plates' areas in the wind | open (batch 1b) |
-| [Wind on structures](../theory/structure-wind.md) | A face's drag outside the table: the shape's drag or 1 | The table's largest face drag | open (batch 1b) |
-| [Structures](../theory/structures-fe.md) | Buckling length k = 1 between joints: a diagonal split at a crossing nothing holds out of plane buckles over more | The length to the next joint held out of plane, else said per member | open (batch 1b) |
+| [Wind on structures](../theory/structure-wind.md) | A face's drag outside the table: the shape's drag or 1 | The table's largest face drag (or the shape's when larger) | done 2026-11-08 |
+| [Structures](../theory/structures-fe.md) | Buckling length k = 1 between joints: a diagonal split at a crossing nothing holds out of plane buckles over more | Said on each half in compression through such a crossing (without lk, k or a crossing partner) | done 2026-11-08 |
 | [Clearances](../theory/clearances.md) | In a swing band the wire's radius taken off radially, not r / cos β | r / cos β | open (batch 3) |
 | [LiDAR](../theory/lidar-analysis.md) | A voltage above the table's last row: that row's distance | The span not checked, said | open (batch 3) |
 | [Thermal](../theory/thermal.md) | Wire-to-wire rules left out of the temperature limit; a 10 °C grid can miss a narrow failure | Both included; the grid refined below the limit found | open (batch 3) |

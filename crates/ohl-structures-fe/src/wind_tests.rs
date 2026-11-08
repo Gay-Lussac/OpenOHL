@@ -270,6 +270,26 @@ fn a_face_drag_by_solidity_takes_over_on_the_faces() {
         "the members of the two faces across the wind, the horizontals included"
     );
     assert!(w.notes[1].contains("no shielding"), "{:?}", w.notes);
+    // The faces' solidity outside the table (it starts at 0.5): the
+    // table's largest face drag, 3.5, not the shape's 1.2 (on the safe
+    // side, 2026-11-08).
+    let f = factors(
+        "[wind]\ndrag = { round_bar = 1.2 }\n[wind.face_drag]\nsolidity = [0.5, 0.6]\n\
+         factor = [3.5, 3.0]\n",
+    );
+    let w = m.member_wind_with(1000.0, [0.0, 1.0, 0.0], Some(&f));
+    let on_faces: Vec<f64> = w
+        .members
+        .iter()
+        .filter(|r| r.drag_from == DragFrom::Face)
+        .map(|r| r.drag)
+        .collect();
+    assert_eq!(on_faces.len(), 20);
+    assert!(
+        on_faces.iter().all(|d| (*d - 3.5).abs() < 1e-12),
+        "{on_faces:?}"
+    );
+    assert!(w.notes[0].contains("table's largest"), "{:?}", w.notes);
     // A shape without a factor: the generic one, named.
     let f = factors("[wind]\ndrag = { equal_angle = 2.0 }\n");
     let w = m.member_wind_with(1000.0, [0.0, 1.0, 0.0], Some(&f));

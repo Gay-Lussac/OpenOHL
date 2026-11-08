@@ -219,6 +219,30 @@ pub fn moments_along(f: &crate::solve::MemberForces) -> [f64; 2] {
     [my, mz]
 }
 
+/// The compression a member resists by its design (N): its
+/// `capacity_compression` given, else its section's allowable
+/// compression, else the model's capacity method's (ASCE 10-97 or SIA
+/// 263, its crossing partner taken as not bracing it: the lower); none
+/// with the simple check or without a yield strength.
+pub fn design_compression(model: &Model, member: usize) -> Option<f64> {
+    let m = &model.members[member];
+    let s = &model.sections[m.section];
+    if let Some(c) = m.capacity_compression.or(s.compression) {
+        return Some(c);
+    }
+    s.yield_strength?;
+    match model.analysis.capacity {
+        CapacityMethod::Asce10 => crate::asce10::capacity(model, member, Some(false))
+            .compression
+            .map(|c| c.0),
+        CapacityMethod::Sia263 => crate::sia263::capacity(model, member, Some(false))
+            .0
+            .compression
+            .map(|c| c.0),
+        CapacityMethod::Simple => None,
+    }
+}
+
 /// Euler buckling load of a member, N (none without a second moment).
 pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
     let m = &model.members[member];
@@ -249,6 +273,7 @@ pub fn member_usage_with(
     strength: f64,
     given: Option<&[crate::asce10::Capacity]>,
 ) -> Vec<MemberUsage> {
+    let crossings = unbraced_crossings(model);
     (0..model.members.len())
         .map(|idx| {
             usage_of(
@@ -271,6 +296,19 @@ pub fn member_usage_with(
             // Its eccentric ends (connection shifts): where their moment
             // went, or that it was left out.
             let n = solution.members.get(u.member).map_or(0.0, |f| f.axial);
+            // A half of a diagonal through a crossing nothing else holds
+            // out of plane, in compression: its buckling length may be
+            // the whole diagonal's (2026-11-08).
+            if n < 0.0
+                && let Some(j) = &crossings[u.member]
+                && u.usage.is_some()
+            {
+                u.governs.push_str(&format!(
+                    " {NOT_SAFE} buckling length its own: the crossing at {j} is held out of its \
+                     plane only by the other diagonal (unless that one is in tension, the length \
+                     is the whole diagonal's; give lk, or the crossing partner)]"
+                ));
+            }
             if let Some(w) = crate::offsets::eccentricity_words(model, u.member, n) {
                 u.governs = if u.governs.is_empty() {
                     format!("{SHIFTED} {w}]")
@@ -279,6 +317,62 @@ pub fn member_usage_with(
                 };
             }
             u
+        })
+        .collect()
+}
+
+/// Per member, the joint where it is a half of a diagonal through a
+/// crossing that only the other diagonal holds out of the plane: a joint
+/// without supports or springs where exactly four members meet, as two
+/// straight lines (within 1°) — the member one of them — when the member
+/// gives no buckling length of its own (`lk`, `k` other than 1) and no
+/// crossing partner. Its check takes its own length between joints; out
+/// of the plane it may buckle over the whole diagonal: said, not on the
+/// safe side.
+pub fn unbraced_crossings(model: &Model) -> Vec<Option<String>> {
+    let mut at: Vec<Vec<usize>> = vec![Vec::new(); model.nodes.len()];
+    for (k, m) in model.members.iter().enumerate() {
+        at[m.i].push(k);
+        at[m.j].push(k);
+    }
+    let dir = |k: usize, from: usize| -> [f64; 3] {
+        let m = &model.members[k];
+        let other = if m.i == from { m.j } else { m.i };
+        let (a, b) = (model.nodes[from].point, model.nodes[other].point);
+        let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        d.map(|x| x / n.max(1e-12))
+    };
+    let opposite = |a: [f64; 3], b: [f64; 3]| {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < -(1.0f64.to_radians().cos())
+    };
+    (0..model.members.len())
+        .map(|k| {
+            let m = &model.members[k];
+            if m.lk.is_some() || (m.k - 1.0).abs() > 1e-12 || m.design.crossing.is_some() {
+                return None;
+            }
+            [m.i, m.j].into_iter().find_map(|n| {
+                let node = &model.nodes[n];
+                let held = node.fixed.iter().any(|f| *f) || node.spring.iter().any(|s| *s > 0.0);
+                let here = &at[n];
+                if held || here.len() != 4 {
+                    return None;
+                }
+                let mine = dir(k, n);
+                // Its continuation through the joint, and the other two
+                // in line with each other.
+                let cont = here
+                    .iter()
+                    .find(|&&o| o != k && opposite(mine, dir(o, n)))?;
+                let rest: Vec<usize> = here
+                    .iter()
+                    .copied()
+                    .filter(|&o| o != k && o != *cont)
+                    .collect();
+                (rest.len() == 2 && opposite(dir(rest[0], n), dir(rest[1], n)))
+                    .then(|| node.id.clone())
+            })
         })
         .collect()
 }
