@@ -176,6 +176,7 @@ fn the_table_loads_the_model_as_the_line_run_does() {
     let mut direct = Loads {
         nodal: Vec::new(),
         self_weight: 1.0,
+        ..Default::default()
     };
     for p in ["A1", "A11"] {
         let f = at_t2(&loads, "wind", p).factored;
@@ -207,6 +208,7 @@ fn the_table_loads_the_model_as_the_line_run_does() {
     let own = Loads {
         nodal: model.loads.clone(),
         self_weight: 1.0,
+        ..Default::default()
     };
     let (sa, _) = ohl_structures_fe::analyse(&model, &model_case, 1.0, &budget).unwrap();
     let (sb, _) = ohl_structures_fe::analyse(&model, &own, 1.0, &budget).unwrap();
@@ -280,6 +282,7 @@ fn the_cases_of_the_table_are_solved_through_the_link() {
     let mut direct = Loads {
         nodal: Vec::new(),
         self_weight: 1.0,
+        ..Default::default()
     };
     for p in ["A1", "A11"] {
         let f = at_t2(&loads, "wind", p).factored;

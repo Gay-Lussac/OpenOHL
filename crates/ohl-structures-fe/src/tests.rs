@@ -35,6 +35,7 @@ fn nodal(loads: Vec<NodalLoad>) -> Loads {
     Loads {
         nodal: loads,
         self_weight: 0.0,
+        ..Default::default()
     }
 }
 
@@ -345,6 +346,7 @@ fn self_weight() {
         &Loads {
             nodal: vec![],
             self_weight: 1.0,
+            ..Default::default()
         },
         &first_order(),
         &default_budget(),
@@ -475,6 +477,7 @@ fn example_model_parses() {
         &Loads {
             nodal: m.loads.clone(),
             self_weight: 1.0,
+            ..Default::default()
         },
         1.0,
         &default_budget(),
@@ -829,6 +832,7 @@ fn library_sections_resolve_first() {
         let loads = Loads {
             nodal: m.loads.clone(),
             self_weight: 1.0,
+            ..Default::default()
         };
         analyse(m, &loads, 1.0, &default_budget()).unwrap()
     };
@@ -967,6 +971,7 @@ fn single_angles_are_checked_axially_by_default() {
         let loads = Loads {
             nodal: m.loads.clone(),
             self_weight: 0.0,
+            ..Default::default()
         };
         analyse(&m, &loads, 1.0, &default_budget()).unwrap().1
     };
@@ -988,4 +993,76 @@ fn single_angles_are_checked_axially_by_default() {
     }
     let tube = run("T200", "");
     assert!(tube.iter().all(|u| u.governs.contains("My")), "{tube:?}");
+}
+
+/// The moments along a member (2026-11-08: a frame's check takes the
+/// largest along it, not only at its ends): a horizontal tube beam under
+/// its own weight, pinned at both ends — w L² / 8 at mid-span (its ends
+/// free of moment); fixed at both — w L² / 12 at its ends (w L² / 24 at
+/// mid-span); a truss bar with member wind put on its joints as halves —
+/// q L² / 8, and its check says what that bending would add.
+#[test]
+fn the_moment_along_a_member_is_checked() {
+    let lib = ohl_sections::SectionLibrary::parse(LIBRARY).unwrap();
+    let beam = |support: &str, kind: &str| {
+        format!(
+            "[analysis]\nnonlinear = false\n\
+             [[node]]\nid = \"A\"\npoint = [0, 0, 5]\nsupport = \"{support}\"\n\
+             [[node]]\nid = \"B\"\npoint = [8, 0, 5]\nsupport = \"{support}\"\n\
+             [[member]]\nid = \"b\"\nnodes = [\"A\", \"B\"]\nsection = \"T200\"\nkind = \"{kind}\"\n"
+        )
+    };
+    let l = 8.0;
+    for (support, expected) in [("pinned", 1.0 / 8.0), ("fixed", 1.0 / 12.0)] {
+        let m = Model::from_structure_type_with(&beam(support, "frame"), &lib).unwrap();
+        let w = m.sections[m.members[0].section].weight();
+        let loads = Loads {
+            self_weight: 1.0,
+            ..Default::default()
+        };
+        let s = solve(&m, &loads, &first_order(), &default_budget()).unwrap();
+        let f = &s.members[0];
+        let [my, mz] = crate::check::moments_along(f);
+        let along = my.max(mz);
+        assert!(
+            close(along, expected * w * l * l, 1e-6),
+            "{support}: {along} against {}",
+            expected * w * l * l
+        );
+        // The end moments alone: 0 pinned, the largest fixed.
+        let e = &f.end_forces;
+        let ends = e[4].abs().max(e[10].abs()).max(e[5].abs()).max(e[11].abs());
+        if support == "pinned" {
+            assert!(ends < 1e-6 * w * l * l, "{ends}");
+        }
+    }
+    // A truss bar with wind on it, put on its joints as halves.
+    let m = Model::from_structure_type_with(&beam("pinned", "truss"), &lib).unwrap();
+    let q = 2000.0;
+    let total = [0.0, q * l, 0.0];
+    let loads = Loads {
+        nodal: vec![
+            NodalLoad {
+                node: 0,
+                force: [0.0, q * l / 2.0, 0.0],
+                moment: [0.0; 3],
+            },
+            NodalLoad {
+                node: 1,
+                force: [0.0, q * l / 2.0, 0.0],
+                moment: [0.0; 3],
+            },
+        ],
+        member: vec![(0, total)],
+        ..Default::default()
+    };
+    let s = solve(&m, &loads, &first_order(), &default_budget()).unwrap();
+    let [my, mz] = crate::check::moments_along(&s.members[0]);
+    assert!(close(my.max(mz), q * l * l / 8.0, 1e-9), "{my} {mz}");
+    let u = member_usage(&m, &s, 1.0);
+    assert!(
+        crate::check::not_safe(&u[0].governs) && u[0].governs.contains("a truss member"),
+        "{:?}",
+        u[0]
+    );
 }

@@ -1199,6 +1199,7 @@ impl Calculation for StructureFe {
         let loads = ohl_structures_fe::Loads {
             nodal: model.loads.clone(),
             self_weight: weight,
+            ..Default::default()
         };
         let (s, usage) =
             ohl_structures_fe::analyse(&model, &loads, 1.0, &ohl_structures_fe::default_budget())
@@ -1274,6 +1275,7 @@ impl Calculation for StructureFePoint {
         let loads = ohl_structures_fe::Loads {
             nodal: at.loads.clone(),
             self_weight: 0.0,
+            ..Default::default()
         };
         let (s, _) =
             ohl_structures_fe::analyse(&model, &loads, 1.0, &ohl_structures_fe::default_budget())

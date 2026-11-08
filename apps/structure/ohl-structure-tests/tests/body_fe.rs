@@ -215,6 +215,7 @@ fn solve_with(doc: &DocumentMut, weight: f64) -> [Held; 2] {
     let loads = Loads {
         nodal,
         self_weight: weight,
+        ..Default::default()
     };
     let applied: [f64; 3] = [0, 1, 2].map(|k| loads.nodal.iter().map(|l| l.force[k]).sum::<f64>());
     let size = applied.iter().map(|v| v * v).sum::<f64>().sqrt();

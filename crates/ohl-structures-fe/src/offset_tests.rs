@@ -94,6 +94,7 @@ fn run(m: &Model, force: [f64; 3], nonlinear: bool) -> Solution {
             moment: [0.0; 3],
         }],
         self_weight: 0.0,
+        ..Default::default()
     };
     let options = Options {
         nonlinear,

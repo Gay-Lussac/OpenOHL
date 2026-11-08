@@ -394,6 +394,25 @@ pub struct MemberWind {
 }
 
 impl MemberWind {
+    /// Each member's wind as one force (its two halves at its ends
+    /// together), N, structure axes: for [`crate::Loads::member`], so the
+    /// check takes the bending it puts on the member between its joints.
+    pub fn member_forces(&self) -> Vec<(usize, [f64; 3])> {
+        self.members
+            .iter()
+            .enumerate()
+            .map(|(row, r)| {
+                let mut f = [0.0; 3];
+                for l in self.loads.iter().skip(2 * row).take(2) {
+                    for (a, b) in f.iter_mut().zip(l.force) {
+                        *a += b;
+                    }
+                }
+                (r.member, f)
+            })
+            .collect()
+    }
+
     /// The sum of the loads, N (structure axes).
     pub fn total(&self) -> [f64; 3] {
         let mut s = [0.0; 3];

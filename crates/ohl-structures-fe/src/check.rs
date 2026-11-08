@@ -191,6 +191,34 @@ pub const BOWED: &str = "bowed: carries its buckling load";
 /// modelling member): no usage.
 pub const NOT_CHECKED: &str = "not checked (modelling member)";
 
+/// The largest bending moments along a member, about its local y and z
+/// (N·m), between its joints (2026-11-08, owner: "stay on the safe
+/// side"): from its end forces and the load along it they include (a
+/// frame's self-weight), the moment at every point x — M_y(x) = M_y,i +
+/// x F_z,i + q_z x² / 2, M_z(x) = M_z,i − x F_y,i − q_y x² / 2 — its
+/// largest at an end or where the shear is zero; plus, for the load put
+/// on its joints as halves (member wind, ice, a truss's self-weight),
+/// q L² / 8 (a simply supported member's: on the safe side, whatever its
+/// ends do).
+pub fn moments_along(f: &crate::solve::MemberForces) -> [f64; 2] {
+    let e = &f.end_forces;
+    let l = f.length;
+    let largest = |m0: f64, v: f64, q: f64| -> f64 {
+        let at = |x: f64| (m0 + v * x + q * x * x / 2.0).abs();
+        let mut best = at(0.0).max(at(l));
+        if q.abs() > 0.0 {
+            let x = -v / q;
+            if x > 0.0 && x < l {
+                best = best.max(at(x));
+            }
+        }
+        best
+    };
+    let my = largest(e[4], e[2], f.span_load[2]) + f.lumped_load[2].abs() * l * l / 8.0;
+    let mz = largest(e[5], -e[1], -f.span_load[1]) + f.lumped_load[1].abs() * l * l / 8.0;
+    [my, mz]
+}
+
 /// Euler buckling load of a member, N (none without a second moment).
 pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
     let m = &model.members[member];
@@ -429,10 +457,13 @@ fn usage_of(
             // A single angle's end moments, left out of its check (ASCE
             // 10-97's curves take the connection's eccentricity), said when
             // they would add to its usage.
-            if m.is_frame() && axial_member(m, s) && !model.analysis.single_angle_moments {
-                let e = &f.end_forces;
-                let my = e[4].abs().max(e[10].abs());
-                let mz = e[5].abs().max(e[11].abs());
+            // Likewise any member checked for its axial force alone: its
+            // bending between its joints from the loads along it (its own
+            // weight, member wind, ice), said when it would add.
+            let axial_only =
+                !m.is_frame() || (axial_member(m, s) && !model.analysis.single_angle_moments);
+            if axial_only && m.kind != MemberKind::Cable {
+                let [my, mz] = moments_along(f);
                 let fy = s.yield_strength;
                 let cap_y = s.moment_y.or(s.wy.zip(fy).map(|(w, y)| w * y));
                 let cap_z = s.moment_z.or(s.wz.zip(fy).map(|(w, y)| w * y));
@@ -440,8 +471,13 @@ fn usage_of(
                     + cap_z.map_or(0.0, |c| mz / (strength * c));
                 if add >= ANGLE_MOMENTS_SAID {
                     not_safe_notes.push(format!(
-                        "end moments not checked (single_angle_moments off): they would add {:.0} % \
-                         (My {:.2}, Mz {:.2} kN m)",
+                        "bending not checked (axial check{}): it would add {:.0} % (My {:.2}, Mz \
+                         {:.2} kN m along it)",
+                        if m.is_frame() {
+                            ", single_angle_moments off"
+                        } else {
+                            ": a truss member"
+                        },
                         add * 100.0,
                         kn(my),
                         kn(mz)
@@ -465,7 +501,21 @@ fn usage_of(
                 };
                 if !given_cap && (frame || (n < 0.0 && (st.eccentric || st.class4))) {
                     let moments = if frame {
-                        crate::sia263::frame_moments(st, &f.end_forces)
+                        // A moment larger between the joints: as a uniform
+                        // moment that large (on the safe side).
+                        let mut mm = crate::sia263::frame_moments(st, &f.end_forces);
+                        let [my, mz] = moments_along(f);
+                        for (k, a) in st.axes.iter().enumerate() {
+                            let along = match a.name {
+                                "y" => my,
+                                "z" => mz,
+                                _ => 0.0,
+                            };
+                            if along > mm[k][0].abs().max(mm[k][1].abs()) + 1e-9 {
+                                mm[k] = [along, along];
+                            }
+                        }
+                        mm
                     } else {
                         [[0.0; 2]; 2]
                     };
@@ -496,9 +546,8 @@ fn usage_of(
                     governs: axial.map(|a| a.1).unwrap_or_default(),
                 };
             }
-            let e = &f.end_forces;
-            let my = e[4].abs().max(e[10].abs());
-            let mz = e[5].abs().max(e[11].abs());
+            // The largest moments along it, not only at its ends.
+            let [my, mz] = moments_along(f);
             let fy = s.yield_strength;
             let cap_y = s.moment_y.or(s.wy.zip(fy).map(|(w, y)| w * y));
             let cap_z = s.moment_z.or(s.wz.zip(fy).map(|(w, y)| w * y));

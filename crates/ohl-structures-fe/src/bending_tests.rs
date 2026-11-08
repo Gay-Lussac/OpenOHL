@@ -45,6 +45,7 @@ fn run(m: &Model, nodal: Vec<NodalLoad>) -> Result<Solution, FeError> {
     let loads = Loads {
         nodal,
         self_weight: 0.0,
+        ..Default::default()
     };
     solve(m, &loads, &first_order(), &default_budget())
 }

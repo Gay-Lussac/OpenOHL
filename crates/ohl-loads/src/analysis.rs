@@ -46,6 +46,9 @@ pub(crate) struct BodyWeights {
     pub height: f64,
     /// Per member, how much wider the ice makes it for the wind (2·t), m.
     pub widening: Vec<f64>,
+    /// Per member its ice and snow as one force (down), N: for
+    /// [`Loads::member`] (the bending between its joints).
+    pub member: Vec<(usize, [f64; 3])>,
 }
 
 /// The perimeter of a profile's outline (its outer edge, an angle's
@@ -107,6 +110,7 @@ pub(crate) fn body_weights(model: &Model, ice: Option<IceOn>, snow: Option<f64>)
                     moment: [0.0; 3],
                 });
             }
+            out.member.push((k, [0.0, 0.0, -weight]));
         }
     }
     let total = out.ice + out.snow;
@@ -282,6 +286,9 @@ impl Analyses {
             }
         };
         let mut nodal = Vec::new();
+        // The loads along members put on their joints as halves (ice,
+        // snow, member wind): for the bending between joints.
+        let mut spread: Vec<(usize, [f64; 3])> = Vec::new();
         let refused = |why: String| {
             Some(Check {
                 method: Method::Fe,
@@ -383,6 +390,12 @@ impl Analyses {
                 l.force[2] *= case.vertical;
                 l
             }));
+            spread.extend(
+                weights
+                    .member
+                    .iter()
+                    .map(|(k, f)| (*k, f.map(|x| x * case.vertical))),
+            );
             if ice.is_some() {
                 widening = weights.widening;
             }
@@ -435,11 +448,13 @@ impl Analyses {
                     }
                 ));
                 notes.extend(wind.notes.iter().map(|n| format!("model: {n}")));
+                spread.extend(wind.member_forces());
                 nodal.extend(wind.loads);
             }
         }
         let loads = Loads {
             nodal,
+            member: spread,
             self_weight: if model.analysis.self_weight {
                 case.vertical
             } else {

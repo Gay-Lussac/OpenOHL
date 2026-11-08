@@ -371,6 +371,7 @@ fn solved(m: &Model) -> crate::Solution {
     let loads = Loads {
         nodal: m.point_loads("A1", [10e3, 4e3, -20e3]).unwrap(),
         self_weight: 0.0,
+        ..Default::default()
     };
     let options = Options {
         nonlinear: false,

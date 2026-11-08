@@ -83,6 +83,12 @@ pub struct Loads {
     /// Factor on the members' self-weight (0: none), on top of each
     /// member's dead-load factor ([`Model::dead_load_factor`]).
     pub self_weight: f64,
+    /// Loads spread along members that are in `nodal` as halves at their
+    /// ends (member wind, ice): per member (index) its total force,
+    /// structure axes, N. Not loaded again: the check takes from them the
+    /// bending they put on the member between its joints (2026-11-08,
+    /// [`MemberForces::lumped_load`]). Empty: none said.
+    pub member: Vec<(usize, [f64; 3])>,
 }
 
 /// Settings of one solve.
@@ -297,6 +303,16 @@ pub struct MemberForces {
     /// and no more — left out of the stiffness, its force a constant pair
     /// pushing its ends apart.
     pub bowed: bool,
+    /// Its length between its ends as solved, m.
+    pub length: f64,
+    /// The load along it whose effect is in `end_forces` (a frame's
+    /// self-weight, consistent), local axes, N/m.
+    pub span_load: [f64; 3],
+    /// The load along it put on its joints as halves, so not in
+    /// `end_forces` (a truss's self-weight; member wind and ice,
+    /// [`Loads::member`]), local axes, N/m: it bends the member between
+    /// its joints by up to q L² / 8 (2026-11-08).
+    pub lumped_load: [f64; 3],
 }
 
 /// A support reaction: what holds a joint with a support or a spring.
@@ -1489,11 +1505,32 @@ fn solve_with(
                     }
                 }
             }
+            // The loads along it: its self-weight (in its end forces when
+            // it bends, else put on its joints) and those said spread
+            // along it, in its local axes.
+            let w =
+                model.sections[m.section].weight() * model.dead_load_factor(m) * loads.self_weight;
+            let own = p.r * Vector3::new(0.0, 0.0, -w);
+            let mut spread = Vector3::zeros();
+            for (k, f) in &loads.member {
+                if *k == idx {
+                    spread += Vector3::new(f[0], f[1], f[2]) / p.l;
+                }
+            }
+            let spread = p.r * spread;
+            let (span_load, lumped_load) = if bends[idx] {
+                (own, spread)
+            } else {
+                (Vector3::zeros(), own + spread)
+            };
             MemberForces {
                 axial: n,
                 end_forces: end,
                 slack: slack[idx] && bowed[idx] == 0.0,
                 bowed: slack[idx] && bowed[idx] > 0.0,
+                length: p.l,
+                span_load: [span_load[0], span_load[1], span_load[2]],
+                lumped_load: [lumped_load[0], lumped_load[1], lumped_load[2]],
             }
         })
         .collect();

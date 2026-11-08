@@ -25,6 +25,7 @@ fn nodal(loads: Vec<NodalLoad>, self_weight: f64) -> Loads {
     Loads {
         nodal: loads,
         self_weight,
+        ..Default::default()
     }
 }
 

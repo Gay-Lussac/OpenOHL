@@ -50,6 +50,7 @@ fn at(node: usize, f: [f64; 3]) -> Loads {
             moment: [0.0; 3],
         }],
         self_weight: 0.0,
+        ..Default::default()
     }
 }
 
@@ -146,6 +147,7 @@ fn p_delta_stopped_just_above_the_tolerance_is_accepted() {
             },
         ],
         self_weight: 0.0,
+        ..Default::default()
     };
     let options = Options {
         tolerance: 1e-30,

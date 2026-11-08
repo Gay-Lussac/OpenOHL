@@ -83,6 +83,7 @@ fn solved(m: &Model, nodal: Vec<NodalLoad>, options: &Options) -> Solution {
     let loads = Loads {
         nodal,
         self_weight: 0.0,
+        ..Default::default()
     };
     solve(m, &loads, options, &default_budget()).unwrap_or_else(|e| panic!("{e}"))
 }
@@ -414,6 +415,7 @@ fn the_formerly_cycling_kinked_joint_settles() {
     let loads = Loads {
         nodal: kinked_loads(),
         self_weight: 0.0,
+        ..Default::default()
     };
     let ties = crate::solve::chains(&m);
     let e = settle(&m, false, |_, inactive| {

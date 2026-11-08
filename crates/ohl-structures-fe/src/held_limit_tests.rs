@@ -32,6 +32,7 @@ fn run(m: &Model, nodal: Vec<NodalLoad>, nonlinear: bool) -> Result<Solution, Fe
     let loads = Loads {
         nodal,
         self_weight: 0.0,
+        ..Default::default()
     };
     let options = Options {
         nonlinear,

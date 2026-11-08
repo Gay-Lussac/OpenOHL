@@ -913,6 +913,9 @@ pub fn fe_loads(
     self_weight: f64,
 ) -> Result<Loads, String> {
     let mut nodal = Vec::new();
+    // A member's load, put half on each joint, kept whole for the bending
+    // it puts on the member between them (2026-11-08).
+    let mut spread: Vec<(usize, [f64; 3])> = Vec::new();
     let at = |node: usize, f: [f64; 3], share: f64| NodalLoad {
         node,
         force: [f[0] * share, f[1] * share, -f[2] * share],
@@ -947,16 +950,22 @@ pub fn fe_loads(
                 nodal.push(at(n, r.force, 1.0));
             }
             At::Member => {
-                let m = member_of
+                let k = member_of
                     .get(r.label.as_str())
-                    .map(|&k| &model.members[k])
+                    .copied()
                     .ok_or_else(|| format!("no member \"{}\" in the model", r.label))?;
+                let m = &model.members[k];
                 nodal.push(at(m.i, r.force, 0.5));
                 nodal.push(at(m.j, r.force, 0.5));
+                spread.push((k, [r.force[0], r.force[1], -r.force[2]]));
             }
         }
     }
-    Ok(Loads { nodal, self_weight })
+    Ok(Loads {
+        nodal,
+        self_weight,
+        member: spread,
+    })
 }
 
 /// A case of the load table to solve: its name, the strength factor of
@@ -1177,7 +1186,10 @@ pub fn analyse_cases(
     let model = model_of(structure, text, dir, sections)?;
     Ok(in_case_order(cases.len(), threads(cases.len()), |k| {
         let c = &cases[k];
-        (c.name.clone(), analyse_one(&model, table, c, &[], budget))
+        (
+            c.name.clone(),
+            analyse_one(&model, table, c, &Default::default(), budget),
+        )
     }))
 }
 
@@ -1227,7 +1239,7 @@ fn analyse_one(
     model: &Model,
     table: &LoadTable,
     case: &CaseToRun,
-    extra: &[NodalLoad],
+    extra: &ohl_structures_fe::Loads,
     budget: &Budget,
 ) -> Result<CaseResult, String> {
     let self_weight = if model.analysis.self_weight {
@@ -1236,7 +1248,8 @@ fn analyse_one(
         0.0
     };
     let mut loads = fe_loads(model, table, &case.name, self_weight)?;
-    loads.nodal.extend_from_slice(extra);
+    loads.nodal.extend_from_slice(&extra.nodal);
+    loads.member.extend_from_slice(&extra.member);
     let mut notes = Vec::new();
     let left_out = table
         .case(&case.name)

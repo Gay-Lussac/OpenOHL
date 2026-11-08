@@ -37,6 +37,7 @@ fn usage(text: &str, force: f64) -> (f64, String) {
             moment: [0.0; 3],
         }],
         self_weight: 0.0,
+        ..Default::default()
     };
     let o = Options {
         nonlinear: false,
@@ -198,6 +199,7 @@ fn orientation_turns_the_bending_axis() {
                 moment: [0.0; 3],
             }],
             self_weight: 0.0,
+            ..Default::default()
         };
         let o = Options {
             nonlinear: false,
@@ -264,6 +266,7 @@ fn weight_solution(text: &str) -> (Model, crate::Solution) {
     let loads = Loads {
         nodal: Vec::new(),
         self_weight: 1.0,
+        ..Default::default()
     };
     let o = Options {
         nonlinear: m.analysis.nonlinear,

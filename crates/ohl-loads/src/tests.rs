@@ -693,6 +693,7 @@ fn member_wind_replaces_the_bands_in_the_fe_check() {
     let fe_loads = ohl_structures_fe::Loads {
         nodal,
         self_weight: case.vertical,
+        ..Default::default()
     };
     let (_, usage) = ohl_structures_fe::analyse(
         &model,
@@ -1295,6 +1296,7 @@ fn the_structures_take_the_load_cases_own_wind() {
         &ohl_structures_fe::Loads {
             nodal,
             self_weight: wind_case.vertical,
+            ..Default::default()
         },
         wind_case.strength,
         &ohl_structures_fe::default_budget(),

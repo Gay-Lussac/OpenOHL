@@ -131,6 +131,7 @@ fn solve(doc: &DocumentMut, extension: Option<&str>) -> (Model, Vec<String>) {
     let loads = Loads {
         nodal,
         self_weight: 0.0,
+        ..Default::default()
     };
     let (s, _) = ohl_structures_fe::analyse(&model, &loads, 1.0, &default_budget())
         .unwrap_or_else(|e| panic!("{e}"));

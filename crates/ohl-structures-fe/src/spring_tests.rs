@@ -30,7 +30,11 @@ fn load(node: usize, force: [f64; 3]) -> NodalLoad {
 }
 
 fn solved(m: &Model, nodal: Vec<NodalLoad>, self_weight: f64, options: &Options) -> Solution {
-    let loads = Loads { nodal, self_weight };
+    let loads = Loads {
+        nodal,
+        self_weight,
+        ..Default::default()
+    };
     solve(m, &loads, options, &default_budget()).unwrap_or_else(|e| panic!("{e}"))
 }
 

@@ -437,8 +437,8 @@ fn piece_loads(
     name: &str,
     extension: &str,
     notes: &mut Vec<String>,
-) -> Vec<NodalLoad> {
-    let mut out = Vec::new();
+) -> ohl_structures_fe::Loads {
+    let mut out = ohl_structures_fe::Loads::default();
     for (p, d, number) in pressures_on_all(recipes, name) {
         let (mut total, mut on, mut no_area) = ([0.0; 3], 0, 0);
         for id in ids {
@@ -451,12 +451,13 @@ fn piece_loads(
             };
             let f = d.map(|x| x * p * a);
             for node in [model.members[k].i, model.members[k].j] {
-                out.push(NodalLoad {
+                out.nodal.push(NodalLoad {
                     node,
                     force: f.map(|x| 0.5 * x),
                     moment: [0.0; 3],
                 });
             }
+            out.member.push((k, f));
             for (t, x) in total.iter_mut().zip(f) {
                 *t += x;
             }
@@ -491,8 +492,8 @@ fn piece_part_loads(
     sections: &SectionLibrary,
     extension: &str,
     notes: &mut Vec<String>,
-) -> Vec<NodalLoad> {
-    let mut out = Vec::new();
+) -> ohl_structures_fe::Loads {
+    let mut out = ohl_structures_fe::Loads::default();
     let Some(own) = recipe.and_then(|r| r.structure.as_ref()) else {
         return out;
     };
@@ -502,12 +503,13 @@ fn piece_part_loads(
         .collect();
     let mut half = |k: usize, f: [f64; 3]| {
         for node in [model.members[k].i, model.members[k].j] {
-            out.push(NodalLoad {
+            out.nodal.push(NodalLoad {
                 node,
                 force: f.map(|x| 0.5 * x),
                 moment: [0.0; 3],
             });
         }
+        out.member.push((k, f));
     };
     if !own.wind.is_empty() {
         let setup = ohl_structures_fe::wind::MemberWindSetup::new(model, sections.wind.as_ref());
@@ -819,17 +821,19 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             let extra = match input.extension {
                 Some(e) if !piece.is_empty() => {
                     let mut l = piece_loads(m, &piece, input.recipes, &c.name, e, &mut notes);
-                    l.extend(piece_part_loads(
+                    let more = piece_part_loads(
                         m,
                         &piece,
                         input.recipes.iter().find(|r| r.name == c.name),
                         input.sections,
                         e,
                         &mut notes,
-                    ));
+                    );
+                    l.nodal.extend(more.nodal);
+                    l.member.extend(more.member);
                     l
                 }
-                _ => Vec::new(),
+                _ => Default::default(),
             };
             analyse_one(m, input.table, c, &extra, budget).map(|mut r| {
                 r.notes.extend(notes);

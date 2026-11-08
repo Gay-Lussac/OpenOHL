@@ -1072,7 +1072,11 @@ fn amplification(
             }
         }
     }
-    let loads = Loads { nodal, self_weight };
+    let loads = Loads {
+        nodal,
+        self_weight,
+        ..Default::default()
+    };
     let ground = |s: &crate::Solution| {
         let r = s
             .reactions

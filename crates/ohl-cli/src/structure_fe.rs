@@ -312,6 +312,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             println!("  {n}");
         }
     }
+    let spread = member_wind.member_forces();
     let wind = member_wind.loads;
     let runs: Vec<(String, Vec<NodalLoad>)> = match (&args.loads, &args.structure) {
         (Some(path), Some(structure)) => read_loads(path, structure, &args.case)?
@@ -344,6 +345,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         let loads = Loads {
             nodal,
             self_weight: weight,
+            member: spread.clone(),
         };
         let (s, mut usage) = ohl_structures_fe::analyse(
             &model,
