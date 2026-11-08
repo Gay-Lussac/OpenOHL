@@ -384,6 +384,10 @@ impl Analyses {
                     s.load() / 1000.0,
                     weights.snow / 1000.0
                 ));
+                notes.push(format!(
+                    "model: NOT ON THE SAFE SIDE: {}",
+                    ohl_structures::SNOW_BRIDGING
+                ));
             }
             nodal.extend(weights.nodal.iter().map(|l| {
                 let mut l = *l;

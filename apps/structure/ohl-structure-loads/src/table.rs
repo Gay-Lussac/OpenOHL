@@ -878,7 +878,13 @@ fn part_rows(
     }
     for (k, snow) in own.snow.iter().enumerate() {
         let number = Some(Part::Snow.number(k));
-        let text = crate::parts::snow_text(snow);
+        // On each member's plan only (2026-11-08: said not on the safe
+        // side).
+        let text = format!(
+            "{}; NOT ON THE SAFE SIDE: {}",
+            crate::parts::snow_text(snow),
+            ohl_structures::SNOW_BRIDGING
+        );
         for id in ids.iter().filter(|id| snow.on(id)) {
             let row = LoadRow {
                 source: Source::Snow,

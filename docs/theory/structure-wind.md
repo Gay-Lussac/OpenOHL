@@ -367,7 +367,10 @@ normal exposure), \\( C_T = 1.0 \\) (5.2.5); each may be given.
   (snow slides off a steep member), overlapping members counted twice.
   **Simplification, not on the safe side:** snow bridging between members
   (a crossarm's plan bracing filled, a platform) not counted, nor on
-  plates; members without a profile none.
+  plates; members without a profile none. **Said where it applies**
+  (2026-11-08): with every snow on the members, in the line's check notes
+  and on each of OHL-Structure's snow rows (*NOT ON THE SAFE SIDE: snow
+  bridging between members … not counted*).
 - **Pole:** none (no horizontal surface but its top; said).
 - **Wind bands only:** none (no plan area; said, not on the safe side).
 
@@ -378,9 +381,14 @@ loads listed per structure ("ice on the structure", "snow on the
 structure": the same weights, down, at their centroid on the structure's
 axis) are data for the reports; the allowable loads at the attachments
 (Method 2, load trees) take no load without a point, as the wind bands:
-**Simplification:** the type's allowable loads are taken to allow for its
-own body's ice and snow (unsafe where they do not). Exact: the
-fe or pole check.
+**Simplification, not on the safe side:** the type's allowable loads are
+taken to allow for its own body's ice and snow (unsafe where they do
+not). **Said where it applies** (2026-11-08): a structure checked by its
+allowable loads only (no model or pole checks it), in a case with ice or
+snow on the structures, has `[not on the safe side: the structure's own
+ice and snow not in the allowable loads (taken as allowed for by them)]`
+on that check and is never shown as passing. Exact: the fe or pole
+check.
 
 **In OHL-Structure** (a placed structure's cases of the
 line's load case library): the same ice (thickness all round each

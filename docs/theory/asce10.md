@@ -410,6 +410,15 @@ largest \\( KL/r \\).
   centroid lie between the heel and the connected leg's centreline is not
   checked.
 
+**Said where it applies** (2026-11-08): an end restrained by the I/L
+rule (worked out, not given) on a member with \\( L/r > 120 \\) is marked
+`[not on the safe side: restraint at J by the I/L rule (C3.7.4): the
+restraining members buckling in the same case and the plane of the
+stress not checked]`; an end worked out concentric from its bolting,
+`[not on the safe side: concentric at J worked out: the bolts' centroid
+condition (C3.7.4) not checked]`. Given or design-data restraint and
+eccentricity are the user's.
+
 ## Assumptions said per member
 
 Where design data are missing, the least favourable case is assumed and

@@ -392,6 +392,16 @@ fn restraint_by_plate_and_by_stiffness() {
                 bolts = { count = 2, diameter = \"16 mm\" }\n";
     let mut m = model(conn, &BoltLibrary::default());
     assert_eq!(end_conditions(&m, D1).restrained[1].value, Some(true));
+    // Worked out by the I/L rule, which cannot know the case or the
+    // plane: said, not on the safe side (2026-11-08; D1's L/r above 120).
+    let c = asce10::capacity(&m, D1, None);
+    assert!(
+        c.compression_assumed
+            .iter()
+            .any(|n| n.starts_with("restraint at N2 by the I/L rule") && n.contains("not checked")),
+        "{:?}",
+        c.compression_assumed
+    );
     let d = m.members[D1].section;
     m.sections[d].i_min = 120e-8;
     let e = end_conditions(&m, D1);

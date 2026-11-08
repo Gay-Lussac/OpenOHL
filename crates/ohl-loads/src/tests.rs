@@ -295,6 +295,48 @@ fn allowable_loads() {
     for (a, b) in usage[0].structures.iter().zip(&linear[0].structures) {
         assert!(b.loads.as_ref().unwrap().usage >= a.loads.as_ref().unwrap().usage - 1e-12);
     }
+    // A case with snow on the structures: the body's own snow is at no
+    // point, so the allowable loads check says it is not in it (no model
+    // or pole checks it here), not on the safe side (2026-11-08).
+    let mut snowy = loads.clone();
+    snowy[0].case.on_structure.snow = true;
+    let (line, types) = typed(tree(""));
+    let u = capacity::usage(&line, &types, &library, &weather, &snowy);
+    let mut said = 0;
+    for s in &u[0].structures {
+        let c = s.loads.as_ref().unwrap();
+        let t = line
+            .structure(&s.structure)
+            .and_then(|x| x.structure_type.as_deref())
+            .and_then(|t| types.get(t))
+            .unwrap();
+        let analysed = t.members_designed()
+            || t.model.is_some()
+            || t.pole_detail() == Some(ohl_structures::Detail::Design);
+        assert_eq!(
+            c.not_safe,
+            usize::from(!analysed),
+            "{}: {}",
+            s.structure,
+            c.governs
+        );
+        if !analysed {
+            said += 1;
+            assert!(
+                c.governs
+                    .contains("the structure's own ice and snow not in the allowable loads"),
+                "{}",
+                c.governs
+            );
+        }
+    }
+    assert!(said > 0);
+    assert!(
+        usage[0]
+            .structures
+            .iter()
+            .all(|s| s.loads.as_ref().unwrap().not_safe == 0)
+    );
     // The worst structure first; the CSV has a row per case and structure.
     let g = capacity::governing(&usage);
     assert_eq!(g.len(), usage[0].structures.len());

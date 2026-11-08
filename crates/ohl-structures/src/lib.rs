@@ -20,6 +20,11 @@
 //! - [`string_volumes`]: the volumes on an assembly's strings, their
 //!   freedoms, several strings in one assembly (roadmap O6).
 
+/// Snow on a structure's members, in words, said not on the safe side with
+/// every snow on them (2026-11-08): on each member's own plan only.
+pub const SNOW_BRIDGING: &str = "snow bridging between members (plan bracing, a platform) and \
+     snow on gusset plates not counted — the snow on each member's own plan only";
+
 pub mod bolts;
 pub mod connections;
 pub mod derive;

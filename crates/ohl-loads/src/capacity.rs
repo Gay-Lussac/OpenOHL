@@ -723,13 +723,26 @@ pub fn usage_with_sections(
                                 worst = (usage, why);
                             }
                         }
+                        // The structure's own ice or snow is at no point: the
+                        // allowable loads are taken to allow for it. Without
+                        // a model or pole that checks it, said not on the
+                        // safe side (2026-11-08).
+                        let own = !analysed && case.is_some_and(|w| r.case.ices_or_snows(w));
+                        let mut governs = worst.1;
+                        if own {
+                            governs.push_str(&format!(
+                                " {} the structure's own ice and snow not in the allowable \
+                                 loads (taken as allowed for by them)]",
+                                ohl_structures_fe::check::NOT_SAFE
+                            ));
+                        }
                         Check {
                             method: Method::Loads,
                             usage: worst.0,
-                            governs: worst.1,
+                            governs,
                             incomplete: false,
                             approximate: false,
-                            not_safe: 0,
+                            not_safe: usize::from(own),
                         }
                     });
                     let factored: Vec<crate::analysis::Factored> = points

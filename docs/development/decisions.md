@@ -10,6 +10,17 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**End restraint by the I/L rule and snow bridging said (safe-side audit, 2026-11-08)**
+
+A structure checked by its allowable loads only, in a case with ice or
+snow on the structures, says that its own ice and snow are not in that
+check. ASCE 10-97: an end restrained by the program's I/L rule (L/r above 120)
+or worked out concentric is marked not on the safe side with what the
+rule cannot know (C3.7.4: members buckling in the same case, the plane of
+the stress, the bolts' centroid). Snow on members says, with every snow,
+that bridging between members and snow on plates are not counted. The
+load factors on components stay (owner's load cases), said in the theory.
+
 **Clauses not covered named on the members and poles (safe-side audit, 2026-11-08)**
 
 Where the model's data tell that a clause of the capacity method applies

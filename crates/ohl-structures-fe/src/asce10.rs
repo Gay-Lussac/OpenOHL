@@ -397,6 +397,30 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
             [false, true] => assumed.push(format!("not restrained at {}", at(1))),
             [false, false] => {}
         }
+        // A restraint worked out by the I/L rule lowers KL/r: what the
+        // rule cannot know is said, not on the safe side (2026-11-08).
+        for end in 0..2 {
+            let c = &ends.restrained[end];
+            if c.source == Source::WorkedOut && c.value == Some(true) {
+                assumed.push(format!(
+                    "restraint at {} by the I/L rule (C3.7.4): the restraining members buckling \
+                     in the same case and the plane of the stress not checked",
+                    at(end)
+                ));
+            }
+        }
+    }
+    // Concentric worked out from the bolting: C3.7.4's condition on the
+    // bolts' centroid (between the heel and the leg's centre line) is not
+    // checked (2026-11-08).
+    for end in 0..2 {
+        let c = &ends.eccentric[end];
+        if c.source == Source::WorkedOut && c.value == Some(false) {
+            assumed.push(format!(
+                "concentric at {} worked out: the bolts' centroid condition (C3.7.4) not checked",
+                at(end)
+            ));
+        }
     }
     let kl_r = effective_slenderness(l_r, ends.eccentricity, ends.restraint);
     out.kl_r = Some(kl_r);

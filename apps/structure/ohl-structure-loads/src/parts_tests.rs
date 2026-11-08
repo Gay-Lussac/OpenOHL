@@ -212,6 +212,32 @@ impl MemberAreas for Fake {
     fn length(&self, _: &str) -> Result<f64, String> {
         Ok(20.0)
     }
+
+    fn plan_area(&self, _: &str) -> Result<f64, String> {
+        Ok(1.0)
+    }
+}
+
+/// Snow on the members: q × the plan area, each row saying that snow
+/// bridging between members and on plates is not counted, not on the
+/// safe side (2026-11-08).
+#[test]
+fn snow_rows_say_the_bridging_is_not_counted() {
+    let mut c = StructureLoadCases::parse(CASES).unwrap().cases[0].clone();
+    c.structure.as_mut().unwrap().snow = vec![crate::parts::SnowLoad {
+        load: 500.0,
+        members: Pick::All,
+        factor: 1.0,
+    }];
+    let t = evaluate_with_areas(&[c], &structure(), &line(), &Fake);
+    let r = row(&t, Part::Snow.number(0), "m1");
+    assert!(close(r.force[2], 500.0), "{:?}", r.force);
+    assert!(
+        r.note
+            .contains("NOT ON THE SAFE SIDE: snow bridging between members"),
+        "{}",
+        r.note
+    );
 }
 
 fn close(a: f64, b: f64) -> bool {

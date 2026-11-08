@@ -54,11 +54,12 @@ theory page. Status: **done** (with the date), **open**.
 |---|---|---|
 | [ASCE 10-97](../theory/asce10.md), [SIA 263](../theory/sia263.md), [ASCE/SEI 48-19](../theory/asce48.md), [SIA 265](../theory/sia265.md) | Clauses not covered: named on the member where the model's data tell they apply (ASCE 10-97 3.9.3, 3.11, 3.12/3.13, 3.14, 3.15; SIA 263 5.5, 5.1.4/5.1.7); the rest (staggered bracing, bolts in tension, a pole's holes, slip joints, base plates, connections, foundations, f_y by thickness) cannot be told from the data and stay said in the theory pages | done 2026-11-08 |
 | [SIA 263](../theory/sia263.md) | A pole's buckling as a member (4.5.1) | On every SIA 263 pole's result | done 2026-11-08 |
-| [ASCE 10-97](../theory/asce10.md) | Restraint decided once per model; minor-axis I/L; the gauge not used; bolts in tension | open (batch 2) |
+| [ASCE 10-97](../theory/asce10.md) | Restraint decided once per model; minor-axis I/L; the bolts' centroid condition: said on the member where an end is restrained by the I/L rule or worked out concentric (the gauge is only shown: the curves know eccentric or not; bolts in tension cannot be told from the data, theory only) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md) | Lateral-torsional buckling of frames (not found by the solve): ASCE 10-97 3.14 named on I sections and channels bent about their major axis; SIA 263 checks it (Annex B) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md) | A generic pole check without shear or torsion: said on its result | done 2026-11-08 |
-| [Structures](../theory/structures-fe.md) | Factors on load components | open (batch 2) |
-| [Wind on structures](../theory/structure-wind.md) | Snow bridging; allowable loads taken to include the body's ice | open (batch 2) |
+| [Structures](../theory/structures-fe.md) | Factors on load components (either side, by the code's factors) | Kept: the owner's load cases factor the components (as load-tree programs); said in the theory and the load case library's help | kept (owner) |
+| [Wind on structures](../theory/structure-wind.md) | Snow bridging: said with every snow on the members (line check notes, each OHL-Structure snow row) | done 2026-11-08 |
+| [Wind on structures](../theory/structure-wind.md) | Allowable loads taken to include the body's ice and snow: said on the allowable-loads check of a structure without a model or pole, in a case with ice or snow on the structures | done 2026-11-08 |
 | [Wire FE](../theory/wirefe.md) | Structures rigid in the wire solve (sags low for clearances) | open (batch 3) |
 | [Spotting](../theory/spotting.md), [sag-tension](../theory/sagtension.md) | Ruling span; holes in the terrain bridged | open (batch 3) |
 | [LiDAR](../theory/lidar-analysis.md) | Leaning trees and crowns | open (batch 3) |
