@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Wind bands along the line and strings without volumes said (safe-side audit, 2026-11-08)**
+
+A wind band's load in a case blowing with a part along the line takes
+the band's one area (the one across): its label now says so, not on the
+safe side. Internal clearances name, per structure, the strings without
+volumes (their fittings' size not counted), not on the safe side.
+([Wind on structures](../theory/structure-wind.md), [Internal
+clearances](../theory/internal-clearances.md), [safe side](safe-side.md))
+
 **Drag factor 1, bare-area pressures and poles without P-Delta said (safe-side audit, 2026-11-08)**
 
 A member wind whose members take the generic drag factor 1 without

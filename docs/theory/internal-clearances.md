@@ -53,6 +53,10 @@ part ending inside a closed solid counts as 0 (into it).
 
 **A string's live end** is a point: the size of its fittings is not
 counted unless they are given as volumes — **on the unsafe side**.
+**Said where it applies** (2026-11-08): per structure, *NOT ON THE SAFE
+SIDE: T3: 4 string(s) without volumes — their fittings' size (clamps,
+horns, yokes) not counted, the conductor measured from its clamp …*,
+with the first ten labels.
 
 **Volumes** are convex solids: spheres, cylinders, cones (truncated or
 not) and boxes, and the points, segments and triangles they are measured

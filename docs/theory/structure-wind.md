@@ -302,6 +302,9 @@ the structure bodies' only.
   more area along the line (its crossarms seen in full, the body's other
   face) — the longitudinal load is then too low; and at an angle the
   force is taken along the wind, not by the components of each face.
+  **Said where it applies** (2026-11-08): each such band load's label
+  reads *wind on the structure (…; NOT ON THE SAFE SIDE: the band's area
+  across the line taken for a wind with a part along it)*.
   Exact: a band area per direction (not in the type format yet), or the
   member wind of a level 3 structure.
 

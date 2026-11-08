@@ -42,9 +42,9 @@ theory page. Status: **done** (with the date), **open**.
 |---|---|---|---|
 | [Structures](../theory/structures-fe.md) | Dead-load factor (bolts, plates in the self-weight) | "NOT ON THE SAFE SIDE: no dead-load factor given" in every run's notes | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md), [Wind on structures](../theory/structure-wind.md) | Drag factors of the profiles and faces; a load recipe's pressure without them | Every member wind with members on the generic drag 1 and no `[analysis] drag` given: "NOT ON THE SAFE SIDE: n member(s) take the drag factor 1 …"; each load-table row of the line's wind pressure on a member's bare area | done 2026-11-08 |
-| [Wind on structures](../theory/structure-wind.md) | Wind band areas per direction | Per structure on cases blowing ahead or at an angle | open (batch 2) |
+| [Wind on structures](../theory/structure-wind.md) | Wind band areas per direction | On each band load of a case blowing with a part along the line (its label) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md) | A pole's modulus E (P-Delta) | In the pole's result ("[not on the safe side: P-Delta not computed …]"), never shown as passing | done 2026-11-08 |
-| [Internal clearances](../theory/internal-clearances.md) | A string's volumes | Per row where a string has none | open (batch 2) |
+| [Internal clearances](../theory/internal-clearances.md) | A string's volumes | Per structure, the strings without volumes named, in the report's notes | done 2026-11-08 |
 | [Thermal](../theory/thermal.md) | Steel-core magnetic heating in the AC resistance | Per section of a steel-cored conductor | open (batch 3) |
 | [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | On the clamp loads while not given | open (batch 3) |
 

@@ -61,7 +61,7 @@
 //! distance to the body and the grounded shapes, the nearest member or
 //! shape and the required distance; the worst first.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ohl_line::Line;
 use ohl_line::jumper::JumperShape;
@@ -1061,6 +1061,44 @@ pub fn check(
                 .push(format!("\"{}\": {e}: those parts not checked", rule.name));
         }
     }
+    // Strings without volumes: their live end a point, their fittings'
+    // size not counted — said per structure, not on the safe side
+    // (2026-11-08).
+    if !rules.is_empty() {
+        let mut bare: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for case in solved {
+            for shape in case.sections {
+                let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+                    continue;
+                };
+                for (p, sp) in section.points.iter().enumerate() {
+                    let Some((structure, _)) =
+                        checked.iter().find(|(id, _)| *id == sp.structure.as_str())
+                    else {
+                        continue;
+                    };
+                    for st in shape.strings.get(p).into_iter().flatten() {
+                        if !by_string.contains_key(&(*structure, st.label.as_str())) {
+                            bare.entry(structure).or_default().insert(st.label.as_str());
+                        }
+                    }
+                }
+            }
+        }
+        for (structure, labels) in bare {
+            let mut first: Vec<&str> = labels.iter().copied().take(10).collect();
+            if labels.len() > 10 {
+                first.push("…");
+            }
+            report.notes.push(format!(
+                "NOT ON THE SAFE SIDE: {structure}: {} string(s) without volumes — their \
+                 fittings' size (clamps, horns, yokes) not counted, the conductor measured \
+                 from its clamp; give their insulator assemblies shapes: {}",
+                labels.len(),
+                first.join(", ")
+            ));
+        }
+    }
     report.rows.sort_by(|a, b| {
         (a.distance - a.required)
             .total_cmp(&(b.distance - b.required))
@@ -1425,6 +1463,15 @@ mod tests {
                 .all(|w| w[0].distance - w[0].required <= w[1].distance - w[1].required)
         );
         assert!(r.notes.iter().any(|n| n.contains("on the unsafe side")));
+        // Its strings without volumes said, not on the safe side.
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.starts_with(&format!("NOT ON THE SAFE SIDE: {sid}: "))
+                    && n.contains("string(s) without volumes")),
+            "{:?}",
+            r.notes
+        );
         // Every other structure: level 1.
         assert_eq!(r.not_checked.len(), line.structures.len() - 1);
         assert!(

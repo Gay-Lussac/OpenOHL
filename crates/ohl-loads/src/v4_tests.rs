@@ -481,6 +481,12 @@ fn structure_wind_at_90_degrees_is_longitudinal() {
     assert!((thirty.local[0] + f * r30.cos()).abs() < 1e-6);
     assert!((thirty.local[1] + f * r30.sin()).abs() < 1e-6);
     assert!(r[1].structure_wind.has_longitudinal() && !r[0].structure_wind.has_longitudinal());
+    // The band's one area for a wind with a part along the line: said
+    // not on the safe side on its load; across, not.
+    assert!(
+        ahead.label.contains("NOT ON THE SAFE SIDE") && thirty.label.contains("NOT ON THE SAFE")
+    );
+    assert!(!band(&r[0]).label.contains("NOT ON THE SAFE SIDE"));
     assert!(
         r[1].notes.iter().any(|n| n.contains("from 90°")),
         "{:?}",

@@ -1983,7 +1983,16 @@ pub fn add_structure_wind(
                 r.loads.push(AttachmentLoad {
                     structure: s.id.clone(),
                     point: String::new(),
-                    label: format!("wind on the structure ({from}–{to} m)"),
+                    // With a part along the line: the band's one area (the
+                    // one across) — said not on the safe side (2026-11-08).
+                    label: if body.has_longitudinal() {
+                        format!(
+                            "wind on the structure ({from}–{to} m; NOT ON THE SAFE SIDE: the \
+                             band's area across the line taken for a wind with a part along it)"
+                        )
+                    } else {
+                        format!("wind on the structure ({from}–{to} m)")
+                    },
                     sets: Vec::new(),
                     sections: Vec::new(),
                     at: [
