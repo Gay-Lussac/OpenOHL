@@ -200,6 +200,7 @@ impl MemberAreas for Fake {
                     (id.to_owned(), Ok(towards.map(|t| t * pressure * a)))
                 })
                 .to_vec(),
+            joints: Vec::new(),
             notes: vec!["invented member wind".into()],
         })
     }

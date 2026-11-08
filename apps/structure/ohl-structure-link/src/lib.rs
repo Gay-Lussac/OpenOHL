@@ -734,6 +734,12 @@ pub struct SectionAreas {
     model: Result<Model, String>,
     wind: Option<ohl_sections::StructureWind>,
     faces: std::cell::OnceCell<Vec<ohl_structures_fe::wind::Face>>,
+    /// The structure file's text, its folder and its sections, for the
+    /// joints' gusset plates (worked out once, when the wind needs them).
+    text: String,
+    dir: Option<std::path::PathBuf>,
+    sections: SectionLibrary,
+    plates: std::cell::OnceCell<(Vec<ohl_structures_fe::wind::WindPlate>, Vec<String>)>,
 }
 
 impl SectionAreas {
@@ -750,7 +756,32 @@ impl SectionAreas {
             model: model_of(structure, text, dir, sections),
             wind: sections.wind.clone(),
             faces: std::cell::OnceCell::new(),
+            text: text.to_owned(),
+            dir: dir.map(Path::to_path_buf),
+            sections: sections.clone(),
+            plates: std::cell::OnceCell::new(),
         }
+    }
+
+    /// The gusset plates and splice covers of the structure's joints for
+    /// the wind ([`wind_plates`]), with what could not be used.
+    fn plates(&self, model: &Model) -> &(Vec<ohl_structures_fe::wind::WindPlate>, Vec<String>) {
+        self.plates.get_or_init(|| {
+            let bolts = match &self.dir {
+                Some(d) => ohl_structures::bolts::BoltLibrary::beside(d).0,
+                None => ohl_structures::bolts::BoltLibrary::default(),
+            };
+            match joint_details(&self.text, &self.sections, &bolts) {
+                Ok(d) => wind_plates(model, &d),
+                Err(e) => (
+                    Vec::new(),
+                    vec![format!(
+                        "NOT ON THE SAFE SIDE: gusset plates' own wind area not included (the \
+                         joints do not read: {e})"
+                    )],
+                ),
+            }
+        })
     }
 
     fn model(&self, what: &str) -> Result<&Model, String> {
@@ -768,6 +799,87 @@ impl SectionAreas {
             .ok_or_else(|| format!("{what}: no member \"{id}\" in the model"))?;
         Ok((model, k))
     }
+}
+
+/// The joints' gusset plates and splice covers of `details` as plates in
+/// the wind of `model`: at the model's joint of the same id (and place,
+/// within a centimetre), the area of the outline's face, the members
+/// bolted onto them. With what could not be used: plates without an
+/// outline (no bolts onto them to draw it round) and joints not in the
+/// model, said not on the safe side.
+pub fn wind_plates(
+    model: &Model,
+    details: &JointDetails,
+) -> (Vec<ohl_structures_fe::wind::WindPlate>, Vec<String>) {
+    let mut out = Vec::new();
+    let (mut no_outline, mut no_joint) = (Vec::new(), Vec::new());
+    let member_of = |id: &str| model.members.iter().position(|m| m.id == id);
+    for j in &details.joints {
+        let pieces = j
+            .plates
+            .iter()
+            .map(|p| (&p.id, &p.outline, &p.members))
+            .chain(j.splices.iter().flat_map(|s| {
+                s.covers
+                    .iter()
+                    .map(move |c| (&s.id, &c.outline, &s.members))
+            }));
+        let node = model.nodes.iter().position(|n| {
+            n.id == j.id && (0..3).all(|k| (n.point[k] - j.position[k]).abs() <= 0.01)
+        });
+        for (id, outline, members) in pieces {
+            let Some(node) = node else {
+                no_joint.push(format!("{}/{id}", j.id));
+                continue;
+            };
+            let (Some(normal), area) = (plane_normal(outline), polygon_area(outline)) else {
+                no_outline.push(format!("{}/{id}", j.id));
+                continue;
+            };
+            out.push(ohl_structures_fe::wind::WindPlate {
+                id: format!("{}/{id}", j.id),
+                node,
+                area,
+                normal,
+                members: members.iter().filter_map(|m| member_of(m)).collect(),
+            });
+        }
+    }
+    let mut notes = Vec::new();
+    for (what, list) in [
+        ("without an outline (no bolts onto them)", no_outline),
+        ("at joints not in the model", no_joint),
+    ] {
+        if !list.is_empty() {
+            notes.push(format!(
+                "NOT ON THE SAFE SIDE: {} gusset plate(s) {what} not in the wind: {}",
+                list.len(),
+                first_ten(&list)
+            ));
+        }
+    }
+    (out, notes)
+}
+
+/// The first ten of a list, joined, "…" after them.
+fn first_ten(list: &[String]) -> String {
+    let mut s = list.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
+    if list.len() > 10 {
+        s.push_str(", …");
+    }
+    s
+}
+
+/// The area of a plane polygon in 3D (Newell's method), m².
+fn polygon_area(outline: &[[f64; 3]]) -> f64 {
+    let mut n = [0.0; 3];
+    for k in 0..outline.len() {
+        let (a, b) = (outline[k], outline[(k + 1) % outline.len()]);
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    0.5 * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt()
 }
 
 /// The perimeter of a profile's outline (its outer edge, an angle's
@@ -806,11 +918,13 @@ impl MemberAreas for SectionAreas {
                 Vec::new()
             }
         });
+        let (plates, plate_notes) = self.plates(model);
         let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
             model,
             self.wind.as_ref(),
             faces.clone(),
-        );
+        )
+        .with_plates(plates.clone());
         let extra: Vec<f64> = model.members.iter().map(|m| widened(&m.id)).collect();
         // Table axes (vertical down) → structure axes (z up), and back.
         let w = setup.wind_iced(pressure, [towards[0], towards[1], -towards[2]], &extra);
@@ -839,9 +953,23 @@ impl MemberAreas for SectionAreas {
                 (m.id.clone(), force)
             })
             .collect();
+        // The plates' loads come after the members' (two per row).
+        let joints = w
+            .plates
+            .iter()
+            .zip(w.loads.iter().skip(2 * w.members.len()))
+            .map(|(r, l)| {
+                let node = plates[r.plate].node;
+                let f = l.force;
+                (model.nodes[node].id.clone(), [f[0], f[1], -f[2]])
+            })
+            .collect();
+        let mut notes = w.notes;
+        notes.extend(plate_notes.iter().cloned());
         Ok(ohl_structure_loads::BodyWind {
             members,
-            notes: w.notes,
+            joints,
+            notes,
         })
     }
 

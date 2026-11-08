@@ -99,9 +99,40 @@ face, along an in-plane axis).
 
 Approximations: the convex hull overestimates the outline of a face that
 is not convex (a waisted body, the window of a cat-head tower), which
-lowers \\( \varphi \\); members overlapping at the joints are counted
-twice and gusset plates not at all; a crossarm whose face is not flush
-with the body's is a face of its own.
+lowers \\( \varphi \\); a crossarm whose face is not flush with the
+body's is a face of its own.
+
+**Bounds of the solidity ratio (2026-11-08).** The sum above counts
+twice the area where members overlap (at the joints, where an X
+crosses), and it leaves out the gusset plates. Neither is known exactly
+without the face's true silhouette, so the ratio is taken within bounds:
+
+- **lower,** \\( \varphi_{low} = (\sum d_m L_m \sin\theta_m - O)/A_o \\):
+  each member is a strip of its width round its centre line. \\( O \\)
+  takes, for each member in turn, its width × the length of its axis
+  that the strips of the members before it cover (the overlaps found by
+  clipping the strips against each other). The union of the strips is
+  at least the sum less \\( O \\), however many members meet at a joint.
+  At a right-angled corner \\( O \\) is \\( d^2/2 \\), where the true
+  overlap is \\( d^2/4 \\).
+- **upper,** \\( \varphi_{high} = (\sum d_m L_m \sin\theta_m + A_{plates})/A_o \\):
+  the overlaps counted twice, plus the area of the gusset plates and
+  splice covers that lie in the face, where the joints are known
+  (OHL-Structure; below).
+
+Wherever a factor depends on the ratio, the **largest factor over the
+bounds** is taken: the face drag, and the shielding factor (the least
+shelter). Both are linear between the table's points, so the largest
+value is at a bound or at a table point between them. Part of the range
+outside the table counts as outside it (see above).
+
+**Conservative:** the largest factor over the bounds; the overlap bound
+\\( O \\) is larger than the true overlap, so \\( \varphi_{low} \\) is
+below the true ratio. Exact: the face's true silhouette (the union of the
+member outlines and plates), overlaps once and plates included.
+
+**Conservative:** each member's own force still takes its whole strip:
+the overlaps are counted twice in the forces, a little more wind.
 
 **Conservative:** the convex-hull outline, which lowers the solidity ratio
 of a face that is not convex. A lower \\( \varphi_{front} \\) shelters
@@ -110,11 +141,35 @@ is on the safe side where the data's face drag falls as the solidity grows,
 and not where it rises. Exact: the face's own outline (a polygon round its
 members).
 
-**Simplification:** members overlapping at the joints counted twice
-(raises \\( \varphi \\): more shelter behind the face, unsafe by a
-little) and gusset plates left out (their own wind area missing, unsafe;
-\\( \varphi \\) a little low, safe for the shielding). Exact: the
-face's true silhouette, overlaps once and plates included.
+## Gusset plates
+
+The structure model holds no plates; the **joint details** do: each
+plate's and each splice cover's outline (given, or worked out round the
+bolts onto it; [Joint plates](joint-plates.md)). Where they are known
+(OHL-Structure's wind on the body), each plate facing the wind takes
+
+\\[ F = q\,c\,A\,|\hat{\mathbf n}\cdot\hat{\mathbf w}| \\]
+
+along the wind at its joint, a row of the load table on that joint.
+\\( A \\) is the area of one face of its outline and
+\\( \hat{\mathbf n} \\) its normal. \\( c \\) is the largest drag
+factor of the members bolted onto it (of the members at its joint when
+none is). Plates are not shielded. Their area also raises the face's
+upper solidity bound (above).
+
+**Conservative:** plates never shielded, and the members' largest drag.
+Covers count in full, though most of a cover lies on the members' legs,
+inside their silhouette. Exact: the face's true silhouette.
+
+**Simplification, not on the safe side:** a plate's outline without ice
+on its edges, and plates without an outline (no bolts onto them to
+draw it round) or at a joint the model does not have are left out.
+These are said in the load table's notes: *NOT ON THE SAFE SIDE: 2
+gusset plate(s) without an outline (no bolts onto them) not in the
+wind: …*. Where the joints are not known — the line application's
+structure checks, `ohl structures fe`, an extension's piece — every
+member wind says *NOT ON THE SAFE SIDE: gusset plates' own wind area not
+included*.
 
 ## Which members are shielded
 

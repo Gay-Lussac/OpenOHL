@@ -122,6 +122,117 @@ fn face_ids(m: &Model, c: usize) -> Vec<String> {
     ids
 }
 
+/// The lower bound of the solidity of the face y = 0 (the faces across
+/// the wind both have it), checked a little below the members' sum.
+fn front_low(faces: &[crate::wind::Face], phi: f64) -> f64 {
+    let front = faces
+        .iter()
+        .find(|f| f.normal[1].abs() > 0.5 && f.offset.abs() < 1e-9)
+        .unwrap();
+    assert!(close(front.solidity, phi, 1e-12));
+    let low = front.solidity_low();
+    assert!(low < phi && low > 0.95 * phi, "{low} vs {phi}");
+    low
+}
+
+/// A square frame of four round bars (d = 50 mm, 2 m sides) in the x–z
+/// plane: each corner's two strips share d²/4; the bound takes, of each
+/// strip after the first, its width × the length of its axis shared: d/2
+/// at a corner (d²/2), the last bar at both its ends — 4 × d²/2 = 2 d²
+/// in all (twice the true d², on the safe side for the shielding).
+#[test]
+fn overlaps_at_the_corners_are_bounded_by_hand() {
+    let lib = SectionLibrary::parse(LIBRARY).unwrap();
+    let mut t = String::from("[analysis]\nnonlinear = false\nself_weight = false\n");
+    for (id, x, z) in [("A", 0, 0), ("B", 2, 0), ("C", 2, 2), ("D", 0, 2)] {
+        t.push_str(&format!(
+            "[[node]]\nid = \"{id}\"\npoint = [{x}, 0, {z}]\nsupport = \"fixed\"\n"
+        ));
+    }
+    for (id, a, b) in [
+        ("ab", "A", "B"),
+        ("bc", "B", "C"),
+        ("cd", "C", "D"),
+        ("da", "D", "A"),
+    ] {
+        t.push_str(&format!(
+            "[[member]]\nid = \"{id}\"\nnodes = [\"{a}\", \"{b}\"]\nsection = \"B50\"\n"
+        ));
+    }
+    let m = Model::parse_with(&t, &lib).unwrap();
+    let f = faces(&m);
+    assert_eq!(f.len(), 1);
+    let d: f64 = 0.05;
+    assert!(close(f[0].overlap, 2.0 * d * d, 1e-9), "{}", f[0].overlap);
+    assert!(close(f[0].solidity, 4.0 * 2.0 * d / 4.0, 1e-12));
+    assert!(close(
+        f[0].solidity_low(),
+        (8.0 * d - 2.0 * d * d) / 4.0,
+        1e-9
+    ));
+    // Plates given raise the upper bound only.
+    let setup =
+        MemberWindSetup::with_faces(&m, None, f).with_plates(vec![crate::wind::WindPlate {
+            id: "A/p".into(),
+            node: 0,
+            area: 0.04,
+            normal: [0.0, 1.0, 0.0],
+            members: vec![0, 3],
+        }]);
+    let face = &setup.faces()[0];
+    assert!(close(face.solidity_high(), face.solidity + 0.01, 1e-12));
+}
+
+/// A gusset plate takes q · c · A · |n · w| along the wind at its joint,
+/// c the largest drag of the members bolted onto it; without plates the
+/// notes say their wind area is missing, not on the safe side.
+#[test]
+fn a_gusset_plate_takes_wind_at_its_joint() {
+    let m = model();
+    let plain = MemberWindSetup::new(&m, None).wind(1000.0, [0.0, 1.0, 0.0]);
+    assert!(
+        plain
+            .notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: gusset plates")),
+        "{:?}",
+        plain.notes
+    );
+    let leg = m.members.iter().position(|x| x.id == "leg00").unwrap();
+    let node = m.members[leg].j;
+    // A plate of 0.1 m² in the face y = 0, wind at 30° to its normal.
+    let plate = crate::wind::WindPlate {
+        id: "N01/p".into(),
+        node,
+        area: 0.1,
+        normal: [0.0, 1.0, 0.0],
+        members: vec![leg],
+    };
+    let w = MemberWindSetup::new(&m, None)
+        .with_plates(vec![plate])
+        .wind(1000.0, [0.5, 3f64.sqrt() / 2.0, 0.0]);
+    assert_eq!(w.plates.len(), 1);
+    let f = 1000.0 * 1.0 * 0.1 * 3f64.sqrt() / 2.0;
+    assert!(close(w.plates[0].force, f, 1e-12));
+    let l = w.loads.last().unwrap();
+    assert_eq!(l.node, node);
+    assert!(close(l.force[0], 0.5 * f, 1e-12) && close(l.force[1], 3f64.sqrt() / 2.0 * f, 1e-12));
+    assert!(
+        w.notes
+            .iter()
+            .any(|n| n.starts_with("gusset plates: 1 plate(s)")),
+        "{:?}",
+        w.notes
+    );
+    assert!(
+        !w.notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE"))
+    );
+    // The members' own forces are as without the plate.
+    assert_eq!(w.member_forces().len(), w.members.len());
+}
+
 #[test]
 fn the_tower_has_four_side_faces_and_a_top() {
     let m = model();
@@ -192,7 +303,11 @@ fn the_face_behind_is_shielded_by_the_one_in_front() {
     );
     let setup = MemberWindSetup::new(&m, Some(&f));
     let w = setup.wind(1000.0, [0.0, 1.0, 0.0]);
+    // The front face's solidity is known within bounds (its members'
+    // overlaps at the joints at most once less); η falls with it, so the
+    // lower bound governs (on the safe side).
     let phi = 0.05 * (20.0 + 4.0 * SQRT20) / 16.0;
+    let phi = front_low(setup.faces(), phi);
     let eta = 1.0 - phi;
     let face = 1000.0 * 0.05 * (20.0 + 4.0 * SQRT20);
     let expected = 1.2 * (face * (1.0 + eta) + 1280.0 + 50.0);
@@ -250,7 +365,9 @@ fn a_face_drag_by_solidity_takes_over_on_the_faces() {
          factor = [3.0, 2.0]\n",
     );
     let w = m.member_wind_with(1000.0, [0.0, 1.0, 0.0], Some(&f));
+    // The face drag falls with the solidity: its lower bound governs.
     let phi = 0.05 * (20.0 + 4.0 * SQRT20) / 16.0;
+    let phi = front_low(&faces(&m), phi);
     let c = 3.0 - 10.0 * (phi - 0.1);
     let face = 1000.0 * 0.05 * (20.0 + 4.0 * SQRT20);
     // Faces y = 0 and 2 (facing the wind) by their solidity; the side

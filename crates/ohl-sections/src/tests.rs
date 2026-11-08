@@ -591,6 +591,34 @@ fn wind_factors_read_and_interpolate() {
     assert_eq!(SectionLibrary::parse("").unwrap().wind, None);
 }
 
+/// The largest factor over a range of solidity ratios: at an end or a
+/// table point between (a curve that falls, then one that rises and
+/// falls); part of the range outside the table: none.
+#[test]
+fn wind_factors_largest_over_a_range() {
+    let lib = SectionLibrary::parse(WIND).unwrap();
+    let w = lib.wind.as_ref().unwrap();
+    let face = w.face_drag.as_ref().unwrap();
+    // Falling: the low end, 0.15 → 2.9.
+    close(face.largest_in(0.15, 0.4).unwrap(), 2.9, 1e-12);
+    close(face.largest_in(0.4, 0.15).unwrap(), 2.9, 1e-12);
+    assert_eq!(face.largest_in(0.05, 0.2), None);
+    let peaked = ohl_sections_curve(&[0.1, 0.3, 0.5], &[2.0, 3.0, 2.5]);
+    // The table point 0.3 inside the range governs.
+    close(peaked.largest_in(0.2, 0.45).unwrap(), 3.0, 1e-12);
+    // Shielding at spacing 2 falls with φ: the low end, 0.2 → (0.7 + 0.9) / 2 = 0.8.
+    let s = w.shielding.as_ref().unwrap();
+    close(s.largest_in(0.2, 0.4, 2.0).unwrap(), 0.8, 1e-12);
+    assert_eq!(s.largest_in(0.2, 0.6, 2.0), None);
+}
+
+fn ohl_sections_curve(solidity: &[f64], factor: &[f64]) -> crate::wind::Curve {
+    crate::wind::Curve {
+        solidity: solidity.to_vec(),
+        factor: factor.to_vec(),
+    }
+}
+
 #[test]
 fn wind_mistakes_are_refused() {
     for (text, says) in [

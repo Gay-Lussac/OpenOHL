@@ -606,6 +606,9 @@ pub struct BodyWind {
     /// Per member (id): its force (transverse, longitudinal, vertical
     /// down), N, or why it has none.
     pub members: Vec<(String, Result<[f64; 3], String>)>,
+    /// Per joint (id) loads not on a member: the gusset plates' wind
+    /// (transverse, longitudinal, vertical down), N.
+    pub joints: Vec<(String, [f64; 3])>,
     /// What was applied (drag factors, shielding), in words.
     pub notes: Vec<String>,
 }
@@ -813,6 +816,14 @@ fn part_rows(
                     rows.push(match f {
                         Ok(f) => LoadRow { force: f, ..row },
                         Err(why) => row.missing(why),
+                    });
+                }
+                for (id, f) in body.joints {
+                    rows.push(LoadRow {
+                        source: Source::Wind,
+                        note: format!("{text}; gusset plates"),
+                        force: f,
+                        ..LoadRow::new(&case.name, number, At::Joint, &id)
                     });
                 }
             }

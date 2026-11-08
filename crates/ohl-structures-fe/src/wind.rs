@@ -27,6 +27,9 @@ use crate::model::{Model, NodalLoad, cross, dot, norm, sub};
 /// Two members at a joint closer to parallel than this (sine of the
 /// angle) do not define a plane.
 const PARALLEL: f64 = 0.0175;
+/// How a wind note marks what is not on the safe side (as
+/// [`crate::dead_load_note`]).
+pub const NOT_SAFE_WIND: &str = "NOT ON THE SAFE SIDE";
 /// A face takes part in a wind direction when |n · w| is above this (an
 /// edge-on face neither shelters nor is sheltered).
 const FACING: f64 = 1e-3;
@@ -52,11 +55,40 @@ pub struct Face {
     /// Outline's extent along `up`, m.
     pub height: f64,
     /// Solidity ratio: the members' area seen along the normal (profiles
-    /// only) over the outline's area.
+    /// only) over the outline's area — members overlapping at the joints
+    /// counted twice (an upper bound, gusset plates aside).
     pub solidity: f64,
+    /// An upper bound on the area counted twice in [`Face::solidity`]
+    /// where members overlap (at the joints, where they cross), m²: the
+    /// solidity with each overlap once is at least
+    /// [`Face::solidity_low`].
+    pub overlap: f64,
+    /// Gusset plates' area in the face, m² ([`MemberWindSetup::with_plates`];
+    /// 0: none given).
+    pub plates: f64,
 }
 
 impl Face {
+    /// The lowest the face's true solidity ratio can be: the members'
+    /// area less the bound on their overlaps, over the outline's area.
+    pub fn solidity_low(&self) -> f64 {
+        if self.area > 0.0 {
+            (self.solidity - self.overlap / self.area).max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// The highest it can be: the members' area with the overlaps
+    /// counted twice and the gusset plates given.
+    pub fn solidity_high(&self) -> f64 {
+        if self.area > 0.0 {
+            self.solidity + self.plates / self.area
+        } else {
+            self.solidity
+        }
+    }
+
     /// Mean breadth across `up`: area over height, m.
     pub fn breadth(&self) -> f64 {
         if self.height > 0.0 {
@@ -335,6 +367,7 @@ fn make_face(model: &Model, members: Vec<usize>, normal: [f64; 3], offset: f64) 
         .iter()
         .filter_map(|k| model.projected_area(*k, normal))
         .sum();
+    let overlap = overlap_bound(model, &members, normal, up, v);
     Some(Face {
         members,
         normal,
@@ -344,7 +377,147 @@ fn make_face(model: &Model, members: Vec<usize>, normal: [f64; 3], offset: f64) 
         area,
         height: hi - lo,
         solidity: shown / area,
+        overlap,
+        plates: 0.0,
     })
+}
+
+/// A member's silhouette in a face: the strip of its profile's width
+/// (seen along the face's normal) round its centre line, in the face's
+/// in-plane coordinates (counter-clockwise), with its axis.
+struct Strip {
+    corners: [[f64; 2]; 4],
+    start: [f64; 2],
+    along: [f64; 2],
+    width: f64,
+}
+
+fn strip(model: &Model, k: usize, normal: [f64; 3], up: [f64; 3], v: [f64; 3]) -> Option<Strip> {
+    let m = &model.members[k];
+    let len = model.length(m);
+    let area = model.projected_area(k, normal)?;
+    if len <= 0.0 || area <= 0.0 {
+        return None;
+    }
+    let to2 = |p: [f64; 3]| [dot(p, up), dot(p, v)];
+    let (a, b) = (to2(model.nodes[m.i].point), to2(model.nodes[m.j].point));
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let l2 = (d[0] * d[0] + d[1] * d[1]).sqrt();
+    if l2 <= 0.0 {
+        return None;
+    }
+    let along = [d[0] / l2, d[1] / l2];
+    let width = area / len;
+    let h = [-along[1] * width / 2.0, along[0] * width / 2.0];
+    Some(Strip {
+        corners: [
+            [a[0] - h[0], a[1] - h[1]],
+            [b[0] - h[0], b[1] - h[1]],
+            [b[0] + h[0], b[1] + h[1]],
+            [a[0] + h[0], a[1] + h[1]],
+        ],
+        start: a,
+        along,
+        width,
+    })
+}
+
+/// The part of convex polygon `subject` inside convex polygon `clip`
+/// (both counter-clockwise; Sutherland–Hodgman).
+fn clip_convex(subject: &[[f64; 2]], clip: &[[f64; 2]]) -> Vec<[f64; 2]> {
+    let mut out = subject.to_vec();
+    for k in 0..clip.len() {
+        if out.is_empty() {
+            break;
+        }
+        let (a, b) = (clip[k], clip[(k + 1) % clip.len()]);
+        let side = |p: [f64; 2]| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        let input = std::mem::take(&mut out);
+        for i in 0..input.len() {
+            let (p, q) = (input[i], input[(i + 1) % input.len()]);
+            let (sp, sq) = (side(p), side(q));
+            if sp >= 0.0 {
+                out.push(p);
+            }
+            if (sp >= 0.0) != (sq >= 0.0) {
+                let t = sp / (sp - sq);
+                out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+            }
+        }
+    }
+    out
+}
+
+/// An upper bound on the area the members' strips of a face share
+/// (counted twice in the sum of their areas): each strip, in turn, can
+/// share with the strips before it at most its width times the length
+/// of its axis their overlaps cover. So the union of the strips is at
+/// least their sum less this, whatever the number of members meeting at
+/// a joint (a sum over pairs would take a joint of k members k(k−1)/2
+/// times).
+fn overlap_bound(
+    model: &Model,
+    members: &[usize],
+    normal: [f64; 3],
+    up: [f64; 3],
+    v: [f64; 3],
+) -> f64 {
+    let strips: Vec<Strip> = members
+        .iter()
+        .filter_map(|k| strip(model, *k, normal, up, v))
+        .collect();
+    let bbox = |s: &Strip| {
+        s.corners.iter().fold(
+            [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ],
+            |b, p| {
+                [
+                    b[0].min(p[0]),
+                    b[1].min(p[1]),
+                    b[2].max(p[0]),
+                    b[3].max(p[1]),
+                ]
+            },
+        )
+    };
+    let boxes: Vec<[f64; 4]> = strips.iter().map(bbox).collect();
+    let mut total = 0.0;
+    for (i, s) in strips.iter().enumerate() {
+        let mut spans: Vec<(f64, f64)> = Vec::new();
+        for (j, o) in strips.iter().enumerate().take(i) {
+            let (a, b) = (boxes[i], boxes[j]);
+            if a[0] > b[2] || b[0] > a[2] || a[1] > b[3] || b[1] > a[3] {
+                continue;
+            }
+            let shared = clip_convex(&s.corners, &o.corners);
+            if shared.len() < 3 {
+                continue;
+            }
+            let at =
+                |p: &[f64; 2]| (p[0] - s.start[0]) * s.along[0] + (p[1] - s.start[1]) * s.along[1];
+            let lo = shared.iter().map(at).fold(f64::INFINITY, f64::min);
+            let hi = shared.iter().map(at).fold(f64::NEG_INFINITY, f64::max);
+            if hi > lo {
+                spans.push((lo, hi));
+            }
+        }
+        spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut covered = 0.0;
+        let mut reach = f64::NEG_INFINITY;
+        for (lo, hi) in spans {
+            let lo = lo.max(reach);
+            if hi > lo {
+                covered += hi - lo;
+                reach = hi;
+            }
+        }
+        total += covered * s.width;
+    }
+    total
 }
 
 /// Whether wind factors need the faces (a face drag or shielding).
@@ -389,6 +562,9 @@ pub struct MemberWind {
     pub loads: Vec<NodalLoad>,
     /// Per member with a profile and a force.
     pub members: Vec<MemberWindRow>,
+    /// Per gusset plate facing the wind (its load at its joint comes
+    /// after the members' in [`MemberWind::loads`]).
+    pub plates: Vec<PlateWindRow>,
     /// What was applied and what was not, in words.
     pub notes: Vec<String>,
 }
@@ -443,6 +619,36 @@ pub struct MemberWindSetup<'a> {
     model: &'a Model,
     factors: Option<&'a StructureWind>,
     faces: Vec<Face>,
+    /// The gusset plates given (none: no joint details, said).
+    plates: Option<Vec<WindPlate>>,
+}
+
+/// A gusset plate (or a splice's cover) in the wind: its area, the plane
+/// it lies in and the joint it is at — from the joint details, which the
+/// structure model itself does not hold.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindPlate {
+    /// Its id, for notes.
+    pub id: String,
+    /// The joint (index into [`Model::nodes`]).
+    pub node: usize,
+    /// The area of one of its faces, m².
+    pub area: f64,
+    /// Unit normal of its plane.
+    pub normal: [f64; 3],
+    /// The members bolted onto it (indices into [`Model::members`]).
+    pub members: Vec<usize>,
+}
+
+/// The wind on one gusset plate.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlateWindRow {
+    /// The plate (index into the plates given).
+    pub plate: usize,
+    /// Drag factor applied: the largest of the members bolted onto it.
+    pub drag: f64,
+    /// The force on it, N.
+    pub force: f64,
 }
 
 impl<'a> MemberWindSetup<'a> {
@@ -457,6 +663,7 @@ impl<'a> MemberWindSetup<'a> {
             } else {
                 Vec::new()
             },
+            plates: None,
         }
     }
 
@@ -471,7 +678,38 @@ impl<'a> MemberWindSetup<'a> {
             model,
             factors,
             faces,
+            plates: None,
         }
+    }
+
+    /// The same with the joints' gusset plates in the wind: each takes
+    /// q × c × A × |n · w| along the wind at its joint, c the largest drag
+    /// factor of the members bolted onto it (of those at its joint when
+    /// none is), not shielded; its area raises the upper bound of the
+    /// solidity ratio of the face it lies in ([`Face::solidity_high`]).
+    /// Without plates (the setup as made) every wind says, not on the
+    /// safe side, that their own wind area is missing.
+    pub fn with_plates(mut self, plates: Vec<WindPlate>) -> Self {
+        let tol = tolerance(self.model);
+        for face in &mut self.faces {
+            let joints: BTreeSet<usize> = face
+                .members
+                .iter()
+                .flat_map(|k| [self.model.members[*k].i, self.model.members[*k].j])
+                .collect();
+            face.plates = plates
+                .iter()
+                .filter(|p| {
+                    joints.contains(&p.node)
+                        && dot(p.normal, face.normal).abs() > 1.0 - PARALLEL
+                        && (dot(face.normal, self.model.nodes[p.node].point) - face.offset).abs()
+                            <= tol
+                })
+                .map(|p| p.area)
+                .sum();
+        }
+        self.plates = Some(plates);
+        self
     }
 
     /// The faces found.
@@ -540,7 +778,10 @@ impl<'a> MemberWindSetup<'a> {
                         .total_cmp(&dot(self.faces[**b].normal, w).abs())
                 })
             {
-                match curve.at(self.faces[f].solidity) {
+                // Its face's solidity is known within bounds (overlaps,
+                // plates): the largest drag over them, on the safe side.
+                let face = &self.faces[f];
+                match curve.largest_in(face.solidity_low(), face.solidity_high()) {
                     Some(c) => drag = Some((c, DragFrom::Face)),
                     // Outside the table: its largest face drag, or the
                     // shape's when larger (on the safe side, 2026-11-08;
@@ -605,7 +846,10 @@ impl<'a> MemberWindSetup<'a> {
                     } else {
                         f64::INFINITY
                     };
-                    match table.at(self.faces[g].solidity, spacing) {
+                    // The least shelter over the front face's solidity
+                    // bounds, on the safe side.
+                    let face = &self.faces[g];
+                    match table.largest_in(face.solidity_low(), face.solidity_high(), spacing) {
                         Some(eta) => {
                             shielding = eta;
                             shielded_by = Some((g, spacing));
@@ -632,8 +876,65 @@ impl<'a> MemberWindSetup<'a> {
                 force: f * sin,
             });
         }
+        // The gusset plates, after the members (whose loads come two per
+        // row first): q·c·A·|n·w| along the wind at their joint.
+        for (p, plate) in self.plates.iter().flatten().enumerate() {
+            let facing = dot(plate.normal, w).abs();
+            if plate.area <= 0.0 || facing <= FACING {
+                continue;
+            }
+            let largest = |pick: &dyn Fn(usize) -> bool| {
+                out.members
+                    .iter()
+                    .filter(|r| pick(r.member))
+                    .map(|r| r.drag)
+                    .fold(None, |m: Option<f64>, c| Some(m.map_or(c, |m| m.max(c))))
+            };
+            let drag = largest(&|k| plate.members.contains(&k))
+                .or_else(|| {
+                    largest(&|k| {
+                        let m = &model.members[k];
+                        m.i == plate.node || m.j == plate.node
+                    })
+                })
+                .unwrap_or(model.analysis.drag);
+            let f = pressure * drag * plate.area * facing;
+            out.loads.push(NodalLoad {
+                node: plate.node,
+                force: w.map(|c| f * c),
+                moment: [0.0; 3],
+            });
+            out.plates.push(PlateWindRow {
+                plate: p,
+                drag,
+                force: f,
+            });
+        }
         out.notes = self.notes(&out, &missing_shapes, outside_face_drag, outside_shielding);
+        if !out.members.is_empty() {
+            out.notes.push(self.plates_note(&out));
+        }
         out
+    }
+
+    /// The gusset plates in words: their wind, or — none given — that
+    /// their own wind area is missing (not on the safe side).
+    fn plates_note(&self, out: &MemberWind) -> String {
+        let Some(plates) = &self.plates else {
+            return format!(
+                "{NOT_SAFE_WIND}: gusset plates' own wind area not included (no joint \
+                 details here; OHL-Structure adds them from the joints)"
+            );
+        };
+        let area: f64 = plates.iter().map(|p| p.area).sum();
+        let force: f64 = out.plates.iter().map(|r| r.force).sum();
+        format!(
+            "gusset plates: {} plate(s), {area:.2} m², {:.2} kN on the {} facing the wind \
+             (the largest drag of the members bolted onto each, not shielded)",
+            plates.len(),
+            force / 1000.0,
+            out.plates.len()
+        )
     }
 
     fn notes(

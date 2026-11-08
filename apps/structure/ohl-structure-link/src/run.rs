@@ -537,7 +537,8 @@ fn piece_part_loads(
                 }
             }
             notes.push(format!(
-                "extension {extension}: wind {} ({}) also on its {} member(s), {:.2} kN",
+                "extension {extension}: wind {} ({}) also on its {} member(s), {:.2} kN \
+                 (NOT ON THE SAFE SIDE: the piece's gusset plates not in it)",
                 k + 1,
                 ohl_structure_loads::wind_text(w),
                 piece.len(),

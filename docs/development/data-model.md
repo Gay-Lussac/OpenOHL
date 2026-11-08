@@ -1968,8 +1968,14 @@ order (`merge`: project first, then user; the earlier id wins);
 
 The format stays version 1 with `[wind]` (a table only added; a program built before it refuses a file holding one, naming the key). The `[wind]` factors are used by `ohl_structures_fe::wind` (the member
 wind with lattice faces, their solidity ratios and shielding:
-`faces(model)`, `MemberWindSetup`, `Model::member_wind_with`; nothing
-stored, computed from the model's geometry; theory: [Wind on lattice
+`faces(model)` — each `Face` with `solidity`, `overlap` (m², the bound
+on area counted twice), `plates` (m²), `solidity_low()`/`solidity_high()`
+— `MemberWindSetup` (`with_plates(Vec<WindPlate>)`: `id`, `node`,
+`area`, `normal`, `members`; `MemberWind::plates`: `PlateWindRow`s, their
+loads after the members'), `Model::member_wind_with`; `Curve::largest_in`,
+`Shielding::largest_in`: the largest factor over solidity bounds; nothing
+stored, computed from the model's geometry (the plates from the joint
+details, `ohl_structure_link::wind_plates`); theory: [Wind on lattice
 structures](../theory/structure-wind.md)) in `ohl_loads`' structure check
 and `ohl structures fe`. Sections are typed in OHL-Structure
 (`ohl_structure_edit::section_library`: `SectionDraft`, `put_section`,
@@ -2255,7 +2261,9 @@ line forces 1001…, wind 2001…, ice 3001…, point loads 4001…; a point
 turned off keeps its row (force 0, note "off"). The self weight has no
 rows (the solve puts it on the members × `self_weight_factor()`). The
 members' wind, outline and length come through the `MemberAreas` trait
-(`member_ids`, `member_wind` → `BodyWind`, `perimeter`, `length`;
+(`member_ids`, `member_wind` → `BodyWind` (`members`, `joints`: the
+gusset plates' wind per joint id, rows `at = joint`, `notes`),
+`perimeter`, `length`;
 default: not known, the rows say why), implemented by
 `ohl_structure_link::SectionAreas` with the section library's `[wind]`
 factors (`ohl_structures_fe::wind::MemberWindSetup::wind_iced`: iced

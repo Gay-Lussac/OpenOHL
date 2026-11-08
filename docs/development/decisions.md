@@ -10,6 +10,22 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Wind: solidity within bounds, gusset plates in the wind (safe-side audit, 2026-11-08)**
+
+Following the owner's safe-side rule: a lattice face's solidity ratio
+counted members' overlaps twice (more shelter behind it) and had no
+gusset plates. Now it is taken within bounds. The lower bound has the
+overlaps at most once less (each member's strip clipped against those
+before it). The upper bound adds the plates. The face drag and the
+shielding factor take their largest value over the bounds. OHL-Structure
+puts each joint's plates and splice covers in the wind on the body:
+q·c·A·|n·w| at the joint, the largest drag of the members bolted onto it,
+not shielded. Where the joints are not known (the line application's
+checks, `ohl structures fe`, an extension's piece), every member wind
+says, not on the safe side, that the plates' area is missing. Benchmark
+structwind-001 moved by hand derivation (Σ Fy 2906.73 → 2910.92 N).
+([Wind on structures](../theory/structure-wind.md), [safe side](safe-side.md))
+
 **Staying on the safe side: checks not done are said, never passed (owner, 2026-11-08)**
 
 - Owner: "what's important to me is that we stay on the safe side and that it's explained why and where it has to be done so". An audit of every treatment the theory pages call not on the safe side is on [Staying on the safe side](safe-side.md), with each item's status; batches follow.

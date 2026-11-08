@@ -474,10 +474,29 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
             .1
     );
     harness.get_by_label("Stop").click();
-    harness.step();
+    // Free within a few frames (under the full check's load the click
+    // was once not taken on the first frame, 2026-11-08): no run, no
+    // result taken from it.
+    for _ in 0..10 {
+        harness.step();
+        if !harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .radial_clearances
+            .result()
+            .1
+        {
+            break;
+        }
+    }
     let r = harness.state_mut().ready().unwrap();
-    // Free at once: no run, no result taken from it.
-    assert!(matches!(r.radial_clearances.result(), (None, false)));
+    let (report, running) = r.radial_clearances.result();
+    assert!(
+        report.is_none() && !running,
+        "after Stop: report {}, running {running}",
+        report.is_some()
+    );
     // Stepped, not run to rest: the stopped thread's last repaint request
     // can come at any frame.
     harness.run_steps(4);

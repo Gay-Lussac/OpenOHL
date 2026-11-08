@@ -13,12 +13,25 @@
 #   m² over the outline 2 × 4 = 8 m²: φ = 0.1184017;
 # - the face in front (y = 0): q c d Σ L = 1000 · 1.2 · 0.05 · 18.944272
 #   = 1136.656 N along y;
-# - the face behind (y = 2), shielded: η = 1 − φ = 0.8815983, 1002.074 N;
+# - the front face's solidity with its overlaps once is known only within
+#   bounds (since 2026-11-08): its members' strips (d wide round their
+#   centre lines, h = d/2) overlap at the joints and where the X crosses;
+#   the bound takes, of each member after the first (file order leg0,
+#   top0, x0a, x0b, leg1), d × the length of its axis the earlier ones
+#   cover: top0 at leg0 h; x0a at leg0 h(2+√5) (its edge t = +h meets
+#   leg0's edge x = h at s = h(√5+2)) and at top0 h(1+√5)/2; x0b at
+#   leg0/top0 h(2+√5) and through x0a's strip ±h(1+|cos θ|)/sin θ with
+#   cos θ = 3/5: 4h; leg1 at x0b and at x0a/top0 h(2+√5) each. In all
+#   d h (13.5 + 4.5√5) = 0.0294529 m², so φ ≥ (0.947214 − 0.029453)/8
+#   = 0.1147201;
+# - the face behind (y = 2), shielded: η falls with φ, so the lower bound
+#   governs (on the safe side): η = 1 − 0.1147201 = 0.8852799, 1006.259 N;
 # - the 4 diagonals of the faces x = 0 and 2 (in planes along the wind,
 #   neither in front nor behind): sin²θ = 4/5, each force q c d L sin θ
 #   along the normal, its y part q c d √20 (4/5)^1.5 = 192 N: 768 N;
 # - the top horizontals of the side faces lie along the wind: none;
-# Σ Fy = 1136.656 (1 + η) + 768 = 2906.7306 N; Σ Fx = Σ Fz = 0 (the side
+# Σ Fy = 1136.656 (1 + η) + 768 = 2910.9153 N (2906.7306 N before
+# 2026-11-08, with the overlaps counted twice); Σ Fx = Σ Fz = 0 (the side
 # diagonals' vertical parts cancel in pairs).
 # Faces found: the 4 sides and the top (4 horizontals), 5; shielded: the 5
 # members of the face y = 2.
@@ -147,13 +160,13 @@ id = "x3b"
 nodes = ["N00", "N31"]
 section = "B50"
 '''
-expected.fy = { value = 2906.7305898749055, rel_tol = 1e-9 }
+expected.fy = { value = 2910.915315466523, rel_tol = 1e-9 }
 expected.fx = { value = 0.0, abs_tol = 1e-9 }
 expected.fz = { value = 0.0, abs_tol = 1e-9 }
 expected.faces = { value = 5.0, abs_tol = 1e-9 }
 expected.shielded = { value = 5.0, abs_tol = 1e-9 }
 expected.solidity_max = { value = 0.11840169943749475, rel_tol = 1e-9 }
-expected.shielding_min = { value = 0.8815983005625052, rel_tol = 1e-9 }
+expected.shielding_min = { value = 0.8852799108591848, rel_tol = 1e-9 }
 
 [[case]]
 id = "structwind-002"

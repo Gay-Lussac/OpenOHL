@@ -71,10 +71,30 @@ fn interpolate(xs: &[f64], ys: &[f64], x: f64) -> Option<f64> {
     Some(ys[k] + t * (ys[k + 1] - ys[k]))
 }
 
+/// The solidity ratios at which a function linear between the table's
+/// `xs` takes its extremes on `lo..=hi`: the two ends and the table's
+/// points between them.
+fn candidates(xs: &[f64], lo: f64, hi: f64) -> Vec<f64> {
+    let mut out = vec![lo, hi];
+    out.extend(xs.iter().copied().filter(|x| *x > lo && *x < hi));
+    out
+}
+
 impl Curve {
     /// The factor at solidity ratio `phi`; none outside the table.
     pub fn at(&self, phi: f64) -> Option<f64> {
         interpolate(&self.solidity, &self.factor, phi)
+    }
+
+    /// The largest factor for a solidity ratio anywhere in `lo..=hi`
+    /// (a face whose ratio is known only within bounds: on the safe
+    /// side); none when part of it is outside the table.
+    pub fn largest_in(&self, lo: f64, hi: f64) -> Option<f64> {
+        let (lo, hi) = (lo.min(hi), lo.max(hi));
+        candidates(&self.solidity, lo, hi)
+            .into_iter()
+            .map(|x| self.at(x))
+            .try_fold(f64::NEG_INFINITY, |m, c| c.map(|c| m.max(c)))
     }
 }
 
@@ -105,6 +125,20 @@ impl Shielding {
             None => rows.first().copied(),
             Some(s) => interpolate(s, &rows, spacing),
         }
+    }
+
+    /// The largest factor (the least shelter) for a solidity ratio of
+    /// the face in front anywhere in `lo..=hi` at spacing ratio
+    /// `spacing` (on the safe side when the ratio is known only within
+    /// bounds); none when part of it is outside the table. At a fixed
+    /// spacing the factor is linear between the table's solidity
+    /// ratios, so its largest value is at an end or one of them.
+    pub fn largest_in(&self, lo: f64, hi: f64, spacing: f64) -> Option<f64> {
+        let (lo, hi) = (lo.min(hi), lo.max(hi));
+        candidates(&self.solidity, lo, hi)
+            .into_iter()
+            .map(|x| self.at(x, spacing))
+            .try_fold(f64::NEG_INFINITY, |m, c| c.map(|c| m.max(c)))
     }
 }
 
