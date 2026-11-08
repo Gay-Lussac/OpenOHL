@@ -258,6 +258,30 @@ fn asce10_bolted(g: &BoltGroup, s: &PlateSteel, n: f64, out: &mut Checked) {
                         resistance: 0.60 * av * fu + at * fy,
                         distance: false,
                     });
+                    // Torn out towards the plate's side edge (2026-11-08):
+                    // one shear plane along the line farthest from it, the
+                    // tension plane from that line to the side edge across
+                    // the others — the angle's own block of Eq. 3.10-1.
+                    match g.edge {
+                        Some(edge) => {
+                            let lines = f64::from(g.lines.max(1));
+                            let av1 = t * (e + (k - 1.0) * p - (k - 0.5) * dh).max(0.0);
+                            let at1 = t * (edge + g.span - (lines - 0.5) * dh).max(0.0);
+                            out.checks.push(PlateCheck {
+                                what: "block shear of the plate towards its side edge (ASCE \
+                                       10-97 Eq. 3.10-1)"
+                                    .into(),
+                                demand: force,
+                                resistance: 0.60 * av1 * fu + at1 * fy,
+                                distance: false,
+                            });
+                        }
+                        None => out.notes.push(
+                            "block shear towards the side edge not checked (the plate's side \
+                             edge not reached)"
+                                .into(),
+                        ),
+                    }
                 }
             }
         }
@@ -400,6 +424,28 @@ fn sia263_bolted(g: &BoltGroup, s: &PlateSteel, n: f64, out: &mut Checked) {
                 resistance: (0.9 * fu * at + fy / 3f64.sqrt() * av) / GAMMA_M2,
                 distance: false,
             });
+            // Torn out towards the plate's side edge (2026-11-08): one
+            // shear plane, the tension plane to the side edge.
+            match g.edge {
+                Some(edge) => {
+                    let lines = f64::from(g.lines.max(1));
+                    let av1 = t * (e + (k - 1.0) * p);
+                    let at1 = t * (edge + g.span - (lines - 0.5) * d0).max(0.0);
+                    out.checks.push(PlateCheck {
+                        what: "block shear of the plate towards its side edge (SIA 263 6.2.4.3, \
+                               (83))"
+                            .into(),
+                        demand: force,
+                        resistance: (0.9 * fu * at1 + fy / 3f64.sqrt() * av1) / GAMMA_M2,
+                        distance: false,
+                    });
+                }
+                None => out.notes.push(
+                    "block shear towards the side edge not checked (the plate's side edge not \
+                     reached)"
+                        .into(),
+                ),
+            }
         }
         (_, _, None, false) => out
             .notes
@@ -670,6 +716,12 @@ mod tests {
         let s = find(&c, "block shear");
         let want = 0.6 * 1212e-6 * 510e6 + 404e-6 * 355e6;
         assert!((s.resistance - want).abs() < 1.0, "{s:?} {want}");
+        // Towards the side edge (30 mm): A_v = 10 × (40 + 50 − 1.5 × 19.6)
+        // = 606 mm² (one plane), A_t = 10 × (30 + 60 − 1.5 × 19.6) = 606
+        // mm²: 0.6 × 606 × 510 + 606 × 355 = 400.6 kN.
+        let side = find(&c, "towards its side edge");
+        let want = 0.6 * 606e-6 * 510e6 + 606e-6 * 355e6;
+        assert!((side.resistance - want).abs() < 1.0, "{side:?} {want}");
         let n = find(&c, "net section");
         assert!((n.resistance - 286.84e3).abs() < 1.0, "{n:?}");
         // The net section governs at 200 kN: 0.697.
@@ -711,6 +763,10 @@ mod tests {
         assert!((find(&c, "(82)").resistance - r82).abs() < 1.0);
         let r83 = (0.9 * 510e6 * 420e-6 + 355e6 / 3f64.sqrt() * 1800e-6) / 1.25;
         assert!((find(&c, "(83)").resistance - r83).abs() < 1.0);
+        // Towards the side edge: A_t = 10 × (30 + 60 − 1.5 × 18) = 630 mm²,
+        // A_v = 10 × 90 = 900 mm² (one plane).
+        let side = (0.9 * 510e6 * 630e-6 + 355e6 / 3f64.sqrt() * 900e-6) / 1.25;
+        assert!((find(&c, "towards its side edge").resistance - side).abs() < 1.0);
         assert!((find(&c, "(38)").resistance - 355e6 * 1200e-6 / 1.05).abs() < 1.0);
         assert!((find(&c, "(39)").resistance - 0.9 * 510e6 * 840e-6 / 1.25).abs() < 1.0);
         // A short pitch: e = p − d_0/2 = 30 − 9 = 21 mm.

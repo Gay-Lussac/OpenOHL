@@ -979,10 +979,15 @@ fn the_structure_report_shows_the_plate_checks() {
         "plates and welds</td>",
         "<h2>Plates and welds — largest usage over the cases</h2>",
         "D2&#39;s bolts",
-        "ASCE 10-97 4.4",
     ] {
         assert!(r.html.contains(shown), "{shown}");
     }
+    // The governing check names its clause: bearing (4.4) or, since the
+    // path towards the side edge is checked too (2026-11-08), block shear.
+    assert!(
+        r.html.contains("ASCE 10-97 4.4") || r.html.contains("ASCE 10-97 Eq. 3.10-1"),
+        "the clause"
+    );
 }
 
 /// The report of the example pole structure with one case of its own:

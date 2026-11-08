@@ -526,9 +526,11 @@ impl ZoneWindow {
                 rep
             });
             local.finish(LOCAL.1, started.elapsed());
-            // Tests: held until Stop (two minutes at most).
+            // Tests: held until Stop (ten minutes at most: under the full
+            // check's load a run can take most of two, and a hold ending
+            // just before Stop let the report through, 2026-11-08).
             #[cfg(test)]
-            while hold && !c.is_cancelled() && started.elapsed() < Duration::from_secs(120) {
+            while hold && !c.is_cancelled() && started.elapsed() < Duration::from_secs(600) {
                 std::thread::sleep(Duration::from_millis(5));
             }
             let _ = tx.send(r);

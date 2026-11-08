@@ -149,8 +149,9 @@ fn joint_kinds_are_set_and_undone() {
     h.run();
     let after = text(&h);
     assert!(after.contains("kind = \"attach\""), "{after}");
-    // 7: the example's load cases have the parts already.
-    assert!(after.contains("version = 7"), "{after}");
+    // 8: the example has members' design data (and its load cases
+    // their parts) already.
+    assert!(after.contains("version = 8"), "{after}");
     let t = h.state().file.as_ref().unwrap().structure().clone();
     assert_eq!(t.joint("L10B").unwrap().kind, Some(JointKind::Attach));
     h.state_mut().selected = vec![Handle::Joint("L10B".into())];

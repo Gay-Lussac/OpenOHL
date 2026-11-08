@@ -160,7 +160,7 @@ fn line_forces_are_added_a_point_unticked_and_the_wind_mirrored() {
             .as_ref()
             .unwrap()
             .text()
-            .contains("version = 7")
+            .contains("version = 8")
     );
 
     // A11 unticked: its line forces left out; the menu stays open.

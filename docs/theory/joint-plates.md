@@ -101,9 +101,17 @@ Exact: the split from a model of the joint, or given.
   the tension plane between the outer lines,
   \\( A_t = t\,(\text{span} - (n_\text{lines} - 1)d_h) \\). This
   **applies a rule the standard gives for angles to a plate** — said in
-  every result. Other tearing paths (towards a side edge of the plate)
-  are not checked (**not on the safe side** for a bolt group near a side
-  edge).
+  every result. **And towards the plate's side edge** (2026-11-08;
+  before, not checked — not on the safe side for a bolt group near a
+  side edge): the angle's own block of Eq. 3.10-1, one shear plane along
+  the gauge line farthest from that edge,
+  \\( A_v = t\,(e_1 + (n-1)p - (n - \tfrac12)d_h) \\), and the tension
+  plane from it to the side edge across the other lines,
+  \\( A_t = t\,(e_2 + \text{span} - (n_\text{lines} - \tfrac12)d_h) \\),
+  \\( e_2 \\) the outer lines' distance to the nearer side edge; the
+  weaker governs. Unit test: the plate below, towards a 30 mm side edge,
+  \\( A_v = A_t = 606 \\) mm², 400.6 kN. A side edge not reached: that
+  path not checked, said (not on the safe side).
 - **Net section**: 3.10.1 is the rule for tension members; the plate's
   section across the bolt group is checked by it in tension only.
 - **Edge**: the plate's edges taken as sheared or flame-cut (Eq. 4.5-7,
@@ -139,7 +147,9 @@ Design values with \\( \gamma_{M1} = 1.05 \\), \\( \gamma_{M2} = 1.25 \\)
   \\( A_{v,net} = 2t\,(e_1 + (n-1)p - (n - \tfrac12)d_0) \\),
   \\( A_{v,brut} = 2t\,(e_1 + (n-1)p) \\),
   \\( A_t = t\,(\text{span} - (n_\text{lines} - 1)d_0) \\); both criteria,
-  the lower governing. Other paths: as for ASCE 10-97, not checked.
+  the lower governing. **Towards the side edge** (2026-11-08), as for
+  ASCE 10-97: (83) with one shear plane, \\( A_{v,brut} = t\,(e_1 + (n-1)p) \\),
+  and \\( A_t = t\,(e_2 + \text{span} - (n_\text{lines} - \tfrac12)d_0) \\).
 - **Gross section** (38) in tension and compression; the net section (39)
   in tension only (6.2.4.1: in compression the holes are not deducted).
 - **Compression**: SIA 263 gives no rule for a gusset plate's buckling
