@@ -18,6 +18,13 @@ of Parts A, B and C).
 - Every plan window is as wide (540 points) and first opens at the same place (top right); the plans offer their formats in the sheets window's order.
 - Built, in active development, not approved yet.
 
+**Each plan its own sheet template (owner, 2026-11-08)**
+
+- Owner: "for the plans (phase plan, route plan etc.) they should all have their own template separate from the profile plan but defined in a similar way".
+- The Route plan, Situation plans and Phase plan windows each have a **Template** row as the Profile sheets window's (the template list, Load file…, Save as file…) and **Values of the template** (title block) and **Revisions** sections; each plan keeps its own template and values in the project (`app.plan_sheets.<plan>.<line>`, `PlanSheet`). None kept yet (a project from before): each plan starts on the sheets' template it took until now, then keeps its own.
+- A plan set's drawing takes its plan window's template and values, the profile sheets the Profile sheets window's; a template the set names wins, as before. The plans still take the sheets window's routes and weather cases.
+- Built, in active development, not approved yet.
+
 ## 2026-11-07
 
 **Joint tools pick before they drag; Rotate member in the close-up (owner, 2026-11-07)**

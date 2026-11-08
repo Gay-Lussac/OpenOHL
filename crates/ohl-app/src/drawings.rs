@@ -1719,7 +1719,9 @@ pub fn set_template_key(w: &DrawingsWindow, plugin: &str, name: &str) -> String 
 pub type SetJob = Vec<(String, Input, Option<PlanRequest>)>;
 
 /// The inputs of plan set `set` (of `plugin`): each drawing with the
-/// Profile sheets window's settings, its template, paper and scales over them,
+/// Profile sheets window's settings, a plan with its own template and
+/// values (`plans`, from its window), the set's template, paper and scales
+/// over them,
 /// written in `formats` into `out`; their sheets kept for the set's one
 /// PDF with `one_pdf` ([`run_plan_set`]). A set's second drawing of a
 /// kind is named apart, `-2` after the route's name, its third `-3` …
@@ -1729,6 +1731,7 @@ pub fn plan_set_inputs(
     model: &Model,
     case: usize,
     w: &DrawingsWindow,
+    plans: &[(PlanKind, crate::plans_window::PlanSheet)],
     plugin: &str,
     set: &ohl_drawing::plan_set::PlanSet,
     formats: &[Format],
@@ -1747,6 +1750,19 @@ pub fn plan_set_inputs(
         let at = |e: String| format!("{} drawing {} ({}): {e}", set.name, k + 1, d.kind.as_str());
         let mut ww = w.clone();
         ww.formats = formats.to_vec();
+        // A plan its own plan's template and values (owner, 2026-11-08),
+        // the profile sheets the sheets window's; the set's template wins.
+        let own = |kind: PlanKind| plans.iter().find(|(k, _)| *k == kind).map(|(_, s)| s);
+        let kind_of = match d.kind {
+            SetKind::Route => Some(PlanKind::Route),
+            SetKind::Situation => Some(PlanKind::Situation),
+            SetKind::Phase => Some(PlanKind::Phase),
+            SetKind::Sheets => None,
+        };
+        if let Some(s) = kind_of.and_then(own) {
+            ww.sheet.template = s.template.clone();
+            ww.sheet.fields = s.fields.clone();
+        }
         if let Some(t) = &d.template {
             ww.sheet.template = set_template_key(w, plugin, t);
         }
@@ -2095,13 +2111,18 @@ impl DrawingsWindow {
             crate::export_form::intro(
                 ui,
                 "The routes' profile sheets and profile exports. The route plan, \
-                 situation plans and phase plan take this window's template, routes and \
-                 title fields.",
+                 situation plans and phase plan take this window's routes and weather \
+                 cases, each with its own template.",
             );
             crate::export_form::grid(ui, "drawings-grid", |ui| {
                 ui.label("Template");
                 ui.vertical(|ui| {
-                    if let Some(a) = crate::sheet_ui::template_ui(ui, &mut self.sheet, &offers) {
+                    if let Some(a) = crate::sheet_ui::template_ui(
+                        ui,
+                        "drawings",
+                        &mut self.sheet.template,
+                        &offers,
+                    ) {
                         *action = Some(a);
                     }
                     if let Err(e) = &template {
@@ -3083,29 +3104,7 @@ impl Drawings {
         let Some(w) = &mut self.window else {
             return Ok(());
         };
-        match action {
-            crate::sheet_ui::Action::Load(path) => {
-                let t = ohl_drawing::SheetTemplate::load(&path)?;
-                let stem = path
-                    .file_stem()
-                    .map_or("template".to_owned(), |s| s.to_string_lossy().into_owned());
-                let op = ohl_server::Op::PutLibrary {
-                    kind: crate::sheet_ui::KIND.into(),
-                    name: format!("{stem}.{}", ohl_drawing::template::EXTENSION),
-                    text: t.embedded(),
-                };
-                w.sheet.template = match model.project_op("sheet template", op) {
-                    Ok(_) => format!("project:{stem}"),
-                    // No project (or read-only): used from its file.
-                    Err(_) => format!("file:{}", path.display()),
-                };
-                Ok(())
-            }
-            crate::sheet_ui::Action::SaveAs(path) => {
-                let t = crate::sheet_ui::resolve(model, &w.sheet.template, &w.plugin_templates)?;
-                std::fs::write(&path, t.embedded()).map_err(|e| format!("{}: {e}", path.display()))
-            }
-        }
+        crate::sheet_ui::template_action(model, &mut w.sheet.template, &w.plugin_templates, action)
     }
 
     /// The window of the sheet previewed (when asked): drawn by the

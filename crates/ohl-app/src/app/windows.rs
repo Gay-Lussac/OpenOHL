@@ -764,11 +764,20 @@ pub(super) fn tool_windows(
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
     r.drawings.show(ctx, &mut r.model, r.case);
-    // The phase plan keeps its groups in the project; each plan window
-    // apart (owner, 2026-11-08).
-    r.plans.phase.keep(&mut r.model, ctx);
+    // Each plan window apart, keeping its own template in the project
+    // (and the phase plan its groups; owner, 2026-11-08).
+    r.plans.set.others = r.plans.sheets();
+    let plugins = r.drawings.settings().plugin_templates.clone();
+    let start = r.drawings.settings().sheet.template.clone();
     let mut sheets = false;
     for w in r.plans.all() {
+        w.keep(&mut r.model, ctx, &start);
+        if let Some(a) = w.action.take()
+            && let Err(e) =
+                crate::sheet_ui::template_action(&mut r.model, &mut w.sheet.template, &plugins, a)
+        {
+            w.error = Some(e);
+        }
         if w.open {
             let wanted = w.wanted(&r.model, r.drawings.settings());
             r.model.want(wanted, ctx);

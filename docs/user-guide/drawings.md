@@ -546,25 +546,31 @@ roadmap O14; built, in active development (not approved yet)), three
 plans, each with its own menu item and **its own window** (2026-11-08):
 **Plans & sheets › Route plan…**, **Situation plans…** and **Phase
 plan…**, and **Plan set…** for a plugin's set of drawings. Each is
-written for every route with the sheet template, title fields, routes
-and cases of Plans & sheets › Profile sheets…, on the paper chosen, in
-PDF, SVG, PNG or DXF. The template sets their page as the sheets'
-(2026-11-07): frame, title block, revision and stringing tables, key
+written for every route with the routes and cases of Plans & sheets ›
+Profile sheets…, on the paper chosen, in PDF, SVG, PNG or DXF, with **its
+own sheet template** and its values (2026-11-08: apart from the profile
+sheets' and from each other's, chosen the same way — the template list,
+**Load file…**, **Save as file…**, and **Values of the template** for
+the title block and the revisions —, kept in the project for the line
+worked on). A plan set's drawing takes its plan's template (the profile
+sheets the Profile sheets window's), the set's when it names one. The
+template sets their page as the sheets' (2026-11-07): frame, title block, revision and stringing tables, key
 map, notes, legend, scale bar and north arrow, pens; [Which drawing uses
 what](sheet-templates.md#which-drawing-uses-what) shows each plan and what it
 takes from the template.
 
 Every plan window is laid out as the Profile sheets window, and as wide:
 a line saying what it makes, then the same rows in the same order —
-**Template** and **Route** (here only shown: set in Profile sheets, the
-button **Profile sheets…** opens it), **Paper** (the plan set: **Plan
+**Template** (its own; the plan set: each drawing its plan's) and
+**Route** (here only shown: set in Profile sheets, the button **Profile
+sheets…** opens it), **Paper** (the plan set: **Plan
 set**), **Scale**, the plan's own rows (**Under it**: the project's
 drawings, orthophotos, the corridor), **Formats** and **Folder** (none
 chosen: the sheets' folder) — then its own sections (the plan set's
 drawings, the phase plan's alignments drawn together) and **Export** at
 the bottom. Each window keeps its own settings (paper, scale, formats,
-folder), so the route plan and the situation plans can be on different
-papers.
+folder, template and values), so the route plan and the situation plans
+can be on different papers with different title blocks.
 
 - **Route plan** — the whole route **north up** at a small scale
   (1:5000 to 1:25 000, 1:10 000 by default), over the project's drawings

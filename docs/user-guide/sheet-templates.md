@@ -9,8 +9,10 @@ block, the revision table, the legend, the key map and more. What is computed â€
 the ground, the wires, the structures, where sheets end â€” stays the same whatever
 the template.
 
-The same template serves the profile sheets and the route, situation and
-phase plans: the plans take its frame, title block, revision and stringing tables,
+A template serves the profile sheets and the route, situation and phase
+plans alike, each drawing choosing its own (2026-11-08: the Profile sheets
+window and each plan's window have their own **Template** row, chosen the
+same way): the plans take its frame, title block, revision and stringing tables,
 key map, notes, legend, scale bar, north arrow and pens as the sheets do; what only a
 profile has (bands, panels, sag labels) they leave out. See [Which drawing uses
 what](#which-drawing-uses-what).

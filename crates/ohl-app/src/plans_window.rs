@@ -10,8 +10,10 @@
 //! **situation plans** (north up, over the project's drawings and
 //! orthophotos) and the **phase plan** (the structures where the phase
 //! arrangement changes), written for every route of the Profile sheets
-//! window with its sheet template and title fields
-//! ([`crate::drawings::run_plans`]).
+//! window, each plan with **its own sheet template** and its values
+//! (owner, 2026-11-08: "they should all have their own template separate
+//! from the profile plan but defined in a similar way"; [`PlanSheet`],
+//! kept in the project) ([`crate::drawings::run_plans`]).
 
 use std::path::PathBuf;
 
@@ -22,8 +24,10 @@ use crate::drawings::{
 };
 use crate::model::Model;
 use crate::survey_io::Job;
+use ohl_drawing::SheetFields;
 use ohl_drawing::export::Format;
 use ohl_drawing::plan_set::PlanSet;
+use serde::{Deserialize, Serialize};
 
 /// The formats the plans are written in.
 /// In the Profile sheets window's order.
@@ -31,6 +35,31 @@ const FORMATS: [Format; 4] = [Format::Svg, Format::Dxf, Format::Pdf, Format::Png
 
 /// The papers offered.
 const PAPERS: [&str; 5] = ["A0", "A1", "A2", "A3", "A4"];
+
+/// A plan's own sheet template and the values of its fields (title
+/// block, revisions), as the Profile sheets window has its own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlanSheet {
+    /// The template: `default`, `project:NAME`, `library:NAME`,
+    /// `plugin:PLUGIN/NAME` or `file:PATH` ([`crate::sheet_ui::SheetChoice::template`]).
+    pub template: String,
+    /// The values of its fields and the revisions.
+    pub fields: SheetFields,
+}
+
+impl Default for PlanSheet {
+    fn default() -> Self {
+        Self {
+            template: "default".into(),
+            fields: SheetFields::default(),
+        }
+    }
+}
+
+/// The project setting a plan's sheet is kept in, per plan:
+/// `app.plan_sheets.<route|situation|phase>.<project line>`.
+pub const SHEET_SETTING: &str = "app.plan_sheets";
 
 /// The four plan windows, each opened by its own menu item and keeping
 /// its own settings.
@@ -68,6 +97,14 @@ impl PlanWindows {
             PlanKind::Situation => &mut self.situation,
             PlanKind::Phase => &mut self.phase,
         }
+    }
+
+    /// Each plan's own sheet (the plan set's drawings take them).
+    pub fn sheets(&self) -> Vec<(PlanKind, PlanSheet)> {
+        [&self.route, &self.situation, &self.phase]
+            .iter()
+            .map(|w| (w.kind, w.sheet.clone()))
+            .collect()
     }
 
     /// Each window.
@@ -122,10 +159,17 @@ pub struct PlansWindow {
     /// The phase plans of alignments drawn together (owner, 2026-11-03),
     /// kept in the project (`app.phase_plans.<line>`).
     pub groups: Vec<PhaseGroup>,
-    /// The Profile sheets window asked for (its template and route are
-    /// set there).
+    /// The Profile sheets window asked for (the route is set there).
     pub open_sheets: bool,
+    /// Its own sheet template and values (none used by the plan set
+    /// window: each drawing takes its plan's).
+    pub sheet: PlanSheet,
+    /// The plan set window: the plans' own sheets, as last given.
+    pub others: Vec<(PlanKind, PlanSheet)>,
+    /// A template file to load or write, asked in the window.
+    pub action: Option<crate::sheet_ui::Action>,
     kept: crate::check_ui::Kept,
+    kept_sheet: crate::check_ui::Kept,
 }
 
 /// The project setting the phase plans' groups are kept in.
@@ -157,7 +201,11 @@ impl PlansWindow {
             waiting: false,
             groups: Vec::new(),
             open_sheets: false,
+            sheet: PlanSheet::default(),
+            others: Vec::new(),
+            action: None,
             kept: Default::default(),
+            kept_sheet: Default::default(),
         }
     }
 
@@ -200,9 +248,44 @@ impl PlansWindow {
         }
     }
 
-    /// Reads the phase plans' groups from the project when not read yet
-    /// for the line worked on, writes them when they changed.
-    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+    /// Reads the window's own sheet (and the phase plan its groups) from
+    /// the project when not read yet for the line worked on, writes them
+    /// when they changed. None kept yet: it starts on `start` (the
+    /// sheets' template, as the plans took before they had their own).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context, start: &str) {
+        if self.set_mode {
+            return;
+        }
+        let setting = format!(
+            "{SHEET_SETTING}.{}",
+            match self.kind {
+                PlanKind::Route => "route",
+                PlanKind::Situation => "situation",
+                PlanKind::Phase => "phase",
+            }
+        );
+        let json = serde_json::to_string(&self.sheet).unwrap_or_default();
+        let mut kept = std::mem::take(&mut self.kept_sheet);
+        if let crate::check_ui::Step::Load(text) =
+            kept.step(model, ctx, &setting, "plan sheet template", &json)
+        {
+            self.sheet = text
+                .as_deref()
+                .and_then(|t| serde_json::from_str(t).ok())
+                .unwrap_or_else(|| PlanSheet {
+                    template: start.to_owned(),
+                    ..Default::default()
+                });
+            kept.loaded(serde_json::to_string(&self.sheet).unwrap_or_default());
+        }
+        self.kept_sheet = kept;
+        if self.kind == PlanKind::Phase {
+            self.keep_groups(model, ctx);
+        }
+    }
+
+    /// The phase plans' groups, kept as [`Self::keep`].
+    fn keep_groups(&mut self, model: &mut Model, ctx: &egui::Context) {
         let json = serde_json::to_string(&self.groups).unwrap_or_default();
         let mut kept = std::mem::take(&mut self.kept);
         if let crate::check_ui::Step::Load(text) =
@@ -310,6 +393,15 @@ impl PlansWindow {
         }
     }
 
+    /// The template a set's drawing of `kind` takes when the set names
+    /// none: its plan's own.
+    pub fn sheet_of(&self, kind: PlanKind) -> PlanSheet {
+        self.others
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map_or_else(PlanSheet::default, |(_, s)| s.clone())
+    }
+
     /// The weather cases the plans asked for draw in (their templates'
     /// and the Profile sheets window's per circuit): solved while the window is
     /// open, the export waiting for them. The phase plan, a schematic,
@@ -330,14 +422,18 @@ impl PlansWindow {
             if let Some((plugin, _, Ok(set))) = self.sets.get(self.set) {
                 for d in set.drawings.iter().filter(|d| d.kind != SetKind::Phase) {
                     let key = d.template.as_ref().map_or_else(
-                        || drawings.sheet.template.clone(),
+                        || match d.kind {
+                            SetKind::Route => self.sheet_of(PlanKind::Route).template,
+                            SetKind::Situation => self.sheet_of(PlanKind::Situation).template,
+                            _ => drawings.sheet.template.clone(),
+                        },
                         |t| crate::drawings::set_template_key(drawings, plugin, t),
                     );
                     v.extend(needed(&key));
                 }
             }
         } else if self.kind != PlanKind::Phase {
-            v = needed(&drawings.sheet.template);
+            v = needed(&self.sheet.template);
         }
         v.sort_unstable();
         v.dedup();
@@ -365,12 +461,9 @@ impl PlansWindow {
         let mut open = true;
         let mut start = false;
         let offers = crate::sheet_ui::offers_kept(model, &drawings.plugin_templates);
-        let template = offers
-            .iter()
-            .find(|o| o.key == drawings.sheet.template)
-            .map_or(drawings.sheet.template.clone(), |o| {
-                format!("{} › {}", o.group, o.name)
-            });
+        let template = (!self.set_mode).then(|| {
+            crate::sheet_ui::resolve_kept(model, &self.sheet.template, &drawings.plugin_templates)
+        });
         let routes = model.line.alignment_views();
         let route = match drawings.route.and_then(|k| routes.get(k)) {
             Some(r) => format!("{} {}", r.id, r.name),
@@ -381,8 +474,9 @@ impl PlansWindow {
             crate::export_form::intro(
                 ui,
                 if self.set_mode {
-                    "Several drawings in one go, as a plugin's plan set lists them, with the \
-                     sheet template, routes and title fields of Plans & sheets › Profile sheets."
+                    "Several drawings in one go, as a plugin's plan set lists them: each with \
+                     its plan's own template (the profile sheets with Profile sheets'), the set's \
+                     when it names one."
                 } else {
                     match self.kind {
                         PlanKind::Route => {
@@ -406,12 +500,29 @@ impl PlansWindow {
             );
             ui.add_space(4.0);
             crate::export_form::grid(ui, title, |ui| {
-                let go = Some("Profile sheets…");
-                // Both set in the sheets window: one way there.
-                if crate::export_form::shown_row(ui, "Template", &template, go) {
+                ui.label("Template");
+                if self.set_mode {
+                    ui.label("each drawing its plan's own");
+                } else {
+                    ui.vertical(|ui| {
+                        if let Some(a) = crate::sheet_ui::template_ui(
+                            ui,
+                            title,
+                            &mut self.sheet.template,
+                            &offers,
+                        ) {
+                            self.action = Some(a);
+                        }
+                        if let Some(Err(e)) = &template {
+                            crate::menu::error_label(ui, e);
+                        }
+                    });
+                }
+                ui.end_row();
+                // The route chosen in the sheets window: one way there.
+                if crate::export_form::shown_row(ui, "Route", &route, Some("Profile sheets…")) {
                     self.open_sheets = true;
                 }
-                crate::export_form::shown_row(ui, "Route", &route, None);
                 if self.set_mode {
                     ui.label("Plan set");
                     let shown = self
@@ -507,9 +618,32 @@ impl PlansWindow {
                     }
                     None => {}
                 }
-            } else if self.kind == PlanKind::Phase {
-                ui.separator();
-                self.groups_ui(ui, model);
+            } else {
+                if let Some(Ok(t)) = &template {
+                    egui::CollapsingHeader::new("Values of the template (title block)")
+                        .id_salt((title, "values"))
+                        .show(ui, |ui| {
+                            crate::sheet_ui::fields_ui(ui, t, &mut self.sheet.fields)
+                        });
+                    if t.revisions.place != "off" {
+                        egui::CollapsingHeader::new(format!(
+                            "Revisions ({})",
+                            self.sheet.fields.revisions.len()
+                        ))
+                        .id_salt((title, "revisions"))
+                        .show(ui, |ui| {
+                            crate::sheet_ui::revisions_ui(
+                                ui,
+                                &mut self.sheet.fields,
+                                crate::sheet_ui::last_commit(model),
+                            )
+                        });
+                    }
+                }
+                if self.kind == PlanKind::Phase {
+                    ui.separator();
+                    self.groups_ui(ui, model);
+                }
             }
             start = crate::export_form::footer(ui, self.error.as_deref(), self.job.is_some());
         });
@@ -552,7 +686,15 @@ impl PlansWindow {
                         Some((plugin, name, Ok(set))) => {
                             let one_pdf = self.one_pdf;
                             match plan_set_inputs(
-                                model, case, drawings, plugin, set, &formats, one_pdf, out,
+                                model,
+                                case,
+                                drawings,
+                                &self.others,
+                                plugin,
+                                set,
+                                &formats,
+                                one_pdf,
+                                out,
                             ) {
                                 Ok(jobs) => {
                                     self.error = None;
@@ -587,6 +729,9 @@ impl PlansWindow {
                         w.route = None;
                     }
                     w.formats = self.formats.clone();
+                    // Its own template and values.
+                    w.sheet.template = self.sheet.template.clone();
+                    w.sheet.fields = self.sheet.fields.clone();
                     let req = self.request();
                     match Input::for_plans(model, case, &w, out, &req) {
                         Ok(input) => {
@@ -724,6 +869,56 @@ mod tests {
         assert!(Input::for_plans(&model, 0, &w, dir, &win.request()).is_ok());
     }
 
+    /// Owner, 2026-11-08: each plan has its own template, apart from the
+    /// profile sheets'. In a plan set, a plan's drawing takes its plan
+    /// window's template (here one that does not read, so it is seen to
+    /// be taken), the profile sheets the sheets window's.
+    #[test]
+    fn a_plan_takes_its_own_template() {
+        let model = crate::tests::synthetic();
+        let w = crate::drawings::DrawingsWindow::default();
+        let set = |kind: &str| {
+            PlanSet::parse(&format!(
+                "format = \"ohl-plan-set\"\nversion = 1\nname = \"S\"\n\
+                 [[drawing]]\nkind = \"{kind}\"\npage = \"A3\"\n"
+            ))
+            .unwrap()
+        };
+        let own = vec![(
+            PlanKind::Route,
+            PlanSheet {
+                template: "library:no-such-template".into(),
+                ..Default::default()
+            },
+        )];
+        let dir = std::env::temp_dir();
+        let run = |kind: &str, plans: &[(PlanKind, PlanSheet)]| {
+            crate::drawings::plan_set_inputs(
+                &model,
+                0,
+                &w,
+                plans,
+                "",
+                &set(kind),
+                &[Format::Pdf],
+                false,
+                dir.clone(),
+            )
+            .map(|_| ())
+        };
+        assert!(run("route", &[]).is_ok());
+        let e = run("route", &own).unwrap_err();
+        assert!(e.contains("no-such-template"), "{e}");
+        // The other drawings keep theirs.
+        assert!(run("situation", &own).is_ok());
+        assert!(run("sheets", &own).is_ok());
+        // The windows start apart, each on the built-in template.
+        let mut plans = PlanWindows::default();
+        plans.route.sheet.template = "library:x".into();
+        assert_eq!(plans.situation.sheet.template, "default");
+        assert_eq!(plans.sheets().len(), 3);
+    }
+
     /// A plan set written in one go: the sheets and the phase plan of
     /// the example line, each with the set's paper, and all their sheets
     /// in one PDF; and the LeV plugin's set (when this checkout has it)
@@ -745,6 +940,7 @@ mod tests {
             &model,
             0,
             &w,
+            &[],
             "",
             &set,
             &[ohl_drawing::export::Format::Pdf],

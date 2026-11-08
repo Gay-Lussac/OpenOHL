@@ -394,6 +394,7 @@ pub fn read_plugins(
 }
 
 /// What the template row asks of the window.
+#[derive(Debug)]
 pub enum Action {
     /// Keep the template file in the project (or use it from the file).
     Load(PathBuf),
@@ -403,20 +404,20 @@ pub enum Action {
 
 /// The template row: a dropdown grouped by source, Load file…, Save as
 /// file….
+/// `id` tells the windows' rows apart; `template` the key chosen.
 pub fn template_ui(
     ui: &mut egui::Ui,
-    choice: &mut SheetChoice,
+    id: &str,
+    template: &mut String,
     offers: &[Offer],
 ) -> Option<Action> {
     let mut action = None;
     let shown = offers
         .iter()
-        .find(|o| o.key == choice.template)
-        .map_or(choice.template.clone(), |o| {
-            format!("{} › {}", o.group, o.name)
-        });
+        .find(|o| o.key == *template)
+        .map_or(template.clone(), |o| format!("{} › {}", o.group, o.name));
     ui.horizontal(|ui| {
-        egui::ComboBox::from_id_salt("drawings-template")
+        egui::ComboBox::from_id_salt((id, "template"))
             .selected_text(shown)
             .width(260.0)
             .show_ui(ui, |ui| {
@@ -431,17 +432,15 @@ pub fn template_ui(
                     } else {
                         format!("   {} ⚠", o.name)
                     };
-                    let r = ui.add_enabled(
-                        o.ok,
-                        egui::Button::selectable(choice.template == o.key, text),
-                    );
+                    let r =
+                        ui.add_enabled(o.ok, egui::Button::selectable(*template == o.key, text));
                     let r = if o.about.is_empty() {
                         r
                     } else {
                         r.on_hover_text(&o.about)
                     };
                     if r.clicked() {
-                        choice.template = o.key.clone();
+                        *template = o.key.clone();
                     }
                 }
             })
@@ -469,13 +468,7 @@ pub fn template_ui(
                 .add_filter("Sheet templates", &[EXTENSION])
                 .set_file_name(format!(
                     "{}.{EXTENSION}",
-                    stem(
-                        choice
-                            .template
-                            .rsplit([':', '/'])
-                            .next()
-                            .unwrap_or("template")
-                    )
+                    stem(template.rsplit([':', '/']).next().unwrap_or("template"))
                 ))
                 .save_file()
         {
@@ -483,6 +476,40 @@ pub fn template_ui(
         }
     });
     action
+}
+
+/// Does `action` for the template `template` of a window: a file loaded
+/// into the project (or, without one, used from the file: `template` then
+/// its `file:` key), or the template chosen written to a file.
+pub fn template_action(
+    model: &mut Model,
+    template: &mut String,
+    plugins: &PluginTemplates,
+    action: Action,
+) -> Result<(), String> {
+    match action {
+        Action::Load(path) => {
+            let t = SheetTemplate::load(&path)?;
+            let stem = path
+                .file_stem()
+                .map_or("template".to_owned(), |s| s.to_string_lossy().into_owned());
+            let op = ohl_server::Op::PutLibrary {
+                kind: KIND.into(),
+                name: format!("{stem}.{EXTENSION}"),
+                text: t.embedded(),
+            };
+            *template = match model.project_op("sheet template", op) {
+                Ok(_) => format!("project:{stem}"),
+                // No project (or read-only): used from its file.
+                Err(_) => format!("file:{}", path.display()),
+            };
+            Ok(())
+        }
+        Action::SaveAs(path) => {
+            let t = resolve(model, template, plugins)?;
+            std::fs::write(&path, t.embedded()).map_err(|e| format!("{}: {e}", path.display()))
+        }
+    }
 }
 
 /// The fields of template `t` (required marked *), the per-sheet ones as

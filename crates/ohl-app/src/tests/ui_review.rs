@@ -437,6 +437,10 @@ fn the_plan_windows_look_alike() {
         for row in shared {
             h.get_by_label(row);
         }
+        // Its own template, chosen as in Profile sheets (2026-11-08).
+        h.get_by_label("Load file…");
+        h.get_by_label("Save as file…");
+        h.get_by_label("Values of the template (title block)");
         // Only its own plan: no tabs to the others.
         for other in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
             if other != kind {
@@ -461,7 +465,7 @@ fn the_plan_windows_look_alike() {
         r.plans.route.page = "A1".into();
         assert_eq!(r.plans.situation.page, "A3");
     }
-    // The template row leads to the Profile sheets window.
+    // The route row leads to the Profile sheets window.
     h.state_mut().ready().unwrap().plans.situation.show();
     h.run_steps(6);
     h.get_all_by_label("Profile sheets…")
