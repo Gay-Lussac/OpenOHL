@@ -696,20 +696,36 @@ fn end_check(
                 let one = (0.85 * e / hole * fu * b.diameter * t).min(2.4 * fu * b.diameter * t)
                     / GAMMA_M2;
                 bearing = Some(f64::from(b.count) * one * plies);
-                // And on the leg it bolts onto, when weaker: its own end
-                // distance there not known, this member's taken (said).
+                // And on the leg it bolts onto, when weaker. Its end
+                // distance there is not known: the smaller of this
+                // member's and Table 17's minimum (that leg may end as near
+                // the bolts as the code allows: on the safe side, owner
+                // 2026-11-08); without a minimum for the bolt, this
+                // member's, said not on the safe side.
                 if let Some(o) = onto
                     && let Some(fo) = o.fu
                 {
                     let to = o.thickness;
+                    let (eo, why) = match bolt_minimums(b.diameter) {
+                        Some(m) if m[0] < e => (
+                            m[0],
+                            format!("e_1 there the minimum of Table 17, {:.0} mm", m[0] * 1e3),
+                        ),
+                        Some(_) => (e, "e_1 there as this member's".to_owned()),
+                        None => (
+                            e,
+                            "e_1 there taken as this member's (no minimum for the bolt: not \
+                             checked whether that leg ends nearer)"
+                                .to_owned(),
+                        ),
+                    };
                     let v = f64::from(b.count)
-                        * (0.85 * e / hole * fo * b.diameter * to).min(2.4 * fo * b.diameter * to)
+                        * (0.85 * eo / hole * fo * b.diameter * to).min(2.4 * fo * b.diameter * to)
                         / GAMMA_M2;
                     if bearing.is_none_or(|own| v < own) {
                         bearing = Some(v);
                         notes.push(format!(
-                            "bearing on {}'s leg ({:.0} mm), the weaker; its e_1 taken as this \
-                             member's",
+                            "bearing on {}'s leg ({:.0} mm), the weaker; {why}",
                             o.id,
                             to * 1e3
                         ));

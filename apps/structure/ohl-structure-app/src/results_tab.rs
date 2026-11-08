@@ -94,18 +94,23 @@ impl Default for ResultsTab {
     }
 }
 
-/// Usage colour: red above 100 %, orange from 90 %, green below, grey
-/// without a capacity.
-pub fn usage_colour(usage: Option<f64>) -> [u8; 4] {
+/// Usage colour of what `governs` says: red above 100 %, orange from
+/// 90 %, violet when its check is not on the safe side (part of it not
+/// done, 2026-11-08: never green), green below, grey without a capacity.
+pub fn usage_colour(usage: Option<f64>, governs: &str) -> [u8; 4] {
     use ohl_structure_link::UsageClass;
     // A usage that is not a number never shows as a pass.
-    match usage.map(ohl_structure_link::classify_usage) {
+    match usage.map(|u| ohl_structure_link::classify(u, governs)) {
         Some(UsageClass::Over) => [235, 70, 60, 255],
         Some(UsageClass::Near) => [255, 170, 60, 255],
+        Some(UsageClass::NotSafe) => NOT_SAFE_COLOUR,
         Some(UsageClass::Pass) => [110, 220, 120, 255],
         None => [150, 150, 160, 255],
     }
 }
+
+/// The colour of a usage whose check is not on the safe side.
+pub const NOT_SAFE_COLOUR: [u8; 4] = [200, 120, 230, 255];
 
 fn rgb(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgb(c[0], c[1], c[2])
@@ -242,13 +247,17 @@ impl ResultsTab {
         };
         let mut s = Scene::new([0.0; 3]);
         for m in &r.members {
-            s.polyline(&[at(m.ends[0]), at(m.ends[1])], usage_colour(m.usage), 3.0);
+            s.polyline(
+                &[at(m.ends[0]), at(m.ends[1])],
+                usage_colour(m.usage, &m.governs),
+                3.0,
+            );
         }
         // The joints with plates: coloured by their plates' and welds'
         // worst usage, as the members (2026-11-04).
         for (j, u) in ohl_structure_link::joint_plate_usage(&r.plates) {
             if let Some(k) = r.joints.iter().position(|x| x.id == j) {
-                s.point(at(k), usage_colour(Some(u)), 9.0);
+                s.point(at(k), usage_colour(Some(u), ""), 9.0);
             }
         }
         if self.reactions {
@@ -579,7 +588,7 @@ impl StructureApp {
                     } else {
                         "pole"
                     });
-                    ui.colored_label(rgb(usage_colour(s.usage)), pct(s.usage));
+                    ui.colored_label(rgb(usage_colour(s.usage, &s.governs)), pct(s.usage));
                     ui.label(&s.case);
                     ui.label(&s.governs);
                     ui.end_row();
@@ -662,7 +671,7 @@ impl StructureApp {
                         if incomplete.is_some() {
                             ui.weak(format!("({text} of the loads there are)"));
                         } else {
-                            ui.colored_label(rgb(usage_colour(c.usage())), text);
+                            ui.colored_label(rgb(usage_colour(c.usage(), "")), text);
                         }
                     });
                 }
@@ -791,7 +800,7 @@ fn pole_ui(ui: &mut egui::Ui, p: &PoleResult) {
         .show(ui, |ui| {
             egui::Grid::new("pole-grid").num_columns(2).show(ui, |ui| {
                 ui.strong("usage");
-                ui.colored_label(rgb(usage_colour(Some(p.usage))), &p.governs);
+                ui.colored_label(rgb(usage_colour(Some(p.usage), &p.governs)), &p.governs);
                 ui.end_row();
                 ui.strong("ground moment");
                 ui.label(format!(
@@ -837,7 +846,7 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult, shown: (u64, usize)) {
             ui.strong("governing");
             match r.governing() {
                 Some(g) => ui.colored_label(
-                    rgb(usage_colour(g.usage)),
+                    rgb(usage_colour(g.usage, &g.governs)),
                     format!(
                         "member {} — {:.0} % ({})",
                         g.id,
@@ -961,7 +970,7 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult, shown: (u64, usize)) {
                 c.cell(|ui| {
                     crate::style::num(ui, |ui| {
                         ui.colored_label(
-                            rgb(usage_colour(m.usage)),
+                            rgb(usage_colour(m.usage, &m.governs)),
                             m.usage.map_or("—".into(), |u| format!("{:.0}", u * 100.0)),
                         )
                     })

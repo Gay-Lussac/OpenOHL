@@ -107,7 +107,9 @@ use ohl_structures::StructureType;
 /// The one usage classification (over / near / pass, a usage that is not
 /// a number over) of the line's checks, for the structure application's
 /// colours and reports.
-pub use ohl_structures_fe::check::{NEAR_FULL, UsageClass, classify_usage, usage_order};
+pub use ohl_structures_fe::check::{
+    NEAR_FULL, NOT_SAFE, UsageClass, classify, classify_usage, not_safe, usage_order,
+};
 use ohl_structures_fe::{Loads, Model, NodalLoad};
 
 /// The values the line gives at placed structure `structure`: per point,
@@ -1303,6 +1305,9 @@ fn analyse_one(
     let (solution, usage) = ohl_structures_fe::analyse(model, &loads, case.strength, budget)
         .map_err(|e| format!("did not solve: {e}"))?;
     let took = started.elapsed();
+    if let Some(note) = ohl_structures_fe::dead_load_note(model) {
+        notes.push(note);
+    }
     if let Some(note) = ohl_structures_fe::stabilisation_note(model, &solution) {
         notes.push(note);
     }

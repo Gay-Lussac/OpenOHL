@@ -437,7 +437,7 @@ impl StructureApp {
         ui.add_space(6.0);
         ui.strong("Plate checks (the last run)");
         let colour = |u: Option<f64>| {
-            let [r, g, b, _] = crate::results_tab::usage_colour(u);
+            let [r, g, b, _] = crate::results_tab::usage_colour(u, "");
             egui::Color32::from_rgb(r, g, b)
         };
         let pct = |u: Option<f64>| u.map_or("—".to_owned(), |u| format!("{:.0} %", u * 100.0));

@@ -343,7 +343,7 @@ fn edges_and_checks(ui: &mut egui::Ui, p: &PlateDetail, usage: &[UsageRow]) {
             .striped(true)
             .show(ui, |ui| {
                 for (part, u, case, governs) in usage {
-                    let [r, g, b, _] = crate::results_tab::usage_colour(*u);
+                    let [r, g, b, _] = crate::results_tab::usage_colour(*u, governs);
                     ui.label(egui::RichText::new(part).small());
                     ui.colored_label(
                         egui::Color32::from_rgb(r, g, b),

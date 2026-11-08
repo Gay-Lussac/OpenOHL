@@ -711,11 +711,13 @@ impl View {
 /// view's bottom right.
 fn usage_legend(painter: &egui::Painter, rect: egui::Rect) {
     let near = crate::results_tab::NEAR_FULL * 100.0;
+    let unsafe_mark = ohl_structure_link::NOT_SAFE;
     let rows = [
-        (Some(1.5), "over 100 %".to_owned()),
-        (Some(0.95), format!("{near:.0} to 100 %")),
-        (Some(0.5), format!("under {near:.0} %")),
-        (None, "no capacity".to_owned()),
+        (Some(1.5), "", "over 100 %".to_owned()),
+        (Some(0.95), "", format!("{near:.0} to 100 %")),
+        (Some(0.5), unsafe_mark, "not all checked".to_owned()),
+        (Some(0.5), "", format!("under {near:.0} %")),
+        (None, "", "no capacity".to_owned()),
     ];
     let font = egui::FontId::proportional(12.0);
     let line = 16.0;
@@ -733,9 +735,9 @@ fn usage_legend(painter: &egui::Painter, rect: egui::Rect) {
         font.clone(),
         egui::Color32::WHITE,
     );
-    for (k, (u, text)) in rows.iter().enumerate() {
+    for (k, (u, governs, text)) in rows.iter().enumerate() {
         let y = at.y + 4.0 + line * (k as f32 + 1.0) + line / 2.0;
-        let c = crate::results_tab::usage_colour(*u);
+        let c = crate::results_tab::usage_colour(*u, governs);
         painter.line_segment(
             [egui::pos2(at.x + 8.0, y), egui::pos2(at.x + 28.0, y)],
             egui::Stroke::new(3.0, egui::Color32::from_rgb(c[0], c[1], c[2])),

@@ -131,16 +131,20 @@ pub enum UsageMark {
     /// Approximate: its finite-element check kept tension-only members
     /// active because their set did not settle.
     Approximate,
+    /// Within its capacity, but part of a member's check not done (not on
+    /// the safe side, 2026-11-08): never shown as a pass.
+    NotSafe,
     /// Nothing to check against (no type, no capacity).
     Unchecked,
 }
 
 impl UsageMark {
     /// Every mark, in the legend's order.
-    pub const ALL: [UsageMark; 6] = [
+    pub const ALL: [UsageMark; 7] = [
         UsageMark::Within,
         UsageMark::Near,
         UsageMark::Over,
+        UsageMark::NotSafe,
         UsageMark::Incomplete,
         UsageMark::Approximate,
         UsageMark::Unchecked,
@@ -151,6 +155,7 @@ impl UsageMark {
         match s.status() {
             UsageStatus::Incomplete => Self::Incomplete,
             UsageStatus::Approximate => Self::Approximate,
+            UsageStatus::NotSafe => Self::NotSafe,
             UsageStatus::NotChecked => Self::Unchecked,
             UsageStatus::Over => Self::Over,
             UsageStatus::Pass => match s.governing() {
@@ -168,6 +173,7 @@ impl UsageMark {
             Self::Over => [235, 70, 60],
             Self::Incomplete => [150, 156, 170],
             Self::Approximate => [175, 120, 220],
+            Self::NotSafe => [215, 110, 200],
             Self::Unchecked => [95, 100, 110],
         }
     }
@@ -180,6 +186,7 @@ impl UsageMark {
             Self::Over => "over 100 %",
             Self::Incomplete => "not checked: a wire not solved",
             Self::Approximate => "approximate (tension-only kept)",
+            Self::NotSafe => "not all checked (not safe side)",
             Self::Unchecked => "no capacity to check",
         }
     }
@@ -1086,8 +1093,12 @@ impl LoadsPage {
                 };
                 let colour = match classify_usage(c.usage) {
                     UsageClass::Over => error,
+                    _ if c.not_safe > 0 => {
+                        let [r, g, b] = UsageMark::NotSafe.color();
+                        egui::Color32::from_rgb(r, g, b)
+                    }
                     UsageClass::Near => egui::Color32::from_rgb(255, 170, 60),
-                    UsageClass::Pass => ok,
+                    UsageClass::Pass | UsageClass::NotSafe => ok,
                 };
                 egui::RichText::new(text).monospace().color(colour)
             }

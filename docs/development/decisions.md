@@ -10,11 +10,19 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Staying on the safe side: checks not done are said, never passed (owner, 2026-11-08)**
+
+- Owner: "what's important to me is that we stay on the safe side and that it's explained why and where it has to be done so". An audit of every treatment the theory pages call not on the safe side is on [Staying on the safe side](safe-side.md), with each item's status; batches follow.
+- Owner's choices: a member end without bolts is **not checked, shown so** (no hole invented); single-angle end moments stay off by default (ASCE 10-97's curves include the eccentricity) but are **said where they would add**; the audit is worked through **structures first**.
+- Batch 1a: a capacity method's notes that a part was not checked go into `[not on the safe side: …]` (`check::NOT_SAFE`), apart from `[assumed: …]`; such a member is `UsageClass::NotSafe` — violet in OHL-Structure, "notsafe" in the report, `UsageStatus::NotSafe` ("not all checked") in OHL-Design, never a pass. A welded, pinned or fixed end says its connection is not checked. Single angles as frames: their end moments said when they would add ≥ 1 %. A model without a dead-load factor says so in every run; holds to the ground above 1 N are said not on the safe side. SIA 263 bearing on the leg bolted onto: the smaller of the member's e₁ and Table 17's minimum. A polygonal pole's ice on its own perimeter.
+- The example towers give no bolts and no dead-load factor: their checks now say they are not on the safe side (true).
+- Built, in active development, not approved yet.
+
 **Bolts to the other leg, each leg onto its own plate, a joint's problems fixed (owner, 2026-11-08)**
 
 - Owner: "go ahead with moving single bolts to the other leg also for setting up nested connections, the joint is giving a lot of errors and i would like to have a tool to help resolve errors. and also it can happen that either with a welded plate or with 2 plates that the member is bolted to both with a 90° difference so we should be able to have it bolted on the same welded on both the faces of the member or on 2 different plates if not welded".
 - **To the other leg**: with Move bolt and a bolt picked, a button (key L) puts it on the angle's other leg where it was along and across; the end is then bolted by both legs (the last bolt off a leg: the other leg alone). The member view draws the other leg folded out below the heel: a bolt dragged across the heel line, or added or removed there, is on that leg (`ToolPick::Bolt`'s index: the leg bolted's bolts, then the other leg's; `Act::LegBolts`, one undo step). The code's distances are marked on the leg bolted only.
-- **`other_onto`** (connection, with `leg = "both"`): the plate the other leg bolts onto. That plate lies against the other leg, is drawn round its bolts, their grip takes its thickness, and the plate checks take each plate with its bolts, the member's force shared by the bolts on each — an assumption, marked so in the theory (not on the safe side for a plate whose leg draws more; no standard gives the split). Two plates welded together: a welded plate holding both faces. Data-only: format version unchanged (an optional field).
+- **`other_onto`** (connection, with `leg = "both"`): the plate the other leg bolts onto. That plate lies against the other leg, is drawn round its bolts, their grip takes its thickness, and the plate checks take each plate with its bolts and the member's **whole force** (owner, same day: "stay on the safe side" — the split between an angle's legs is not known; a share by bolts would not be on the safe side for the plate whose leg draws more). Two plates welded together: a welded plate holding both faces. Data-only: format version unchanged (an optional field).
 - **Problems**: the joint details record each misfit in a form a fix can be found for (`ohl_structure_link::Problem`); OHL-Structure's Joint details list them first with the fixes that worked when tried on a copy of the structure (in the background), each one undo step (`joint_fixes`). Nothing is changed by itself.
 - Built, in active development, not approved yet.
 

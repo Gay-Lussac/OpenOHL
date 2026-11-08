@@ -127,8 +127,8 @@ struct AnalysisFile {
     drag: f64,
     #[serde(default = "yes")]
     stabilise: bool,
-    #[serde(default = "one")]
-    dead_load_factor: f64,
+    #[serde(default)]
+    dead_load_factor: Option<f64>,
     #[serde(default)]
     single_angle_moments: bool,
     #[serde(default)]
@@ -142,7 +142,7 @@ impl Default for AnalysisFile {
             self_weight: true,
             drag: 1.0,
             stabilise: true,
-            dead_load_factor: 1.0,
+            dead_load_factor: None,
             single_angle_moments: false,
             capacity: None,
         }
@@ -694,6 +694,9 @@ pub struct Analysis {
     /// model (bolts, plates, galvanising: typically 1.1–1.4 on lattice
     /// towers, more on light bracing); a member's own replaces it.
     pub dead_load_factor: f64,
+    /// The dead-load factor given (none given: 1, the members' steel only —
+    /// said not on the safe side, [`crate::dead_load_note`]).
+    pub dead_load_given: bool,
     /// Add a single angle's frame end moments to its usage (version 4;
     /// default false: a single angle — a profile `equal_angle` or
     /// `unequal_angle` — is checked for its axial force only, as lattice
@@ -752,6 +755,7 @@ impl Default for Analysis {
             drag: 1.0,
             stabilise: true,
             dead_load_factor: 1.0,
+            dead_load_given: false,
             single_angle_moments: false,
             capacity: CapacityMethod::Asce10,
         }
@@ -997,7 +1001,8 @@ impl Model {
                 self_weight: file.analysis.self_weight,
                 drag: file.analysis.drag,
                 stabilise: file.analysis.stabilise,
-                dead_load_factor: file.analysis.dead_load_factor,
+                dead_load_factor: file.analysis.dead_load_factor.unwrap_or(1.0),
+                dead_load_given: file.analysis.dead_load_factor.is_some(),
                 single_angle_moments: file.analysis.single_angle_moments,
                 capacity: match &file.analysis.capacity {
                     None => CapacityMethod::default(),

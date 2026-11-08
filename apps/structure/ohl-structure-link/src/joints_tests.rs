@@ -1421,11 +1421,11 @@ fn both_legs_onto_two_plates_at_ninety_degrees() {
         if welded {
             assert_eq!(g2.assembly, ["G1", "G2"]);
         }
-        // The checks: each plate half the force (two bolts of four).
+        // The checks: each plate the whole force (on the safe side).
         let plans =
             crate::plate_checks::plate_plans(&text, &library(), &Default::default()).unwrap();
         let shares = plans.bolted_shares("D1");
-        assert_eq!(shares, vec![0.5, 0.5], "welded {welded}");
+        assert_eq!(shares, vec![1.0, 1.0], "welded {welded}");
     }
     // One leg bolted, or a plate not there: said, not used.
     let one = two(false).replace("leg = \"both\"", "leg = \"long\"");

@@ -24,6 +24,16 @@ fn setup() -> (Line, ohl_cables::Library, Vec<WeatherCase>, LoadCases) {
     (line, library, weather, cases)
 }
 
+/// The notes besides those every example tower has (2026-11-08): it gives
+/// no bolts and no dead-load factor, so its check says it is not on the
+/// safe side — true, and said.
+fn other_notes(notes: &[String]) -> Vec<&String> {
+    notes
+        .iter()
+        .filter(|n| !n.starts_with("model: NOT ON THE SAFE SIDE"))
+        .collect()
+}
+
 #[test]
 fn load_case_files_are_checked() {
     let ok = "[[case]]\nname = \"a\"\nweather = \"w\"\n";
@@ -466,7 +476,7 @@ fn structure_analysis_on_the_example_line() {
             } else {
                 assert!(s.pole.is_none());
             }
-            assert!(s.notes.is_empty(), "{s:?}");
+            assert!(other_notes(&s.notes).is_empty(), "{s:?}");
         }
     }
     // The wind case loads the tower more than still air.
@@ -646,7 +656,11 @@ fn member_wind_replaces_the_bands_in_the_fe_check() {
         wind.notes
     );
     // Still air: no member wind, no note.
-    assert!(t2(&plain, 0).notes.is_empty(), "{:?}", t2(&plain, 0).notes);
+    assert!(
+        other_notes(&t2(&plain, 0).notes).is_empty(),
+        "{:?}",
+        t2(&plain, 0).notes
+    );
     // By hand: the model with the library, the factored loads at its
     // points and the member wind (high wind × 1.4 transverse, to −x: the
     // wind comes from the right).
@@ -696,7 +710,7 @@ fn member_wind_replaces_the_bands_in_the_fe_check() {
     assert!(t.wind.is_some());
     // Without the library: the type's own tables, no member wind.
     let own = capacity::usage(&line, &types, &library, &weather, &loads);
-    assert!(t2(&own, 1).notes.is_empty());
+    assert!(other_notes(&t2(&own, 1).notes).is_empty());
     assert_ne!(t2(&own, 1).fe, wind.fe);
 }
 
@@ -935,7 +949,7 @@ fn structure_analysis_with_an_extension_body() {
         {
             let fe = s.fe.as_ref().unwrap_or_else(|| panic!("{s:?}"));
             assert!(fe.usage > 0.0 && fe.usage < 1.0, "{}: {fe:?}", c.case);
-            assert!(s.notes.is_empty(), "{s:?}");
+            assert!(other_notes(&s.notes).is_empty(), "{s:?}");
             seen += 1;
         }
     }
@@ -1044,6 +1058,7 @@ fn an_approximate_fe_check_is_never_a_plain_pass() {
         governs: "member AM tension 1.0 kN of 10.0 kN — kept active (did not settle)".into(),
         incomplete: false,
         approximate,
+        not_safe: 0,
     };
     let mut s = capacity::StructureUsage {
         structure: "T1".into(),

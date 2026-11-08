@@ -81,6 +81,28 @@ pub fn analyse(
 /// At most this many stabilised directions are named in a note.
 const NOTE_NAMES: usize = 12;
 
+/// Said when the model's self-weight is its members' steel alone: no
+/// dead-load factor given, none of its own on any member (owner
+/// 2026-11-08: bolts, gusset plates and galvanising are then not in the
+/// vertical loads — not on the safe side).
+pub fn dead_load_note(model: &Model) -> Option<String> {
+    let own = model.members.iter().any(|m| m.dead_load_factor.is_some());
+    (model.analysis.self_weight
+        && !model.analysis.dead_load_given
+        && !own
+        && !model.members.is_empty())
+    .then(|| {
+        "NOT ON THE SAFE SIDE: no dead-load factor given — the self-weight is the members' \
+             steel only (bolts, gusset plates, galvanising left out); give [analysis] \
+             dead_load_factor"
+            .to_owned()
+    })
+}
+
+/// A hold to the ground taking more than this force (N; N m for a
+/// rotation) is said not on the safe side: below it, rounding.
+pub const GROUND_SAID: f64 = 1.0;
+
 /// The stabilisation of a solution in words (none: nothing was held):
 /// how many joint directions at how many joints, the first of them, and
 /// the largest force one of them took — with its share of the support
@@ -123,6 +145,25 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
                 100.0 * h.force.abs() / total
             ));
         }
+    }
+    // Held to the ground: their force goes to the ground, not through the
+    // members (owner 2026-11-08: said where it applies).
+    let ground: Vec<&crate::Stabilised> = held
+        .iter()
+        .filter(|h| h.at.relative.is_empty() && h.force.abs() > GROUND_SAID)
+        .collect();
+    if let Some(h) = ground
+        .iter()
+        .max_by(|a, b| a.force.abs().total_cmp(&b.force.abs()))
+    {
+        text.push_str(&format!(
+            "; NOT ON THE SAFE SIDE: {} hold(s) to the ground take load the members do not \
+             carry (largest {:.3} {} at {}): add a member to hold those joints",
+            ground.len(),
+            h.force.abs() / 1000.0,
+            if h.at.rotation { "kN m" } else { "kN" },
+            model.node_name(h.at.node)
+        ));
     }
     if !solution.relative_over.is_empty() {
         // Relative holds above the refusal limit of a ground hold:

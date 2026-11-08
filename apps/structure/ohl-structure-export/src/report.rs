@@ -71,12 +71,15 @@ fn pct(u: Option<f64>) -> String {
     }
 }
 
-fn class(u: Option<f64>) -> &'static str {
+/// The class of usage `u` of what `governs` says: a usage that is not a
+/// number is over (never a pass); a check not on the safe side never "ok"
+/// (2026-11-08).
+fn class(u: Option<f64>, governs: &str) -> &'static str {
     use ohl_structure_link::UsageClass;
-    // A usage that is not a number is over (never a pass).
-    match u.map(ohl_structure_link::classify_usage) {
+    match u.map(|u| ohl_structure_link::classify(u, governs)) {
         Some(UsageClass::Over) => "over",
         Some(UsageClass::Near) => "near",
+        Some(UsageClass::NotSafe) => "notsafe",
         Some(UsageClass::Pass) => "ok",
         None => "",
     }
@@ -95,6 +98,7 @@ th,td{border:1px solid #bbb;padding:2px 6px;text-align:left;vertical-align:top}\
 th{background:#eee}td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}\
 .warn{border:2px solid #b00;background:#fee;color:#600;padding:6px 10px;font-weight:bold;margin:8px 0}\
 .over{color:#b00;font-weight:bold}.near{color:#a60}.ok{color:#060}\
+.notsafe{color:#808;font-weight:bold}\
 .note{color:#555}ul{margin:4px 0 8px 18px;padding:0}\
 @media print{body{margin:0;max-width:none}h2{break-after:avoid}tr{break-inside:avoid}}";
 
@@ -270,7 +274,7 @@ pub fn report_html(input: &ReportInput) -> String {
                 "plates" => "plates and welds",
                 _ => "pole",
             },
-            class(s.usage),
+            class(s.usage, &s.governs),
             pct(s.usage),
             esc(&s.case),
             esc(&s.governs)
@@ -335,7 +339,7 @@ pub fn report_html(input: &ReportInput) -> String {
                 "<tr><td>{}</td><td class=\"n {}\">{}</td><td>{}</td><td class=\"n\">{}</td>\
                  <td>{}</td></tr>",
                 esc(&id),
-                class(u),
+                class(u, &governs),
                 pct(u),
                 esc(case),
                 kn(axial),
@@ -374,7 +378,7 @@ pub fn report_html(input: &ReportInput) -> String {
                     esc(&p.joint),
                     esc(&p.plate),
                     esc(&p.part.words()),
-                    class(u),
+                    class(u, governs),
                     pct(u),
                     esc(case),
                     kn(force),
@@ -433,7 +437,7 @@ pub fn report_html(input: &ReportInput) -> String {
                          <td class=\"n\">{}</td><td class=\"n\">{}</td><td class=\"n\">{}</td>\
                          <td class=\"n\">{}</td><td class=\"n\">{:.3}</td><td>{}</td></tr>",
                         esc(&c.name),
-                        class(Some(p.usage)),
+                        class(Some(p.usage), &p.governs),
                         pct(Some(p.usage)),
                         p.height,
                         kn(p.moment),

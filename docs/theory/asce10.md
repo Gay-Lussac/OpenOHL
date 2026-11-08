@@ -430,7 +430,7 @@ said in what governs (`[assumed: …]`):
 | holes per section | 1 |
 | bolt threads | in the shear plane |
 | twisting | free to warp (K_t 1); built-ups' warping left out |
-| bolts | connection not checked, gross section in tension |
+| bolts | connection not checked, gross section in tension — **not on the safe side** (no hole to assume without a bolt): the member is marked `[not on the safe side: no bolts given: connection not checked]` and never shown as passing (2026-11-08) |
 
 ## Plates and welds
 

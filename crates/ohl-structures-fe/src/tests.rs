@@ -948,7 +948,8 @@ fn member_wind_on_a_truss_bar() {
 }
 
 /// A portal of single angles (frames): by default each member is checked
-/// for its axial force only (tower practice, 2026-10-27);
+/// for its axial force only (tower practice, 2026-10-27), its end moments
+/// said with what they would add — not on the safe side (2026-11-08);
 /// `single_angle_moments = true` adds the end moments as before. A tube
 /// portal keeps its interaction either way.
 #[test]
@@ -973,10 +974,17 @@ fn single_angles_are_checked_axially_by_default() {
     let both = run("L100", "single_angle_moments = true\n");
     for (a, b) in axial.iter().zip(&both) {
         assert!(
-            !a.governs.contains("My") && b.governs.contains("My"),
+            !a.governs.contains("+ My") && b.governs.contains("+ My"),
             "{a:?} {b:?}"
         );
         assert!(a.usage.unwrap() < b.usage.unwrap());
+        // Left out, the end moments are said with what they would add:
+        // not on the safe side (owner 2026-11-08).
+        assert!(
+            crate::check::not_safe(&a.governs) && a.governs.contains("would add"),
+            "{a:?}"
+        );
+        assert!(!b.governs.contains("would add"), "{b:?}");
     }
     let tube = run("T200", "");
     assert!(tube.iter().all(|u| u.governs.contains("My")), "{tube:?}");

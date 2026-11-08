@@ -268,13 +268,13 @@ assumed).
   and bolts none (the notes count the members left out). Exact: every
   member's outline, the plates.
 - **Pole:** the shaft above the ground, cut in 8 pieces of equal height,
-  each \\( \rho\, g\, (\pi D t + \pi t^2) \\) per metre with \\( D \\) its
-  diameter at the piece's middle, as vertical loads on the axis; the wind
+  each \\( \rho\, g\, (P t + \pi t^2) \\) per metre with \\( P \\) its
+  perimeter at the piece's middle (\\( \pi D \\) round; a regular polygon
+  of \\( n \\) sides, \\( D \\) across flats: \\( n D \tan(\pi/n) \\), its corners
+  counted — 2026-11-08, before \\( \pi D \\), not on the safe side), as vertical loads on the axis; the wind
   on the iced pole is the pressure times \\( (D_{top} + 2t)/D_{top} \\).
   **Conservative:** that factor, the largest ratio along the pole (at the
   top, the smallest diameter), for the whole shaft.
-  **Simplification, not on the safe side:** a polygonal shaft's perimeter
-  taken as \\( \pi D \\) (a polygon's is larger by its corners).
 - **Wind bands only (level 1 and 2 types):** no surface to put the ice
   on: none counted, the notes name the structures. **Not on the safe
   side.** Exact: a type with members or a pole.

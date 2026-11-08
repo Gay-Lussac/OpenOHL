@@ -116,10 +116,10 @@ pub(crate) fn body_weights(model: &Model, ice: Option<IceOn>, snow: Option<f64>)
     out
 }
 
-/// The ice on a pole's shaft above the ground (version 4): ρ·g·(π·D·t +
-/// π·t²) per metre, D its diameter at that height (a polygon taken as
-/// its circle across, not on the safe side by its corners: π·D is less
-/// than its perimeter), as vertical loads on its axis at the middle of
+/// The ice on a pole's shaft above the ground (version 4): ρ·g·(P·t +
+/// π·t²) per metre, P its perimeter at that height (a polygon's own,
+/// corners included, 2026-11-08: before π·D, not on the safe side), as
+/// vertical loads on its axis at the middle of
 /// [`POLE_ICE_PIECES`] pieces of equal height; with the total weight, N.
 /// `foot`: the height of the ground in the type's axes, m.
 pub(crate) fn pole_ice(pole: &Pole, ice: IceOn, foot: f64) -> (Vec<PoleLoad>, f64) {
@@ -129,7 +129,7 @@ pub(crate) fn pole_ice(pole: &Pole, ice: IceOn, foot: f64) -> (Vec<PoleLoad>, f6
     let loads = (0..POLE_ICE_PIECES)
         .map(|k| {
             let z = (k as f64 + 0.5) * piece;
-            let w = ice.weight_per_metre(std::f64::consts::PI * pole.diameter_at(z)) * piece;
+            let w = ice.weight_per_metre(pole.perimeter_at(z)) * piece;
             total += w;
             PoleLoad {
                 point: [0.0, 0.0, foot + z],
@@ -289,6 +289,7 @@ impl Analyses {
                 governs: format!("model: {why}"),
                 incomplete: false,
                 approximate: false,
+                not_safe: 0,
             })
         };
         for (label, [tr, lo, ve]) in loads {
@@ -452,6 +453,9 @@ impl Analyses {
             &ohl_structures_fe::default_budget(),
         ) {
             Ok((solution, usage)) => {
+                if let Some(note) = ohl_structures_fe::dead_load_note(model) {
+                    notes.push(format!("model: {note}"));
+                }
                 if let Some(note) = ohl_structures_fe::stabilisation_note(model, &solution) {
                     notes.push(format!("model: {note}"));
                 }
@@ -480,6 +484,27 @@ impl Analyses {
                         ohl_structures_fe::check::capacity_note(model, &usage)
                     ));
                 }
+                // Members whose check is not on the safe side: said, with
+                // which (owner 2026-11-08).
+                let unsafe_members: Vec<String> = usage
+                    .iter()
+                    .filter(|u| ohl_structures_fe::check::not_safe(&u.governs))
+                    .map(|u| model.members[u.member].id.clone())
+                    .collect();
+                if !unsafe_members.is_empty() {
+                    const NAMED: usize = 10;
+                    notes.push(format!(
+                        "model: NOT ON THE SAFE SIDE: {} member(s) with part of their check not \
+                         done (their usage may be too low; what governs each says which): {}{}",
+                        unsafe_members.len(),
+                        unsafe_members[..unsafe_members.len().min(NAMED)].join(", "),
+                        if unsafe_members.len() > NAMED {
+                            ", …"
+                        } else {
+                            ""
+                        }
+                    ));
+                }
                 match worst(&usage) {
                     Some(w) => Some(Check {
                         method: Method::Fe,
@@ -487,6 +512,10 @@ impl Analyses {
                         governs: format!("member {} {}", model.members[w.member].id, w.governs),
                         incomplete: false,
                         approximate: !solution.kept_active.is_empty(),
+                        not_safe: usage
+                            .iter()
+                            .filter(|u| ohl_structures_fe::check::not_safe(&u.governs))
+                            .count(),
                     }),
                     None => {
                         notes.push("model: no member has a capacity".into());
@@ -500,6 +529,7 @@ impl Analyses {
                 governs: format!("model: {e}"),
                 incomplete: false,
                 approximate: false,
+                not_safe: 0,
             }),
         }
     }
@@ -607,6 +637,7 @@ impl Analyses {
                     governs: format!("pole {}: {}", pole.id, c.governs),
                     incomplete: false,
                     approximate: false,
+                    not_safe: 0,
                 },
                 Err(e) => Check {
                     method: Method::Pole,
@@ -614,6 +645,7 @@ impl Analyses {
                     governs: e,
                     incomplete: false,
                     approximate: false,
+                    not_safe: 0,
                 },
             },
         )

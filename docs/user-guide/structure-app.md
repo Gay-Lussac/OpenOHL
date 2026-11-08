@@ -1062,8 +1062,8 @@ for any plates; a welded plate then holds both faces of the member).
 The second plate lies against the other leg and is drawn round that
 leg's bolts; their grip takes its thickness; it lists the member among
 **Members onto it**; and the plate checks take each plate with the
-bolts on it, the member's force shared by the bolts of each leg (an
-assumption, said; [theory](../theory/joint-plates.md)). Not given: both
+bolts on it and the member's **whole force** (on the safe side: the split
+between the legs is not known; [theory](../theory/joint-plates.md)). Not given: both
 legs onto Onto, as before. Set with one leg, or naming no plate there:
 said, not used.
 

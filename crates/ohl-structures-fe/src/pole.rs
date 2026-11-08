@@ -517,6 +517,20 @@ impl Pole {
         self.length - self.embedment
     }
 
+    /// The shaft's perimeter at height `h` above ground, m: π D round; a
+    /// regular polygon of `sides`, its diameter across flats, n · D ·
+    /// tan(π / n) (larger than π D by its corners).
+    pub fn perimeter_at(&self, h: f64) -> f64 {
+        let d = self.diameter_at(h);
+        match self.sides.filter(|n| *n >= 3) {
+            Some(n) => {
+                let n = f64::from(n);
+                n * d * (std::f64::consts::PI / n).tan()
+            }
+            None => std::f64::consts::PI * d,
+        }
+    }
+
     /// Diameter at height `h` above ground, m (linear taper, or the
     /// profile: linear between its heights, held beyond them).
     pub fn diameter_at(&self, h: f64) -> f64 {
@@ -992,6 +1006,9 @@ fn amplification(
         analysis: Analysis {
             nonlinear: true,
             self_weight: true,
+            // A pole's own weight is its shaft's; what it carries besides
+            // is in the pole check's notes.
+            dead_load_given: true,
             ..Analysis::default()
         },
         ..Model::default()

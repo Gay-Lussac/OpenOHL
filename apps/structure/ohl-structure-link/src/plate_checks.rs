@@ -185,28 +185,23 @@ pub fn plate_plans(
                 let mut notes = Vec::new();
                 notes.extend(steel_note.clone());
                 // Both legs bolted onto two plates (`other_onto`,
-                // 2026-11-08): each plate the member's force shared by
-                // its bolts on that leg.
+                // 2026-11-08): each plate checked for the member's whole
+                // force (on the safe side: how the force splits between an
+                // angle's two legs is not known; owner 2026-11-08, "stay on
+                // the safe side").
                 let whole = j
                     .arrivals
                     .iter()
                     .find(|x| x.member == a.member && x.end == a.end);
-                let share = match whole {
-                    Some(w) if w.other_onto.is_some() => {
-                        let all = (w.bolt_points.len() + w.other_points.len()).max(1);
-                        let here = a.bolt_points.len() as f64 / all as f64;
-                        notes.push(format!(
-                            "both legs bolted, onto {} and {}: this plate takes {:.0} % of its \
-                             force (its bolts here of all its bolts: an assumption, each bolt \
-                             of the end carrying the same)",
-                            w.onto.value.as_deref().unwrap_or("?"),
-                            w.other_onto.as_deref().unwrap_or("?"),
-                            here * 100.0
-                        ));
-                        here
-                    }
-                    _ => 1.0,
-                };
+                if let Some(w) = whole.filter(|w| w.other_onto.is_some()) {
+                    notes.push(format!(
+                        "both legs bolted, onto {} and {}: each plate checked for the whole \
+                         force (on the safe side: the split between the legs is not known)",
+                        w.onto.value.as_deref().unwrap_or("?"),
+                        w.other_onto.as_deref().unwrap_or("?"),
+                    ));
+                }
+                let share = 1.0;
                 let Some(group) = bolt_group(a, &p.id, &p.outline, j, &model, steel, &mut notes)
                 else {
                     continue;

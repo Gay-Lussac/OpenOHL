@@ -383,6 +383,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             reaction[1] / 1000.0,
             reaction[2] / 1000.0
         );
+        if let Some(note) = ohl_structures_fe::dead_load_note(&model) {
+            println!("  {note}");
+        }
         if let Some(note) = ohl_structures_fe::stabilisation_note(&model, &s) {
             println!("  {note}");
         }

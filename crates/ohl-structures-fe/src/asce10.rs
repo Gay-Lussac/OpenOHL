@@ -584,7 +584,10 @@ pub(crate) fn end_bolts(
         if let Some(k) = e.kind
             && k != ConnectionKind::Bolted
         {
-            notes.push(format!("{}: no bolts", k.as_str()));
+            notes.push(format!(
+                "{}: no bolts, the connection not checked",
+                k.as_str()
+            ));
             return None;
         }
         return member;

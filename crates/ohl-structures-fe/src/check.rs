@@ -97,6 +97,13 @@ fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
                      what governs)"
                 ));
             }
+            let not_safe = usage.iter().filter(|u| not_safe(&u.governs)).count();
+            if not_safe > 0 {
+                text.push_str(&format!(
+                    "; {not_safe} member(s) NOT ON THE SAFE SIDE: part of their check not done \
+                     (\"{NOT_SAFE} …]\" in what governs says which; their usage may be too low)"
+                ));
+            }
             let joints = usage.iter().filter(|u| u.governs.contains(JOINTS)).count();
             if joints > 0 {
                 text.push_str(&format!(
@@ -117,6 +124,31 @@ fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
 /// The mark before what a capacity method assumed for a member's missing
 /// design data, in what governs: `[assumed: length ratios 1, …]`.
 pub const ASSUMED: &str = "[assumed:";
+
+/// The mark before what a member's check could not do, so that its usage
+/// may be too low (owner 2026-11-08: "stay on the safe side and … explain
+/// why and where"): `[not on the safe side: connection not checked at N4
+/// (no bolts given), …]`. A member with it never passes plainly: the
+/// views show it apart ([`not_safe`]).
+pub const NOT_SAFE: &str = "[not on the safe side:";
+
+/// Whether what governs a member says its check is not on the safe side
+/// ([`NOT_SAFE`]).
+pub fn not_safe(governs: &str) -> bool {
+    governs.contains(NOT_SAFE)
+}
+
+/// Whether a capacity method's note on a member is a part it could not
+/// check (its usage then possibly too low), not an assumption on the safe
+/// side.
+fn unchecked_note(note: &str) -> bool {
+    note.contains("not checked")
+}
+
+/// A single angle's (or lattice member's) end moments are left out of
+/// its check unless they would add at least this share of its capacity
+/// (1 %): above it the member says what they would add.
+pub const ANGLE_MOMENTS_SAID: f64 = 0.01;
 
 /// The mark before the conditions a member's ends take from their
 /// connections, per end, in what governs: `[joints: N2 eccentric (worked
@@ -385,8 +417,39 @@ fn usage_of(
             if !joints.is_empty() {
                 suffix.push_str(&format!(" {JOINTS} {}]", joints.join("; ")));
             }
-            if !assumed.is_empty() {
-                suffix.push_str(&format!(" {ASSUMED} {}]", assumed.join(", ")));
+            // What the method assumed on the safe side, and what it could
+            // not check (its usage then possibly too low).
+            let (unchecked, safe): (Vec<&String>, Vec<&String>) =
+                assumed.iter().partition(|n| unchecked_note(n));
+            if !safe.is_empty() {
+                let safe: Vec<&str> = safe.iter().map(|n| n.as_str()).collect();
+                suffix.push_str(&format!(" {ASSUMED} {}]", safe.join(", ")));
+            }
+            let mut not_safe_notes: Vec<String> = unchecked.into_iter().cloned().collect();
+            // A single angle's end moments, left out of its check (ASCE
+            // 10-97's curves take the connection's eccentricity), said when
+            // they would add to its usage.
+            if m.is_frame() && axial_member(m, s) && !model.analysis.single_angle_moments {
+                let e = &f.end_forces;
+                let my = e[4].abs().max(e[10].abs());
+                let mz = e[5].abs().max(e[11].abs());
+                let fy = s.yield_strength;
+                let cap_y = s.moment_y.or(s.wy.zip(fy).map(|(w, y)| w * y));
+                let cap_z = s.moment_z.or(s.wz.zip(fy).map(|(w, y)| w * y));
+                let add = cap_y.map_or(0.0, |c| my / (strength * c))
+                    + cap_z.map_or(0.0, |c| mz / (strength * c));
+                if add >= ANGLE_MOMENTS_SAID {
+                    not_safe_notes.push(format!(
+                        "end moments not checked (single_angle_moments off): they would add {:.0} % \
+                         (My {:.2}, Mz {:.2} kN m)",
+                        add * 100.0,
+                        kn(my),
+                        kn(mz)
+                    ));
+                }
+            }
+            if !not_safe_notes.is_empty() {
+                suffix.push_str(&format!(" {NOT_SAFE} {}]", not_safe_notes.join(", ")));
             }
             // SIA 263: compression with the bending of an eccentric
             // connection, class 4 and frames by the stability check
@@ -527,6 +590,10 @@ pub enum UsageClass {
     /// Over 100 %, not allowed (infinite), or not a number (code review
     /// 2026-10-26: a usage that is not a number never passes).
     Over,
+    /// Within its capacity, but part of the check not done
+    /// ([`NOT_SAFE`]): its usage may be too low — never a plain pass
+    /// (owner 2026-11-08).
+    NotSafe,
 }
 
 /// The class of usage `u` (1 = 100 %): over above 1 and when not a
@@ -538,6 +605,17 @@ pub fn classify_usage(u: f64) -> UsageClass {
         UsageClass::Near
     } else {
         UsageClass::Pass
+    }
+}
+
+/// The class of usage `u` of what `governs` says: as [`classify_usage`],
+/// but a usage within its capacity whose check is not on the safe side
+/// ([`not_safe`]) is [`UsageClass::NotSafe`], never a pass.
+pub fn classify(u: f64, governs: &str) -> UsageClass {
+    match classify_usage(u) {
+        UsageClass::Over => UsageClass::Over,
+        _ if not_safe(governs) => UsageClass::NotSafe,
+        c => c,
     }
 }
 

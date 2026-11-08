@@ -101,6 +101,7 @@
 # Development
 
 - [Decision log](development/decisions.md)
+- [Staying on the safe side](development/safe-side.md)
 - [Validation cases](development/validation.md)
 - [Writing plugins](development/plugins.md)
 - [Data model map](development/data-model.md)

@@ -102,6 +102,10 @@ pub struct Check {
     /// active because their set did not settle (the solver's last resort,
     /// [`ohl_structures_fe::Solution::kept_active`]).
     pub approximate: bool,
+    /// The members whose check is not on the safe side (part of it not
+    /// done: [`ohl_structures_fe::check::NOT_SAFE`]; 2026-11-08): with
+    /// any, the structure never passes plainly.
+    pub not_safe: usize,
 }
 
 /// What a structure's checks in one load case come to.
@@ -116,6 +120,9 @@ pub enum UsageStatus {
     /// members kept active because their set did not settle): not a plain
     /// pass (whatever its usage).
     Approximate,
+    /// Within its capacity, but part of a member's check not done
+    /// ([`Check::not_safe`]): not a pass (2026-11-08).
+    NotSafe,
     /// Every check within its capacity (100 % or less).
     Pass,
     /// A check over 100 %.
@@ -129,6 +136,7 @@ impl UsageStatus {
             Self::NotChecked => "not checked",
             Self::Incomplete => "incomplete",
             Self::Approximate => "approximate",
+            Self::NotSafe => "not all checked",
             Self::Pass => "pass",
             Self::Over => "over",
         }
@@ -184,6 +192,16 @@ impl StructureUsage {
         !self.missing.is_empty()
     }
 
+    /// How many members' checks are not on the safe side
+    /// ([`Check::not_safe`]).
+    pub fn not_safe(&self) -> usize {
+        [&self.spans, &self.loads, &self.fe, &self.pole]
+            .into_iter()
+            .flatten()
+            .map(|c| c.not_safe)
+            .sum()
+    }
+
     /// Whether a check is approximate ([`Check::approximate`]).
     pub fn is_approximate(&self) -> bool {
         [&self.spans, &self.loads, &self.fe, &self.pole]
@@ -208,6 +226,7 @@ impl StructureUsage {
             // A usage that is not a number never passes.
             Some(g) => match ohl_structures_fe::check::classify_usage(g.usage) {
                 ohl_structures_fe::check::UsageClass::Over => UsageStatus::Over,
+                _ if self.not_safe() > 0 => UsageStatus::NotSafe,
                 _ => UsageStatus::Pass,
             },
         }
@@ -595,6 +614,7 @@ pub fn usage_with_sections(
                                 ),
                                 incomplete: false,
                                 approximate: false,
+                                not_safe: 0,
                             },
                             Some(allowed) => {
                                 let mut worst = (
@@ -636,6 +656,7 @@ pub fn usage_with_sections(
                                     governs: worst.1,
                                     incomplete: false,
                                     approximate: false,
+                                    not_safe: 0,
                                 }
                             }
                         }
@@ -708,6 +729,7 @@ pub fn usage_with_sections(
                             governs: worst.1,
                             incomplete: false,
                             approximate: false,
+                            not_safe: 0,
                         }
                     });
                     let factored: Vec<crate::analysis::Factored> = points

@@ -20,7 +20,7 @@ Each member has **local axes**: \\( x \\) from node *i* to node *j*; a reference
 
 **Self-weight**: \\( w = f_d\\,\rho A g \\) per metre — \\( f_d \\) the member's dead-load factor (its own, else the model's `dead_load_factor`, default 1: bolts, plates) — times the load case's vertical factor. On frames as consistent nodal loads (\\( wL/2 \\) and \\( wL^2/12 \\) end moments, in local axes), on trusses and cables half at each end. The reported member end forces of frames subtract the fixed-end part, so they are the true end forces.
 
-**Simplification:** the dead-load factor is 1 unless given: bolts, gusset plates and other connection steel are not in the self-weight (unsafe for the vertical loads by their share). Exact: a dead-load factor (or the parts' weight) from the design.
+**Not on the safe side until given:** the dead-load factor is 1 unless given: bolts, gusset plates and other connection steel are not in the self-weight (unsafe for the vertical loads by their share). No factor is assumed (it depends on the design); instead every run of a model without one — no `[analysis] dead_load_factor`, none on any member — says so in its notes: "NOT ON THE SAFE SIDE: no dead-load factor given …" (2026-11-08; a pole's shaft is its own weight, not said). Exact: a dead-load factor (or the parts' weight) from the design.
 
 ## Second order (P-Delta)
 
@@ -76,7 +76,7 @@ The threshold (an eigenvalue below \\( 10^{-6} \\) of the largest: members withi
 
 **Simplification:** on the second try a direction with up to about 0.2° of real stiffness is held as if it had none; what it would carry by that stiffness is carried by the hold (reported, refused above 1 % of the loads). Exact: the joints placed by their definitions, or members that hold them.
 
-**Simplification:** a stabilisation is refused only when it takes more than 1 % of the loads *and* more than a quarter of its joint's own load. Below that, the force it takes does not go through the members (unsafe by that force, reported per joint). Exact: a model whose joints are all held by members.
+**Simplification, not on the safe side:** a stabilisation is refused only when it takes more than 1 % of the loads *and* more than a quarter of its joint's own load. Below that, a hold **to the ground** takes force that does not go through the members (unsafe by that force): the notes say "NOT ON THE SAFE SIDE: n hold(s) to the ground take load the members do not carry (largest … at …)" for every hold above 1 N (2026-11-08; below, rounding). A hold relative to its lines passes its force to the lines' ends: the members carry it. Exact: a model whose joints are all held by members.
 
 **Simplification** (relaxed for relative holds): a hold relative to its lines carries any load across them, as if the member the joint cuts were a beam pinned at the lines' ends (its end shares \\( w_e \\)) — even where the real member is a truss or tension-only member with no bending to do so, or a joint loaded across a line of members only by rounding (an insulator hung from the middle of a tension-only rod imported without its bending). Large such holds are flagged, not refused: the load reaches the supports, but the members along the line are not checked for that bending. Exact: a model whose joints are all held by members (a member that bends, `frame` or `bending = true`, where a load acts across a line).
 
@@ -160,6 +160,20 @@ Benchmark `structfe-015`: a truss shifted 20 mm at the top of a cantilever colum
 
 ## Member usage
 
+**Checks not done are said, never passed** (owner, 2026-11-08: "stay on
+the safe side and … explain why and where"). What a capacity method
+assumed for missing data **on the safe side** is listed in what governs
+as `[assumed: …]`. What it **could not check** — a connection without
+bolts, bolt shear without a capacity, bearing or the net section without
+a thickness or an ultimate strength, block shear without its data, a
+general profile's torsional buckling, a single angle's end moments left
+out — is listed apart as `[not on the safe side: …]`: the usage may then
+be too low. Such a member is **never shown as passing**: OHL-Structure
+colours it violet ("not all checked") unless it is over 100 %, its
+report class is "notsafe", and in OHL-Design a structure with any such
+member is "not all checked (not safe side)", not a pass. The notes count
+the members and name the first of them.
+
 Against the member's capacity times the load case's strength factor \\( \phi \\). The capacities \\( N_t \\), \\( N_c \\) of trusses and frames come from the model's **capacity method** (`[analysis] capacity`, [below](#member-capacity-methods)): **ASCE 10-97** by default, or the **simple check**. Either way a member's own `capacity_tension` and `capacity_compression` replace the computed ones (the compression one buckling included).
 
 | Member | Usage |
@@ -192,7 +206,7 @@ A structure's FE usage is its worst member.
 
 **Single angles: axial only**. Lattice towers are often modelled with their legs and main bracing as frames, for stability and to carry loads across a member; the end moments those frames then get are secondary (from the joints' rigidity in the model, not designed for). Tower practice designs a single angle for its axial force alone: the eccentricity of its bolted connection is in its effective slenderness (the design method's curves for eccentric ends), not in a bending check. Adding the frame end moments made the usage of light single angles 1.2–16 times that of a tower design program on a real line, mostly from bending. So a frame whose section is a single angle is checked axially by default; `single_angle_moments = true` in `[analysis]` keeps the interaction (version 4 of `.ohlfe`). The same holds for a **lattice member** — one whose design data give it a class (leg, bracing, redundant, crossing diagonal) — whatever its section: built-up angles (two angles back to back, four in a star) are `general` profiles but designed axially too; with them, the tower maxima of the usage came to within 5 % of the tower program's on 85 % of the real towers compared (median ratio 1.00), against 1.5 times with their end moments. Other members (tubes, I sections, `general` profiles and `[[section]]` tables without a design class) keep the interaction.
 
-**Simplification:** a single angle's (and a lattice member's) end moments are not checked. Unsafe where a single angle really carries bending (a crossarm member loaded across its span, an angle used as a beam): give such a member another section type, or set `single_angle_moments = true`. Exact: the angle's combined axial and biaxial bending check about its principal axes, with the moments the structure really puts on it.
+**Simplification, not on the safe side:** a single angle's (and a lattice member's) end moments are not checked. Unsafe where a single angle really carries bending (a crossarm member loaded across its span, an angle used as a beam): give such a member another section type, or set `single_angle_moments = true`. Said where it applies (2026-11-08): a single angle modelled as a frame whose end moments would add 1 % or more of its capacity is marked `[not on the safe side: end moments not checked (single_angle_moments off): they would add n % (My …, Mz … kN m)]` and not shown as passing; below 1 %, not said (the frame's secondary moments of tower practice). The default stays off: ASCE 10-97's curves for an eccentric connection already take its moment, and checking both would count it twice. Exact: the angle's combined axial and biaxial bending check about its principal axes, with the moments the structure really puts on it.
 
 **Simplification:** frames are checked with the largest end moments and a linear interaction. A moment larger inside the member (from its own weight or member wind, which this check does not see between the joints) is missed (unsafe for long members under their own load). Exact: the moment along the member, and the code's interaction with its amplification.
 

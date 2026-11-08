@@ -1153,7 +1153,12 @@ impl StructureApp {
                 .map(|r| {
                     r.members
                         .iter()
-                        .map(|m| (m.id.clone(), crate::results_tab::usage_colour(m.usage)))
+                        .map(|m| {
+                            (
+                                m.id.clone(),
+                                crate::results_tab::usage_colour(m.usage, &m.governs),
+                            )
+                        })
                         .collect()
                 })
                 .unwrap_or_default()

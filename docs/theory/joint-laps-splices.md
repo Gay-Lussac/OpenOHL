@@ -62,9 +62,13 @@ angle's leg):
 | SIA 263 | per bolt \\( \min(0.85\,e_1/d_0,\ 2.4)\,f_u\,d\,t_o/\gamma_{M2} \\) | Table 16, (76) |
 
 Under SIA 263 the end distance \\( e_1 \\) in the leg bolted onto is not
-known (the bolts sit where the member's own end puts them): the member's
-own \\( e_1 \\) is taken, **not on the safe side** where that leg ends
-nearer the bolts (said in the results). A member without connection data
+known (the bolts sit where the member's own end puts them): the smaller of
+the member's own \\( e_1 \\) and Table 17's minimum for the bolt is taken
+(**conservative**, 2026-11-08: that leg may end as near the bolts as the
+code allows; said in the results). A bolt Table 17 gives no minimum for:
+the member's own, said "not checked whether that leg ends nearer" — **not
+on the safe side**, the member's result marked so. Exact: that leg's end
+distance from the joint's geometry. A member without connection data
 is checked as before (its own leg only).
 
 ## Continuous members
