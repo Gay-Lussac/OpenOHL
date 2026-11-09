@@ -59,6 +59,13 @@
 //!   structures.
 //! - `voltages = [220]`: only the wires of these nominal voltages (kV; 0
 //!   for earthed wires) are checked (default: all).
+//! - `altitude = { from = "1000 m", per_1000_m = 0.14 }` (2026-11-09,
+//!   optional): the distances grow by that share per 1000 m above `from`
+//!   ([`Altitude`]; e.g. the Swiss LeV, Table 2.4.1), at the **highest
+//!   point of the wire** checked (of the higher wire of a pair; the
+//!   reaches at the highest wire point) — conservative; heights are the
+//!   project's (its vertical datum). `[[internal_rule]]` takes it too, at
+//!   the structure's and the part's highest point.
 //! - `wires = "sections"` or `"jumpers"`: only the sections' spans, or only
 //!   the jumpers, are checked (default `"both"`).
 //! - Vertical zone: `vertical_band` is its half width across the line (to
@@ -182,6 +189,84 @@ pub enum Requirement {
         /// Voltage from which the distance increases, kV.
         above_kv: f64,
     },
+}
+
+/// The increase of a rule's distances with the altitude (owner,
+/// 2026-11-09; e.g. the Swiss LeV, Annex 6, Table 2.4.1: +14 % per 1000 m
+/// above 1000 m): the distance × `1 + per_1000_m · (h − from) / 1000 m`
+/// for a height h above `from`, else × 1. The height is the project's
+/// (its vertical datum: above sea level); each check takes a height never
+/// below the parts it measures ([`Rule::required`]) — conservative.
+/// `altitude = { from = "1000 m", per_1000_m = 0.14 }`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Altitude {
+    /// The height up to which the distances hold as given, m.
+    pub from: f64,
+    /// The share they grow by per 1000 m above it (0.14: 14 %).
+    pub per_1000_m: f64,
+}
+
+impl Altitude {
+    /// The factor at height `h`, m (≥ 1).
+    pub fn factor(&self, h: f64) -> f64 {
+        1.0 + self.per_1000_m * ((h - self.from).max(0.0) / 1000.0)
+    }
+
+    /// The factor of an optional term at `h` (none: 1).
+    pub fn of(a: Option<&Self>, h: f64) -> f64 {
+        a.map_or(1.0, |a| a.factor(h))
+    }
+
+    /// `{ from = "1000 m", per_1000_m = 0.14 }`.
+    pub fn to_toml(&self) -> String {
+        format!(
+            "{{ from = {}, per_1000_m = {:?} }}",
+            length(self.from),
+            self.per_1000_m
+        )
+    }
+
+    /// "+14 % per 1000 m above 1000 m".
+    pub fn describe(&self) -> String {
+        format!(
+            "+{} % per 1000 m above {} m",
+            (self.per_1000_m * 100.0 * 1e6).round() / 1e6,
+            self.from
+        )
+    }
+
+    /// Reads `{ from = "1000 m", per_1000_m = 0.14 }` (the text of the
+    /// value, as an editor fills it in).
+    pub fn parse(text: &str) -> Result<Self, String> {
+        #[derive(Deserialize)]
+        struct Value {
+            v: RawAltitude,
+        }
+        let v: Value = toml::from_str(&format!("v = {}", text.trim()))
+            .map_err(|e| format!("{}: {}", text.trim(), e.message()))?;
+        v.v.resolve()
+    }
+}
+
+/// An `altitude` value as written.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawAltitude {
+    from: Length,
+    per_1000_m: f64,
+}
+
+impl RawAltitude {
+    pub(crate) fn resolve(self) -> Result<Altitude, String> {
+        let a = Altitude {
+            from: self.from.si(),
+            per_1000_m: self.per_1000_m,
+        };
+        if !(a.from.is_finite() && a.per_1000_m.is_finite() && a.per_1000_m >= 0.0) {
+            return Err("altitude: from a height, per_1000_m ≥ 0 (0.14: +14 % per 1000 m)".into());
+        }
+        Ok(a)
+    }
 }
 
 impl Requirement {
@@ -485,6 +570,9 @@ pub struct Rule {
     /// the rule format has no measure for, said as such in the results
     /// ([`Required::band`]; required [`SCREEN_DISTANCE`]).
     pub screen: bool,
+    /// The distances' increase with the altitude (none: as given at any
+    /// height).
+    pub altitude: Option<Altitude>,
 }
 
 /// What a screen rule requires vertically ([`Rule::screen`]): no point
@@ -545,12 +633,16 @@ impl Rule {
         self.voltages.is_empty() || self.voltages.iter().any(|v| (v - kv).abs() < 1e-6)
     }
 
-    /// The requirements for a wire of voltage `kv` (none: 0 kV). Use
+    /// The requirements for a wire of voltage `kv` (none: 0 kV) at height
+    /// `h` (m, the project's heights: [`Rule::altitude`]; callers give
+    /// the highest point of what is measured — conservative). Use
     /// [`Rule::check_voltages`] first: above a table's last row the last
-    /// row's distance is used.
-    pub fn required(&self, kv: Option<f64>) -> Required {
+    /// row's distance is used. A screen's band grows with the altitude
+    /// too (a distance of the code).
+    pub fn required(&self, kv: Option<f64>, h: f64) -> Required {
         let kv = kv.unwrap_or(0.0);
-        let at = |r: &Option<Requirement>| r.as_ref().map(|r| r.at_or_last(kv));
+        let f = Altitude::of(self.altitude.as_ref(), h);
+        let at = |r: &Option<Requirement>| r.as_ref().map(|r| r.at_or_last(kv) * f);
         if self.screen {
             return Required {
                 vertical: Some(SCREEN_DISTANCE),
@@ -630,14 +722,20 @@ impl Rule {
     }
 
     /// Distance within which targets are looked for, m, for the voltages
-    /// met (see [`Rule::check_voltages`]).
-    pub fn reach(&self, potentials: &[Option<Potential>], others: &[Option<Potential>]) -> f64 {
+    /// met (see [`Rule::check_voltages`]) up to height `top` (m: the
+    /// highest wire point checked, so that no target is left out).
+    pub fn reach(
+        &self,
+        potentials: &[Option<Potential>],
+        others: &[Option<Potential>],
+        top: f64,
+    ) -> f64 {
         let met = self.voltages_met(potentials, others);
         let largest = if met.is_empty() {
-            self.required(None).largest()
+            self.required(None, top).largest()
         } else {
             met.iter()
-                .map(|&kv| self.required(kv).largest())
+                .map(|&kv| self.required(kv, top).largest())
                 .fold(0.0, f64::max)
         };
         largest + self.search_margin
@@ -652,14 +750,15 @@ impl Rule {
         &self,
         potentials: &[Option<Potential>],
         others: &[Option<Potential>],
+        top: f64,
     ) -> f64 {
         if !self.screen {
-            return self.reach(potentials, others);
+            return self.reach(potentials, others, top);
         }
         let met = self.voltages_met(potentials, others);
         let kvs = if met.is_empty() { vec![None] } else { met };
         kvs.iter()
-            .map(|&kv| self.required(kv).radial_reach())
+            .map(|&kv| self.required(kv, top).radial_reach())
             .fold(0.0, f64::max)
             + self.search_margin
     }
@@ -723,6 +822,8 @@ struct RawRule {
     vertical_depth: Option<Length>,
     #[serde(default)]
     surface: Option<String>,
+    #[serde(default)]
+    altitude: Option<RawAltitude>,
 }
 
 /// A requirement as written in a file: a distance, a table by voltage or a
@@ -1555,6 +1656,13 @@ impl RuleSet {
                 } else {
                     defaults.vertical_band
                 };
+                let altitude = match r.altitude {
+                    Some(a) => match a.resolve() {
+                        Ok(a) => Some(a),
+                        Err(e) => return bad(&e),
+                    },
+                    None => None,
+                };
                 Ok(Rule {
                     name: r.name,
                     target,
@@ -1574,6 +1682,7 @@ impl RuleSet {
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
                     surface,
                     screen: r.screen,
+                    altitude,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -1714,6 +1823,7 @@ impl RuleSet {
                 vertical_depth: 0.0,
                 surface: None,
                 screen: false,
+                altitude: None,
             }],
             wind: None,
             check: None,
@@ -1989,6 +2099,9 @@ impl Rule {
             CircuitFilter::Same => t.push_str("circuits = \"same\"\n"),
             CircuitFilter::Different => t.push_str("circuits = \"different\"\n"),
         }
+        if let Some(a) = &self.altitude {
+            let _ = writeln!(t, "altitude = {}", a.to_toml());
+        }
         t
     }
 }
@@ -2177,7 +2290,7 @@ mod tests {
         let set = RuleSet::parse(text).unwrap();
         assert_eq!(set.rules.len(), 4);
         assert_eq!(set.rules[0].radial, Some(Requirement::Fixed(6.5)));
-        assert_eq!(set.rules[0].reach(&[], &[]), 12.0);
+        assert_eq!(set.rules[0].reach(&[], &[], 0.0), 12.0);
         assert_eq!(set.rules[1].vertical_band, 1.0);
         let classes = set.rules[1].point_classes(|r| {
             if r == "vegetation" {
@@ -2254,11 +2367,11 @@ mod tests {
         // system: 0 kV; a phase and an earth wire: 219 kV.
         assert!((r.pair_voltage(Some(&l1), Some(&l2)).unwrap() - 380.0).abs() < 1e-9);
         assert_eq!(
-            r.required(r.pair_voltage(Some(&l1), Some(&l1))).radial,
+            r.required(r.pair_voltage(Some(&l1), Some(&l1)), 0.0).radial,
             Some(0.5)
         );
         assert_eq!(
-            r.required(r.pair_voltage(Some(&l1), None)).radial,
+            r.required(r.pair_voltage(Some(&l1), None), 0.0).radial,
             Some(3.5)
         );
         assert_eq!(r.pair_voltage(None, None), None);
@@ -2286,16 +2399,16 @@ mod tests {
         assert!(b.by_voltage());
         // Earth wire (no voltage): the 0 kV row; the formula's base.
         assert_eq!(
-            b.required(None),
+            b.required(None, 0.0),
             Required {
                 vertical: Some(5.0),
                 radial: Some(5.0),
                 band: None,
             }
         );
-        assert_eq!(b.required(Some(132.0)).vertical, Some(6.0));
-        assert_eq!(b.required(Some(150.0)).vertical, Some(6.0));
-        let r380 = b.required(Some(380.0));
+        assert_eq!(b.required(Some(132.0), 0.0).vertical, Some(6.0));
+        assert_eq!(b.required(Some(150.0), 0.0).vertical, Some(6.0));
+        let r380 = b.required(Some(380.0), 0.0);
         assert_eq!(r380.vertical, Some(7.5));
         assert!((r380.radial.unwrap() - 8.3).abs() < 1e-12);
         // 500 kV is beyond the table: an error before checking.
@@ -2303,7 +2416,7 @@ mod tests {
         let e = b.check_voltages(&[Some(ac(500.0))], &[]).unwrap_err();
         assert!(e.contains("500 kV") && e.contains("420 kV"), "{e}");
         // Reach: the largest requirement met, plus the search margin.
-        assert!((b.reach(&[None, Some(ac(380.0))], &[]) - (8.3 + 5.0)).abs() < 1e-12);
+        assert!((b.reach(&[None, Some(ac(380.0))], &[], 0.0) - (8.3 + 5.0)).abs() < 1e-12);
         // Wire pairs: sum of the voltages (220 + 380 = 600 kV → 5.5 m).
         let x = &set.rules[1];
         assert_eq!(
@@ -2311,7 +2424,7 @@ mod tests {
             Some(600.0)
         );
         assert_eq!(
-            x.required(x.pair_voltage(Some(&ac(220.0)), Some(&ac(380.0))))
+            x.required(x.pair_voltage(Some(&ac(220.0)), Some(&ac(380.0))), 0.0)
                 .radial,
             Some(5.5)
         );
@@ -2323,7 +2436,10 @@ mod tests {
             x.check_voltages(&[Some(ac(380.0))], &[Some(ac(500.0))])
                 .is_err()
         );
-        assert_eq!(x.reach(&[Some(ac(380.0))], &[Some(ac(220.0))]), 5.5 + 5.0);
+        assert_eq!(
+            x.reach(&[Some(ac(380.0))], &[Some(ac(220.0))], 0.0),
+            5.5 + 5.0
+        );
     }
 
     /// The three forms of a requirement written and read back exactly

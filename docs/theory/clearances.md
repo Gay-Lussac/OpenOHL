@@ -94,6 +94,37 @@ hold is noted and its rule is not checked: never passed silently. The
 thermal limit refuses to run instead ([Thermal
 rating](thermal.md#maximum-operating-temperature-from-clearance)).
 
+## Distances growing with the altitude
+
+*Built, in active development (not approved yet; owner, 2026-11-09).*
+A rule may say that its distances grow with the height above sea level,
+`altitude = { from = "1000 m", per_1000_m = 0.14 }`:
+
+\\[ d(h) = d \\cdot \\Big(1 + p \\, \\frac{\\max(h - h_0,\\, 0)}{1000\\ \\text{m}}\\Big) \\]
+
+with \\( d \\) the rule's distance (fixed or by voltage), \\( h_0 \\) `from`
+and \\( p \\) `per_1000_m` — e.g. the Swiss LeV, Annex 6, Table 2.4.1:
++14 % per 1000 m above 1000 m.
+
+- **Which height** — *conservative*: a code gives the increase for the
+  place of the air gap; the check takes the **highest point of the
+  wire** being checked (a bundle's upper subconductor), for a pair of
+  wires the higher of the two. Every point measured on the wire is at
+  or below it, so the distance required is never less than at that
+  point. The exact treatment would take the height of each measured
+  pair of points; the difference is at most \\( p \\) times the span's
+  rise in thousands of metres (about 4 % for a span rising 300 m, at
+  14 %/1000 m).
+- **How far is searched** — the reach of each rule is taken at the
+  highest wire point of the weather case, so no target is left out of
+  the search.
+- **Heights** are the project's, in its vertical datum (LN02, LHN95…):
+  a project in local heights must not use the term (the program does
+  not check the datum).
+- The internal clearances take it at the structure's highest point (its
+  members and grounded shapes) or the part's, whichever is higher
+  ([Internal clearances](internal-clearances.md)).
+
 ## Wind positions
 
 A weather case with wind is solved from each side chosen (left, right or

@@ -164,16 +164,19 @@ pub fn check_case(
     let active: Vec<usize> = (0..rules.len())
         .filter(|&k| applies(&rules[k], case))
         .collect();
+    // The highest wire point: the reaches at it (a rule's altitude term),
+    // so that no target is left out.
+    let top = crate::checks::top_of(wires.iter().chain(targets.other_wires));
     // How far the wire-to-wire checks look: a screen's band, not its
     // 1000 m (2026-10-27).
     let reach = active
         .iter()
-        .map(|&k| rules[k].reach_in_plan(targets.voltages, targets.other_voltages))
+        .map(|&k| rules[k].reach_in_plan(targets.voltages, targets.other_voltages, top))
         .fold(0.0, f64::max);
     // The reach of every rule, as the point checks were capped before.
     let every = active
         .iter()
-        .map(|&k| rules[k].reach(targets.voltages, targets.other_voltages))
+        .map(|&k| rules[k].reach(targets.voltages, targets.other_voltages, top))
         .fold(0.0, f64::max);
     let classes = |k: usize| targets.point_classes.get(k).map_or(&[][..], Vec::as_slice);
     let mut out: Vec<RuleCheck> = Vec::new();
@@ -204,9 +207,9 @@ pub fn check_case(
             Target::Points { .. } => {
                 let own = parts
                     .iter()
-                    .map(|w| rule.required(w.kv()).largest() + rule.search_margin)
+                    .map(|w| w.required(rule).largest() + rule.search_margin)
                     .fold(
-                        rule.reach(targets.voltages, targets.other_voltages),
+                        rule.reach(targets.voltages, targets.other_voltages, top),
                         f64::max,
                     )
                     .min(every);
@@ -332,10 +335,12 @@ pub fn check_case_pairs(
             !rules[k].case_pairs.is_empty() && matches!(rules[k].target, Target::SameLine { .. })
         })
         .collect();
-    // How far the wire-to-wire checks look, as in a case.
+    // How far the wire-to-wire checks look, as in a case (at the highest
+    // wire point of every case).
+    let top = crate::checks::top_of(cases.iter().flat_map(|(_, w)| w.iter()));
     let reach = paired
         .iter()
-        .map(|&k| rules[k].reach_in_plan(voltages, &[]))
+        .map(|&k| rules[k].reach_in_plan(voltages, &[], top))
         .fold(0.0, f64::max);
     let matching = |pattern: &str| -> Vec<usize> {
         (0..cases.len())

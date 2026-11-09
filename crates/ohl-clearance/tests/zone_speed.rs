@@ -164,6 +164,7 @@ fn windy() -> WeatherCase {
 fn rules() -> Vec<ZoneRule> {
     vec![
         ZoneRule {
+            altitude: None,
             name: "Ground".into(),
             voltages: Vec::new(),
             cases: Vec::new(),
@@ -177,6 +178,7 @@ fn rules() -> Vec<ZoneRule> {
             calculation: None,
         },
         ZoneRule {
+            altitude: None,
             name: "Vegetation".into(),
             voltages: Vec::new(),
             cases: Vec::new(),
@@ -197,6 +199,7 @@ fn rules() -> Vec<ZoneRule> {
 /// code's horizontal distance).
 fn screen() -> ZoneRule {
     ZoneRule {
+        altitude: None,
         name: "Screen".into(),
         voltages: Vec::new(),
         cases: Vec::new(),

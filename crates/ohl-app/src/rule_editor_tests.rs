@@ -149,7 +149,7 @@ fn the_rule_editor_sets_distances_by_voltage() {
     let r = harness.state_mut().ready().unwrap();
     let rules = r.clearances.rules.clone().unwrap().unwrap();
     assert_eq!(
-        rules[1].required(Some(220.0)).radial,
+        rules[1].required(Some(220.0), 0.0).radial,
         Some(3.0 + 0.01 * 170.0)
     );
     // Undo: the change before (per kV 0).
@@ -212,7 +212,7 @@ fn add_a_rule_takes_a_distance_by_voltage() {
     assert_eq!(w.rules.len(), 1);
     let set = w.rule_set();
     // 6 m + 0.01 m/kV: 8.2 m at 220 kV.
-    assert!((set.rules[0].required(Some(220.0)).vertical.unwrap() - 8.2).abs() < 1e-12);
+    assert!((set.rules[0].required(Some(220.0), 0.0).vertical.unwrap() - 8.2).abs() < 1e-12);
     let file = w.file.clone().unwrap();
     let text = std::fs::read_to_string(file).unwrap();
     assert!(
@@ -364,7 +364,7 @@ fn the_lev_rule_presets_load_into_the_rule_file() {
         .iter()
         .find(|r| r.name.starts_with("Ground vertical"))
         .unwrap();
-    assert!((ground.required(Some(220.0)).vertical.unwrap() - 9.7).abs() < 1e-9);
+    assert!((ground.required(Some(220.0), 0.0).vertical.unwrap() - 9.7).abs() < 1e-9);
     let r = harness.state_mut().ready().unwrap();
     assert!(
         r.model
@@ -860,7 +860,7 @@ fn a_preset_value_changed_in_the_project() {
             .iter()
             .find(|x| x.name == "Test ground")
             .unwrap();
-        assert!((g.required(Some(220.0)).vertical.unwrap() - 9.2).abs() < 1e-9);
+        assert!((g.required(Some(220.0), 0.0).vertical.unwrap() - 9.2).abs() < 1e-9);
         assert!(
             p.description.contains("1 value changed"),
             "{}",
@@ -873,7 +873,7 @@ fn a_preset_value_changed_in_the_project() {
             .iter()
             .find(|x| x.name == "Test ground")
             .unwrap();
-        assert!((g.required(Some(220.0)).vertical.unwrap() - 8.2).abs() < 1e-9);
+        assert!((g.required(Some(220.0), 0.0).vertical.unwrap() - 8.2).abs() < 1e-9);
     }
     harness.get_by_label("Reset all").click();
     harness.run();
@@ -887,7 +887,7 @@ fn a_preset_value_changed_in_the_project() {
         .iter()
         .find(|x| x.name == "Test ground")
         .unwrap();
-    assert!((g.required(Some(220.0)).vertical.unwrap() - 8.2).abs() < 1e-9);
+    assert!((g.required(Some(220.0), 0.0).vertical.unwrap() - 8.2).abs() < 1e-9);
 }
 
 /// Saves the window as `name`.png in `OHL_RENDER_PNG` (when set and the

@@ -1142,7 +1142,16 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   vertical requirement is the half width b of a band in plan by the
   wire's voltage, every point within it reported (`Required::band`,
   required `SCREEN_DISTANCE`; `ZoneFinding::band`, `zone::screen_text`).
-  Still version 1: older files read the same.
+  Since 2026-11-09 an optional `altitude = { from = "1000 m",
+  per_1000_m = 0.14 }` (`rules::Altitude`; `Rule::altitude`,
+  `ZoneRule::altitude`, `InternalRule::altitude`): the distances × (1 +
+  per_1000_m · (h − from)/1000 m) above `from`. `Rule::required(kv, h)`
+  and `InternalRule::required(kv, wind, h)` now take the height;
+  `Wire::top()` / `checks::top_of` give a wire's highest point (a
+  bundle's upper subconductor), `Wire::required(rule)` the requirement
+  there; `Rule::reach` / `reach_in_plan` take the highest wire point of
+  the case (`top`). Written only when given: still version 1, older
+  files read the same.
 - `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
   2026-10-20 `arc` (bool, default false; written only when true, so a
   file without it is written as before and older programs read it) —
@@ -1384,7 +1393,8 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - **Internal clearances, the volumes on the strings** (2026-10-25,
   additive): `[[internal_rule]]` takes `shapes` (default true) and an
   optional `distance_wind` (a requirement for the cases with wind;
-  `InternalRule::required(kv, wind)`). `internal::check` now takes the
+  `InternalRule::required(kv, wind)`; since 2026-11-09 with the height,
+  `required(kv, wind, h)`, for the optional `altitude`). `internal::check` now takes the
   cases as `SolvedCase { name, wind, sections, jumpers }` and the
   strings with volumes (`StringFit`: structure, label, the assembly's
   `StringVolumes` with the string's own shapes merged, its still-air top

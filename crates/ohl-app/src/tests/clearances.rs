@@ -421,6 +421,7 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
             ..Default::default()
         };
         w.rules.push(ohl_clearance::ZoneRule {
+            altitude: None,
             name: "Ground".into(),
             voltages: Vec::new(),
             cases: vec!["high wind".into()],
@@ -549,6 +550,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             ..Default::default()
         };
         w.rules.push(ohl_clearance::ZoneRule {
+            altitude: None,
             name: "High ground".into(),
             voltages: vec![220.0],
             cases: vec!["high wind".into()],
@@ -633,6 +635,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             ..Default::default()
         };
         w.rules.push(ohl_clearance::ZoneRule {
+            altitude: None,
             name: "High ground".into(),
             voltages: Vec::new(),
             cases: vec!["high wind".into()],

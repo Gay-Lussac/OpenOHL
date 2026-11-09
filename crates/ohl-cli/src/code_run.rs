@@ -224,6 +224,9 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
             if let Some(v) = &r.radial {
                 parts.push(format!("radial {v}"));
             }
+            if let Some(a) = &r.altitude {
+                parts.push(a.describe());
+            }
             println!("  {}: {}", r.name, parts.join("; "));
         }
         for t in &p.rules.tension_rules {
@@ -253,10 +256,17 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
             );
         }
         for r in &p.rules.internal_rules {
+            let mut distance = r.distance.to_string();
+            if let Some(w) = &r.distance_wind {
+                distance = format!("{distance}; with wind {w}");
+            }
+            if let Some(a) = &r.altitude {
+                distance = format!("{distance}; {}", a.describe());
+            }
             println!(
                 "  {}: internal clearance {} — {}{}",
                 r.name,
-                r.distance,
+                distance,
                 r.describe_parts(),
                 if r.cases.is_empty() {
                     String::new()

@@ -70,6 +70,10 @@ pub struct EditRule {
     /// Which table of the file it is (0: a new rule; a copy keeps its
     /// original's until it is written).
     id: u64,
+    /// Its distances' increase with the altitude as the file has it
+    /// (shown in its summary; kept in the file, part of
+    /// [`EditRule::rest`]).
+    pub altitude: Option<ohl_clearance::rules::Altitude>,
 }
 
 /// The fields of a rule besides its name, distances and voltages that the
@@ -133,6 +137,7 @@ impl EditRule {
             written: RuleFields::default(),
             rest: String::new(),
             id: 0,
+            altitude: None,
         }
     }
 
@@ -217,6 +222,7 @@ pub fn merged(rules: &[EditRule], group: &[usize]) -> EditRule {
         written: first.written.clone(),
         rest: first.rest.clone(),
         id: first.id,
+        altitude: first.altitude,
     }
 }
 
@@ -568,6 +574,7 @@ impl RuleEditor {
                     }
                 );
                 EditRule {
+                    altitude: r.altitude,
                     name: r.name,
                     target,
                     vertical: r.vertical,
@@ -1371,10 +1378,10 @@ impl crate::check_ui::RuleRow for EditRule {
             .to_owned(),
             voltages: crate::rule_table::voltages_words(&self.voltages),
             cases,
-            distance: if distance.is_empty() {
-                "none".into()
-            } else {
-                distance.join("; ")
+            distance: match (distance.is_empty(), &self.altitude) {
+                (true, _) => "none".into(),
+                (false, None) => distance.join("; "),
+                (false, Some(a)) => format!("{}; {}", distance.join("; "), a.describe()),
             },
             wires: if self.fields.exclude_near_ends > 0.0 {
                 format!("but {} m at the ends", self.fields.exclude_near_ends)

@@ -326,7 +326,7 @@ impl ArcPointCheck {
         let mut results = Vec::new();
         for (i, &k) in items.iter().enumerate() {
             let a = &arcs[k];
-            results.push(WireResult::with(def.required(a.wire.kv())));
+            results.push(WireResult::with(a.wire.required(def)));
             // In plan the band lies within its radius of the attachment
             // axis: a vertical clearance counts within the zone's width
             // (and half a slice) of it, a radial one within the reach —
@@ -594,7 +594,7 @@ pub(crate) fn arc_ground(
         ..def.clone()
     };
     let lines = arc_lines(a);
-    let mut best = WireResult::with(def.required(a.wire.kv()));
+    let mut best = WireResult::with(a.wire.required(def));
     for (phi, t) in lines {
         // Stop and the time limit, line by line (an arc has up to some
         // thousands).

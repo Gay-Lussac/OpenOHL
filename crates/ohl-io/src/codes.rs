@@ -847,7 +847,7 @@ mod tests {
         let most = |kv: Option<f64>| {
             ground
                 .iter()
-                .filter_map(|r| r.required(kv).vertical)
+                .filter_map(|r| r.required(kv, 0.0).vertical)
                 .fold(0.0f64, f64::max)
         };
         assert!(most(Some(380.0)) >= 11.3 - 1e-9, "{}", most(Some(380.0)));
@@ -1039,8 +1039,11 @@ mod tests {
         // 6 m + 0.01 m/kV · 380 kV = 9.8 m; crossings at 220 kV: the
         // 420 kV row, 4.5 m.
         let ground = &p.rules.rules[0];
-        assert!((ground.required(Some(380.0)).vertical.unwrap() - 9.8).abs() < 1e-12);
-        assert_eq!(p.rules.rules[1].required(Some(220.0)).radial, Some(4.5));
+        assert!((ground.required(Some(380.0), 0.0).vertical.unwrap() - 9.8).abs() < 1e-12);
+        assert_eq!(
+            p.rules.rules[1].required(Some(220.0), 0.0).radial,
+            Some(4.5)
+        );
         assert_eq!(p.weather.as_ref().unwrap().cases[0].name, "Test hot");
         let e = rule_presets(&host, &dir, "fail = true").unwrap_err();
         assert!(
@@ -1101,7 +1104,7 @@ mod tests {
         assert_eq!(ok.len(), 2);
         assert!(ok[0].weather.is_none());
         assert_eq!(
-            ok[0].rules.rules[0].required(Some(220.0)).vertical,
+            ok[0].rules.rules[0].required(Some(220.0), 0.0).vertical,
             Some(9.2)
         );
         // A case named but not given.

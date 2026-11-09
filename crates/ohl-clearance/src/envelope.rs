@@ -129,7 +129,7 @@ mod tests {
         let result = |v: f64, r: f64| WireResult {
             vertical: Some(hit(v)),
             radial: Some(hit(r)),
-            ..WireResult::with(rule.required(None))
+            ..WireResult::with(rule.required(None, 0.0))
         };
         env.add(0, "cold", "S1 span 0", None, &result(12.0, 11.0));
         env.add(0, "hot", "S1 span 0", None, &result(6.5, 6.2));

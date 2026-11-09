@@ -155,6 +155,9 @@ pub struct ZoneRule {
     /// ground at max sag; none: each section's own, or the `[check]`
     /// method) — the rule file's `calculation`.
     pub calculation: crate::calculation::Calc,
+    /// The distance's increase with the altitude ([`Rule::altitude`]; the
+    /// rule file's `altitude`).
+    pub altitude: Option<crate::rules::Altitude>,
 }
 
 impl ZoneRule {
@@ -194,6 +197,7 @@ impl ZoneRule {
                 // A screen is a vertical rule: in the radial window its
                 // 1000 m would set the reach of a radial check (2026-10-27).
                 screen: self.screen && vertical,
+                altitude: self.altitude,
                 target,
             }
         };
@@ -349,6 +353,7 @@ pub fn from_rule_set(
             .filter(|w| out.width.is_some_and(|z| (z - w).abs() > 1e-9));
         for (voltages, distance) in rows {
             let row = ZoneRule {
+                altitude: rule.altitude,
                 name: rule.name.clone(),
                 voltages,
                 cases: rule.cases.clone(),
@@ -372,12 +377,14 @@ pub fn from_rule_set(
                     &last.cases,
                     &last.distance,
                     last.wires,
+                    last.altitude,
                 ) == (
                     &row.name,
                     &row.voltages,
                     &row.cases,
                     &row.distance,
                     row.wires,
+                    row.altitude,
                 )
                 && last.width == row.width
             {
@@ -981,13 +988,13 @@ pub fn check_zones(
         let largest = p
             .wires
             .iter()
-            .map(|w| p.def.required(w.kv()).largest())
+            .map(|w| w.required(&p.def).largest())
             .fold(0.0, f64::max);
         // The widest band (a screen's by the wires' voltages).
         let band = p
             .wires
             .iter()
-            .filter_map(|w| p.def.required(w.kv()).band)
+            .filter_map(|w| w.required(&p.def).band)
             .fold(p.def.vertical_band, f64::max);
         let reach = (largest + p.def.search_margin)
             .max(band)
@@ -1522,6 +1529,7 @@ mod tests {
 
     fn rule(distance: f64, classes: &[u8]) -> ZoneRule {
         ZoneRule {
+            altitude: None,
             name: "r".into(),
             voltages: Vec::new(),
             cases: Vec::new(),
@@ -1661,11 +1669,13 @@ mod tests {
         let mut rules = vec![
             rule(6.0, &[5]),
             ZoneRule {
+                altitude: None,
                 name: "wide".into(),
                 width: Some(4.0),
                 ..rule(9.0, &[6])
             },
             ZoneRule {
+                altitude: None,
                 name: "screen".into(),
                 screen: true,
                 distance: Requirement::Formula {
@@ -1972,6 +1982,7 @@ mod tests {
         let zone = Zone::new(Measure::Vertical);
         let found = |wires: Wires| {
             let rules = [ZoneRule {
+                altitude: None,
                 wires,
                 ..rule(3.0, &[5])
             }];
@@ -1992,6 +2003,7 @@ mod tests {
                 .all(|s| s.starts_with("jumper:"))
         );
         assert!(!jumpers_needed(&[ZoneRule {
+            altitude: None,
             wires: Wires::Sections,
             ..rule(3.0, &[5])
         }]));
@@ -2145,6 +2157,7 @@ mod tests {
         assert!(s1(&v).is_some());
         // So does a rule's own width in the narrow zone.
         let own = [ZoneRule {
+            altitude: None,
             width: Some(2.5),
             screen: false,
             ..rules[0].clone()
@@ -2161,6 +2174,7 @@ mod tests {
         // a 110 kV rule checks none.
         let at = |kv| {
             [ZoneRule {
+                altitude: None,
                 voltages: vec![kv],
                 ..rule(5.0, &[5])
             }]
@@ -2219,6 +2233,7 @@ mod tests {
         };
         let rows = vec![
             ZoneRule {
+                altitude: None,
                 name: "Trees \"high\"".into(),
                 voltages: vec![220.0],
                 cases: vec!["high wind".into(), "max temperature".into()],
@@ -2232,6 +2247,7 @@ mod tests {
                 calculation: None,
             },
             ZoneRule {
+                altitude: None,
                 name: "Ground points".into(),
                 voltages: Vec::new(),
                 cases: Vec::new(),
@@ -2246,6 +2262,7 @@ mod tests {
                 calculation: None,
             },
             ZoneRule {
+                altitude: None,
                 name: "Terrain, earth wires".into(),
                 voltages: vec![0.0],
                 cases: Vec::new(),
@@ -2334,6 +2351,24 @@ mod tests {
         "#;
         let set = RuleSet::parse(text).unwrap();
         assert_eq!(RuleSet::parse(&set.to_toml()).unwrap(), set);
+        // The altitude term (2026-11-09) through the windows' rules and back.
+        let high = RuleSet::parse(&format!(
+            "{text}altitude = {{ from = \"1000 m\", per_1000_m = 0.14 }}\n"
+        ))
+        .unwrap();
+        assert_eq!(RuleSet::parse(&high.to_toml()).unwrap(), high);
+        let a = high.rules[0].altitude.unwrap();
+        assert_eq!((a.from, a.per_1000_m), (1000.0, 0.14));
+        let zr = from_rule_set(&high, Measure::Vertical, |_| vec![6], &[0.0, 220.0]);
+        assert_eq!(zr.rules[0].altitude, Some(a));
+        let back = to_rule_set(
+            "w",
+            &Zone::new(Measure::Vertical),
+            &WindSteps::default(),
+            &CheckScope::default(),
+            &zr.rules,
+        );
+        assert!(back.rules.iter().all(|r| r.altitude == Some(a)));
         let roles = |r: &str| if r == "building" { vec![6] } else { vec![] };
         let v = from_rule_set(&set, Measure::Vertical, roles, &[0.0, 220.0]);
         let got: Vec<(Vec<f64>, Requirement, Vec<u8>)> = v

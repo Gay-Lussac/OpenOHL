@@ -102,6 +102,10 @@ pub struct InternalRule {
     /// The distance to keep in the cases with wind (a wind pressure above
     /// 0); none: `distance` in every case.
     pub distance_wind: Option<Requirement>,
+    /// The distances' increase with the altitude ([`crate::rules::Altitude`]),
+    /// taken at the highest point of the structure and of the part
+    /// measured (conservative); none: as given at any height.
+    pub altitude: Option<crate::rules::Altitude>,
 }
 
 impl InternalRule {
@@ -119,16 +123,19 @@ impl InternalRule {
             reach: DEFAULT_REACH,
             shapes: true,
             distance_wind: None,
+            altitude: None,
         }
     }
 
     /// The distance to keep for a part of `kv` in a case with wind
-    /// (`wind`) or in still air.
-    pub fn required(&self, kv: f64, wind: bool) -> Result<f64, String> {
+    /// (`wind`) or in still air, at height `h` (m: [`InternalRule::altitude`]).
+    pub fn required(&self, kv: f64, wind: bool, h: f64) -> Result<f64, String> {
+        let f = crate::rules::Altitude::of(self.altitude.as_ref(), h);
         match (&self.distance_wind, wind) {
             (Some(d), true) => d.at(kv),
             _ => self.distance.at(kv),
         }
+        .map(|d| d * f)
     }
 
     /// What is wrong with it (none: nothing).
@@ -201,6 +208,9 @@ impl InternalRule {
         if self.reach != DEFAULT_REACH {
             let _ = writeln!(t, "reach = \"{} m\"", self.reach);
         }
+        if let Some(a) = &self.altitude {
+            let _ = writeln!(t, "altitude = {}", a.to_toml());
+        }
         t
     }
 }
@@ -231,6 +241,8 @@ pub(crate) struct RawInternalRule {
     shapes: bool,
     #[serde(default)]
     distance_wind: Option<crate::rules::RawRequirement>,
+    #[serde(default)]
+    altitude: Option<crate::rules::RawAltitude>,
 }
 
 impl RawInternalRule {
@@ -242,7 +254,15 @@ impl RawInternalRule {
             ),
             None => None,
         };
+        let altitude = match self.altitude {
+            Some(a) => Some(
+                a.resolve()
+                    .map_err(|e| format!("internal rule \"{}\": {e}", self.name))?,
+            ),
+            None => None,
+        };
         let rule = InternalRule {
+            altitude,
             distance: self
                 .distance
                 .resolve()
@@ -1008,8 +1028,23 @@ pub fn check(
                     .map_err(|e| format!("internal clearances: {e}"))?;
                 let (pieces, grounded) =
                     pieces_at(line, structure, case, &by_string, rule, filter, &kv_of);
+                // The structure's highest point (its members, its grounded
+                // shapes): with each part's own, the height of the rule's
+                // altitude term — never below what is measured.
+                let structure_top = members
+                    .iter()
+                    .map(|m| m.bounds.hi[2])
+                    .chain(grounded.iter().map(|g| g.bounds.hi[2]))
+                    .fold(f64::NEG_INFINITY, f64::max);
                 for piece in pieces {
-                    let required = match rule.required(piece.kv, case.wind) {
+                    let height = piece
+                        .wires
+                        .iter()
+                        .flatten()
+                        .map(|p| p[2])
+                        .chain(piece.solids.iter().map(|c| aabb(c).hi[2]))
+                        .fold(structure_top, f64::max);
+                    let required = match rule.required(piece.kv, case.wind, height) {
                         Ok(d) => d,
                         Err(e) => {
                             no_distance.insert(e);
@@ -1836,9 +1871,28 @@ mod tests {
         assert!(b.conductors && !b.jumpers && b.string_ends && !b.shapes);
         // With wind its own distance (owner, 2026-10-19), else the one by
         // voltage; the first rule the same in both.
-        assert_eq!(b.required(220.0, true).unwrap(), 0.8);
-        assert_eq!(b.required(220.0, false).unwrap(), 2.0);
-        assert_eq!(a.required(220.0, true).unwrap(), 1.5);
+        assert_eq!(b.required(220.0, true, 0.0).unwrap(), 0.8);
+        assert_eq!(b.required(220.0, false, 0.0).unwrap(), 2.0);
+        assert_eq!(a.required(220.0, true, 0.0).unwrap(), 1.5);
+        // The altitude term (2026-11-09): +14 % per 1000 m above 1000 m,
+        // read, written back and applied at the height given.
+        let mut h = b.clone();
+        h.altitude = Some(crate::rules::Altitude {
+            from: 1000.0,
+            per_1000_m: 0.14,
+        });
+        let text = format!(
+            "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n{}",
+            h.to_toml()
+        );
+        let back = crate::rules::RuleSet::parse(&text)
+            .unwrap()
+            .internal_rules
+            .remove(0);
+        assert_eq!(back, h);
+        assert!((h.required(220.0, false, 1500.0).unwrap() - 2.0 * 1.07).abs() < 1e-12);
+        assert!((h.required(220.0, true, 2000.0).unwrap() - 0.8 * 1.14).abs() < 1e-12);
+        assert_eq!(h.required(220.0, false, 600.0).unwrap(), 2.0);
         assert!(a.shapes && a.distance_wind.is_none());
         assert_eq!(b.reach, 12.0);
         assert_eq!(b.distance.at(220.0).unwrap(), 2.0);

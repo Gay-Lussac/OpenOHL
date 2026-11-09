@@ -195,6 +195,7 @@ pub fn unset(r: &ZoneRule) -> bool {
 /// weather case and voltage, its distance to set (no value is invented).
 pub fn first_rule() -> ZoneRule {
     ZoneRule {
+        altitude: None,
         name: "Ground".into(),
         voltages: Vec::new(),
         cases: Vec::new(),
@@ -1097,6 +1098,7 @@ impl ZoneWindow {
                 "A rule",
                 "a new row at the end of the table: set its distance and its targets below it",
                 |n| ZoneRule {
+                    altitude: None,
                     name: format!("Rule {}", n + 1),
                     ground: false,
                     ..first_rule()
@@ -1723,7 +1725,10 @@ impl check_ui::RuleRow for ZoneRule {
                 list.join(", ")
             ));
         }
-        let distance = crate::rule_table::distance_words(&self.distance);
+        let mut distance = crate::rule_table::distance_words(&self.distance);
+        if let Some(a) = &self.altitude {
+            distance = format!("{distance}; {}", a.describe());
+        }
         check_ui::Summary {
             target: if target.is_empty() {
                 "choose its targets".into()

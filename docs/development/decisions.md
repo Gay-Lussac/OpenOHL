@@ -8,6 +8,25 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-09
+
+**Clearance distances growing with the altitude (owner, 2026-11-09)**
+
+The owner asked for the LeV's internal distances (Annex 6, 1: C1 at
+rest, C3 in a brief approach) as a preset of the LeV plugin, and then
+for the altitude increase of Table 2.4.1 (+14 % per 1000 m above
+1000 m) to be a parameter of the rules rather than one value for the
+whole line: "All clearance rules". `[[rule]]` and `[[internal_rule]]`
+take an optional `altitude = { from, per_1000_m }`; the distances are
+multiplied at the highest point of the wire checked (the higher wire of
+a pair), the internal rules at the structure's highest point or the
+part's — conservative, said in the theory page. The searches reach as
+far as the requirement at the highest wire point of the case. The
+rule summaries (the Clearances, vertical/radial and internal windows,
+`ohl code rule-presets`) show the term. Not covered: the `[vegetation]`
+table, galloping and the safety volumes (their own requirements; no
+altitude rule known for them).
+
 ## 2026-11-08
 
 **Line side said: thermal, jumper pull, spotting, fall-in, rigid structures (safe-side audit, 2026-11-08)**

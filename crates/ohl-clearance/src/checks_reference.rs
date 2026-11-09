@@ -41,7 +41,7 @@ impl OldPointCheck {
             results: wires
                 .wires
                 .iter()
-                .map(|w| WireResult::with(rule.required(w.kv())))
+                .map(|w| WireResult::with(w.required(rule)))
                 .collect(),
             seen: Vec::new(),
             groups: None,
@@ -153,7 +153,7 @@ pub fn old_ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<W
     wires
         .iter()
         .map(|wire| {
-            let mut result = WireResult::with(rule.required(wire.kv()));
+            let mut result = WireResult::with(wire.required(rule));
             let reach = result.required.largest() + rule.search_margin;
             // To the surface.
             let off = wire.allowance();

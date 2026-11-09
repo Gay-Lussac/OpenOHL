@@ -93,10 +93,38 @@ pub struct Wire {
     pub polyline_error: f64,
 }
 
+/// The highest point of `wires`, m ([`Wire::top`]; none: −∞, no
+/// increase).
+pub fn top_of<'a>(wires: impl IntoIterator<Item = &'a Wire>) -> f64 {
+    wires
+        .into_iter()
+        .map(Wire::top)
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
 impl Wire {
     /// Nominal voltage of its system, kV (none: earthed).
     pub fn kv(&self) -> Option<f64> {
         self.potential.map(|p| p.nominal_kv)
+    }
+
+    /// Its highest point, m (the project's heights; a bundle's highest
+    /// subconductor): the height a rule's altitude term is taken at
+    /// ([`Rule::required`]) — never below any point measured on it
+    /// (conservative).
+    pub fn top(&self) -> f64 {
+        let up = self.bundle.iter().map(|b| b[1]).fold(0.0, f64::max);
+        self.points
+            .iter()
+            .map(|p| p[2])
+            .fold(f64::NEG_INFINITY, f64::max)
+            + up
+    }
+
+    /// What `rule` requires of it ([`Rule::required`] at its voltage and
+    /// its [`Wire::top`]).
+    pub fn required(&self, rule: &Rule) -> crate::rules::Required {
+        rule.required(self.kv(), self.top())
     }
 
     /// What is taken off a distance measured to its polyline (a
@@ -528,7 +556,7 @@ pub fn plan_reach(rule: &Rule, wire: &Wire, reach: f64, measures: [bool; 2]) -> 
     if FULL_CELLS.load(std::sync::atomic::Ordering::Relaxed) {
         return f64::INFINITY;
     }
-    let required = rule.required(wire.kv());
+    let required = wire.required(rule);
     let mut plan: f64 = 0.0;
     if measures[1] {
         let r = (required.radial_reach() + rule.search_margin).min(reach);
@@ -915,7 +943,7 @@ impl PointCheck {
         let results: Vec<WireResult> = wires
             .wires
             .iter()
-            .map(|w| WireResult::with(rule.required(w.kv())))
+            .map(|w| WireResult::with(w.required(rule)))
             .collect();
         let band = results
             .iter()
@@ -1561,7 +1589,7 @@ pub(crate) fn ground_wire(
     bound: [f64; 2],
     vertical_extra: Option<&[f64]>,
 ) -> WireResult {
-    let mut result = WireResult::with(rule.required(wire.kv()));
+    let mut result = WireResult::with(wire.required(rule));
     let reach = result.required.largest() + rule.search_margin;
     let bundle = wire.bundle_radius();
     // To the surface.
@@ -1891,8 +1919,11 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                 }
                 let (c, d) = b.segment(j, k);
                 let crossing = crossing_in_plan(p, q, c, d);
-                let required = rule
-                    .required(rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()));
+                // The pair's voltage at the higher of the two wires.
+                let required = rule.required(
+                    rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()),
+                    wire.top().max(other.top()),
+                );
                 let reach = (required.largest() + rule.search_margin).min(b.reach);
                 // To the surfaces of both.
                 let off = wire.allowance() + b.allowances[j];
@@ -2042,10 +2073,10 @@ mod tests {
              vertical = { base = \"5 m\", per_kv = \"0.01 m\", above_kv = 0 }",
         );
         assert!(s.screen);
-        let r110 = s.required(Some(110.0));
+        let r110 = s.required(Some(110.0), 0.0);
         assert_eq!(r110.vertical, Some(SCREEN_DISTANCE));
         assert!((r110.band.unwrap() - 6.1).abs() < 1e-9);
-        assert!((s.required(Some(380.0)).band.unwrap() - 8.8).abs() < 1e-9);
+        assert!((s.required(Some(380.0), 0.0).band.unwrap() - 8.8).abs() < 1e-9);
         let text = "[[rule]]\nname = \"b\"\ntarget = \"points\"\nclasses = [33]\nscreen = true\n\
              vertical = { base = \"5 m\", per_kv = \"0.01 m\", above_kv = 0 }";
         let set = RuleSet::parse(text).unwrap();
@@ -2226,6 +2257,60 @@ mod tests {
         assert!((res.radial.unwrap().distance - 3.0f64.hypot(0.3)).abs() < 1e-9);
         assert_eq!((res.vertical_violations, res.radial_violations), (1, 2));
         assert!(res.violates());
+    }
+
+    /// The altitude term (owner, 2026-11-09): flat ground at 1990 m, a
+    /// wire 10 m above it at 2000 m; a 9 m rule with +14 % per 1000 m
+    /// above 1000 m requires 9 × 1.14 = 10.26 m there — the 10 m fails,
+    /// as it passes without the term. A bundle's top counts its upper
+    /// subconductor; a pair takes the higher wire.
+    #[test]
+    fn the_altitude_term_at_the_wires_top() {
+        let mut points = Vec::new();
+        for i in 0..=10 {
+            for j in -10..=10 {
+                points.push(SurveyPoint {
+                    x: i as f64 * 10.0,
+                    y: j as f64 * 2.0,
+                    z: 1990.0,
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let terrain = Terrain::from_points(&points, None).unwrap();
+        let wires = vec![straight(
+            "S",
+            "L1",
+            [10.0, 0.0, 2000.0],
+            [90.0, 0.0, 2000.0],
+        )];
+        let plain = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0");
+        let high = rule(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0\n\
+             altitude = { from = \"1000 m\", per_1000_m = 0.14 }",
+        );
+        assert_eq!(wires[0].top(), 2000.0);
+        let res = &ground_check(&plain, &wires, &terrain)[0];
+        assert_eq!(res.required.vertical, Some(9.0));
+        assert!(!res.violates());
+        let res = &ground_check(&high, &wires, &terrain)[0];
+        assert!((res.required.vertical.unwrap() - 10.26).abs() < 1e-9);
+        assert!((res.vertical.unwrap().distance - 10.0).abs() < 1e-9);
+        assert!(res.violates());
+        // Below the threshold: no increase.
+        assert_eq!(high.required(None, 900.0).vertical, Some(9.0));
+        assert_eq!(high.required(None, 1000.0).vertical, Some(9.0));
+        // A bundle: its upper subconductor 0.2 m above the points.
+        let b = Wire {
+            bundle: vec![[-0.2, 0.0], [0.2, 0.0], [0.0, 0.2]],
+            ..wires[0].clone()
+        };
+        assert!((b.top() - 2000.2).abs() < 1e-12);
+        // The reach at the highest wire point: never less than the
+        // requirement there.
+        assert!((high.reach(&[], &[], 2000.0) - (10.26 + high.search_margin)).abs() < 1e-9);
+        assert!((top_of(&[wires[0].clone(), b]) - 2000.2).abs() < 1e-12);
     }
 
     #[test]

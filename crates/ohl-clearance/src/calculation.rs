@@ -115,6 +115,7 @@ pub fn only_zone(rules: &[crate::ZoneRule], calc: Calc) -> Vec<crate::ZoneRule> 
                 r.clone()
             } else {
                 crate::ZoneRule {
+                    altitude: None,
                     cases: vec![NO_CASE.into()],
                     ..r.clone()
                 }

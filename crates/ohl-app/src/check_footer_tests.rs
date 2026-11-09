@@ -230,6 +230,7 @@ fn closing_a_clearance_window_takes_its_marks_off() {
         w.rules.clear();
         // 100 m over the ground: every span is below it.
         w.rules.push(ohl_clearance::ZoneRule {
+            altitude: None,
             name: "High ground".into(),
             voltages: Vec::new(),
             cases: Vec::new(),

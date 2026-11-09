@@ -75,9 +75,10 @@ pub struct Prepared {
 }
 
 impl Prepared {
-    fn reach(&self, rule: &Rule) -> f64 {
-        // In plan: a screen's band, not its 1000 m (2026-10-27).
-        rule.reach_in_plan(&self.voltages, &self.other_voltages)
+    /// In plan: a screen's band, not its 1000 m (2026-10-27); at height
+    /// `top` (the highest wire point: a rule's altitude term).
+    fn reach(&self, rule: &Rule, top: f64) -> f64 {
+        rule.reach_in_plan(&self.voltages, &self.other_voltages, top)
     }
 
     /// The rules.
@@ -677,7 +678,9 @@ pub fn cross_cases(
     extras: &mut ViewerExtras,
     env: &mut ohl_clearance::Envelope,
 ) {
-    let reach = p.rules.iter().map(|r| p.reach(r)).fold(0.0, f64::max);
+    let top =
+        ohl_clearance::checks::top_of(all.iter().flat_map(|c| c.wires.iter().chain(&c.other)));
+    let reach = p.rules.iter().map(|r| p.reach(r, top)).fold(0.0, f64::max);
     for (ri, rule) in p.rules.iter().enumerate() {
         for [ca, cb] in &rule.case_pairs {
             let firsts: Vec<&CaseWires> = all

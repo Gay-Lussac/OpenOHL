@@ -36,6 +36,7 @@ fn windy() -> WeatherCase {
 fn rules(required: f64) -> Vec<ZoneRule> {
     vec![
         ZoneRule {
+            altitude: None,
             name: "ground".into(),
             voltages: Vec::new(),
             cases: Vec::new(),
@@ -49,6 +50,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             calculation: None,
         },
         ZoneRule {
+            altitude: None,
             name: "points".into(),
             voltages: Vec::new(),
             cases: Vec::new(),

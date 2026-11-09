@@ -1236,6 +1236,9 @@ impl check_ui::RuleRow for InternalRule {
                 crate::rule_table::distance_words(w)
             );
         }
+        if let Some(a) = &self.altitude {
+            distance = format!("{distance}; {}", a.describe());
+        }
         check_ui::Summary {
             target: "the structure's members".into(),
             voltages: crate::rule_table::voltages_words(&self.voltages),
