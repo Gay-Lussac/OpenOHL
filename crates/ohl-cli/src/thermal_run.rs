@@ -498,6 +498,14 @@ fn clearance_limit(l: &LimitArgs) -> Result<(), String> {
         base.name,
         started.elapsed()
     );
+    // What the limits leave out, not on the safe side: each note once.
+    let mut said: Vec<&str> = Vec::new();
+    for n in limits.iter().flat_map(|l| &l.notes) {
+        if !said.contains(&n.as_str()) {
+            said.push(n);
+            println!("  {n}");
+        }
+    }
     let mut header =
         "section,cable,limit_c,status,rule,span,measure,clearance_m,required_m".to_owned();
     for c in &ambient {

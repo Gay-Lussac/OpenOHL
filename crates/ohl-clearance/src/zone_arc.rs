@@ -341,7 +341,8 @@ impl ArcPointCheck {
             } else {
                 0.0
             };
-            let grow = a.radius + a.arc.outer + radial + def.vertical_band + def.vertical_depth;
+            let grow =
+                a.radius + a.arc.vertical_outer() + radial + def.vertical_band + def.vertical_depth;
             let mut mine: HashSet<(i64, i64)> = HashSet::new();
             let centres: Vec<P3> = a
                 .arc
@@ -402,7 +403,10 @@ impl ArcPointCheck {
             let required = self.results[i].required;
             let reach = (required.largest() + self.margin).min(self.reach);
             // The capsule: nothing of the arc nearer than this.
-            if a.arc.axis.distance(q) - a.radius - a.arc.outer - self.band - self.depth > reach {
+            // (The radius measured vertically is the larger: it bounds both.)
+            if a.arc.axis.distance(q) - a.radius - a.arc.vertical_outer() - self.band - self.depth
+                > reach
+            {
                 continue;
             }
             let mut record = |m: usize, hit: Hit| {
@@ -449,7 +453,10 @@ impl ArcPointCheck {
                 && let Some(v) = a.arc.vertical(q, self.band, self.depth)
             {
                 let hit = Hit {
-                    distance: (v.gap - a.arc.outer).max(0.0),
+                    // The bundle radius and allowance measured
+                    // vertically, r / cos β (2026-11-08; before radially,
+                    // not on the safe side on a sloping span).
+                    distance: (v.gap - a.arc.vertical_outer()).max(0.0),
                     wire: v.point,
                     target: q,
                     class: Some(class),

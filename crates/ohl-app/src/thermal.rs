@@ -2122,6 +2122,20 @@ fn limit_table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) -> Option<St
             return None;
         }
     };
+    // What the limits leave out, not on the safe side (2026-11-08): each
+    // note once, in the not-safe colour.
+    let mut said: Vec<&str> = Vec::new();
+    for n in limits.iter().flat_map(|l| &l.notes) {
+        if !said.contains(&n.as_str()) {
+            said.push(n);
+        }
+    }
+    if !said.is_empty() {
+        let [r, g, b] = crate::loads::UsageMark::NotSafe.color();
+        for n in said {
+            ui.label(egui::RichText::new(n).color(egui::Color32::from_rgb(r, g, b)));
+        }
+    }
     let cases = w.cases();
     let mut cols = vec![
         Col::text("Section"),

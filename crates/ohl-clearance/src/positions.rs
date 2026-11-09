@@ -1020,6 +1020,19 @@ impl SwingArc {
         self.allowance
     }
 
+    /// [`SwingArc::outer`] measured vertically, m: a vertical through the
+    /// wire meets its surface `outer / cos β` from the axis, β the
+    /// slope of the span's axis (as the still-air vertical,
+    /// [`crate::checks`]); a level span: `outer`.
+    pub fn vertical_outer(&self) -> f64 {
+        let cos = self.axis.u[0].hypot(self.axis.u[1]);
+        if cos > 1e-9 {
+            self.outer / cos
+        } else {
+            self.outer
+        }
+    }
+
     /// The band's margin it was made with, m ([`BAND_MARGIN`] by
     /// default).
     pub fn margin(&self) -> f64 {
@@ -2234,6 +2247,13 @@ mod tests {
         assert!((v.gap - (16.5 - top)).abs() < 1e-9, "{v:?} {top}");
         let v = arc.vertical([50.0, 0.0, 15.5], 0.5, 0.0).unwrap();
         assert_eq!(v.gap, 0.0);
+        // The radius taken off vertically (2026-11-08): r on a level span;
+        // on an axis sloping at cos β = 0.8, r / 0.8 (30 mm → 37.5 mm).
+        let mut sloped = arc.clone();
+        sloped.outer = 0.03;
+        assert!((sloped.vertical_outer() - 0.03).abs() < 1e-15);
+        sloped.axis.u = [0.8, 0.0, 0.6];
+        assert!((sloped.vertical_outer() - 0.0375).abs() < 1e-15);
     }
 
     /// The bands never claim more than the exact distance: random points

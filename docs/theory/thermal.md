@@ -219,13 +219,23 @@ scan stops at the first failure on its grid, so a failure that appears and
 disappears again between two grid points is missed. Wire-to-wire rules are
 not checked (every section heated alike hardly changes their distances).
 
-**Simplification:** the 10 °C scan grid. A failure narrower than a step
-(a structure swinging, an object passed by) is missed, and the limit is
-then too high (unsafe). Exact: a finer step, at more cost.
+**Simplification, not on the safe side:** the 10 °C scan grid. A failure
+narrower than a step (a structure swinging, an object passed by) is
+missed, and the limit is then too high (unsafe). A vertical clearance
+only falls as the sag grows; a radial one can dip and rise again as a
+span lowers past an object beside it. **Said where it applies**
+(2026-11-08): with a radial requirement among the rules, every limit
+found says *NOT ON THE SAFE SIDE: a radial clearance failing only between
+two steps of the scan (10 °C …) is not found*. Exact: a finer step, at
+more cost (the scan step is a setting).
 
-**Simplification:** wire-to-wire rules left out of the limit. Heating every
-section alike hardly changes those distances, but a section next to a cold
-one (another line, an earth wire) comes nearer to it (unsafe). Exact: the
+**Simplification, not on the safe side:** wire-to-wire rules left out of
+the limit. Heating every section alike hardly changes those distances,
+but a section next to a cold one (another line, an earth wire) comes
+nearer to it (unsafe). **Said where it applies** (2026-11-08): when
+wire-to-wire rules apply to the base case, every section's limit names
+them (*NOT ON THE SAFE SIDE: wire-to-wire rules not in the limit …*), in
+the app above the table and in `ohl thermal`'s output. Exact: the
 wire-to-wire rules in the limit, with the other wires at their own
 temperatures.
 

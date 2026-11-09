@@ -223,14 +223,13 @@ where the lowest point's height is convex along the line, as a hanging
 wire's (and for a straight piece); a wire kinked by a point load between
 two places 0.1 m apart could dip below it by millimetres.
 
-**Simplification:** in the swing band the bundle radius and the
-allowance are taken off as on a level wire (radially), not
-\\( r/\cos\beta \\) as the still-air vertical does (above): on a span
-sloping at \\( \beta \\) the band's vertical is \\( r(1/\cos\beta - 1) \\)
-too large — unsafe, by millimetres for a conductor's radius (4.6 mm for
-30 mm on 30°), more for a bundle. The radial distance, which never
-exceeds the true vertical one, is not affected. Exact: the radius
-measured vertically, as in still air.
+In the swing band the bundle radius and the allowance are taken off
+**vertically**, \\( r/\cos\beta \\) with \\( \beta \\) the slope of the
+span's axis, as the still-air vertical does (above; 2026-11-08 — before
+radially, \\( r(1/\cos\beta - 1) \\) too large on a sloping span, not on
+the safe side: 4.6 mm for 30 mm on 30°, more for a bundle). The band's
+pruning takes the same larger radius, so nothing within reach is passed
+over; a level span is unchanged. Test: `the_swing_arc_by_hand`.
 
 **Check by hand** (`benchmarks/clearance/danger-trees.toml`,
 `arcclear-001…006`): a level 100 m span 20 m up, sag 4 m in still air and

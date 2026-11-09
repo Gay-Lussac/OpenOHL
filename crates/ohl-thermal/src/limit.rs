@@ -157,6 +157,10 @@ pub struct SectionLimit {
     pub governing: Option<Governing>,
     /// Solutions used.
     pub solves: u32,
+    /// What the limit leaves out, not on the safe side (2026-11-08): the
+    /// wire-to-wire rules applying to the base case; with a radial rule,
+    /// a failure between two steps of the scan.
+    pub notes: Vec<String>,
 }
 
 /// What the wires are checked against.
@@ -199,6 +203,8 @@ struct Search<'s, 'a> {
     voltages: Vec<Option<ohl_line::electrical::Potential>>,
     targets: &'s mut Targets<'a>,
     checked_any: bool,
+    /// The notes of every section ([`SectionLimit::notes`]).
+    notes: Vec<String>,
 }
 
 impl Search<'_, '_> {
@@ -317,12 +323,24 @@ impl Search<'_, '_> {
             }
             Ok(Limit::At(lo))
         })();
+        let mut notes = self.notes.clone();
+        if matches!(result, Ok(Limit::At(_) | Limit::AboveRange))
+            && self.rules.iter().any(|r| r.radial.is_some())
+        {
+            notes.push(format!(
+                "NOT ON THE SAFE SIDE: a radial clearance failing only between two steps of the \
+                 scan ({} °C: a span lowering past an object beside it) is not found — a \
+                 smaller scan step finds narrower ones",
+                o.scan_step
+            ));
+        }
         SectionLimit {
             section: section.id.clone(),
             cable: section.cable.clone(),
             result,
             governing,
             solves,
+            notes,
         }
     }
 }
@@ -484,6 +502,26 @@ impl<'s, 'a> Search<'s, 'a> {
         rules: &[Rule],
         targets: &'s mut Targets<'a>,
     ) -> Result<Self, String> {
+        // The wire-to-wire rules applying to the base case: not in the
+        // limit (the other wires at their own temperatures), said.
+        let left: Vec<&str> = rules
+            .iter()
+            .filter(|r| {
+                ohl_clearance::applies(r, &base.name)
+                    && (!r.case_pairs.is_empty()
+                        || !matches!(r.target, Target::Ground | Target::Points { .. }))
+            })
+            .map(|r| r.name.as_str())
+            .collect();
+        let notes = if left.is_empty() {
+            Vec::new()
+        } else {
+            vec![format!(
+                "NOT ON THE SAFE SIDE: wire-to-wire rules not in the limit (a section heated \
+                 next to colder wires comes nearer to them): {}",
+                left.join(", ")
+            )]
+        };
         let (rules, classes) = chosen_rules(rules, targets.point_classes, &base.name);
         if rules.is_empty() {
             return Err(format!(
@@ -516,6 +554,7 @@ impl<'s, 'a> Search<'s, 'a> {
             voltages,
             targets,
             checked_any: false,
+            notes,
         })
     }
 }
@@ -595,6 +634,59 @@ mod tests {
         };
         assert!(lowest(t) >= 5.0);
         assert!(lowest(t + options.tolerance) < 5.0);
+    }
+
+    /// What the limit leaves out is said on every section, not on the
+    /// safe side (2026-11-08): a wire-to-wire rule applying to the base
+    /// case, and with a radial requirement a failure between two steps;
+    /// the plain vertical ground rule says nothing.
+    #[test]
+    fn what_the_limit_leaves_out_is_said() {
+        let options = LimitOptions::default();
+        assert!(limits(5.0, &options).iter().all(|s| s.notes.is_empty()));
+        let (line, library, terrain) = example();
+        let base = WeatherCase::still("hot", Temperature::from_celsius(15.0));
+        let mut rules = RuleSet::ground(5.0).rules;
+        rules[0].radial = Some(ohl_clearance::Requirement::Fixed(4.0));
+        let mut phases = rules[0].clone();
+        phases.name = "phase to phase".into();
+        phases.target = Target::SameLine {
+            include_same_phase: false,
+        };
+        rules.push(phases);
+        let mut targets = Targets {
+            ground: Some(&terrain),
+            surfaces: &[],
+            point_classes: &[],
+            points: None,
+        };
+        let out = clearance_limits(
+            &line,
+            &library,
+            &base,
+            &rules,
+            &mut targets,
+            &options,
+            &default_budget(&options, line.sections.len()),
+            &mut |_, _| {},
+        )
+        .unwrap();
+        for s in out.iter().filter(|s| matches!(s.result, Ok(Limit::At(_)))) {
+            assert!(
+                s.notes.iter().any(|n| n
+                    .starts_with("NOT ON THE SAFE SIDE: wire-to-wire rules not in the limit")
+                    && n.ends_with("phase to phase")),
+                "{:?}",
+                s.notes
+            );
+            assert!(
+                s.notes
+                    .iter()
+                    .any(|n| n.contains("between two steps of the scan (10 °C")),
+                "{:?}",
+                s.notes
+            );
+        }
     }
 
     #[test]

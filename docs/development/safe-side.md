@@ -31,10 +31,10 @@ theory page. Status: **done** (with the date), **open**.
 | [Wind on structures](../theory/structure-wind.md) | Overlaps counted twice in the solidity ratio (more shelter); gusset plates without wind area | The solidity ratio taken within bounds (overlaps at most once less: a bound by clipping the members' strips; plates added) and the largest face drag and shielding factor over them; the joints' plates and covers in OHL-Structure's wind on the body; where the joints are not known (line checks, `ohl structures fe`), "NOT ON THE SAFE SIDE: gusset plates' own wind area not included" | done 2026-11-08 |
 | [Wind on structures](../theory/structure-wind.md) | A face's drag outside the table: the shape's drag or 1 | The table's largest face drag (or the shape's when larger) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md) | Buckling length k = 1 between joints: a diagonal split at a crossing nothing holds out of plane buckles over more | Said on each half in compression through such a crossing (without lk, k or a crossing partner) | done 2026-11-08 |
-| [Clearances](../theory/clearances.md) | In a swing band the wire's radius taken off radially, not r / cos β | r / cos β | open (batch 3) |
-| [LiDAR](../theory/lidar-analysis.md) | A voltage above the table's last row: that row's distance | The span not checked, said | open (batch 3) |
-| [Thermal](../theory/thermal.md) | Wire-to-wire rules left out of the temperature limit; a 10 °C grid can miss a narrow failure | Both included; the grid refined below the limit found | open (batch 3) |
-| [Jumpers](../theory/jumpers.md) | The riser's ice and wind per unstretched metre | Per stretched metre | open (batch 3) |
+| [Clearances](../theory/clearances.md) | In a swing band the wire's radius taken off radially, not r / cos β | r / cos β (`SwingArc::vertical_outer`) | done 2026-11-08 |
+| [LiDAR](../theory/lidar-analysis.md) | A voltage above the table's last row: that row's distance | Kept (owner, 2026-10-27): checked with the last row's distance, each such span named in the report's warnings as on the unsafe side ("extend the table") | kept (owner) |
+| [Thermal](../theory/thermal.md) | Wire-to-wire rules left out of the temperature limit; a 10 °C grid can miss a narrow failure | Said on every limit: the wire-to-wire rules applying to the base case named; with a radial rule, a failure between two scan steps (the step is a setting) | done 2026-11-08 |
+| [Jumpers](../theory/jumpers.md) | The riser's ice and wind per unstretched metre | Per stretched metre at the largest stretch (a second solve), the own weight per unstressed metre | done 2026-11-08 |
 
 ## B. A value is needed: said on every result until it is given
 

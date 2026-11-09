@@ -24,9 +24,10 @@
 //! weather case the jumper keeps it (lengthened or shortened with the
 //! temperature like the line's wires): its tension follows the weather.
 //!
-//! Simplifications (marked in the theory page): the load per metre of
-//! unstressed wire (its stretch, \\( T/EA \\), about \\( 10^{-4} \\), left
-//! out of the ice and wind); the polygon of bars for the curve (its error
+//! The ice and wind are taken per stretched metre with the largest
+//! stretch, \\( 1 + T_{max}/EA \\) (a second solve; conservative where it
+//! stretches less), the own weight per unstressed metre. Simplifications
+//! (marked in the theory page): the polygon of bars for the curve (its error
 //! reported, [`JumperShape::polyline_error`]: \\( q\\,\ell^2 / 8T \\) per
 //! piece); no bending stiffness (a taut wire). A riser that goes slack (a
 //! bar in compression) is refused for that weather case: given by its
@@ -335,6 +336,20 @@ pub(super) fn shape(
             .chain(hanging(l0))
             .map(|(f, w)| (f, w / bundle))
             .collect();
+    // Ice and wind per stretched metre (2026-11-08; before per unstressed
+    // metre, low by its stretch T/EA, not on the safe side): solved once,
+    // then with them times 1 + T_max/EA, its largest stretch (on the safe
+    // side where it stretches less). The own weight stays per unstressed
+    // metre (it weighs the same stretched).
+    let first = solve_taut(a, b, l0, ea, load, &points)?;
+    let t_max = first
+        .forces
+        .iter()
+        .copied()
+        .chain(first.ends.iter().map(|f| f.norm()))
+        .fold(0.0, f64::max);
+    let own = Vector3::new(0.0, 0.0, -cable.weight().si() / thermal);
+    let load = own + (load - own) * (1.0 + t_max / ea);
     let solved = solve_taut(a, b, l0, ea, load, &points)?;
     let n = solved.forces.len();
     let max_tension = solved

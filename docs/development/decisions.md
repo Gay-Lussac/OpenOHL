@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Line side: swing band radius, thermal limit notes, riser per stretched metre (safe-side audit, 2026-11-08)**
+
+In the swing band the bundle radius and allowance are taken off
+vertically, r / cos β (before radially). The thermal limit says, per
+section, the wire-to-wire rules it leaves out and, with a radial rule,
+that a failure between two scan steps is not found. A riser's ice and
+wind act per stretched metre at its largest stretch (a second solve).
+LiDAR voltages above a table keep the owner's rule of 2026-10-27 (checked
+with the last row, named as unsafe in the report).
+([Clearances](../theory/clearances.md), [Thermal](../theory/thermal.md),
+[Jumpers](../theory/jumpers.md), [safe side](safe-side.md))
+
 **End restraint by the I/L rule and snow bridging said (safe-side audit, 2026-11-08)**
 
 A structure checked by its allowable loads only, in a case with ice or
