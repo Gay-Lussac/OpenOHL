@@ -937,7 +937,10 @@ pub fn check(
     filter: &ohl_weather::CaseFilter,
     budget: &ohl_core::budget::Budget,
 ) -> Result<InternalReport, String> {
-    let mut report = InternalReport::default();
+    let mut report = InternalReport {
+        notes: vec![crate::RIGID_STRUCTURES.to_owned()],
+        ..InternalReport::default()
+    };
     let potentials = line.potentials().map_err(|e| e.to_string())?;
     let kv_of = |section: &str| -> Option<f64> {
         potentials

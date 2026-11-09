@@ -1261,7 +1261,30 @@ pub fn structure_loads(
     let has_local = ohl_line::local::has_local(&line);
     let local = (has_local && cases.iter().any(|c| c.use_local))
         .then(|| ohl_line::local::localized(&line, ohl_line::local::Purpose::Strength));
-    let set_notes = load_case_set_notes(&line, cases);
+    let mut set_notes = load_case_set_notes(&line, cases);
+    // The jumpers' own pull on their clamps with a bending stiffness only
+    // estimated (k · EI_max, conservative for the swing, not for the
+    // pull): said with every case (2026-11-08).
+    if line.solver.jumper_loads == ohl_line::JumperLoads::Pull {
+        let estimated: Vec<&str> = line
+            .jumpers
+            .iter()
+            .filter(|j| j.bending_stiffness.is_none() && j.tension.is_none())
+            .map(|j| j.id.as_str())
+            .collect();
+        if !estimated.is_empty() {
+            let mut first: Vec<&str> = estimated.iter().copied().take(10).collect();
+            if estimated.len() > 10 {
+                first.push("…");
+            }
+            set_notes.push(format!(
+                "NOT ON THE SAFE SIDE: the jumpers' pull on their clamps with an estimated \
+                 bending stiffness (its reduction factor: the low end, for the swing; the pull \
+                 can be larger with a stiffer jumper) — give bending_stiffness: {}",
+                first.join(", ")
+            ));
+        }
+    }
     let mut out = Vec::with_capacity(cases.len());
     for case in cases {
         let w = weather

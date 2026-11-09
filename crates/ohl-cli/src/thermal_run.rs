@@ -246,6 +246,9 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
         conductor.heat_capacity = vec![(mc, 0.0)];
     }
     let cases = AmbientCases::load(&a.ambient)?.select(&a.case)?;
+    for n in ohl_thermal::sections::cable_notes(cable) {
+        println!("{n}");
+    }
     println!(
         "{} — {}, {} ambient cases",
         cable.name,
@@ -498,6 +501,9 @@ fn clearance_limit(l: &LimitArgs) -> Result<(), String> {
         base.name,
         started.elapsed()
     );
+    for n in ohl_thermal::sections::not_safe_notes(&line, &library) {
+        println!("  {n}");
+    }
     // What the limits leave out, not on the safe side: each note once.
     let mut said: Vec<&str> = Vec::new();
     for n in limits.iter().flat_map(|l| &l.notes) {
@@ -675,6 +681,9 @@ fn clearance_check(c: &CheckArgs) -> Result<(), String> {
         base.name,
         started.elapsed()
     );
+    for n in ohl_thermal::sections::not_safe_notes(&line, &library) {
+        println!("  {n}");
+    }
     let mut csv = "section,cable,current_a,bundle,temperature_c,ambient_case,status,rule,span,measure,clearance_m,required_m,margin_m\n".to_owned();
     let (mut passed, mut failed) = (0, 0);
     for h in &heats {

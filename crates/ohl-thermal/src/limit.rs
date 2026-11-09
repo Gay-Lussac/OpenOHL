@@ -689,6 +689,37 @@ mod tests {
         }
     }
 
+    /// The example line's phase sections carry current: the uniform
+    /// temperature and the steel cores (its conductors are ACSR) said,
+    /// not on the safe side; a wire type alone the same (2026-11-08).
+    #[test]
+    fn the_thermal_results_say_what_they_leave_out() {
+        let (line, library, _) = example();
+        let notes = crate::sections::not_safe_notes(&line, &library);
+        assert!(
+            notes
+                .iter()
+                .all(|n| n.starts_with("NOT ON THE SAFE SIDE: "))
+        );
+        assert!(notes.iter().any(|n| n.contains("one uniform temperature")));
+        assert!(notes.iter().any(|n| n.contains("along each section")));
+        let acsr = line
+            .sections
+            .iter()
+            .filter_map(|s| library.get(&s.cable))
+            .find(|c| c.kind == ohl_cables::CableKind::Acsr);
+        if let Some(c) = acsr {
+            assert!(
+                notes.iter().any(|n| n.contains("magnetic heating")),
+                "{notes:?}"
+            );
+            assert_eq!(crate::sections::cable_notes(c).len(), 2);
+        }
+        let mut earthed = line.clone();
+        earthed.sections.clear();
+        assert!(crate::sections::not_safe_notes(&earthed, &library).is_empty());
+    }
+
     #[test]
     fn ranges_and_errors() {
         // Nothing required: every section passes the whole range.

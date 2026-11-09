@@ -171,18 +171,26 @@ does not count on.
 heavily loaded conductor is hotter than its surface; the sag follows the
 mean (or the core) temperature, the cooling the surface's. Rated at a
 surface temperature, the core runs hotter and the sag is larger than at
-that temperature (unsafe for clearances, more so at high currents).
+that temperature (unsafe for clearances, more so at high currents). **Said where it
+applies** (2026-11-08): above every thermal result of a line with
+sections carrying current, and with every rating of a wire type in `ohl
+thermal` (*NOT ON THE SAFE SIDE: one uniform temperature in the
+conductor …*).
 Exact: the radial temperature difference (TB 601 section 4, IEEE 738
 clause 4.5).
 
 **Simplification:** magnetic heating of steel cores beyond what the AC
 resistance holds is left out: for a steel-cored conductor at high current
-the real heating can be higher (unsafe). Exact: the magnetic heating
-added to the Joule heating, or AC resistances that hold it.
+the real heating can be higher (unsafe). **Said where it applies**
+(2026-11-08): the sections of ACSR and ACSS conductors named above the
+results (and the rating of such a wire type in `ohl thermal`). Exact:
+the magnetic heating added to the Joule heating, or AC resistances that
+hold it.
 
 **Simplification:** the temperature is the same along each section. Where
 the wind is sheltered (a valley, trees) the conductor is hotter locally
-(unsafe there). Exact: a weather case per span.
+(unsafe there). Said above the results with the uniform temperature
+(2026-11-08). Exact: a weather case per span.
 
 ## Maximum operating temperature from clearance
 

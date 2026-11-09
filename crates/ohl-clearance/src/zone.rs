@@ -865,6 +865,7 @@ pub fn check_zones(
     let begun = Instant::now();
     let mut report = ZoneReport {
         lowest: vec![None; rules.len()],
+        notes: vec![crate::RIGID_STRUCTURES.to_owned()],
         ..ZoneReport::default()
     };
     let wires: Vec<Vec<Wire>> = shapes
@@ -1588,6 +1589,8 @@ mod tests {
             &budget,
         )
         .unwrap();
+        // The structures rigid in the wire solve: said with every report.
+        assert!(report.notes.iter().any(|n| n == crate::RIGID_STRUCTURES));
         (states, report)
     }
 

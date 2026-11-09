@@ -501,6 +501,17 @@ impl VegetationCheck {
                 ));
             }
         }
+        beyond.push(crate::RIGID_STRUCTURES.to_owned());
+        // Fall-in: a straight trunk under each point, no crown — said, not
+        // on the safe side (2026-11-08).
+        if params.fall_in {
+            beyond.push(
+                "NOT ON THE SAFE SIDE: fall-in with a straight trunk under each point and no \
+                 crown — a leaning tree falls further one way and a crown reaches beyond its \
+                 trunk"
+                    .to_owned(),
+            );
+        }
         if params.clearance_by_voltage.is_some() {
             params.clearance = required.iter().copied().fold(0.0, f64::max);
         }
@@ -1293,7 +1304,25 @@ mod tests {
         };
         let mut c = VegetationCheck::new(wires.clone(), &[5], params.clone());
         assert_eq!(c.required(), &[7.0, 9.0]);
-        assert!(c.warnings().is_empty());
+        // Only the rigid structures, said with every check.
+        assert_eq!(c.warnings(), &[crate::RIGID_STRUCTURES.to_owned()]);
+        // Fall-in: its straight trunk and no crown said (2026-11-08).
+        let falling = VegetationCheck::new(
+            wires.clone(),
+            &[5],
+            VegetationParams {
+                fall_in: true,
+                ..params.clone()
+            },
+        );
+        assert!(
+            falling
+                .warnings()
+                .iter()
+                .any(|w| w.starts_with("NOT ON THE SAFE SIDE: fall-in with a straight trunk")),
+            "{:?}",
+            falling.warnings()
+        );
         // A table ending at 220 kV (owner, 2026-10-27): the 380 kV span
         // takes the last row's 7 m, with a warning in the report.
         let short = VegetationParams {
@@ -1302,7 +1331,7 @@ mod tests {
         };
         let s = VegetationCheck::new(wires.clone(), &[5], short);
         assert_eq!(s.required(), &[7.0, 7.0]);
-        assert_eq!(s.warnings().len(), 1, "{:?}", s.warnings());
+        assert_eq!(s.warnings().len(), 2, "{:?}", s.warnings());
         assert!(
             s.warnings()[0].contains("380 kV span 1") && s.warnings()[0].contains("unsafe side"),
             "{:?}",

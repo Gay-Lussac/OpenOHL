@@ -10,6 +10,17 @@ of Parts A, B and C).
 
 ## 2026-11-08
 
+**Line side said: thermal, jumper pull, spotting, fall-in, rigid structures (safe-side audit, 2026-11-08)**
+
+The thermal results say, above them, the uniform temperature in the
+conductor and along each section and the steel cores' magnetic heating
+(the ACSR and ACSS sections named). With the jumpers' own pull, every
+load case names the jumpers whose bending stiffness is only estimated.
+Spotting says its one catenary for every span and marks the terrain holes
+bridged. The LiDAR fall-in says its straight trunk without a crown. The
+clearance-zone, internal-clearance and LiDAR reports say that the
+structures are rigid in the wire solve. This closes the audit's list.
+
 **Line side: swing band radius, thermal limit notes, riser per stretched metre (safe-side audit, 2026-11-08)**
 
 In the swing band the bundle radius and allowance are taken off

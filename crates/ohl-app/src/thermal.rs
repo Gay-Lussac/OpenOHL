@@ -1707,6 +1707,16 @@ fn results(
             return None;
         }
     }
+    // What every thermal result leaves out, not on the safe side
+    // (2026-11-08).
+    let [r, g, b] = crate::loads::UsageMark::NotSafe.color();
+    for n in ohl_thermal::sections::not_safe_notes(&model.line, &model.library) {
+        ui.label(
+            egui::RichText::new(n)
+                .small()
+                .color(egui::Color32::from_rgb(r, g, b)),
+        );
+    }
     let section = match w.page {
         Page::Ampacity => ampacity_table(ui, w, model),
         Page::Temperature => temperature_table(ui, w, model),

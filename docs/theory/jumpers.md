@@ -105,7 +105,7 @@ A clamped jumper is nearly locked close to its clamps, where the hardware squeez
 
 The **reduction factor** \\( k \\) is the jumper's `stiffness_factor`, default 0.2; the usual range is 0.2–0.35. It is the only input the jumper's design needs. The lower it is, the further the jumper swings, so 0.2 is the conservative side for clearances to the structure. The floor \\( EI_{min} \\) applies only when the strand counts are given.
 
-**Conservative:** the default reduction factor 0.2, the low end of the usual range: a softer jumper swings further in the wind, on the safe side for the jumper's clearances to the structure. It is not necessarily on the safe side for other results (the jumper's pull on the clamps). Exact: a stiffness that varies along the loop (nearly locked at the clamps, slipping in the middle), or a measured one given as `bending_stiffness`.
+**Conservative:** the default reduction factor 0.2, the low end of the usual range: a softer jumper swings further in the wind, on the safe side for the jumper's clearances to the structure. It is not necessarily on the safe side for other results (the jumper's pull on the clamps): with the pull option, every load case's notes name the jumpers whose stiffness is only estimated (*NOT ON THE SAFE SIDE: the jumpers' pull on their clamps with an estimated bending stiffness … — give bending_stiffness*, 2026-11-08). Exact: a stiffness that varies along the loop (nearly locked at the clamps, slipping in the middle), or a measured one given as `bending_stiffness`.
 
 For Drake 26/7 (composite \\( E \\approx 73.9 \\) GPa, \\( d = 28.14 \\) mm, 26 × 4.44 mm aluminium and 7 × 3.46 mm steel):
 

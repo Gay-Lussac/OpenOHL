@@ -442,6 +442,14 @@ fn spots_the_synthetic_main_route() {
     .unwrap();
     assert_eq!(rp.problem.required.len(), 1);
     assert!((rp.problem.required[0].station - 640.0).abs() < 1e-6);
+    // The one catenary for every span said, not on the safe side.
+    assert!(
+        rp.notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: one catenary of the given tension")),
+        "{:?}",
+        rp.notes
+    );
     let r = spot(&rp.problem, &default_budget()).unwrap();
     let text = route::report(&rp, &r, &cost.currency);
     let at_angle = r

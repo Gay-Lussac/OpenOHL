@@ -45,8 +45,8 @@ theory page. Status: **done** (with the date), **open**.
 | [Wind on structures](../theory/structure-wind.md) | Wind band areas per direction | On each band load of a case blowing with a part along the line (its label) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md) | A pole's modulus E (P-Delta) | In the pole's result ("[not on the safe side: P-Delta not computed …]"), never shown as passing | done 2026-11-08 |
 | [Internal clearances](../theory/internal-clearances.md) | A string's volumes | Per structure, the strings without volumes named, in the report's notes | done 2026-11-08 |
-| [Thermal](../theory/thermal.md) | Steel-core magnetic heating in the AC resistance | Per section of a steel-cored conductor | open (batch 3) |
-| [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | On the clamp loads while not given | open (batch 3) |
+| [Thermal](../theory/thermal.md) | Steel-core magnetic heating in the AC resistance | Above every thermal result, the sections of ACSR and ACSS conductors named | done 2026-11-08 |
+| [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | With the pull option, every load case's notes name the jumpers whose stiffness is estimated | done 2026-11-08 |
 
 ## C. Limits of the method or clauses not covered: said where they apply
 
@@ -60,10 +60,10 @@ theory page. Status: **done** (with the date), **open**.
 | [Structures](../theory/structures-fe.md) | Factors on load components (either side, by the code's factors) | Kept: the owner's load cases factor the components (as load-tree programs); said in the theory and the load case library's help | kept (owner) |
 | [Wind on structures](../theory/structure-wind.md) | Snow bridging: said with every snow on the members (line check notes, each OHL-Structure snow row) | done 2026-11-08 |
 | [Wind on structures](../theory/structure-wind.md) | Allowable loads taken to include the body's ice and snow: said on the allowable-loads check of a structure without a model or pole, in a case with ice or snow on the structures | done 2026-11-08 |
-| [Wire FE](../theory/wirefe.md) | Structures rigid in the wire solve (sags low for clearances) | open (batch 3) |
-| [Spotting](../theory/spotting.md), [sag-tension](../theory/sagtension.md) | Ruling span; holes in the terrain bridged | open (batch 3) |
-| [LiDAR](../theory/lidar-analysis.md) | Leaning trees and crowns | open (batch 3) |
-| [Thermal](../theory/thermal.md) | Uniform radial temperature; one weather case per section | open (batch 3) |
+| [Wire FE](../theory/wirefe.md) | Structures rigid in the wire solve (sags low for clearances): said with the clearance-zone, internal-clearance and LiDAR reports (the interaction itself is open point O7) | done 2026-11-08 |
+| [Spotting](../theory/spotting.md) | One catenary for every span (the ruling-span idea); holes in the terrain bridged: said in every spotted route's notes | done 2026-11-08 |
+| [LiDAR](../theory/lidar-analysis.md) | Leaning trees and crowns: said whenever fall-in is checked | done 2026-11-08 |
+| [Thermal](../theory/thermal.md) | Uniform radial temperature; one weather case per section: said above every thermal result | done 2026-11-08 |
 
 Already said in the results where they apply (kept): members without a
 profile get no ice; wind-band types no ice or snow; a member's centre

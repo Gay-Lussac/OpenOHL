@@ -136,6 +136,81 @@ pub fn section_temperatures(
         .collect()
 }
 
+/// What the thermal results of `line` leave out, not on the safe side
+/// (2026-11-08): for the sections carrying current, one uniform
+/// temperature in the conductor and along the section; for those of
+/// steel-cored conductors (ACSR, ACSS), the core's magnetic heating
+/// beyond what the AC resistance holds. Empty: no section carries
+/// current.
+pub fn not_safe_notes(line: &Line, library: &Library) -> Vec<String> {
+    let potentials = line.potentials().unwrap_or_default();
+    let live: Vec<&ohl_line::Section> = line
+        .sections
+        .iter()
+        .filter(|s| potentials.get(&s.id).is_some_and(Option::is_some))
+        .collect();
+    if live.is_empty() {
+        return Vec::new();
+    }
+    let mut notes = vec![
+        "NOT ON THE SAFE SIDE: one uniform temperature in the conductor — at a high current \
+         its core runs hotter than its surface and the sag is larger than at the temperature \
+         given"
+            .to_owned(),
+        "NOT ON THE SAFE SIDE: the same temperature along each section — a span sheltered from \
+         the wind runs hotter"
+            .to_owned(),
+    ];
+    let steel: BTreeSet<&str> = live
+        .iter()
+        .filter(|s| {
+            library.get(&s.cable).is_some_and(|c| {
+                matches!(
+                    c.kind,
+                    ohl_cables::CableKind::Acsr | ohl_cables::CableKind::Acss
+                )
+            })
+        })
+        .map(|s| s.id.as_str())
+        .collect();
+    if !steel.is_empty() {
+        let mut first: Vec<&str> = steel.iter().copied().take(10).collect();
+        if steel.len() > 10 {
+            first.push("…");
+        }
+        notes.push(format!(
+            "NOT ON THE SAFE SIDE: the steel core's magnetic heating beyond what the AC \
+             resistance holds not counted ({} section(s) of steel-cored conductors: {})",
+            steel.len(),
+            first.join(", ")
+        ));
+    }
+    notes
+}
+
+/// [`not_safe_notes`] for one wire type rated alone: its uniform
+/// temperature, and the steel core's magnetic heating when it is
+/// steel-cored (ACSR, ACSS).
+pub fn cable_notes(cable: &ohl_cables::Cable) -> Vec<String> {
+    let mut notes = vec![
+        "NOT ON THE SAFE SIDE: one uniform temperature in the conductor — at a high current \
+         its core runs hotter than its surface and the sag is larger than at the temperature \
+         given"
+            .to_owned(),
+    ];
+    if matches!(
+        cable.kind,
+        ohl_cables::CableKind::Acsr | ohl_cables::CableKind::Acss
+    ) {
+        notes.push(
+            "NOT ON THE SAFE SIDE: the steel core's magnetic heating beyond what the AC \
+             resistance holds not counted"
+                .to_owned(),
+        );
+    }
+    notes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

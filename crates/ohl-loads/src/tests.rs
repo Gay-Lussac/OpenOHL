@@ -857,6 +857,29 @@ fn dead_end_spans_take_both_sides() {
     }
 }
 
+/// With the jumpers' own pull on their clamps, a jumper whose bending
+/// stiffness is only estimated is named in every case's notes, not on the
+/// safe side; given, or with the estimate option, not (2026-11-08).
+#[test]
+fn the_pull_with_an_estimated_stiffness_is_said() {
+    let (mut line, library, weather, cases) = setup();
+    let budget = ohl_wirefe::default_fe_budget();
+    let said = |line: &Line| {
+        structure_loads(line, &library, &weather, &cases.cases[..1], &budget).unwrap()[0]
+            .notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: the jumpers' pull"))
+    };
+    assert!(!said(&line), "the estimate: not said");
+    line.solver.jumper_loads = ohl_line::JumperLoads::Pull;
+    assert!(line.jumpers.iter().all(|j| j.bending_stiffness.is_none()));
+    assert!(said(&line));
+    for j in &mut line.jumpers {
+        j.bending_stiffness = Some(400.0);
+    }
+    assert!(!said(&line), "given: not said");
+}
+
 /// A jumper's support clamp loads the top of its string on the structure:
 /// at least half the string's weight down, and the jumper's weight it
 /// carries; the load is the jumper's.

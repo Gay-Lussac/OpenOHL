@@ -495,7 +495,9 @@ circle's margin is kept).
 worst direction for every point.
 **Simplification:** a straight trunk below the top point and no crown;
 the root ball as a hinge at a fixed fraction of the height. A leaning tree
-falls further one way and a crown reaches further than its trunk (unsafe).
+falls further one way and a crown reaches further than its trunk (unsafe;
+**said** in the report's warnings whenever fall-in is checked,
+2026-11-08).
 Exact: the stem and crown segmented from the points, lean measured.
 
 ### Isoclearance lines

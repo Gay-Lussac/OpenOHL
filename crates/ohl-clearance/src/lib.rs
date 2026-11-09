@@ -34,6 +34,13 @@
 //!
 //! [`Terrain::profile`]: ohl_terrain::Terrain::profile
 
+/// Every clearance of the wires is computed with the structures rigid in
+/// the wire solve (2026-11-08: said with the reports, not on the safe
+/// side): a structure giving under the wires' pull lowers their sags.
+pub const RIGID_STRUCTURES: &str = "NOT ON THE SAFE SIDE: the structures rigid in the wire \
+     solve — a structure giving under the wires' pull lowers the sags (the line–structure \
+     interaction is not built yet)";
+
 pub mod blowout;
 pub mod calculation;
 pub mod case;

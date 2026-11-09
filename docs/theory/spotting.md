@@ -29,9 +29,9 @@ clamped to the piece. The smallest clearance of the span is the least of these v
 
 **Conservative:** the wire hangs from the lowest wire point of each candidate (\\( h_k \\)): higher wires of the same structure clear the ground by more. Exact: each wire from its own point.
 
-**Simplification:** one catenary of the given \\( H \\) and \\( w \\) for every span (the ruling-span idea), in the vertical plane over the route's centreline, in still air. Real spans differ in tension with their lengths, the outer phases hang beside the centreline over side slopes, and wind swings the wires; each can lower the clearance (unsafe). Exact: the placement solved and checked as a line ([Sag-tension](sagtension.md), [Terrain and ground clearance](../user-guide/terrain.md)), which is what a spotted route is for next.
+**Simplification:** one catenary of the given \\( H \\) and \\( w \\) for every span (the ruling-span idea), in the vertical plane over the route's centreline, in still air. Real spans differ in tension with their lengths, the outer phases hang beside the centreline over side slopes, and wind swings the wires; each can lower the clearance (unsafe). **Said** in every spotted route's notes (*NOT ON THE SAFE SIDE: one catenary of the given tension for every span …*, 2026-11-08). Exact: the placement solved and checked as a line ([Sag-tension](sagtension.md), [Terrain and ground clearance](../user-guide/terrain.md)), which is what a spotted route is for next.
 
-**Simplification:** holes in the terrain along the route are bridged in a straight line (said in the notes). A hollow is then filled (safe), a hump in the hole missed (unsafe). Exact: terrain without holes.
+**Simplification, not on the safe side:** holes in the terrain along the route are bridged in a straight line (said in the notes: *NOT ON THE SAFE SIDE: n hole(s) … bridged*). A hollow is then filled (safe), a hump in the hole missed (unsafe). Exact: terrain without holes.
 
 ## Dynamic programming
 

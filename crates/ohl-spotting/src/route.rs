@@ -182,11 +182,18 @@ pub fn route_problem(
         return Err(format!("route {}: needs two points or more", route.id));
     }
     let total: f64 = centreline.windows(2).map(|w| length2(w[0], w[1])).sum();
-    let mut notes = Vec::new();
+    // What spotting leaves out, not on the safe side (2026-11-08).
+    let mut notes = vec![
+        "NOT ON THE SAFE SIDE: one catenary of the given tension for every span, in still air \
+         over the centreline — real spans differ in tension, the outer phases hang beside it \
+         and the wind swings them: check the placement as a line"
+            .to_owned(),
+    ];
     let (ground, gaps) = ground_profile(&centreline, terrain);
     if gaps > 0 {
         notes.push(format!(
-            "{gaps} hole(s) in the terrain along the route bridged in a straight line"
+            "NOT ON THE SAFE SIDE: {gaps} hole(s) in the terrain along the route bridged in a \
+             straight line (a hump in a hole is missed)"
         ));
     }
     let covered = |s: f64| {
