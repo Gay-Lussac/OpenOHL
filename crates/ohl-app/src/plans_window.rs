@@ -405,17 +405,33 @@ impl PlansWindow {
     /// The weather cases the plans asked for draw in (their templates'
     /// and the Profile sheets window's per circuit): solved while the window is
     /// open, the export waiting for them. The phase plan, a schematic,
-    /// takes the case shown and needs none.
-    pub fn wanted(&self, model: &Model, drawings: &crate::drawings::DrawingsWindow) -> Vec<usize> {
+    /// takes the case shown and needs none. A set's profile sheets with
+    /// their side lines under the lowest arm also need the still-air case
+    /// ([`crate::drawings::still_wanted`], `case` the case shown).
+    pub fn wanted(
+        &self,
+        model: &Model,
+        case: usize,
+        drawings: &crate::drawings::DrawingsWindow,
+    ) -> Vec<usize> {
         use ohl_drawing::plan_set::SetKind;
-        let needed = |key: &str| {
-            crate::sheet_ui::resolve_kept(model, key, &drawings.plugin_templates)
-                .ok()
-                .and_then(|t| {
-                    crate::drawings::SheetCases::of(model, &t, &drawings.sheet.circuit_cases).ok()
-                })
+        let needed = |key: &str, sheets: bool| {
+            let Ok(t) = crate::sheet_ui::resolve_kept(model, key, &drawings.plugin_templates)
+            else {
+                return Vec::new();
+            };
+            let mut v = crate::drawings::SheetCases::of(model, &t, &drawings.sheet.circuit_cases)
                 .map(|p| p.needed())
-                .unwrap_or_default()
+                .unwrap_or_default();
+            if sheets {
+                v.extend(crate::drawings::still_wanted(
+                    model,
+                    case,
+                    &drawings.sheet,
+                    &t,
+                ));
+            }
+            v
         };
         let mut v = Vec::new();
         if self.set_mode {
@@ -429,11 +445,11 @@ impl PlansWindow {
                         },
                         |t| crate::drawings::set_template_key(drawings, plugin, t),
                     );
-                    v.extend(needed(&key));
+                    v.extend(needed(&key, d.kind == SetKind::Sheets));
                 }
             }
         } else if self.kind != PlanKind::Phase {
-            v = needed(&self.sheet.template);
+            v = needed(&self.sheet.template, false);
         }
         v.sort_unstable();
         v.dedup();
@@ -650,7 +666,7 @@ impl PlansWindow {
         // Its weather cases solved first ([`Self::wanted`]): the export
         // starts once they are.
         let unsolved: Vec<String> = self
-            .wanted(model, drawings)
+            .wanted(model, case, drawings)
             .into_iter()
             .filter_map(|k| model.cases.get(k))
             .filter(|c| !c.ready)
@@ -861,11 +877,11 @@ mod tests {
         }
         let dir = std::env::temp_dir();
         let win = PlansWindow::of(PlanKind::Situation);
-        assert_eq!(win.wanted(&model, &w), vec![k]);
+        assert_eq!(win.wanted(&model, 0, &w), vec![k]);
         let e = Input::for_plans(&model, 0, &w, dir.clone(), &win.request()).err();
         assert!(e.is_some_and(|e| e.contains("being solved")));
         let win = PlansWindow::of(PlanKind::Phase);
-        assert!(win.wanted(&model, &w).is_empty());
+        assert!(win.wanted(&model, 0, &w).is_empty());
         assert!(Input::for_plans(&model, 0, &w, dir, &win.request()).is_ok());
     }
 

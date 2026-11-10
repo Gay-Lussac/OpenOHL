@@ -512,6 +512,25 @@ struct LineArgs {
     /// axis in the plan and the key map (default: the template's).
     #[arg(long)]
     corridor_width: Option<f64>,
+    /// Where the two side terrain lines of the sheets' profile run
+    /// (default: the template's `[corridor] profile_lines`): corridor (its
+    /// edges), distance (--profile-distance either side of the axis,
+    /// whatever the corridor's width) or lowest_arm (the terrain under
+    /// the outermost conductors of the lowest arm in still air). Other
+    /// than corridor, the two lines are drawn in the plan too.
+    #[arg(long, value_parser = ["corridor", "distance", "lowest_arm"])]
+    profile_lines: Option<String>,
+    /// The distance of the profile's side lines from the axis, m (alone:
+    /// as with --profile-lines distance; default: the template's
+    /// `[corridor] profile_distance`).
+    #[arg(long, value_name = "M")]
+    profile_distance: Option<f64>,
+    /// With the side lines under the lowest arm: the circuits whose wires
+    /// count, NAME,NAME… (default: the template's `[corridor]
+    /// profile_circuits`, else every circuit with a system — the phase
+    /// conductors, no earth wires).
+    #[arg(long, value_delimiter = ',', value_name = "NAMES")]
+    profile_circuits: Option<Vec<String>>,
     /// LiDAR classes drawn on the sheets as dots, by code (e.g.
     /// 2,3,5,14; default: the template's `[lidar] classes`; where: the
     /// template's `[lidar] profile` / `plan`): the points of --lidar or
@@ -1923,6 +1942,9 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         mixed_sizes,
         same_paper,
         corridor_width,
+        profile_lines,
+        profile_distance,
+        profile_circuits,
         sheet_lidar_classes,
         versions,
         role,
@@ -2631,6 +2653,12 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 },
                 role: role.clone(),
                 corridor: *corridor_width,
+                profile_lines: sheet_run::profile_lines(
+                    profile_lines.as_deref(),
+                    *profile_distance,
+                    &template,
+                )?,
+                profile_circuits: sheet_run::profile_circuits(&line, profile_circuits.as_deref())?,
                 conductor_clearance: if *conductor_clearance || template.conductor_clearance.show {
                     let (specs, notes) =
                         ohl_drawing::curves::conductor_clearances(&line, prepared.rules());
@@ -2864,6 +2892,15 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 }
                 // The sags of the wires as drawn (each in its case).
                 d.set_sags(&line, &shapes);
+                // The profile's side lines under the lowest arm: the
+                // wires in still air.
+                d.set_lowest_arm_lines(
+                    &line,
+                    route,
+                    sheet_run::still_shapes(&solved_cases, k_cond.unwrap_or(0)),
+                    ground,
+                    &options,
+                );
                 d.set_members(|id| members(&line, id));
                 d.set_poles(|id| poles(&line, id));
                 d.set_case(&first_case.name);

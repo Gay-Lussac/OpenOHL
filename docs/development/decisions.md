@@ -10,6 +10,73 @@ of Parts A, B and C).
 
 ## 2026-11-10
 
+**Where the profile's two side lines run: the corridor's edges, a distance from the axis, or under the outermost conductors of the lowest arm (owner, 2026-11-10)**
+
+The two side terrain lines of the profile sheets ran only along the
+corridor's edges. The owner asked for a setting with three choices: the
+corridor's edge (as before, the default); a fixed distance from the axis,
+independent of the corridor's width (the plan keeps, say, ±50 m for the
+parcels while the profile's side lines are at 10 m); and exactly under
+the outermost conductors of the lowest arm, following the wire along
+each span. The owner's answers to the three questions asked:
+
+- **(a) Still air.** The terrain directly below the conductor as it
+  hangs without wind: no blowout, no extra distance.
+- **(b) A side without a conductor on the lowest arm** takes the lowest
+  conductor that exists on that side; a side with no conductor at all
+  gets no line.
+- **(c) Phase conductors only by default**, with a list of all circuits
+  to tick in or out (earth wires and earthed circuits listed, unticked).
+
+So, as built:
+
+- **Names.** Template: `[corridor] profile_lines = "corridor" |
+  "distance" | "lowest_arm"`, `profile_distance = "10 m"`,
+  `profile_circuits = [names]`; legend words `profile_distance`,
+  `profile_lowest_arm`. Command line: `--profile-lines`,
+  `--profile-distance`, `--profile-circuits`. Export window, More of the
+  template: "profile side lines" (as the template says / the corridor's
+  edges / at a distance from the axis / under the lowest arm), the
+  distance next to it, "Circuits: n of m" as a tick menu that stays
+  open. The export's choice goes over the template's. A template without
+  the keys is read and drawn exactly as before (a test compares the
+  sheets).
+- **The lowest arm, the outermost (chosen here, to be confirmed by the
+  owner).** Per side of the axis (the sign of the mean offset of the
+  wire's two ends) and per span along the alignment: of the counted
+  wires leaving the span's first structure, those whose end there is
+  within 0.5 m of the lowest one's height (the wire's own end, at its
+  string's wire point), and of these the one whose two ends are on
+  average farthest from the axis, a bundle counted to its outer
+  subconductor. The first structure decides and the wire is followed to
+  its next structure, so the line is continuous along the span; that
+  per-side rule gives answer (b) by itself. 0.5 m: wide enough for the
+  wire points of one arm (strings of slightly different lengths, a
+  cross-arm's camber), narrow against the metres between two arms.
+- **Still air (a).** The wires as solved in the case the conductors are
+  drawn in when it has no wind, else the first solved case without wind
+  (the app solves it when it is not yet). Without wind the plan trace
+  does not depend on the temperature or the ice but through the strings'
+  swing along the line, so any such case serves. Every case with wind:
+  the straight chord between the attachment points, with a warning on
+  the sheets.
+- **At a structure** one span's trace is joined to the next by the
+  straight step between the two wire ends; the profile shows the ground
+  under that step. Where a side has no counted wire in a span the line
+  stops.
+- **The plan** draws the two lines in the pens of the profile's side
+  lines when they are not on the corridor's edges; the corridor's edges
+  stay.
+- **Drawing only.** No result is computed from these lines; the theory
+  page says they are no clearance statement (the ground under a
+  blown-out conductor is not on them).
+- **Not done.** The sheet preview over the Profile and Plan pages shows
+  sheet frames, elevations and the lines below the lowest conductor
+  only, never the side lines: nothing to follow there (the window's
+  Preview sheet draws the real sheet and follows). Spans to a structure
+  beside the alignment are not followed. The route and situation plans
+  do not draw the lines.
+
 **The line transmits the spans' pulls; the unbalanced load case is made on the structure. A structure may take no load case (owner, 2026-11-10)**
 
 Another program's load-case command "% longitudinal load = p" on the back

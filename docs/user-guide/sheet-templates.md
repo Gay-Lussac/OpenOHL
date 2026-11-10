@@ -573,9 +573,80 @@ matches its edge; both are in the legend.
 | `pen` | A pen | | Both edges |
 | `near_side` | `"right"`, `"left"` | `"right"` | Which side is the near one |
 | `near`, `far` | Pens | | Each edge's pen, over `pen` |
-| `profile` | `true`, `false` | `true` | The ground along both edges in the profile |
+| `profile` | `true`, `false` | `true` | The two side lines in the profile (`false`: neither, wherever they would run) |
+| `profile_lines` | `"corridor"`, `"distance"`, `"lowest_arm"` | `"corridor"` | Where the profile's two side lines run (below). The export window's choice and `--profile-lines` go over it |
+| `profile_distance` | A length in the field | None | With `"distance"`: how far from the axis. Also `--profile-distance` |
+| `profile_circuits` | A list of circuit names | Every circuit with a system | With `"lowest_arm"`: the circuits whose wires count. Also `--profile-circuits` |
 
 `--side-offset` still adds ground profiles at any offset.
+
+### Where the profile's side lines run
+
+The two side lines of the profile are the terrain left and right of the line. Where
+they are taken is a choice of its own, so the plan can keep a wide corridor (say ±50 m,
+for the parcels) while the profile shows the ground close to the conductors:
+
+| `profile_lines` | The two side lines are the terrain … | The corridor's width | In the plan |
+|---|---|---|---|
+| `"corridor"` (default) | along the corridor's two edges, at ± `width` | moves them | the corridor's edges, as before |
+| `"distance"` | at `profile_distance` left and right of the axis | does not matter (no corridor needed) | the corridor's edges, and the two lines at ± the distance |
+| `"lowest_arm"` | exactly under the outermost conductor of the lowest arm on each side, in still air | does not matter (no corridor needed) | the corridor's edges, and the two lines under the conductors |
+
+A template without the key reads as `"corridor"`: its sheets are drawn exactly as
+before. With the other two, the plan draws the two lines as well, in the pens they have
+in the profile (the `near` and `far` pens, on the layer `OHL_GROUND_SIDE`), so the
+reader sees where the side profiles were taken; the legend names them (`profile_distance`,
+`profile_lowest_arm` in [`[legend.labels]`](#the-templates-words)). The terrain is taken
+from the ground surface exactly as along the corridor's edges: where the surface ends,
+the line is broken.
+
+**Under the lowest arm — the definition.** Left and right are the sides of the route's
+axis looking along increasing stations. On each side the line follows one conductor per
+span:
+
+1. **The wires that count** are those of the circuits listed in `profile_circuits` (the
+   ticks of the export window, `--profile-circuits`); without a list, every circuit that
+   carries an electrical system — the phase conductors, not the earth wires or earthed
+   circuits. Only spans along the route's alignment count (a span to a structure beside
+   the alignment does not).
+2. **A wire's side** is the sign of the mean distance of its two ends from the axis. A
+   span whose wires all lie on one side of the axis has a line on that side only.
+3. **The lowest arm.** Among the wires of a side that leave a structure, those whose end
+   at that structure is within **0.5 m** of the lowest one's height (the wire's own end:
+   the wire point of its string). The **span's first structure decides**; the wire
+   chosen there is followed to its next structure, whatever the heights are at that end,
+   so the line never jumps inside a span. A side without a conductor on the structure's
+   lowest arm therefore takes the lowest conductor that exists on that side; a side
+   without any conductor has no line there.
+4. **The outermost** of those is the one whose two ends are on average farthest from the
+   axis. A bundle counts to its outer subconductor (half the bundle's width across the
+   wire is added, and the line is shifted that far outwards).
+5. **Still air.** The line is the trace in plan of that wire as solved in a weather case
+   **without wind**: no blowout, no extra distance. It follows the solved wire from
+   attachment to attachment — not a constant offset — so it moves across the axis where
+   the two structures differ. The case taken is the one the conductors are drawn in
+   when it has no wind, else the first case without wind among those solved. (Without
+   wind the wire hangs in the vertical plane through its two ends; temperature and ice
+   change its plan position only through the swing of the strings along the line, so
+   any case without wind serves.) When every case has wind, the lines follow the
+   straight chord between the wires' attachment points instead, and the sheets warn so.
+6. **At a structure** the end of one span's trace is joined to the start of the next by
+   a straight step (from one wire point to the other): in the plan a short jog at the
+   structure, in the profile the ground under that jog. Where a side has no wire in a
+   span (the circuits end, the wires change side), the line stops and starts again.
+
+Each route draws its own lines from the spans along its own alignment; on a sheet that
+begins or ends inside a span the line is simply cut at the sheet's edge. Where the
+circuits of a side do not share their structures (one skips a structure the other
+uses), the wire chosen where the first one starts is followed to its end, and the
+choice is made again from there among the wires starting at or after it.
+
+```toml
+[corridor]
+width = "50 m"                  # the plan's corridor, for the parcels
+profile_lines = "lowest_arm"    # the profile's side lines under the conductors
+# profile_circuits = ["North"]  # only this circuit's wires (default: every circuit with a system)
+```
 
 **`[centreline]`**
 
@@ -804,7 +875,7 @@ Pens act on lines. `OHL_TITLE`, `OHL_TITLE_FIELDS`, `OHL_TITLE_IMAGE`, `OHL_LOGO
 | `OHL_TITLE`, `OHL_TITLE_FIELDS`, `OHL_TITLE_IMAGE`, `OHL_LOGO` | The title block, its filled fields, its images, the logos |
 | `OHL_PANELS`, `OHL_GRID`, `OHL_LABELS` | The panels' outlines, their grid, their labels |
 | `OHL_CENTRELINE`, `OHL_CORRIDOR` | The axis in the plan, the corridor's edges |
-| `OHL_GROUND`, `OHL_GROUND_SIDE` | The ground on the axis, the ground along the corridor's edges |
+| `OHL_GROUND`, `OHL_GROUND_SIDE` | The ground on the axis; the profile's side lines (along the corridor's edges or [elsewhere](#where-the-profiles-side-lines-run), there in the plan too) |
 | `OHL_CLEARANCE`, `OHL_CONDUCTOR_CLEARANCE` | The line above the ground, the lines below the lowest conductor |
 | `OHL_STRUCTURES`, `OHL_MEMBERS`, `OHL_ELEVATIONS` | Structures, their members and poles, their elevations |
 | `OHL_WIRES`, `OHL_VERSIONS` | The wires, the other versions of the line |
@@ -822,6 +893,8 @@ Templates carry their own texts. Every entry the export puts in the legend has a
 |---|---|---|
 | `axis` | axis of the line | |
 | `corridor_near`, `corridor_far` | corridor edge, near (far) side ({side}) ±{width} m | `{side}` (right, left; on the route and situation plans ±), `{width}` |
+| `profile_distance` | terrain {distance} m {side} of the axis | `{side}` (right, left), `{distance}` |
+| `profile_lowest_arm` | terrain under the outermost conductor of the lowest arm, {side} | `{side}` (right, left) |
 | `weather_case` | weather case {case} | `{case}` |
 | `structure`, `structure_role` | structure, structure ({role}) | `{role}` |
 | `clearance_violation` | clearance violation | |

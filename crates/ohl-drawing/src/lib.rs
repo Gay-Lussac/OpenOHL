@@ -61,6 +61,7 @@ pub mod pdf;
 pub mod plan_set;
 pub mod plans;
 pub mod png;
+pub mod side_lines;
 pub mod style;
 mod table;
 pub mod template;
@@ -69,12 +70,15 @@ pub mod template;
 mod background_tests;
 #[cfg(test)]
 mod sheet_tests;
+#[cfg(test)]
+mod side_line_tests;
 
 pub use curves::ConductorClearance;
 pub use layout::{
     ElevationDrawing, Sheet, SheetLayout, elevations, plan_model, profile_model, sheet,
     sheet_layout, sheets,
 };
+pub use side_lines::{ProfileLines, SideLine};
 pub use table::{profile_csv, profile_xml};
 pub use template::{Revision, SheetFields, SheetTemplate};
 
@@ -131,6 +135,14 @@ pub struct Options {
     /// key map), the plan at least that wide (none: the template's, else
     /// none).
     pub corridor: Option<f64>,
+    /// Where the profile's two side terrain lines run (none: the
+    /// template's `[corridor] profile_lines`, the corridor's edges unless
+    /// it says otherwise): see [`Options::profile_line_mode`].
+    pub profile_lines: Option<ProfileLines>,
+    /// The circuits whose wires the side lines under the lowest arm may
+    /// follow, by name (none: the template's `[corridor]
+    /// profile_circuits`, else every circuit with a system).
+    pub profile_circuits: Option<Vec<String>>,
     /// Lines below the lowest conductor of each circuit, lowered by its
     /// ground clearance ([`curves::conductor_clearances`]).
     pub conductor_clearance: Vec<ConductorClearance>,
@@ -212,6 +224,21 @@ impl Options {
     pub fn draws_lidar(&self) -> bool {
         let l = &self.template.lidar;
         (l.profile || l.plan) && !self.lidar_class_list().is_empty()
+    }
+
+    /// Where the profile's two side terrain lines run: the export's
+    /// choice over the template's (`[corridor] profile_lines`).
+    pub fn profile_line_mode(&self) -> ProfileLines {
+        self.profile_lines
+            .unwrap_or_else(|| self.template.corridor.profile_line_mode())
+    }
+
+    /// The circuits counted for the side lines under the lowest arm: the
+    /// export's over the template's (none: every circuit with a system).
+    pub fn profile_circuits(&self) -> Option<&[String]> {
+        self.profile_circuits
+            .as_deref()
+            .or(self.template.corridor.profile_circuits.as_deref())
     }
 
     /// The half width LiDAR points are taken within, m: the corridor's,
@@ -476,6 +503,8 @@ impl Default for Options {
             info: SheetInfo::default(),
             role: None,
             corridor: None,
+            profile_lines: None,
+            profile_circuits: None,
             conductor_clearance: Vec::new(),
             bands: true,
             lidar_classes: None,
@@ -842,6 +871,15 @@ pub struct RouteDrawing {
     /// Ground along the corridor's edges (offset ± its half width, right
     /// positive): drawn in the profile, each edge in its pen.
     pub corridor_ground: Vec<(f64, Profile)>,
+    /// The profile's side lines when they do not run along the corridor's
+    /// edges ([`Options::profile_line_mode`]): where each runs in plan and
+    /// the ground under it, the template's near side first. At a distance
+    /// from the axis: made by [`build`]; under the lowest arm:
+    /// [`RouteDrawing::set_lowest_arm_lines`].
+    pub profile_lines: Vec<SideLine>,
+    /// What to say on the sheets about [`Self::profile_lines`] (no
+    /// still-air case solved, no conductor counted).
+    pub profile_line_notes: Vec<String>,
     /// LiDAR points within the corridor ([`RouteDrawing::set_lidar`]):
     /// (station, offset, z), class; by station.
     pub lidar: Vec<([f64; 3], u8)>,
@@ -1155,13 +1193,26 @@ pub fn build(
             .collect()
     });
     // The ground along the corridor's edges: near side first.
+    let mode = options.profile_line_mode();
     let corridor_ground = match (terrain, options.corridor.filter(|w| *w > 0.0)) {
-        (Some(t), Some(w)) if options.template.corridor.profile => {
+        (Some(t), Some(w))
+            if options.template.corridor.profile && mode == ProfileLines::Corridor =>
+        {
             let near = options.template.corridor.near_offset(w);
             [near, -near]
                 .into_iter()
                 .map(|o| (o, ground_profile(&centre, o, t)))
                 .collect()
+        }
+        _ => Vec::new(),
+    };
+    // The side lines at a distance from the axis (those under the lowest
+    // arm need the wires in still air: `set_lowest_arm_lines`).
+    let profile_lines = match mode {
+        ProfileLines::Distance(w) if options.template.corridor.profile => {
+            side_lines::at_distance(options, w, polyline_length(&centre), |o| {
+                terrain.map_or_else(Vec::new, |t| ground_profile(&centre, o, t))
+            })
         }
         _ => Vec::new(),
     };
@@ -1222,6 +1273,8 @@ pub fn build(
         versions: Vec::new(),
         clearances: Vec::new(),
         corridor_ground,
+        profile_lines,
+        profile_line_notes: Vec::new(),
         lidar: Vec::new(),
         stringing: Vec::new(),
         sags: Vec::new(),

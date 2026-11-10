@@ -445,6 +445,8 @@ impl DrawingSettings {
             w.sheet.template = "default".into();
         }
         w.sheet.corridor = w.sheet.corridor.filter(|c| (0.0..=10_000.0).contains(c));
+        let distance = w.sheet.profile_distance;
+        w.sheet.profile_distance = distance.filter(|d| (0.1..=10_000.0).contains(d));
         w.sheet.elevation_scale = w
             .sheet
             .elevation_scale
@@ -753,6 +755,55 @@ impl SheetCases {
     }
 }
 
+/// The weather case the profile's side lines under the lowest arm take
+/// the wires from: the case shown when it has no wind, else the first
+/// without wind (none: every case has wind).
+fn still_case(model: &Model, case: usize) -> Option<usize> {
+    let wind: Vec<bool> = model
+        .cases
+        .iter()
+        .map(|c| c.case.wind_pressure.si() != 0.0)
+        .collect();
+    ohl_drawing::side_lines::still_case(&wind, case)
+}
+
+/// The weather case to solve for the profile sheets' side lines when
+/// `sheet` over template `t` asks for those under the lowest arm
+/// ([`still_case`]; none: not asked for, or every case has wind).
+pub fn still_wanted(
+    model: &Model,
+    case: usize,
+    sheet: &SheetChoice,
+    t: &ohl_drawing::SheetTemplate,
+) -> Option<usize> {
+    (sheet.profile_line_mode(t) == ohl_drawing::ProfileLines::LowestArm)
+        .then(|| still_case(model, case))
+        .flatten()
+}
+
+/// The sections solved in still air ([`still_case`]) when `options` ask
+/// for the side lines under the lowest arm (else none; none too when
+/// every case has wind: the sheets then say so); an error while that
+/// case is being solved.
+fn still_shapes(
+    model: &Model,
+    case: usize,
+    options: &ohl_drawing::Options,
+) -> Result<Option<Vec<SectionShape>>, String> {
+    if options.profile_line_mode() != ohl_drawing::ProfileLines::LowestArm {
+        return Ok(None);
+    }
+    match still_case(model, case).and_then(|k| model.cases.get(k)) {
+        Some(c) if c.ready => Ok(Some(c.shapes.clone())),
+        Some(c) => Err(format!(
+            "weather case \"{}\" (still air, for the profile's side lines) is being solved: the \
+             sheets follow once it is",
+            c.case.name
+        )),
+        None => Ok(None),
+    }
+}
+
 /// What an export needs, taken from the model (sent to the background).
 pub struct Input {
     /// The line.
@@ -786,6 +837,10 @@ pub struct Input {
     /// The stringing case(s) and the sections solved in them (the
     /// `stringing` band; none: no stringing case chosen).
     pub stringing: Option<(String, Vec<SectionShape>)>,
+    /// The sections solved in still air, for the profile's side lines
+    /// under the lowest arm ([`still_shapes`]; none: not asked for, or no
+    /// case without wind).
+    pub still: Option<Vec<SectionShape>>,
     /// The project's drawings drawn under the plan: name, drawing (none
     /// unless the template or the window asks).
     pub plan_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
@@ -1149,6 +1204,8 @@ impl Input {
             },
             role: (!s.role.is_empty()).then(|| s.role.clone()),
             corridor: s.corridor,
+            profile_lines: s.profile_line_choice(&template)?,
+            profile_circuits: s.profile_circuits.clone(),
             conductor_clearance,
             bands: s.bands,
             lidar_classes: s
@@ -1259,6 +1316,7 @@ impl Input {
             bodies: model.bodies.clone(),
             routes,
             ground: model.ground.clone(),
+            still: still_shapes(model, case, &options)?,
             options,
             versions,
             markers: if w.markers_on {
@@ -1352,6 +1410,13 @@ impl Input {
         }
         // The sags of the wires as drawn (each circuit in its case).
         d.set_sags(&self.line, shapes);
+        d.set_lowest_arm_lines(
+            &self.line,
+            route,
+            self.still.as_deref(),
+            self.ground.as_deref(),
+            &self.options,
+        );
         if !self.lidar.is_empty() {
             d.set_lidar(
                 self.lidar.iter().copied(),
@@ -1515,7 +1580,11 @@ impl Input {
         req: &PlanRequest,
     ) -> Result<Self, String> {
         let phase = req.kind == PlanKind::Phase;
-        let mut input = Self::prepare(model, case, w, out, !phase)?;
+        // (These plans draw no profile: no side lines, no still-air case
+        // to wait for.)
+        let mut w = w.clone();
+        w.sheet.profile_lines = Some(ohl_drawing::ProfileLines::Corridor.key().into());
+        let mut input = Self::prepare(model, case, &w, out, !phase)?;
         if req.kind != PlanKind::Phase {
             if req.drawings {
                 input.map_drawings = model
@@ -2898,6 +2967,7 @@ fn sheet_sections(
                     ui.weak("(the template draws none)");
                 }
             });
+            crate::sheet_ui::profile_lines_ui(ui, s, t, model);
             plan_background_ui(ui, s, t, model);
             ui.checkbox(
                 &mut s.conductor_clearance,
@@ -3045,6 +3115,8 @@ impl Drawings {
                 && let Ok(p) = SheetCases::of(model, &t, &s.circuit_cases)
             {
                 model.want(p.needed(), ctx);
+                // The still-air case of the side lines under the lowest arm.
+                model.want(still_wanted(model, case, &s, &t), ctx);
             }
         }
         // The sheet preview over the views is drawn again once the

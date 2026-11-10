@@ -93,6 +93,37 @@ increasing stations: with the stations increasing to the right on paper,
 a reader of the profile looks across the line from its right side (and
 that side is the plan's lower edge). The template may say the left.
 
+The two side lines may run elsewhere (`[corridor] profile_lines`):
+
+- **At a distance d from the axis**: the ground profile at the offsets
+  ± d, made the same way, whatever w is.
+- **Under the outermost conductors of the lowest arm.** For each side of
+  the axis and each span along the alignment, of the wires counted (the
+  circuits chosen; by default those carrying a system) whose mean end
+  offset has that side's sign, take those whose end at the span's first
+  structure lies within 0.5 m of the lowest such end, and of these the
+  one whose two ends are on average farthest from the axis (plus half the
+  bundle's width b/2 for a bundle). The side line is the plan trace of
+  that wire as solved in a weather case without wind — shifted b/2
+  outwards, perpendicular to its chord, for a bundle — and the ground is
+  the surface's profile under each piece of that trace, every ground
+  point drawn at the station of its projection on the centreline. The
+  trace of one span is joined to the next span's by the straight segment
+  between the two wire ends at the structure.
+
+  Without wind a wire hangs in the vertical plane through its two ends, so
+  its plan trace is the straight line between its solved ends; these move
+  with temperature and ice only by the strings' swing along the line.
+  Any case without wind therefore gives the same line to within that
+  swing; the case the conductors are drawn in is taken when it has no
+  wind, else the first one without. **Drawing only:** nothing is computed
+  from these lines, and they are no clearance statement — the ground
+  under a conductor blown out by wind is not on them (that is what the
+  clearance checks and the corridor's edges are for). **Not conservative,
+  said on the sheets:** when no case without wind is solved, the straight
+  chord between the wires' attachment points is drawn instead (no string
+  swing), with a warning.
+
 ## LiDAR points
 
 A LiDAR point (x, y, z) of a class drawn is projected on the route's

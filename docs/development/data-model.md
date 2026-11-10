@@ -1772,6 +1772,36 @@ checked by a test). Every key: the user guide's [Sheet
 templates](../user-guide/sheet-templates.md) and
 `examples/sheet-templates/example-a1.ohlsheet`. Since 2026-10-22 `[page] format` takes any standard paper size or `"optimised"` with `sizes` (names) and `mixed` (bool) (`SheetTemplate::optimise`); still version 1 (older files read the same). Since 2026-10-22 `[elevations]` takes `stick` (bool) and the labels `dimensions`, `arm_heights`, and `[legend.labels]` the words `elevation_dimension`, `elevation_arm`, `elevation_string`. Since 2026-10-23 `[cases]` (`conductors`, `earth_wires`, `stringing`: a case's name or a temperature, `CasesSpec::pick`), the band kind `stringing` (`RouteDrawing::stringing`, `Stringing { from, to, from_structure, to_structure, tensions: [(system or none, lowest N, highest N)], phases: [(system or none, phase label, lowest N, highest N)] (since 2026-10-24), case }`, set by `RouteDrawing::set_stringing`; the end structures since 2026-10-23) and the words `stringing`, `earth_wires`. Since 2026-10-23 also `[stringing_table]` (`StringingTableSpec`: `place` `"bottom"` / `"above_title_block"` / `"off"`, `rows`, `row_height`, `size`, `columns` with the fields `st.from`, `st.to`, `st.circuit`, `st.phase` (since 2026-10-24), `st.tension`, `st.case`), drawn on the layer `OHL_STRINGING`. Since 2026-10-24 the band kind `sag` and `[sag_labels]` (`SagLabelsSpec`: `show`, `circuits`, `label` with `{sag}`, `{circuit}`, `size`, `gap`); `RouteDrawing::sags: Vec<SpanSag { from, to, sags: [(system or none, sag m, lowest mid-span point (station, z))] }>`, set by `RouteDrawing::set_sags` from the shapes drawn. Since 2026-10-25 `[[note]] from` (`NoteSpec::from`, `NoteFrom`: `"frame"` (default) or `"drawing"`: `at`'s y down from the drawing's lowest row, `layout::Paper::drawing_bottom`)). Since 2026-10-28 `[roles.<role>] removed` (`RoleSpec::removed`, a role's name: what the project does not keep of a version in this role is moved to a version of the same name in that role by `RouteDrawing::split_removed(options, own cases)`, the app's and the CLI's sheets call it after adding the versions; kept within `ohl_drawing::SAME_WITHIN` = 1 m) and the word `ground_cut` (`{height}`); still version 1. Since 2026-11-10 `[layout] order = ["profile", "plan", "bands"]` puts the plan between the profile and the band rows (`LayoutSpec::plan_between`; the bands then start at `Frame::bands_top`, under the plan) and the elevations asked `"above"` in a strip of their own above the profile (`Frame::elev_axis`, `layout::elevation_room`); the other two orders as before; still version 1.
 
+Since 2026-11-10 (owner: where the profile's two side lines run; still
+version 1, every key optional, a template without them reads and draws
+as before) `[corridor]` takes `profile_lines` (`"corridor"` default,
+`"distance"`, `"lowest_arm"`; `CorridorSpec::profile_line_choice`
+checks it, an unknown word or `distance` without a positive
+`profile_distance` refuses the template), `profile_distance: Metres` and
+`profile_circuits: Vec<String>` (circuit names); `[legend.labels]` the
+words `profile_distance` (`{side}`, `{distance}`) and
+`profile_lowest_arm` (`{side}`). `ohl_drawing::side_lines`:
+`ProfileLines { Corridor, Distance(m), LowestArm }` (`parse`, `key`),
+`SideLine { right, plan: runs of (station, offset), ground: Profile }`,
+`circuits(line) -> [(name, counted by default)]`, `still_case(wind
+flags, drawn)`, `LEVEL_TOLERANCE` 0.5 m. `Options` gained
+`profile_lines: Option<ProfileLines>` and `profile_circuits:
+Option<Vec<String>>` (the export's over the template's:
+`Options::profile_line_mode`, `Options::profile_circuits`).
+`RouteDrawing` gained `profile_lines: Vec<SideLine>` (near side first;
+empty in the `Corridor` mode, where `corridor_ground` is filled as
+before; `Distance`: made by `build`, `corridor_ground` then empty;
+`LowestArm`: `RouteDrawing::set_lowest_arm_lines(line, route, still
+shapes or none, terrain, options)`, called by the app's and the CLI's
+sheets after `build`) and `profile_line_notes: Vec<String>` (added to
+the first sheet's warnings). Drawn on `OHL_GROUND_SIDE` in the profile
+and in the plan in the corridor's `near` / `far` pens. `ohl drawing`
+gained `--profile-lines`, `--profile-distance`, `--profile-circuits`;
+the app's `SheetChoice` `profile_lines`, `profile_distance`,
+`profile_circuits`, and `drawings::Input` `still:
+Option<Vec<SectionShape>>` (the still-air case's sections, copied only
+in the `LowestArm` mode).
+
 `ohl_drawing::Options` gained `template: Arc<SheetTemplate>`, `fields:
 SheetFields { values, per_sheet: key → sheet → value, revisions:
 Vec<Revision { index, date, text, by, checked }> }`, `info: SheetInfo {
@@ -2850,6 +2880,8 @@ once, the server logs who changed which key).
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name) (2026-10-27), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored) |
 | `app.phase_distance.<project line>`, `app.unequal_wind.<project line>` | `ohl-design` (a check plugin's Distance between conductors…, and under unequal wind) | JSON (2026-10-27): `cases` (names), `circuits` (names, `null` every circuit), `scope` (2026-10-28, `ohl_app::check_ui::Scope`: the circuits and the routes and alignments; a file without it takes the circuits), `spacing`, `nearby`, `max_distance` (m), `choices` (the plugin's choices, indices), `wind_step` (Pa), `low_share`, `calculation` (2026-11-01), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored); missing fields keep the window's values |
 | `app.surfaces`, `app.lidar_percent` | earlier builds only | read when the user has no choice of their own yet (the ground and the surfaces shown; the share of the point cloud near the camera, %) |
+
+Since 2026-11-10 `sheet` also holds `profile_lines` (`corridor`, `distance`, `lowest_arm`; none: the template's), `profile_distance` (m; none: the template's, else 10) and `profile_circuits` (circuit names; none: the template's, else every circuit with a system) — each left out when none, so older settings read and write the same.
 
 `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4; since 2026-10-22 any standard paper size of `ohl_drawing::paper::PAPER_SIZES`, `WIDTHxHEIGHT`, or `"optimised"`), `paper_sizes` (the sizes ticked, names; 2026-10-22), `mixed_sizes`, `same_paper`, `paper_orientation` (`both`, `landscape`, `portrait`), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; since 2026-10-20 `side_offsets` (m), `plan_scale`, `logos` (`[{file, width}]`), `clearance_rule` (the clearance line from the ground rule), `markers`, `page` may be `"template"`, and `sheet` (`ohl_app::sheet_ui::SheetChoice`: `template` (choice key), `portrait`, `fields` (`values`, `per_sheet`, `revisions`), `versions` (`[{line, role, label}]`), `role`, `corridor`, `conductor_clearance`, `bands`, `elevation_scale`, `elevation_labels`, since 2026-10-22 `elevation_stick` (none: the template's) — labels `dimensions` and `arm_heights` too; since 2026-10-23 `circuit_cases`: per circuit key — a system's name, "" for the earth wires — `{drawn, stringing}`, each a case's name or none; `lidar_classes` (codes, comma separated; none: the template's), `background_drawings`, `background_photo` (the drawings and orthophotos under the plan; 2026-10-23), `key_map_drawings`, `key_map_photo` (under the key map; 2026-10-23) — each on, off or none: the template's); missing fields and values out of range take the defaults; absent: the defaults).
 

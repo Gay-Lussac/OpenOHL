@@ -335,6 +335,69 @@ pub fn version_line(
     crate::project::load_resolved(path, &dir, insulators).map(|(l, _)| l)
 }
 
+/// `--profile-lines` and `--profile-distance` over `template`'s
+/// `[corridor]`: where the profile's side lines run (none: as the
+/// template says). A distance alone asks for the lines at that distance;
+/// `distance` without one takes the template's.
+pub fn profile_lines(
+    word: Option<&str>,
+    distance: Option<f64>,
+    template: &ohl_drawing::SheetTemplate,
+) -> Result<Option<ohl_drawing::ProfileLines>, String> {
+    let word = match (word, distance) {
+        (Some(w), _) => w,
+        (None, Some(_)) => "distance",
+        (None, None) => return Ok(None),
+    };
+    let distance = distance.or(template.corridor.profile_distance.map(|d| d.0));
+    ohl_drawing::ProfileLines::parse(word, distance)
+        .map(Some)
+        .map_err(|e| format!("--profile-lines: {e} (--profile-distance)"))
+}
+
+/// `--profile-circuits`: the circuits counted for the side lines under
+/// the lowest arm, each one of `line`'s.
+pub fn profile_circuits(
+    line: &ohl_line::Line,
+    names: Option<&[String]>,
+) -> Result<Option<Vec<String>>, String> {
+    let Some(names) = names else {
+        return Ok(None);
+    };
+    let known = ohl_drawing::side_lines::circuits(line);
+    for n in names {
+        if !known.iter().any(|(k, _)| k == n) {
+            return Err(format!(
+                "--profile-circuits: no circuit \"{n}\" (circuits: {})",
+                known
+                    .iter()
+                    .map(|(k, _)| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+    Ok(Some(names.to_vec()))
+}
+
+/// The sections as solved in still air for the side lines under the
+/// lowest arm: of the case drawn (`drawn`) when it has no wind, else of
+/// the first solved case without wind (none: every case has wind).
+pub fn still_shapes(
+    solved: &[(
+        ohl_weather::WeatherCase,
+        Vec<ohl_line::solve::SectionShape>,
+        Vec<ohl_line::jumper::JumperShape>,
+    )],
+    drawn: usize,
+) -> Option<&[ohl_line::solve::SectionShape]> {
+    let wind: Vec<bool> = solved
+        .iter()
+        .map(|(c, _, _)| c.wind_pressure.si() != 0.0)
+        .collect();
+    ohl_drawing::side_lines::still_case(&wind, drawn).map(|k| solved[k].1.as_slice())
+}
+
 /// `ohl sheet-templates`: lists every template (source, name, page,
 /// fields); with `out`, writes each as `.ohlsheet` (its images embedded)
 /// into that folder.

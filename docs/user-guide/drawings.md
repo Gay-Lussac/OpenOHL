@@ -58,6 +58,9 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--version LINE=ROLE[:LABEL]` | another version of the line drawn with it in a role (a project line of a project file, or a line file; repeatable) |
 | `--role ROLE` | the role of the line itself (its style) |
 | `--corridor-width M` | the corridor's edges at ± M in the plan and the key map, the ground along them in the profile |
+| `--profile-lines corridor\|distance\|lowest_arm` | where the profile's two side terrain lines run (default: the template's `[corridor] profile_lines`): the corridor's edges, `--profile-distance` either side of the axis, or under the outermost conductors of the lowest arm in still air; other than `corridor`, the plan draws the two lines too — [Where the profile's side lines run](sheet-templates.md#where-the-profiles-side-lines-run) |
+| `--profile-distance M` | the side lines' distance from the axis, m (alone: as with `--profile-lines distance`; default the template's `profile_distance`) |
+| `--profile-circuits NAME,NAME` | with `lowest_arm`: the circuits whose wires count (default the template's `profile_circuits`, else every circuit with a system); a name that is no circuit of the line is refused |
 | `--sheet-lidar-classes 2,3,5` | LiDAR classes drawn as dots where the template draws them (`[lidar]`), from `--lidar` or `--pointcloud`, within the corridor ([Sheet templates](sheet-templates.md#lidar-points)) |
 | `--conductor-clearance` | lines below the lowest conductor from the ground rules (`--rules`, `--clearance`) |
 | `--plan-drawings [NAMES]`, `--plan-orthophoto [LAYERS]` | the project's drawings (DXF) and orthophotos under the plan, straightened along the line (alone: the template's names, else every one; or the names, comma-separated); `--no-plan-backgrounds` neither, `--plan-background-dpi` the photo's resolution, `--backgrounds FILE.ohl` the project file holding them (default: the line's) — [Drawings and orthophotos under the plan](sheet-templates.md#drawings-and-orthophotos-under-the-plan) |
@@ -473,7 +476,16 @@ below; base offset in mm; rotation), PNG resolution; then the template's
 **values** (required ones marked `*`, per-sheet values), the
 **revisions** (rows added, deleted, or the last version commit), the
 **versions of the line** (other project lines in their roles, the line's
-own role), **more of the template** (corridor, LiDAR classes, the project's
+own role), **more of the template** (corridor, **profile side lines** — where
+the profile's two side terrain lines run: as the template says, the
+corridor's edges, at a distance from the axis (its metres next to it), or
+under the lowest arm, then with **Circuits: n of m**, a tick menu that
+stays open listing every circuit of the line, the phase circuits ticked and
+the earthed ones — marked so — unticked, with search, All, None, Invert and
+Default; unticking the circuit that holds the outermost conductor moves the
+line to the next one; the still-air case it needs is solved when it is not
+yet, see [Where the profile's side lines
+run](sheet-templates.md#where-the-profiles-side-lines-run) —, LiDAR classes, the project's
 drawings and orthophotos under the plan, lines below the lowest
 conductor, band rows, elevation scale and labels), **Weather cases per
 circuit** (each circuit's case drawn and stringing case over the

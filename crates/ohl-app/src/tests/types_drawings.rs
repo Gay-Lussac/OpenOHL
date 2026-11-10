@@ -1283,3 +1283,128 @@ fn the_differences_of_two_lines_say_what_to_solve_again() {
         assert!(d.jumpers.contains(&j.id));
     }
 }
+
+/// Plans & sheets › Profile sheets… › More of the template: where the
+/// profile's two side lines run (owner, 2026-11-10) — the corridor's
+/// edges unless chosen otherwise; at a distance; under the lowest arm
+/// with the circuits in a tick menu that stays open; the wires taken
+/// from a case without wind; kept with the drawing settings.
+#[test]
+fn the_export_window_chooses_the_profile_side_lines() {
+    use crate::drawings::{DrawingSettings, DrawingsWindow, Input};
+    use ohl_drawing::ProfileLines;
+    let m = synthetic();
+    let mut w = DrawingsWindow {
+        route: Some(0),
+        out: Some(std::env::temp_dir()),
+        ..Default::default()
+    };
+    let input = Input::new(&m, 0, &w).unwrap();
+    assert_eq!(input.options.profile_line_mode(), ProfileLines::Corridor);
+    assert!(input.still.is_none(), "nothing copied unless asked for");
+    // At a distance: 10 m first, then the window's.
+    w.sheet.profile_lines = Some("distance".into());
+    let input = Input::new(&m, 0, &w).unwrap();
+    assert_eq!(
+        input.options.profile_line_mode(),
+        ProfileLines::Distance(10.0)
+    );
+    w.sheet.profile_distance = Some(15.0);
+    let input = Input::new(&m, 0, &w).unwrap();
+    assert_eq!(
+        input.options.profile_line_mode(),
+        ProfileLines::Distance(15.0)
+    );
+    let d = input.drawing(&input.routes[0]).unwrap();
+    assert_eq!(d.profile_lines.len(), 2);
+    assert_eq!(d.profile_lines[0].plan[0][0], [0.0, 15.0]);
+    // Under the lowest arm, the case shown with wind ("high wind"): the
+    // wires of the first case without wind, no note.
+    w.sheet.profile_lines = Some("lowest_arm".into());
+    let windy = m
+        .cases
+        .iter()
+        .position(|c| c.case.name == "high wind")
+        .unwrap();
+    let input = Input::new(&m, windy, &w).unwrap();
+    assert_eq!(input.options.profile_line_mode(), ProfileLines::LowestArm);
+    assert_eq!(
+        input.still.as_ref().map(Vec::len),
+        Some(m.cases[0].shapes.len())
+    );
+    let d = input.drawing(&input.routes[0]).unwrap();
+    assert_eq!(
+        d.profile_lines.iter().map(|l| l.right).collect::<Vec<_>>(),
+        [true, false]
+    );
+    assert!(d.profile_line_notes.is_empty());
+    // S1 hangs 6 m right of the axis, without blowout.
+    let at = d.profile_lines[0].plan[0]
+        .iter()
+        .find(|p| p[0] > 100.0)
+        .unwrap();
+    assert!((at[1] - 6.0).abs() < 0.05, "{at:?}");
+    // No circuit ticked: no line, said in the sheets' warnings.
+    w.sheet.profile_circuits = Some(Vec::new());
+    let input = Input::new(&m, 0, &w).unwrap();
+    let d = input.drawing(&input.routes[0]).unwrap();
+    assert!(d.profile_lines.is_empty());
+    assert!(d.profile_line_notes[0].contains("no conductor"));
+    // Kept with the drawing settings; settings from before read as the
+    // template's choice.
+    let kept = serde_json::to_value(DrawingSettings::of(&w, false)).unwrap();
+    assert_eq!(kept["sheet"]["profile_lines"], "lowest_arm");
+    let back: DrawingSettings = serde_json::from_value(kept.clone()).unwrap();
+    let mut again = DrawingsWindow::default();
+    back.apply(&mut again);
+    assert_eq!(again.sheet, w.sheet);
+    let mut old = kept;
+    for key in ["profile_lines", "profile_distance", "profile_circuits"] {
+        old["sheet"].as_object_mut().unwrap().remove(key);
+    }
+    let old: DrawingSettings = serde_json::from_value(old).unwrap();
+    assert_eq!(old.sheet.profile_lines, None);
+    let none = serde_json::to_value(DrawingSettings::default()).unwrap();
+    assert!(none["sheet"].get("profile_lines").is_none());
+
+    // The window: the choice, then the circuits' tick menu staying open.
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(m, None));
+    h.run();
+    h.state_mut().ready().unwrap().drawings.open();
+    h.run_steps(3);
+    h.get_by_label("More of the template").click_accesskit();
+    h.run_steps(3);
+    let combo = egui::accesskit::Role::ComboBox;
+    h.get_by_role_and_label(combo, "profile side lines")
+        .click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("at a distance from the axis");
+    h.get_by_label("under the lowest arm").click_accesskit();
+    h.run_steps(3);
+    let sheet = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.drawings.window.as_ref().unwrap().sheet.clone()
+    };
+    assert_eq!(sheet(&mut h).profile_lines.as_deref(), Some("lowest_arm"));
+    // Both circuits carry the system (the branch through its jumper).
+    h.get_by_label("Circuits: 2 of 2").click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("2 of 2 ticked");
+    h.get_by_label("None").click_accesskit();
+    h.run_steps(2);
+    // Still open, the ticks kept.
+    h.get_by_label("0 of 2 ticked");
+    assert_eq!(sheet(&mut h).profile_circuits, Some(Vec::new()));
+    h.get_by_label("All").click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("2 of 2 ticked");
+    assert_eq!(
+        sheet(&mut h).profile_circuits,
+        Some(vec!["Example 1".to_owned(), "Branch".to_owned()])
+    );
+    h.get_by_label("Default").click_accesskit();
+    h.run_steps(2);
+    assert_eq!(sheet(&mut h).profile_circuits, None);
+}

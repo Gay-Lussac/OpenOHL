@@ -608,7 +608,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 35] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 37] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -619,6 +619,17 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 35] = [
         "corridor_far",
         "corridor edge, far side ({side}) ±{width} m",
         &["side", "width"],
+    ),
+    // The profile's side lines away from the corridor's edges.
+    (
+        "profile_distance",
+        "terrain {distance} m {side} of the axis",
+        &["side", "distance"],
+    ),
+    (
+        "profile_lowest_arm",
+        "terrain under the outermost conductor of the lowest arm, {side}",
+        &["side"],
     ),
     ("weather_case", "weather case {case}", &["case"]),
     ("structure", "structure", &[]),
@@ -837,6 +848,23 @@ pub struct CorridorSpec {
     /// The ground along both edges drawn in the profile (default on).
     #[serde(default = "yes")]
     pub profile: bool,
+    /// Where the profile's two side lines run: `"corridor"` (default:
+    /// its edges), `"distance"` (`profile_distance` either side of the
+    /// axis, whatever the width) or `"lowest_arm"` (under the outermost
+    /// conductors of the lowest arm in still air:
+    /// [`crate::side_lines`]).
+    #[serde(default = "corridor_word")]
+    pub profile_lines: String,
+    /// `profile_lines = "distance"`: the distance from the axis.
+    pub profile_distance: Option<Metres>,
+    /// `profile_lines = "lowest_arm"`: the circuits whose wires count, by
+    /// name (default: every circuit with a system — phase conductors, no
+    /// earth wires).
+    pub profile_circuits: Option<Vec<String>>,
+}
+
+fn corridor_word() -> String {
+    "corridor".into()
 }
 
 fn right() -> String {
@@ -853,11 +881,26 @@ impl Default for CorridorSpec {
             near: PenSpec::default(),
             far: PenSpec::default(),
             profile: true,
+            profile_lines: corridor_word(),
+            profile_distance: None,
+            profile_circuits: None,
         }
     }
 }
 
 impl CorridorSpec {
+    /// Where the profile's side lines run, checked.
+    pub fn profile_line_choice(&self) -> Result<crate::ProfileLines, String> {
+        crate::ProfileLines::parse(&self.profile_lines, self.profile_distance.map(|d| d.0))
+            .map_err(|e| format!("corridor.profile_lines: {e}"))
+    }
+
+    /// Where the profile's side lines run (a template read is checked:
+    /// the corridor's edges otherwise).
+    pub fn profile_line_mode(&self) -> crate::ProfileLines {
+        self.profile_line_choice().unwrap_or_default()
+    }
+
     /// The offset of the near edge for a half width `w`, m (right
     /// positive); the far edge's is the opposite.
     pub fn near_offset(&self, w: f64) -> f64 {
@@ -2357,6 +2400,14 @@ impl SheetTemplate {
                 "corridor.near_side = \"{}\": give right or left",
                 self.corridor.near_side
             ));
+        }
+        self.corridor.profile_line_choice()?;
+        if self
+            .corridor
+            .profile_distance
+            .is_some_and(|d| d.0.is_nan() || d.0 <= 0.0)
+        {
+            return Err("corridor.profile_distance: give a positive distance".into());
         }
         self.corridor.near.check("corridor.near")?;
         self.corridor.far.check("corridor.far")?;

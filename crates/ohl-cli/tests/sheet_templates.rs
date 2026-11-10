@@ -106,3 +106,58 @@ fn sheet_templates_are_listed_and_written() {
     assert!(text.contains("format = \"ohl-sheet-template\""));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// `--profile-lines`, `--profile-distance`, `--profile-circuits`: the
+/// profile's side lines at a distance from the axis and under the lowest
+/// arm, named in the legend; an unknown circuit refused.
+#[test]
+fn the_profile_side_lines_are_chosen() {
+    let dir = std::env::temp_dir().join(format!("ohl-profile-lines-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    let svg = |extra: &[&str]| {
+        let mut args = vec!["--field", "project_no=EX-9"];
+        args.extend_from_slice(extra);
+        let out = drawing(&dir, &args);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stdout}\n{stderr}");
+        assert!(!stdout.contains("side lines"), "{stdout}");
+        std::fs::read_to_string(dir.join("main-sheet-01.svg")).unwrap()
+    };
+    // As the template says: the corridor's edges.
+    let edges = svg(&[]);
+    assert!(edges.contains("near side (right): edge and ground"));
+    assert!(!edges.contains("of the axis") && !edges.contains("lowest arm"));
+    let at = svg(&["--profile-distance", "10"]);
+    assert!(at.contains("terrain 10 m right of the axis"));
+    assert!(at.contains("terrain 10 m left of the axis"));
+    assert!(at.contains("corridor ±25 m"), "the corridor's edges stay");
+    let arm = svg(&[
+        "--profile-lines",
+        "lowest_arm",
+        "--profile-circuits",
+        "Example 1",
+    ]);
+    assert!(arm.contains("terrain under the outermost conductor of the lowest arm, right"));
+    assert!(arm.contains("terrain under the outermost conductor of the lowest arm, left"));
+    for (extra, message) in [
+        (
+            &[
+                "--profile-lines",
+                "lowest_arm",
+                "--profile-circuits",
+                "Nope",
+            ][..],
+            "no circuit \"Nope\" (circuits: Example 1, Branch)",
+        ),
+        (&["--profile-lines", "distance"][..], "give the distance"),
+    ] {
+        let mut args = vec!["--field", "project_no=EX-9"];
+        args.extend_from_slice(extra);
+        let out = drawing(&dir, &args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success());
+        assert!(stderr.contains(message), "{stderr}");
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}

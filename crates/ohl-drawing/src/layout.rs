@@ -159,7 +159,13 @@ fn heights_split(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2], Ve
     let mut full = [f64::INFINITY, f64::NEG_INFINITY];
     // The ground along the corridor's edges: seen when it fits (the
     // LiDAR points are not: they are clipped at the panel).
-    for p in d.corridor_ground.iter().flat_map(|(_, r)| r).flatten() {
+    for p in d
+        .corridor_ground
+        .iter()
+        .flat_map(|(_, r)| r)
+        .chain(d.profile_lines.iter().flat_map(|l| &l.ground))
+        .flatten()
+    {
         see(&mut full, p[0], p[1]);
     }
     for w in d
@@ -571,6 +577,41 @@ pub(crate) fn corridor_edge(o: &Options, offset: f64) -> (Pen, bool) {
     )
 }
 
+/// The profile's side lines away from the corridor's edges
+/// ([`RouteDrawing::profile_lines`]), each in its side's corridor pen and
+/// named in `legend`: the runs `runs` gives of each (the ground under it
+/// in the profile, its trace in the plan), on paper.
+fn side_lines(
+    d: &RouteDrawing,
+    o: &Options,
+    legend: &mut crate::style::Legend,
+    runs: impl Fn(&crate::SideLine) -> Vec<Vec<[f64; 2]>>,
+) -> Vec<Item> {
+    let labels = &o.template.legend;
+    let mut items = Vec::new();
+    for l in &d.profile_lines {
+        let (pen, _) = corridor_edge(o, if l.right { 1.0 } else { -1.0 });
+        let side = ("side", if l.right { "right" } else { "left" });
+        let words = match o.profile_line_mode() {
+            crate::ProfileLines::Distance(w) => labels.label(
+                "profile_distance",
+                &[side, ("distance", &crate::template::format_number(w, ""))],
+            ),
+            _ => labels.label("profile_lowest_arm", &[side]),
+        };
+        for run in runs(l) {
+            items.push(path(
+                Layer::GroundSide,
+                run,
+                pen.clone(),
+                Some(words.clone()),
+            ));
+        }
+        legend.add(Sample::Line(pen), words);
+    }
+    items
+}
+
 /// The legend's entries of a corridor of half width `w`: one (its label)
 /// when both edges look alike and no ground is drawn along them, else
 /// the near and the far edge.
@@ -829,6 +870,14 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
         }
         corridor_legend(o, f, d, w, &label);
     }
+    // Where the profile's side lines were taken, when not on the
+    // corridor's edges: in the pens they have in the profile.
+    plan.extend(side_lines(d, o, &mut f.legend.borrow_mut(), |l| {
+        l.plan
+            .iter()
+            .map(|r| r.iter().map(|q| [f.x(q[0]), f.plan_y(q[1])]).collect())
+            .collect()
+    }));
     // Isoclearance lines under the wires.
     for w in &d.isoclearance {
         plan.push(path(
@@ -1405,6 +1454,7 @@ fn profile_obstacles(
         .iter()
         .chain(d.sides.iter().flat_map(|(_, r)| r))
         .chain(d.corridor_ground.iter().flat_map(|(_, r)| r))
+        .chain(d.profile_lines.iter().flat_map(|l| &l.ground))
     {
         add(run
             .iter()
@@ -1580,6 +1630,13 @@ fn profile_part(
             ));
         }
     }
+    // The side lines elsewhere (at a distance, under the lowest arm).
+    prof.extend(side_lines(d, o, &mut legend, |l| {
+        l.ground
+            .iter()
+            .map(|r| r.iter().map(|q| [f.x(q[0]), y(q[1])]).collect())
+            .collect()
+    }));
     let instead = o.template.conductor_clearance.mode == "instead" && !curves.is_empty();
     // The ground on the axis: always solid (the template may only leave
     // it out, `[centreline] ground = false`).
@@ -2462,7 +2519,8 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
         scales_text(o),
     ));
     draw(items, d, o, &f);
-    let warnings = draw_elevations(items, d, o, &f);
+    let mut warnings = draw_elevations(items, d, o, &f);
+    warnings.extend(d.profile_line_notes.iter().cloned());
     (drawing, f, warnings)
 }
 
@@ -3074,6 +3132,7 @@ pub(crate) fn layout_planned(
             let mut sl = sheet_at(d, o, stations, (*a, *b), page, paper);
             sl.number = k + 1;
             if k == 0 {
+                sl.warnings.extend(d.profile_line_notes.iter().cloned());
                 sl.warnings.extend(curves.iter().cloned());
             }
             sl

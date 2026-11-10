@@ -773,7 +773,7 @@ pub(super) fn tool_windows(
             w.error = Some(e);
         }
         if w.open {
-            let wanted = w.wanted(&r.model, r.drawings.settings());
+            let wanted = w.wanted(&r.model, r.case, r.drawings.settings());
             r.model.want(wanted, ctx);
         }
         w.ui(ctx, &r.model, r.case, r.drawings.settings());

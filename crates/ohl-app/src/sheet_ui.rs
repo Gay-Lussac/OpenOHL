@@ -104,6 +104,206 @@ pub struct SheetChoice {
     /// The project's orthophotos under the key map, on or off (none: as
     /// the template's `[key_map] orthophoto` says; 2026-10-23).
     pub key_map_photo: Option<bool>,
+    /// Where the profile's two side terrain lines run: `corridor`,
+    /// `distance` or `lowest_arm` (none: as the template's `[corridor]
+    /// profile_lines` says; 2026-11-10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_lines: Option<String>,
+    /// Their distance from the axis, m (none: the template's, else
+    /// [`PROFILE_DISTANCE`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_distance: Option<f64>,
+    /// Under the lowest arm: the circuits whose wires count (none: the
+    /// template's, else every circuit with a system).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_circuits: Option<Vec<String>>,
+}
+
+/// The distance of the profile's side lines from the axis first offered,
+/// m (neither the window nor the template gives one).
+pub const PROFILE_DISTANCE: f64 = 10.0;
+
+/// The choices of where the profile's side lines run: key (none: the
+/// template's), words, what it does to the drawing.
+const PROFILE_LINES: [(Option<&str>, &str, &str); 4] = [
+    (
+        None,
+        "as the template says",
+        "The template's [corridor] profile_lines (the corridor's edges unless it says otherwise)",
+    ),
+    (
+        Some("corridor"),
+        "the corridor's edges",
+        "The profile's two side lines are the ground along the corridor's edges (± its width): \
+         they move with the corridor's width",
+    ),
+    (
+        Some("distance"),
+        "at a distance from the axis",
+        "The profile's two side lines are the ground at this distance left and right of the \
+         axis, whatever the corridor's width; the plan shows the two lines too, in the same pens",
+    ),
+    (
+        Some("lowest_arm"),
+        "under the lowest arm",
+        "The profile's two side lines are the ground exactly under the outermost conductor of \
+         the lowest arm on each side, as it hangs in still air (no blowout, no extra distance), \
+         span by span; the plan shows the two lines too. A side without a conductor of the \
+         circuits ticked has no line",
+    ),
+];
+
+impl SheetChoice {
+    /// Where the profile's side lines run as the window says, over
+    /// template `t` (none: as the template says).
+    pub fn profile_line_choice(
+        &self,
+        t: &SheetTemplate,
+    ) -> Result<Option<ohl_drawing::ProfileLines>, String> {
+        let Some(word) = self.profile_lines.as_deref() else {
+            return Ok(None);
+        };
+        let distance = self
+            .profile_distance
+            .or(t.corridor.profile_distance.map(|d| d.0))
+            .unwrap_or(PROFILE_DISTANCE);
+        ohl_drawing::ProfileLines::parse(word, Some(distance)).map(Some)
+    }
+
+    /// The same, a choice that does not read taken as the template's.
+    pub fn profile_line_mode(&self, t: &SheetTemplate) -> ohl_drawing::ProfileLines {
+        self.profile_line_choice(t)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| t.corridor.profile_line_mode())
+    }
+}
+
+/// The line's circuits for the side lines under the lowest arm (name,
+/// ticked by default), kept until the line changes.
+fn profile_circuit_list(ui: &egui::Ui, model: &Model) -> Arc<Vec<(String, bool)>> {
+    type Kept = (u64, Arc<Vec<(String, bool)>>);
+    let key = egui::Id::new("drawings-profile-circuit-list");
+    if let Some((version, list)) = ui.data(|d| d.get_temp::<Kept>(key))
+        && version == model.line_version
+    {
+        return list;
+    }
+    let list = Arc::new(ohl_drawing::side_lines::circuits(&model.line));
+    ui.data_mut(|d| d.insert_temp::<Kept>(key, (model.line_version, list.clone())));
+    list
+}
+
+/// Where the profile's two side lines run (Profile sheets › More of the
+/// template; owner, 2026-11-10): the choice, the distance, and the
+/// circuits counted under the lowest arm in a tick menu that stays open.
+pub fn profile_lines_ui(ui: &mut egui::Ui, s: &mut SheetChoice, t: &SheetTemplate, model: &Model) {
+    ui.horizontal(|ui| {
+        let label = ui.label("profile side lines");
+        let words = |key: Option<&str>| {
+            PROFILE_LINES
+                .iter()
+                .find(|c| c.0 == key)
+                .map_or("as the template says", |c| c.1)
+        };
+        egui::ComboBox::from_id_salt("drawings-profile-lines")
+            .selected_text(words(s.profile_lines.as_deref()))
+            .show_ui(ui, |ui| {
+                for (key, text, tip) in PROFILE_LINES {
+                    ui.selectable_value(&mut s.profile_lines, key.map(str::to_owned), text)
+                        .on_hover_text(tip);
+                }
+            })
+            .response
+            .labelled_by(label.id)
+            .on_hover_text(
+                "Where the two terrain lines left and right of the axis are taken for the \
+                 profile: the corridor's edges, a fixed distance from the axis, or under the \
+                 outermost conductors of the lowest arm. Only the two side lines change (and, \
+                 away from the corridor's edges, the plan shows them); the ground on the axis \
+                 and the corridor stay",
+            );
+        match s.profile_line_mode(t) {
+            ohl_drawing::ProfileLines::Distance(d) if s.profile_lines.is_some() => {
+                let mut d = d;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut d)
+                            .range(0.1..=10_000.0)
+                            .speed(0.5)
+                            .suffix(" m"),
+                    )
+                    .on_hover_text(
+                        "The distance of the two side lines from the axis: the profile shows \
+                         the ground this far left and right of it",
+                    )
+                    .changed()
+                {
+                    s.profile_distance = Some(d);
+                }
+            }
+            ohl_drawing::ProfileLines::LowestArm => profile_circuits_menu(ui, s, t, model),
+            _ => {}
+        }
+    });
+}
+
+/// The tick menu of the circuits counted under the lowest arm.
+fn profile_circuits_menu(ui: &mut egui::Ui, s: &mut SheetChoice, t: &SheetTemplate, model: &Model) {
+    let all = profile_circuit_list(ui, model);
+    let given = s
+        .profile_circuits
+        .as_ref()
+        .or(t.corridor.profile_circuits.as_ref());
+    let on = |name: &str, default: bool| given.map_or(default, |g| g.iter().any(|x| x == name));
+    let ticked: Vec<String> = all
+        .iter()
+        .filter(|(n, live)| on(n, *live))
+        .map(|(n, _)| n.clone())
+        .collect();
+    let title = format!("Circuits: {} of {}", ticked.len(), all.len());
+    crate::menu::options_menu(ui, &title, |ui| {
+        ui.set_min_width(260.0);
+        ui.label(
+            egui::RichText::new(
+                "The side lines follow the outermost conductor of the lowest arm among the \
+                 circuits ticked (by default the phase conductors: every circuit with a system, \
+                 no earth wires). Unticking a circuit moves the line to the next conductor.",
+            )
+            .small()
+            .weak(),
+        );
+        if ui
+            .small_button("Default")
+            .on_hover_text(
+                "As the template says, else every circuit with a system (the phase conductors)",
+            )
+            .clicked()
+        {
+            s.profile_circuits = None;
+            return;
+        }
+        let items: Vec<crate::tick_list::Item> = all
+            .iter()
+            .map(|(n, live)| {
+                let name = crate::check_ui::circuit_label(n);
+                let label = if *live {
+                    name
+                } else {
+                    format!("{name} (earthed)")
+                };
+                crate::tick_list::Item::new(n.clone(), label)
+            })
+            .collect();
+        let mut chosen = Some(ticked);
+        if crate::tick_list::tick_list(ui, "drawings-profile-circuits", &items, &mut chosen, 160.0)
+        {
+            // (The list's "All" means every row: written out here, where
+            // none means the default.)
+            s.profile_circuits =
+                Some(chosen.unwrap_or_else(|| all.iter().map(|(n, _)| n.clone()).collect()));
+        }
+    });
 }
 
 /// LiDAR class codes written `2, 3, 5` (empty: none).
@@ -138,6 +338,9 @@ impl Default for SheetChoice {
             background_photo: None,
             key_map_drawings: None,
             key_map_photo: None,
+            profile_lines: None,
+            profile_distance: None,
+            profile_circuits: None,
         }
     }
 }

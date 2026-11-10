@@ -143,6 +143,11 @@ near_side = "right"           # the side nearest the profile's reader: right (lo
 near = { colour = "#2a7f3f", dash = "6 1.5 1 1.5" }   # the near edge: plan, key map, its ground in the profile
 far = { colour = "#7a3fa0", dash = "2 1.5" }          # the far edge
 profile = true                # the ground along both edges in the profile
+profile_lines = "corridor"    # where the profile's two side lines run: the corridor's edges (default), or
+# profile_lines = "distance"    # … at a fixed distance from the axis, whatever the corridor's width:
+# profile_distance = "10 m"
+# profile_lines = "lowest_arm"  # … under the outermost conductor of the lowest arm on each side, in still air;
+# profile_circuits = ["Example 1"]   # the circuits whose wires count (default: every circuit with a system)
 
 [centreline]
 pen = { width = "0.25 mm", colour = "#000000", dash = "" }   # the axis in the plan ("" dash: solid)
