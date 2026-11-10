@@ -365,21 +365,26 @@ impl Ready {
         };
         let empty = ohl_structures::InsulatorLibrary::default();
         let insulators = self.model.types.as_ref().map_or(&empty, |(_, i)| i);
-        let line = self.model.line.clone();
-        let action = p.ui(ui, rs, insulators, &line);
+        // The line is only read while the page is shown; the line as
+        // stored is copied only for the action that changes the model
+        // while reading it (2026-11-10: both were copied on every frame).
+        let action = p.ui(ui, rs, insulators, &self.model.line);
         let request = p.workspace.request.take();
-        let stored = self.model.stored_line().unwrap_or(&self.model.line).clone();
         match action {
-            Some(PlacedAction::Apply) => match p.command(&stored, insulators) {
-                Ok((what, command)) => {
-                    if self.perform(crate::edit::Action::Command { what, command }) {
-                        p.applied();
-                        p.message = Some(("applied".into(), false));
+            Some(PlacedAction::Apply) => {
+                let stored = self.model.stored_line().unwrap_or(&self.model.line);
+                match p.command(stored, insulators) {
+                    Ok((what, command)) => {
+                        if self.perform(crate::edit::Action::Command { what, command }) {
+                            p.applied();
+                            p.message = Some(("applied".into(), false));
+                        }
                     }
+                    Err(e) => p.message = Some((e, true)),
                 }
-                Err(e) => p.message = Some((e, true)),
-            },
+            }
             Some(PlacedAction::MakeType { id: type_id, edit }) => {
+                let stored = self.model.stored_line().unwrap_or(&self.model.line).clone();
                 match self.make_type(&p, &stored, &type_id) {
                     Ok(()) => {
                         log::info!("structure {} made structure type {type_id}", p.id);

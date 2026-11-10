@@ -241,7 +241,7 @@ impl SpotWindow {
                 egui::ComboBox::from_id_salt("spot-route")
                     .selected_text(&self.route)
                     .show_ui(ui, |ui| {
-                        for r in model.line.alignment_views() {
+                        for r in model.alignment_views().iter() {
                             ui.selectable_value(&mut self.route, r.id.clone(), &r.id);
                         }
                     });

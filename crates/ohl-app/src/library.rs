@@ -749,6 +749,124 @@ impl LibraryKind {
     }
 }
 
+/// A library page's document: what it is as edited, as text and against
+/// the file as read. Apart from the page so that the page cannot change
+/// the document without the text kept of it being dropped.
+mod edited {
+    use std::cell::{Cell, OnceCell};
+    use toml_edit::DocumentMut;
+
+    #[cfg(test)]
+    thread_local! {
+        /// How often this thread wrote a page's document out as text.
+        pub static WRITTEN: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// The file's content as edited, and its text as read. The document
+    /// as text and whether it differs from the file are asked on every
+    /// frame (the tab's title, the page's buttons, the load case form, a
+    /// wire's graph; owner, 2026-11-10: the whole document was written
+    /// out each time): written out once and kept until the document is
+    /// changed — which only [`Self::open`], [`Self::replace`],
+    /// [`Self::edit`] and [`Self::edit_if`] can do.
+    #[derive(Default)]
+    pub struct Edited {
+        /// The content, as edited (none: no file open, or not TOML).
+        doc: Option<DocumentMut>,
+        /// The text as read (unsaved changes when different).
+        saved: String,
+        /// `doc` as text, since its last change.
+        text: OnceCell<String>,
+        /// Whether `text` differs from `saved`, since either changed.
+        dirty: Cell<Option<bool>>,
+    }
+
+    impl Edited {
+        /// A file read: its document and its text.
+        pub fn open(&mut self, doc: DocumentMut, saved: String) {
+            self.saved = saved;
+            self.replace(Some(doc));
+        }
+
+        /// Another document in place of the one edited (none: nothing
+        /// open); the text as read stays.
+        pub fn replace(&mut self, doc: Option<DocumentMut>) {
+            self.doc = doc;
+            self.changed();
+        }
+
+        /// The file was written with `text`.
+        pub fn set_saved(&mut self, text: String) {
+            self.saved = text;
+            self.dirty.set(None);
+        }
+
+        /// The document, to read.
+        pub fn doc(&self) -> Option<&DocumentMut> {
+            self.doc.as_ref()
+        }
+
+        /// The document, to change: what is kept of it is dropped.
+        pub fn edit(&mut self) -> Option<&mut DocumentMut> {
+            self.changed();
+            self.doc.as_mut()
+        }
+
+        /// The document handed to an editor shown every frame, which
+        /// answers whether it changed it (what the page already checks
+        /// the file on): only then is what is kept dropped. Its answer
+        /// (false without a document).
+        pub fn edit_if(&mut self, editor: impl FnOnce(&mut DocumentMut) -> bool) -> bool {
+            let Some(doc) = &mut self.doc else {
+                return false;
+            };
+            let changed = editor(doc);
+            if changed {
+                self.changed();
+            }
+            // An editor that changes the document must say so: tests
+            // of the pages fail here when one does not.
+            #[cfg(test)]
+            if let (Some(kept), Some(doc)) = (self.text.get(), &self.doc) {
+                assert_eq!(
+                    *kept,
+                    doc.to_string(),
+                    "an editor changed the document and answered that it did not"
+                );
+            }
+            changed
+        }
+
+        /// The document as text (none without one).
+        pub fn text(&self) -> Option<&str> {
+            let doc = self.doc.as_ref()?;
+            Some(self.text.get_or_init(|| {
+                #[cfg(test)]
+                WRITTEN.with(|n| n.set(n.get() + 1));
+                doc.to_string()
+            }))
+        }
+
+        /// Whether the document differs from the file as read (not
+        /// without a document).
+        pub fn dirty(&self) -> bool {
+            if let Some(d) = self.dirty.get() {
+                return d;
+            }
+            let d = self.text().is_some_and(|t| t != self.saved);
+            self.dirty.set(Some(d));
+            d
+        }
+
+        /// The document changed: its text and the answer of
+        /// [`Self::dirty`] are worked out again when next asked.
+        fn changed(&mut self) {
+            self.text = OnceCell::new();
+            self.dirty.set(None);
+        }
+    }
+}
+
 /// An open library page.
 pub struct LibraryPage {
     /// Which library.
@@ -757,10 +875,8 @@ pub struct LibraryPage {
     pub files: Vec<PathBuf>,
     /// The file open.
     pub file: Option<PathBuf>,
-    /// Its content, as edited.
-    doc: Option<DocumentMut>,
-    /// The text as read (unsaved changes when different).
-    saved: String,
+    /// Its content, as edited and as read.
+    edited: edited::Edited,
     /// The item shown (several-per-file kinds).
     item: usize,
     /// Why the file does not read, as edited.
@@ -826,8 +942,7 @@ impl LibraryPage {
             kind,
             files,
             file: None,
-            doc: None,
-            saved: String::new(),
+            edited: Default::default(),
             item: 0,
             error: None,
             warning: None,
@@ -872,19 +987,18 @@ impl LibraryPage {
                     {
                         self.message = Some((e, true));
                     }
-                    self.saved = text;
-                    self.doc = Some(doc);
+                    self.edited.open(doc, text);
                     self.file = Some(path.to_path_buf());
                     self.check();
                 }
                 Err(e) => {
-                    self.doc = None;
+                    self.edited.replace(None);
                     self.file = Some(path.to_path_buf());
                     self.error = Some(format!("not TOML: {e}"));
                 }
             },
             Err(e) => {
-                self.doc = None;
+                self.edited.replace(None);
                 self.error = Some(format!("{}: {e}", path.display()));
             }
         }
@@ -892,12 +1006,14 @@ impl LibraryPage {
 
     /// The text as edited.
     pub fn text(&self) -> Option<String> {
-        self.doc.as_ref().map(DocumentMut::to_string)
+        self.edited.text().map(str::to_owned)
     }
 
-    /// Whether there are unsaved changes.
+    /// Whether there are unsaved changes (asked every frame, of every
+    /// open page: the answer is kept until the content changes,
+    /// [`edited::Edited`]).
     pub fn dirty(&self) -> bool {
-        self.text().is_some_and(|t| t != self.saved)
+        self.edited.dirty()
     }
 
     /// **Edit in the structure application…** asked (on the page or on its
@@ -925,15 +1041,15 @@ impl LibraryPage {
     }
 
     fn check(&mut self) {
-        self.error = match (&self.file, self.text()) {
-            (Some(path), Some(text)) => self.kind.check(path, &text).err(),
+        self.error = match (&self.file, self.edited.text()) {
+            (Some(path), Some(text)) => self.kind.check(path, text).err(),
             _ => None,
         };
         // Reads, but worth a look.
-        self.warning = match (&self.file, self.text(), self.kind) {
+        self.warning = match (&self.file, self.edited.text(), self.kind) {
             (Some(path), Some(text), LibraryKind::Cables) if self.error.is_none() => {
                 let mut lib = ohl_cables::Library::default();
-                lib.add_toml(path, &text).ok().and_then(|_| {
+                lib.add_toml(path, text).ok().and_then(|_| {
                     let w = ohl_cables::mechanics::library_warnings(&lib);
                     (!w.is_empty()).then(|| w.join("\n"))
                 })
@@ -954,7 +1070,7 @@ impl LibraryPage {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
         std::fs::write(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
-        self.saved = text;
+        self.edited.set_saved(text);
         Ok(path)
     }
 
@@ -966,18 +1082,18 @@ impl LibraryPage {
         if self.kind != LibraryKind::LoadCases {
             return;
         }
-        let Some(text) = self.text() else {
+        let Some(text) = self.edited.text() else {
             return;
         };
-        let Ok(cases) = ohl_loads::LoadCases::parse(&text) else {
+        let Ok(cases) = ohl_loads::LoadCases::parse(text) else {
             return;
         };
         let want = i64::from(cases.written_version());
-        if let Some(doc) = &mut self.doc
-            && doc
-                .get("version")
+        if self.edited.doc().is_some_and(|doc| {
+            doc.get("version")
                 .and_then(toml_edit::Item::as_integer)
                 .is_some_and(|v| v < want)
+        }) && let Some(doc) = self.edited.edit()
         {
             doc["version"] = toml_edit::value(want);
         }
@@ -990,7 +1106,7 @@ impl LibraryPage {
         if self.kind != LibraryKind::Cables {
             return;
         }
-        let Some(doc) = &mut self.doc else {
+        let Some(doc) = self.edited.doc() else {
             return;
         };
         let gives = doc
@@ -1006,6 +1122,7 @@ impl LibraryPage {
                 .get("version")
                 .and_then(toml_edit::Item::as_integer)
                 .is_some_and(|v| v < 2)
+            && let Some(doc) = self.edited.edit()
         {
             doc["version"] = toml_edit::value(2);
         }
@@ -1068,8 +1185,8 @@ impl LibraryPage {
         let Some(key) = self.kind.items_key() else {
             return Vec::new();
         };
-        self.doc
-            .as_ref()
+        self.edited
+            .doc()
             .and_then(|d| d.get(key))
             .and_then(Item::as_array_of_tables)
             .map(|a| a.iter().map(label_of).collect())
@@ -1082,7 +1199,7 @@ impl LibraryPage {
         let Some(key) = self.kind.items_key() else {
             return;
         };
-        let Some(doc) = &mut self.doc else {
+        let Some(doc) = self.edited.edit() else {
             return;
         };
         let taken: Vec<String> = doc
@@ -1128,8 +1245,8 @@ impl LibraryPage {
             return;
         };
         if let Some(a) = self
-            .doc
-            .as_mut()
+            .edited
+            .edit()
             .and_then(|d| d.get_mut(key))
             .and_then(Item::as_array_of_tables_mut)
             && self.item < a.len()
@@ -1322,7 +1439,7 @@ impl LibraryPage {
             }
         }
         ui.separator();
-        if self.doc.is_none() {
+        if self.edited.doc().is_none() {
             if self.files.is_empty() {
                 ui.label(format!(
                     "The {} is empty.",
@@ -1357,8 +1474,7 @@ impl LibraryPage {
                     );
             });
             if self.form_on {
-                let text = self.text().unwrap_or_default();
-                self.form.sync(&text);
+                self.form.sync(self.edited.text().unwrap_or_default());
                 let fcx = crate::load_case_form::FormContext {
                     weather: cx.weather,
                     line: cx.line,
@@ -1371,7 +1487,7 @@ impl LibraryPage {
                     self.error.as_deref(),
                 ) && let Ok(doc) = t.parse::<DocumentMut>()
                 {
-                    self.doc = Some(doc);
+                    self.edited.replace(Some(doc));
                     self.buffers.clear();
                     self.message = None;
                     self.check();
@@ -1421,7 +1537,6 @@ impl LibraryPage {
                 });
                 let none = ohl_structures::InsulatorLibrary::default();
                 let insulators = cx.insulators.unwrap_or(&none);
-                let doc = self.doc.as_mut().expect("checked");
                 if self.workspace.ahead != cx.ahead {
                     self.workspace.ahead = cx.ahead;
                     self.workspace.redraw();
@@ -1434,7 +1549,11 @@ impl LibraryPage {
                         format!("used by {n} structures of the line (they follow when saved)")
                     }
                 };
-                if self.workspace.ui(ui, doc, cx.rs, insulators, &note) {
+                let workspace = &mut self.workspace;
+                if self
+                    .edited
+                    .edit_if(|doc| workspace.ui(ui, doc, cx.rs, insulators, &note))
+                {
                     self.buffers.clear();
                     self.check();
                 }
@@ -1470,64 +1589,68 @@ impl LibraryPage {
                         // The file's own fields (name of a set of cases…).
                         if !kind.fields("").is_empty() {
                             ui.separator();
-                            let doc = self.doc.as_mut().expect("checked");
-                            changed |= table_ui(
-                                ui,
-                                kind,
-                                doc.as_table_mut(),
-                                "",
-                                "file",
-                                &mut self.buffers,
-                                true,
-                                None,
-                            );
+                            let buffers = &mut self.buffers;
+                            changed |= self.edited.edit_if(|doc| {
+                                table_ui(
+                                    ui,
+                                    kind,
+                                    doc.as_table_mut(),
+                                    "",
+                                    "file",
+                                    buffers,
+                                    true,
+                                    None,
+                                )
+                            });
                         }
                     });
                 egui::CentralPanel::default().show(ui, |ui| {
                     egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
-                        let doc = self.doc.as_mut().expect("checked");
                         let mut wire = None;
-                        if let Some(t) = doc
-                            .get_mut(key)
-                            .and_then(Item::as_array_of_tables_mut)
-                            .and_then(|a| a.get_mut(self.item))
-                        {
-                            changed |= table_ui(
+                        let (item, buffers) = (self.item, &mut self.buffers);
+                        changed |= self.edited.edit_if(|doc| {
+                            let Some(t) = doc
+                                .get_mut(key)
+                                .and_then(Item::as_array_of_tables_mut)
+                                .and_then(|a| a.get_mut(item))
+                            else {
+                                return false;
+                            };
+                            let changed = table_ui(
                                 ui,
                                 kind,
                                 t,
                                 key,
-                                &format!("{key}{}", self.item),
-                                &mut self.buffers,
+                                &format!("{key}{item}"),
+                                buffers,
                                 false,
                                 None,
                             );
                             if kind == LibraryKind::Cables {
                                 wire = Some(label_of(t));
                             }
-                        }
+                            changed
+                        });
                         // A wire's tension against its strain (owner,
                         // 2026-11-01), from the file as edited.
                         if let Some(id) = wire {
                             ui.separator();
-                            curves_ui(ui, &doc.to_string(), &id, &mut self.curve_temperature);
+                            curves_ui(
+                                ui,
+                                self.edited.text().unwrap_or_default(),
+                                &id,
+                                &mut self.curve_temperature,
+                            );
                         }
                     });
                 });
             }
             None => {
                 egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
-                    let doc = self.doc.as_mut().expect("checked");
-                    changed |= table_ui(
-                        ui,
-                        kind,
-                        doc.as_table_mut(),
-                        "",
-                        "",
-                        &mut self.buffers,
-                        false,
-                        None,
-                    );
+                    let buffers = &mut self.buffers;
+                    changed |= self.edited.edit_if(|doc| {
+                        table_ui(ui, kind, doc.as_table_mut(), "", "", buffers, false, None)
+                    });
                 });
             }
         }
@@ -2344,7 +2467,8 @@ mod tests {
     /// version 2; without it the file keeps its version 1.
     #[test]
     fn a_cable_with_its_reference_temperature_is_saved_at_version_2() {
-        let dir = temp("wires");
+        // (A folder of its own: `new_files_and_items` runs beside it.)
+        let dir = temp("wires-version");
         let path = dir.join("wires.ohlw");
         std::fs::copy(root().join("libraries/cables/acsr-examples.ohlw"), &path).unwrap();
         let sources = Sources {
@@ -2357,7 +2481,7 @@ mod tests {
         page.save().unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("version = 1\n"), "{text}");
-        let doc = page.doc.as_mut().unwrap();
+        let doc = page.edited.edit().unwrap();
         doc["cable"]
             .as_array_of_tables_mut()
             .unwrap()
@@ -2398,7 +2522,7 @@ mod tests {
         page.save().unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("version = 1\n"), "{text}");
-        let doc = page.doc.as_mut().unwrap();
+        let doc = page.edited.edit().unwrap();
         let wind: toml_edit::DocumentMut =
             "structure = { wind_pressure = \"900 Pa\", wind_factor = 1.2 }\n"
                 .parse()
@@ -2417,7 +2541,7 @@ mod tests {
         assert_eq!(read.cases[1].structure.unwrap().wind_pressure, Some(900.0));
         assert!(LibraryKind::LoadCases.fields("structure").len() == 2);
         // A broken wire (roadmap O9): version 3.
-        let doc = page.doc.as_mut().unwrap();
+        let doc = page.edited.edit().unwrap();
         let broken: toml_edit::DocumentMut = "broken = { section = \"S1\", span = \"every\" }\n"
             .parse()
             .unwrap();
@@ -2460,7 +2584,7 @@ mod tests {
         assert!(page.error.is_none(), "{:?}", page.error);
         assert!(page.items().len() >= 4);
         let set = |page: &mut LibraryPage, v: &str| {
-            let doc = page.doc.as_mut().unwrap();
+            let doc = page.edited.edit().unwrap();
             doc["case"]
                 .as_array_of_tables_mut()
                 .unwrap()
@@ -2479,6 +2603,94 @@ mod tests {
         assert!(text.starts_with("# Example weather cases"));
         assert!(text.contains("temperature = \"12 °C\""));
         assert!(!page.dirty());
+    }
+
+    /// The page's document is written out as text once per change, not on
+    /// every question (owner, 2026-11-10), and "unsaved" is what
+    /// comparing the document's text with the file's says: after a
+    /// change, a change the editor reports, a change back, a save, the
+    /// file opened again.
+    #[test]
+    fn the_document_is_written_out_once_per_change() {
+        let dir = temp("dirty-kept");
+        let path = dir.join("cases.ohlwc");
+        std::fs::copy(
+            root().join("examples/synthetic-line/weather-cases.ohlwc"),
+            &path,
+        )
+        .unwrap();
+        let sources = Sources {
+            file: dir.join("line.ohl.json"),
+            weather: Some(path.clone()),
+            ..Sources::default()
+        };
+        let mut page = LibraryPage::new(LibraryKind::WeatherCases, &sources);
+        let written = || edited::WRITTEN.with(std::cell::Cell::get);
+        // The old answer: the document written out and compared.
+        let direct = |page: &LibraryPage| {
+            let on_disk = std::fs::read_to_string(&path).unwrap();
+            page.edited
+                .doc()
+                .map(ToString::to_string)
+                .is_some_and(|t| t != on_disk)
+        };
+        let before = written();
+        for _ in 0..5 {
+            assert!(!page.dirty());
+            assert!(page.text().is_some());
+        }
+        // Written once at most since it was opened (checked then).
+        assert_eq!(written(), before);
+        let was = page.edited.doc().unwrap()["case"]
+            .as_array_of_tables()
+            .unwrap()
+            .get(0)
+            .unwrap()["temperature"]
+            .clone();
+        let set = |doc: &mut DocumentMut, v: toml_edit::Item| {
+            doc["case"]
+                .as_array_of_tables_mut()
+                .unwrap()
+                .get_mut(0)
+                .unwrap()["temperature"] = v;
+        };
+        // A change.
+        set(page.edited.edit().unwrap(), toml_edit::value("12 °C"));
+        for _ in 0..5 {
+            assert!(page.dirty());
+            assert_eq!(page.dirty(), direct(&page));
+        }
+        assert_eq!(written(), before + 1);
+        // An editor shown that changes nothing: nothing written again.
+        for _ in 0..5 {
+            assert!(!page.edited.edit_if(|_| false));
+            assert!(page.dirty());
+        }
+        assert_eq!(written(), before + 1);
+        // An editor that changes it back, and says so.
+        assert!(page.edited.edit_if(|doc| {
+            set(doc, was.clone());
+            true
+        }));
+        assert!(!page.dirty());
+        assert_eq!(page.dirty(), direct(&page));
+        assert_eq!(written(), before + 2);
+        // Changed and saved: the file has it, nothing unsaved.
+        set(page.edited.edit().unwrap(), toml_edit::value("13 °C"));
+        assert!(page.dirty());
+        page.save().unwrap();
+        assert!(!page.dirty());
+        assert_eq!(page.dirty(), direct(&page));
+        assert_eq!(
+            page.text().unwrap(),
+            std::fs::read_to_string(&path).unwrap()
+        );
+        // Changed and opened again: the file's.
+        set(page.edited.edit().unwrap(), toml_edit::value("14 °C"));
+        assert!(page.dirty());
+        page.open(&path);
+        assert!(!page.dirty());
+        assert!(page.text().unwrap().contains("13 °C"));
     }
 
     /// A new wire file, with a second wire next to the first.

@@ -10,6 +10,53 @@ of Parts A, B and C).
 
 ## 2026-11-10
 
+**The weather case groups are read when the libraries change, not every frame; what else was worked out every frame (owner, 2026-11-10)**
+
+A review of what the applications do on every frame found the weather
+case file's modification time asked for on every frame a check window's
+Setup tab is shown, to see whether its groups changed outside the
+program. The owner decided, in the owner's words: **refresh on a library
+change, not every frame.** The groups are read when the model reads its
+libraries (a file saved in the program, Reload, another project line, an
+undo of a library change) or uses another weather case file, and when the
+Weather case groups window is opened — the user's own way to see them as
+they are now. A file edited outside the program therefore shows at the
+next of these, not at once: accepted.
+
+The other findings of the same review were removed with it (the list,
+with what each kept value is keyed by, is in
+[performance](performance.md), "What else was recomputed every frame").
+They change only *when* something is worked out — no value, text or
+drawing — with these points decided on the way:
+
+- **A kept value's key names everything it is made from**, and where
+  that cannot be had cheaply and surely the value is not kept. So the
+  project's copy of the phase-distance values is still asked of the
+  project on every frame (its kind is not among those whose change counts
+  the libraries' revision up), and a run reads its values file itself
+  rather than taking the text shown.
+- **A library page's document can only be changed through its keeper**
+  (`library::edited::Edited`), which drops the text kept of it; an editor
+  shown every frame says whether it changed the document (the page
+  already checked the file on that answer), and the tests fail when an
+  editor changes it and says it did not.
+- **The profile makes notes only for the traces it writes on**; traces
+  farther than 2000 px (or the view's width) beyond the view's sides get
+  none. A note is centred on its trace, so one that far out neither
+  showed nor took the place of one that shows.
+- **Which plugins are in use is looked up on disk at most once a
+  second** (and at once when they are listed again or the user allows
+  one): a plugin built while the program runs is picked up within the
+  second instead of on the next frame.
+- **OHL-Structure reads the section library's files when their time or
+  length on disk changes**, looked at once a second, instead of reading
+  them all each second; a file changed in the last 3 s is read at every
+  look, because a file system keeping times to the second cannot tell a
+  second change from the first.
+- **Lines on the ground are keyed by the solutions' serials**, not their
+  points: a case solved again to the same shapes makes the lines once
+  more (the same lines).
+
 **The profile sheet: the plan between the profile and the tables, the elevations above (owner, 2026-11-10)**
 
 The owner asked for the plan submission's profile sheet (the private LeV

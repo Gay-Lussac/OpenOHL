@@ -428,6 +428,33 @@ pub struct Plugins {
     pub reading_project: bool,
     /// The project read, or why not (taken by the import window).
     pub project_read: Option<Result<Box<ohl_io::projects::ImportedProject>, String>>,
+    /// Which of the plugins listed can be used, as looked last
+    /// ([`Plugins::usable`]).
+    usable: std::sync::Mutex<Option<Usable>>,
+}
+
+/// Which of the plugins listed have no problem ([`Listed::problem`]: the
+/// manifest, what the user allowed, the entry file on disk), and what
+/// that was found from: the plugins listed (each folder, and whether it
+/// is a duplicate) and what the user allowed. Looked again when either
+/// differs, when the plugins are listed again, and after
+/// [`USABLE_FOR`] — a plugin built while the program runs is picked up
+/// then (owner's plan, 2026-11-10: the entry files were looked for on
+/// disk several times per plugin on every frame).
+struct Usable {
+    at: std::time::Instant,
+    allowed: BTreeMap<String, Consent>,
+    listed: Vec<(PathBuf, bool)>,
+    ok: Vec<bool>,
+}
+
+/// How long the plugins' entry files are taken to be as found last.
+const USABLE_FOR: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread looked which plugins can be used.
+    static USABLE_LOOKED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -568,12 +595,54 @@ impl Plugins {
         }
         self.listed = listed;
         self.stale = true;
+        // Listed again (Reload, an install, a removal): looked at once.
+        *self.usable_kept() = None;
+    }
+
+    fn usable_kept(&self) -> std::sync::MutexGuard<'_, Option<Usable>> {
+        self.usable
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Whether plugin `l` has no problem ([`Listed::problem`]), as found
+    /// when the plugins were last looked at ([`Usable`]); one that is not
+    /// of those listed is looked at now.
+    fn usable(&self, l: &Listed) -> bool {
+        let Some(k) = self.listed.iter().position(|x| std::ptr::eq(x, l)) else {
+            return l.problem().is_none();
+        };
+        let mut kept = self.usable_kept();
+        let fresh = kept.as_ref().is_some_and(|u| {
+            u.at.elapsed() < USABLE_FOR
+                && u.allowed == self.allowed
+                && u.listed.len() == self.listed.len()
+                && u.listed
+                    .iter()
+                    .zip(&self.listed)
+                    .all(|((dir, duplicate), l)| *dir == l.found.dir && *duplicate == l.duplicate)
+        });
+        if !fresh {
+            #[cfg(test)]
+            USABLE_LOOKED.with(|n| n.set(n.get() + 1));
+            *kept = Some(Usable {
+                at: std::time::Instant::now(),
+                allowed: self.allowed.clone(),
+                listed: self
+                    .listed
+                    .iter()
+                    .map(|l| (l.found.dir.clone(), l.duplicate))
+                    .collect(),
+                ok: self.listed.iter().map(|l| l.problem().is_none()).collect(),
+            });
+        }
+        kept.as_ref().is_some_and(|u| u.ok[k])
     }
 
     /// Whether the plugin is used (no problem, not turned off; a Python
     /// plugin only once the user allowed it to run unsandboxed).
     pub fn enabled(&self, l: &Listed) -> bool {
-        l.problem().is_none()
+        self.usable(l)
             && !self.disabled.contains(&l.found.name())
             && self.to_allow(l).is_none_or(|c| !c.unsandboxed)
     }
@@ -1350,6 +1419,93 @@ impl Plugins {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Which plugins can be used is looked up on disk once, not on every
+    /// question (2026-11-10): again when the plugins are listed again,
+    /// when what the user allowed changes, and after a second — an entry
+    /// file gone or built meanwhile is seen then. What the user turned
+    /// off counts at once.
+    #[test]
+    fn the_plugins_in_use_are_looked_up_once() {
+        let root = std::env::temp_dir().join(format!("ohl-app-usable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("hello-python");
+        std::fs::create_dir_all(&dir).unwrap();
+        let from = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../plugins/examples/hello-python");
+        for f in ["ohl-plugin.toml", "hello.py"] {
+            std::fs::copy(from.join(f), dir.join(f)).unwrap();
+        }
+        let mut p = Plugins {
+            folders: vec![root.clone()],
+            ..Default::default()
+        };
+        p.refresh();
+        let looked = || USABLE_LOOKED.with(std::cell::Cell::get);
+        // A second and more gone by since the plugins were looked at.
+        let age = |p: &Plugins| {
+            let mut kept = p.usable_kept();
+            let u = kept.as_mut().unwrap();
+            u.at = u.at.checked_sub(USABLE_FOR * 2).unwrap();
+        };
+        // The answer without anything kept.
+        let direct = |p: &Plugins| {
+            p.listed
+                .iter()
+                .filter(|l| {
+                    l.problem().is_none()
+                        && !p.disabled.contains(&l.found.name())
+                        && p.to_allow(l).is_none_or(|c| !c.unsandboxed)
+                })
+                .count()
+        };
+        let before = looked();
+        // Not sandboxed: not used until allowed.
+        for _ in 0..4 {
+            assert!(p.python_scripts().is_empty());
+        }
+        assert_eq!(looked(), before + 1);
+        let l = &p.listed[0];
+        let (key, asked) = (
+            l.found.manifest.as_ref().unwrap().consent_key(),
+            p.to_allow(l).unwrap(),
+        );
+        // Allowed: looked again, at once.
+        p.allowed.insert(key, asked);
+        for _ in 0..4 {
+            assert_eq!(p.python_scripts().len(), 1);
+            assert_eq!(p.table_columns().len(), 0);
+            assert!(p.check_dirs().is_empty());
+        }
+        assert_eq!((looked(), direct(&p)), (before + 2, 1));
+        // Turned off and on: at once, nothing looked up.
+        p.disabled.insert("hello-python".into());
+        assert!(p.python_scripts().is_empty());
+        p.disabled.clear();
+        assert_eq!(p.python_scripts().len(), 1);
+        assert_eq!(looked(), before + 2);
+        // Its entry file gone: seen after the second, not before.
+        std::fs::remove_file(dir.join("hello.py")).unwrap();
+        assert_eq!(p.python_scripts().len(), 1);
+        assert_eq!(looked(), before + 2);
+        age(&p);
+        assert!(p.python_scripts().is_empty());
+        assert_eq!((looked(), direct(&p)), (before + 3, 0));
+        // Built again: after the second, or at once when listed again.
+        std::fs::copy(from.join("hello.py"), dir.join("hello.py")).unwrap();
+        assert!(p.python_scripts().is_empty());
+        p.refresh();
+        assert_eq!(p.python_scripts().len(), 1);
+        assert_eq!((looked(), direct(&p)), (before + 4, 1));
+        std::fs::remove_file(dir.join("hello.py")).unwrap();
+        age(&p);
+        assert!(p.python_scripts().is_empty());
+        std::fs::copy(from.join("hello.py"), dir.join("hello.py")).unwrap();
+        age(&p);
+        assert_eq!(p.python_scripts().len(), 1);
+        assert_eq!(looked(), before + 6);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     /// The plugin folders and the plugins turned off come from the
     /// settings file shared with OHL-Structure (`settings.toml` in the

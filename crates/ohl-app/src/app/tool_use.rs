@@ -22,7 +22,7 @@ impl Ready {
     /// The first alignment of what the profile shows (by default the
     /// route with most structures).
     pub(super) fn profile_alignment(&mut self) -> Option<String> {
-        let views = self.xsections.alignments(&self.model.line);
+        let views = self.model.alignment_views();
         let show = self
             .profile
             .show
@@ -47,7 +47,7 @@ impl Ready {
     /// Opens a cut at structure `id` at once (its menu: Cross-section
     /// here), the depth by default, the line width across.
     pub fn cross_section_at(&mut self, id: &str) {
-        let views = self.xsections.alignments(&self.model.line);
+        let views = self.model.alignment_views();
         let preferred = self.profile_alignment().unwrap_or_default();
         let d = crate::xsection::Dialog::new(
             &self.model,

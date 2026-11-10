@@ -2103,7 +2103,7 @@ impl DrawingsWindow {
         action: &mut Option<crate::sheet_ui::Action>,
     ) -> Option<Job> {
         let mut job = None;
-        let routes = model.line.alignment_views();
+        let routes = model.alignment_views();
         let offers = crate::sheet_ui::offers_kept(model, &self.plugin_templates);
         let template =
             crate::sheet_ui::resolve_kept(model, &self.sheet.template, &self.plugin_templates);

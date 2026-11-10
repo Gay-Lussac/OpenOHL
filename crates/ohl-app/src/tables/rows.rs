@@ -347,6 +347,9 @@ impl TableKind {
                 .iter()
                 .flat_map(|s| {
                     let through = &through;
+                    // The structure as stored, found once (not for each
+                    // of its strings).
+                    let stored = model.stored_line().and_then(|l| l.structure(&s.id));
                     s.strings.iter().map(move |x| {
                         let sets: Vec<u32> = s
                             .component(&x.wire)
@@ -356,11 +359,7 @@ impl TableKind {
                             .collect();
                         let dead_end = line.is_dead_end(s, &x.wire);
                         // Limits its insulator gives (not its own): dimmed.
-                        let own = model
-                            .stored_line()
-                            .and_then(|l| l.structure(&s.id))
-                            .and_then(|o| o.string(&x.label))
-                            .map(|o| o.limits());
+                        let own = stored.and_then(|o| o.string(&x.label)).map(|o| o.limits());
                         let (l, given) = (x.limits(), own.unwrap_or(x.limits()));
                         let inherited = [
                             l.max_load.is_some() && given.max_load.is_none(),

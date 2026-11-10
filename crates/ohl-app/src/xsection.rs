@@ -904,7 +904,6 @@ pub struct CrossSections {
     /// The window making a cut, when open.
     pub dialog: Option<Dialog>,
     grid: Option<Arc<PointGrid>>,
-    alignments: crate::plan::AlignmentViews,
     /// Counted up when the slabs are forgotten.
     serial: u64,
 }
@@ -987,11 +986,6 @@ impl CrossSections {
         }
     }
 
-    /// The line's alignments.
-    pub fn alignments(&mut self, line: &ohl_line::Line) -> Vec<AlignmentView> {
-        self.alignments.get(line).to_vec()
-    }
-
     /// The title of cut `id`'s tab.
     pub fn title(&self, id: u32) -> String {
         self.views.get(&id).map_or_else(
@@ -1021,7 +1015,7 @@ impl CrossSections {
         alignment: Option<String>,
         width: f64,
     ) {
-        let views = self.alignments(&model.line);
+        let views = model.alignment_views();
         self.dialog = Some(Dialog::new(model, &views, selection, alignment, width));
     }
 
@@ -1032,7 +1026,7 @@ impl CrossSections {
         ui: &mut egui::Ui,
         cx: PanelCtx<'_>,
     ) -> Option<crate::selection::Use> {
-        let views = self.alignments(&cx.model.line);
+        let views = cx.model.alignment_views();
         let grid = self.grid(cx.model);
         let serial = self.serial;
         let Some(view) = self.views.get_mut(&id) else {

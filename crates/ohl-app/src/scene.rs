@@ -1889,14 +1889,16 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                                 continue;
                             }
                             for (a, b) in crate::selection::string_pieces(model, k)
-                                .remove(&(structure.clone(), label.clone()))
-                                .unwrap_or_default()
+                                .get(&(structure.clone(), label.clone()))
+                                .into_iter()
+                                .flatten()
                             {
-                                s.polyline(&[a, b], hi, 2.0);
+                                s.polyline(&[*a, *b], hi, 2.0);
                             }
                         }
                         let mut drawn = crate::selection::string_pieces(model, strong)
-                            .remove(&(structure.clone(), label.clone()))
+                            .get(&(structure.clone(), label.clone()))
+                            .cloned()
                             .unwrap_or_default();
                         if drawn.is_empty()
                             && let Some(st) = line.structure(structure)

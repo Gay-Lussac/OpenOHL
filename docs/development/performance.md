@@ -303,8 +303,9 @@ frame, in several views).
   every frame. `check_ui::LineChoices` makes them once per version of the
   line (`Model::line_version`), route worked on and case names (the names
   themselves are compared). The weather case groups are shared instead
-  of copied; their file's modification time is still asked for on every
-  frame the Setup tab is shown (one `stat`), as before.
+  of copied, and read when the libraries change (below; until then their
+  file's modification time was asked for on every frame the Setup tab was
+  shown).
 
 Measured (a timing of the table's work alone, without egui drawing the
 cells; Apple M-series, release, median of 40):
@@ -325,6 +326,57 @@ after it a comparison of the keys.
 
 Not measured: the whole frame of a window (drawing the rows in view is
 unchanged), the safety volumes' mesh volumes, the rule editors' lists.
+
+### What else was recomputed every frame (2026-11-10)
+
+Found by a review of the frame's work and removed the same day. Only
+*when* something is worked out changed: the values, texts and drawings
+are the same (each item has a test that compares with the computation as
+it was, or counts how often it is made). Every kept value names all it is
+made from in its key; `Model::line_version` counts every change of the
+line (the line is never changed in place), `Solved::serial` every solve of
+a weather case, `Model::revisions.libraries` every reading of the library
+files. Most of them are kept by the model (`model::ModelKept`, each a
+`kept::Kept`: the last value and its key), so a model opened anew starts
+with nothing kept. Not measured: the list below is what was done on every
+frame and what it is keyed by now.
+
+| What | Every frame before | Now made when … changes |
+|---|---|---|
+| Weather case groups (the checks' Setup tabs, `case_groups::groups_shared`) | a `stat` of the weather case file | the file used (its path) or the libraries' revision; at once when the model reads its libraries (also when they then do not load) and when the Weather case groups window is opened. A file changed outside the program shows at the next of these (the owner's decision) |
+| Phase distance, *Values used* | the values file read from disk (a file chosen), or every library file's text copied to find the project's copy, then two more copies of the text | a file chosen: the file, its modification time or its length (`phase_distance::KeptFile`; one `stat` per frame is left). The project's copy is still asked of the project every frame, now without copying the other files (the next row); the copies of the text are gone. A run reads the values itself, as before |
+| A library page's *unsaved* (`LibraryPage::dirty`: every Library tab's title, hidden ones too, its buttons; the load case form's text; a wire's graph) | the whole document written out as text and compared, up to five times a frame per page | the document: its text and the answer are kept (`library::edited::Edited`) until the page replaces or changes it — the page can reach the document only through `open`, `replace`, `edit` and `edit_if` (an editor shown every frame, which answers whether it changed anything: what the page already checked the file on) |
+| `Session::library_files(kind)` | kind, name and text copied for every library object, then all but one kind thrown away (asked for each of the 15 kinds in turn) | nothing kept: only the library objects are gone through, the kind compared first |
+| Profile: section labels and sags | a note for every span of the line (its points copied), all of them looked through for every trace | nothing kept: only the notes of the traces written on are made, found by section and span (`profile::span_notes`); traces more than 2000 px (or the view's width) beyond the view's sides get none |
+| Plan: the objects' labels | the structures' names made (every member point of every structure looked at for its top) and thrown away | nothing kept: not made (`annotations::object_notes_unnamed`) |
+| 3D: the structures' names | every member point of every structure looked at for its top | the line's version (`annotations::structure_tops`) |
+| Where the strings are drawn (`selection::string_pieces`: the labels, picking, and the selection's highlight — once per selected object and case) | a map of every string of the line, each section searched for by id | per weather case: the line's version and the serials of the case's solution and of its other wind side (`selection::KeptPieces`) |
+| Properties of a structure: its routes | the routes of every structure worked out, twice | the line's version (`Model::routes_of`, as the other panels) |
+| The alignments with their structures (`Line::alignment_views`) | worked out by the open Profile sheets, Plans and Spotting windows; hashed from every alignment, point and structure by the plan, the profile and the cross-sections, the profile copying the result | the line's version, one shared list (`Model::alignment_views`) |
+| The shapes shown (`Model::shapes_shown_ref`, the plan) | each section searched for in every case's shapes (the square of their number) | nothing kept: each case's shapes indexed by section once per call. The other project lines in the plan: the cases shown asked once, each section's once |
+| Lines on the ground: whether they are still right (`ground_lines::key`) | every clamp, low point and mid-point of every solution displayed hashed; every section asked for its cases | each solution's serial instead of its points (a case solved again to the same shapes makes the lines once more: the same lines); only the sections that can have cases of their own are asked |
+| Structure editor page, the windows of a deletion of an alignment point or a spread, the route choice | the whole line copied (the editor page: twice) | nothing kept: read where it is; copied only by the action that changes the model while reading it |
+| Which plugins are in use (`Plugins::enabled`, asked for each plugin by five lists a frame) | each plugin's entry file looked for on disk each time | the plugins listed (each folder, duplicate or not), what the user allowed; at once when the plugins are listed again (Reload, install, remove); otherwise looked at again after a second, so a plugin built meanwhile is picked up. Turned off or on: not kept, counts at once |
+| Profile: the clearance marks | both ends of every mark projected onto the centreline | the drawing (counted up when it is made again) and the marks themselves, compared (`profile::MarksAlong`) |
+| Strings table | the structure as stored searched for once per string | nothing kept: once per structure (the rows themselves are kept by the Tables page) |
+| OHL-Structure, Section library: the library's files | every file copied for the sheet each frame (again, and parsed again, with a form open); every file read and parsed again each second | shared, not copied; each file's document parsed once; the folder is listed and its files' times and lengths asked each second, and the files read again only when one is new, gone or differs — or was changed less than 3 s before it was read (its time may not tell a second change yet). A change made in the window is read at once |
+| OHL-Structure: the section ids members choose from (four sheets) | the library's ids copied and the file's own looked up among them | the structure file's revision and the libraries' stamp (`SectionEditor::choices`) |
+
+Left as they were, and why:
+
+- **Phase distance, the project's copy of the values**: asked of the
+  project on every frame (cheap now). It is not among the 15 library
+  kinds whose change counts `revisions.libraries` up — another project
+  line chosen does not count it for this kind — so that revision is no
+  sure key for it.
+- **The lists the plugins give** (table columns, check folders, scripts,
+  class schemes, field presets) are still made on every call, from memory
+  only.
+- **`Model::unsolved_shown`**: with no section unsolved it only asks each
+  section for its cases; left.
+- **`Model::set_check_plugins`** compiles a check plugin's WebAssembly on
+  the user-interface thread when the plugins in use change (a fraction of
+  a second each): not part of this change.
 
 ## Edit benchmark (desktop application)
 

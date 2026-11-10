@@ -199,8 +199,21 @@ impl Displayed {
     /// What `model` displays, `shown` the case shown.
     pub fn of(model: &Model, shown: usize) -> Self {
         let line = model.shown(shown);
-        let mut ids: BTreeSet<&str> = model.line.sections.iter().map(|s| s.id.as_str()).collect();
-        ids.extend(model.display_cases.keys().map(String::as_str));
+        // Only the sections that can be drawn in other cases than the
+        // line's are asked ([`Model::section_cases`]): those with display
+        // cases of their own, when they are used, and a check result's
+        // (2026-11-10: every section of the line was asked on every
+        // frame; the others' cases are the line's).
+        let mut ids: BTreeSet<&str> = BTreeSet::new();
+        if model.cases_shown == crate::model::CasesShown::PerSection {
+            ids.extend(model.display_cases.keys().map(String::as_str));
+        }
+        if let Some(r) = &model.result_case {
+            ids.extend(r.sections.iter().map(String::as_str).filter(|id| {
+                model.display_cases.contains_key(*id)
+                    || model.line.sections.iter().any(|s| s.id == *id)
+            }));
+        }
         let sections = ids
             .into_iter()
             .filter_map(|id| {
@@ -1013,10 +1026,13 @@ impl GroundLines {
 
 /// What the lines of the cases `displayed` are made from: the settings'
 /// geometry, the line (its version, the alignments), the solutions of
-/// the cases (their clamps and low points, both wind sides, the other
-/// sides `others` solved here), the project lines displayed (`projects`,
-/// when each was shown, their solutions and other sides
-/// `project_others`), the ground.
+/// the cases (each by its serial, [`Solved::serial`]: both wind sides,
+/// the other sides `others` solved here), the project lines displayed
+/// (`projects`, when each was shown, their solutions and other sides
+/// `project_others`), the ground. (Until 2026-11-10 every clamp, low
+/// point and mid-point of every solution was hashed on every frame; a
+/// case solved again to the same shapes now makes the lines once more —
+/// the same lines.)
 fn key(
     model: &Model,
     displayed: &Displayed,
@@ -1050,19 +1066,7 @@ fn key(
         for (k, s) in all {
             k.hash(&mut h);
             (s.ready, s.case.wind_from == WindSide::Left).hash(&mut h);
-            for shape in &s.shapes {
-                shape.section.hash(&mut h);
-                for p in &shape.clamps {
-                    p.map(f64::to_bits).hash(&mut h);
-                }
-                for span in &shape.spans {
-                    span.low_point.map(f64::to_bits).hash(&mut h);
-                    span.mid_point.map(f64::to_bits).hash(&mut h);
-                }
-            }
-            for j in &s.jumpers {
-                j.low_point.map(f64::to_bits).hash(&mut h);
-            }
+            s.serial.hash(&mut h);
         }
     }
     model
@@ -3127,6 +3131,124 @@ pub const CORRIDOR_HOVER: &str = "Half width of the LiDAR ground the lines are d
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// [`Displayed::of`] as it was made until 2026-11-10: every section
+    /// of the line asked.
+    fn displayed_before(model: &Model, shown: usize) -> Displayed {
+        let line = model.shown(shown);
+        let mut ids: BTreeSet<&str> = model.line.sections.iter().map(|s| s.id.as_str()).collect();
+        ids.extend(model.display_cases.keys().map(String::as_str));
+        let sections = ids
+            .into_iter()
+            .filter_map(|id| {
+                let own = model.section_cases(id, shown);
+                (own != line).then(|| (id.to_owned(), own))
+            })
+            .collect();
+        Displayed { line, sections }
+    }
+
+    /// What is displayed is what asking every section gave: the line's
+    /// cases, sections' own (used, and kept but not used), a check
+    /// result's case on its sections (a section of the line, one with
+    /// display cases only, one unknown).
+    #[test]
+    fn displayed_is_what_every_section_gave() {
+        let mut m = crate::tests::synthetic();
+        let same = |m: &Model, what: &str| {
+            for shown in [0, 1] {
+                assert_eq!(
+                    Displayed::of(m, shown),
+                    displayed_before(m, shown),
+                    "{what}"
+                );
+            }
+            Displayed::of(m, 0)
+        };
+        assert!(same(&m, "the case shown").sections.is_empty());
+        m.shown_cases = vec![1, 2, 99];
+        assert!(same(&m, "two cases shown").sections.is_empty());
+        let (a, b) = (m.line.sections[0].id.clone(), m.line.sections[1].id.clone());
+        m.display_cases.insert(a.clone(), vec![0]);
+        m.display_cases.insert("gone".into(), vec![2]);
+        m.display_cases.insert(b.clone(), vec![99]);
+        assert!(same(&m, "own cases kept, not used").sections.is_empty());
+        m.cases_shown = crate::model::CasesShown::PerSection;
+        let d = same(&m, "own cases used");
+        assert_eq!(
+            d.sections.keys().collect::<Vec<_>>(),
+            [&a, &"gone".to_owned()]
+        );
+        for (cases_shown, sections) in [
+            (
+                crate::model::CasesShown::AllSections,
+                vec![b.clone(), "gone".into(), "nowhere".into()],
+            ),
+            (
+                crate::model::CasesShown::PerSection,
+                vec![b.clone(), "gone".into(), "nowhere".into()],
+            ),
+            (crate::model::CasesShown::PerSection, Vec::new()),
+        ] {
+            m.cases_shown = cases_shown;
+            for case in [Some(0), Some(2), Some(99), None] {
+                m.result_case = Some(crate::result_case::ResultCase::new(
+                    crate::result_case::From::Clearances,
+                    crate::selection::Selection::None,
+                    sections.clone(),
+                    case,
+                    String::new(),
+                    [0.0; 3],
+                ));
+                let d = same(&m, "a check result's case");
+                if case == Some(0) && !sections.is_empty() {
+                    assert_eq!(d.sections[&b][0], 0);
+                    assert!(!d.sections.contains_key("nowhere"));
+                }
+            }
+        }
+    }
+
+    /// The key of the lines made is the same from frame to frame and
+    /// another when a case displayed is solved again (its serial), when
+    /// the line changes, when other cases are displayed — without the
+    /// solutions' points being gone through (2026-11-10).
+    #[test]
+    fn the_key_follows_the_solutions_serials() {
+        let mut m = crate::tests::synthetic();
+        let settings = Settings::default();
+        let of =
+            |m: &Model, shown: usize| key(m, &Displayed::of(m, shown), &[], &[], &[], &settings);
+        let first = of(&m, 0);
+        assert_eq!(of(&m, 0), first);
+        // Another case displayed.
+        m.shown_cases = vec![1];
+        assert_ne!(of(&m, 0), first);
+        m.shown_cases = vec![0];
+        assert_eq!(of(&m, 0), first);
+        // Case 1 solved again: case 0's lines are as they were.
+        let case = m.cases[1].case.clone();
+        m.cases[1] = Solved::new(&m.line, &m.library, case);
+        assert_eq!(of(&m, 0), first);
+        // Case 0 solved again: made again (the same lines).
+        let case = m.cases[0].case.clone();
+        m.cases[0] = Solved::new(&m.line, &m.library, case);
+        let again = of(&m, 0);
+        assert_ne!(again, first);
+        assert_eq!(of(&m, 0), again);
+        m.line_version += 1;
+        assert_ne!(of(&m, 0), again);
+        // From the axis: the solutions do not count.
+        let axis = Settings {
+            from: From::Axis,
+            ..Settings::default()
+        };
+        let of_axis = |m: &Model| key(m, &Displayed::of(m, 0), &[], &[], &[], &axis);
+        let before = of_axis(&m);
+        let case = m.cases[0].case.clone();
+        m.cases[0] = Solved::new(&m.line, &m.library, case);
+        assert_eq!(of_axis(&m), before);
+    }
 
     fn flat(z: f64) -> Terrain {
         Terrain::from_xyz(

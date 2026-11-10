@@ -163,6 +163,11 @@ fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
         }
     });
     description(ui, &s.description);
+    // Its routes, from the model's (worked out once per version of the
+    // line: asking the line goes through every structure, twice a frame
+    // until 2026-11-10).
+    let routes_of = model.routes_of();
+    let routes: &[String] = routes_of.structures.get(&id).map_or(&[], Vec::as_slice);
     // Attachment points whose joint is gone (or unlinked): drawn red,
     // the structure's loads refused until they are linked again.
     let lost: Vec<String> = crate::link_tool::unlinked_points(line)
@@ -216,15 +221,15 @@ fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
             ("orientation", format!("{:.2}°", s.orientation_deg)),
             (
                 "routes",
-                match (line.routes_of(&id), s.routes.is_empty()) {
-                    (r, _) if r.is_empty() => "—".into(),
+                match (routes, s.routes.is_empty()) {
+                    ([], _) => "—".into(),
                     (r, true) => format!("{} (from the alignments)", r.join(", ")),
                     (r, false) => format!("{} (its own)", r.join(", ")),
                 },
             ),
         ],
     );
-    if line.routes_of(&id).is_empty() {
+    if routes.is_empty() {
         ui.colored_label(
             ui.visuals().warn_fg_color,
             "On no route: it stands on no alignment. Give its route(s) in its window \

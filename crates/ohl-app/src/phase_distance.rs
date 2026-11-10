@@ -482,6 +482,8 @@ pub struct PhaseDistanceWindow {
     cell: Option<([u32; 3], String)>,
     /// The plugin running the check, for the plugins in use.
     plugin: Option<Loaded>,
+    /// The text of the values file chosen, as shown ([`KeptFile`]).
+    file_text: KeptFile,
     /// The values shown as tables, for their text.
     tables: Option<(String, Result<Vec<ValueTable>, String>)>,
     values_error: Option<String>,
@@ -580,6 +582,7 @@ impl PhaseDistanceWindow {
             editing: None,
             cell: None,
             plugin: None,
+            file_text: KeptFile::default(),
             tables: None,
             values_error: None,
             pending_values: None,
@@ -734,6 +737,42 @@ enum Source {
     Project,
     /// A file.
     File,
+}
+
+/// The text of a values file as last read, for showing it (owner,
+/// 2026-11-10: the window read the file on every frame): read again when
+/// another file is chosen or the file's time or length on disk changed.
+/// A run reads the file itself ([`PhaseDistanceWindow::current_values`]).
+#[derive(Debug, Default)]
+struct KeptFile(Option<(FileStamp, Result<String, String>)>);
+
+/// A file, its time and its length (none: not there).
+type FileStamp = (PathBuf, Option<(std::time::SystemTime, u64)>);
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread read a values file for showing it.
+    static FILES_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl KeptFile {
+    /// The text of `file`, or why it does not read.
+    fn text(&mut self, file: &std::path::Path) -> &Result<String, String> {
+        let stamp: FileStamp = (
+            file.to_path_buf(),
+            std::fs::metadata(file)
+                .and_then(|m| Ok((m.modified()?, m.len())))
+                .ok(),
+        );
+        if !self.0.as_ref().is_some_and(|(s, _)| *s == stamp) {
+            #[cfg(test)]
+            FILES_READ.with(|n| n.set(n.get() + 1));
+            let text =
+                std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()));
+            self.0 = Some((stamp, text));
+        }
+        &self.0.as_ref().expect("just set").1
+    }
 }
 
 /// Kind of the project's library files holding edited values.
@@ -1911,6 +1950,24 @@ impl PhaseDistanceWindow {
         Ok((name, check.info.values.clone(), Source::Plugin))
     }
 
+    /// As [`Self::current_values`] for showing them: the file chosen as
+    /// read last ([`KeptFile`]), not read on every frame.
+    fn shown_values(&mut self, model: &Model) -> Result<(String, String, Source), String> {
+        if self.values.is_none()
+            && let Some(file) = &self.file
+        {
+            let name = file
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            return self
+                .file_text
+                .text(file)
+                .clone()
+                .map(|t| (name, t, Source::File));
+        }
+        self.current_values(model)
+    }
+
     /// The values as tables (read only; an admin may edit them: kept in
     /// the project).
     fn values_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
@@ -1919,21 +1976,24 @@ impl PhaseDistanceWindow {
         if self.check().is_err() && self.file.is_none() && self.values.is_none() {
             return;
         }
-        let current = self.current_values(model);
+        let current = self.shown_values(model);
         let admin = is_admin(model);
         egui::CollapsingHeader::new("Values used")
             .id_salt("phase-distance-values")
             .default_open(true)
             .show(ui, |ui| {
-                let (name, text, source) = match &current {
-                    Ok(c) => c.clone(),
+                let (name, text, source) = match current {
+                    Ok(c) => c,
                     Err(e) => {
                         crate::menu::error_label(ui, e);
                         return;
                     }
                 };
                 let editing = self.editing.is_some();
-                let shown = self.editing.clone().unwrap_or_else(|| text.clone());
+                let shown: std::borrow::Cow<'_, str> = match &self.editing {
+                    Some(e) => e.clone().into(),
+                    None => text.as_str().into(),
+                };
                 let tables = match self.tables_of(&shown) {
                     Ok(t) => t,
                     Err(e) => {
@@ -2812,5 +2872,46 @@ mod check_weather_tests {
         assert_eq!(case_for(&refs, &hint), Some(3));
         assert_eq!(case_for(&refs[..3], &hint), Some(2));
         assert_eq!(case_for(&refs[..2], &hint), None);
+    }
+}
+
+#[cfg(test)]
+mod kept_file_tests {
+    use super::{FILES_READ, KeptFile};
+
+    /// The values file shown is read once, and again when it changed on
+    /// disk (its time or length), when another is chosen and when it
+    /// comes to be; what it gives is what reading it gives.
+    #[test]
+    fn a_values_file_is_read_when_it_changed() {
+        let dir = std::env::temp_dir().join(format!("ohl-values-kept-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.values"), dir.join("b.values"));
+        let read = || FILES_READ.with(std::cell::Cell::get);
+        let direct = |p: &std::path::Path| {
+            std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))
+        };
+        let mut kept = KeptFile::default();
+        let before = read();
+        // Not there: the error of reading it, asked once.
+        assert_eq!(*kept.text(&a), direct(&a));
+        assert!(kept.text(&a).is_err());
+        assert_eq!(read(), before + 1);
+        std::fs::write(&a, "one").unwrap();
+        for _ in 0..4 {
+            assert_eq!(kept.text(&a).as_deref(), Ok("one"));
+        }
+        assert_eq!(read(), before + 2);
+        // Changed (another length: seen whatever the clock's step).
+        std::fs::write(&a, "three").unwrap();
+        assert_eq!(*kept.text(&a), direct(&a));
+        assert_eq!(kept.text(&a).as_deref(), Ok("three"));
+        assert_eq!(read(), before + 3);
+        // Another file, and back.
+        std::fs::write(&b, "other").unwrap();
+        assert_eq!(kept.text(&b).as_deref(), Ok("other"));
+        assert_eq!(kept.text(&a).as_deref(), Ok("three"));
+        assert_eq!(read(), before + 5);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

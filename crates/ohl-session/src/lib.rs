@@ -1960,12 +1960,16 @@ impl Session {
     /// (e.g. `cables`, `structures`, `insulators`, `weather`): file name and
     /// text, by name.
     pub fn library_files(&self, kind: &str) -> Result<Vec<(String, String)>, SessionError> {
+        // Only the library objects are looked at, and the kind is
+        // compared before anything is copied: asked for each kind in
+        // turn, every file's text was copied for each of them
+        // (2026-11-10).
         let mut out: Vec<(String, String)> = self
             .objects
-            .iter()
-            .filter(|((k, _), _)| *k == Kind::Library)
+            .range((Kind::Library, String::new())..)
+            .take_while(|((k, _), _)| *k == Kind::Library)
+            .filter(|(_, o)| o.value.get("kind").and_then(Value::as_str) == Some(kind))
             .filter_map(|(_, o)| library_entry(&o.value))
-            .filter(|(k, _, _)| k == kind)
             .map(|(_, name, text)| (name, text))
             .collect();
         out.sort();

@@ -303,7 +303,7 @@ impl PlansWindow {
     /// The phase plans' groups: each a name and the alignments ticked —
     /// a route's tick takes all its alignments (owner, 2026-11-03).
     fn groups_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let views = model.line.alignment_views();
+        let views = model.alignment_views();
         ui.label(egui::RichText::new("Alignments in one plan").strong())
             .on_hover_text(
                 "A phase plan of several routes and alignments, drawn one after the other in \
@@ -323,7 +323,7 @@ impl PlansWindow {
                 .spacing([10.0, 2.0])
                 .show(ui, |ui| {
                     let mut routes: Vec<String> = Vec::new();
-                    for v in &views {
+                    for v in views.iter() {
                         if !routes.contains(&v.route) {
                             routes.push(v.route.clone());
                         }
@@ -464,7 +464,7 @@ impl PlansWindow {
         let template = (!self.set_mode).then(|| {
             crate::sheet_ui::resolve_kept(model, &self.sheet.template, &drawings.plugin_templates)
         });
-        let routes = model.line.alignment_views();
+        let routes = model.alignment_views();
         let route = match drawings.route.and_then(|k| routes.get(k)) {
             Some(r) => format!("{} {}", r.id, r.name),
             None => "every route".into(),

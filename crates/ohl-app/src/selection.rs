@@ -404,7 +404,7 @@ impl Selection {
                 .map(|w| w.position),
             Selection::String { structure, label } => {
                 let (a, b) = string_pieces(model, case)
-                    .remove(&(structure.clone(), label.clone()))
+                    .get(&(structure.clone(), label.clone()))
                     .and_then(|v| v.first().copied())
                     .or_else(|| {
                         let s = model.line.structure(structure)?;
@@ -515,12 +515,32 @@ pub type StringPieces = std::collections::HashMap<(String, String), Vec<([f64; 3
 /// Where each string is drawn in weather case `case` (and its mirror, the
 /// wind from the other side): (top, bottom) by (structure, label) — a
 /// section's strings as solved, a jumper's helping strings to their
-/// clamps.
-pub fn string_pieces(model: &Model, case: usize) -> StringPieces {
+/// clamps. Made once per line version and solution of the case and
+/// shared ([`KeptPieces`]; owner, 2026-11-10: the labels, the picking and
+/// the selection's highlight made the whole line's map again on every
+/// frame, some of them for every selected object).
+pub fn string_pieces(model: &Model, case: usize) -> std::sync::Arc<StringPieces> {
+    let key = (model.line_version, model.drawn_serials(case));
+    model
+        .kept
+        .string_pieces
+        .get(case, key, || string_pieces_made(model, case))
+}
+
+/// [`string_pieces`], worked out.
+fn string_pieces_made(model: &Model, case: usize) -> StringPieces {
+    #[cfg(test)]
+    PIECES_MADE.with(|n| n.set(n.get() + 1));
+    // (The sections by id, found once: the first of an id, as a search
+    // from the front finds it.)
+    let mut sections = std::collections::HashMap::new();
+    for s in &model.line.sections {
+        sections.entry(s.id.as_str()).or_insert(s);
+    }
     let mut out = StringPieces::new();
     for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
         for shape in &solved.shapes {
-            let Some(sec) = model.line.sections.iter().find(|s| s.id == shape.section) else {
+            let Some(sec) = sections.get(shape.section.as_str()) else {
                 continue;
             };
             for (p, strings) in sec.points.iter().zip(&shape.strings) {
@@ -542,6 +562,51 @@ pub fn string_pieces(model: &Model, case: usize) -> StringPieces {
         }
     }
     out
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread worked out a case's string pieces.
+    pub(crate) static PIECES_MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// What a case's string pieces are made from: the line's version and the
+/// serials of the case's solution and its mirror
+/// ([`Model::drawn_serials`]).
+type PiecesKey = (u64, (u64, u64));
+
+/// The string pieces of the weather cases asked for, each with what it
+/// was made from ([`string_pieces`]); those of another version of the
+/// line are dropped when one is made.
+#[derive(Debug, Default)]
+pub struct KeptPieces(
+    std::sync::Mutex<std::collections::HashMap<usize, (PiecesKey, std::sync::Arc<StringPieces>)>>,
+);
+
+impl KeptPieces {
+    /// The pieces of `case` for `key`: those kept, or made now.
+    fn get(
+        &self,
+        case: usize,
+        key: PiecesKey,
+        make: impl FnOnce() -> StringPieces,
+    ) -> std::sync::Arc<StringPieces> {
+        let lock = || {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        };
+        if let Some((k, p)) = lock().get(&case)
+            && *k == key
+        {
+            return p.clone();
+        }
+        let p = std::sync::Arc::new(make());
+        let mut kept = lock();
+        kept.retain(|_, (k, _)| k.0 == key.0);
+        kept.insert(case, (key, p.clone()));
+        p
+    }
 }
 
 /// The wire points where the strings hold them in `pieces` (as given
@@ -881,9 +946,12 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
                     .map(|c| (c, k)),
             );
             if strings {
-                for ((structure, label), pieces) in pieces {
-                    let sel = Selection::String { structure, label };
-                    for (a, b) in pieces {
+                for ((structure, label), pieces) in pieces.iter() {
+                    let sel = Selection::String {
+                        structure: structure.clone(),
+                        label: label.clone(),
+                    };
+                    for &(a, b) in pieces {
                         out.push(((sel.clone(), a, b), k));
                     }
                 }

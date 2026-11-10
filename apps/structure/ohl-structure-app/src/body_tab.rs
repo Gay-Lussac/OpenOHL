@@ -259,7 +259,11 @@ impl StructureApp {
             return;
         };
         // The section library's first (looked up first), then the file's.
-        let sections = crate::section_editor::section_choices(&self.loads.sections, f.doc());
+        let sections = self.section_editor.choices(
+            (f.revision(), self.libs_stamp),
+            &self.loads.sections,
+            f.doc(),
+        );
         let all = groups(t);
         if all.is_empty() {
             ui.label(
@@ -306,7 +310,7 @@ impl StructureApp {
                     .width(110.0)
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut chosen, "—".to_owned(), "— (sticks)");
-                        for s in &sections {
+                        for s in sections.iter() {
                             ui.selectable_value(&mut chosen, s.clone(), s);
                         }
                     });

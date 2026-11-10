@@ -18,17 +18,23 @@
 //! structures ([`crate::internal_clearances::GroupStudy`]).
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::sync::Arc;
 
 use eframe::egui;
 use ohl_weather::CaseGroup;
 
 use crate::model::Model;
 
-/// The groups read, by file and its time (read again when it changed).
-type Cache = Option<(PathBuf, Option<SystemTime>, Arc<Vec<CaseGroup>>)>;
-static CACHE: Mutex<Cache> = Mutex::new(None);
+/// The groups read, by the file's path and the libraries' revision
+/// ([`crate::revision::Revisions::libraries`]); kept by the model
+/// ([`crate::model::ModelKept`]).
+pub type KeptGroups = crate::kept::Kept<(PathBuf, u64), Arc<Vec<CaseGroup>>>;
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread read a weather case file for its groups.
+    static GROUPS_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 /// The groups of the model's weather case file (none without one, or
 /// when it does not read).
@@ -37,30 +43,39 @@ pub fn groups(model: &Model) -> Vec<CaseGroup> {
 }
 
 /// As [`groups`], shared instead of copied (what asks every frame: the
-/// checks' case lists, [`crate::check_ui::LineChoices`]). The file's
-/// time is still looked at on every call: a file changed outside the
-/// program shows at once.
+/// checks' case lists, [`crate::check_ui::LineChoices`]). The file is
+/// read when the model reads its libraries (owner, 2026-11-10: "refresh
+/// on a library change, not every frame" — until then its time on disk
+/// was asked on every call) or uses another file; a file changed outside
+/// the program shows at the next library change or reload, and when the
+/// Weather case groups window is opened ([`groups_now`]).
 pub fn groups_shared(model: &Model) -> Arc<Vec<CaseGroup>> {
     let Some(path) = model.sources.weather.as_ref() else {
         return Arc::default();
     };
-    let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-    let mut cache = CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((p, m, g)) = cache.as_ref()
-        && p == path
-        && *m == modified
-    {
-        return g.clone();
-    }
-    let g = Arc::new(
+    model
+        .kept
+        .case_groups
+        .get((path.clone(), model.revisions.libraries), || read(path))
+}
+
+/// The groups as the file has them now: read from disk and kept (the
+/// user's own action: the Weather case groups window opened).
+pub fn groups_now(model: &Model) -> Arc<Vec<CaseGroup>> {
+    model.kept.case_groups.forget();
+    groups_shared(model)
+}
+
+/// The groups of the weather case file `path` (none when it does not
+/// read).
+fn read(path: &std::path::Path) -> Arc<Vec<CaseGroup>> {
+    #[cfg(test)]
+    GROUPS_READ.with(|n| n.set(n.get() + 1));
+    Arc::new(
         ohl_weather::WeatherCases::load(path)
             .map(|s| s.groups)
             .unwrap_or_default(),
-    );
-    *cache = Some((path.clone(), modified, g.clone()));
-    g
+    )
 }
 
 /// A group's buttons: the cases of the one clicked added to `chosen`
@@ -180,7 +195,9 @@ impl GroupsWindow {
             return None;
         }
         let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let edit = self.edit.get_or_insert_with(|| groups(model));
+        let edit = self
+            .edit
+            .get_or_insert_with(|| groups_now(model).as_ref().clone());
         let mut open = true;
         let mut save = false;
         let mut remove = None;
@@ -313,6 +330,64 @@ impl GroupsWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The groups are read once per file and library revision (owner,
+    /// 2026-11-10), not on every call: a file changed outside shows when
+    /// the libraries are read again, when the window asks, or when the
+    /// model uses another file.
+    #[test]
+    fn groups_are_read_once_per_library_revision() {
+        let mut model = crate::tests::synthetic_project("groups-kept");
+        let dir = model.sources.file.parent().unwrap().to_path_buf();
+        let write = |file: &str, group: &str| {
+            let path = dir.join(file);
+            std::fs::write(
+                &path,
+                format!(
+                    "format = \"ohl-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\n\
+                     temperature = \"10 °C\"\n[[group]]\nname = \"{group}\"\ncases = [\"a\"]\n"
+                ),
+            )
+            .unwrap();
+            path
+        };
+        let read = || GROUPS_READ.with(std::cell::Cell::get);
+        let name = |m: &Model| groups_shared(m)[0].name.clone();
+        model.sources.weather = Some(write("cases.ohlwc", "one"));
+        let before = read();
+        for _ in 0..4 {
+            assert_eq!(name(&model), "one");
+        }
+        assert_eq!(read(), before + 1);
+        // Changed outside the program: not looked at on every call.
+        write("cases.ohlwc", "two");
+        assert_eq!(name(&model), "one");
+        assert_eq!(read(), before + 1);
+        // The window opened: read now, and kept.
+        assert_eq!(groups_now(&model)[0].name, "two");
+        assert_eq!(name(&model), "two");
+        assert_eq!(read(), before + 2);
+        // The libraries changed.
+        write("cases.ohlwc", "three");
+        model.revisions.libraries += 1;
+        assert_eq!(name(&model), "three");
+        assert_eq!(name(&model), "three");
+        assert_eq!(read(), before + 3);
+        // Read again by the model.
+        write("cases.ohlwc", "four");
+        model.reload_libraries().unwrap();
+        assert_eq!(name(&model), "four");
+        assert_eq!(read(), before + 4);
+        // Another file used.
+        model.sources.weather = Some(write("other.ohlwc", "five"));
+        assert_eq!(name(&model), "five");
+        assert_eq!(name(&model), "five");
+        assert_eq!(read(), before + 5);
+        // None: no groups, nothing read.
+        model.sources.weather = None;
+        assert!(groups_shared(&model).is_empty());
+        assert_eq!(read(), before + 5);
+    }
 
     /// Groups written into a case file keep its cases and comments, read
     /// back, and are replaced (not added) when saved again; two of one

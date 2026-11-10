@@ -299,6 +299,21 @@ pub fn notes_where(
     view: View,
     keep: impl Fn(&[[f64; 3]], [f64; 3]) -> bool,
 ) -> Vec<Note> {
+    notes_of(model, case, view, |shape, k| {
+        let s = &shape.spans[k];
+        keep(&s.points, s.mid_point)
+    })
+}
+
+/// [`notes`] of the spans `keep` keeps, given a section's shape and the
+/// span's place in it (the profile: the spans whose traces it writes
+/// on).
+pub fn notes_of(
+    model: &Model,
+    case: usize,
+    view: View,
+    keep: impl Fn(&ohl_line::solve::SectionShape, usize) -> bool,
+) -> Vec<Note> {
     let display = &model.section_display;
     let (label, sag) = (display.label[view as usize], display.sag[view as usize]);
     if !label && !sag {
@@ -346,10 +361,7 @@ pub fn notes_where(
         };
         if label
             && !shape.spans.is_empty()
-            && {
-                let s = &shape.spans[shape.spans.len() / 2];
-                keep(&s.points, s.mid_point)
-            }
+            && keep(shape, shape.spans.len() / 2)
             && labelled.insert(shape.section.clone())
         {
             out.push(note(
@@ -364,7 +376,7 @@ pub fn notes_where(
         }
         if sag {
             for (k, s) in shape.spans.iter().enumerate() {
-                if keep(&s.points, s.mid_point) {
+                if keep(shape, k) {
                     out.push(note(k, Kind::Sag, format!("{:.2} m", s.sag)));
                 }
             }
@@ -387,6 +399,34 @@ fn with_description(text: String, description: &str, show: bool) -> String {
     }
 }
 
+/// The height above which each structure's name is written (2 m under
+/// it), in the line's order: its highest point or member point, at least
+/// 5 m above its foot. Worked out once per version of the line (owner,
+/// 2026-11-10: every member point of every structure was looked at on
+/// every frame of the 3D view and the plan).
+pub fn structure_tops(model: &Model) -> std::sync::Arc<[f64]> {
+    model.kept.structure_tops.get(model.line_version, || {
+        #[cfg(test)]
+        TOPS_MADE.with(|n| n.set(n.get() + 1));
+        model.line.structures.iter().map(structure_top).collect()
+    })
+}
+
+/// [`structure_tops`] of one structure.
+fn structure_top(s: &ohl_line::Structure) -> f64 {
+    s.points
+        .iter()
+        .map(|p| p.position[2])
+        .chain(s.members.iter().flatten().map(|p| p[2]))
+        .fold(s.position[2] + 5.0, f64::max)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread worked out the structures' tops.
+    pub(crate) static TOPS_MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The labels of `view` for the structures, their points, strings (where
 /// drawn in weather case `case`) and wire points, as chosen in Structures
 /// › Display options.
@@ -396,10 +436,32 @@ pub fn object_notes(
     view: View,
     near: Option<([f64; 3], f64)>,
 ) -> Vec<Note> {
+    object_notes_of(model, case, view, near, true)
+}
+
+/// [`object_notes`] without the structures' names ([`Kind::Structure`]):
+/// for the plan, which writes them itself.
+pub fn object_notes_unnamed(
+    model: &Model,
+    case: usize,
+    view: View,
+    near: Option<([f64; 3], f64)>,
+) -> Vec<Note> {
+    object_notes_of(model, case, view, near, false)
+}
+
+/// [`object_notes`], the structures' names made only with `names`.
+fn object_notes_of(
+    model: &Model,
+    case: usize,
+    view: View,
+    near: Option<([f64; 3], f64)>,
+    names: bool,
+) -> Vec<Note> {
     let d = &model.section_display;
     let v = view as usize;
     let (structures, points, strings, wires, tops, library, alignment) = (
-        d.structure_label[v],
+        names && d.structure_label[v],
         d.point_label[v],
         d.string_label[v],
         d.wire_label[v],
@@ -416,6 +478,11 @@ pub fn object_notes(
     } else {
         Default::default()
     };
+    let name_tops = if structures {
+        structure_tops(model)
+    } else {
+        Default::default()
+    };
     let note = |at: [f64; 3], text: String, color: [u8; 3]| Note {
         section: String::new(),
         span: 0,
@@ -428,15 +495,10 @@ pub fn object_notes(
     };
     let close = |p: [f64; 3]| near.is_none_or(|(eye, r)| within(p, eye, r));
     let mut out = Vec::new();
-    for s in &model.line.structures {
+    for (k, s) in model.line.structures.iter().enumerate() {
         // Names at any distance (decluttered where they are written).
         if structures {
-            let top = s
-                .points
-                .iter()
-                .map(|p| p.position[2])
-                .chain(s.members.iter().flatten().map(|p| p[2]))
-                .fold(s.position[2] + 5.0, f64::max);
+            let top = name_tops[k];
             let mut name = note(
                 [s.position[0], s.position[1], top + 2.0],
                 with_description(s.id.clone(), &s.description, show),

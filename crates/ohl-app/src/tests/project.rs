@@ -1111,3 +1111,44 @@ fn tables_show_defaults_and_leave_them_unset() {
     assert_eq!(j.angle_to_deg, Some(10.0));
     assert!(j.bending_stiffness.is_none() && ei > 0.0);
 }
+
+/// The project's library files of one kind are those put under that
+/// kind, by name, whatever else the project keeps (2026-11-10: the kind
+/// is compared before a file's text is copied): two kinds side by side,
+/// the kinds the project had before unchanged.
+#[test]
+fn library_files_of_a_kind_are_that_kinds_by_name() {
+    let mut m = synthetic_project("library-files-by-kind");
+    let e = m.editing.as_mut().unwrap();
+    let before: Vec<_> = crate::model::PROJECT_LIBRARIES
+        .iter()
+        .map(|(k, _)| e.session.library_files(k).unwrap())
+        .collect();
+    assert!(before.iter().any(|f| !f.is_empty()));
+    let user = e.user.clone();
+    for (kind, name, text) in [
+        ("phase-distance", "b.values", "two"),
+        ("notes", "a.values", "other"),
+        ("phase-distance", "a.values", "one"),
+        ("phase-distance", "b.values", "two again"),
+    ] {
+        e.session.put_library_file(&user, kind, name, text).unwrap();
+    }
+    let own = |v: &[(&str, &str)]| -> Vec<(String, String)> {
+        v.iter().map(|(n, t)| ((*n).into(), (*t).into())).collect()
+    };
+    assert_eq!(
+        e.session.library_files("phase-distance").unwrap(),
+        own(&[("a.values", "one"), ("b.values", "two again")])
+    );
+    assert_eq!(
+        e.session.library_files("notes").unwrap(),
+        own(&[("a.values", "other")])
+    );
+    assert!(e.session.library_files("phase").unwrap().is_empty());
+    let after: Vec<_> = crate::model::PROJECT_LIBRARIES
+        .iter()
+        .map(|(k, _)| e.session.library_files(k).unwrap())
+        .collect();
+    assert_eq!(after, before);
+}

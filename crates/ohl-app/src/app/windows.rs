@@ -159,7 +159,7 @@ pub(super) fn cut_window(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     d.follow(&r.selection);
-    let views = r.xsections.alignments(&r.model.line);
+    let views = r.model.alignment_views();
     let mut out = crate::xsection::DialogOut::None;
     tool_window(r, "xsection", "Cross-section").show(ctx, |ui| {
         out = crate::xsection::dialog_ui(ui, &mut d, &r.model.line, &views);
@@ -541,16 +541,10 @@ pub(super) fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
             }
         }
     }
-    // (The line copied only while the window is open: every frame.)
-    let Some(stored) = r
-        .route_choice
-        .is_some()
-        .then(|| r.model.stored_line().unwrap_or(&r.model.line).clone())
-    else {
-        return;
-    };
+    // (The line read where it is: not copied while the window is open.)
+    let stored = r.model.stored_line().unwrap_or(&r.model.line);
     if let Some(c) = &mut r.route_choice
-        && let Some(action) = c.ui(ctx, &stored)
+        && let Some(action) = c.ui(ctx, stored)
     {
         use crate::alignment_tools::RouteChoiceAction;
         match action {

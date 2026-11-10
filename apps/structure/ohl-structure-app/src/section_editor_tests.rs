@@ -270,3 +270,134 @@ fn materials_are_typed_in_the_library_sheet() {
     assert!(app.loads.sections.material("alu").is_some());
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+/// The library's files are read when they changed, not every second
+/// (2026-11-10): after a second the folder is looked at, and the files
+/// read again only when one is new, gone, or has another time or length
+/// on disk — or was changed too shortly before for its time to tell; a
+/// change made in the window is read at once. Their documents are parsed
+/// once; nothing is copied for the sheet.
+#[test]
+fn library_files_are_read_when_they_changed() {
+    use crate::section_editor::FILES_READ;
+    let (mut app, sections) = app("seclib-kept", true);
+    let read = || FILES_READ.with(std::cell::Cell::get);
+    let texts = |app: &mut StructureApp| -> Vec<String> {
+        let files = app.section_editor.files(&sections);
+        files.iter().map(|f| f.text.clone()).collect()
+    };
+    let on_disk = |names: &[&str]| -> Vec<String> {
+        names
+            .iter()
+            .map(|n| std::fs::read_to_string(sections.join(n)).unwrap())
+            .collect()
+    };
+    app.section_editor.forget_files();
+    let before = read();
+    let first = app.section_editor.files(&sections);
+    for _ in 0..4 {
+        // Within the second: the same files, shared.
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &app.section_editor.files(&sections)
+        ));
+    }
+    assert_eq!(read(), before + 1);
+    assert_eq!(texts(&mut app), on_disk(&["a.ohlsec"]));
+    // A second later, the file written only just before: read again
+    // (its time on disk may not tell a second change yet).
+    app.section_editor.later(false);
+    assert_eq!(texts(&mut app), on_disk(&["a.ohlsec"]));
+    assert_eq!(read(), before + 2);
+    // Later still, nothing changed: looked at, not read.
+    for _ in 0..3 {
+        app.section_editor.later(true);
+        let kept = app.section_editor.files(&sections);
+        assert!(std::sync::Arc::ptr_eq(
+            &kept,
+            &app.section_editor.files(&sections)
+        ));
+        // Parsed once: the same document each time.
+        assert!(std::ptr::eq(
+            kept[0].doc().unwrap(),
+            app.section_editor.files(&sections)[0].doc().unwrap()
+        ));
+    }
+    assert_eq!(read(), before + 2);
+    // Changed by another program: seen at the next look, not before it.
+    std::fs::write(
+        sections.join("a.ohlsec"),
+        format!("{MATERIALS}# changed elsewhere\n"),
+    )
+    .unwrap();
+    assert_ne!(texts(&mut app), on_disk(&["a.ohlsec"]));
+    app.section_editor.later(true);
+    assert_eq!(texts(&mut app), on_disk(&["a.ohlsec"]));
+    assert_eq!(read(), before + 3);
+    // A file more, then one less.
+    std::fs::write(
+        sections.join("b.ohlsec"),
+        "[[section]]\nid = \"B\"\nshape = \"round_bar\"\nd = \"20 mm\"\n",
+    )
+    .unwrap();
+    app.section_editor.later(true);
+    assert_eq!(texts(&mut app), on_disk(&["a.ohlsec", "b.ohlsec"]));
+    assert_eq!(read(), before + 4);
+    std::fs::remove_file(sections.join("b.ohlsec")).unwrap();
+    app.section_editor.later(true);
+    assert_eq!(texts(&mut app), on_disk(&["a.ohlsec"]));
+    assert_eq!(read(), before + 5);
+    // A change made here: read at once.
+    let file = sections.join("a.ohlsec");
+    app.save_section(&angle(&file, "L60", "60 mm", "6 mm"))
+        .unwrap();
+    assert_eq!(texts(&mut app), on_disk(&["a.ohlsec"]));
+    assert!(texts(&mut app)[0].contains("L60"));
+    std::fs::remove_dir_all(sections.parent().unwrap()).unwrap();
+}
+
+/// The section ids members choose from are listed once per revision of
+/// the structure file and stamp of the libraries (2026-11-10), and are
+/// the list made directly.
+#[test]
+fn section_choices_are_listed_once_per_revision() {
+    use crate::section_editor::CHOICES_MADE;
+    let (mut app, sections) = app("seclib-choices", true);
+    let file = sections.join("a.ohlsec");
+    let made = || CHOICES_MADE.with(std::cell::Cell::get);
+    let ask = |app: &mut StructureApp| {
+        let f = app.file.as_ref().unwrap();
+        let ids = app.section_editor.choices(
+            (f.revision(), app.libs_stamp),
+            &app.loads.sections,
+            f.doc(),
+        );
+        assert_eq!(*ids, *section_choices(&app.loads.sections, f.doc()));
+        ids
+    };
+    let before = made();
+    let first = ask(&mut app);
+    for _ in 0..4 {
+        assert!(std::sync::Arc::ptr_eq(&first, &ask(&mut app)));
+    }
+    assert_eq!(made(), before + 1);
+    // The library changed: listed again, with the new section.
+    app.save_section(&angle(&file, "L60", "60 mm", "6 mm"))
+        .unwrap();
+    assert!(ask(&mut app).contains(&"L60".to_owned()));
+    assert!(!first.contains(&"L60".to_owned()));
+    ask(&mut app);
+    assert_eq!(made(), before + 2);
+    // The structure file changed: listed again.
+    app.file.as_mut().unwrap().edit("section of m1", |doc, _| {
+        ohl_structure_edit::set_member_section(doc, "m1", Some("L60"))
+    });
+    ask(&mut app);
+    ask(&mut app);
+    assert_eq!(made(), before + 3);
+    // Undone: another revision, listed again.
+    app.undo();
+    ask(&mut app);
+    assert_eq!(made(), before + 4);
+    std::fs::remove_dir_all(sections.parent().unwrap()).unwrap();
+}

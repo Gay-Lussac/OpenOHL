@@ -396,7 +396,8 @@ pub(super) fn point_delete_window(ctx: &egui::Context, r: &mut Ready) {
     // None: still open; Some(None): delete it; Some(Some(list)): off these.
     let mut chosen: Option<Option<Vec<String>>> = None;
     let mut close = false;
-    let stored = r.model.stored_line().unwrap_or(&r.model.line).clone();
+    // (Read where it is: not copied on every frame the window is open.)
+    let stored = r.model.stored_line().unwrap_or(&r.model.line);
     tool_window(r, "point-delete", format!("Delete alignment point {id}")).show(ctx, |ui| {
         ui.label(format!(
             "{id} is on {} alignments. Delete it from all of them, or take it off the ones ticked \
@@ -460,7 +461,7 @@ pub(super) fn point_delete_window(ctx: &egui::Context, r: &mut Ready) {
             for a in alignments.iter_mut().filter(|a| off.contains(&a.id)) {
                 a.points.retain(|p| *p != id);
             }
-            match crate::editors::alignments_command(&stored, &alignments) {
+            match crate::editors::alignments_command(stored, &alignments) {
                 Ok(command) => {
                     r.perform(crate::edit::Action::Command {
                         what: format!("took alignment point {id} off {}", off.join(", ")),
@@ -483,7 +484,8 @@ pub(super) fn spread_delete_window(ctx: &egui::Context, r: &mut Ready) {
     let Some(ask) = r.spread_delete.clone() else {
         return;
     };
-    let line = r.model.stored_line().unwrap_or(&r.model.line).clone();
+    // (Read where it is: not copied on every frame the window is open.)
+    let line = r.model.stored_line().unwrap_or(&r.model.line);
     let Some(sec) = line.sections.iter().find(|s| s.id == ask.section) else {
         r.spread_delete = None;
         return;
@@ -516,7 +518,7 @@ pub(super) fn spread_delete_window(ctx: &egui::Context, r: &mut Ready) {
             };
             let ends: Vec<(String, Vec<String>)> = [&l.from, &l.to]
                 .into_iter()
-                .map(|p| (p.clone(), point_uses(&line, sec, p, *k)))
+                .map(|p| (p.clone(), point_uses(line, sec, p, *k)))
                 .collect();
             let free: Vec<String> = ends
                 .iter()
@@ -624,7 +626,7 @@ pub(super) fn spread_delete_window(ctx: &egui::Context, r: &mut Ready) {
     match chosen {
         Some(Some((points, spreads))) => {
             r.spread_delete = None;
-            if let Some(action) = span_delete_action(&line, &section, &points, &spreads) {
+            if let Some(action) = span_delete_action(line, &section, &points, &spreads) {
                 r.perform(action);
             }
         }

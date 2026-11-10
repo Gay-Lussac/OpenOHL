@@ -568,6 +568,9 @@ pub struct Model {
     /// The routes of the structures, sections and jumpers, by line
     /// version ([`Model::routes_of`]).
     routes_cache: std::sync::Mutex<Option<(u64, std::sync::Arc<RoutesOf>)>>,
+    /// What else the views and windows ask every frame, each kept by
+    /// what it is made from ([`ModelKept`]).
+    pub kept: ModelKept,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
     /// The project's session when it is read-only for this user (a
@@ -1230,6 +1233,33 @@ pub struct RoutesOf {
     pub jumpers: std::collections::BTreeMap<String, Vec<String>>,
 }
 
+/// What a model keeps of what is asked every frame (owner, 2026-11-10),
+/// each by its own key ([`crate::kept::Kept`]). A new model starts with
+/// nothing kept.
+#[derive(Debug, Default)]
+pub struct ModelKept {
+    /// The weather case file's groups, by the file's path and the
+    /// libraries' revision ([`crate::case_groups::groups_shared`]).
+    pub case_groups: crate::case_groups::KeptGroups,
+    /// The line's alignment views, by the line's version
+    /// ([`Model::alignment_views`]).
+    alignment_views: crate::kept::Kept<u64, std::sync::Arc<[ohl_line::route::AlignmentView]>>,
+    /// The height each structure's name is written at, by the line's
+    /// version ([`crate::annotations::structure_tops`]).
+    pub structure_tops: crate::kept::Kept<u64, std::sync::Arc<[f64]>>,
+    /// Where the strings are drawn, by weather case
+    /// ([`crate::selection::string_pieces`]).
+    pub string_pieces: crate::selection::KeptPieces,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread worked out a line's alignment views for
+    /// [`Model::alignment_views`].
+    pub(crate) static ALIGNMENT_VIEWS_MADE: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 impl Model {
     /// The routes of the line's structures, sections and jumpers, worked
     /// out once per version of the line (the panels ask every frame).
@@ -1250,6 +1280,29 @@ impl Model {
             *m = Some((self.line_version, r.clone()));
         }
         r
+    }
+
+    /// The line's alignments with the structures on them
+    /// ([`ohl_line::Line::alignment_views`]: every structure placed on
+    /// every alignment by distance), worked out once per version of the
+    /// line and shared (owner, 2026-11-10: the profile, the plan, the
+    /// cross-sections and the open Drawings, Plans and Spotting windows
+    /// each worked them out on every frame).
+    pub fn alignment_views(&self) -> std::sync::Arc<[ohl_line::route::AlignmentView]> {
+        self.kept.alignment_views.get(self.line_version, || {
+            #[cfg(test)]
+            ALIGNMENT_VIEWS_MADE.with(|n| n.set(n.get() + 1));
+            self.line.alignment_views().into()
+        })
+    }
+
+    /// The solutions weather case `case` is drawn from, by their serials
+    /// (the case's and its mirror's, 0 for none): another pair, another
+    /// drawing of the case.
+    pub fn drawn_serials(&self, case: usize) -> (u64, u64) {
+        self.cases.get(case).map_or((0, 0), |c| {
+            (c.serial, c.mirror.as_ref().map_or(0, |m| m.serial))
+        })
     }
 
     /// What the route worked on holds; none: all the line is worked on.
@@ -1838,18 +1891,35 @@ impl Model {
 
     /// [`Model::shapes_shown`] without copying them (drawn every frame).
     pub fn shapes_shown_ref(&self, case: usize) -> Vec<&SectionShape> {
-        self.line
-            .sections
-            .iter()
-            .flat_map(|s| {
-                self.section_cases(&s.id, case)
-                    .into_iter()
-                    .filter_map(|k| self.cases.get(k))
-                    .flat_map(|c| c.drawn())
-                    .filter_map(|c| c.shapes.iter().find(|x| x.section == s.id))
-                    .collect::<Vec<_>>()
-            })
-            .collect()
+        // The shapes of each case drawn (each of its wind sides) by
+        // section, found once: looking through a case's shapes for every
+        // section took the square of their number (2026-11-10). The
+        // first of a section's, as a search from the front finds it.
+        let mut by_case: std::collections::HashMap<
+            usize,
+            Vec<std::collections::HashMap<&str, &SectionShape>>,
+        > = std::collections::HashMap::new();
+        let mut out = Vec::new();
+        for s in &self.line.sections {
+            for k in self.section_cases(&s.id, case) {
+                let Some(c) = self.cases.get(k) else {
+                    continue;
+                };
+                let sides = by_case.entry(k).or_insert_with(|| {
+                    c.drawn()
+                        .map(|side| {
+                            let mut shapes = std::collections::HashMap::new();
+                            for x in &side.shapes {
+                                shapes.entry(x.section.as_str()).or_insert(x);
+                            }
+                            shapes
+                        })
+                        .collect()
+                });
+                out.extend(sides.iter().filter_map(|m| m.get(s.id.as_str()).copied()));
+            }
+        }
+        out
     }
 
     /// Every section not solved in a weather case it is drawn in (both
@@ -2140,6 +2210,10 @@ impl Model {
     /// solves every case. Nothing changes when one does not load.
     pub fn reload_libraries(&mut self) -> Result<String, String> {
         let started = Instant::now();
+        // The weather case file may have been written even when the
+        // libraries then do not load (the revision stays): its groups
+        // are read again in any case.
+        self.kept.case_groups.forget();
         let stored = match self.session() {
             Some(s) => s.export(),
             None => load_line(&self.sources.file, None)?.0,
@@ -2660,6 +2734,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         types,
         resolve_cache,
         routes_cache: Default::default(),
+        kept: Default::default(),
         editing,
         display_cases: Default::default(),
         shown_cases: vec![0],

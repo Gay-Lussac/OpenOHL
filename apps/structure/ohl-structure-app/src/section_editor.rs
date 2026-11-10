@@ -14,7 +14,8 @@
 //! sections in Design › Member sections and Groups.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
 use ohl_sections::{SECTION_FILE_EXTENSION, Section, SectionLibrary};
@@ -28,6 +29,11 @@ use crate::app::{StructureApp, error_label};
 /// How often the library folder is looked at again (files written by the
 /// line application, another window).
 const RESCAN: Duration = Duration::from_secs(1);
+
+/// A file changed less than this ago is read at every look: its time on
+/// disk may not tell a second change from the first yet (file systems
+/// that keep times to the second or two).
+const SETTLED: Duration = Duration::from_secs(3);
 
 /// File name of the library file new sections go into when the folder
 /// has none.
@@ -70,11 +76,15 @@ pub struct LibraryFile {
     pub text: String,
     /// What it reads as, or why not.
     pub read: Result<SectionLibrary, String>,
+    /// Its text as a document, once asked for (none: not TOML).
+    doc: OnceLock<Option<DocumentMut>>,
 }
 
 impl LibraryFile {
-    fn doc(&self) -> Option<DocumentMut> {
-        self.text.parse().ok()
+    /// The file's text as a document (none: not TOML), parsed once
+    /// (2026-11-10: on every frame a form was open).
+    pub(crate) fn doc(&self) -> Option<&DocumentMut> {
+        self.doc.get_or_init(|| self.text.parse().ok()).as_ref()
     }
 
     /// The file's default material.
@@ -101,26 +111,86 @@ pub struct SectionEditor {
     pub material: Option<(PathBuf, Option<String>, MaterialDraft)>,
     /// A material's deletion waiting for its confirmation: file and id.
     pub confirm_material_delete: Option<(PathBuf, String)>,
-    /// The files read, and when.
-    files: Option<(Instant, PathBuf, Vec<LibraryFile>)>,
+    /// The files read, and what from.
+    files: Option<FilesRead>,
+    /// The section ids members may take, for the structure file's
+    /// revision and the libraries' stamp ([`SectionEditor::choices`]).
+    choices: Option<(ChoicesKey, Arc<[String]>)>,
     undo: Vec<LibraryEdit>,
     redo: Vec<LibraryEdit>,
 }
 
+/// What the section ids to choose from are listed for: the structure
+/// file's revision and the libraries' stamp.
+type ChoicesKey = (u64, u64);
+
+/// The library's files on disk as last looked at: each path with its
+/// time and length (none: not to be had).
+type Stamp = Vec<(PathBuf, Option<(SystemTime, u64)>)>;
+
+/// The library files as read, shared (the sheet and its forms ask every
+/// frame: nothing is copied), and what they were read from.
+#[derive(Debug)]
+struct FilesRead {
+    /// When the folder was last looked at.
+    looked: Instant,
+    /// The library's place.
+    at: PathBuf,
+    /// The files on disk when they were read.
+    stamp: Stamp,
+    /// Every file was last changed long enough before it was read
+    /// ([`SETTLED`]): the same stamp at the next look means the same
+    /// files.
+    settled: bool,
+    files: Arc<[LibraryFile]>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread read the library's files.
+    pub(crate) static FILES_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// How often this thread made the list of section ids to choose from.
+    pub(crate) static CHOICES_MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The `.ohlsec` files at `at` (a folder: its files in name order; a
 /// file: itself).
-pub fn library_files(at: &Path) -> Vec<LibraryFile> {
-    let paths = if at.is_file() {
+fn library_paths(at: &Path) -> Vec<PathBuf> {
+    if at.is_file() {
         vec![at.to_path_buf()]
     } else {
         ohl_core::files::files_with_extension(at, SECTION_FILE_EXTENSION)
-    };
+    }
+}
+
+/// The files `paths` as they are on disk now.
+fn stamp_of(paths: Vec<PathBuf>) -> Stamp {
     paths
         .into_iter()
-        .map(|path| {
-            let text = std::fs::read_to_string(&path).unwrap_or_default();
+        .map(|p| {
+            let on_disk = std::fs::metadata(&p)
+                .and_then(|m| Ok((m.modified()?, m.len())))
+                .ok();
+            (p, on_disk)
+        })
+        .collect()
+}
+
+/// The files of `stamp`, read.
+fn read_files(stamp: &Stamp) -> Vec<LibraryFile> {
+    #[cfg(test)]
+    FILES_READ.with(|n| n.set(n.get() + 1));
+    stamp
+        .iter()
+        .map(|(path, _)| {
+            let text = std::fs::read_to_string(path).unwrap_or_default();
             let read = SectionLibrary::parse(&text);
-            LibraryFile { path, text, read }
+            LibraryFile {
+                path: path.clone(),
+                text,
+                read,
+                doc: OnceLock::new(),
+            }
         })
         .collect()
 }
@@ -192,22 +262,83 @@ fn rows(s: &Section, density: Option<f64>) -> Vec<(&'static str, String, &'stati
 }
 
 impl SectionEditor {
-    /// The library files at `at`, read again when a second passed or
-    /// `at` changed.
-    pub fn files(&mut self, at: &Path) -> &[LibraryFile] {
-        let stale = self
+    /// The library files at `at`. The folder is looked at again when a
+    /// second passed or `at` changed; the files are read again only when
+    /// the folder then lists other files, or one's time or length on disk
+    /// changed, or one was changed too shortly before it was read for its
+    /// time to tell ([`SETTLED`]) — until 2026-11-10 every file was read
+    /// and parsed again each second. A change made here is read at once
+    /// ([`Self::forget_files`]).
+    pub fn files(&mut self, at: &Path) -> Arc<[LibraryFile]> {
+        let due = self
             .files
             .as_ref()
-            .is_none_or(|(when, p, _)| p != at || when.elapsed() >= RESCAN);
-        if stale {
-            self.files = Some((Instant::now(), at.to_path_buf(), library_files(at)));
+            .is_none_or(|r| r.at != at || r.looked.elapsed() >= RESCAN);
+        if due {
+            // (The stamp before the files: one written in between is
+            // read again at the next look.)
+            let now = SystemTime::now();
+            let stamp = stamp_of(library_paths(at));
+            match &mut self.files {
+                Some(r) if r.at == at && r.settled && r.stamp == stamp => {
+                    r.looked = Instant::now();
+                }
+                _ => {
+                    let settled = stamp.iter().all(|(_, on_disk)| {
+                        on_disk.is_some_and(|(changed, _)| {
+                            now.duration_since(changed).is_ok_and(|d| d >= SETTLED)
+                        })
+                    });
+                    self.files = Some(FilesRead {
+                        looked: Instant::now(),
+                        at: at.to_path_buf(),
+                        files: read_files(&stamp).into(),
+                        stamp,
+                        settled,
+                    });
+                }
+            }
         }
-        self.files.as_ref().map_or(&[][..], |f| f.2.as_slice())
+        self.files
+            .as_ref()
+            .map_or_else(|| Arc::from(Vec::new()), |r| r.files.clone())
+    }
+
+    /// The section ids members may take ([`section_choices`]) for `key`:
+    /// the structure file's revision and the libraries' stamp, which
+    /// count every change of `doc` and of `library`. Made once per key
+    /// (2026-11-10: on every frame, by four sheets).
+    pub fn choices(
+        &mut self,
+        key: ChoicesKey,
+        library: &SectionLibrary,
+        doc: &DocumentMut,
+    ) -> Arc<[String]> {
+        match &self.choices {
+            Some((k, ids)) if *k == key => ids.clone(),
+            _ => {
+                #[cfg(test)]
+                CHOICES_MADE.with(|n| n.set(n.get() + 1));
+                let ids: Arc<[String]> = section_choices(library, doc).into();
+                self.choices = Some((key, ids.clone()));
+                ids
+            }
+        }
     }
 
     /// Read the files again at the next look.
     pub fn forget_files(&mut self) {
         self.files = None;
+    }
+
+    /// A second and more gone by since the folder was looked at, and
+    /// (`settled`) long enough since its files were changed (tests).
+    #[cfg(test)]
+    pub(crate) fn later(&mut self, settled: bool) {
+        if let Some(r) = &mut self.files {
+            r.looked = r.looked.checked_sub(RESCAN * 2).expect("the clock");
+            r.settled |= settled;
+        }
     }
 
     /// Whether the next undo is a library edit (`steps`: the structure
@@ -376,7 +507,7 @@ impl StructureApp {
         let at = self.section_library_at()?;
         let files = self.section_editor.files(&at);
         let file = files.iter().find(|f| f.path == path)?;
-        let mut draft = SectionDraft::read(&file.doc()?, id)?;
+        let mut draft = SectionDraft::read(file.doc()?, id)?;
         let taken: Vec<String> = files
             .iter()
             .filter_map(|f| f.read.as_ref().ok())
@@ -403,17 +534,17 @@ impl StructureApp {
                 density: None,
             };
         };
-        let files = self.section_editor.files(&at).to_vec();
+        let files = self.section_editor.files(&at);
         let file = files.iter().find(|f| f.path == ed.file);
         let base = file.and_then(LibraryFile::doc).and_then(|d| {
             ed.old
                 .as_deref()
-                .and_then(|o| edit::section_table_of(&d, o).cloned())
+                .and_then(|o| edit::section_table_of(d, o).cloned())
         });
         let mut section = ed.draft.section(base.as_ref());
         // An id used by another section of the library.
         if let Ok(s) = &section {
-            for f in &files {
+            for f in files.iter() {
                 let Ok(lib) = &f.read else { continue };
                 let mine = f.path == ed.file;
                 if lib
@@ -519,7 +650,7 @@ impl StructureApp {
         let Some(at) = self.section_library_at() else {
             return;
         };
-        let files = self.section_editor.files(&at).to_vec();
+        let files = self.section_editor.files(&at);
         ui.horizontal_wrapped(|ui| {
             ui.label(format!("Cross-section library: {}", at.display()))
                 .on_hover_text(
@@ -530,7 +661,7 @@ impl StructureApp {
                 );
         });
         self.wind_summary(ui);
-        for f in &files {
+        for f in files.iter() {
             if let Err(e) = &f.read {
                 error_label(ui, format!("{}: {e}", f.path.display()));
             }
@@ -558,7 +689,7 @@ impl StructureApp {
                                 .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
                         )
                         .show_ui(ui, |ui| {
-                            for f in &files {
+                            for f in files.iter() {
                                 let name = f
                                     .path
                                     .file_name()
@@ -838,7 +969,7 @@ impl StructureApp {
                     .iter()
                     .find(|f| f.path == path)
                     .and_then(LibraryFile::doc)
-                    .and_then(|d| SectionDraft::read(&d, &id));
+                    .and_then(|d| SectionDraft::read(d, &id));
                 if let Some(draft) = draft {
                     self.section_editor.editing = Some(Editing {
                         file: path,
@@ -1010,7 +1141,7 @@ impl StructureApp {
                 .iter()
                 .find(|f| &f.path == path)
                 .and_then(LibraryFile::doc)
-                .and_then(|d| MaterialDraft::read(&d, id))
+                .and_then(|d| MaterialDraft::read(d, id))
         };
         match action {
             Some((path, id, 'e')) => {
@@ -1088,7 +1219,7 @@ impl StructureApp {
                         .iter()
                         .find(|f| f.path == path)
                         .and_then(LibraryFile::doc)
-                        .and_then(|doc| edit::material_table_of(&doc, o).cloned())
+                        .and_then(|doc| edit::material_table_of(doc, o).cloned())
                 });
                 let check = d.material(base.as_ref());
                 if let Err(e) = &check {

@@ -34,8 +34,6 @@ pub struct ProfileView {
     pub(crate) rect: Option<egui::Rect>,
     /// The wires' colours, line codes and directions.
     styles: crate::wire_style::StyleCache,
-    /// The routes' alignments.
-    alignments: crate::plan::AlignmentViews,
     /// Kept while the view does not move (forgotten with the drawing):
     /// the heights seen at the stations shown,
     extent: Option<([u64; 2], (f64, f64))>,
@@ -70,8 +68,13 @@ pub struct ProfileView {
     /// end at the wire, the end at the target); a vertical one has the
     /// same x and y at both ends, so it is drawn vertical here too ...
     pub marks: Vec<([f64; 3], [f64; 3])>,
-    /// ... dimmed while out of date.
+    /// ... dimmed while out of date;
     pub marks_stale: bool,
+    /// their ends' stations and offsets along the profile's centreline
+    /// ([`MarksAlong`]).
+    marks_along: MarksAlong,
+    /// Counted up when the drawing (its centreline) is made again.
+    drawing_serial: u64,
     /// A box or lasso being drawn to select LiDAR points
     /// ([`crate::area`]).
     pub area: Option<crate::area::AreaDrag>,
@@ -101,6 +104,48 @@ pub struct ProfileView {
 /// The stations and offsets of the vegetation points along a route: the
 /// route, the report's serial, grow-in, danger trees.
 type VegetationAlong = (String, u64, Vec<(f64, f64)>, Vec<(f64, f64)>);
+
+/// A clearance mark: the end at the wire, the end at the target.
+type Mark = ([f64; 3], [f64; 3]);
+
+/// The clearance marks' ends along the profile's centreline: each end's
+/// (station, offset), worked out once per drawing and set of marks
+/// (2026-11-10: both ends of every mark were projected onto the
+/// centreline on every frame). Kept with the marks they are of: marks
+/// set from anywhere are seen by comparing them.
+#[derive(Default)]
+struct MarksAlong {
+    /// The drawing's serial and the marks these are of (none: not made).
+    made_for: Option<(u64, Vec<Mark>)>,
+    along: Vec<[(f64, f64); 2]>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread projected a set of marks.
+    static MARKS_PROJECTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl MarksAlong {
+    /// The ends of `marks` along `centreline` (the drawing `serial`'s),
+    /// in the marks' order.
+    fn get(&mut self, serial: u64, centreline: &[[f64; 3]], marks: &[Mark]) -> &[[(f64, f64); 2]] {
+        if self
+            .made_for
+            .as_ref()
+            .is_none_or(|(s, m)| *s != serial || m != marks)
+        {
+            #[cfg(test)]
+            MARKS_PROJECTED.with(|n| n.set(n.get() + 1));
+            self.along = marks
+                .iter()
+                .map(|(at, to)| [at, to].map(|p| ohl_line::route::project(centreline, *p)))
+                .collect();
+            self.made_for = Some((serial, marks.to_vec()));
+        }
+        &self.along
+    }
+}
 
 /// The lines on the ground along the profile: what they were found for
 /// (the lines, the alignments' starts), each side's pieces of (station,
@@ -506,7 +551,7 @@ impl ProfileView {
         buttons: (egui::PointerButton, egui::PointerButton),
     ) -> Option<crate::selection::Use> {
         self.sheets_drawn.clear();
-        let routes = self.alignments.get(&model.line).to_vec();
+        let routes = model.alignment_views();
         if routes.is_empty() {
             ui.label(
                 "No alignment yet: define the route, then draw its alignment (New alignment tool).",
@@ -655,6 +700,7 @@ impl ProfileView {
             built.survey.sort_by(|a, b| a[0].total_cmp(&b[0]));
             built.lidar.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]));
             self.drawing = Some((key, built));
+            self.drawing_serial += 1;
             self.extent = None;
             self.back = None;
             self.wires = None;
@@ -905,9 +951,10 @@ impl ProfileView {
                 crate::revision::dimmed32(egui::Color32::from_rgb(255, 60, 50), self.marks_stale);
             let target =
                 crate::revision::dimmed32(egui::Color32::from_rgb(255, 160, 60), self.marks_stale);
-            for (at, to) in &self.marks {
-                let (sa, oa) = ohl_line::route::project(&d.centreline, *at);
-                let (st, ot) = ohl_line::route::project(&d.centreline, *to);
+            let along = self
+                .marks_along
+                .get(self.drawing_serial, &d.centreline, &self.marks);
+            for ((at, to), &[(sa, oa), (st, ot)]) in self.marks.iter().zip(along) {
                 let within = |s: f64, o: f64| o.abs() <= depth && s >= s0 && s <= s1;
                 if !(within(sa, oa) || within(st, ot)) {
                     continue;
@@ -1266,37 +1313,7 @@ impl ProfileView {
         }
         // Section labels and sags (Line › Sections › Display options), on this
         // route's traces of the spans.
-        let notes = crate::annotations::notes(model, case, crate::annotations::View::Profile, None);
-        if !notes.is_empty() {
-            let mut placer = crate::annotations::Placer::default();
-            for w in &d.wires {
-                let Some(Selection::Span { section, span }) = trace_selection(&w.label) else {
-                    continue;
-                };
-                let (Some(first), Some(last)) = (w.points.first(), w.points.last()) else {
-                    continue;
-                };
-                let (a, b) = (to_screen(first[0], first[2]), to_screen(last[0], last[2]));
-                if a.distance(b) < crate::annotations::MIN_SPAN_PX {
-                    continue;
-                }
-                // The trace's point at mid-station.
-                let mid = 0.5 * (first[0] + last[0]);
-                let Some(m) = w
-                    .points
-                    .iter()
-                    .min_by(|p, q| (p[0] - mid).abs().total_cmp(&(q[0] - mid).abs()))
-                else {
-                    continue;
-                };
-                for note in notes
-                    .iter()
-                    .filter(|n| n.section == section && n.span == span)
-                {
-                    placer.paint(&painter, to_screen(m[0], m[2]), note);
-                }
-            }
-        }
+        paint_span_notes(&painter, rect, model, case, &d.wires, to_screen);
         // The sheet preview: match lines across the view at each sheet's
         // ends, the sheets in a strip along the bottom (warned ones amber,
         // the part beyond what the sheet holds darker), their numbers.
@@ -1735,6 +1752,116 @@ pub fn ratio_menu(ui: &mut egui::Ui, ratio: &mut Option<f64>) -> bool {
 
 /// What a trace is, from its label: `S1 span 0 (circuit phase)` or
 /// `jumper J1`.
+/// Traces farther than this beyond the view's sides, px (the view's own
+/// width when that is more), get no note made: a note is centred on its
+/// trace, so one that far out neither shows nor takes the place of one
+/// that shows.
+const NOTE_MARGIN_PX: f32 = 2000.0;
+
+/// The section labels and sags (Line › Sections › Display options) on
+/// the route's traces of the spans, `wires`: a note at each trace's point
+/// at mid-station, overlapping ones left out ([`span_notes`]).
+fn paint_span_notes(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    model: &Model,
+    case: usize,
+    wires: &[ohl_drawing::Trace],
+    to_screen: impl Fn(f64, f64) -> egui::Pos2,
+) {
+    let (notes, written) = span_notes(rect, model, case, wires, to_screen);
+    let mut placer = crate::annotations::Placer::default();
+    for (at, k) in written {
+        placer.paint(painter, at, &notes[k]);
+    }
+}
+
+/// The notes of [`paint_span_notes`] and, in the order they are written,
+/// where each is (a note of a span is written on each of its traces).
+/// Only the notes of the traces written on are made, found by section
+/// and span (owner, 2026-11-10: a note was made for every span of the
+/// line on every frame, and all of them looked through for every trace).
+fn span_notes(
+    rect: egui::Rect,
+    model: &Model,
+    case: usize,
+    wires: &[ohl_drawing::Trace],
+    to_screen: impl Fn(f64, f64) -> egui::Pos2,
+) -> (Vec<crate::annotations::Note>, Vec<(egui::Pos2, usize)>) {
+    let view = crate::annotations::View::Profile;
+    let display = &model.section_display;
+    if !display.label[view as usize] && !display.sag[view as usize] {
+        return Default::default();
+    }
+    let on = traces_noted(rect, wires, to_screen);
+    if on.is_empty() {
+        return Default::default();
+    }
+    let wanted: std::collections::HashSet<(&str, usize)> =
+        on.iter().map(|(s, k, _)| (s.as_str(), *k)).collect();
+    let notes = crate::annotations::notes_of(model, case, view, |shape, k| {
+        wanted.contains(&(shape.section.as_str(), k))
+    });
+    // A span's notes in the order they were made (its label, its sag).
+    let mut of_span: std::collections::HashMap<(&str, usize), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (k, n) in notes.iter().enumerate() {
+        of_span
+            .entry((n.section.as_str(), n.span))
+            .or_default()
+            .push(k);
+    }
+    let written = on
+        .iter()
+        .flat_map(|(section, span, at)| {
+            of_span
+                .get(&(section.as_str(), *span))
+                .into_iter()
+                .flatten()
+                .map(|k| (*at, *k))
+        })
+        .collect();
+    (notes, written)
+}
+
+/// The traces of spans a note is written on, in their order: (section,
+/// span, where on screen — the trace's point at mid-station). Not those
+/// too short on screen, nor those far beyond the view's sides
+/// ([`NOTE_MARGIN_PX`]).
+fn traces_noted(
+    rect: egui::Rect,
+    wires: &[ohl_drawing::Trace],
+    to_screen: impl Fn(f64, f64) -> egui::Pos2,
+) -> Vec<(String, usize, egui::Pos2)> {
+    let margin = rect.width().max(NOTE_MARGIN_PX);
+    let (lo, hi) = (rect.min.x - margin, rect.max.x + margin);
+    let mut on = Vec::new();
+    for w in wires {
+        let (Some(first), Some(last)) = (w.points.first(), w.points.last()) else {
+            continue;
+        };
+        let (a, b) = (to_screen(first[0], first[2]), to_screen(last[0], last[2]));
+        if a.distance(b) < crate::annotations::MIN_SPAN_PX || a.x.max(b.x) < lo || a.x.min(b.x) > hi
+        {
+            continue;
+        }
+        let Some(Selection::Span { section, span }) = trace_selection(&w.label) else {
+            continue;
+        };
+        // The trace's point at mid-station.
+        let mid = 0.5 * (first[0] + last[0]);
+        let Some(m) = w
+            .points
+            .iter()
+            .min_by(|p, q| (p[0] - mid).abs().total_cmp(&(q[0] - mid).abs()))
+        else {
+            continue;
+        };
+        on.push((section, span, to_screen(m[0], m[2])));
+    }
+    on
+}
+
 fn trace_selection(label: &str) -> Option<Selection> {
     if let Some(id) = label.strip_prefix("jumper ") {
         return Some(Selection::Jumper(id.to_owned()));
@@ -1765,5 +1892,179 @@ mod tests {
             Some(Selection::Jumper("J1".into()))
         );
         assert_eq!(super::trace_selection("ground"), None);
+    }
+
+    /// The clearance marks' ends along the centreline are projected once
+    /// per drawing and set of marks (2026-11-10), and are what projecting
+    /// each end gives.
+    #[test]
+    fn marks_are_projected_once_per_drawing_and_marks() {
+        use super::{MARKS_PROJECTED, MarksAlong};
+        let centreline = [[0.0, 0.0, 0.0], [100.0, 0.0, 5.0], [100.0, 80.0, 9.0]];
+        let other = [[0.0, 10.0, 0.0], [200.0, 10.0, 0.0]];
+        let marks = vec![
+            ([30.0, 4.0, 20.0], [30.0, 4.0, 2.0]),
+            ([103.0, 40.0, 25.0], [110.0, 42.0, 1.0]),
+        ];
+        let direct = |c: &[[f64; 3]], m: &[super::Mark]| -> Vec<[(f64, f64); 2]> {
+            m.iter()
+                .map(|(at, to)| {
+                    [
+                        ohl_line::route::project(c, *at),
+                        ohl_line::route::project(c, *to),
+                    ]
+                })
+                .collect()
+        };
+        let projected = || MARKS_PROJECTED.with(std::cell::Cell::get);
+        let mut along = MarksAlong::default();
+        let before = projected();
+        for _ in 0..5 {
+            assert_eq!(
+                along.get(1, &centreline, &marks),
+                direct(&centreline, &marks)
+            );
+        }
+        assert_eq!(projected(), before + 1);
+        // The first mark: 30 m along, 4 m to the left.
+        assert_eq!(along.get(1, &centreline, &marks)[0][0], (30.0, -4.0));
+        // Another drawing (its centreline): again.
+        assert_eq!(along.get(2, &other, &marks), direct(&other, &marks));
+        assert_eq!(along.get(2, &other, &marks), direct(&other, &marks));
+        assert_eq!(projected(), before + 2);
+        // Other marks, set from anywhere: again; none: none.
+        let fewer = marks[1..].to_vec();
+        assert_eq!(along.get(2, &other, &fewer), direct(&other, &fewer));
+        assert_eq!(along.get(2, &other, &fewer), direct(&other, &fewer));
+        assert_eq!(projected(), before + 3);
+        assert!(along.get(2, &other, &[]).is_empty());
+    }
+
+    /// The profile's section labels and sags as written until 2026-11-10:
+    /// a note made for every span of the line, all of them looked through
+    /// for every trace. Where each note is written, in order.
+    fn span_notes_before(
+        model: &crate::model::Model,
+        case: usize,
+        wires: &[ohl_drawing::Trace],
+        to_screen: impl Fn(f64, f64) -> eframe::egui::Pos2,
+    ) -> Vec<(eframe::egui::Pos2, crate::annotations::Note)> {
+        let notes = crate::annotations::notes(model, case, crate::annotations::View::Profile, None);
+        let mut out = Vec::new();
+        for w in wires {
+            let Some(Selection::Span { section, span }) = super::trace_selection(&w.label) else {
+                continue;
+            };
+            let (Some(first), Some(last)) = (w.points.first(), w.points.last()) else {
+                continue;
+            };
+            let (a, b) = (to_screen(first[0], first[2]), to_screen(last[0], last[2]));
+            if a.distance(b) < crate::annotations::MIN_SPAN_PX {
+                continue;
+            }
+            let mid = 0.5 * (first[0] + last[0]);
+            let Some(m) = w
+                .points
+                .iter()
+                .min_by(|p, q| (p[0] - mid).abs().total_cmp(&(q[0] - mid).abs()))
+            else {
+                continue;
+            };
+            for note in notes
+                .iter()
+                .filter(|n| n.section == section && n.span == span)
+            {
+                out.push((to_screen(m[0], m[2]), note.clone()));
+            }
+        }
+        out
+    }
+
+    /// The notes written on the profile's traces are those written
+    /// before (same notes, same places, same order) for every trace
+    /// within the view and its margin; traces far beyond the view's
+    /// sides get none any more (they neither showed nor took a place).
+    #[test]
+    fn span_notes_are_those_written_before() {
+        use eframe::egui;
+        let mut model = crate::tests::synthetic();
+        let view = crate::annotations::View::Profile as usize;
+        // Traces as the profile has them: station, offset, height (the
+        // easting for the station), two of each span, a jumper, the
+        // ground.
+        let mut wires = Vec::new();
+        for shape in &model.cases[0].shapes {
+            for (k, span) in shape.spans.iter().enumerate() {
+                for copy in ["", " (other case)"] {
+                    wires.push(ohl_drawing::Trace {
+                        label: format!("{} span {k}{copy}", shape.section),
+                        points: span.points.iter().map(|p| [p[0], 0.0, p[2]]).collect(),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        wires.push(ohl_drawing::Trace {
+            label: "jumper J1".into(),
+            points: vec![[0.0, 0.0, 10.0], [500.0, 0.0, 10.0]],
+            ..Default::default()
+        });
+        wires.push(ohl_drawing::Trace::default());
+        assert!(wires.len() > 10);
+        let (lo, hi) = wires
+            .iter()
+            .flat_map(|w| &w.points)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                (lo.min(p[0]), hi.max(p[0]))
+            });
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(1200.0, 600.0));
+        // The stations `from`..`to` across the view.
+        let screen = |from: f64, to: f64| {
+            move |s: f64, z: f64| {
+                egui::pos2(
+                    rect.min.x + ((s - from) / (to - from) * f64::from(rect.width())) as f32,
+                    rect.max.y - (z * 2.0) as f32,
+                )
+            }
+        };
+        let now = |model: &crate::model::Model, to_screen: &dyn Fn(f64, f64) -> egui::Pos2| {
+            let (notes, written) = super::span_notes(rect, model, 0, &wires, to_screen);
+            written
+                .into_iter()
+                .map(|(at, k)| (at, notes[k].clone()))
+                .collect::<Vec<_>>()
+        };
+        // Nothing ticked: nothing, as before.
+        let whole = screen(lo, hi);
+        assert!(now(&model, &whole).is_empty());
+        assert!(span_notes_before(&model, 0, &wires, whole).is_empty());
+        for (label, sag) in [(true, false), (false, true), (true, true)] {
+            model.section_display.label[view] = label;
+            model.section_display.sag[view] = sag;
+            // The whole line in view, and a part of it enlarged within
+            // the margin of the view's sides.
+            let (third, span) = (lo + (hi - lo) / 3.0, (hi - lo) / 3.0);
+            for to_screen in [screen(lo, hi), screen(third, third + span)] {
+                let before = span_notes_before(&model, 0, &wires, to_screen);
+                assert!(!before.is_empty());
+                assert_eq!(now(&model, &to_screen), before, "label {label}, sag {sag}");
+            }
+        }
+        // Enlarged a hundredfold on the line's start: the notes of the
+        // traces within the margin of the view, as before; none of those
+        // farther out.
+        let near = screen(lo, lo + (hi - lo) / 100.0);
+        let margin = rect.width().max(super::NOTE_MARGIN_PX);
+        let all = span_notes_before(&model, 0, &wires, near);
+        let kept = now(&model, &near);
+        assert!(!kept.is_empty() && kept.iter().all(|k| all.contains(k)));
+        // (Those left out: farther than the margin beyond the view.)
+        assert!(kept.len() < all.len());
+        for gone in all.iter().filter(|n| !kept.contains(n)) {
+            assert!(gone.0.x > rect.max.x + margin, "{gone:?}");
+        }
+        // The order of those kept is the order before.
+        let order: Vec<_> = all.iter().filter(|n| kept.contains(n)).cloned().collect();
+        assert_eq!(kept, order);
     }
 }

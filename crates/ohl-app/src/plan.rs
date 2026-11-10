@@ -43,8 +43,6 @@ pub struct PlanView {
     backgrounds: crate::backgrounds::PlanCache,
     /// The wires' colours, line codes and directions.
     styles: crate::wire_style::StyleCache,
-    /// The alignments drawn.
-    alignments: AlignmentViews,
     /// The sheet preview's sheets drawn in the last frame.
     pub sheets_drawn: usize,
     /// A measuring tool is held: what is under the cursor is found every
@@ -294,40 +292,6 @@ pub(crate) fn styled_wire_shapes(
 
 fn color(c: [u8; 3]) -> egui::Color32 {
     egui::Color32::from_rgb(c[0], c[1], c[2])
-}
-
-/// The line's alignment views ([`ohl_line::Line::alignment_views`]: the
-/// structures on each found by distance), kept between frames and made
-/// again when what they come from changes: the alignments, their points,
-/// the structures' ids, positions and routes (a hash of them, much
-/// cheaper than the views).
-#[derive(Debug, Default)]
-pub(crate) struct AlignmentViews {
-    key: Option<u64>,
-    views: Vec<ohl_line::route::AlignmentView>,
-}
-
-impl AlignmentViews {
-    /// The views of `line`.
-    pub(crate) fn get(&mut self, line: &ohl_line::Line) -> &[ohl_line::route::AlignmentView] {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        for a in &line.alignments {
-            (&a.id, &a.name, &a.route, &a.points).hash(&mut h);
-        }
-        for p in &line.alignment_points {
-            (&p.id, &p.structure, p.position.map(f64::to_bits)).hash(&mut h);
-        }
-        for s in &line.structures {
-            (&s.id, &s.routes, s.position.map(f64::to_bits)).hash(&mut h);
-        }
-        let key = h.finish();
-        if self.key != Some(key) {
-            self.views = line.alignment_views();
-            self.key = Some(key);
-        }
-        &self.views
-    }
 }
 
 /// What of the plan is in view, in project coordinates (a margin
@@ -631,7 +595,7 @@ impl PlanView {
         let wires = crate::perf::span("plan wires");
         let line = &model.line;
         let cull = Cull::new(rect, c, scale, 20.0);
-        for r in self.alignments.get(line) {
+        for r in model.alignment_views().iter() {
             let pts: Vec<egui::Pos2> = r.centreline(line).into_iter().map(to_screen).collect();
             painter.add(egui::Shape::line(
                 pts,
@@ -784,6 +748,11 @@ impl PlanView {
             }
         }
         // Other project lines, in their colours.
+        // (The cases shown for the line, and those of each section, asked
+        // once: not for every shape of every case.)
+        let shown = model.shown(case);
+        let mut cases_of: std::collections::HashMap<&str, Vec<usize>> =
+            std::collections::HashMap::new();
         for other in &model.other_lines {
             let col = color(other.color);
             let whole = model.other_lines_whole;
@@ -792,7 +761,10 @@ impl PlanView {
             // jumpers in the cases shown.
             for (k, solved) in other.cases.iter().enumerate() {
                 for shape in &solved.shapes {
-                    if !model.section_cases(&shape.section, case).contains(&k)
+                    if !cases_of
+                        .entry(shape.section.as_str())
+                        .or_insert_with(|| model.section_cases(&shape.section, case))
+                        .contains(&k)
                         || !(whole || d.sections.contains(&shape.section))
                     {
                         continue;
@@ -802,7 +774,7 @@ impl PlanView {
                         painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5, col)));
                     }
                 }
-                if model.shown(case).contains(&k) {
+                if shown.contains(&k) {
                     for j in solved
                         .jumpers
                         .iter()
@@ -886,12 +858,12 @@ impl PlanView {
         }
         // Labels of the structures' points, strings, wire points (their
         // names are written above).
-        for note in
-            crate::annotations::object_notes(model, case, crate::annotations::View::Plan, None)
-        {
-            if note.kind == crate::annotations::Kind::Structure {
-                continue;
-            }
+        for note in crate::annotations::object_notes_unnamed(
+            model,
+            case,
+            crate::annotations::View::Plan,
+            None,
+        ) {
             let p = to_screen(note.at);
             if rect.contains(p) {
                 placer.paint(&painter, p, &note);

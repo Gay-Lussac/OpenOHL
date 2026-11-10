@@ -215,7 +215,11 @@ impl StructureApp {
         let Some(f) = &mut self.file else {
             return;
         };
-        let sections = crate::section_editor::section_choices(&self.loads.sections, f.doc());
+        let sections = self.section_editor.choices(
+            (f.revision(), self.libs_stamp),
+            &self.loads.sections,
+            f.doc(),
+        );
         let length = t
             .joint(&m.nodes[0])
             .zip(t.joint(&m.nodes[1]))
@@ -249,7 +253,7 @@ impl StructureApp {
                     .selected_text(&chosen)
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut chosen, "—".to_owned(), "— (a stick)");
-                        for s in &sections {
+                        for s in sections.iter() {
                             ui.selectable_value(&mut chosen, s.clone(), s);
                         }
                     });
@@ -612,8 +616,11 @@ impl StructureApp {
                     .iter()
                     .filter_map(|id| t.members.iter().find(|m| &m.id == id))
                     .collect();
-                let sections =
-                    crate::section_editor::section_choices(&self.loads.sections, f.doc());
+                let sections = self.section_editor.choices(
+                    (f.revision(), self.libs_stamp),
+                    &self.loads.sections,
+                    f.doc(),
+                );
                 let shared = |get: &dyn Fn(&ohl_structures::structures::TypeMember) -> String| {
                     let first = members.first().map(|m| get(m));
                     if members.iter().all(|m| Some(get(m)) == first) {
@@ -636,7 +643,7 @@ impl StructureApp {
                             .selected_text(&chosen)
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut chosen, "—".to_owned(), "— (sticks)");
-                                for s in &sections {
+                                for s in sections.iter() {
                                     ui.selectable_value(&mut chosen, s.clone(), s);
                                 }
                             });
