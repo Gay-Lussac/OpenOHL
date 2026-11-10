@@ -33,7 +33,7 @@ Guiding principles:
 
 **Contents**
 - [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18; U7, U8, U10, U11; Phases 1–5 for the line
-- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19, O20; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
+- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19–O21; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): O2, O9, O11, O17; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
 The phases below record what is built. Phases map to GitHub milestones;
@@ -1203,6 +1203,20 @@ own length between joints (k = 1) unless `lk` or `k` is given, so a
 diagonal drawn in halves buckles at half length.
 > **Owner:** (2026-10-19) Usage: OK for now, to be discussed again later.
 > Buckling length: depends on the joint type; OK for now.
+
+### O21. Equipment on a structure: permanent loads
+A structure type has no place for a piece of equipment fixed to it (a
+switch, an antenna, a platform, a cable end): its weight, its wind area
+with a drag factor and its ice area, at a joint, acting in **every** load
+case. A type's own `[[load]]` only acts in the model's own case, not in
+the cases built from the line's forces. Wanted: a permanent load of a
+structure type (weight; wind area and drag, taking each case's wind on
+the structure; ice area, taking each case's ice), shown and edited in
+OHL-Structure, counted in the loads table and the reports. Until then a
+structure carrying equipment is checked without it — on the unsafe side,
+to be said by whoever models it.
+> **Owner:** (2026-11-10) Agreed in principle; kept on the roadmap for
+> now, not built yet.
 
 *In Part A:* O3 item 2 (one name per object; attachment points linked
 to joints, the Link tool and rigid links, in both applications). *In
