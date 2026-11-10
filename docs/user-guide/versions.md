@@ -96,6 +96,15 @@ plan says which one it takes):
 - an object changed on one side only is taken from that side;
 - an object changed on both sides is merged **field by field** (one side
   moved T6, the other turned it: both are kept);
+- a **library file** changed on both sides is merged **entry by entry**
+  (each side added a weather case, a rule or a cable to the same file, or
+  changed different entries or different values of one entry: all of it
+  is kept, your comments and layout too); only the same value changed
+  differently, or an entry removed on one side and changed on the other,
+  leaves the file a conflict to settle as a whole;
+- a structure's attachment points, wire points and strings (the parts
+  with a label) are merged part by part; a section's points along the
+  line stay one value;
 - a field changed differently on both sides, or an object deleted on one
   side and changed on the other, is a **conflict**.
 

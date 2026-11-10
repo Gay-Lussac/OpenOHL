@@ -4007,6 +4007,7 @@ impl Session {
 pub mod annotations;
 pub mod collab;
 pub mod impact;
+pub mod library_merge;
 pub mod lines;
 pub mod live;
 pub mod packing;

@@ -1089,3 +1089,110 @@ fn a_deletion_meets_a_use() {
         assert!(s.status().unwrap().changes.is_empty());
     }
 }
+
+/// Each line adds a weather case to the same library file (owner,
+/// 2026-11-10): they combine — no conflict, both cases in the merged
+/// file. The same case changed differently on both lines stays one
+/// conflict on the file.
+#[test]
+fn library_files_merge_entry_by_entry() {
+    let (_, mut s) = project("library-entries");
+    let file = |cases: &[(&str, &str)]| {
+        let mut t = String::from("format = \"ohl-weather-cases\"\nversion = 1\n");
+        for (name, temperature) in cases {
+            t += &format!("\n[[case]]\nname = \"{name}\"\ntemperature = \"{temperature}\"\n");
+        }
+        t
+    };
+    let put = |s: &mut Session, cases: &[(&str, &str)]| {
+        s.put_library_file("ana", "weather", "cases.ohlwc", &file(cases))
+            .unwrap();
+    };
+    put(&mut s, &[("everyday", "10 °C")]);
+    s.commit("ana", "with a weather file").unwrap();
+    s.create_branch("ana", "alt", None).unwrap();
+    s.checkout("ana", "alt").unwrap();
+    put(&mut s, &[("everyday", "10 °C"), ("theirs hot", "80 °C")]);
+    s.commit("ana", "a hot case").unwrap();
+    s.checkout("ana", "main").unwrap();
+    put(&mut s, &[("everyday", "10 °C"), ("ours cold", "-20 °C")]);
+    s.commit("ana", "a cold case").unwrap();
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
+    s.merge("ana", "alt", None, &Choices::new()).unwrap();
+    let text = &s.library_files("weather").unwrap()[0].1;
+    for name in ["everyday", "ours cold", "theirs hot"] {
+        assert!(text.contains(&format!("name = \"{name}\"")), "{text}");
+    }
+    assert!(s.status().unwrap().changes.is_empty());
+
+    // The same case changed differently: one conflict, as before.
+    s.checkout("ana", "alt").unwrap();
+    s.merge("ana", "main", None, &Choices::new()).unwrap();
+    let all = [("everyday", "10 °C"), ("ours cold", "-20 °C")];
+    put(&mut s, &[all[0], all[1], ("theirs hot", "85 °C")]);
+    s.commit("ana", "hotter").unwrap();
+    s.checkout("ana", "main").unwrap();
+    put(&mut s, &[all[0], all[1], ("theirs hot", "90 °C")]);
+    s.commit("ana", "hotter still").unwrap();
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    let keys: Vec<&str> = plan.conflicts.iter().map(|c| c.key.as_str()).collect();
+    assert_eq!(keys, ["library:weather/cases.ohlwc"]);
+}
+
+/// A structure's labelled parts merge part by part (owner, 2026-11-10):
+/// one line raises an attachment point, the other adds a point — both,
+/// no conflict. The same point raised differently on both lines stays one
+/// conflict on the list.
+#[test]
+fn labelled_parts_merge_part_by_part() {
+    let (_, mut s) = with_branch("parts");
+    let put = |s: &mut Session, edit: &dyn Fn(&mut ohl_line::Structure)| {
+        let mut st = s.line().structure("T7").unwrap().clone();
+        edit(&mut st);
+        s.apply(
+            "ana",
+            Command::Put {
+                kind: Kind::Structure,
+                id: "T7".into(),
+                value: serde_json::to_value(&st).unwrap(),
+                ord: None,
+            },
+        )
+        .unwrap();
+    };
+    let a1 = s.line().structure("T7").unwrap().points[0].position;
+    // The other line: a new point B1.
+    s.checkout("ana", "alt").unwrap();
+    put(&mut s, &|st| {
+        let mut p = st.points[0].clone();
+        p.label = "B1".into();
+        p.position[2] += 2.0;
+        st.points.push(p);
+    });
+    s.commit("ana", "a point B1").unwrap();
+    // This line: A1 raised by 0.5 m.
+    s.checkout("ana", "main").unwrap();
+    put(&mut s, &|st| st.points[0].position[2] += 0.5);
+    s.commit("ana", "A1 raised").unwrap();
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
+    s.merge("ana", "alt", None, &Choices::new()).unwrap();
+    let st = s.line().structure("T7").unwrap();
+    let labels: Vec<&str> = st.points.iter().map(|p| p.label.as_str()).collect();
+    assert_eq!(labels, ["A1", "B1"]);
+    assert_eq!(st.points[0].position[2], a1[2] + 0.5);
+
+    // The same point changed differently on both lines: the list is one
+    // conflict.
+    s.checkout("ana", "alt").unwrap();
+    s.merge("ana", "main", None, &Choices::new()).unwrap();
+    put(&mut s, &|st| st.points[0].position[2] += 1.0);
+    s.commit("ana", "A1 higher").unwrap();
+    s.checkout("ana", "main").unwrap();
+    put(&mut s, &|st| st.points[0].position[2] -= 1.0);
+    s.commit("ana", "A1 lower").unwrap();
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    let keys: Vec<&str> = plan.conflicts.iter().map(|c| c.key.as_str()).collect();
+    assert_eq!(keys, ["structure:T7/points"]);
+}

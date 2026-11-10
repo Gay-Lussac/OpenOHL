@@ -1107,6 +1107,19 @@ pub fn merge_states_with(
             ours.libraries.get(key),
             theirs.libraries.get(key),
         );
+        // Changed on both sides: entry by entry where the two texts
+        // combine by themselves ([`crate::library_merge`]), else one
+        // conflict.
+        let by_entry = match (o, t) {
+            (Some(o), Some(t)) if o != t && b != Some(t) && b != Some(o) => {
+                crate::library_merge::merge(b.map(String::as_str), o, t)
+            }
+            _ => None,
+        };
+        if let Some(text) = by_entry {
+            merged.libraries.insert(key.clone(), text);
+            continue;
+        }
         let taken = if o == t || b == t {
             o
         } else if b == o {
@@ -1299,6 +1312,63 @@ fn whole_conflict(
     }
 }
 
+/// A list changed on both sides, merged **part by part** where its parts
+/// are told by a `label` (2026-11-10: a structure's attachment points,
+/// wire points and strings — one line moved a point, the other added a
+/// string: both; before, the list was one conflict). Each of the three
+/// lists (the common one may be absent) must hold objects with a text
+/// `label`, unique in the list: their order then carries no meaning (they
+/// are named), unlike a section's points along the line, which stay one
+/// value. A part changed on one side is that side's; theirs' new parts
+/// come after ours; a part changed differently on both sides (or removed
+/// on one and changed on the other): `None`, the list is one conflict.
+fn merge_labelled(b: Option<&Value>, o: Option<&Value>, t: Option<&Value>) -> Option<Value> {
+    fn parts(v: Option<&Value>) -> Option<Vec<(&str, &Value)>> {
+        let Some(v) = v else {
+            return Some(Vec::new());
+        };
+        let mut seen = BTreeSet::new();
+        v.as_array()?
+            .iter()
+            .map(|e| {
+                let label = e.as_object()?.get("label")?.as_str()?;
+                seen.insert(label).then_some((label, e))
+            })
+            .collect()
+    }
+    let (o, t) = (o?, t?);
+    let (pb, po, pt) = (parts(b)?, parts(Some(o))?, parts(Some(t))?);
+    fn of<'v>(list: &[(&str, &'v Value)], label: &str) -> Option<&'v Value> {
+        list.iter().find(|(l, _)| *l == label).map(|(_, e)| *e)
+    }
+    let mut out = Vec::new();
+    for (label, eo) in &po {
+        let (eb, et) = (of(&pb, label), of(&pt, label));
+        if et == Some(*eo) || eb == et {
+            out.push((*eo).clone());
+        } else if eb == Some(*eo) {
+            // Theirs' change of it, or its removal.
+            out.extend(et.cloned());
+        } else {
+            return None;
+        }
+    }
+    for (label, et) in &pt {
+        if of(&po, label).is_some() {
+            continue;
+        }
+        match of(&pb, label) {
+            // New on theirs.
+            None => out.push((*et).clone()),
+            // Removed by ours, as it was on theirs: stays removed.
+            Some(eb) if eb == *et => {}
+            // Removed by ours, changed by theirs.
+            Some(_) => return None,
+        }
+    }
+    Some(Value::Array(out))
+}
+
 /// Field-level merge of one object changed on both sides (`None`: the
 /// fields do not fit together; the object is then one conflict).
 fn merge_fields(
@@ -1320,6 +1390,11 @@ fn merge_fields(
             ov
         } else if bv == ov {
             tv
+        } else if let Some(list) = merge_labelled(bv, ov, tv) {
+            // A list of labelled parts (a structure's points, wire points
+            // and strings) changed on both sides in different parts.
+            leaves.insert(p.clone(), list);
+            continue;
         } else {
             let key = format!("{okey}/{}", path_text(p));
             let chosen = one_side(choices.get(&key).or_else(|| choices.get(okey)));

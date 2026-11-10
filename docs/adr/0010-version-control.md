@@ -123,9 +123,30 @@ More of 2026-11-10 (the version-management review), each with its test:
   the object kept. References are told by name (`structure`, `section`,
   `route`/`routes`, `points`, `jumper`).
 
-Not built yet: lists (a section's points, a structure's wire points) and
-library files merged entry by entry rather than whole; conflicts of one
-logged command settled together. **Revert** is a three-way merge of the working
+- **Library files entry by entry** (`ohl_session::library_merge`). A
+  library file changed on both sides was one conflict (the base's line
+  above still says "library files are compared whole" for a *diff*). Now
+  the three TOML texts are compared by value, key by key: a key changed
+  on one side is that side's; tables merge key by key; lists of tables
+  whose entries all carry a text `name`, `id` or `label` unique in each
+  text (`[[case]]`, `[[rule]]`…) merge entry by entry, an entry key by
+  key; theirs' new entries come after ours. The result is ours' text with
+  theirs' changes laid into it (`toml_edit`: ours' comments and layout
+  stay, an entry from theirs brings its own). The same value changed
+  differently, an entry removed on one side and changed on the other, a
+  list without names, a text that is not TOML: one conflict, as before.
+- **A structure's labelled parts part by part.** Lists inside an object
+  are one value, except those whose elements are objects with a `label`
+  unique in the list — a structure's attachment points, wire points and
+  strings: a part changed on one side is that side's, theirs' new parts
+  come after ours, a part changed differently on both sides leaves the
+  list one conflict. Their order carries no meaning (they are named).
+  **A section's points stay one value**: their order is the wire's way
+  along the line, and a point inserted by one side has no certain place
+  in the other side's order — a wrong guess would be a wrong line, so
+  the choice stays the user's.
+
+Not built yet: conflicts of one logged command settled together. **Revert** is a three-way merge of the working
 state with the reverted revision as base and its first parent as theirs.
 
 **Edit rights** (`ols_session::collab`): a grant limits a user, or every user
