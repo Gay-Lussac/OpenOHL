@@ -61,9 +61,14 @@ pub fn ui(
     position: Option<&mut Option<(String, [f64; 3])>>,
     point: PointExtras<'_>,
 ) -> Option<crate::edit::Action> {
-    let line = &model.line;
-    let mut next: Option<Selection> = None;
-    let mut action: Option<crate::edit::Action> = None;
+    let mut cx = Panel {
+        model,
+        case,
+        position,
+        point,
+        next: None,
+        action: None,
+    };
     // Several selected (Shift or Cmd/Ctrl+click): the one clicked last
     // below.
     if !model.selected_also.is_empty() {
@@ -79,1360 +84,1444 @@ pub fn ui(
             ));
     }
     egui::ScrollArea::vertical().show(ui, |ui| match selection.clone() {
-        Selection::None => {
-            ui.label("Click a structure or a wire in a view.");
-            ui.separator();
-            ui.heading(&line.name);
-            grid(
-                ui,
-                "line",
-                &[
-                    ("CRS", line.crs.clone()),
-                    ("height datum", crate::crs::describe_height_datum(model)),
-                    ("structures", line.structures.len().to_string()),
-                    ("sections", line.sections.len().to_string()),
-                    ("jumpers", line.jumpers.len().to_string()),
-                    ("systems", line.systems.len().to_string()),
-                    ("weather cases", model.cases.len().to_string()),
-                ],
-            );
-        }
-        Selection::Structure(id) => {
-            let Some(s) = line.structure(&id) else {
-                ui.label(format!("{id}: not in the line"));
-                return;
-            };
-            ui.heading(format!("Structure {id}")).context_menu(|ui| {
-                if ui
-                    .button("Cross-section here")
-                    .on_hover_text(
-                        "A cut across the line in the plane of its cross-arms, in a tab of its \
+        Selection::None => nothing_ui(ui, &mut cx),
+        Selection::Structure(id) => structure_ui(ui, &mut cx, id),
+        Selection::Attachment { structure, set } => attachment_ui(ui, &mut cx, structure, set),
+        Selection::Point { structure, label } => point_ui(ui, &mut cx, structure, label),
+        Selection::SpanPoint { section, label } => span_point_ui(ui, &mut cx, section, label),
+        Selection::Spread { section, index } => spread_ui(ui, &mut cx, section, index),
+        Selection::JumperPoint { jumper, label } => jumper_point_ui(ui, &mut cx, jumper, label),
+        Selection::Spacer(id) => spacer_ui(ui, &mut cx, id),
+        Selection::String { structure, label } => string_ui(ui, &mut cx, structure, label),
+        Selection::AlignmentPoint { id } => alignment_point_ui(ui, &mut cx, id),
+        Selection::SurveyPoint(k) => survey_point_ui(ui, &mut cx, k),
+        Selection::LidarPoint(p) => lidar_point_ui(ui, &mut cx, p),
+        Selection::Jumper(id) => jumper_ui(ui, &mut cx, id),
+        Selection::Span { section, span } => span_ui(ui, &mut cx, section, span),
+    });
+    if let Some(n) = cx.next {
+        *selection = n;
+    }
+    cx.action
+}
+
+/// What the panel's parts share: the model and the case shown, the
+/// structure position being typed, the point extras, and what a part
+/// asks for — the next selection (a related object clicked) and an edit.
+struct Panel<'a, 'b> {
+    model: &'a Model,
+    case: usize,
+    position: Option<&'a mut Option<(String, [f64; 3])>>,
+    point: PointExtras<'b>,
+    next: Option<Selection>,
+    action: Option<crate::edit::Action>,
+}
+
+/// Nothing selected: the line in short.
+fn nothing_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>) {
+    let model = cx.model;
+    let line = &model.line;
+    ui.label("Click a structure or a wire in a view.");
+    ui.separator();
+    ui.heading(&line.name);
+    grid(
+        ui,
+        "line",
+        &[
+            ("CRS", line.crs.clone()),
+            ("height datum", crate::crs::describe_height_datum(model)),
+            ("structures", line.structures.len().to_string()),
+            ("sections", line.sections.len().to_string()),
+            ("jumpers", line.jumpers.len().to_string()),
+            ("systems", line.systems.len().to_string()),
+            ("weather cases", model.cases.len().to_string()),
+        ],
+    );
+}
+
+/// A structure: its data, typed position, attachments and the sections through it.
+fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let point = &mut cx.point;
+    let position = cx.position.as_deref_mut();
+    let Some(s) = line.structure(&id) else {
+        ui.label(format!("{id}: not in the line"));
+        return;
+    };
+    ui.heading(format!("Structure {id}")).context_menu(|ui| {
+        if ui
+            .button("Cross-section here")
+            .on_hover_text(
+                "A cut across the line in the plane of its cross-arms, in a tab of its \
                          own (C: the window)",
-                    )
-                    .clicked()
-                {
-                    *point.cut_at = Some(id.clone());
-                    ui.close();
-                }
-            });
-            description(ui, &s.description);
-            // Attachment points whose joint is gone (or unlinked): drawn red,
-            // the structure's loads refused until they are linked again.
-            let lost: Vec<String> = crate::link_tool::unlinked_points(line)
-                .into_iter()
-                .filter(|(st, _, _)| *st == id)
-                .map(|(_, l, _)| l)
-                .collect();
-            if !lost.is_empty() {
-                ui.colored_label(
-                    ui.visuals().warn_fg_color,
-                    format!(
-                        "Unlinked attachment point(s) {}: drawn red; its loads are refused \
+            )
+            .clicked()
+        {
+            *point.cut_at = Some(id.clone());
+            ui.close();
+        }
+    });
+    description(ui, &s.description);
+    // Attachment points whose joint is gone (or unlinked): drawn red,
+    // the structure's loads refused until they are linked again.
+    let lost: Vec<String> = crate::link_tool::unlinked_points(line)
+        .into_iter()
+        .filter(|(st, _, _)| *st == id)
+        .map(|(_, l, _)| l)
+        .collect();
+    if !lost.is_empty() {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            format!(
+                "Unlinked attachment point(s) {}: drawn red; its loads are refused \
                          until they are linked again (Link tool, or Replace's Attachment points)",
-                        lost.join(", ")
-                    ),
-                );
-                for l in &lost {
-                    if ui.link(format!("attachment point {l}")).clicked() {
-                        next = Some(Selection::Point {
-                            structure: id.clone(),
-                            label: l.clone(),
-                        });
-                    }
-                }
+                lost.join(", ")
+            ),
+        );
+        for l in &lost {
+            if ui.link(format!("attachment point {l}")).clicked() {
+                cx.next = Some(Selection::Point {
+                    structure: id.clone(),
+                    label: l.clone(),
+                });
             }
-            grid(
-                ui,
-                "structure",
-                &[
-                    (
-                        "type",
-                        s.structure_type.clone().unwrap_or_else(|| "—".into()),
-                    ),
-                    (
-                        "detail",
-                        s.structure_type
-                            .as_deref()
-                            .and_then(|t| model.types.as_ref()?.0.get(t))
-                            .map_or("—".into(), |t| {
-                                format!("{} — {}", t.detail().level(), t.detail().name())
-                            }),
-                    ),
-                    (
-                        "extension",
-                        s.extension.clone().unwrap_or_else(|| "—".into()),
-                    ),
-                    ("height adjustment", format!("{:.2} m", s.height_adjust)),
-                    ("easting", format!("{:.3} m", s.position[0])),
-                    ("northing", format!("{:.3} m", s.position[1])),
-                    ("ground", format!("{:.3} m", s.position[2])),
-                    ("orientation", format!("{:.2}°", s.orientation_deg)),
-                    (
-                        "routes",
-                        match (line.routes_of(&id), s.routes.is_empty()) {
-                            (r, _) if r.is_empty() => "—".into(),
-                            (r, true) => format!("{} (from the alignments)", r.join(", ")),
-                            (r, false) => format!("{} (its own)", r.join(", ")),
-                        },
-                    ),
-                ],
-            );
-            if line.routes_of(&id).is_empty() {
-                ui.colored_label(
-                    ui.visuals().warn_fg_color,
-                    "On no route: it stands on no alignment. Give its route(s) in its window \
+        }
+    }
+    grid(
+        ui,
+        "structure",
+        &[
+            (
+                "type",
+                s.structure_type.clone().unwrap_or_else(|| "—".into()),
+            ),
+            (
+                "detail",
+                s.structure_type
+                    .as_deref()
+                    .and_then(|t| model.types.as_ref()?.0.get(t))
+                    .map_or("—".into(), |t| {
+                        format!("{} — {}", t.detail().level(), t.detail().name())
+                    }),
+            ),
+            (
+                "extension",
+                s.extension.clone().unwrap_or_else(|| "—".into()),
+            ),
+            ("height adjustment", format!("{:.2} m", s.height_adjust)),
+            ("easting", format!("{:.3} m", s.position[0])),
+            ("northing", format!("{:.3} m", s.position[1])),
+            ("ground", format!("{:.3} m", s.position[2])),
+            ("orientation", format!("{:.2}°", s.orientation_deg)),
+            (
+                "routes",
+                match (line.routes_of(&id), s.routes.is_empty()) {
+                    (r, _) if r.is_empty() => "—".into(),
+                    (r, true) => format!("{} (from the alignments)", r.join(", ")),
+                    (r, false) => format!("{} (its own)", r.join(", ")),
+                },
+            ),
+        ],
+    );
+    if line.routes_of(&id).is_empty() {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            "On no route: it stands on no alignment. Give its route(s) in its window \
                      (Edit) or the Structures table.",
+        );
+    }
+    if let Some(position) = position {
+        // Typed position: applied as one move.
+        let buffer = match position {
+            Some((sid, p)) if *sid == id => p,
+            _ => &mut position.insert((id.clone(), s.position)).1,
+        };
+        ui.separator();
+        ui.horizontal(|ui| {
+            for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+                ui.label(name);
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut buffer[k])
+                        .speed(0.1)
+                        .max_decimals(3),
                 );
             }
-            if let Some(position) = position {
-                // Typed position: applied as one move.
-                let buffer = match position {
-                    Some((sid, p)) if *sid == id => p,
-                    _ => &mut position.insert((id.clone(), s.position)).1,
-                };
-                ui.separator();
-                ui.horizontal(|ui| {
-                    for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
-                        ui.label(name);
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut buffer[k])
-                                .speed(0.1)
-                                .max_decimals(3),
-                        );
-                    }
-                });
-                ui.horizontal(|ui| {
-                    let moved = (0..3).any(|k| (buffer[k] - s.position[k]).abs() > 1e-9);
-                    if ui.add_enabled(moved, egui::Button::new("Move")).clicked() {
-                        action = Some(crate::edit::Action::Move {
-                            id: id.clone(),
-                            position: *buffer,
-                        });
-                    }
-                    if ui.button("Delete…").on_hover_text("Delete key").clicked() {
-                        action = Some(crate::edit::Action::Delete {
-                            kind: ohl_session::Kind::Structure,
-                            id: id.clone(),
-                            confirm: false,
-                        });
-                    }
+        });
+        ui.horizontal(|ui| {
+            let moved = (0..3).any(|k| (buffer[k] - s.position[k]).abs() > 1e-9);
+            if ui.add_enabled(moved, egui::Button::new("Move")).clicked() {
+                cx.action = Some(crate::edit::Action::Move {
+                    id: id.clone(),
+                    position: *buffer,
                 });
             }
-            if let Some(t) = &s.structure_type
-                && ui
-                    .button(STRINGS_AND_POINTS)
-                    .on_hover_text(format!(
-                        "Type {t} on the structure screen: its attachment points, strings, wire \
+            if ui.button("Delete…").on_hover_text("Delete key").clicked() {
+                cx.action = Some(crate::edit::Action::Delete {
+                    kind: ohl_session::Kind::Structure,
+                    id: id.clone(),
+                    confirm: false,
+                });
+            }
+        });
+    }
+    if let Some(t) = &s.structure_type
+        && ui
+            .button(STRINGS_AND_POINTS)
+            .on_hover_text(format!(
+                "Type {t} on the structure screen: its attachment points, strings, wire \
                          points and sets beside the structure in 3D (every structure of the type \
                          follows when saved)"
-                    ))
-                    .clicked()
-            {
-                action = Some(crate::edit::Action::EditType { id: t.clone() });
-            }
-            if let Some(t) = &s.structure_type
-                && ui
-                    .button(OPEN_IN_STRUCTURE_APP)
-                    .on_hover_text(format!(
-                        "Open structure type {t} in OHL-Structure (its own window) with \
+            ))
+            .clicked()
+    {
+        cx.action = Some(crate::edit::Action::EditType { id: t.clone() });
+    }
+    if let Some(t) = &s.structure_type
+        && ui
+            .button(OPEN_IN_STRUCTURE_APP)
+            .on_hover_text(format!(
+                "Open structure type {t} in OHL-Structure (its own window) with \
                          the loads the line puts on {id}; saved there, every structure of the \
                          type follows, and values typed over its load table stay with {id}"
+            ))
+            .clicked()
+    {
+        cx.action = Some(crate::edit::Action::EditInStructureApp {
+            id: t.clone(),
+            structure: Some(id.clone()),
+        });
+    }
+    if ui
+        .button("Placement…")
+        .on_hover_text(
+            "Where it stands (coordinates or an alignment point), its orientation, \
+                     type, extension and description; Put it on the line again",
+        )
+        .clicked()
+    {
+        cx.action = Some(crate::edit::Action::EditPlacement { id: id.clone() });
+    }
+    if ui
+        .button("Replace…")
+        .on_hover_text(
+            "Another structure type in its place (Replace structure): matching wire \
+                     points are rewired, the others you map — what would be removed is listed",
+        )
+        .clicked()
+    {
+        cx.action = Some(crate::edit::Action::ReplaceStructure { id: id.clone() });
+    }
+    if s.structure_type.is_none()
+        && ui
+            .button(STRINGS_AND_POINTS)
+            .on_hover_text(
+                "Its points, wire points, strings and sets beside its drawing in 3D, on \
+                         the structure screen (Make it a type… there saves it as a structure \
+                         type)",
+            )
+            .clicked()
+    {
+        cx.action = Some(crate::edit::Action::EditStructure { id: id.clone() });
+    }
+    if s.structure_type.is_none()
+        && ui
+            .button(OPEN_IN_STRUCTURE_APP)
+            .on_hover_text(
+                "It has no structure file for OHL-Structure to open: make it one (a \
+                         structure type of the project, the structure takes it) and open that \
+                         in OHL-Structure",
+            )
+            .clicked()
+    {
+        cx.action = Some(crate::edit::Action::MakeFileAndEdit { id: id.clone() });
+    }
+    if let Some(a) = crate::load_case_sets::structure_ui(ui, model, &id) {
+        cx.action = Some(a);
+    }
+    ui.separator();
+    ui.label(egui::RichText::new("Wire points").strong());
+    egui::Grid::new("attachments").striped(true).show(ui, |ui| {
+        for h in ["set", "label", "strings", "z", "weight"] {
+            ui.label(egui::RichText::new(h).small());
+        }
+        ui.end_row();
+        for w in &s.wires {
+            ui.label(w.set.map_or(String::new(), |x| x.to_string()));
+            ui.label(&w.label);
+            let on: Vec<&ohl_line::InsulatorString> = s.strings_to(&w.label).collect();
+            ui.label(match on.len() {
+                0 => "fixed".to_owned(),
+                _ => on
+                    .iter()
+                    .map(|x| format!("{} from {}", x.label, x.top))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            });
+            ui.label(format!("{:.2}", w.position[2]));
+            ui.label(format!("{:.0} N", on.iter().map(|x| x.weight).sum::<f64>()));
+            ui.end_row();
+        }
+    });
+    ui.separator();
+    ui.label(egui::RichText::new("Spans at this structure").strong());
+    for sec in &line.sections {
+        for (k, w) in sec.points.windows(2).enumerate() {
+            if w[0].structure == id || w[1].structure == id {
+                let text = format!(
+                    "{} span {} ({} {}): {} ➡ {}",
+                    sec.id,
+                    k + 1,
+                    sec.circuit_name,
+                    sec.phase_label,
+                    w[0].structure,
+                    w[1].structure
+                );
+                if ui.link(text).clicked() {
+                    cx.next = Some(Selection::Span {
+                        section: sec.id.clone(),
+                        span: k,
+                    });
+                }
+            }
+        }
+    }
+    let jumpers: Vec<&ohl_line::Jumper> = line
+        .jumpers
+        .iter()
+        .filter(|jp| jp.points().any(|p| p.structure == id))
+        .collect();
+    if !jumpers.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("Jumpers at this structure").strong());
+        for jp in jumpers {
+            // Its ends here by their set; a tap by where it is.
+            let end = |e: &ohl_line::JumperEnd| match e {
+                ohl_line::JumperEnd::Wire(p) => format!("set {}", p.set),
+                ohl_line::JumperEnd::Tap { .. } => e.to_string(),
+            };
+            let text = format!("{}: {} ➡ {}", jp.id, end(&jp.from), end(&jp.to));
+            if ui.link(text).clicked() {
+                cx.next = Some(Selection::Jumper(jp.id.clone()));
+            }
+        }
+    }
+}
+
+/// An attachment (a structure's set): its strings and the wires on it.
+fn attachment_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, set: u32) {
+    let model = cx.model;
+    let line = &model.line;
+    let at = ohl_line::SectionPoint::new(structure.clone(), set);
+    let Some(st) = line.structure(&structure) else {
+        ui.label(format!("{structure}: not in the line"));
+        return;
+    };
+    let Some(w) = st.wire_at_set(set) else {
+        ui.label(format!("{structure} set {set}: not in the line"));
+        return;
+    };
+    ui.heading(format!("{structure} set {set}"));
+    description(ui, &w.description);
+    if ui.link(format!("structure {structure}")).clicked() {
+        cx.next = Some(Selection::Structure(structure.clone()));
+    }
+    let p3 = |p: [f64; 3]| format!("{:.3}, {:.3}, {:.3}", p[0], p[1], p[2]);
+    let c = st.component(&w.label);
+    let mut rows: Vec<(&str, String)> = vec![
+        ("wire point", format!("{} at {}", w.label, p3(w.position))),
+        (
+            "held by",
+            if c.strings.is_empty() {
+                "fixed to the structure".into()
+            } else {
+                format!("{} strings", c.strings.len())
+            },
+        ),
+    ];
+    for &i in &c.strings {
+        let x = &st.strings[i];
+        rows.push((
+            "string",
+            format!(
+                "{}: {} ➡ {}, {:.3} m, {:.0} N{}{}{}",
+                x.label,
+                x.top,
+                x.wire,
+                st.string_length(x).unwrap_or(0.0),
+                x.weight,
+                x.insulator
+                    .as_deref()
+                    .map_or(String::new(), |i| format!(", {i}")),
+                x.compression
+                    .map_or(String::new(), |c| format!(", up to {c:.0} N compression")),
+                if x.strain { ", strain" } else { "" }
+            ),
+        ));
+    }
+    grid(
+        ui,
+        "attachment",
+        &rows
+            .iter()
+            .map(|(a, b)| (*a, b.clone()))
+            .collect::<Vec<_>>(),
+    );
+    ui.separator();
+    ui.label(egui::RichText::new("Spans at this attachment").strong());
+    for sec in &line.sections {
+        for (k, w) in sec.points.windows(2).enumerate() {
+            if (w[0] == at || w[1] == at)
+                && ui
+                    .link(format!(
+                        "{} span {} ({} {})",
+                        sec.id,
+                        k + 1,
+                        sec.circuit_name,
+                        sec.phase_label
                     ))
                     .clicked()
             {
-                action = Some(crate::edit::Action::EditInStructureApp {
-                    id: t.clone(),
-                    structure: Some(id.clone()),
+                cx.next = Some(Selection::Span {
+                    section: sec.id.clone(),
+                    span: k,
                 });
             }
+        }
+    }
+    for jp in &line.jumpers {
+        if (jp.from == at || jp.to == at) && ui.link(format!("jumper {}", jp.id)).clicked() {
+            cx.next = Some(Selection::Jumper(jp.id.clone()));
+        }
+    }
+}
+
+/// A point of a structure (a structure point or a wire point) and its link.
+fn point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, label: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let point = &mut cx.point;
+    let Some(st) = line.structure(&structure) else {
+        ui.label(format!("{structure}: not in the line"));
+        return;
+    };
+    let heading = ui.heading(format!("{structure} point {label}"));
+    // An attachment point: its link to a joint, the offset (a
+    // rigid link) and its moment per load case; its menu links or
+    // unlinks it.
+    if let Some(p) = st.point(&label) {
+        let typed = st.structure_type.is_some();
+        heading.context_menu(|ui| {
             if ui
-                .button("Placement…")
-                .on_hover_text(
-                    "Where it stands (coordinates or an alignment point), its orientation, \
-                     type, extension and description; Put it on the line again",
-                )
+                .add_enabled(typed, egui::Button::new("Link to a joint… (Link tool)"))
                 .clicked()
             {
-                action = Some(crate::edit::Action::EditPlacement { id: id.clone() });
+                *point.start_link = Some((structure.clone(), label.clone()));
+                ui.close();
             }
             if ui
-                .button("Replace…")
+                .add_enabled(typed && p.is_linked(), egui::Button::new("Unlink"))
                 .on_hover_text(
-                    "Another structure type in its place (Replace structure): matching wire \
-                     points are rewired, the others you map — what would be removed is listed",
-                )
-                .clicked()
-            {
-                action = Some(crate::edit::Action::ReplaceStructure { id: id.clone() });
-            }
-            if s.structure_type.is_none()
-                && ui
-                    .button(STRINGS_AND_POINTS)
-                    .on_hover_text(
-                        "Its points, wire points, strings and sets beside its drawing in 3D, on \
-                         the structure screen (Make it a type… there saves it as a structure \
-                         type)",
-                    )
-                    .clicked()
-            {
-                action = Some(crate::edit::Action::EditStructure { id: id.clone() });
-            }
-            if s.structure_type.is_none()
-                && ui
-                    .button(OPEN_IN_STRUCTURE_APP)
-                    .on_hover_text(
-                        "It has no structure file for OHL-Structure to open: make it one (a \
-                         structure type of the project, the structure takes it) and open that \
-                         in OHL-Structure",
-                    )
-                    .clicked()
-            {
-                action = Some(crate::edit::Action::MakeFileAndEdit { id: id.clone() });
-            }
-            if let Some(a) = crate::load_case_sets::structure_ui(ui, model, &id) {
-                action = Some(a);
-            }
-            ui.separator();
-            ui.label(egui::RichText::new("Wire points").strong());
-            egui::Grid::new("attachments").striped(true).show(ui, |ui| {
-                for h in ["set", "label", "strings", "z", "weight"] {
-                    ui.label(egui::RichText::new(h).small());
-                }
-                ui.end_row();
-                for w in &s.wires {
-                    ui.label(w.set.map_or(String::new(), |x| x.to_string()));
-                    ui.label(&w.label);
-                    let on: Vec<&ohl_line::InsulatorString> = s.strings_to(&w.label).collect();
-                    ui.label(match on.len() {
-                        0 => "fixed".to_owned(),
-                        _ => on
-                            .iter()
-                            .map(|x| format!("{} from {}", x.label, x.top))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    });
-                    ui.label(format!("{:.2}", w.position[2]));
-                    ui.label(format!("{:.0} N", on.iter().map(|x| x.weight).sum::<f64>()));
-                    ui.end_row();
-                }
-            });
-            ui.separator();
-            ui.label(egui::RichText::new("Spans at this structure").strong());
-            for sec in &line.sections {
-                for (k, w) in sec.points.windows(2).enumerate() {
-                    if w[0].structure == id || w[1].structure == id {
-                        let text = format!(
-                            "{} span {} ({} {}): {} ➡ {}",
-                            sec.id,
-                            k + 1,
-                            sec.circuit_name,
-                            sec.phase_label,
-                            w[0].structure,
-                            w[1].structure
-                        );
-                        if ui.link(text).clicked() {
-                            next = Some(Selection::Span {
-                                section: sec.id.clone(),
-                                span: k,
-                            });
-                        }
-                    }
-                }
-            }
-            let jumpers: Vec<&ohl_line::Jumper> = line
-                .jumpers
-                .iter()
-                .filter(|jp| jp.points().any(|p| p.structure == id))
-                .collect();
-            if !jumpers.is_empty() {
-                ui.separator();
-                ui.label(egui::RichText::new("Jumpers at this structure").strong());
-                for jp in jumpers {
-                    // Its ends here by their set; a tap by where it is.
-                    let end = |e: &ohl_line::JumperEnd| match e {
-                        ohl_line::JumperEnd::Wire(p) => format!("set {}", p.set),
-                        ohl_line::JumperEnd::Tap { .. } => e.to_string(),
-                    };
-                    let text = format!("{}: {} ➡ {}", jp.id, end(&jp.from), end(&jp.to));
-                    if ui.link(text).clicked() {
-                        next = Some(Selection::Jumper(jp.id.clone()));
-                    }
-                }
-            }
-        }
-        Selection::Attachment { structure, set } => {
-            let at = ohl_line::SectionPoint::new(structure.clone(), set);
-            let Some(st) = line.structure(&structure) else {
-                ui.label(format!("{structure}: not in the line"));
-                return;
-            };
-            let Some(w) = st.wire_at_set(set) else {
-                ui.label(format!("{structure} set {set}: not in the line"));
-                return;
-            };
-            ui.heading(format!("{structure} set {set}"));
-            description(ui, &w.description);
-            if ui.link(format!("structure {structure}")).clicked() {
-                next = Some(Selection::Structure(structure.clone()));
-            }
-            let p3 = |p: [f64; 3]| format!("{:.3}, {:.3}, {:.3}", p[0], p[1], p[2]);
-            let c = st.component(&w.label);
-            let mut rows: Vec<(&str, String)> = vec![
-                ("wire point", format!("{} at {}", w.label, p3(w.position))),
-                (
-                    "held by",
-                    if c.strings.is_empty() {
-                        "fixed to the structure".into()
-                    } else {
-                        format!("{} strings", c.strings.len())
-                    },
-                ),
-            ];
-            for &i in &c.strings {
-                let x = &st.strings[i];
-                rows.push((
-                    "string",
-                    format!(
-                        "{}: {} ➡ {}, {:.3} m, {:.0} N{}{}{}",
-                        x.label,
-                        x.top,
-                        x.wire,
-                        st.string_length(x).unwrap_or(0.0),
-                        x.weight,
-                        x.insulator
-                            .as_deref()
-                            .map_or(String::new(), |i| format!(", {i}")),
-                        x.compression
-                            .map_or(String::new(), |c| format!(", up to {c:.0} N compression")),
-                        if x.strain { ", strain" } else { "" }
-                    ),
-                ));
-            }
-            grid(
-                ui,
-                "attachment",
-                &rows
-                    .iter()
-                    .map(|(a, b)| (*a, b.clone()))
-                    .collect::<Vec<_>>(),
-            );
-            ui.separator();
-            ui.label(egui::RichText::new("Spans at this attachment").strong());
-            for sec in &line.sections {
-                for (k, w) in sec.points.windows(2).enumerate() {
-                    if (w[0] == at || w[1] == at)
-                        && ui
-                            .link(format!(
-                                "{} span {} ({} {})",
-                                sec.id,
-                                k + 1,
-                                sec.circuit_name,
-                                sec.phase_label
-                            ))
-                            .clicked()
-                    {
-                        next = Some(Selection::Span {
-                            section: sec.id.clone(),
-                            span: k,
-                        });
-                    }
-                }
-            }
-            for jp in &line.jumpers {
-                if (jp.from == at || jp.to == at) && ui.link(format!("jumper {}", jp.id)).clicked()
-                {
-                    next = Some(Selection::Jumper(jp.id.clone()));
-                }
-            }
-        }
-        Selection::Point { structure, label } => {
-            let Some(st) = line.structure(&structure) else {
-                ui.label(format!("{structure}: not in the line"));
-                return;
-            };
-            let heading = ui.heading(format!("{structure} point {label}"));
-            // An attachment point: its link to a joint, the offset (a
-            // rigid link) and its moment per load case; its menu links or
-            // unlinks it.
-            if let Some(p) = st.point(&label) {
-                let typed = st.structure_type.is_some();
-                heading.context_menu(|ui| {
-                    if ui
-                        .add_enabled(typed, egui::Button::new("Link to a joint… (Link tool)"))
-                        .clicked()
-                    {
-                        *point.start_link = Some((structure.clone(), label.clone()));
-                        ui.close();
-                    }
-                    if ui
-                        .add_enabled(typed && p.is_linked(), egui::Button::new("Unlink"))
-                        .on_hover_text(
-                            "It stays where it is; the structure's loads are refused until it \
+                    "It stays where it is; the structure's loads are refused until it \
                              is linked again",
-                        )
-                        .clicked()
-                    {
-                        match crate::link_tool::unlink_command(model, &structure, &label) {
-                            Ok((what, command)) => {
-                                action = Some(crate::edit::Action::Command { what, command });
-                            }
-                            Err(e) => {
-                                ui.colored_label(ui.visuals().error_fg_color, e);
-                            }
-                        }
-                        ui.close();
-                    }
-                });
-                let rows = crate::link_tool::point_rows(st, p, point.loads);
-                let rows: Vec<(&str, String)> =
-                    rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
-                grid(ui, "point-link", &rows);
-                if typed && point.editable {
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button("Link…")
-                            .on_hover_text(
-                                "The Link tool on this point: click a ringed joint of its \
-                                 type (it is linked there where it is)",
-                            )
-                            .clicked()
-                        {
-                            *point.start_link = Some((structure.clone(), label.clone()));
-                        }
-                        if p.is_linked()
-                            && ui
-                                .button("Unlink")
-                                .on_hover_text(
-                                    "It stays where it is; the structure's loads are refused \
-                                     until it is linked again",
-                                )
-                                .clicked()
-                            && let Ok((what, command)) =
-                                crate::link_tool::unlink_command(model, &structure, &label)
-                        {
-                            action = Some(crate::edit::Action::Command { what, command });
-                        }
-                    });
-                }
-                if p.offset != [0.0; 3] && point.loads.is_none() {
-                    ui.label(
-                        egui::RichText::new(
-                            "Its moment per load case: Checks › Structure loads (compute)",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                }
-            }
-            if ui.link(format!("structure {structure}")).clicked() {
-                next = Some(Selection::Structure(structure.clone()));
-            }
-            let what = match (st.point(&label), st.wire(&label)) {
-                (Some(_), _) => "a point of the structure".to_owned(),
-                (None, Some(w)) => match w.set {
-                    Some(set) => format!("a wire point, set {set}"),
-                    None => "a wire point (no set)".to_owned(),
-                },
-                (None, None) => "not on the structure any more".to_owned(),
-            };
-            ui.label(what);
-            let hanging: Vec<&str> = st
-                .strings
-                .iter()
-                .filter(|x| x.top == label)
-                .map(|x| x.label.as_str())
-                .collect();
-            ui.label(if hanging.is_empty() {
-                "No string hangs from it.".to_owned()
-            } else {
-                format!("Strings hanging from it: {}", hanging.join(", "))
-            });
-        }
-        Selection::SpanPoint { section, label } => {
-            ui.heading(format!("{section} span point {label}"));
-            let Some(p) = line
-                .sections
-                .iter()
-                .find(|s| s.id == section)
-                .and_then(|s| s.span_points.iter().find(|p| p.label == label))
-            else {
-                ui.label("Not in the line any more.");
-                return;
-            };
-            if ui
-                .link(format!("section {section}, span {}", p.span + 1))
+                )
                 .clicked()
             {
-                next = Some(Selection::Span {
-                    section: section.clone(),
-                    span: p.span,
-                });
-            }
-            description(ui, &p.description);
-            let mut rows = vec![
-                ("span".to_owned(), (p.span + 1).to_string()),
-                ("place".to_owned(), p.at.text()),
-            ];
-            if let Some((_, q)) = model
-                .shape(&section, case)
-                .and_then(|s| s.span_points.iter().find(|(l, _)| *l == label))
-            {
-                rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
-            }
-            rows.extend(object_rows(p.object.as_ref()));
-            let rows: Vec<(&str, String)> =
-                rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
-            grid(ui, "span-point", &rows);
-            let tap = ohl_line::Tap::Span(ohl_line::SpanPointRef {
-                section: section.clone(),
-                point: label.clone(),
-            });
-            for j in line.jumpers.iter().filter(|j| j.taps().any(|t| *t == tap)) {
-                if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
-                    next = Some(Selection::Jumper(j.id.clone()));
-                }
-            }
-            for s in line.spacers.iter().filter(|s| {
-                [&s.a, &s.b]
-                    .iter()
-                    .any(|e| e.section == section && e.point == label)
-            }) {
-                if ui.link(format!("spacer {}", s.id)).clicked() {
-                    next = Some(Selection::Spacer(s.id.clone()));
-                }
-            }
-            // The spreads it ends.
-            if let Some(sec) = line.sections.iter().find(|s| s.id == section) {
-                for k in sec.spreads_at(&label) {
-                    if ui
-                        .link(format!("spread {} (it ends here)", spread_name(sec, k)))
-                        .clicked()
-                    {
-                        next = Some(Selection::Spread {
-                            section: section.clone(),
-                            index: k,
-                        });
+                match crate::link_tool::unlink_command(model, &structure, &label) {
+                    Ok((what, command)) => {
+                        cx.action = Some(crate::edit::Action::Command { what, command });
+                    }
+                    Err(e) => {
+                        ui.colored_label(ui.visuals().error_fg_color, e);
                     }
                 }
+                ui.close();
             }
-        }
-        Selection::Spread { section, index } => {
-            let Some(sec) = line.sections.iter().find(|s| s.id == section) else {
-                ui.label("Not in the line any more.");
-                return;
-            };
-            let Some(l) = sec.spreads.get(index) else {
-                ui.label("Not in the line any more.");
-                return;
-            };
-            ui.heading(format!("{section} spread {}", spread_name(sec, index)));
-            let span = sec
-                .span_points
-                .iter()
-                .find(|p| p.label == l.from)
-                .map(|p| p.span);
-            if let Some(span) = span
-                && ui
-                    .link(format!("section {section}, span {}", span + 1))
-                    .clicked()
-            {
-                next = Some(Selection::Span {
-                    section: section.clone(),
-                    span,
-                });
-            }
-            for (end, point) in [("from", &l.from), ("to", &l.to)] {
-                if ui.link(format!("{end} span point {point}")).clicked() {
-                    next = Some(Selection::SpanPoint {
-                        section: section.clone(),
-                        label: point.clone(),
-                    });
-                }
-            }
-            let bundle = sec.bundle.max(1);
-            let mut rows = vec![
-                ("load", format!("{:.2} N/m", l.load)),
-                (
-                    "on",
-                    if l.per_subconductor {
-                        "each subconductor".to_owned()
-                    } else {
-                        "the whole bundle".to_owned()
-                    },
-                ),
-                (
-                    "type",
-                    l.type_id.clone().unwrap_or_else(|| "own values".into()),
-                ),
-            ];
-            if bundle > 1 {
-                rows.push((
-                    "whole bundle",
-                    format!("{:.2} N/m ({bundle} subconductors)", l.bundle_load(bundle)),
-                ));
-            }
-            if let Some(stretch) = crate::selection::spread_stretch(model, case, &section, index) {
-                let length: f64 = stretch
-                    .windows(2)
-                    .map(|w| {
-                        let d = [0, 1, 2].map(|k| w[1][k] - w[0][k]);
-                        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-                    })
-                    .sum();
-                rows.push(("length (case shown)", format!("{length:.2} m")));
-                rows.push((
-                    "load in all (case shown)",
-                    format!("{:.0} N", l.bundle_load(bundle) * length),
-                ));
-            }
-            grid(ui, "spread", &rows);
-        }
-        Selection::JumperPoint { jumper, label } => {
-            ui.heading(format!("jumper {jumper} point {label}"));
-            let Some(p) = line
-                .jumpers
-                .iter()
-                .find(|j| j.id == jumper)
-                .and_then(|j| j.points.iter().find(|p| p.label == label))
-            else {
-                ui.label("Not in the line any more.");
-                return;
-            };
-            if ui.link(format!("jumper {jumper}")).clicked() {
-                next = Some(Selection::Jumper(jumper.clone()));
-            }
-            description(ui, &p.description);
-            let mut rows = vec![("place".to_owned(), p.at.text())];
-            if let Some((_, q)) = model
-                .jumper_shape(&jumper, case)
-                .and_then(|s| s.point_positions.iter().find(|(l, _)| *l == label))
-            {
-                rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
-            }
-            rows.extend(object_rows(p.object.as_ref()));
-            let rows: Vec<(&str, String)> =
-                rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
-            grid(ui, "jumper-point", &rows);
-            let tap = ohl_line::Tap::Jumper {
-                jumper: jumper.clone(),
-                point: label.clone(),
-            };
-            for j in line.jumpers.iter().filter(|j| j.taps().any(|t| *t == tap)) {
-                if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
-                    next = Some(Selection::Jumper(j.id.clone()));
-                }
-            }
-        }
-        Selection::Spacer(id) => {
-            ui.heading(format!("spacer {id}"));
-            let Some(s) = line.spacers.iter().find(|s| s.id == id) else {
-                ui.label("Not in the line any more.");
-                return;
-            };
-            description(ui, &s.description);
-            for e in [&s.a, &s.b] {
+        });
+        let rows = crate::link_tool::point_rows(st, p, point.loads);
+        let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+        grid(ui, "point-link", &rows);
+        if typed && point.editable {
+            ui.horizontal(|ui| {
                 if ui
-                    .link(format!("{} span point {}", e.section, e.point))
+                    .button("Link…")
+                    .on_hover_text(
+                        "The Link tool on this point: click a ringed joint of its \
+                                 type (it is linked there where it is)",
+                    )
                     .clicked()
                 {
-                    next = Some(Selection::SpanPoint {
-                        section: e.section.clone(),
-                        label: e.point.clone(),
-                    });
+                    *point.start_link = Some((structure.clone(), label.clone()));
                 }
-            }
-            let mut rows = vec![
-                (
-                    "assembly",
-                    s.insulator.clone().unwrap_or_else(|| "–".into()),
-                ),
-                (
-                    "length",
-                    s.length
-                        .map_or_else(|| "as strung".into(), |l| format!("{l:.3} m")),
-                ),
-                ("weight", format!("{:.0} N", s.weight)),
-                ("wind area", format!("{:.3} m²", s.wind_area)),
-                (
-                    "compression limit",
-                    s.compression
-                        .map_or_else(|| "tension only".into(), |c| format!("{c:.0} N")),
-                ),
-            ];
-            if let Some(x) = crate::selection::spacer_state(model, case, &id) {
-                rows.push(("force (case shown)", format!("{:.0} N", x.force)));
-                rows.push((
-                    "state",
-                    if x.over {
-                        "over its compression limit".into()
-                    } else if x.slack {
-                        "slack".into()
-                    } else {
-                        "ok".into()
-                    },
-                ));
-            }
-            grid(ui, "spacer", &rows);
+                if p.is_linked()
+                    && ui
+                        .button("Unlink")
+                        .on_hover_text(
+                            "It stays where it is; the structure's loads are refused \
+                                     until it is linked again",
+                        )
+                        .clicked()
+                    && let Ok((what, command)) =
+                        crate::link_tool::unlink_command(model, &structure, &label)
+                {
+                    cx.action = Some(crate::edit::Action::Command { what, command });
+                }
+            });
         }
-        Selection::String { structure, label } => {
-            let Some(st) = line.structure(&structure) else {
-                ui.label(format!("{structure}: not in the line"));
-                return;
-            };
-            let Some(x) = st.string(&label) else {
-                ui.label(format!("{structure} string {label}: not in the line"));
-                return;
-            };
-            ui.heading(format!("{structure} string {label}"));
-            description(ui, &x.description);
-            if ui.link(format!("structure {structure}")).clicked() {
-                next = Some(Selection::Structure(structure.clone()));
-            }
-            let c = st.component(&x.wire);
-            let set = c.wires.iter().find_map(|&i| st.wires[i].set);
-            let hangs = if st.point(&x.top).is_some() {
-                format!("{} (a point of the structure)", x.top)
-            } else {
-                format!("{} (the bottom of another string)", x.top)
-            };
-            let users: Vec<&str> = line
-                .jumpers
-                .iter()
-                .filter(|j| {
-                    j.supports()
-                        .iter()
-                        .any(|c| c.structure_id(j) == structure && c.wire == x.wire)
-                })
-                .map(|j| j.id.as_str())
-                .collect();
-            let wire = match (st.wire(&x.wire).and_then(|w| w.set), users.is_empty()) {
-                (Some(s), _) => format!("{} (set {s}: a wire is clamped here)", x.wire),
-                (None, false) => format!("{} (holds jumper {})", x.wire, users.join(", ")),
-                (None, true) => format!("{} (other strings hang from it)", x.wire),
-            };
-            let mut rows: Vec<(&str, String)> = vec![
-                ("hangs from", hangs),
-                ("to wire point", wire),
-                (
-                    "length",
-                    format!("{:.3} m", st.string_length(x).unwrap_or(0.0)),
-                ),
-                ("weight", format!("{:.0} N", x.weight)),
-                ("wind area", format!("{:.3} m²", x.wind_area)),
-                (
-                    "library label",
-                    x.insulator.clone().unwrap_or_else(|| "—".into()),
-                ),
-                (
-                    "clamp",
-                    if line.is_dead_end(st, &x.wire) {
-                        "strain (a tension string at a dead end)"
-                    } else {
-                        "suspension"
-                    }
-                    .into(),
-                ),
-                (
-                    "compression",
-                    x.compression
-                        .map_or("none: tension only".into(), |c| format!("up to {c:.0} N")),
-                ),
-            ];
-            // Its force where it is drawn (each side of the wind).
-            for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
-                let shapes = solved.shapes.iter().flat_map(|sh| {
-                    line.sections
-                        .iter()
-                        .find(|s| s.id == sh.section)
-                        .into_iter()
-                        .flat_map(move |sec| sec.points.iter().zip(&sh.strings))
-                });
-                for (p, strings) in shapes {
-                    for y in strings
-                        .iter()
-                        .filter(|y| p.structure == structure && y.label == label)
-                    {
-                        rows.push((
-                            "force",
-                            format!("{:.0} N{}", y.force, if y.slack { " (slack)" } else { "" }),
-                        ));
-                    }
-                }
-                for j in &solved.jumpers {
-                    for s in j.supports.iter().filter(|s| s.structure == structure) {
-                        for y in s.strings.iter().filter(|y| y.label == label) {
-                            rows.push(("force", format!("{:.0} N (jumper {})", y.force, j.jumper)));
-                        }
-                    }
-                }
-            }
-            if let Some(set) = set {
-                rows.push(("set", set.to_string()));
-            }
-            grid(
-                ui,
-                "string",
-                &rows
-                    .iter()
-                    .map(|(a, b)| (*a, b.clone()))
-                    .collect::<Vec<_>>(),
-            );
+        if p.offset != [0.0; 3] && point.loads.is_none() {
             ui.label(
-                egui::RichText::new("Edit tool (or click with it): change it and where it hangs")
+                egui::RichText::new("Its moment per load case: Checks › Structure loads (compute)")
                     .small()
                     .weak(),
             );
         }
-        Selection::AlignmentPoint { id } => {
-            ui.heading(format!("Alignment point {id}"));
-            let Some(a) = line.alignment_point(&id).cloned() else {
-                ui.label("not in the line");
-                return;
-            };
-            description(ui, &a.description);
-            let orders = crate::editors::point_orders(line, &id);
-            let on = if orders.is_empty() {
-                "none (waiting to be used)".to_owned()
+    }
+    if ui.link(format!("structure {structure}")).clicked() {
+        cx.next = Some(Selection::Structure(structure.clone()));
+    }
+    let what = match (st.point(&label), st.wire(&label)) {
+        (Some(_), _) => "a point of the structure".to_owned(),
+        (None, Some(w)) => match w.set {
+            Some(set) => format!("a wire point, set {set}"),
+            None => "a wire point (no set)".to_owned(),
+        },
+        (None, None) => "not on the structure any more".to_owned(),
+    };
+    ui.label(what);
+    let hanging: Vec<&str> = st
+        .strings
+        .iter()
+        .filter(|x| x.top == label)
+        .map(|x| x.label.as_str())
+        .collect();
+    ui.label(if hanging.is_empty() {
+        "No string hangs from it.".to_owned()
+    } else {
+        format!("Strings hanging from it: {}", hanging.join(", "))
+    });
+}
+
+/// A point on a span.
+fn span_point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, section: String, label: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    ui.heading(format!("{section} span point {label}"));
+    let Some(p) = line
+        .sections
+        .iter()
+        .find(|s| s.id == section)
+        .and_then(|s| s.span_points.iter().find(|p| p.label == label))
+    else {
+        ui.label("Not in the line any more.");
+        return;
+    };
+    if ui
+        .link(format!("section {section}, span {}", p.span + 1))
+        .clicked()
+    {
+        cx.next = Some(Selection::Span {
+            section: section.clone(),
+            span: p.span,
+        });
+    }
+    description(ui, &p.description);
+    let mut rows = vec![
+        ("span".to_owned(), (p.span + 1).to_string()),
+        ("place".to_owned(), p.at.text()),
+    ];
+    if let Some((_, q)) = model
+        .shape(&section, case)
+        .and_then(|s| s.span_points.iter().find(|(l, _)| *l == label))
+    {
+        rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
+    }
+    rows.extend(object_rows(p.object.as_ref()));
+    let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+    grid(ui, "span-point", &rows);
+    let tap = ohl_line::Tap::Span(ohl_line::SpanPointRef {
+        section: section.clone(),
+        point: label.clone(),
+    });
+    for j in line.jumpers.iter().filter(|j| j.taps().any(|t| *t == tap)) {
+        if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
+            cx.next = Some(Selection::Jumper(j.id.clone()));
+        }
+    }
+    for s in line.spacers.iter().filter(|s| {
+        [&s.a, &s.b]
+            .iter()
+            .any(|e| e.section == section && e.point == label)
+    }) {
+        if ui.link(format!("spacer {}", s.id)).clicked() {
+            cx.next = Some(Selection::Spacer(s.id.clone()));
+        }
+    }
+    // The spreads it ends.
+    if let Some(sec) = line.sections.iter().find(|s| s.id == section) {
+        for k in sec.spreads_at(&label) {
+            if ui
+                .link(format!("spread {} (it ends here)", spread_name(sec, k)))
+                .clicked()
+            {
+                cx.next = Some(Selection::Spread {
+                    section: section.clone(),
+                    index: k,
+                });
+            }
+        }
+    }
+}
+
+/// A spread between two span points.
+fn spread_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, section: String, index: usize) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    let Some(sec) = line.sections.iter().find(|s| s.id == section) else {
+        ui.label("Not in the line any more.");
+        return;
+    };
+    let Some(l) = sec.spreads.get(index) else {
+        ui.label("Not in the line any more.");
+        return;
+    };
+    ui.heading(format!("{section} spread {}", spread_name(sec, index)));
+    let span = sec
+        .span_points
+        .iter()
+        .find(|p| p.label == l.from)
+        .map(|p| p.span);
+    if let Some(span) = span
+        && ui
+            .link(format!("section {section}, span {}", span + 1))
+            .clicked()
+    {
+        cx.next = Some(Selection::Span {
+            section: section.clone(),
+            span,
+        });
+    }
+    for (end, point) in [("from", &l.from), ("to", &l.to)] {
+        if ui.link(format!("{end} span point {point}")).clicked() {
+            cx.next = Some(Selection::SpanPoint {
+                section: section.clone(),
+                label: point.clone(),
+            });
+        }
+    }
+    let bundle = sec.bundle.max(1);
+    let mut rows = vec![
+        ("load", format!("{:.2} N/m", l.load)),
+        (
+            "on",
+            if l.per_subconductor {
+                "each subconductor".to_owned()
             } else {
-                orders
-                    .iter()
-                    .map(|(a, k)| format!("{a} #{k}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            let routes = line.point_routes(&id);
-            grid(
-                ui,
-                "alignment",
-                &[
-                    ("easting", format!("{:.3} m", a.position[0])),
-                    ("northing", format!("{:.3} m", a.position[1])),
-                    ("height", format!("{:.3} m", a.position[2])),
-                    ("on alignments (place)", on),
-                    (
-                        "routes",
-                        if routes.is_empty() {
-                            "none".to_owned()
-                        } else {
-                            routes.join(", ")
-                        },
-                    ),
-                ],
-            );
-            match a.structure {
-                Some(st) => {
-                    if ui.link(format!("tied to structure {st}")).clicked() {
-                        next = Some(Selection::Structure(st));
-                    }
-                }
-                None => {
-                    ui.label("free (not tied to a structure)");
+                "the whole bundle".to_owned()
+            },
+        ),
+        (
+            "type",
+            l.type_id.clone().unwrap_or_else(|| "own values".into()),
+        ),
+    ];
+    if bundle > 1 {
+        rows.push((
+            "whole bundle",
+            format!("{:.2} N/m ({bundle} subconductors)", l.bundle_load(bundle)),
+        ));
+    }
+    if let Some(stretch) = crate::selection::spread_stretch(model, case, &section, index) {
+        let length: f64 = stretch
+            .windows(2)
+            .map(|w| {
+                let d = [0, 1, 2].map(|k| w[1][k] - w[0][k]);
+                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+            })
+            .sum();
+        rows.push(("length (case shown)", format!("{length:.2} m")));
+        rows.push((
+            "load in all (case shown)",
+            format!("{:.0} N", l.bundle_load(bundle) * length),
+        ));
+    }
+    grid(ui, "spread", &rows);
+}
+
+/// A point on a jumper.
+fn jumper_point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, jumper: String, label: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    ui.heading(format!("jumper {jumper} point {label}"));
+    let Some(p) = line
+        .jumpers
+        .iter()
+        .find(|j| j.id == jumper)
+        .and_then(|j| j.points.iter().find(|p| p.label == label))
+    else {
+        ui.label("Not in the line any more.");
+        return;
+    };
+    if ui.link(format!("jumper {jumper}")).clicked() {
+        cx.next = Some(Selection::Jumper(jumper.clone()));
+    }
+    description(ui, &p.description);
+    let mut rows = vec![("place".to_owned(), p.at.text())];
+    if let Some((_, q)) = model
+        .jumper_shape(&jumper, case)
+        .and_then(|s| s.point_positions.iter().find(|(l, _)| *l == label))
+    {
+        rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
+    }
+    rows.extend(object_rows(p.object.as_ref()));
+    let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+    grid(ui, "jumper-point", &rows);
+    let tap = ohl_line::Tap::Jumper {
+        jumper: jumper.clone(),
+        point: label.clone(),
+    };
+    for j in line.jumpers.iter().filter(|j| j.taps().any(|t| *t == tap)) {
+        if ui.link(format!("jumper {} (on this tap)", j.id)).clicked() {
+            cx.next = Some(Selection::Jumper(j.id.clone()));
+        }
+    }
+}
+
+/// A phase spacer.
+fn spacer_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    ui.heading(format!("spacer {id}"));
+    let Some(s) = line.spacers.iter().find(|s| s.id == id) else {
+        ui.label("Not in the line any more.");
+        return;
+    };
+    description(ui, &s.description);
+    for e in [&s.a, &s.b] {
+        if ui
+            .link(format!("{} span point {}", e.section, e.point))
+            .clicked()
+        {
+            cx.next = Some(Selection::SpanPoint {
+                section: e.section.clone(),
+                label: e.point.clone(),
+            });
+        }
+    }
+    let mut rows = vec![
+        (
+            "assembly",
+            s.insulator.clone().unwrap_or_else(|| "–".into()),
+        ),
+        (
+            "length",
+            s.length
+                .map_or_else(|| "as strung".into(), |l| format!("{l:.3} m")),
+        ),
+        ("weight", format!("{:.0} N", s.weight)),
+        ("wind area", format!("{:.3} m²", s.wind_area)),
+        (
+            "compression limit",
+            s.compression
+                .map_or_else(|| "tension only".into(), |c| format!("{c:.0} N")),
+        ),
+    ];
+    if let Some(x) = crate::selection::spacer_state(model, case, &id) {
+        rows.push(("force (case shown)", format!("{:.0} N", x.force)));
+        rows.push((
+            "state",
+            if x.over {
+                "over its compression limit".into()
+            } else if x.slack {
+                "slack".into()
+            } else {
+                "ok".into()
+            },
+        ));
+    }
+    grid(ui, "spacer", &rows);
+}
+
+/// An insulator string.
+fn string_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, label: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    let Some(st) = line.structure(&structure) else {
+        ui.label(format!("{structure}: not in the line"));
+        return;
+    };
+    let Some(x) = st.string(&label) else {
+        ui.label(format!("{structure} string {label}: not in the line"));
+        return;
+    };
+    ui.heading(format!("{structure} string {label}"));
+    description(ui, &x.description);
+    if ui.link(format!("structure {structure}")).clicked() {
+        cx.next = Some(Selection::Structure(structure.clone()));
+    }
+    let c = st.component(&x.wire);
+    let set = c.wires.iter().find_map(|&i| st.wires[i].set);
+    let hangs = if st.point(&x.top).is_some() {
+        format!("{} (a point of the structure)", x.top)
+    } else {
+        format!("{} (the bottom of another string)", x.top)
+    };
+    let users: Vec<&str> = line
+        .jumpers
+        .iter()
+        .filter(|j| {
+            j.supports()
+                .iter()
+                .any(|c| c.structure_id(j) == structure && c.wire == x.wire)
+        })
+        .map(|j| j.id.as_str())
+        .collect();
+    let wire = match (st.wire(&x.wire).and_then(|w| w.set), users.is_empty()) {
+        (Some(s), _) => format!("{} (set {s}: a wire is clamped here)", x.wire),
+        (None, false) => format!("{} (holds jumper {})", x.wire, users.join(", ")),
+        (None, true) => format!("{} (other strings hang from it)", x.wire),
+    };
+    let mut rows: Vec<(&str, String)> = vec![
+        ("hangs from", hangs),
+        ("to wire point", wire),
+        (
+            "length",
+            format!("{:.3} m", st.string_length(x).unwrap_or(0.0)),
+        ),
+        ("weight", format!("{:.0} N", x.weight)),
+        ("wind area", format!("{:.3} m²", x.wind_area)),
+        (
+            "library label",
+            x.insulator.clone().unwrap_or_else(|| "—".into()),
+        ),
+        (
+            "clamp",
+            if line.is_dead_end(st, &x.wire) {
+                "strain (a tension string at a dead end)"
+            } else {
+                "suspension"
+            }
+            .into(),
+        ),
+        (
+            "compression",
+            x.compression
+                .map_or("none: tension only".into(), |c| format!("up to {c:.0} N")),
+        ),
+    ];
+    // Its force where it is drawn (each side of the wind).
+    for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
+        let shapes = solved.shapes.iter().flat_map(|sh| {
+            line.sections
+                .iter()
+                .find(|s| s.id == sh.section)
+                .into_iter()
+                .flat_map(move |sec| sec.points.iter().zip(&sh.strings))
+        });
+        for (p, strings) in shapes {
+            for y in strings
+                .iter()
+                .filter(|y| p.structure == structure && y.label == label)
+            {
+                rows.push((
+                    "force",
+                    format!("{:.0} N{}", y.force, if y.slack { " (slack)" } else { "" }),
+                ));
+            }
+        }
+        for j in &solved.jumpers {
+            for s in j.supports.iter().filter(|s| s.structure == structure) {
+                for y in s.strings.iter().filter(|y| y.label == label) {
+                    rows.push(("force", format!("{:.0} N (jumper {})", y.force, j.jumper)));
                 }
             }
         }
-        Selection::SurveyPoint(k) => {
-            ui.heading(format!("Survey point {}", k + 1));
-            if let Some(p) = crate::selection::position(model, &Selection::SurveyPoint(k)) {
-                grid(
-                    ui,
-                    "survey",
-                    &[
-                        ("easting", format!("{:.3} m", p[0])),
-                        ("northing", format!("{:.3} m", p[1])),
-                        ("height", format!("{:.3} m", p[2])),
-                    ],
-                );
+    }
+    if let Some(set) = set {
+        rows.push(("set", set.to_string()));
+    }
+    grid(
+        ui,
+        "string",
+        &rows
+            .iter()
+            .map(|(a, b)| (*a, b.clone()))
+            .collect::<Vec<_>>(),
+    );
+    ui.label(
+        egui::RichText::new("Edit tool (or click with it): change it and where it hangs")
+            .small()
+            .weak(),
+    );
+}
+
+/// An alignment point.
+fn alignment_point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
+    let model = cx.model;
+    let line = &model.line;
+    ui.heading(format!("Alignment point {id}"));
+    let Some(a) = line.alignment_point(&id).cloned() else {
+        ui.label("not in the line");
+        return;
+    };
+    description(ui, &a.description);
+    let orders = crate::editors::point_orders(line, &id);
+    let on = if orders.is_empty() {
+        "none (waiting to be used)".to_owned()
+    } else {
+        orders
+            .iter()
+            .map(|(a, k)| format!("{a} #{k}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let routes = line.point_routes(&id);
+    grid(
+        ui,
+        "alignment",
+        &[
+            ("easting", format!("{:.3} m", a.position[0])),
+            ("northing", format!("{:.3} m", a.position[1])),
+            ("height", format!("{:.3} m", a.position[2])),
+            ("on alignments (place)", on),
+            (
+                "routes",
+                if routes.is_empty() {
+                    "none".to_owned()
+                } else {
+                    routes.join(", ")
+                },
+            ),
+        ],
+    );
+    match a.structure {
+        Some(st) => {
+            if ui.link(format!("tied to structure {st}")).clicked() {
+                cx.next = Some(Selection::Structure(st));
             }
         }
-        Selection::LidarPoint((q, class)) => {
-            let class = &class;
-            ui.heading("LiDAR point");
-            let p = crate::selection::lidar_xyz(model, &q);
-            let def = model.scheme.class(*class);
-            grid(
-                ui,
-                "lidar",
-                &[
-                    ("easting", format!("{:.3} m", p[0])),
-                    ("northing", format!("{:.3} m", p[1])),
-                    ("height", format!("{:.3} m", p[2])),
-                    (
-                        "class",
-                        format!("{} {}", class, def.map_or("", |d| d.name.as_str())),
-                    ),
-                    ("roles", def.map_or(String::new(), |d| d.roles.join(", "))),
-                    ("scheme", model.scheme.name.clone()),
-                ],
-            );
-            ui.label(
-                egui::RichText::new(
-                    "As drawn, to the millimetre. Every point drawn can be clicked; farther \
+        None => {
+            ui.label("free (not tied to a structure)");
+        }
+    }
+}
+
+/// A survey point.
+fn survey_point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, k: usize) {
+    let model = cx.model;
+    ui.heading(format!("Survey point {}", k + 1));
+    if let Some(p) = crate::selection::position(model, &Selection::SurveyPoint(k)) {
+        grid(
+            ui,
+            "survey",
+            &[
+                ("easting", format!("{:.3} m", p[0])),
+                ("northing", format!("{:.3} m", p[1])),
+                ("height", format!("{:.3} m", p[2])),
+            ],
+        );
+    }
+}
+
+/// A LiDAR point.
+fn lidar_point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, (q, class): crate::model::LidarPoint) {
+    let model = cx.model;
+    let class = &class;
+    ui.heading("LiDAR point");
+    let p = crate::selection::lidar_xyz(model, &q);
+    let def = model.scheme.class(*class);
+    grid(
+        ui,
+        "lidar",
+        &[
+            ("easting", format!("{:.3} m", p[0])),
+            ("northing", format!("{:.3} m", p[1])),
+            ("height", format!("{:.3} m", p[2])),
+            (
+                "class",
+                format!("{} {}", class, def.map_or("", |d| d.name.as_str())),
+            ),
+            ("roles", def.map_or(String::new(), |d| d.roles.join(", "))),
+            ("scheme", model.scheme.name.clone()),
+        ],
+    );
+    ui.label(
+        egui::RichText::new(
+            "As drawn, to the millimetre. Every point drawn can be clicked; farther \
                      away the level of detail draws a share of the cloud. The Edit tool \
                      changes its coordinates and class.",
-                )
-                .small(),
-            );
-        }
-        Selection::Jumper(id) => {
-            let Some(j) = line.jumpers.iter().find(|j| j.id == id) else {
-                ui.label(format!("{id}: not in the line"));
-                return;
-            };
-            ui.heading(format!("Jumper {id}"));
-            description(ui, &j.description);
-            ui.horizontal(|ui| {
-                for end in [&j.from, &j.to] {
-                    if ui.link(end.to_string()).clicked() {
-                        next = Some(match end {
-                            ohl_line::JumperEnd::Wire(p) => {
-                                Selection::Structure(p.structure.clone())
-                            }
-                            ohl_line::JumperEnd::Tap {
-                                tap: ohl_line::Tap::Span(r),
-                            } => Selection::SpanPoint {
-                                section: r.section.clone(),
-                                label: r.point.clone(),
-                            },
-                            ohl_line::JumperEnd::Tap {
-                                tap: ohl_line::Tap::Jumper { jumper, point },
-                            } => Selection::JumperPoint {
-                                jumper: jumper.clone(),
-                                label: point.clone(),
-                            },
-                        });
-                    }
-                }
-            });
-            // The wire points it passes through (clamps on suspension
-            // strings), in order, with the lengths between its clamps.
-            if !j.supports().is_empty() {
-                let through: Vec<String> = j
-                    .supports()
-                    .iter()
-                    .map(|c| format!("{} on {}", c.wire, c.structure_id(j)))
-                    .collect();
-                ui.label(format!("passes through {}", through.join(", then ")));
-                let pieces = crate::editors::jumper_pieces(j);
-                if !pieces.is_empty() {
-                    let text: Vec<String> = pieces.iter().map(|l| format!("{l:.2}")).collect();
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "lengths between its clamps: {} m",
-                            text.join(" + ")
-                        ))
-                        .small(),
-                    );
-                }
-            }
-            let section = line.jumper_section(j);
-            let b = line.jumper_bundle(j);
-            // Where each bundle value comes from: the jumper or its section.
-            let from = |own: bool| {
-                if own {
-                    "set on the jumper"
-                } else {
-                    "from its section"
-                }
-            };
-            grid(
-                ui,
-                "jumper",
-                &[
-                    ("wire type", j.cable.clone()),
-                    (
-                        "section",
-                        section.map_or("—".into(), |s| {
-                            format!("{} ({} {})", s.id, s.circuit_name, s.phase_label)
-                        }),
-                    ),
-                    (
-                        "bundle",
-                        match (b.count, b.spacing) {
-                            (1, _) => format!("single ({})", from(j.bundle.is_some())),
-                            (n, Some(s)) => format!(
-                                "{n} × {:.0} mm ({})",
-                                s * 1000.0,
-                                from(j.bundle.is_some() || j.bundle_spacing.is_some())
-                            ),
-                            (n, None) => format!("{n}, no spacing ({})", from(j.bundle.is_some())),
-                        },
-                    ),
-                    (
-                        "defined by",
-                        match (j.length, j.sag) {
-                            _ if j.rigid => "rigid: straight between its clamps".into(),
-                            _ if j.tension.is_some() => format!(
-                                "tension {:.0} N at its higher end at {} °C (a riser, taut)",
-                                j.tension.unwrap_or_default(),
-                                j.temperature
-                            ),
-                            (Some(l), _) => format!("length {l:.3} m at {} °C", j.temperature),
-                            (_, Some(s)) => format!("sag {s:.2} m at {} °C", j.temperature),
-                            _ => "—".into(),
-                        },
-                    ),
-                    (
-                        "bending stiffness",
-                        match (j.bending_stiffness, model.library.get(&j.cable)) {
-                            (Some(0.0), _) => "0 (hinged ends)".into(),
-                            (Some(e), _) => format!("{e:.1} N·m² (set on the jumper)"),
-                            (None, Some(c)) => format!(
-                                "{:.1} N·m² (estimated: {:.2} × the wire's solid-bar {:.0} N·m²{})",
-                                ohl_line::jumper::jumper_bending_stiffness(j, c, &line.defaults),
-                                j.stiffness_factor
-                                    .unwrap_or(line.defaults.jumper_stiffness_factor),
-                                c.bending_stiffness_max(),
-                                c.bending_stiffness_min().map_or(String::new(), |m| format!(
-                                    ", not below its strands slipping, {m:.0} N·m²"
-                                ))
-                            ),
-                            (None, None) => "—".into(),
-                        },
-                    ),
-                    ("leaves its clamps", {
-                        let d = line.defaults.jumper_exit_angle_deg;
-                        format!(
-                            "{:.0}° / {:.0}° below the conductor",
-                            j.angle_from_deg.unwrap_or(d),
-                            j.angle_to_deg.unwrap_or(d)
-                        )
-                    }),
-                    (
-                        "support string",
-                        j.support().map_or("none".into(), |s| {
-                            format!("{:.2} m, {:.0} N", s.length, s.weight)
-                        }),
-                    ),
-                    (
-                        "helping strings",
-                        if j.supports().is_empty() {
-                            "none".into()
-                        } else {
-                            j.supports()
-                                .iter()
-                                .map(|c| {
-                                    format!(
-                                        "{} {} at {:.2} ({:.2} m)",
-                                        c.structure_id(j),
-                                        c.wire,
-                                        c.at,
-                                        c.clamp_length
-                                    )
-                                })
-                                .collect::<Vec<_>>()
-                                .join("; ")
-                        },
-                    ),
-                ],
-            );
-            ui.separator();
-            ui.label(egui::RichText::new("Weather cases").strong());
-            unsolved_note(ui, model, point.solve_all);
-            // The case of the copy clicked (else the one shown).
-            let shown = model.selection_case.unwrap_or(case);
-            case_table(
-                ui,
-                "jumper-cases-scroll",
-                &[
-                    "Weather case",
-                    "Length [m]",
-                    "Sag [m]",
-                    "Max T [N]",
-                    "Of RTS [%]",
-                    "Low z [m]",
-                ],
-                model.cases.len(),
-                |ui, k| {
-                    let solved = &model.cases[k];
-                    let mut cells: Vec<Cell> = vec![(
-                        case_name(
-                            &solved.case.name,
-                            k == shown,
-                            model.selection_case.is_some(),
-                        ),
-                        None,
-                    )];
-                    match solved.jumpers.iter().find(|x| x.jumper == id) {
-                        Some(js) => {
-                            let plain = |v: String| (egui::RichText::new(v), None);
-                            cells.push(plain(format!("{:.3}", js.unstressed_length)));
-                            cells.push(plain(format!("{:.3}", js.sag)));
-                            cells.push(plain(format!("{:.0}", js.max_tension)));
-                            // Taut: stretched between its clamps; over the
-                            // cable's strength: red.
-                            let used = egui::RichText::new(format!(
-                                "{:.0}{}",
-                                js.strength_use * 100.0,
-                                if js.taut { " taut" } else { "" }
-                            ));
-                            cells.push(if js.strength_use > 1.0 {
-                                (used.color(ui.visuals().error_fg_color), None)
-                            } else if js.taut {
-                                (
-                                    used.color(ui.visuals().warn_fg_color),
-                                    Some(
-                                        "Taut: shorter than its clamps' distance — \
-                                         stretched, its pull holding the clamps back",
-                                    ),
-                                )
-                            } else {
-                                (used, None)
-                            });
-                            cells.push(plain(format!("{:.2}", js.low_point[2])));
-                        }
-                        None => cells.push(unsolved_cell(solved)),
-                    }
-                    cells
-                },
-            );
-            // Its supports in the case shown: each clamp's strings.
-            if let Some(js) = model
-                .cases
-                .get(case)
-                .and_then(|c| c.jumpers.iter().find(|x| x.jumper == id))
-                .filter(|js| !js.supports.is_empty())
-            {
-                ui.separator();
-                ui.label(egui::RichText::new("Support strings (case shown)").strong());
-                cases_box(ui, "jumper-supports-scroll", |ui| {
-                    egui::Grid::new("jumper-supports")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            for h in ["clamp", "string", "force (N)", "clamp z (m)"] {
-                                ui.label(egui::RichText::new(h).small());
-                            }
-                            ui.end_row();
-                            for (k, s) in js.supports.iter().enumerate() {
-                                let clamp = if s.wire.is_empty() {
-                                    format!("{}", k + 1)
-                                } else {
-                                    format!("{} {} {}", k + 1, s.structure, s.wire)
-                                };
-                                for x in &s.strings {
-                                    ui.label(&clamp);
-                                    ui.label(if x.label.is_empty() { "—" } else { &x.label });
-                                    ui.label(if x.force > 0.0 {
-                                        format!("{:.0}", x.force)
-                                    } else {
-                                        "slack".into()
-                                    });
-                                    ui.label(format!("{:.2}", s.clamp[2]));
-                                    ui.end_row();
-                                }
-                            }
-                        });
+        )
+        .small(),
+    );
+}
+
+/// A jumper: its data and results in every weather case.
+fn jumper_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    let point = &mut cx.point;
+    let Some(j) = line.jumpers.iter().find(|j| j.id == id) else {
+        ui.label(format!("{id}: not in the line"));
+        return;
+    };
+    ui.heading(format!("Jumper {id}"));
+    description(ui, &j.description);
+    ui.horizontal(|ui| {
+        for end in [&j.from, &j.to] {
+            if ui.link(end.to_string()).clicked() {
+                cx.next = Some(match end {
+                    ohl_line::JumperEnd::Wire(p) => Selection::Structure(p.structure.clone()),
+                    ohl_line::JumperEnd::Tap {
+                        tap: ohl_line::Tap::Span(r),
+                    } => Selection::SpanPoint {
+                        section: r.section.clone(),
+                        label: r.point.clone(),
+                    },
+                    ohl_line::JumperEnd::Tap {
+                        tap: ohl_line::Tap::Jumper { jumper, point },
+                    } => Selection::JumperPoint {
+                        jumper: jumper.clone(),
+                        label: point.clone(),
+                    },
                 });
-            }
-            if let Some(why) = model
-                .cases
-                .get(case)
-                .and_then(|c| c.failed.iter().find(|f| f.starts_with(&format!("{id}:"))))
-            {
-                crate::menu::error_label(ui, why);
-            }
-        }
-        Selection::Span { section, span } => {
-            let Some(sec) = line.sections.iter().find(|s| s.id == section) else {
-                ui.label(format!("{section}: not in the line"));
-                return;
-            };
-            let (a, b) = (&sec.points[span].structure, &sec.points[span + 1].structure);
-            ui.heading(format!("{section} span {}", span + 1));
-            description(ui, &sec.description);
-            ui.horizontal(|ui| {
-                for st in [a, b] {
-                    if ui.link(format!("structure {st}")).clicked() {
-                        next = Some(Selection::Structure(st.clone()));
-                    }
-                }
-            });
-            let phases = line.section_phases().unwrap_or_default();
-            let system = phases
-                .get(&section)
-                .copied()
-                .flatten()
-                .map(|(k, p)| {
-                    let s = &line.systems[k];
-                    format!(
-                        "{} {} — {} kV {}{}",
-                        s.id,
-                        s.phases[p].label,
-                        s.voltage_kv,
-                        match s.kind {
-                            ohl_line::electrical::SystemKind::Ac => "AC",
-                            ohl_line::electrical::SystemKind::Dc => "DC",
-                        },
-                        s.frequency_hz.map_or(String::new(), |f| format!(" {f} Hz"))
-                    )
-                })
-                .unwrap_or_else(|| "earthed (no system)".into());
-            grid(
-                ui,
-                "span",
-                &[
-                    ("wire type", sec.cable.clone()),
-                    (
-                        "circuit / phase",
-                        format!("{} {}", sec.circuit_name, sec.phase_label),
-                    ),
-                    ("system", system),
-                    (
-                        "bundle",
-                        match (sec.bundle, sec.bundle_spacing) {
-                            (1, _) => "single".into(),
-                            (n, Some(s)) => format!("{n} × {:.0} mm", s * 1000.0),
-                            (n, None) => format!("{n} (no spacing)"),
-                        },
-                    ),
-                    ("spans in section", (sec.points.len() - 1).to_string()),
-                    (
-                        "local wind",
-                        match sec.wind_factor(span) {
-                            1.0 => "the weather case's".to_owned(),
-                            f => format!("× {f} of the weather case's"),
-                        },
-                    ),
-                    (
-                        "routes",
-                        model
-                            .routes_of()
-                            .sections
-                            .get(&section)
-                            .map_or(String::new(), |r| r.join(", ")),
-                    ),
-                ],
-            );
-            if point.editable
-                && let Some(a) = assign_circuit_ui(ui, model, &section)
-            {
-                action = Some(a);
-            }
-            if point.editable
-                && let Some(a) = local_wind_ui(ui, sec, span)
-            {
-                action = Some(a);
-            }
-            ui.separator();
-            ui.label(egui::RichText::new("Weather cases").strong());
-            unsolved_note(ui, model, point.solve_all);
-            // The case of the copy clicked (else the one shown); both wind
-            // sides shown: the mirror after each case.
-            let shown = model
-                .selection_case
-                .unwrap_or_else(|| model.section_case(&section, case));
-            let rows: Vec<(usize, bool, &crate::model::Solved)> = model
-                .cases
-                .iter()
-                .enumerate()
-                .flat_map(|(k, c)| c.drawn().enumerate().map(move |(m, d)| (k, m > 0, d)))
-                .collect();
-            case_table(
-                ui,
-                "span-cases-scroll",
-                &[
-                    "Weather case",
-                    "H [kN]",
-                    "Max T [kN]",
-                    "Sag [m]",
-                    "Low z [m]",
-                ],
-                rows.len(),
-                |_, i| {
-                    let (k, mirrored, solved) = rows[i];
-                    let text = if mirrored {
-                        format!("{} (wind from the left)", solved.case.name)
-                    } else {
-                        solved.case.name.clone()
-                    };
-                    let mut cells: Vec<Cell> = vec![(
-                        case_name(
-                            &text,
-                            k == shown && !mirrored,
-                            model.selection_case.is_some(),
-                        ),
-                        None,
-                    )];
-                    match solved
-                        .shapes
-                        .iter()
-                        .find(|x| x.section == section)
-                        .and_then(|x| x.spans.get(span))
-                    {
-                        Some(sp) => cells.extend(
-                            [
-                                format!("{:.2}", sp.horizontal_tension / 1e3),
-                                format!("{:.2}", sp.max_tension / 1e3),
-                                format!("{:.3}", sp.sag),
-                                format!("{:.2}", sp.low_point[2]),
-                            ]
-                            .map(|v| (egui::RichText::new(v), None)),
-                        ),
-                        None => cells.push(unsolved_cell(solved)),
-                    }
-                    cells
-                },
-            );
-            // Its wire's tension against its strain, the span marked
-            // (owner, 2026-11-01); computed when opened, kept until the
-            // line or the case changes.
-            egui::CollapsingHeader::new("Tension against strain")
-                .id_salt("span-curves")
-                .show(ui, |ui| {
-                    let key = egui::Id::new((
-                        "span-curves",
-                        &section,
-                        span,
-                        shown,
-                        model.line_version,
-                        model.cases.get(shown).map(|c| c.case.name.clone()),
-                    ));
-                    let got = ui
-                        .ctx()
-                        .data(|d| d.get_temp::<Result<crate::wire_curves::Curves, String>>(key));
-                    let got = got.unwrap_or_else(|| {
-                        let c = crate::wire_curves::of_span(model, &section, span, shown);
-                        ui.ctx().data_mut(|d| d.insert_temp(key, c.clone()));
-                        c
-                    });
-                    match got {
-                        Ok(c) => {
-                            crate::wire_curves::plot(ui, &c);
-                            for n in &c.notes {
-                                ui.label(egui::RichText::new(n).small().weak());
-                            }
-                        }
-                        Err(e) => {
-                            crate::menu::error_label(ui, e);
-                        }
-                    }
-                });
-            // Not solved in the case of the copy clicked (else the one
-            // shown): why, and where its dashed red copy comes from.
-            let shown = model
-                .selection_case
-                .unwrap_or_else(|| model.section_case(&section, case));
-            if let Some(d) = model.unsolved_drawn(&section, shown, 0) {
-                crate::menu::error_label(
-                    ui,
-                    format!(
-                        "{section} not solved in {}: {} — drawn dashed red: {}",
-                        model.cases[shown].case.name, d.reason, d.from
-                    ),
-                );
-            } else if let Some(why) = model.cases.get(case).and_then(|c| {
-                c.failed
-                    .iter()
-                    .find(|f| f.starts_with(&format!("{section}:")))
-            }) {
-                crate::menu::error_label(ui, why);
             }
         }
     });
-    if let Some(n) = next {
-        *selection = n;
+    // The wire points it passes through (clamps on suspension
+    // strings), in order, with the lengths between its clamps.
+    if !j.supports().is_empty() {
+        let through: Vec<String> = j
+            .supports()
+            .iter()
+            .map(|c| format!("{} on {}", c.wire, c.structure_id(j)))
+            .collect();
+        ui.label(format!("passes through {}", through.join(", then ")));
+        let pieces = crate::editors::jumper_pieces(j);
+        if !pieces.is_empty() {
+            let text: Vec<String> = pieces.iter().map(|l| format!("{l:.2}")).collect();
+            ui.label(
+                egui::RichText::new(format!(
+                    "lengths between its clamps: {} m",
+                    text.join(" + ")
+                ))
+                .small(),
+            );
+        }
     }
-    action
+    let section = line.jumper_section(j);
+    let b = line.jumper_bundle(j);
+    // Where each bundle value comes from: the jumper or its section.
+    let from = |own: bool| {
+        if own {
+            "set on the jumper"
+        } else {
+            "from its section"
+        }
+    };
+    grid(
+        ui,
+        "jumper",
+        &[
+            ("wire type", j.cable.clone()),
+            (
+                "section",
+                section.map_or("—".into(), |s| {
+                    format!("{} ({} {})", s.id, s.circuit_name, s.phase_label)
+                }),
+            ),
+            (
+                "bundle",
+                match (b.count, b.spacing) {
+                    (1, _) => format!("single ({})", from(j.bundle.is_some())),
+                    (n, Some(s)) => format!(
+                        "{n} × {:.0} mm ({})",
+                        s * 1000.0,
+                        from(j.bundle.is_some() || j.bundle_spacing.is_some())
+                    ),
+                    (n, None) => format!("{n}, no spacing ({})", from(j.bundle.is_some())),
+                },
+            ),
+            (
+                "defined by",
+                match (j.length, j.sag) {
+                    _ if j.rigid => "rigid: straight between its clamps".into(),
+                    _ if j.tension.is_some() => format!(
+                        "tension {:.0} N at its higher end at {} °C (a riser, taut)",
+                        j.tension.unwrap_or_default(),
+                        j.temperature
+                    ),
+                    (Some(l), _) => format!("length {l:.3} m at {} °C", j.temperature),
+                    (_, Some(s)) => format!("sag {s:.2} m at {} °C", j.temperature),
+                    _ => "—".into(),
+                },
+            ),
+            (
+                "bending stiffness",
+                match (j.bending_stiffness, model.library.get(&j.cable)) {
+                    (Some(0.0), _) => "0 (hinged ends)".into(),
+                    (Some(e), _) => format!("{e:.1} N·m² (set on the jumper)"),
+                    (None, Some(c)) => format!(
+                        "{:.1} N·m² (estimated: {:.2} × the wire's solid-bar {:.0} N·m²{})",
+                        ohl_line::jumper::jumper_bending_stiffness(j, c, &line.defaults),
+                        j.stiffness_factor
+                            .unwrap_or(line.defaults.jumper_stiffness_factor),
+                        c.bending_stiffness_max(),
+                        c.bending_stiffness_min().map_or(String::new(), |m| format!(
+                            ", not below its strands slipping, {m:.0} N·m²"
+                        ))
+                    ),
+                    (None, None) => "—".into(),
+                },
+            ),
+            ("leaves its clamps", {
+                let d = line.defaults.jumper_exit_angle_deg;
+                format!(
+                    "{:.0}° / {:.0}° below the conductor",
+                    j.angle_from_deg.unwrap_or(d),
+                    j.angle_to_deg.unwrap_or(d)
+                )
+            }),
+            (
+                "support string",
+                j.support().map_or("none".into(), |s| {
+                    format!("{:.2} m, {:.0} N", s.length, s.weight)
+                }),
+            ),
+            (
+                "helping strings",
+                if j.supports().is_empty() {
+                    "none".into()
+                } else {
+                    j.supports()
+                        .iter()
+                        .map(|c| {
+                            format!(
+                                "{} {} at {:.2} ({:.2} m)",
+                                c.structure_id(j),
+                                c.wire,
+                                c.at,
+                                c.clamp_length
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                },
+            ),
+        ],
+    );
+    ui.separator();
+    ui.label(egui::RichText::new("Weather cases").strong());
+    unsolved_note(ui, model, point.solve_all);
+    // The case of the copy clicked (else the one shown).
+    let shown = model.selection_case.unwrap_or(case);
+    case_table(
+        ui,
+        "jumper-cases-scroll",
+        &[
+            "Weather case",
+            "Length [m]",
+            "Sag [m]",
+            "Max T [N]",
+            "Of RTS [%]",
+            "Low z [m]",
+        ],
+        model.cases.len(),
+        |ui, k| {
+            let solved = &model.cases[k];
+            let mut cells: Vec<Cell> = vec![(
+                case_name(
+                    &solved.case.name,
+                    k == shown,
+                    model.selection_case.is_some(),
+                ),
+                None,
+            )];
+            match solved.jumpers.iter().find(|x| x.jumper == id) {
+                Some(js) => {
+                    let plain = |v: String| (egui::RichText::new(v), None);
+                    cells.push(plain(format!("{:.3}", js.unstressed_length)));
+                    cells.push(plain(format!("{:.3}", js.sag)));
+                    cells.push(plain(format!("{:.0}", js.max_tension)));
+                    // Taut: stretched between its clamps; over the
+                    // cable's strength: red.
+                    let used = egui::RichText::new(format!(
+                        "{:.0}{}",
+                        js.strength_use * 100.0,
+                        if js.taut { " taut" } else { "" }
+                    ));
+                    cells.push(if js.strength_use > 1.0 {
+                        (used.color(ui.visuals().error_fg_color), None)
+                    } else if js.taut {
+                        (
+                            used.color(ui.visuals().warn_fg_color),
+                            Some(
+                                "Taut: shorter than its clamps' distance — \
+                                         stretched, its pull holding the clamps back",
+                            ),
+                        )
+                    } else {
+                        (used, None)
+                    });
+                    cells.push(plain(format!("{:.2}", js.low_point[2])));
+                }
+                None => cells.push(unsolved_cell(solved)),
+            }
+            cells
+        },
+    );
+    // Its supports in the case shown: each clamp's strings.
+    if let Some(js) = model
+        .cases
+        .get(case)
+        .and_then(|c| c.jumpers.iter().find(|x| x.jumper == id))
+        .filter(|js| !js.supports.is_empty())
+    {
+        ui.separator();
+        ui.label(egui::RichText::new("Support strings (case shown)").strong());
+        cases_box(ui, "jumper-supports-scroll", |ui| {
+            egui::Grid::new("jumper-supports")
+                .striped(true)
+                .show(ui, |ui| {
+                    for h in ["clamp", "string", "force (N)", "clamp z (m)"] {
+                        ui.label(egui::RichText::new(h).small());
+                    }
+                    ui.end_row();
+                    for (k, s) in js.supports.iter().enumerate() {
+                        let clamp = if s.wire.is_empty() {
+                            format!("{}", k + 1)
+                        } else {
+                            format!("{} {} {}", k + 1, s.structure, s.wire)
+                        };
+                        for x in &s.strings {
+                            ui.label(&clamp);
+                            ui.label(if x.label.is_empty() { "—" } else { &x.label });
+                            ui.label(if x.force > 0.0 {
+                                format!("{:.0}", x.force)
+                            } else {
+                                "slack".into()
+                            });
+                            ui.label(format!("{:.2}", s.clamp[2]));
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+    }
+    if let Some(why) = model
+        .cases
+        .get(case)
+        .and_then(|c| c.failed.iter().find(|f| f.starts_with(&format!("{id}:"))))
+    {
+        crate::menu::error_label(ui, why);
+    }
+}
+
+/// A span: its section, electrical system and results in every weather case.
+fn span_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, section: String, span: usize) {
+    let model = cx.model;
+    let line = &model.line;
+    let case = cx.case;
+    let point = &mut cx.point;
+    let Some(sec) = line.sections.iter().find(|s| s.id == section) else {
+        ui.label(format!("{section}: not in the line"));
+        return;
+    };
+    let (a, b) = (&sec.points[span].structure, &sec.points[span + 1].structure);
+    ui.heading(format!("{section} span {}", span + 1));
+    description(ui, &sec.description);
+    ui.horizontal(|ui| {
+        for st in [a, b] {
+            if ui.link(format!("structure {st}")).clicked() {
+                cx.next = Some(Selection::Structure(st.clone()));
+            }
+        }
+    });
+    let phases = line.section_phases().unwrap_or_default();
+    let system = phases
+        .get(&section)
+        .copied()
+        .flatten()
+        .map(|(k, p)| {
+            let s = &line.systems[k];
+            format!(
+                "{} {} — {} kV {}{}",
+                s.id,
+                s.phases[p].label,
+                s.voltage_kv,
+                match s.kind {
+                    ohl_line::electrical::SystemKind::Ac => "AC",
+                    ohl_line::electrical::SystemKind::Dc => "DC",
+                },
+                s.frequency_hz.map_or(String::new(), |f| format!(" {f} Hz"))
+            )
+        })
+        .unwrap_or_else(|| "earthed (no system)".into());
+    grid(
+        ui,
+        "span",
+        &[
+            ("wire type", sec.cable.clone()),
+            (
+                "circuit / phase",
+                format!("{} {}", sec.circuit_name, sec.phase_label),
+            ),
+            ("system", system),
+            (
+                "bundle",
+                match (sec.bundle, sec.bundle_spacing) {
+                    (1, _) => "single".into(),
+                    (n, Some(s)) => format!("{n} × {:.0} mm", s * 1000.0),
+                    (n, None) => format!("{n} (no spacing)"),
+                },
+            ),
+            ("spans in section", (sec.points.len() - 1).to_string()),
+            (
+                "local wind",
+                match sec.wind_factor(span) {
+                    1.0 => "the weather case's".to_owned(),
+                    f => format!("× {f} of the weather case's"),
+                },
+            ),
+            (
+                "routes",
+                model
+                    .routes_of()
+                    .sections
+                    .get(&section)
+                    .map_or(String::new(), |r| r.join(", ")),
+            ),
+        ],
+    );
+    if point.editable
+        && let Some(a) = assign_circuit_ui(ui, model, &section)
+    {
+        cx.action = Some(a);
+    }
+    if point.editable
+        && let Some(a) = local_wind_ui(ui, sec, span)
+    {
+        cx.action = Some(a);
+    }
+    ui.separator();
+    ui.label(egui::RichText::new("Weather cases").strong());
+    unsolved_note(ui, model, point.solve_all);
+    // The case of the copy clicked (else the one shown); both wind
+    // sides shown: the mirror after each case.
+    let shown = model
+        .selection_case
+        .unwrap_or_else(|| model.section_case(&section, case));
+    let rows: Vec<(usize, bool, &crate::model::Solved)> = model
+        .cases
+        .iter()
+        .enumerate()
+        .flat_map(|(k, c)| c.drawn().enumerate().map(move |(m, d)| (k, m > 0, d)))
+        .collect();
+    case_table(
+        ui,
+        "span-cases-scroll",
+        &[
+            "Weather case",
+            "H [kN]",
+            "Max T [kN]",
+            "Sag [m]",
+            "Low z [m]",
+        ],
+        rows.len(),
+        |_, i| {
+            let (k, mirrored, solved) = rows[i];
+            let text = if mirrored {
+                format!("{} (wind from the left)", solved.case.name)
+            } else {
+                solved.case.name.clone()
+            };
+            let mut cells: Vec<Cell> = vec![(
+                case_name(
+                    &text,
+                    k == shown && !mirrored,
+                    model.selection_case.is_some(),
+                ),
+                None,
+            )];
+            match solved
+                .shapes
+                .iter()
+                .find(|x| x.section == section)
+                .and_then(|x| x.spans.get(span))
+            {
+                Some(sp) => cells.extend(
+                    [
+                        format!("{:.2}", sp.horizontal_tension / 1e3),
+                        format!("{:.2}", sp.max_tension / 1e3),
+                        format!("{:.3}", sp.sag),
+                        format!("{:.2}", sp.low_point[2]),
+                    ]
+                    .map(|v| (egui::RichText::new(v), None)),
+                ),
+                None => cells.push(unsolved_cell(solved)),
+            }
+            cells
+        },
+    );
+    // Its wire's tension against its strain, the span marked
+    // (owner, 2026-11-01); computed when opened, kept until the
+    // line or the case changes.
+    egui::CollapsingHeader::new("Tension against strain")
+        .id_salt("span-curves")
+        .show(ui, |ui| {
+            let key = egui::Id::new((
+                "span-curves",
+                &section,
+                span,
+                shown,
+                model.line_version,
+                model.cases.get(shown).map(|c| c.case.name.clone()),
+            ));
+            let got = ui
+                .ctx()
+                .data(|d| d.get_temp::<Result<crate::wire_curves::Curves, String>>(key));
+            let got = got.unwrap_or_else(|| {
+                let c = crate::wire_curves::of_span(model, &section, span, shown);
+                ui.ctx().data_mut(|d| d.insert_temp(key, c.clone()));
+                c
+            });
+            match got {
+                Ok(c) => {
+                    crate::wire_curves::plot(ui, &c);
+                    for n in &c.notes {
+                        ui.label(egui::RichText::new(n).small().weak());
+                    }
+                }
+                Err(e) => {
+                    crate::menu::error_label(ui, e);
+                }
+            }
+        });
+    // Not solved in the case of the copy clicked (else the one
+    // shown): why, and where its dashed red copy comes from.
+    let shown = model
+        .selection_case
+        .unwrap_or_else(|| model.section_case(&section, case));
+    if let Some(d) = model.unsolved_drawn(&section, shown, 0) {
+        crate::menu::error_label(
+            ui,
+            format!(
+                "{section} not solved in {}: {} — drawn dashed red: {}",
+                model.cases[shown].case.name, d.reason, d.from
+            ),
+        );
+    } else if let Some(why) = model.cases.get(case).and_then(|c| {
+        c.failed
+            .iter()
+            .find(|f| f.starts_with(&format!("{section}:")))
+    }) {
+        crate::menu::error_label(ui, why);
+    }
 }
 
 /// Height of the weather case lists in the properties, points: a fixed
