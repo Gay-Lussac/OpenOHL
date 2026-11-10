@@ -858,3 +858,84 @@ fn the_plans_take_the_templates_furniture() {
     assert!(tb.contains(">Legend<"));
     assert!(tb.contains("1:10000"), "the plan's scale");
 }
+
+/// The panels' order (2026-11-10): `profile`, `plan`, `bands` puts the
+/// plan between the profile and the band rows — the bands, which follow
+/// the profile's stations, then stand under the plan, the station labels
+/// under them. The other orders as before: the bands right under the
+/// profile.
+#[test]
+fn the_plan_stands_between_the_profile_and_the_bands() {
+    // Where the profile's and the plan's titles and the first band row
+    // stand on the first sheet (y, mm from the top).
+    let tops = |order: &str| {
+        let text = example_text().replace(
+            "order = [\"plan\", \"profile\", \"bands\"]",
+            &format!("order = {order}"),
+        );
+        assert!(text.contains(&format!("order = {order}")));
+        let o = options(template(&text));
+        let d = main_route(&o);
+        let sheet = &sheets(&d, &o, &page_format("A1").unwrap())[0];
+        let flat = sheet.drawing.flat();
+        let title = |t: &str| {
+            flat.iter()
+                .find_map(|(i, _)| match i {
+                    Item::Text(x) if x.text == t => Some(x.at[1]),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no title {t}"))
+        };
+        let bands = flat
+            .iter()
+            .filter_map(|(i, _)| match i {
+                Item::Path(p) if p.layer == Layer::Bands => {
+                    p.points.iter().map(|q| q[1]).reduce(f64::min)
+                }
+                _ => None,
+            })
+            .fold(f64::INFINITY, f64::min);
+        // The structures' elevations (the example template draws them
+        // above the line): their lowest and highest point on paper.
+        let elevations = flat
+            .iter()
+            .filter_map(|(i, _)| match i {
+                Item::Path(p) if p.layer == Layer::Elevations => Some(&p.points),
+                _ => None,
+            })
+            .flatten()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), q| {
+                (lo.min(q[1]), hi.max(q[1]))
+            });
+        assert!(elevations.0.is_finite(), "no elevation drawn");
+        assert!(
+            sheet.warnings.iter().all(|w| !w.contains("elevation")),
+            "{:?}",
+            sheet.warnings
+        );
+        (
+            title("Longitudinal profile"),
+            title("Plan view"),
+            bands,
+            elevations,
+        )
+    };
+    // The plan between: the elevations stay at the top of the sheet, in a
+    // strip of their own above the profile.
+    let (profile, plan, bands, e) = tops(r#"["profile", "plan", "bands"]"#);
+    assert!(profile < plan && plan < bands, "{profile} {plan} {bands}");
+    assert!(e.1 < profile + 2.0, "{e:?} above the profile at {profile}");
+    // The other orders: on the plan, as before.
+    let (profile, plan, bands, e) = tops(r#"["profile", "bands", "plan"]"#);
+    assert!(profile < bands && bands < plan, "{profile} {plan} {bands}");
+    assert!(e.0 > plan, "{e:?} on the plan from {plan}");
+    let (profile, plan, bands, e) = tops(r#"["plan", "profile", "bands"]"#);
+    assert!(
+        plan < profile && profile < bands,
+        "{profile} {plan} {bands}"
+    );
+    assert!(
+        e.0 > plan && e.1 < profile,
+        "{e:?} on the plan {plan} to {profile}"
+    );
+}

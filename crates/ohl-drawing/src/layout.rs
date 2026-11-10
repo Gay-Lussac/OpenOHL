@@ -59,6 +59,15 @@ pub(crate) struct Frame {
     pub paper_end: f64,
     /// The band rows' height under the profile, mm.
     pub bands_h: f64,
+    /// Where the band rows start (y, mm): right under the profile, or —
+    /// the plan between the profile and the bands
+    /// ([`crate::template::LayoutSpec::plan_between`]) — under the plan.
+    pub bands_top: f64,
+    /// The structures' elevations stand in a strip of their own above the
+    /// profile, on this axis (y, mm) — the plan being between the profile
+    /// and the bands, the elevations asked above the line (none: on the
+    /// plan, about its axis).
+    pub elev_axis: Option<f64>,
     /// The legend, made as the frame is drawn.
     pub legend: std::cell::RefCell<crate::style::Legend>,
 }
@@ -69,6 +78,12 @@ impl Frame {
     }
     pub(crate) fn plan_y(&self, offset: f64) -> f64 {
         self.plan_axis + offset * self.plan_k
+    }
+    /// Where a point of a structure's elevation at `offset` from the
+    /// line's axis stands (y, mm): on the plan, or in the elevations' own
+    /// strip above the profile ([`Frame::elev_axis`]).
+    pub(crate) fn elev_y(&self, offset: f64) -> f64 {
+        self.elev_axis.unwrap_or(self.plan_axis) + offset * self.plan_k
     }
     pub(crate) fn y_in(&self, p: &Part, z: f64) -> f64 {
         self.prof_top + (p.z1 - z) * self.v
@@ -998,7 +1013,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
         if o.template.layout.station_labels {
             items.push(text(
                 Layer::Labels,
-                [x, prof_bottom + f.bands_h + 4.0],
+                [x, f.bands_top + f.bands_h + 4.0],
                 2.5,
                 Anchor::Middle,
                 format_station(s),
@@ -2162,7 +2177,7 @@ fn elevations_on_paper(
     }
     let end = f.s1;
     let size = o.elevations.text_size;
-    let to_paper = |p: &[f64; 2]| [f.x(p[0]), f.plan_y(p[1])];
+    let to_paper = |p: &[f64; 2]| [f.x(p[0]), f.elev_y(p[1])];
     elevations_of(d, o)
         .into_iter()
         .filter(|e| e.station >= f.s0 - 1e-6 && e.station <= end + 1e-6)
@@ -2252,7 +2267,8 @@ fn elevation_warnings(d: &RouteDrawing, o: &Options, f: &Frame) -> Vec<String> {
     for (a, ba) in &boxes {
         // (Its height across the line; along it an elevation may stand
         // past the panel's end.)
-        if ba[1] < plan[1] || ba[3] > plan[3] {
+        // (In a strip of their own they have the room they need.)
+        if f.elev_axis.is_none() && (ba[1] < plan[1] || ba[3] > plan[3]) {
             warnings.push(format!(
                 "the elevation of {a} leaves the plan panel (drawn anyway): a smaller offset \
                  or a smaller scale of the elevations keeps it in"
@@ -2295,7 +2311,7 @@ fn draw_elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Fra
         if let Some([a, b]) = e.leader {
             items.push(path(
                 Layer::Elevations,
-                vec![[f.x(a[0]), f.plan_y(a[1])], [f.x(b[0]), f.plan_y(b[1])]],
+                vec![[f.x(a[0]), f.elev_y(a[1])], [f.x(b[0]), f.elev_y(b[1])]],
                 lp(o, Layer::Elevations, "#888", 0.13).dashed("1 0.7"),
                 None,
             ));
@@ -2308,7 +2324,7 @@ fn draw_elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Fra
         for d in &e.dims {
             items.push(path(
                 Layer::Elevations,
-                d.iter().map(|q| [f.x(q[0]), f.plan_y(q[1])]).collect(),
+                d.iter().map(|q| [f.x(q[0]), f.elev_y(q[1])]).collect(),
                 thin.clone(),
                 None,
             ));
@@ -2316,7 +2332,7 @@ fn draw_elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Fra
         for (at, words, anchor) in &e.labels {
             items.push(Item::Text(Text {
                 layer: Layer::Elevations,
-                at: [f.x(at[0]), f.plan_y(at[1])],
+                at: [f.x(at[0]), f.elev_y(at[1])],
                 text: words.clone(),
                 size,
                 anchor: *anchor,
@@ -2391,7 +2407,7 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
     let plan_k = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
     let margin = 30.0;
     let title_h = 8.0 + 5.0 * o.title.len() as f64;
-    let (above, below) = plan_room(d, o, plan_k);
+    let (above, below) = plan_room(d, o, plan_k, true);
     let plan_h = if o.plan { above + below } else { 0.0 };
     let plan_top = margin + title_h;
     let f = Frame {
@@ -2411,6 +2427,11 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
         whole_ends: false,
         paper_end: s1,
         bands_h: 0.0,
+        bands_top: margin
+            + title_h
+            + if o.plan { plan_h + 15.0 } else { 0.0 }
+            + (part.z1 - part.z0) * v,
+        elev_axis: None,
         legend: Default::default(),
     };
     let width = 2.0 * margin + f.width();
@@ -2449,14 +2470,41 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
 /// width at the plan's scale across the line, the corridor (with room for
 /// its labels), and what the structures' elevations need (with room for
 /// their names and labels).
-pub(crate) fn plan_room(d: &RouteDrawing, o: &Options, plan_k: f64) -> (f64, f64) {
+/// The room the structures' elevations take above the line's axis, mm
+/// (their lines and labels; 0 without elevations): the height of their
+/// strip above the profile.
+pub(crate) fn elevation_room(d: &RouteDrawing, o: &Options, plan_k: f64) -> f64 {
+    if !o.plan || o.elevations.place == ElevationPlace::Off {
+        return 0.0;
+    }
+    let size = o.elevations.text_size;
+    let mut above: f64 = 0.0;
+    for e in elevations_of(d, o) {
+        for p in e.lines.iter().flat_map(|(l, _)| l) {
+            above = above.max(-p[1] * plan_k + 4.0);
+        }
+        for (p, ..) in &e.labels {
+            above = above.max(-p[1] * plan_k + size + 1.0);
+        }
+    }
+    above
+}
+
+/// (`elevations`: with the room of the structures' elevations — not when
+/// they stand in a strip of their own.)
+pub(crate) fn plan_room(
+    d: &RouteDrawing,
+    o: &Options,
+    plan_k: f64,
+    elevations: bool,
+) -> (f64, f64) {
     let half = o
         .corridor
         .map_or(o.plan_half_width, |w| o.plan_half_width.max(w))
         * plan_k
         + if o.corridor.is_some() { 3.0 } else { 0.0 };
     let (mut above, mut below) = (half, half);
-    if o.plan && o.elevations.place != ElevationPlace::Off {
+    if elevations && o.plan && o.elevations.place != ElevationPlace::Off {
         let size = o.elevations.text_size;
         for e in elevations_of(d, o) {
             for p in e.lines.iter().flat_map(|(l, _)| l) {
@@ -2655,6 +2703,10 @@ pub(crate) struct Paper {
     available: f64,
     /// The band rows' height under the profile, mm.
     bands_h: f64,
+    /// Where the band rows start, mm from the paper's top.
+    bands_top: f64,
+    /// The axis of the elevations' own strip above the profile, if so.
+    elev_axis: Option<f64>,
     /// The drawing's lower edge (under the bands and the station labels),
     /// mm from the paper's top.
     drawing_bottom: f64,
@@ -2718,6 +2770,8 @@ impl Paper {
             whole_ends: true,
             paper_end: s0 + self.usable / self.h,
             bands_h: self.bands_h,
+            bands_top: self.bands_top,
+            elev_axis: self.elev_axis,
             legend: Default::default(),
         }
     }
@@ -2830,7 +2884,17 @@ impl Paper {
         });
         // The panels between.
         let left = inner[0] + t.layout.axis_room.0;
-        let (above, below) = plan_room(d, o, plan_k);
+        // The plan between the profile and the bands, the elevations
+        // asked above the line: they stay at the top of the sheet, in a
+        // strip of their own above the profile (2026-11-10).
+        let strip =
+            o.plan && t.layout.plan_between() && o.elevations.place == ElevationPlace::Above;
+        let strip_h = if strip {
+            elevation_room(d, o, plan_k)
+        } else {
+            0.0
+        };
+        let (above, below) = plan_room(d, o, plan_k, !strip);
         let auto = above + below;
         let plan_h = if o.plan {
             match t.layout.plan_height {
@@ -2849,8 +2913,15 @@ impl Paper {
         let bands_h = furniture::bands_height(t, o, d);
         let area_top = inner[1] + 6.0;
         let bottom = lowest - pad;
+        // The plan between the profile and the bands (2026-11-10: the
+        // situation under the profile, the tables last): from the bottom
+        // up — the station labels, the bands, the plan, the profile.
+        let between = o.plan && t.layout.plan_between();
         let (plan_top, prof_top, prof_bottom) = if !o.plan {
             (area_top, area_top, bottom - labels - bands_h)
+        } else if between {
+            let plan_top = bottom - labels - bands_h - gap - plan_h;
+            (plan_top, area_top + strip_h, plan_top - gap)
         } else if t.layout.plan_below() {
             let plan_top = bottom - plan_h;
             (plan_top, area_top, plan_top - gap - labels - bands_h)
@@ -2869,7 +2940,15 @@ impl Paper {
             prof_top,
             available: (prof_bottom - prof_top).max(10.0),
             bands_h,
-            drawing_bottom: if o.plan && t.layout.plan_below() {
+            elev_axis: strip.then_some(area_top + strip_h),
+            bands_top: if between {
+                plan_top + plan_h + gap
+            } else {
+                prof_top + (prof_bottom - prof_top).max(10.0)
+            },
+            drawing_bottom: if between {
+                plan_top + plan_h + gap + bands_h + labels
+            } else if o.plan && t.layout.plan_below() {
                 plan_top + plan_h
             } else {
                 prof_top + (prof_bottom - prof_top).max(10.0) + bands_h + labels
@@ -3266,7 +3345,7 @@ fn draw_some(
             }
             draw(items, d, o, &f);
             if o.bands && !t.bands.is_empty() {
-                furniture::bands(items, t, &f, d, o, f.prof_top + f.prof_h, sl.number);
+                furniture::bands(items, t, &f, d, o, f.bands_top, sl.number);
             }
             // Match lines at the sheet's ends, over every panel.
             let top = if o.plan {
@@ -3274,11 +3353,8 @@ fn draw_some(
             } else {
                 f.prof_top
             };
-            let bottom = (f.prof_top + f.prof_h + f.bands_h).max(if o.plan {
-                f.plan_top + f.plan_h
-            } else {
-                0.0
-            });
+            let bottom =
+                (f.bands_top + f.bands_h).max(if o.plan { f.plan_top + f.plan_h } else { 0.0 });
             let match_pen = lp(o, Layer::Match, "#06c", 0.3).dashed("2 1");
             for x in [f.x(s0), f.x(s1)] {
                 items.push(path(

@@ -31,7 +31,7 @@ size = "2.5 mm"               # the drawing's labels (band rows)
 colour = "#000000"            # texts of the title block, notes, legend
 
 [layout]
-order = ["plan", "profile", "bands"]   # or ["profile", "bands", "plan"]
+order = ["plan", "profile", "bands"]   # or ["profile", "bands", "plan"], or ["profile", "plan", "bands"] (the bands under the plan, the elevations above the profile)
 gap = "8 mm"                  # between the panels
 plan_height = "auto"          # or at least "60 mm"
 beyond_match = "faded"        # "none" (default) or "faded": the next sheet faded

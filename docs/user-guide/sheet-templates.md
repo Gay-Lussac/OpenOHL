@@ -211,6 +211,14 @@ marked](../images/sheet-templates/layout-keys.svg)
 The profile takes the height left over: the more the plan, the rows and the bottom
 row use, the less it has.
 
+`order` has three arrangements:
+
+| `order` | Top to bottom |
+|---|---|
+| `["plan", "profile", "bands"]` | The plan, the profile, the rows under it |
+| `["profile", "bands", "plan"]` | The profile, the rows under it, the plan last |
+| `["profile", "plan", "bands"]` | The profile, the plan, then the rows under the plan (they still follow the profile's stations). The structures' elevations, when drawn `"above"`, then stay at the top of the sheet in a strip of their own above the profile, instead of on the plan |
+
 ![Two real sheets: the plan above the profile, and the plan below
 it](../images/sheet-templates/panel-order.svg)
 

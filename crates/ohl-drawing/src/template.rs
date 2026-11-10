@@ -339,8 +339,10 @@ impl<'de> Deserialize<'de> for Beyond {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayoutSpec {
-    /// Top to bottom: `"plan"`, `"profile"`, `"bands"` (the bands right
-    /// under the profile).
+    /// Top to bottom: `"plan"`, `"profile"`, `"bands"`. The bands are
+    /// right under the profile, except in the order `profile`, `plan`,
+    /// `bands`: the plan is then between the profile and the bands
+    /// ([`LayoutSpec::plan_between`]).
     #[serde(default = "default_order")]
     pub order: Vec<String>,
     /// Between the panels.
@@ -413,6 +415,19 @@ impl LayoutSpec {
     pub fn plan_below(&self) -> bool {
         let at = |k: &str| self.order.iter().position(|o| o == k);
         matches!((at("plan"), at("profile")), (Some(a), Some(b)) if a > b)
+    }
+
+    /// Whether the plan is drawn between the profile and the band rows
+    /// (`order = ["profile", "plan", "bands"]`): the bands, which follow
+    /// the profile's stations, then stand under the plan. In the order
+    /// `profile`, `bands`, `plan` (and without `bands` named) they stay
+    /// right under the profile.
+    pub fn plan_between(&self) -> bool {
+        let at = |k: &str| self.order.iter().position(|o| o == k);
+        matches!(
+            (at("profile"), at("plan"), at("bands")),
+            (Some(a), Some(b), Some(c)) if a < b && b < c
+        )
     }
 }
 
