@@ -496,7 +496,7 @@ pub struct PhaseDistanceWindow {
     progress: Option<Arc<UnequalProgress>>,
     /// The results table's rows, for (the run, compared or not, the rows
     /// kept): built once, not every frame (2026-11-04).
-    pub(crate) table: Option<((u64, bool, usize), Vec<check_ui::Row>)>,
+    pub(crate) table: check_ui::CachedRows<(u64, bool, usize)>,
     /// The setup kept in the project ([`SETTING`]).
     kept: check_ui::Kept,
 }
@@ -586,7 +586,7 @@ impl PhaseDistanceWindow {
             since: None,
             job: Job::default(),
             progress: None,
-            table: None,
+            table: Default::default(),
             kept: Default::default(),
         }
     }
@@ -2387,9 +2387,13 @@ impl PhaseDistanceWindow {
 
     /// The results table's rows of `report` (built once per run, kept in
     /// `table`).
-    fn table_rows(&self, report: &Report) -> Vec<check_ui::Row> {
+    fn table_rows(
+        kind: Kind,
+        comparison: Option<&Comparison>,
+        report: &Report,
+    ) -> Vec<check_ui::Row> {
         use check_ui::Cell;
-        let unequal = self.kind == Kind::UnequalWind;
+        let unequal = kind == Kind::UnequalWind;
         report
             .rows
             .iter()
@@ -2436,7 +2440,7 @@ impl PhaseDistanceWindow {
                     note.push("nearby span");
                 }
                 cells.extend([Cell::text(&r.rule), Cell::text(note.join(", "))]);
-                if let Some(c) = &self.comparison {
+                if let Some(c) = comparison {
                     let change = c.changes.get(&r.key()).copied();
                     cells.push(
                         Cell::text(change.map_or("", Change::text))
@@ -2555,11 +2559,10 @@ impl PhaseDistanceWindow {
             self.comparison.is_some(),
             report.rows.len(),
         );
-        if self.table.as_ref().is_none_or(|(k, _)| *k != key) {
-            let rows = self.table_rows(report);
-            self.table = Some((key, rows));
-        }
-        let rows = self.table.as_ref().map_or(&[][..], |(_, r)| &r[..]);
+        let (kind, comparison) = (self.kind, self.comparison.as_ref());
+        let rows = self
+            .table
+            .get_or_build(key, || Self::table_rows(kind, comparison, report));
         let id = format!("{}-rows", self.kind.page());
         let csv_name = if unequal {
             "unequal-wind-table.csv"
@@ -2567,7 +2570,7 @@ impl PhaseDistanceWindow {
             "phase-distance-table.csv"
         };
         if let Some(k) = check_ui::ResultTable::new(&id, cols)
-            .rows_ref(rows)
+            .rows_kept(rows)
             .group_by(&[0, 1, if unequal { 13 } else { 16 }])
             .csv(csv_name)
             .full_csv(

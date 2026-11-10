@@ -15,6 +15,7 @@ use crate::selection::Selection;
 mod alignments;
 mod backgrounds_lines;
 mod building_fields;
+mod check_rows;
 mod check_shots;
 mod check_windows;
 mod checks_spacers;

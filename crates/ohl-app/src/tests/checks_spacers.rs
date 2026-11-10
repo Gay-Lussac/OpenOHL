@@ -352,7 +352,7 @@ fn an_unequal_wind_report_opens_again() {
                 x.required = x.distance - 0.5;
             }
         }
-        w.table = None;
+        w.table.clear();
     }
     harness.run();
     harness.get_by_label("Save").click();
@@ -420,7 +420,7 @@ fn an_unequal_wind_report_opens_again() {
     // "laggy when the results are shown").
     let built = |h: &mut Harness<'_, App>| {
         let w = &h.state_mut().ready().unwrap().unequal_wind;
-        w.table.as_ref().map(|(_, rows)| rows.as_ptr())
+        w.table.stamp()
     };
     let before = built(&mut harness);
     assert!(before.is_some(), "the table shown");

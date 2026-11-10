@@ -262,6 +262,70 @@ cargo test --release -p ohl-app --bin ohl-design tables_frame_benchmark -- --ign
 
 Synthetic example (Apple M-series, release, median of 60 frames of the page alone, before → after): Structures 0.142 → 0.133 ms, Sections 0.129 → 0.118, Strings 0.302 → 0.287, Conductor paths 0.084 → 0.054, Circuits 0.062 → 0.049, Routes 0.051 → 0.039, Alignment points 0.110 → 0.098, Weather cases 0.134 → 0.125, Point and spread load types 0.217 → 0.193 ms (that table read the project's library files from the project file every frame). The example has a handful of rows per table, so what remains is egui drawing the cells; the rows' cost grows with the line (every structure's sections counted, the routes, the circuits found), and is now paid once per change.
 
+### Check windows: result rows and choice lists (2026-11-10)
+
+What a check window worked out again on every frame while it was shown,
+and what it is keyed by now. Display only: the rows, their order, texts
+and numbers are the same (tests compare kept rows with rows made for the
+frame, in several views).
+
+- **The result rows.** Each window built a fresh row per result row,
+  every cell written to a text, on every frame. A window now keeps them
+  (`check_ui::CachedRows`) and builds them when their key changes:
+
+  | Window | The rows are built again when … changes |
+  |---|---|
+  | Wire tensions, String checks, Internal clearances, Lightning, Ice shedding, Galloping | the count of answers taken (`Job::generation`; a saved run shown counts), the number of result rows |
+  | Phase distance, Unequal wind | the same, and whether a comparison with a saved report is shown (as since 2026-11-04) |
+  | Vegetation, Safety volumes | the count of answers taken, the window's count of reports (a saved run shown), the number of spans or volumes |
+  | Vertical and radial clearances | the count of reports taken, the number of findings, the point classes' numbers and names (a hash; the Target column says them) |
+  | Clearances | the count of reports taken, the number of findings |
+  | Structure loads | the count of answers taken, the load case shown, factored or unfactored, the structure filter |
+  | Thermal rating | Ampacity, Temperature: the key their values are kept by already; Step change: that key, the print interval and the maximum temperature; Clearance limit: the count of runs arrived, the line's version, the method, the range and the ambient cases; At the current: the count of runs arrived and the cases' names |
+  | Buildings (fields) | the count of answers taken, the preset shown |
+  | Bill of materials | the count of answers taken, the number of lines |
+
+  *Only violations*, the search, the sort and the grouping are not in the
+  keys: they choose among the rows. A result taken away shows no table;
+  the next answer has another count.
+- **Filtering, sorting and grouping** (`ResultTable`): over all rows on
+  every frame before, the search lower-casing every cell. For kept rows
+  the answer (the rows shown in order, the group headings, the count of
+  violations) is kept per table in the session's memory and made again
+  when the rows (every build has a stamp of its own), *Only violations*,
+  the search, the sort column and direction, or the grouping change.
+- **Safety volumes**: each mesh's volume, a sum over all its triangles,
+  was worked out for the table on every frame; now once with the rows.
+- **The rule editors' lists** (Wire tensions, String checks, Internal
+  clearances, Ice shedding, Lightning): the weather cases' names, the
+  wire types (sorted, each once), the systems, circuits and voltages, and
+  for Lightning what is on the route worked on, were made from the line on
+  every frame. `check_ui::LineChoices` makes them once per version of the
+  line (`Model::line_version`), route worked on and case names (the names
+  themselves are compared). The weather case groups are shared instead
+  of copied; their file's modification time is still asked for on every
+  frame the Setup tab is shown (one `stat`), as before.
+
+Measured (a timing of the table's work alone, without egui drawing the
+cells; Apple M-series, release, median of 40):
+
+```bash
+cargo test --release -p ohl-app rows_kept_timing -- --ignored --nocapture
+```
+
+5000 rows of seven cells, written as Wire tensions writes them. Before,
+every frame: the rows built, then filtered, sorted and grouped. Now: the
+first frame after a run or a change of view the same work, the frames
+after it a comparison of the keys.
+
+| View | Before, every frame | Now, first frame | Now, the frames after |
+|---|---|---|---|
+| Only violations (the default) | 3.13 ms | 3.19 ms | 0.0003 ms |
+| Every row, sorted by tension, grouped by rule | 3.38 ms | 3.41 ms | 0.0003 ms |
+
+Not measured: the whole frame of a window (drawing the rows in view is
+unchanged), the safety volumes' mesh volumes, the rule editors' lists.
+
 ## Edit benchmark (desktop application)
 
 `bench::edit_benchmark` changes one section's stringing (as the span tool

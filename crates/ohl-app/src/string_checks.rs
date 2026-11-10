@@ -87,6 +87,10 @@ pub struct StringChecksWindow {
     generation: u64,
     /// What the views draw of it: (shown, generation).
     drawn: Option<(bool, u64)>,
+    /// What the rule editor offers of the line.
+    choices: check_ui::LineChoices,
+    /// The results table's rows, by the answer's count and its rows.
+    rows: check_ui::CachedRows<(u64, usize)>,
 }
 
 /// The rule file of the window in a project: in its clearance rules (its
@@ -417,16 +421,14 @@ impl StringChecksWindow {
         out: &mut Out,
     ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Strings);
-        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let groups = crate::case_groups::groups(model);
-        let mut voltages: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| p.map_or(0.0, |p| p.nominal_kv))
-            .collect();
-        voltages.sort_by(f64::total_cmp);
-        voltages.dedup();
-        let t = check_ui::RuleTable::new("string-check-rules", &mut self.rules, &voltages)
+        // The lists offered, made once per version of the line.
+        let check_ui::LineChoices {
+            cases,
+            groups,
+            voltages_or_zero: voltages,
+            ..
+        } = self.choices.of(model);
+        let t = check_ui::RuleTable::new("string-check-rules", &mut self.rules, voltages)
             .heads("Checks", "Strings")
             .add(
                 "A string rule",
@@ -447,9 +449,8 @@ impl StringChecksWindow {
                             ui,
                             &crate::rule_table::cases_words(&r.cases),
                             |ui| {
-                                changed |=
-                                    crate::case_groups::pick_names(ui, &groups, &mut r.cases);
-                                changed |= ticks(ui, &cases, &mut r.cases);
+                                changed |= crate::case_groups::pick_names(ui, groups, &mut r.cases);
+                                changed |= ticks(ui, cases, &mut r.cases);
                             },
                         );
                         ui.end_row();
@@ -477,7 +478,7 @@ impl StringChecksWindow {
                         ui.label("Voltages");
                         changed |= crate::rule_table::voltages_menu(
                             ui,
-                            &voltages,
+                            voltages,
                             &mut r.voltages,
                             "None ticked: every voltage (0 kV: earth wires)",
                         );
@@ -606,56 +607,10 @@ impl StringChecksWindow {
         check_ui::notes_fold(ui, "string-check-rows", &report.report.notes);
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // goes to its structure.
-        use check_ui::{Cell, Col};
-        let rows: Vec<check_ui::Row> = report
-            .report
-            .rows
-            .iter()
-            .map(|r| {
-                let rule = &report.rules[r.rule];
-                let (value, limit, usage) = match r.measure {
-                    Measure::Load => (
-                        Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
-                        Cell::sorted(format!("{:.2} kN", r.limit / 1000.0), r.limit),
-                        Cell::num(Some(100.0 * r.usage), 1),
-                    ),
-                    Measure::Uplift => (
-                        Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
-                        Cell::text(if r.pass {
-                            "hangs"
-                        } else if r.value < 0.0 {
-                            "pushed"
-                        } else {
-                            "slack"
-                        }),
-                        Cell::num(None, 1),
-                    ),
-                    _ => (
-                        Cell::sorted(format!("{:.1}°", r.value), r.value),
-                        Cell::sorted(format!("{:.1}°", r.limit), r.limit),
-                        Cell::num(Some(100.0 * r.usage), 1),
-                    ),
-                };
-                check_ui::Row::new(
-                    vec![
-                        Cell::text(format!("{} {}", r.structure, r.string)),
-                        Cell::text(if r.strain { "strain" } else { "suspension" }),
-                        Cell::text(&rule.name),
-                        Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
-                        Cell::text(r.measure.describe()),
-                        value.bad(!r.pass),
-                        limit,
-                        Cell::text(match r.source {
-                            Source::String => "string",
-                            Source::Rule => "rule",
-                        }),
-                        usage.bad(!r.pass),
-                        Cell::text(if r.pass { "pass" } else { "fail" }).bad(!r.pass),
-                    ],
-                    !r.pass,
-                )
-            })
-            .collect();
+        use check_ui::Col;
+        // Built once per answer, not every frame.
+        let key = (self.job.generation, report.report.rows.len());
+        let rows = self.rows.get_or_build(key, || table_rows(report));
         if let Some(k) = check_ui::ResultTable::new(
             "string-check-rows",
             vec![
@@ -671,7 +626,7 @@ impl StringChecksWindow {
                 Col::text("Verdict"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .group_by(&[2, 3, 0, 4])
         .csv("string-checks-table.csv")
         .full_csv(
@@ -687,6 +642,60 @@ impl StringChecksWindow {
             ));
         }
     }
+}
+
+/// The results table's rows: one per limit × string × case.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .report
+        .rows
+        .iter()
+        .map(|r| {
+            let rule = &report.rules[r.rule];
+            let (value, limit, usage) = match r.measure {
+                Measure::Load => (
+                    Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
+                    Cell::sorted(format!("{:.2} kN", r.limit / 1000.0), r.limit),
+                    Cell::num(Some(100.0 * r.usage), 1),
+                ),
+                Measure::Uplift => (
+                    Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
+                    Cell::text(if r.pass {
+                        "hangs"
+                    } else if r.value < 0.0 {
+                        "pushed"
+                    } else {
+                        "slack"
+                    }),
+                    Cell::num(None, 1),
+                ),
+                _ => (
+                    Cell::sorted(format!("{:.1}°", r.value), r.value),
+                    Cell::sorted(format!("{:.1}°", r.limit), r.limit),
+                    Cell::num(Some(100.0 * r.usage), 1),
+                ),
+            };
+            check_ui::Row::new(
+                vec![
+                    Cell::text(format!("{} {}", r.structure, r.string)),
+                    Cell::text(if r.strain { "strain" } else { "suspension" }),
+                    Cell::text(&rule.name),
+                    Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
+                    Cell::text(r.measure.describe()),
+                    value.bad(!r.pass),
+                    limit,
+                    Cell::text(match r.source {
+                        Source::String => "string",
+                        Source::Rule => "rule",
+                    }),
+                    usage.bad(!r.pass),
+                    Cell::text(if r.pass { "pass" } else { "fail" }).bad(!r.pass),
+                ],
+                !r.pass,
+            )
+        })
+        .collect()
 }
 
 /// A row's value against its limit, in words: "52.1 kN of 40.0 kN (130 %)",

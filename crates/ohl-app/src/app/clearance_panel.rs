@@ -1172,12 +1172,59 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     false
 }
 
+/// The Clearances window's result rows: one per finding.
+fn clearance_rows(rep: &crate::clearance::Report) -> Vec<crate::check_ui::Row> {
+    rep.findings
+        .iter()
+        .map(|f| {
+            use crate::check_ui::Cell;
+            let wire = match &f.wire {
+                crate::selection::Selection::Span { section, span } => Cell::span(section, *span),
+                other => Cell::text(other.describe()),
+            };
+            let (required, found) = match f.band {
+                Some(b) => (
+                    Cell::sorted(format!("b {b:.2} in plan"), b),
+                    Cell::sorted(
+                        ohl_clearance::zone::screen_text(b, f.at, f.target),
+                        f.distance,
+                    ),
+                ),
+                None => (
+                    Cell::num(Some(f.required), 2),
+                    Cell::num(Some(f.distance), 2),
+                ),
+            };
+            crate::check_ui::Row::new(
+                vec![
+                    wire,
+                    Cell::text(f.other.as_ref().map_or("-".into(), |o| o.describe())),
+                    Cell::text(&f.rule),
+                    Cell::text(f.measure),
+                    required,
+                    found.bad(true),
+                    // Found less required, as the vertical and
+                    // radial windows show it.
+                    Cell::sorted(
+                        format!("{:+.2}", f.distance - f.required),
+                        f.distance - f.required,
+                    )
+                    .bad(true),
+                    Cell::text(&f.case),
+                    Cell::sorted(f.positions.to_string(), f.positions as f64),
+                ],
+                true,
+            )
+        })
+        .collect()
+}
+
 /// The Clearances window's Results tab: the verdict, the findings of the
 /// case shown in the shared table (a click selects the wire, draws the
 /// case and goes there), the rules' lowest clearances and the notes
 /// folded under it.
 fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
-    let c = &r.clearances;
+    let c = &mut r.clearances;
     let mut go: Option<crate::clearance::Finding> = None;
     match &c.report {
         Some(Err(e)) => {
@@ -1202,62 +1249,9 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
             if crate::check_ui::verdict(ui, n > 0, &text, n > 0) {
                 go = rep.findings.first().cloned();
             }
-            let rows: Vec<crate::check_ui::Row> = rep
-                .findings
-                .iter()
-                .map(|f| {
-                    use crate::check_ui::Cell;
-                    let class = f.class.map_or("-".to_owned(), |k| {
-                        format!(
-                            "class {k}{}",
-                            r.model
-                                .scheme
-                                .class(k)
-                                .map_or(String::new(), |d| format!(" {}", d.name))
-                        )
-                    });
-                    let wire = match &f.wire {
-                        crate::selection::Selection::Span { section, span } => {
-                            Cell::span(section, *span)
-                        }
-                        other => Cell::text(other.describe()),
-                    };
-                    let (required, found) = match f.band {
-                        Some(b) => (
-                            Cell::sorted(format!("b {b:.2} in plan"), b),
-                            Cell::sorted(
-                                ohl_clearance::zone::screen_text(b, f.at, f.target),
-                                f.distance,
-                            ),
-                        ),
-                        None => (
-                            Cell::num(Some(f.required), 2),
-                            Cell::num(Some(f.distance), 2),
-                        ),
-                    };
-                    let _ = class;
-                    crate::check_ui::Row::new(
-                        vec![
-                            wire,
-                            Cell::text(f.other.as_ref().map_or("-".into(), |o| o.describe())),
-                            Cell::text(&f.rule),
-                            Cell::text(f.measure),
-                            required,
-                            found.bad(true),
-                            // Found less required, as the vertical and
-                            // radial windows show it.
-                            Cell::sorted(
-                                format!("{:+.2}", f.distance - f.required),
-                                f.distance - f.required,
-                            )
-                            .bad(true),
-                            Cell::text(&f.case),
-                            Cell::sorted(f.positions.to_string(), f.positions as f64),
-                        ],
-                        true,
-                    )
-                })
-                .collect();
+            // Built once per report, not every frame.
+            let key = (c.generation, rep.findings.len());
+            let rows = c.rows.get_or_build(key, || clearance_rows(rep));
             let notes: Vec<String> = rep
                 .rules
                 .iter()
@@ -1285,7 +1279,7 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                         .tip("How many wind positions and case pairs are below the rule"),
                 ],
             )
-            .rows(rows)
+            .rows_kept(rows)
             .group_by(&[2, 0, 3, 7])
             .csv("wire-clearances.csv")
             .ui(ui);

@@ -18,7 +18,7 @@
 //! structures ([`crate::internal_clearances::GroupStudy`]).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use eframe::egui;
@@ -27,29 +27,39 @@ use ohl_weather::CaseGroup;
 use crate::model::Model;
 
 /// The groups read, by file and its time (read again when it changed).
-type Cache = Option<(PathBuf, Option<SystemTime>, Vec<CaseGroup>)>;
+type Cache = Option<(PathBuf, Option<SystemTime>, Arc<Vec<CaseGroup>>)>;
 static CACHE: Mutex<Cache> = Mutex::new(None);
 
 /// The groups of the model's weather case file (none without one, or
 /// when it does not read).
 pub fn groups(model: &Model) -> Vec<CaseGroup> {
-    let Some(path) = model.sources.weather.clone() else {
-        return Vec::new();
+    groups_shared(model).as_ref().clone()
+}
+
+/// As [`groups`], shared instead of copied (what asks every frame: the
+/// checks' case lists, [`crate::check_ui::LineChoices`]). The file's
+/// time is still looked at on every call: a file changed outside the
+/// program shows at once.
+pub fn groups_shared(model: &Model) -> Arc<Vec<CaseGroup>> {
+    let Some(path) = model.sources.weather.as_ref() else {
+        return Arc::default();
     };
-    let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+    let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
     let mut cache = CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((p, m, g)) = cache.as_ref()
-        && *p == path
+        && p == path
         && *m == modified
     {
         return g.clone();
     }
-    let g = ohl_weather::WeatherCases::load(&path)
-        .map(|s| s.groups)
-        .unwrap_or_default();
-    *cache = Some((path, modified, g.clone()));
+    let g = Arc::new(
+        ohl_weather::WeatherCases::load(path)
+            .map(|s| s.groups)
+            .unwrap_or_default(),
+    );
+    *cache = Some((path.clone(), modified, g.clone()));
     g
 }
 

@@ -98,6 +98,10 @@ pub struct InternalClearancesWindow {
     generation: u64,
     /// What the views draw of it: (shown, generation).
     drawn: Option<(bool, u64)>,
+    /// What the rule editor offers of the line.
+    choices: check_ui::LineChoices,
+    /// The results table's rows, by the answer's count and its rows.
+    rows: check_ui::CachedRows<(u64, usize)>,
 }
 
 /// The rule file of the window in a project: in its rules folder (its
@@ -851,7 +855,7 @@ impl InternalClearancesWindow {
         });
         // The weather case groups' columns of before (2026-10-25): offered
         // once to copy into the structures.
-        let groups = crate::case_groups::groups(model);
+        let groups = crate::case_groups::groups_shared(model);
         if let Some(note) = group_study_note(&groups) {
             let study = GroupStudy::of(&model.line, &groups);
             let pending = study.pending(&model.line).count();
@@ -906,16 +910,14 @@ impl InternalClearancesWindow {
         out: &mut Out,
     ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Internal);
-        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let groups = crate::case_groups::groups(model);
-        let mut voltages: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|p| p.map(|p| p.nominal_kv))
-            .collect();
-        voltages.sort_by(f64::total_cmp);
-        voltages.dedup();
-        let t = check_ui::RuleTable::new("internal-clearance-rules", &mut self.rules, &voltages)
+        // The lists offered, made once per version of the line.
+        let check_ui::LineChoices {
+            cases,
+            groups,
+            voltages,
+            ..
+        } = self.choices.of(model);
+        let t = check_ui::RuleTable::new("internal-clearance-rules", &mut self.rules, voltages)
             .add(
                 "An internal rule",
                 "for every electrified part in every case: set its distance",
@@ -938,9 +940,8 @@ impl InternalClearancesWindow {
                             ui,
                             &crate::rule_table::cases_words(&r.cases),
                             |ui| {
-                                changed |=
-                                    crate::case_groups::pick_names(ui, &groups, &mut r.cases);
-                                for c in &cases {
+                                changed |= crate::case_groups::pick_names(ui, groups, &mut r.cases);
+                                for c in cases {
                                     let mut on = r.cases.contains(c);
                                     if ui.checkbox(&mut on, c).changed() {
                                         r.cases.retain(|x| x != c);
@@ -956,7 +957,7 @@ impl InternalClearancesWindow {
                         ui.label("Voltages");
                         changed |= crate::rule_table::voltages_menu(
                             ui,
-                            &voltages,
+                            voltages,
                             &mut r.voltages,
                             "None ticked: every voltage",
                         );
@@ -1004,7 +1005,7 @@ impl InternalClearancesWindow {
                             ui,
                             ("internal-distance", k),
                             &mut r.distance,
-                            &voltages,
+                            voltages,
                         );
                         ui.end_row();
                         // A distance of its own in the cases with wind
@@ -1029,7 +1030,7 @@ impl InternalClearancesWindow {
                                     ui,
                                     ("internal-distance-wind", k),
                                     d,
-                                    &voltages,
+                                    voltages,
                                 );
                             }
                         });
@@ -1155,37 +1156,10 @@ impl InternalClearancesWindow {
         }
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // goes to its structure.
-        use check_ui::{Cell, Col};
-        let rows: Vec<check_ui::Row> = report
-            .report
-            .rows
-            .iter()
-            .map(|r| {
-                let against = r.against();
-                check_ui::Row::new(
-                    vec![
-                        Cell::text(&r.structure),
-                        Cell::text(r.part.to_string()),
-                        Cell::text(if against.is_empty() {
-                            "—".into()
-                        } else {
-                            against
-                        }),
-                        Cell::text(&report.rules[r.rule].name),
-                        Cell::text(&r.case),
-                        Cell::num(Some(r.distance), 2).bad(!r.pass()),
-                        Cell::num(Some(r.required), 2),
-                        Cell::text(if r.to_surface {
-                            "surface"
-                        } else {
-                            "centre line"
-                        }),
-                        Cell::text(if r.pass() { "pass" } else { "too near" }).bad(!r.pass()),
-                    ],
-                    !r.pass(),
-                )
-            })
-            .collect();
+        use check_ui::Col;
+        // Built once per answer, not every frame.
+        let key = (self.job.generation, report.report.rows.len());
+        let rows = self.rows.get_or_build(key, || table_rows(report));
         if let Some(k) = check_ui::ResultTable::new(
             "internal-clearance-rows",
             vec![
@@ -1200,7 +1174,7 @@ impl InternalClearancesWindow {
                 Col::text("Verdict"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .group_by(&[0, 3, 4])
         .csv("internal-clearances-table.csv")
         .full_csv(
@@ -1216,6 +1190,41 @@ impl InternalClearancesWindow {
             ));
         }
     }
+}
+
+/// The results table's rows: one per part × case × rule.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .report
+        .rows
+        .iter()
+        .map(|r| {
+            let against = r.against();
+            check_ui::Row::new(
+                vec![
+                    Cell::text(&r.structure),
+                    Cell::text(r.part.to_string()),
+                    Cell::text(if against.is_empty() {
+                        "—".into()
+                    } else {
+                        against
+                    }),
+                    Cell::text(&report.rules[r.rule].name),
+                    Cell::text(&r.case),
+                    Cell::num(Some(r.distance), 2).bad(!r.pass()),
+                    Cell::num(Some(r.required), 2),
+                    Cell::text(if r.to_surface {
+                        "surface"
+                    } else {
+                        "centre line"
+                    }),
+                    Cell::text(if r.pass() { "pass" } else { "too near" }).bad(!r.pass()),
+                ],
+                !r.pass(),
+            )
+        })
+        .collect()
 }
 
 /// An internal clearance rule as a row of the shared rule table.

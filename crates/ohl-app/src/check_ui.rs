@@ -372,6 +372,133 @@ pub fn circuits_of(line: &ohl_line::Line) -> Vec<String> {
     names
 }
 
+/// What the checks' rule editors offer of the line (owner, 2026-11-10:
+/// five windows made these lists from the line again every frame, each
+/// with its own copy of the code): made once per version of what they
+/// read — the line ([`crate::model::Model::line_version`]), the route
+/// worked on, the weather cases' names — and kept by the window. The
+/// case groups are the weather case file's as read last, shared
+/// ([`crate::case_groups::groups_shared`]).
+#[derive(Debug, Clone, Default)]
+pub struct LineChoices {
+    /// What the lists were made from: the line's version and the route
+    /// worked on (none: never made). The cases' names are compared
+    /// themselves.
+    made_for: Option<(u64, Option<String>)>,
+    /// The weather cases' names, in the model's order.
+    pub cases: Vec<String>,
+    /// The weather case groups.
+    pub groups: std::sync::Arc<Vec<ohl_weather::CaseGroup>>,
+    /// The nominal voltages of the line's circuits that have one, kV,
+    /// ascending, each once.
+    pub voltages: Vec<f64>,
+    /// As `voltages`, with 0 for what has none (earthed wires).
+    pub voltages_or_zero: Vec<f64>,
+    /// The wire types of the line's sections, sorted, each once.
+    pub types: Vec<String>,
+    /// The line's systems, then "none".
+    pub systems: Vec<String>,
+    /// The line's circuits.
+    pub circuits: Vec<String>,
+    /// The wire types of the sections on the route worked on (all
+    /// without one), sorted, each once.
+    pub route_types: Vec<String>,
+    /// The systems with a section on the route worked on, sorted.
+    pub route_systems: Vec<String>,
+    /// The circuits with a section on the route worked on.
+    pub route_circuits: Vec<String>,
+}
+
+impl LineChoices {
+    /// The lists for `model` now: made again when its line, the route
+    /// worked on or the cases' names changed; the groups asked of the
+    /// weather case file's cache every time.
+    pub fn of(&mut self, model: &Model) -> &Self {
+        let same = self
+            .made_for
+            .as_ref()
+            .is_some_and(|(v, r)| *v == model.line_version && *r == model.work_route)
+            && self
+                .cases
+                .iter()
+                .eq(model.cases.iter().map(|c| &c.case.name));
+        if !same {
+            *self = Self::made(model);
+            #[cfg(test)]
+            CHOICES_MADE.with(|n| n.set(n.get() + 1));
+        }
+        self.groups = crate::case_groups::groups_shared(model);
+        self
+    }
+
+    /// The lists of `model` (the groups left empty).
+    fn made(model: &Model) -> Self {
+        let line = &model.line;
+        let kv = |zero: bool| {
+            let mut v: Vec<f64> = ohl_clearance::case::voltages_of(line)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|p| match p {
+                    Some(p) => Some(p.nominal_kv),
+                    None => zero.then_some(0.0),
+                })
+                .collect();
+            v.sort_by(f64::total_cmp);
+            v.dedup();
+            v
+        };
+        let sorted_once = |mut v: Vec<String>| {
+            v.sort();
+            v.dedup();
+            v
+        };
+        // With a route worked on: what has a section on it (2026-11-01).
+        let on = model.scope();
+        let sections: Vec<&ohl_line::Section> = line
+            .sections
+            .iter()
+            .filter(|s| on.as_ref().is_none_or(|o| o.sections.contains(&s.id)))
+            .collect();
+        let mut systems: Vec<String> = line.systems.iter().map(|s| s.id.clone()).collect();
+        systems.push("none".into());
+        let mut route_systems: Vec<String> = line
+            .systems
+            .iter()
+            .filter(|y| {
+                sections
+                    .iter()
+                    .any(|s| s.system.as_deref() == Some(y.id.as_str()))
+            })
+            .map(|s| s.id.clone())
+            .collect();
+        route_systems.sort();
+        Self {
+            made_for: Some((model.line_version, model.work_route.clone())),
+            cases: model.cases.iter().map(|c| c.case.name.clone()).collect(),
+            groups: Default::default(),
+            voltages: kv(false),
+            voltages_or_zero: kv(true),
+            types: sorted_once(line.sections.iter().map(|s| s.cable.clone()).collect()),
+            systems,
+            circuits: line.circuits.iter().map(|c| c.name.clone()).collect(),
+            route_types: sorted_once(sections.iter().map(|s| s.cable.clone()).collect()),
+            route_systems,
+            route_circuits: line
+                .circuits
+                .iter()
+                .filter(|c| sections.iter().any(|s| s.circuit_name == c.name))
+                .map(|c| c.name.clone())
+                .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Counts the times a [`LineChoices`] made its lists (tests).
+    static CHOICES_MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The weather cases of a check's scope.
 pub enum Cases<'a> {
     /// Several, ticked (indices in `names`).
@@ -1049,9 +1176,109 @@ impl Default for View {
 }
 
 /// A line of the table drawn: a group's heading or a row.
+#[derive(Debug, Clone, PartialEq)]
 enum Line {
     Group(String, usize),
     Row(usize),
+}
+
+/// The next stamp of rows built ([`CachedRows`]): never one given before,
+/// whichever window builds them.
+fn next_stamp() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A check window's result rows kept from frame to frame (2026-11-10:
+/// every window made every row, each cell a text, again every frame).
+/// Built when what they are made from changes, said by the window as a
+/// key: the answer's count ([`crate::job::Job::generation`]) and what
+/// else the cells are written from (the page shown, a comparison…).
+/// What only chooses among the rows (*Only violations*, the search, the
+/// sort, the groups) is not in the key: the table does that itself.
+#[derive(Debug, Clone)]
+pub struct CachedRows<K> {
+    /// The key they were built for, their stamp, the rows.
+    kept: Option<(K, u64, Vec<Row>)>,
+}
+
+impl<K> Default for CachedRows<K> {
+    fn default() -> Self {
+        Self { kept: None }
+    }
+}
+
+impl<K: PartialEq> CachedRows<K> {
+    /// The rows of `key`: those kept when they were built for it, else
+    /// built now by `build` (and kept, the older ones dropped).
+    pub fn get_or_build(&mut self, key: K, build: impl FnOnce() -> Vec<Row>) -> KeptRows<'_> {
+        if self.kept.as_ref().is_some_and(|(k, ..)| *k != key) {
+            self.kept = None;
+        }
+        let (_, stamp, rows) = self
+            .kept
+            .get_or_insert_with(|| (key, next_stamp(), build()));
+        KeptRows {
+            rows,
+            stamp: *stamp,
+        }
+    }
+
+    /// Drops them: the next [`CachedRows::get_or_build`] builds (tests
+    /// that change a result in place).
+    #[cfg(test)]
+    pub fn clear(&mut self) {
+        self.kept = None;
+    }
+
+    /// The stamp of the rows kept, if any: another one after every build
+    /// (tests).
+    #[cfg(test)]
+    pub fn stamp(&self) -> Option<u64> {
+        self.kept.as_ref().map(|(_, stamp, _)| *stamp)
+    }
+}
+
+/// Rows of a [`CachedRows`] with their stamp: other rows, another stamp.
+/// A [`ResultTable`] given them ([`ResultTable::rows_kept`]) filters,
+/// sorts and groups once per stamp and view, not every frame.
+#[derive(Debug, Clone, Copy)]
+pub struct KeptRows<'a> {
+    /// The rows.
+    pub rows: &'a [Row],
+    stamp: u64,
+}
+
+/// What a table shows of kept rows, kept in the memory per table: for
+/// which rows and view ([`ShownFor`]), and the answer.
+type ShownKept = std::sync::Arc<(ShownFor, Shown)>;
+
+/// What [`ResultTable::shown`] reads: the rows (their stamp), the view's
+/// choices and the table's own.
+#[derive(Debug, Clone, PartialEq)]
+struct ShownFor {
+    stamp: u64,
+    sort: Option<(usize, bool)>,
+    only: bool,
+    search: String,
+    group: Option<usize>,
+    filter: bool,
+    groups: Vec<usize>,
+}
+
+/// The rows shown, in order (indices in the rows given), the lines
+/// drawn, and how many of all rows are violations.
+#[derive(Debug, Clone, PartialEq)]
+struct Shown {
+    idx: Vec<usize>,
+    lines: Vec<Line>,
+    violations: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Counts the times a table filtered, sorted and grouped (tests).
+    static SHOWN_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// The results of a check as one table (owner, 2026-10-27; built on the
@@ -1062,6 +1289,8 @@ pub struct ResultTable<'a> {
     id: &'a str,
     cols: Vec<Col>,
     rows: std::borrow::Cow<'a, [Row]>,
+    /// The stamp of rows kept ([`ResultTable::rows_kept`]).
+    stamp: Option<u64>,
     filter: bool,
     groups: Vec<usize>,
     csv: Option<&'a str>,
@@ -1094,6 +1323,7 @@ impl<'a> ResultTable<'a> {
             id,
             cols,
             rows: std::borrow::Cow::Borrowed(&[]),
+            stamp: None,
             filter: true,
             groups: Vec::new(),
             csv: None,
@@ -1102,16 +1332,20 @@ impl<'a> ResultTable<'a> {
         }
     }
 
-    /// Its rows.
+    /// Its rows, made for this frame (a few rows, or rows of what is
+    /// edited: filtered and sorted again every frame).
     pub fn rows(mut self, rows: Vec<Row>) -> Self {
         self.rows = std::borrow::Cow::Owned(rows);
+        self.stamp = None;
         self
     }
 
-    /// Its rows, kept by the window from frame to frame (built once per
-    /// run: thousands of rows are not made again every frame).
-    pub fn rows_ref(mut self, rows: &'a [Row]) -> Self {
-        self.rows = std::borrow::Cow::Borrowed(rows);
+    /// Its rows, kept by the window from frame to frame ([`CachedRows`]:
+    /// built once per run, thousands of rows are not made again every
+    /// frame; filtered, sorted and grouped once per view of them).
+    pub fn rows_kept(mut self, kept: KeptRows<'a>) -> Self {
+        self.rows = std::borrow::Cow::Borrowed(kept.rows);
+        self.stamp = Some(kept.stamp);
         self
     }
 
@@ -1156,6 +1390,8 @@ impl<'a> ResultTable<'a> {
     /// The rows shown, in order (indices in the rows given), and the
     /// lines drawn.
     fn shown(&self, view: &View) -> (Vec<usize>, Vec<Line>) {
+        #[cfg(test)]
+        SHOWN_RUNS.with(|n| n.set(n.get() + 1));
         let q = view.search.trim().to_lowercase();
         let mut idx: Vec<usize> = (0..self.rows.len())
             .filter(|&k| !self.filter || !view.only || self.rows[k].violation)
@@ -1229,6 +1465,66 @@ impl<'a> ResultTable<'a> {
         (idx, lines)
     }
 
+    /// The memory key of what the table showed last.
+    fn shown_key(&self) -> egui::Id {
+        egui::Id::new(("result-table-shown", self.id))
+    }
+
+    /// What the table showed last of these very rows (kept rows, the
+    /// same stamp), in whatever view.
+    fn shown_before(&self, ui: &egui::Ui) -> Option<ShownKept> {
+        let stamp = self.stamp?;
+        ui.data(|d| d.get_temp::<ShownKept>(self.shown_key()))
+            .filter(|kept| kept.0.stamp == stamp)
+    }
+
+    /// How many of all rows are violations (counted once for kept rows).
+    fn violations(&self, ui: &egui::Ui) -> usize {
+        match self.shown_before(ui) {
+            Some(kept) => kept.1.violations,
+            None => self.rows.iter().filter(|r| r.violation).count(),
+        }
+    }
+
+    /// [`ResultTable::shown`] and the count of violations: of kept rows
+    /// ([`ResultTable::rows_kept`]) the answer of the last frame while
+    /// the rows (their stamp), the view's choices and the table's are
+    /// the same (kept in the memory per table); else made now.
+    fn shown_kept(&self, ui: &egui::Ui, view: &View) -> ShownKept {
+        let key = self.shown_key();
+        if let Some(kept) = self.shown_before(ui)
+            && let f = &kept.0
+            && f.sort == view.sort
+            && f.only == view.only
+            && f.search == view.search
+            && f.group == view.group
+            && f.filter == self.filter
+            && f.groups == self.groups
+        {
+            return kept;
+        }
+        let (idx, lines) = self.shown(view);
+        let shown = Shown {
+            idx,
+            lines,
+            violations: self.rows.iter().filter(|r| r.violation).count(),
+        };
+        let made_for = ShownFor {
+            stamp: self.stamp.unwrap_or(0),
+            sort: view.sort,
+            only: view.only,
+            search: view.search.clone(),
+            group: view.group,
+            filter: self.filter,
+            groups: self.groups.clone(),
+        };
+        let kept: ShownKept = std::sync::Arc::new((made_for, shown));
+        if self.stamp.is_some() {
+            ui.data_mut(|d| d.insert_temp(key, kept.clone()));
+        }
+        kept
+    }
+
     /// The rows shown as CSV (the headers first).
     fn csv_text(&self, idx: &[usize]) -> String {
         let field = |s: &str| {
@@ -1265,7 +1561,7 @@ impl<'a> ResultTable<'a> {
     pub fn ui(self, ui: &mut egui::Ui) -> Option<usize> {
         let key = view_key(self.id);
         let mut view: View = ui.data(|d| d.get_temp(key)).unwrap_or_default();
-        let violations = self.rows.iter().filter(|r| r.violation).count();
+        let violations = self.violations(ui);
         ui.horizontal_wrapped(|ui| {
             if self.filter {
                 ui.checkbox(&mut view.only, "Only violations")
@@ -1300,7 +1596,8 @@ impl<'a> ResultTable<'a> {
                     });
             }
         });
-        let (idx, lines) = self.shown(&view);
+        let shown = self.shown_kept(ui, &view);
+        let (idx, lines) = (&shown.1.idx, &shown.1.lines);
         let mut clicked = None;
         ui.horizontal(|ui| {
             ui.label(
@@ -1314,7 +1611,7 @@ impl<'a> ResultTable<'a> {
                     .on_hover_text("The rows shown, as a CSV file (the headers first)")
                     .clicked()
             {
-                crate::job::save_csv(name, &self.csv_text(&idx));
+                crate::job::save_csv(name, &self.csv_text(idx));
             }
             if let Some((name, what, text)) = &self.full_csv
                 && ui
@@ -1876,6 +2173,366 @@ mod tests {
         h.get_by_label("S2 span 1").click();
         h.run();
         assert_eq!(*h.state(), Some(2));
+    }
+
+    /// Rows of three rules, for the kept-rows tests: `shift` moves the
+    /// values (other rows for another key).
+    fn rule_rows(shift: f64) -> Vec<Row> {
+        [
+            ("ice", 0, 7.5),
+            ("wind", 1, 12.0),
+            ("ice", 2, 3.25),
+            ("cold", 0, 9.0),
+            ("wind", 3, 1.0),
+        ]
+        .into_iter()
+        .map(|(rule, span, v)| {
+            let v = v + shift;
+            Row::new(
+                vec![
+                    Cell::text(rule),
+                    Cell::span("S1", span),
+                    Cell::num(Some(v), 2).bad(v < 8.0),
+                ],
+                v < 8.0,
+            )
+        })
+        .collect()
+    }
+
+    fn rule_cols() -> Vec<Col> {
+        vec![Col::text("Rule"), Col::text("Span"), Col::num("Found [m]")]
+    }
+
+    /// Kept rows are built when their key changes and not otherwise, and
+    /// every build has a stamp of its own.
+    #[test]
+    fn kept_rows_are_built_once_per_key() {
+        let mut kept: CachedRows<(u64, bool)> = CachedRows::default();
+        let mut builds = 0;
+        let mut get = |kept: &mut CachedRows<(u64, bool)>, key: (u64, bool), shift: f64| {
+            let k = kept.get_or_build(key, || {
+                builds += 1;
+                rule_rows(shift)
+            });
+            (k.stamp, k.rows[0].cells[2].text.clone())
+        };
+        let first = get(&mut kept, (1, false), 0.0);
+        assert_eq!(first.1, "7.50");
+        // The same key: the rows kept, whatever would be built now.
+        for _ in 0..5 {
+            assert_eq!(get(&mut kept, (1, false), 100.0), first);
+        }
+        // Another key (either part): built again, another stamp.
+        let second = get(&mut kept, (2, false), 1.0);
+        assert_eq!(second.1, "8.50");
+        assert_ne!(second.0, first.0);
+        let third = get(&mut kept, (2, true), 2.0);
+        assert_eq!(third.1, "9.50");
+        // Back to a key of before: built again (one answer is kept).
+        let back = get(&mut kept, (1, false), 0.0);
+        assert_eq!(back.1, "7.50");
+        assert!(back.0 != first.0 && back.0 != third.0);
+        drop(get);
+        assert_eq!(builds, 4);
+        // Another cache never gives a stamp given before.
+        let mut other: CachedRows<u8> = CachedRows::default();
+        assert_ne!(other.get_or_build(0, || rule_rows(0.0)).stamp, back.0);
+    }
+
+    /// Kept rows filtered, sorted and grouped give what rows made for the
+    /// frame give, in every view; made once per view and rows, then taken
+    /// from the memory.
+    #[test]
+    fn kept_rows_are_shown_as_fresh_ones_once_per_view() {
+        let view = |sort, only, search: &str, group| View {
+            sort,
+            only,
+            search: search.to_owned(),
+            group,
+            selected: None,
+        };
+        let views = [
+            View::default(),
+            view(None, false, "", None),
+            view(Some((2, true)), false, "", None),
+            view(Some((2, false)), true, "", None),
+            view(Some((1, true)), false, " ICE ", None),
+            view(None, false, "", Some(0)),
+            view(Some((2, false)), false, "", Some(0)),
+            view(Some((0, true)), true, "span", Some(0)),
+            // Not a column grouped by: no groups.
+            view(None, false, "", Some(2)),
+        ];
+        let runs = || SHOWN_RUNS.with(std::cell::Cell::get);
+        let mut cache: CachedRows<u32> = CachedRows::default();
+        egui::__run_test_ui(|ui| {
+            for key in [1, 2] {
+                for v in &views {
+                    let kept = cache.get_or_build(key, || rule_rows(f64::from(key)));
+                    let t = ResultTable::new("kept", rule_cols())
+                        .rows_kept(kept)
+                        .group_by(&[0, 1]);
+                    let fresh = ResultTable::new("fresh", rule_cols())
+                        .rows(rule_rows(f64::from(key)))
+                        .group_by(&[0, 1])
+                        .shown(v);
+                    let before = runs();
+                    let first = t.shown_kept(ui, v);
+                    assert_eq!(runs(), before + 1, "{v:?}");
+                    assert_eq!(
+                        (&first.1.idx, &first.1.lines),
+                        (&fresh.0, &fresh.1),
+                        "{v:?}"
+                    );
+                    assert_eq!(
+                        first.1.violations,
+                        t.rows.iter().filter(|r| r.violation).count()
+                    );
+                    // Again, and what is selected changed: not made again.
+                    let mut same = v.clone();
+                    same.selected = Some(1);
+                    for _ in 0..3 {
+                        let again = t.shown_kept(ui, &same);
+                        assert!(std::sync::Arc::ptr_eq(&first, &again), "{v:?}");
+                    }
+                    assert_eq!(runs(), before + 1, "{v:?}");
+                    assert_eq!(t.violations(ui), first.1.violations);
+                }
+            }
+            // The table's own choices are part of it: without the filter,
+            // or grouped by other columns, made again.
+            let v = view(None, true, "", Some(1));
+            let kept = cache.get_or_build(2, Vec::new);
+            let a = ResultTable::new("kept", rule_cols())
+                .rows_kept(kept)
+                .group_by(&[0, 1]);
+            let with = a.shown_kept(ui, &v);
+            let b = ResultTable::new("kept", rule_cols())
+                .rows_kept(kept)
+                .group_by(&[0, 1])
+                .no_filter();
+            let without = b.shown_kept(ui, &v);
+            assert!(without.1.idx.len() > with.1.idx.len());
+            let c = ResultTable::new("kept", rule_cols())
+                .rows_kept(kept)
+                .group_by(&[0]);
+            let ungrouped = c.shown_kept(ui, &v);
+            assert!(ungrouped.1.lines.iter().all(|l| matches!(l, Line::Row(_))));
+        });
+    }
+
+    /// A table of kept rows drawn frame after frame filters once; rows of
+    /// another key are shown at once, in the view chosen before.
+    #[test]
+    fn a_table_of_kept_rows_follows_its_rows() {
+        type State = (CachedRows<u32>, u32, usize);
+        let runs = || SHOWN_RUNS.with(std::cell::Cell::get);
+        let before = runs();
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(600.0, 400.0))
+            .build_ui_state(
+                |ui, s: &mut State| {
+                    let key = s.1;
+                    let kept = s.0.get_or_build(key, || {
+                        s.2 += 1;
+                        rule_rows(f64::from(key))
+                    });
+                    ResultTable::new("follows", rule_cols())
+                        .rows_kept(kept)
+                        .ui(ui);
+                },
+                (CachedRows::default(), 0, 0),
+            );
+        h.run();
+        h.run();
+        h.run();
+        assert_eq!(h.state().2, 1, "built once");
+        assert_eq!(runs(), before + 1, "filtered once");
+        h.get_by_label("3 of 5 rows shown");
+        h.get_by_label("7.50");
+        // Every row, sorted by the value: one more filtering each.
+        h.get_by_label("Only violations").click();
+        h.run();
+        h.get_by_label("Found [m]").click();
+        h.run();
+        h.run();
+        assert_eq!((h.state().2, runs()), (1, before + 3));
+        h.get_by_label("5 of 5 rows shown");
+        // Other rows (a new run): built and filtered once more, shown in
+        // the same view, the rows of before gone.
+        h.state_mut().1 = 1;
+        h.run();
+        h.run();
+        assert_eq!((h.state().2, runs()), (2, before + 4));
+        h.get_by_label("5 of 5 rows shown");
+        h.get_by_label("8.50");
+        assert!(h.query_by_label("7.50").is_none(), "the rows of before");
+        let y = |h: &Harness<'_, State>, t: &str| h.get_by_label(t).rect().top();
+        assert!(y(&h, "2.00") < y(&h, "4.25") && y(&h, "4.25") < y(&h, "13.00"));
+        h.get_by_label("Only violations").click();
+        h.run();
+        // 2.00 and 4.25 are below 8.
+        h.get_by_label("2 of 5 rows shown");
+    }
+
+    /// What a frame of a results table cost before the rows were kept,
+    /// and costs now (docs/development/performance.md), for 5000 rows of
+    /// seven cells as Wire tensions writes them:
+    ///
+    /// ```bash
+    /// cargo test --release -p ohl-app rows_kept_timing -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "a timing, printed"]
+    fn rows_kept_timing() {
+        const ROWS: usize = 5000;
+        let build = || -> Vec<Row> {
+            (0..ROWS)
+                .map(|k| {
+                    let tension = 20_000.0 + 7.0 * k as f64;
+                    let bad = k % 3 == 0;
+                    Row::new(
+                        vec![
+                            Cell::span(&format!("S{}", k % 40), k % 125),
+                            Cell::text(format!("rule {}", k % 4)),
+                            Cell::text(format!("case {}", k % 10)),
+                            Cell::num(Some(tension / 1000.0), 2).bad(bad),
+                            Cell::num(Some(55.0), 2),
+                            Cell::num(Some(tension / 550.0), 1).bad(bad),
+                            Cell::text(if bad { "fail" } else { "pass" }).bad(bad),
+                        ],
+                        bad,
+                    )
+                })
+                .collect()
+        };
+        let cols = || {
+            [
+                "Span", "Rule", "Case", "Tension", "Allowed", "Usage", "Verdict",
+            ]
+            .map(Col::text)
+            .to_vec()
+        };
+        let median = |mut t: Vec<f64>| {
+            t.sort_by(f64::total_cmp);
+            t[t.len() / 2]
+        };
+        let views = [
+            ("only violations", View::default()),
+            (
+                "every row, sorted by tension, grouped by rule",
+                View {
+                    sort: Some((3, false)),
+                    only: false,
+                    group: Some(1),
+                    ..View::default()
+                },
+            ),
+        ];
+        egui::__run_test_ui(|ui| {
+            for (name, view) in &views {
+                // Before: the rows made, then filtered, sorted and
+                // grouped, every frame.
+                let before = median(
+                    (0..40)
+                        .map(|_| {
+                            let t = std::time::Instant::now();
+                            let table = ResultTable::new("timing", cols())
+                                .rows(build())
+                                .group_by(&[1, 2, 0]);
+                            let n = table.rows.iter().filter(|r| r.violation).count();
+                            std::hint::black_box((table.shown(view), n));
+                            t.elapsed().as_secs_f64() * 1e3
+                        })
+                        .collect(),
+                );
+                // Now: the rows kept, what is shown of them kept.
+                let mut cache: CachedRows<u64> = CachedRows::default();
+                let frame = |cache: &mut CachedRows<u64>| {
+                    let t = std::time::Instant::now();
+                    let table = ResultTable::new("timing", cols())
+                        .rows_kept(cache.get_or_build(1, build))
+                        .group_by(&[1, 2, 0]);
+                    let n = table.violations(ui);
+                    std::hint::black_box((table.shown_kept(ui, view), n));
+                    t.elapsed().as_secs_f64() * 1e3
+                };
+                let first = frame(&mut cache);
+                let now = median((0..40).map(|_| frame(&mut cache)).collect());
+                println!(
+                    "{ROWS} rows, {name}: {before:.3} ms a frame before; now {first:.3} ms the \
+                     first frame, then {:.4} ms a frame",
+                    now
+                );
+            }
+        });
+    }
+
+    /// The lists the rule editors offer are made once per version of the
+    /// line, route worked on and case names, and are those the windows
+    /// made every frame before.
+    #[test]
+    fn line_choices_are_made_once_per_version() {
+        let mut model = crate::tests::synthetic();
+        let made = || CHOICES_MADE.with(std::cell::Cell::get);
+        let before = made();
+        let mut choices = LineChoices::default();
+        for _ in 0..4 {
+            choices.of(&model);
+        }
+        assert_eq!(made(), before + 1);
+        let c = choices.of(&model).clone();
+        let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+        assert_eq!(c.cases, names);
+        assert_eq!(*c.groups, crate::case_groups::groups(&model));
+        let mut types: Vec<String> = model
+            .line
+            .sections
+            .iter()
+            .map(|s| s.cable.clone())
+            .collect();
+        types.sort();
+        types.dedup();
+        assert!(!types.is_empty());
+        assert_eq!(c.types, types);
+        // No route worked on: the route's lists are the line's.
+        assert_eq!(c.route_types, types);
+        let mut systems: Vec<String> = model.line.systems.iter().map(|s| s.id.clone()).collect();
+        let circuits: Vec<String> = model.line.circuits.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(c.circuits, circuits);
+        systems.push("none".into());
+        assert_eq!(c.systems, systems);
+        let kv = |zero: bool| {
+            let mut v: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
+                .unwrap()
+                .into_iter()
+                .filter_map(|p| p.map(|p| p.nominal_kv).or(zero.then_some(0.0)))
+                .collect();
+            v.sort_by(f64::total_cmp);
+            v.dedup();
+            v
+        };
+        assert_eq!((c.voltages, c.voltages_or_zero), (kv(false), kv(true)));
+        // The line changed: made again, with the change.
+        model.line.sections[0].cable = "a wire type of the test".into();
+        model.line_version += 1;
+        assert!(
+            choices
+                .of(&model)
+                .types
+                .contains(&"a wire type of the test".to_owned())
+        );
+        assert_eq!(made(), before + 2);
+        // A case renamed (the line's version as it was): made again.
+        model.cases[0].case.name = "renamed".into();
+        assert_eq!(choices.of(&model).cases[0], "renamed");
+        assert_eq!(made(), before + 3);
+        // A route worked on: made again; the same again: kept.
+        model.work_route = Some("a route of the test".into());
+        assert!(choices.of(&model).route_types.is_empty());
+        assert!(!choices.of(&model).types.is_empty());
+        assert_eq!(made(), before + 4);
     }
 
     /// The tabs: Setup first; a new result opens Results; Run greyed with

@@ -123,6 +123,9 @@ pub struct BuildingFieldsWindow {
     /// The preset handed to the field windows (taken by the app).
     pub hand_over: Option<HandOver>,
     pub(crate) job: Job<Found>,
+    /// The buildings table's rows, by the answer's count and the preset
+    /// shown.
+    rows: check_ui::CachedRows<(u64, String)>,
 }
 
 impl BuildingFieldsWindow {
@@ -755,22 +758,26 @@ impl BuildingFieldsWindow {
         });
         check_ui::notes_fold(ui, WINDOW, &found.notes);
         use check_ui::{Cell, Col};
-        let rows: Vec<check_ui::Row> = buildings
-            .iter()
-            .map(|b| {
-                check_ui::Row::new(
-                    vec![
-                        Cell::text(&b.id),
-                        Cell::num(Some(b.area), 0),
-                        Cell::num(Some(b.ground), 2),
-                        Cell::num(Some(b.top - b.ground), 1),
-                        Cell::num(Some(b.cuts as f64), 0),
-                        Cell::num(Some(b.places as f64), 0),
-                    ],
-                    false,
-                )
-            })
-            .collect();
+        // Built once per answer and preset shown, not every frame.
+        let key = (self.job.generation, preset.name.clone());
+        let rows = self.rows.get_or_build(key, || {
+            buildings
+                .iter()
+                .map(|b| {
+                    check_ui::Row::new(
+                        vec![
+                            Cell::text(&b.id),
+                            Cell::num(Some(b.area), 0),
+                            Cell::num(Some(b.ground), 2),
+                            Cell::num(Some(b.top - b.ground), 1),
+                            Cell::num(Some(b.cuts as f64), 0),
+                            Cell::num(Some(b.places as f64), 0),
+                        ],
+                        false,
+                    )
+                })
+                .collect()
+        });
         check_ui::ResultTable::new(
             "building-fields-buildings",
             vec![
@@ -782,7 +789,7 @@ impl BuildingFieldsWindow {
                 Col::num("Places"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .csv("building-fields-buildings.csv")
         .ui(ui);
     }

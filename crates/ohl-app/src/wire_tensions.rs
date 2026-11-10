@@ -90,6 +90,10 @@ pub struct WireTensionsWindow {
     generation: u64,
     /// What the views draw of it: (shown, generation).
     drawn: Option<(bool, u64)>,
+    /// What the rule editor offers of the line.
+    choices: check_ui::LineChoices,
+    /// The results table's rows, by the answer's count and its rows.
+    rows: check_ui::CachedRows<(u64, usize)>,
 }
 
 /// The rule file of the window in a project: in its clearance rules (its
@@ -416,19 +420,15 @@ impl WireTensionsWindow {
         out: &mut Out,
     ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Tension);
-        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let groups = crate::case_groups::groups(model);
-        let mut types: Vec<String> = model
-            .line
-            .sections
-            .iter()
-            .map(|s| s.cable.clone())
-            .collect();
-        types.sort();
-        types.dedup();
-        let mut systems: Vec<String> = model.line.systems.iter().map(|s| s.id.clone()).collect();
-        systems.push("none".into());
-        let circuits: Vec<String> = model.line.circuits.iter().map(|c| c.name.clone()).collect();
+        // The lists offered, made once per version of the line.
+        let check_ui::LineChoices {
+            cases,
+            groups,
+            types,
+            systems,
+            circuits,
+            ..
+        } = self.choices.of(model);
         let t = check_ui::RuleTable::new("wire-tension-rules", &mut self.rules, &[])
             .add(
                 "A tension rule",
@@ -449,9 +449,8 @@ impl WireTensionsWindow {
                             ui,
                             &crate::rule_table::cases_words(&r.cases),
                             |ui| {
-                                changed |=
-                                    crate::case_groups::pick_names(ui, &groups, &mut r.cases);
-                                changed |= ticks(ui, &cases, &mut r.cases);
+                                changed |= crate::case_groups::pick_names(ui, groups, &mut r.cases);
+                                changed |= ticks(ui, cases, &mut r.cases);
                             },
                         );
                         ui.end_row();
@@ -507,11 +506,11 @@ impl WireTensionsWindow {
                                 .weak(),
                             );
                             ui.label(egui::RichText::new("Wire types").strong());
-                            changed |= ticks(ui, &types, &mut r.targets.wire_types);
+                            changed |= ticks(ui, types, &mut r.targets.wire_types);
                             ui.label(egui::RichText::new("Electrical systems").strong());
-                            changed |= ticks(ui, &systems, &mut r.targets.systems);
+                            changed |= ticks(ui, systems, &mut r.targets.systems);
                             ui.label(egui::RichText::new("Circuits").strong());
-                            changed |= ticks(ui, &circuits, &mut r.targets.circuits);
+                            changed |= ticks(ui, circuits, &mut r.targets.circuits);
                         });
                         ui.end_row();
                     });
@@ -620,26 +619,9 @@ impl WireTensionsWindow {
         }
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // selects its span and draws it in the row's weather case.
-        let rows: Vec<check_ui::Row> = report
-            .report
-            .rows
-            .iter()
-            .map(|r| {
-                let rule = &report.rules[r.rule];
-                check_ui::Row::new(
-                    vec![
-                        Cell::span(&r.section, r.span),
-                        Cell::text(&rule.name),
-                        Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
-                        Cell::num(Some(r.tension / 1000.0), 2).bad(!r.passes()),
-                        Cell::num(Some(r.allowed / 1000.0), 2),
-                        Cell::num(Some(100.0 * r.usage), 1).bad(!r.passes()),
-                        Cell::text(if r.passes() { "pass" } else { "fail" }).bad(!r.passes()),
-                    ],
-                    !r.passes(),
-                )
-            })
-            .collect();
+        // Built once per answer, not every frame.
+        let key = (self.job.generation, report.report.rows.len());
+        let rows = self.rows.get_or_build(key, || table_rows(report));
         if let Some(k) = check_ui::ResultTable::new(
             "wire-tension-rows",
             vec![
@@ -652,7 +634,7 @@ impl WireTensionsWindow {
                 Col::text("Verdict"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .group_by(&[1, 2, 0])
         .csv("wire-tensions-table.csv")
         .full_csv(
@@ -671,6 +653,31 @@ impl WireTensionsWindow {
             out.case = Some(r.case.clone());
         }
     }
+}
+
+/// The results table's rows: one per span × case × rule.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .report
+        .rows
+        .iter()
+        .map(|r| {
+            let rule = &report.rules[r.rule];
+            check_ui::Row::new(
+                vec![
+                    Cell::span(&r.section, r.span),
+                    Cell::text(&rule.name),
+                    Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
+                    Cell::num(Some(r.tension / 1000.0), 2).bad(!r.passes()),
+                    Cell::num(Some(r.allowed / 1000.0), 2),
+                    Cell::num(Some(100.0 * r.usage), 1).bad(!r.passes()),
+                    Cell::text(if r.passes() { "pass" } else { "fail" }).bad(!r.passes()),
+                ],
+                !r.passes(),
+            )
+        })
+        .collect()
 }
 
 /// A rule in words: "ice: 0.5 × RTS, maximum (most tensioned support),

@@ -78,8 +78,11 @@ fn keys_fly_the_camera() {
         return;
     }
     let model = synthetic();
+    // (The 3D layers are built over several frames, as many as a busy
+    // machine needs: more steps than the default four.)
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
+        .with_max_steps(64)
         .wgpu()
         .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     harness.run();
@@ -516,7 +519,11 @@ fn lidar_points_can_be_picked() {
 fn g_goes_to_a_structure() {
     let model = synthetic();
     let gpu = ohl_render::headless_device().is_ok();
-    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    // (More steps than the default four: the 3D layers are built over
+    // several frames, as many as a busy machine needs.)
+    let mut builder = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .with_max_steps(64);
     if gpu {
         builder = builder.wgpu();
     }

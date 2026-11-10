@@ -10,6 +10,73 @@ of Parts A, B and C).
 
 ## 2026-11-10
 
+**The profile sheet: the plan between the profile and the tables, the elevations above (owner, 2026-11-10)**
+
+The owner asked for the plan submission's profile sheet (the private LeV
+plugin's template) to show the situation under the profile, above the
+tables, with the pylons' silhouettes staying at the top. The sheet
+templates take a third panel order, `["profile", "plan", "bands"]`: the
+band rows, which follow the profile's stations, then stand under the plan
+(before, always right under the profile), and the elevations drawn
+"above" stand in a strip of their own above the profile instead of on the
+plan. The other two orders are unchanged. A change of the drawing engine
+made for a plugin's template; the owner asked for the layout itself.
+
+**Library files merged entry by entry, a structure's labelled parts part by part (owner, 2026-11-10)**
+
+Approved from the review's open points ("go ahead with 3 and 4"). A
+library file changed on both lines was one conflict; the three TOML texts
+are now merged by value — keys, tables key by key, lists of named tables
+(`[[case]]`, `[[rule]]`…) entry by entry — into ours' text with theirs'
+changes laid into it, comments and layout kept. Lists inside an object
+whose elements carry a unique `label` (a structure's attachment points,
+wire points, strings) merge part by part. What does not combine by itself
+stays one conflict, as before. **A section's points stay one value**:
+their order is the wire's way along the line, and a point inserted on one
+line has no certain place in the other's order — a wrong guess would be a
+wrong line.
+
+**Check windows: nothing rebuilt per frame (review, 2026-11-10; the owner agreed to the change)**
+
+A change of *when* things are computed only: the same rows, in the same
+order, with the same texts and numbers.
+
+- **Result rows are kept from frame to frame.** Every check window made
+  all its result rows again on every frame, each cell written to a text
+  (only Phase distance kept its rows, since 2026-11-04). A window now
+  keeps its rows next to its result (`check_ui::CachedRows`) and builds
+  them when their key changes: the count of answers taken, and what else
+  the cells are written from (the load case shown, factored or not and the
+  structure filter in Structure loads; the classes' names in the vertical
+  and radial clearances; the preset shown in Buildings; the range, method,
+  cases and line in Thermal rating). What only chooses among the rows
+  (*Only violations*, the search, the sort, the groups) is not in the key.
+  Windows: Wire tensions, String checks, Internal clearances, Lightning,
+  Ice shedding, Galloping, Vegetation, Safety volumes, Vertical and radial
+  clearances, Clearances, Structure loads, Thermal rating (five tables),
+  Buildings (fields), Bill of materials, Phase distance and Unequal wind.
+- **A table filters, sorts and groups once per view.** The shared results
+  table did so over all rows on every frame (lower-casing every cell for
+  the search). For kept rows the answer is kept per table and made again
+  when the rows (each build has a stamp of its own), *Only violations*,
+  the search, the sort or the grouping change.
+- **Safety volumes:** each mesh's volume (a sum over its triangles) was
+  worked out per volume on every frame for the table; now once with the
+  rows.
+- **The rule editors' lists** (the weather cases' names, the wire types,
+  systems, circuits, voltages, what is on the route worked on) were made
+  from the line on every frame by five windows, each with its own copy of
+  the code. One `check_ui::LineChoices` makes them once per version of the
+  line, route worked on and case names. The weather case groups are no
+  longer copied per frame (shared); their file's time is still looked at
+  on every frame, so that a file changed outside the program shows at
+  once — keeping that by a counter instead would change when such a
+  change shows, and was not done.
+- Not changed: the tables of Wire fit, Line parameters and Performed
+  checks (a few rows, not in the review).
+
+Built and in active development; not approved yet.
+
 **Merging: both kept under one id, the latest common revision, all or nothing, checked with its libraries (version-management review, 2026-11-10)**
 
 The owner asked to improve the version management, with one rule: nothing

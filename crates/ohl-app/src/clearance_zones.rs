@@ -178,6 +178,11 @@ pub struct ZoneWindow {
     /// What the views draw of this window: shown (open with a report),
     /// the report's generation.
     drawn: Option<(bool, u64)>,
+    /// Counts the reports taken, wherever they are taken.
+    arrived: u64,
+    /// The results table's rows, by the reports taken, the report's
+    /// findings and the classes' names ([`class_names`]).
+    rows: check_ui::CachedRows<(u64, usize, u64)>,
     /// Tests: the check's thread holds its report until Stop (so a test
     /// of Stop cannot see the run end first, however loaded the machine).
     #[cfg(test)]
@@ -246,6 +251,8 @@ impl ZoneWindow {
             #[cfg(test)]
             hold_report: false,
             drawn: None,
+            arrived: 0,
+            rows: Default::default(),
             points: 0,
             estimate: String::new(),
         }
@@ -568,6 +575,7 @@ impl ZoneWindow {
             Err(e) => log::warn!("{}: {e}", self.title()),
         }
         self.report = Some(report);
+        self.arrived += 1;
         self.stamp.arrived();
         self.rules_hash.1 = self.rules_hash.0.take();
         self.running = None;
@@ -1298,7 +1306,7 @@ impl ZoneWindow {
         );
     }
 
-    fn results_ui(&self, ui: &mut egui::Ui, model: &Model) -> Option<Picked> {
+    fn results_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<Picked> {
         let report = match &self.report {
             None => {
                 ui.label(egui::RichText::new("No run yet: Run at the bottom.").weak());
@@ -1331,63 +1339,6 @@ impl ZoneWindow {
         // Every finding, only those in view drawn (2026-10-26); sorted,
         // filtered and grouped by the user (2026-10-27).
         let findings = &report.zone.findings;
-        let rows: Vec<check_ui::Row> = findings
-            .iter()
-            .map(|f| {
-                let span = match finding_span(f) {
-                    Selection::Span { section, span } => check_ui::Cell::span(&section, span),
-                    other => check_ui::Cell::text(other.describe()),
-                };
-                // A screen: the band b and the distance in plan, said as
-                // such (owner, 2026-10-27).
-                let plan = (f.wire[0] - f.target[0]).hypot(f.wire[1] - f.target[1]);
-                let (required, found) = match f.band {
-                    Some(b) => (
-                        check_ui::Cell::sorted(format!("b {b:.2} in plan"), b),
-                        check_ui::Cell::sorted(format!("{plan:.2} in plan"), plan),
-                    ),
-                    None => (
-                        check_ui::Cell::num(Some(f.required), 2),
-                        check_ui::Cell::num(Some(f.distance), 2),
-                    ),
-                };
-                let target = match f.class {
-                    None => "ground".into(),
-                    Some(c) => format!(
-                        "class {c}{}",
-                        model
-                            .scheme
-                            .class(c)
-                            .map_or(String::new(), |d| format!(" {}", d.name))
-                    ),
-                };
-                let what = match (f.class, f.count) {
-                    (None, 1) => "wire piece",
-                    (None, _) => "wire pieces",
-                    (Some(_), 1) => "point",
-                    (Some(_), _) => "points",
-                };
-                check_ui::Row::new(
-                    vec![
-                        span,
-                        check_ui::Cell::text(&report.rules[f.rule].name),
-                        required,
-                        found.bad(true),
-                        check_ui::Cell::sorted(
-                            format!("{:+.2}", f.distance - f.required),
-                            f.distance - f.required,
-                        )
-                        .bad(true),
-                        // The case said with the wind (owner, 2026-10-27);
-                        // clicked, the span is drawn in them.
-                        check_ui::Cell::text(f.position(&report.states)),
-                        check_ui::Cell::text(target),
-                        check_ui::Cell::sorted(format!("{} {what}", f.count), f.count as f64),
-                    ],
-                    true,
-                )
-            })
-            .collect();
         let mut notes: Vec<String> = Vec::new();
         for (k, low) in report.zone.lowest.iter().enumerate() {
             let name = &report.rules[k].name;
@@ -1406,6 +1357,12 @@ impl ZoneWindow {
         notes.extend(report.failed.iter().map(|f| format!("not solved: {f}")));
         let id = format!("{}-results", self.title());
         let csv = format!("{}.csv", self.title().to_lowercase().replace(' ', "-"));
+        // The rows built once per report, and again when the classes'
+        // names (said in the Target column) change.
+        let key = (self.arrived, findings.len(), class_names(&model.scheme));
+        let rows = self
+            .rows
+            .get_or_build(key, || table_rows(report, &model.scheme));
         let clicked = check_ui::ResultTable::new(
             &id,
             vec![
@@ -1420,7 +1377,7 @@ impl ZoneWindow {
                 check_ui::Col::num("Too close"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .group_by(&[1, 0, 6])
         .csv(&csv)
         .below(check_ui::FOLDS_BELOW)
@@ -1445,6 +1402,79 @@ impl ZoneWindow {
         });
         picked(go)
     }
+}
+
+/// The classes' numbers and names as one number (a hash): what the
+/// results table's Target column says of the scheme.
+fn class_names(scheme: &ohl_lidar::ClassScheme) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for c in &scheme.classes {
+        (c.code, &c.name).hash(&mut h);
+    }
+    h.finish()
+}
+
+/// The results table's rows: one per finding (a span below a rule).
+fn table_rows(report: &Report, scheme: &ohl_lidar::ClassScheme) -> Vec<check_ui::Row> {
+    report
+        .zone
+        .findings
+        .iter()
+        .map(|f| {
+            let span = match finding_span(f) {
+                Selection::Span { section, span } => check_ui::Cell::span(&section, span),
+                other => check_ui::Cell::text(other.describe()),
+            };
+            // A screen: the band b and the distance in plan, said as
+            // such (owner, 2026-10-27).
+            let plan = (f.wire[0] - f.target[0]).hypot(f.wire[1] - f.target[1]);
+            let (required, found) = match f.band {
+                Some(b) => (
+                    check_ui::Cell::sorted(format!("b {b:.2} in plan"), b),
+                    check_ui::Cell::sorted(format!("{plan:.2} in plan"), plan),
+                ),
+                None => (
+                    check_ui::Cell::num(Some(f.required), 2),
+                    check_ui::Cell::num(Some(f.distance), 2),
+                ),
+            };
+            let target = match f.class {
+                None => "ground".into(),
+                Some(c) => format!(
+                    "class {c}{}",
+                    scheme
+                        .class(c)
+                        .map_or(String::new(), |d| format!(" {}", d.name))
+                ),
+            };
+            let what = match (f.class, f.count) {
+                (None, 1) => "wire piece",
+                (None, _) => "wire pieces",
+                (Some(_), 1) => "point",
+                (Some(_), _) => "points",
+            };
+            check_ui::Row::new(
+                vec![
+                    span,
+                    check_ui::Cell::text(&report.rules[f.rule].name),
+                    required,
+                    found.bad(true),
+                    check_ui::Cell::sorted(
+                        format!("{:+.2}", f.distance - f.required),
+                        f.distance - f.required,
+                    )
+                    .bad(true),
+                    // The case said with the wind (owner, 2026-10-27);
+                    // clicked, the span is drawn in them.
+                    check_ui::Cell::text(f.position(&report.states)),
+                    check_ui::Cell::text(target),
+                    check_ui::Cell::sorted(format!("{} {what}", f.count), f.count as f64),
+                ],
+                true,
+            )
+        })
+        .collect()
 }
 
 /// The span a finding is on (a jumper's: the jumper).

@@ -234,6 +234,56 @@ pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect, out_of_date
     }
 }
 
+/// The loads of case `r` at the structures whose id contains `filter`
+/// (lower case; empty: all), in the case's order.
+fn loads_shown<'a>(
+    r: &'a CaseLoads,
+    filter: &'a str,
+) -> impl Iterator<Item = &'a ohl_loads::AttachmentLoad> {
+    r.loads
+        .iter()
+        .filter(move |l| filter.is_empty() || l.structure.to_lowercase().contains(filter))
+}
+
+/// A row of the loads table: load `l` of case `r`, factored or not;
+/// incomplete (a wire's forces missing at its structure) as a violation.
+fn load_row(
+    r: &CaseLoads,
+    l: &ohl_loads::AttachmentLoad,
+    unfactored: bool,
+) -> crate::check_ui::Row {
+    use crate::check_ui::Cell;
+    let missing: Vec<String> = r.missing_at(&l.structure).map(|m| m.short()).collect();
+    let v = if unfactored { l.local } else { l.factored };
+    let sections = if missing.is_empty() {
+        l.sections.join(", ")
+    } else {
+        format!(
+            "{} — incomplete: {}",
+            l.sections.join(", "),
+            missing.join(", ")
+        )
+    };
+    crate::check_ui::Row::new(
+        vec![
+            Cell::text(&l.structure).bad(!missing.is_empty()),
+            Cell::text(&l.label),
+            Cell::text(
+                l.sets
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
+            Cell::num(Some(v[0] / 1000.0), 2),
+            Cell::num(Some(v[1] / 1000.0), 2),
+            Cell::num(Some(v[2] / 1000.0), 2),
+            Cell::text(sections).bad(!missing.is_empty()),
+        ],
+        !missing.is_empty(),
+    )
+}
+
 /// The Structure loads window (a page until 2026-10-27; now docked as a
 /// panel or floating like every check window, [`crate::check_help::window`]).
 #[derive(Default)]
@@ -281,6 +331,9 @@ pub struct LoadsPage {
     case_names: Option<(std::path::PathBuf, Result<Vec<String>, String>)>,
     /// Counts the answers taken (a new one opens the Results tab).
     generation: u64,
+    /// The loads table's rows, by the answers taken, the load case
+    /// shown, factored or not and the structure filter.
+    rows: crate::check_ui::CachedRows<(u64, usize, bool, String)>,
     /// How much the last run computed (cases × structures): its time
     /// estimates the next.
     units: (usize, usize),
@@ -881,47 +934,17 @@ impl LoadsPage {
         // The shared results table (owner, 2026-10-28): sortable, units in
         // the headers, searched, grouped by structure, CSV; a row clicked
         // goes to its structure; incomplete loads in the warning colour.
+        // Built once per answer, load case shown, structure filter and
+        // factored or not; not every frame.
         let filter = self.filter.trim().to_lowercase();
-        let shown: Vec<_> = r
-            .loads
-            .iter()
-            .filter(|l| filter.is_empty() || l.structure.to_lowercase().contains(&filter))
-            .collect();
-        use crate::check_ui::{Cell, Col};
-        let rows: Vec<crate::check_ui::Row> = shown
-            .iter()
-            .map(|l| {
-                let missing: Vec<String> = r.missing_at(&l.structure).map(|m| m.short()).collect();
-                let v = if self.unfactored { l.local } else { l.factored };
-                let sections = if missing.is_empty() {
-                    l.sections.join(", ")
-                } else {
-                    format!(
-                        "{} — incomplete: {}",
-                        l.sections.join(", "),
-                        missing.join(", ")
-                    )
-                };
-                crate::check_ui::Row::new(
-                    vec![
-                        Cell::text(&l.structure).bad(!missing.is_empty()),
-                        Cell::text(&l.label),
-                        Cell::text(
-                            l.sets
-                                .iter()
-                                .map(u32::to_string)
-                                .collect::<Vec<_>>()
-                                .join(" "),
-                        ),
-                        Cell::num(Some(v[0] / 1000.0), 2),
-                        Cell::num(Some(v[1] / 1000.0), 2),
-                        Cell::num(Some(v[2] / 1000.0), 2),
-                        Cell::text(sections).bad(!missing.is_empty()),
-                    ],
-                    !missing.is_empty(),
-                )
-            })
-            .collect();
+        use crate::check_ui::Col;
+        let (case, unfactored) = (self.case.min(results.len() - 1), self.unfactored);
+        let key = (self.generation, case, unfactored, filter.clone());
+        let rows = self.rows.get_or_build(key, || {
+            loads_shown(r, &filter)
+                .map(|l| load_row(r, l, unfactored))
+                .collect()
+        });
         if let Some(k) = crate::check_ui::ResultTable::new(
             "structure-loads-rows",
             vec![
@@ -934,13 +957,13 @@ impl LoadsPage {
                 Col::text("Sections"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .no_filter()
         .group_by(&[0])
         .csv("structure-loads-table.csv")
         .ui(ui)
         {
-            go = shown.get(k).map(|l| l.structure.clone());
+            go = loads_shown(r, &filter).nth(k).map(|l| l.structure.clone());
         }
         go
     }

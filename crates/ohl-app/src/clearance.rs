@@ -867,6 +867,9 @@ pub struct Clearances {
     pub wind: ohl_clearance::rules::WindSteps,
     /// Counts the reports taken (a new one opens the Results tab).
     pub generation: u64,
+    /// The results table's rows, by the reports taken and the report's
+    /// findings ([`crate::check_ui::CachedRows`]).
+    pub rows: crate::check_ui::CachedRows<(u64, usize)>,
     running: Option<Receiver<Result<Report, String>>>,
     /// The running check's progress (the points read, the positions
     /// solved of how many), start and Stop.

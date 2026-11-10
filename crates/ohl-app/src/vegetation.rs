@@ -710,6 +710,9 @@ pub struct VegetationWindow {
     pub(crate) job: Job<Report>,
     /// Counts the reports taken (a new one is drawn).
     generation: u64,
+    /// The results table's rows, by the answers taken (runs, saved runs
+    /// shown) and the report's spans.
+    rows: check_ui::CachedRows<(u64, u64, usize)>,
     /// What the views draw now: shown, report, colours.
     drawn: Option<(bool, u64, [[u8; 3]; 2])>,
     /// A saved run shown: what changed since it was saved, when it was
@@ -1234,7 +1237,12 @@ impl VegetationWindow {
                                 crate::menu::error_label(ui, e);
                             }
                             Some(Ok(report)) => {
-                                if let Some(go) = report_ui(ui, report) {
+                                // The table's rows: built once per answer
+                                // (a run's, or a saved run's shown).
+                                let key =
+                                    (self.job.generation, self.generation, report.spans.len());
+                                let rows = self.rows.get_or_build(key, || table_rows(report));
+                                if let Some(go) = report_ui(ui, report, rows) {
                                     out.go = Some(go);
                                 }
                             }
@@ -1935,10 +1943,41 @@ impl VegetationWindow {
     }
 }
 
+/// The results table's rows: one per span.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .spans
+        .iter()
+        .map(|r| {
+            let label =
+                |l: Option<(f64, u32)>| l.map_or("-".to_owned(), |v| report.label(v.1).to_owned());
+            check_ui::Row::new(
+                vec![
+                    Cell::span(&r.section, r.span),
+                    Cell::num(Some(r.required), 2),
+                    Cell::sorted(r.encroaching.to_string(), r.encroaching as f64)
+                        .bad(r.encroaching > 0),
+                    Cell::sorted(r.fall_in.to_string(), r.fall_in as f64).bad(r.fall_in > 0),
+                    Cell::num(r.nearest.map(|v| v.0), 2),
+                    Cell::text(label(r.nearest)),
+                    Cell::num(r.worst_fall.map(|v| v.0), 2),
+                    Cell::text(label(r.worst_fall)),
+                ],
+                r.encroaching > 0 || r.fall_in > 0,
+            )
+        })
+        .collect()
+}
+
 /// The results: the verdict, the exports, the spans in the shared table
 /// (spans 1-based, the units in the headers; a row clicked goes to its
 /// span), the notes and the worst points folded under it.
-fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
+fn report_ui(
+    ui: &mut egui::Ui,
+    report: &Report,
+    rows: check_ui::KeptRows<'_>,
+) -> Option<Selection> {
     let mut go = None;
     let (enc, fall) = report
         .spans
@@ -2022,29 +2061,7 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
             );
         }
     });
-    use check_ui::{Cell, Col};
-    let rows: Vec<check_ui::Row> = report
-        .spans
-        .iter()
-        .map(|r| {
-            let label =
-                |l: Option<(f64, u32)>| l.map_or("-".to_owned(), |v| report.label(v.1).to_owned());
-            check_ui::Row::new(
-                vec![
-                    Cell::span(&r.section, r.span),
-                    Cell::num(Some(r.required), 2),
-                    Cell::sorted(r.encroaching.to_string(), r.encroaching as f64)
-                        .bad(r.encroaching > 0),
-                    Cell::sorted(r.fall_in.to_string(), r.fall_in as f64).bad(r.fall_in > 0),
-                    Cell::num(r.nearest.map(|v| v.0), 2),
-                    Cell::text(label(r.nearest)),
-                    Cell::num(r.worst_fall.map(|v| v.0), 2),
-                    Cell::text(label(r.worst_fall)),
-                ],
-                r.encroaching > 0 || r.fall_in > 0,
-            )
-        })
-        .collect();
+    use check_ui::Col;
     let clicked = check_ui::ResultTable::new(
         "vegetation-rows",
         vec![
@@ -2058,7 +2075,7 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
             Col::text("Case, position (fall)"),
         ],
     )
-    .rows(rows)
+    .rows_kept(rows)
     .csv("vegetation-spans.csv")
     .below(check_ui::FOLDS_BELOW + 70.0)
     .ui(ui);

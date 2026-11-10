@@ -77,6 +77,8 @@ pub struct GallopingWindow {
     pub scope: check_ui::Scope,
     kept: check_ui::Kept,
     pub(crate) job: Job<Report>,
+    /// The results table's rows, by the answer's count and its rows.
+    rows: check_ui::CachedRows<(u64, usize)>,
     /// The parameter file read for its summary (the file, its methods and
     /// requirement in words, or why not).
     params: Option<(PathBuf, Result<String, String>)>,
@@ -353,32 +355,10 @@ impl GallopingWindow {
                         // What was assumed and left out, folded above the
                         // table.
                         check_ui::notes_fold(ui, WINDOW, &report.notes);
-                        use check_ui::{Cell, Col};
-                        let rows: Vec<check_ui::Row> = report
-                            .rows
-                            .iter()
-                            .map(|r| {
-                                check_ui::Row::new(
-                                    vec![
-                                        Cell::text(&r.method),
-                                        Cell::span(&r.a.0, r.a.1),
-                                        Cell::span(&r.b.0, r.b.1),
-                                        Cell::num(Some(r.distance), 2).bad(short(r)),
-                                        Cell::num(r.required, 2),
-                                        Cell::num(Some(r.at * 100.0), 0),
-                                        Cell::sorted(
-                                            format!("{:.2} × {:.2}", r.axes[0][0], r.axes[0][1]),
-                                            r.axes[0][0],
-                                        ),
-                                        Cell::sorted(
-                                            format!("{:.2} × {:.2}", r.axes[1][0], r.axes[1][1]),
-                                            r.axes[1][0],
-                                        ),
-                                    ],
-                                    short(r),
-                                )
-                            })
-                            .collect();
+                        use check_ui::Col;
+                        // Built once per answer, not every frame.
+                        let key = (self.job.generation, report.rows.len());
+                        let rows = self.rows.get_or_build(key, || table_rows(report));
                         if let Some(k) = check_ui::ResultTable::new(
                             "galloping-rows",
                             vec![
@@ -392,7 +372,7 @@ impl GallopingWindow {
                                 Col::text("Other ellipse [m]"),
                             ],
                         )
-                        .rows(rows)
+                        .rows_kept(rows)
                         .group_by(&[0, 1])
                         .csv("galloping-table.csv")
                         .full_csv(
@@ -503,6 +483,36 @@ impl GallopingWindow {
 
 /// The id of the window's body, tabs and footer.
 const WINDOW: &str = "galloping-window";
+
+/// The results table's rows: one per pair × method.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .rows
+        .iter()
+        .map(|r| {
+            check_ui::Row::new(
+                vec![
+                    Cell::text(&r.method),
+                    Cell::span(&r.a.0, r.a.1),
+                    Cell::span(&r.b.0, r.b.1),
+                    Cell::num(Some(r.distance), 2).bad(short(r)),
+                    Cell::num(r.required, 2),
+                    Cell::num(Some(r.at * 100.0), 0),
+                    Cell::sorted(
+                        format!("{:.2} × {:.2}", r.axes[0][0], r.axes[0][1]),
+                        r.axes[0][0],
+                    ),
+                    Cell::sorted(
+                        format!("{:.2} × {:.2}", r.axes[1][0], r.axes[1][1]),
+                        r.axes[1][0],
+                    ),
+                ],
+                short(r),
+            )
+        })
+        .collect()
+}
 
 /// A pair below its requirement.
 fn short(r: &Row) -> bool {

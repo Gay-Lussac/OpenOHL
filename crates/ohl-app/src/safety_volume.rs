@@ -542,6 +542,9 @@ pub struct SafetyVolumeWindow {
     pub(crate) job: Job<Report>,
     /// Counts the reports taken (a new one is drawn).
     generation: u64,
+    /// The results table's rows, by the answers taken (runs, saved runs
+    /// shown) and the report's volumes.
+    rows: crate::check_ui::CachedRows<(u64, u64, usize)>,
     /// What the views draw now: shown, report.
     drawn: Option<(bool, u64)>,
     /// A saved run shown: what changed since it was saved.
@@ -570,6 +573,7 @@ impl Default for SafetyVolumeWindow {
             settings: Settings::default(),
             job: Job::default(),
             generation: 0,
+            rows: Default::default(),
             drawn: None,
             saved_stale: None,
             save_name: "safety volumes".into(),
@@ -1461,8 +1465,10 @@ impl SafetyVolumeWindow {
     }
 
     /// The report; the row clicked.
-    fn report_ui(&self, ui: &mut egui::Ui) -> Option<usize> {
-        let r = self.report()?;
+    fn report_ui(&mut self, ui: &mut egui::Ui) -> Option<usize> {
+        let Some(Ok(r)) = &self.job.result else {
+            return None;
+        };
         let v = &r.volumes;
         ui.label(format!(
             "{} volumes from {} wire positions; weather cases: {}; {} from the conductors, {}.",
@@ -1482,31 +1488,11 @@ impl SafetyVolumeWindow {
         crate::check_ui::notes_fold(ui, "safety-volume-rows", &v.notes);
         // The shared results table (owner, 2026-10-28): sortable, units in
         // the headers, CSV (the colour of each volume: in the views).
-        use crate::check_ui::{Cell, Col};
-        let rows: Vec<crate::check_ui::Row> = v
-            .volumes
-            .iter()
-            .map(|s| {
-                crate::check_ui::Row::new(
-                    vec![
-                        Cell::text(&s.name),
-                        Cell::sorted(
-                            s.kv.map_or("earthed".into(), |k| format!("{k} kV")),
-                            s.kv.unwrap_or(0.0),
-                        ),
-                        Cell::num(Some(s.distance + s.margin), 2),
-                        Cell::sorted(
-                            s.mesh.triangles.len().to_string(),
-                            s.mesh.triangles.len() as f64,
-                        ),
-                        Cell::num(r.meshes.then(|| s.mesh.volume()), 0),
-                        Cell::num(Some(s.allowance), 3),
-                        Cell::num(Some(s.seconds), 2),
-                    ],
-                    false,
-                )
-            })
-            .collect();
+        use crate::check_ui::Col;
+        // Built once per report (a run's, or a saved run's shown), each
+        // mesh's volume summed over its triangles then, not every frame.
+        let key = (self.job.generation, self.generation, v.volumes.len());
+        let rows = self.rows.get_or_build(key, || table_rows(r));
         let cols = vec![
             Col::text("Volume"),
             Col::num("Voltage"),
@@ -1518,7 +1504,7 @@ impl SafetyVolumeWindow {
             Col::num("Time [s]"),
         ];
         let clicked = crate::check_ui::ResultTable::new("safety-volume-rows", cols)
-            .rows(rows)
+            .rows_kept(rows)
             .no_filter()
             .csv("safety-volumes.csv")
             .below(260.0)
@@ -1668,6 +1654,36 @@ impl SafetyVolumeWindow {
             );
         }
     }
+}
+
+/// The results table's rows: one per volume (its mesh's volume summed
+/// over its triangles here, once).
+fn table_rows(r: &Report) -> Vec<crate::check_ui::Row> {
+    use crate::check_ui::Cell;
+    r.volumes
+        .volumes
+        .iter()
+        .map(|s| {
+            crate::check_ui::Row::new(
+                vec![
+                    Cell::text(&s.name),
+                    Cell::sorted(
+                        s.kv.map_or("earthed".into(), |k| format!("{k} kV")),
+                        s.kv.unwrap_or(0.0),
+                    ),
+                    Cell::num(Some(s.distance + s.margin), 2),
+                    Cell::sorted(
+                        s.mesh.triangles.len().to_string(),
+                        s.mesh.triangles.len() as f64,
+                    ),
+                    Cell::num(r.meshes.then(|| s.mesh.volume()), 0),
+                    Cell::num(Some(s.allowance), 3),
+                    Cell::num(Some(s.seconds), 2),
+                ],
+                false,
+            )
+        })
+        .collect()
 }
 
 /// What the app does with the window's asks.

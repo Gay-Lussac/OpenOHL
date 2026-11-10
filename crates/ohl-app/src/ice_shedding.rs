@@ -106,6 +106,10 @@ pub struct IceSheddingWindow {
     pub(crate) job: Job<Arc<Report>>,
     /// What the views draw: (shown, generation, stale).
     drawn: Option<(bool, u64, bool)>,
+    /// What the rule editor offers of the line.
+    choices: check_ui::LineChoices,
+    /// The results table's rows, by the answer's count and its rows.
+    rows: check_ui::CachedRows<(u64, usize)>,
     /// Save in Performed checks.
     saving: crate::field_saved::Saving,
     /// A report saved: the command the app applies.
@@ -507,27 +511,17 @@ impl IceSheddingWindow {
         out: &mut Out,
     ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::IceShedding);
-        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let groups = crate::case_groups::groups(model);
-        let mut voltages: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|p| p.map(|p| p.nominal_kv))
-            .collect();
-        voltages.sort_by(f64::total_cmp);
-        voltages.dedup();
-        let mut types: Vec<String> = model
-            .line
-            .sections
-            .iter()
-            .map(|s| s.cable.clone())
-            .collect();
-        types.sort();
-        types.dedup();
-        let mut systems: Vec<String> = model.line.systems.iter().map(|s| s.id.clone()).collect();
-        systems.push("none".into());
-        let circuits: Vec<String> = model.line.circuits.iter().map(|c| c.name.clone()).collect();
-        let t = check_ui::RuleTable::new("ice-shedding-rules", &mut self.rules, &voltages)
+        // The lists offered, made once per version of the line.
+        let check_ui::LineChoices {
+            cases,
+            groups,
+            voltages,
+            types,
+            systems,
+            circuits,
+            ..
+        } = self.choices.of(model);
+        let t = check_ui::RuleTable::new("ice-shedding-rules", &mut self.rules, voltages)
             .add(
                 "An ice shedding rule",
                 "every wire, one span shedding alone; set its rebound factor and distance",
@@ -541,10 +535,10 @@ impl IceSheddingWindow {
                     ui,
                     k,
                     r,
-                    &cases,
-                    &groups,
-                    &voltages,
-                    (&types, &systems, &circuits),
+                    cases,
+                    groups,
+                    voltages,
+                    (types, systems, circuits),
                 )
             });
         let mut changed = t.changed;
@@ -651,31 +645,9 @@ impl IceSheddingWindow {
             out.case = Some(r.case.clone());
         }
         check_ui::notes_fold(ui, WINDOW, &report.report.notes);
-        let rows: Vec<check_ui::Row> = report
-            .report
-            .rows
-            .iter()
-            .map(|r| {
-                let rule = &report.rules[r.rule];
-                let bad = !r.passes();
-                check_ui::Row::new(
-                    vec![
-                        Cell::span(&r.section, r.span),
-                        Cell::span(&r.other, r.other_span),
-                        Cell::text(&rule.name),
-                        Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
-                        Cell::num(Some(r.rise), 2),
-                        Cell::num(Some(r.jump), 2),
-                        Cell::num(Some(r.before), 2),
-                        Cell::num(Some(r.after), 2).bad(bad),
-                        Cell::num(Some(r.required), 2),
-                        Cell::num(Some(r.at * 100.0), 0),
-                        Cell::text(if bad { "fail" } else { "pass" }).bad(bad),
-                    ],
-                    bad,
-                )
-            })
-            .collect();
+        // Built once per answer, not every frame.
+        let key = (self.job.generation, report.report.rows.len());
+        let rows = self.rows.get_or_build(key, || table_rows(&report));
         if let Some(k) = check_ui::ResultTable::new(
             "ice-shedding-rows",
             vec![
@@ -692,7 +664,7 @@ impl IceSheddingWindow {
                 Col::text("Verdict"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .group_by(&[2, 3, 0])
         .csv("ice-shedding-table.csv")
         .full_csv(
@@ -990,6 +962,36 @@ pub fn handle(r: &mut crate::app::Ready, out: Out) {
     if let Some((what, command)) = r.ice_shedding.apply.take() {
         r.perform(crate::edit::Action::Command { what, command });
     }
+}
+
+/// The results table's rows: one per pair × case × rule.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .report
+        .rows
+        .iter()
+        .map(|r| {
+            let rule = &report.rules[r.rule];
+            let bad = !r.passes();
+            check_ui::Row::new(
+                vec![
+                    Cell::span(&r.section, r.span),
+                    Cell::span(&r.other, r.other_span),
+                    Cell::text(&rule.name),
+                    Cell::text(ohl_clearance::calculation::label(&r.case, r.calculation)),
+                    Cell::num(Some(r.rise), 2),
+                    Cell::num(Some(r.jump), 2),
+                    Cell::num(Some(r.before), 2),
+                    Cell::num(Some(r.after), 2).bad(bad),
+                    Cell::num(Some(r.required), 2),
+                    Cell::num(Some(r.at * 100.0), 0),
+                    Cell::text(if bad { "fail" } else { "pass" }).bad(bad),
+                ],
+                bad,
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]

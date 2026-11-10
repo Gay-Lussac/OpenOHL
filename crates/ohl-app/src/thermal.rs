@@ -271,7 +271,24 @@ pub struct ThermalWindow {
     ratings: Kept<Vec<Vec<Rating>>>,
     heats: Kept<Vec<SectionHeat>>,
     steps: Kept<Vec<StepCurve>>,
+    /// The pages' table rows as last built.
+    rows: PageRows,
 }
+
+/// The table rows of each page, built again only when what they are
+/// written from changed: the key of the page's results (or the runs
+/// arrived) and a hash of what else the cells say.
+#[derive(Default)]
+struct PageRows {
+    ampacity: KeptRows,
+    temperature: KeptRows,
+    step: KeptRows,
+    limit: KeptRows,
+    check: KeptRows,
+}
+
+/// A page's table rows ([`PageRows`]); the pages draw from `&` the window.
+type KeptRows = std::cell::RefCell<check_ui::CachedRows<(u64, u64)>>;
 
 impl Default for ThermalWindow {
     fn default() -> Self {
@@ -310,6 +327,7 @@ impl Default for ThermalWindow {
             ratings: Default::default(),
             heats: Default::default(),
             steps: Default::default(),
+            rows: Default::default(),
         }
     }
 }
@@ -1822,24 +1840,28 @@ fn ampacity_table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) -> Option
             ),
         );
     }
-    let rows: Vec<check_ui::Row> = conductors
-        .iter()
-        .zip(ratings)
-        .map(|((s, _), at_max)| {
-            let mut cells = vec![
-                Cell::text(&s.id),
-                Cell::text(&s.cable),
-                Cell::num(Some(f64::from(s.bundle.max(1))), 0),
-            ];
-            cells.extend(at_max.iter().map(|(text, hover, v)| match v {
-                Some(v) => Cell::sorted(text, *v).tip(hover.as_str()),
-                None => Cell::text(text).tip(hover.as_str()),
-            }));
-            check_ui::Row::new(cells, false)
-        })
-        .collect();
+    // Written from the ratings (and the sections they are of): their key.
+    let mut rows = w.rows.ampacity.borrow_mut();
+    let rows = rows.get_or_build((key, 0), || {
+        conductors
+            .iter()
+            .zip(ratings)
+            .map(|((s, _), at_max)| {
+                let mut cells = vec![
+                    Cell::text(&s.id),
+                    Cell::text(&s.cable),
+                    Cell::num(Some(f64::from(s.bundle.max(1))), 0),
+                ];
+                cells.extend(at_max.iter().map(|(text, hover, v)| match v {
+                    Some(v) => Cell::sorted(text, *v).tip(hover.as_str()),
+                    None => Cell::text(text).tip(hover.as_str()),
+                }));
+                check_ui::Row::new(cells, false)
+            })
+            .collect()
+    });
     let k = check_ui::ResultTable::new("thermal-ampacity-rows", cols)
-        .rows(rows)
+        .rows_kept(rows)
         .no_filter()
         .csv("thermal-ampacity.csv")
         .ui(ui)?;
@@ -1852,7 +1874,7 @@ fn ampacity_table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) -> Option
 fn temperature_table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) -> Option<String> {
     let cases = w.cases().to_vec();
     let kept = w.heats_now(model);
-    let heats = &kept.as_ref().expect("made above").1;
+    let (key, heats, _) = kept.as_ref().expect("made above");
     let mut cols = vec![
         Col::text("Section"),
         Col::text("Wire type"),
@@ -1869,41 +1891,50 @@ fn temperature_table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) -> Opt
         );
     }
     cols.push(Col::num("Hottest [°C]").tip("The hottest ambient case's temperature"));
-    let rows: Vec<check_ui::Row> = heats
-        .iter()
-        .map(|h| {
-            let mut cells = vec![
-                Cell::text(&h.section),
-                Cell::text(&h.cable),
-                Cell::num(Some(f64::from(h.bundle)), 0),
-            ];
-            match &h.current {
-                Ok(i) => cells.push(Cell::num(Some(*i), 0).tip(match (w.current, h.bundle) {
-                    (None, 1) => "its system's operating current".to_owned(),
-                    (None, n) => format!(
-                        "its system's operating current; {:.0} A per subconductor",
-                        i / f64::from(n)
-                    ),
-                    (Some(_), 1) => "typed".to_owned(),
-                    (Some(_), n) => format!("typed; {:.0} A per subconductor", i / f64::from(n)),
-                })),
-                Err(e) => cells.push(Cell::text("—").tip(e.as_str())),
-            }
-            for r in &h.cases {
-                cells.push(match r {
-                    Ok(b) => Cell::num(Some(b.temperature), 1).tip(terms(b)),
-                    Err(e) => Cell::text("—").tip(e.as_str()),
+    // Written from the temperatures alone (the current typed or not and
+    // the cases' names are in their key).
+    let mut rows = w.rows.temperature.borrow_mut();
+    let rows = rows.get_or_build((*key, 0), || {
+        heats
+            .iter()
+            .map(|h| {
+                let mut cells = vec![
+                    Cell::text(&h.section),
+                    Cell::text(&h.cable),
+                    Cell::num(Some(f64::from(h.bundle)), 0),
+                ];
+                match &h.current {
+                    Ok(i) => cells.push(Cell::num(Some(*i), 0).tip(match (w.current, h.bundle) {
+                        (None, 1) => "its system's operating current".to_owned(),
+                        (None, n) => format!(
+                            "its system's operating current; {:.0} A per subconductor",
+                            i / f64::from(n)
+                        ),
+                        (Some(_), 1) => "typed".to_owned(),
+                        (Some(_), n) => {
+                            format!("typed; {:.0} A per subconductor", i / f64::from(n))
+                        }
+                    })),
+                    Err(e) => cells.push(Cell::text("—").tip(e.as_str())),
+                }
+                for r in &h.cases {
+                    cells.push(match r {
+                        Ok(b) => Cell::num(Some(b.temperature), 1).tip(terms(b)),
+                        Err(e) => Cell::text("—").tip(e.as_str()),
+                    });
+                }
+                cells.push(match h.hottest() {
+                    Some((k, t)) => Cell::num(Some(t), 1).tip(format!("in {}", cases[k].name)),
+                    None => {
+                        Cell::text("—").tip(h.current.as_ref().err().cloned().unwrap_or_default())
+                    }
                 });
-            }
-            cells.push(match h.hottest() {
-                Some((k, t)) => Cell::num(Some(t), 1).tip(format!("in {}", cases[k].name)),
-                None => Cell::text("—").tip(h.current.as_ref().err().cloned().unwrap_or_default()),
-            });
-            check_ui::Row::new(cells, false)
-        })
-        .collect();
+                check_ui::Row::new(cells, false)
+            })
+            .collect()
+    });
     let k = check_ui::ResultTable::new("thermal-temperature-rows", cols)
-        .rows(rows)
+        .rows_kept(rows)
         .no_filter()
         .csv("thermal-temperature.csv")
         .ui(ui)?;
@@ -1924,7 +1955,7 @@ const CURVE_COLORS: [egui::Color32; 6] = [
 /// time to the maximum temperature), the plot, the table of times.
 fn step_results(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) {
     let kept = w.steps_now(model);
-    let curves = &kept.as_ref().expect("made above").1;
+    let (key, curves, _) = kept.as_ref().expect("made above");
     if curves.is_empty() {
         ui.label(
             egui::RichText::new(
@@ -1985,25 +2016,32 @@ fn step_results(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) {
         .iter()
         .filter_map(|c| c.points.as_ref().ok())
         .max_by_key(|p| p.len());
-    let mut rows = Vec::new();
-    if let Some(times) = longest {
-        let every = w.print_every.max(1e-9);
-        let mut next = 0.0;
-        for (k, (time, _)) in times.iter().enumerate() {
-            if *time < next - 1e-9 && k + 1 != times.len() {
-                continue;
+    // Written from the curves, the times printed and the maximum
+    // temperature (values above it in the error colour).
+    let also = key_of(&[&w.print_every, &w.max_temperature]);
+    let mut rows = w.rows.step.borrow_mut();
+    let rows = rows.get_or_build((*key, also), || {
+        let mut rows = Vec::new();
+        if let Some(times) = longest {
+            let every = w.print_every.max(1e-9);
+            let mut next = 0.0;
+            for (k, (time, _)) in times.iter().enumerate() {
+                if *time < next - 1e-9 && k + 1 != times.len() {
+                    continue;
+                }
+                next += every;
+                let mut cells = vec![Cell::num(Some(*time), 0)];
+                for c in curves {
+                    let v = c.points.as_ref().ok().and_then(|p| p.get(k)).map(|x| x.1);
+                    cells.push(Cell::num(v, 1).bad(v.is_some_and(|v| v > w.max_temperature)));
+                }
+                rows.push(check_ui::Row::new(cells, false));
             }
-            next += every;
-            let mut cells = vec![Cell::num(Some(*time), 0)];
-            for c in curves {
-                let v = c.points.as_ref().ok().and_then(|p| p.get(k)).map(|x| x.1);
-                cells.push(Cell::num(v, 1).bad(v.is_some_and(|v| v > w.max_temperature)));
-            }
-            rows.push(check_ui::Row::new(cells, false));
         }
-    }
+        rows
+    });
     check_ui::ResultTable::new("thermal-step-rows", cols)
-        .rows(rows)
+        .rows_kept(rows)
         .no_filter()
         .csv("thermal-step.csv")
         .ui(ui);
@@ -2159,59 +2197,71 @@ fn limit_table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model) -> Option<St
                 .tip("The ampacity at the limit, per phase (above the range: a lower bound)"),
         );
     }
-    let rows: Vec<check_ui::Row> = limits
-        .iter()
-        .map(|l| {
-            let t = match &l.result {
-                Ok(Limit::At(t)) => Some(*t),
-                Ok(Limit::AboveRange) => Some(w.options.max_temperature),
-                _ => None,
-            };
-            let mut cells = vec![Cell::text(&l.section), Cell::text(&l.cable)];
-            cells.push(match &l.result {
-                Ok(Limit::At(t)) => Cell::num(Some(*t), 1),
-                Ok(Limit::AboveRange) => Cell::sorted(
-                    format!("above {}", w.options.max_temperature),
-                    w.options.max_temperature + 1e-6,
-                ),
-                Ok(Limit::BelowRange) => Cell::sorted(
-                    format!("below {}", w.options.min_temperature),
-                    w.options.min_temperature - 1e-6,
-                )
-                .bad(true),
-                Err(e) => Cell::text(format!("error: {e}")).bad(true),
-            });
-            cells.push(Cell::text(
-                l.governing.as_ref().map_or(String::new(), |g| {
-                    format!("{} at {:.1} °C", governing_words(g), g.temperature)
-                }),
-            ));
-            let bundle = model
-                .line
-                .sections
-                .iter()
-                .find(|s| s.id == l.section)
-                .map_or(1, |s| s.bundle);
-            let conductor =
-                ohl_thermal::sections::conductor_of(&model.line, &model.library, &l.cable);
-            for c in cases {
-                cells.push(match t {
-                    Some(t) => {
-                        let (text, hover, v) = rating(w.method, &conductor, c, t, bundle);
-                        match v {
-                            Some(v) => Cell::sorted(text, v).tip(hover),
-                            None => Cell::text(text).tip(hover),
-                        }
-                    }
-                    None => Cell::text("—"),
+    // Written from the limits (the runs arrived) and, for the ampacity
+    // at the limit, the line, the method, the range and the cases.
+    let also = key_of(&[
+        &model.line_version,
+        &w.method,
+        &w.options.max_temperature,
+        &w.options.min_temperature,
+        &cases,
+    ]);
+    let mut rows = w.rows.limit.borrow_mut();
+    let rows = rows.get_or_build((w.generation, also), || {
+        limits
+            .iter()
+            .map(|l| {
+                let t = match &l.result {
+                    Ok(Limit::At(t)) => Some(*t),
+                    Ok(Limit::AboveRange) => Some(w.options.max_temperature),
+                    _ => None,
+                };
+                let mut cells = vec![Cell::text(&l.section), Cell::text(&l.cable)];
+                cells.push(match &l.result {
+                    Ok(Limit::At(t)) => Cell::num(Some(*t), 1),
+                    Ok(Limit::AboveRange) => Cell::sorted(
+                        format!("above {}", w.options.max_temperature),
+                        w.options.max_temperature + 1e-6,
+                    ),
+                    Ok(Limit::BelowRange) => Cell::sorted(
+                        format!("below {}", w.options.min_temperature),
+                        w.options.min_temperature - 1e-6,
+                    )
+                    .bad(true),
+                    Err(e) => Cell::text(format!("error: {e}")).bad(true),
                 });
-            }
-            let below = matches!(l.result, Ok(Limit::BelowRange) | Err(_));
-            check_ui::Row::new(cells, below)
-        })
-        .collect();
+                cells.push(Cell::text(
+                    l.governing.as_ref().map_or(String::new(), |g| {
+                        format!("{} at {:.1} °C", governing_words(g), g.temperature)
+                    }),
+                ));
+                let bundle = model
+                    .line
+                    .sections
+                    .iter()
+                    .find(|s| s.id == l.section)
+                    .map_or(1, |s| s.bundle);
+                let conductor =
+                    ohl_thermal::sections::conductor_of(&model.line, &model.library, &l.cable);
+                for c in cases {
+                    cells.push(match t {
+                        Some(t) => {
+                            let (text, hover, v) = rating(w.method, &conductor, c, t, bundle);
+                            match v {
+                                Some(v) => Cell::sorted(text, v).tip(hover),
+                                None => Cell::text(text).tip(hover),
+                            }
+                        }
+                        None => Cell::text("—"),
+                    });
+                }
+                let below = matches!(l.result, Ok(Limit::BelowRange) | Err(_));
+                check_ui::Row::new(cells, below)
+            })
+            .collect()
+    });
     let k = check_ui::ResultTable::new("thermal-limit-rows", cols)
-        .rows(rows)
+        .rows_kept(rows)
         .no_filter()
         .csv("thermal-clearance-limit.csv")
         .ui(ui)?;
@@ -2265,62 +2315,66 @@ fn check_table(ui: &mut egui::Ui, w: &ThermalWindow) -> Option<String> {
         Col::text("Result"),
         Col::text("Governing").tip("Rule, span and measure of the least clearance"),
     ];
-    let rows: Vec<check_ui::Row> = check
-        .heats
-        .iter()
-        .zip(&check.cases)
-        .map(|(h, case)| {
-            let found = checks.iter().find(|c| c.section == h.section);
-            let mut cells = vec![
-                Cell::text(&h.section),
-                Cell::text(&h.cable),
-                match &h.current {
-                    Ok(i) => Cell::num(Some(*i), 0),
-                    Err(e) => Cell::text("—").tip(e.as_str()),
-                },
-                Cell::text(case.and_then(|k| names.get(k).cloned()).unwrap_or_default()),
-            ];
-            let temperature = case.and_then(|k| h.cases.get(k)?.as_ref().ok());
-            cells.push(match temperature {
-                Some(b) => Cell::num(Some(b.temperature), 1).tip(terms(b)),
-                None => Cell::text("—"),
-            });
-            let mut failing = false;
-            match found.map(|c| &c.result) {
-                Some(Ok(Some(g))) => {
-                    failing = !g.met();
-                    cells.push(Cell::num(Some(g.clearance), 2).bad(failing));
-                    cells.push(Cell::num(Some(g.required), 2));
-                    cells.push(Cell::num(Some(g.margin()), 2).bad(failing));
-                    cells.push(Cell::text(if failing { "fail" } else { "pass" }).bad(failing));
-                    cells.push(Cell::text(governing_words(g)));
+    // Written from the check (the runs arrived) and the cases' names.
+    let mut rows = w.rows.check.borrow_mut();
+    let rows = rows.get_or_build((w.generation, key_of(&[&names])), || {
+        check
+            .heats
+            .iter()
+            .zip(&check.cases)
+            .map(|(h, case)| {
+                let found = checks.iter().find(|c| c.section == h.section);
+                let mut cells = vec![
+                    Cell::text(&h.section),
+                    Cell::text(&h.cable),
+                    match &h.current {
+                        Ok(i) => Cell::num(Some(*i), 0),
+                        Err(e) => Cell::text("—").tip(e.as_str()),
+                    },
+                    Cell::text(case.and_then(|k| names.get(k).cloned()).unwrap_or_default()),
+                ];
+                let temperature = case.and_then(|k| h.cases.get(k)?.as_ref().ok());
+                cells.push(match temperature {
+                    Some(b) => Cell::num(Some(b.temperature), 1).tip(terms(b)),
+                    None => Cell::text("—"),
+                });
+                let mut failing = false;
+                match found.map(|c| &c.result) {
+                    Some(Ok(Some(g))) => {
+                        failing = !g.met();
+                        cells.push(Cell::num(Some(g.clearance), 2).bad(failing));
+                        cells.push(Cell::num(Some(g.required), 2));
+                        cells.push(Cell::num(Some(g.margin()), 2).bad(failing));
+                        cells.push(Cell::text(if failing { "fail" } else { "pass" }).bad(failing));
+                        cells.push(Cell::text(governing_words(g)));
+                    }
+                    other => {
+                        let why = match other {
+                            Some(Err(e)) => e.clone(),
+                            Some(Ok(None)) => "nothing of it checked".to_owned(),
+                            _ => h
+                                .current
+                                .as_ref()
+                                .err()
+                                .cloned()
+                                .or_else(|| h.cases.iter().find_map(|r| r.as_ref().err().cloned()))
+                                .unwrap_or_else(|| "not checked".to_owned()),
+                        };
+                        cells.extend([
+                            Cell::text("—"),
+                            Cell::text("—"),
+                            Cell::text("—"),
+                            Cell::text("not checked").tip(why.as_str()),
+                            Cell::text(why),
+                        ]);
+                    }
                 }
-                other => {
-                    let why = match other {
-                        Some(Err(e)) => e.clone(),
-                        Some(Ok(None)) => "nothing of it checked".to_owned(),
-                        _ => h
-                            .current
-                            .as_ref()
-                            .err()
-                            .cloned()
-                            .or_else(|| h.cases.iter().find_map(|r| r.as_ref().err().cloned()))
-                            .unwrap_or_else(|| "not checked".to_owned()),
-                    };
-                    cells.extend([
-                        Cell::text("—"),
-                        Cell::text("—"),
-                        Cell::text("—"),
-                        Cell::text("not checked").tip(why.as_str()),
-                        Cell::text(why),
-                    ]);
-                }
-            }
-            check_ui::Row::new(cells, failing)
-        })
-        .collect();
+                check_ui::Row::new(cells, failing)
+            })
+            .collect()
+    });
     let k = check_ui::ResultTable::new("thermal-check-rows", cols)
-        .rows(rows)
+        .rows_kept(rows)
         .csv("thermal-clearance-at-current.csv")
         .ui(ui)?;
     check.heats.get(k).map(|h| h.section.clone())

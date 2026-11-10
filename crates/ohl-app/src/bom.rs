@@ -48,6 +48,10 @@ pub struct BomWindow {
     status: String,
     /// What the last answer was computed from ([`crate::revision`]).
     stamp: crate::revision::Stamp,
+    /// Counts the answers taken.
+    arrived: u64,
+    /// The table's rows, by the answers taken and the answer's lines.
+    rows: crate::check_ui::CachedRows<(u64, usize)>,
 }
 
 impl BomWindow {
@@ -102,6 +106,7 @@ impl BomWindow {
             }
         };
         self.result = Some(r);
+        self.arrived += 1;
         self.stamp.arrived();
         self.running = None;
     }
@@ -211,32 +216,20 @@ impl BomWindow {
             Some(Err(e)) => {
                 ui.colored_label(ui.visuals().error_fg_color, e);
             }
-            Some(Ok(e)) => table(ui, e),
+            Some(Ok(e)) => {
+                // Built once per answer, not every frame.
+                let key = (self.arrived, e.lines.len());
+                let rows = self.rows.get_or_build(key, || table_rows(e));
+                table(ui, e, rows);
+            }
         }
     }
 }
 
-fn table(ui: &mut egui::Ui, e: &CostEstimate) {
-    let currency = if e.currency.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", e.currency)
-    };
-    // The shared results table (owner, 2026-10-28): sortable, grouped by
-    // category, the currency in the headers, CSV; the totals under it.
-    use crate::check_ui::{Cell, Col};
-    let mut cols = vec![
-        Col::text("Category"),
-        Col::text("Item"),
-        Col::num("Quantity"),
-        Col::text("Unit"),
-    ];
-    if e.priced {
-        cols.push(Col::num(format!("Unit price [{}]", currency.trim())));
-        cols.push(Col::num(format!("Amount [{}]", currency.trim())));
-    }
-    let rows: Vec<crate::check_ui::Row> = e
-        .lines
+/// The table's rows: one per line of the estimate.
+fn table_rows(e: &CostEstimate) -> Vec<crate::check_ui::Row> {
+    use crate::check_ui::Cell;
+    e.lines
         .iter()
         .map(|l| {
             let mut cells = vec![
@@ -254,9 +247,30 @@ fn table(ui: &mut egui::Ui, e: &CostEstimate) {
             }
             crate::check_ui::Row::new(cells, false)
         })
-        .collect();
+        .collect()
+}
+
+fn table(ui: &mut egui::Ui, e: &CostEstimate, rows: crate::check_ui::KeptRows<'_>) {
+    let currency = if e.currency.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", e.currency)
+    };
+    // The shared results table (owner, 2026-10-28): sortable, grouped by
+    // category, the currency in the headers, CSV; the totals under it.
+    use crate::check_ui::Col;
+    let mut cols = vec![
+        Col::text("Category"),
+        Col::text("Item"),
+        Col::num("Quantity"),
+        Col::text("Unit"),
+    ];
+    if e.priced {
+        cols.push(Col::num(format!("Unit price [{}]", currency.trim())));
+        cols.push(Col::num(format!("Amount [{}]", currency.trim())));
+    }
     crate::check_ui::ResultTable::new("bom-rows", cols)
-        .rows(rows)
+        .rows_kept(rows)
         .no_filter()
         .group_by(&[0])
         .csv("bill-of-materials-table.csv")

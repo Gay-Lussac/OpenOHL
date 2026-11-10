@@ -124,6 +124,10 @@ pub struct LightningWindow {
     picked: Option<usize>,
     /// What the views draw: (shown, generation, stale).
     drawn: Option<(bool, u64, bool)>,
+    /// What the rule editor offers of the line.
+    choices: check_ui::LineChoices,
+    /// The results table's rows, by the answer's count and its rows.
+    rows: check_ui::CachedRows<(u64, usize)>,
     /// The line's spans counted, by the version of the line it was
     /// counted on (counted once per version, not every frame).
     spans: Option<(u64, usize)>,
@@ -495,38 +499,16 @@ impl LightningWindow {
         out: &mut Out,
     ) -> bool {
         let part = crate::preset_cases::Part::Check(PresetCheck::Lightning);
-        let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-        let groups = crate::case_groups::groups(model);
-        // With a route worked on: what has a section on it (2026-11-01).
-        let on = model.scope();
-        let sections: Vec<&ohl_line::Section> = model
-            .line
-            .sections
-            .iter()
-            .filter(|s| on.as_ref().is_none_or(|o| o.sections.contains(&s.id)))
-            .collect();
-        let mut types: Vec<String> = sections.iter().map(|s| s.cable.clone()).collect();
-        types.sort();
-        types.dedup();
-        let mut systems: Vec<String> = model
-            .line
-            .systems
-            .iter()
-            .filter(|y| {
-                sections
-                    .iter()
-                    .any(|s| s.system.as_deref() == Some(y.id.as_str()))
-            })
-            .map(|s| s.id.clone())
-            .collect();
-        systems.sort();
-        let circuits: Vec<String> = model
-            .line
-            .circuits
-            .iter()
-            .filter(|c| sections.iter().any(|s| s.circuit_name == c.name))
-            .map(|c| c.name.clone())
-            .collect();
+        // The lists offered, made once per version of the line; with a
+        // route worked on: what has a section on it (2026-11-01).
+        let check_ui::LineChoices {
+            cases,
+            groups,
+            route_types: types,
+            route_systems: systems,
+            route_circuits: circuits,
+            ..
+        } = self.choices.of(model);
         let t = crate::rule_table::RuleTable::new("lightning-rules", &mut self.rules, &[])
             .heads("Method", "Phases")
             .add(
@@ -549,7 +531,7 @@ impl LightningWindow {
                 set.lightning_rules.iter().map(rule_text).collect()
             })
             .ui(ui, |ui, _, r| {
-                rule_fields(ui, r, &cases, &groups, &types, &systems, &circuits)
+                rule_fields(ui, r, cases, groups, types, systems, circuits)
             });
         let mut changed = t.changed;
         if let Some(pick) = t.preset {
@@ -650,29 +632,9 @@ impl LightningWindow {
             out.case = Some(r.case.clone());
         }
         check_ui::notes_fold(ui, WINDOW, &report.report.notes);
-        let rows: Vec<check_ui::Row> = report
-            .report
-            .rows
-            .iter()
-            .map(|r| {
-                let rule = &report.rules[r.rule];
-                let bad = !r.passes();
-                check_ui::Row::new(
-                    vec![
-                        Cell::span(&r.section, r.span),
-                        Cell::text(&r.phase),
-                        Cell::text(&rule.name),
-                        Cell::text(&r.case),
-                        Cell::num(Some(r.exposed), 1).bad(bad),
-                        Cell::num(Some(r.length), 1),
-                        Cell::num(Some(r.worst_along), 1),
-                        margin_cell(rule, r),
-                        Cell::text(if bad { "exposed" } else { "covered" }).bad(bad),
-                    ],
-                    bad,
-                )
-            })
-            .collect();
+        // Built once per answer, not every frame.
+        let key = (self.job.generation, report.report.rows.len());
+        let rows = self.rows.get_or_build(key, || table_rows(&report));
         if let Some(k) = check_ui::ResultTable::new(
             "lightning-rows",
             vec![
@@ -691,7 +653,7 @@ impl LightningWindow {
                 Col::text("Verdict"),
             ],
         )
-        .rows(rows)
+        .rows_kept(rows)
         .group_by(&[2, 3, 0])
         .csv("lightning-table.csv")
         .full_csv(
@@ -1268,6 +1230,34 @@ pub fn handle(r: &mut crate::app::Ready, out: Out) {
         r.view3d.lightning = overlay;
         r.view3d.dirty.insert(crate::scene::Layer::Lightning);
     }
+}
+
+/// The results table's rows: one per phase × span × case × rule.
+fn table_rows(report: &Report) -> Vec<check_ui::Row> {
+    use check_ui::Cell;
+    report
+        .report
+        .rows
+        .iter()
+        .map(|r| {
+            let rule = &report.rules[r.rule];
+            let bad = !r.passes();
+            check_ui::Row::new(
+                vec![
+                    Cell::span(&r.section, r.span),
+                    Cell::text(&r.phase),
+                    Cell::text(&rule.name),
+                    Cell::text(&r.case),
+                    Cell::num(Some(r.exposed), 1).bad(bad),
+                    Cell::num(Some(r.length), 1),
+                    Cell::num(Some(r.worst_along), 1),
+                    margin_cell(rule, r),
+                    Cell::text(if bad { "exposed" } else { "covered" }).bad(bad),
+                ],
+                bad,
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
