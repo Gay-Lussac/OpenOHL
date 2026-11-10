@@ -652,10 +652,18 @@ the plugin's own tests.
 From a review of the cable mechanics on 2026-11-10 (the models offered,
 against what line design practice uses). In the order proposed:
 
-1. **Say the bimetallic default.** A bimetallic conductor's aluminium
-   takes compression without limit by default (hot sags smaller than with
-   the aluminium going slack). It is not in the safe-side list and no
-   result says it: add both, and name the conductors concerned.
+1. **Say the bimetallic model on the results.** A bimetallic conductor's
+   aluminium takes compression without limit by default: above the knee
+   the wire keeps the composite's expansion, which gives the **largest**
+   hot sag (safe for clearances; the tension above the knee is then about
+   1 % low). The other models — the aluminium going slack (bird cage) or
+   a compression limit — give smaller hot sags: not on the safe side for
+   clearances. No result says which model a conductor has: say it (the
+   wire types and sections concerned; "not on the safe side" on the two
+   other models, and on the tension of a case past the knee under the
+   default), and put both in the safe-side list. *(Corrected 2026-11-10:
+   this item first said the default gave the smaller sags; the
+   bimetallic benchmark and the theory's source show the opposite.)*
 2. **Strain strings as hanging cables.** A strain string is a straight
    bar with half its weight at each end. On a tight span that is a
    millimetre; on a slack span (a few kN, a substation span with heavy
