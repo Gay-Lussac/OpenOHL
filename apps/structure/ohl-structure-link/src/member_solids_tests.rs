@@ -56,6 +56,25 @@ fn ends_are_the_close_ups(d: &JointDetails, solids: &[MemberSolid]) {
 /// to nothing and its volume (by the divergence theorem) is its outline's
 /// area times its length between the cuts.
 fn closed_and_outward(s: &MemberSolid, outline: &[[f64; 2]]) {
+    closed_with_area(s, area_of(outline));
+}
+
+/// An outline's area.
+fn area_of(outline: &[[f64; 2]]) -> f64 {
+    let n = outline.len();
+    (0..n)
+        .map(|i| {
+            let (a, b) = (outline[i], outline[(i + 1) % n]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f64>()
+        .abs()
+        / 2.0
+}
+
+/// The same for a solid of steel area `area` in its section (a built-up
+/// section's: its parts' together).
+fn closed_with_area(s: &MemberSolid, area: f64) {
     let mut sum = [0.0; 3];
     let mut volume = 0.0;
     for f in &s.faces {
@@ -76,15 +95,6 @@ fn closed_and_outward(s: &MemberSolid, outline: &[[f64; 2]]) {
         }
     }
     assert!(sum.iter().all(|v| v.abs() < 1e-9), "{}: {sum:?}", s.member);
-    let n = outline.len();
-    let area: f64 = (0..n)
-        .map(|i| {
-            let (a, b) = (outline[i], outline[(i + 1) % n]);
-            a[0] * b[1] - b[0] * a[1]
-        })
-        .sum::<f64>()
-        .abs()
-        / 2.0;
     let length: f64 = {
         let d = [0, 1, 2].map(|i| s.work[1][i] - s.work[0][i]);
         (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() - s.cut[0] - s.cut[1]
@@ -190,8 +200,10 @@ fn every_profile_by_its_outline_turned_by_its_roll() {
     assert_eq!(solid(&solids, "m-CH").ends[0].len(), 8, "a channel's C");
 }
 
-/// The built-ups (two angles back to back, a star, a cross) and a
-/// channel: by their built-up outline, the caps cut into triangles that
+/// The built-ups (two angles back to back, a star, a cross) by their
+/// parts (2026-11-10): a closed prism per angle, their steel the parts'
+/// area (not the filled outline's), the member's size still its outer
+/// outline's; a channel by its outline, the caps cut into triangles that
 /// cover it.
 #[test]
 fn built_ups_and_channels_by_their_outline() {
@@ -215,12 +227,129 @@ fn built_ups_and_channels_by_their_outline() {
         let want = shape.built_up_outline().unwrap();
         assert_eq!(p.outline.len(), want.len(), "{m}");
         assert!(p.outline.len() > 6, "{m}: more than one angle's L");
-        closed_and_outward(s, &p.outline);
+        assert_eq!(s.ends[0].len(), want.len(), "{m}");
+        let parts = shape.built_up_parts().unwrap();
+        assert_eq!(p.parts.len(), parts.len(), "{m}");
+        assert_eq!(s.parts.len(), parts.len(), "{m}");
+        assert_eq!(s.rings().count(), parts.len(), "{m}");
+        let steel: f64 = p.pieces().map(area_of).sum();
+        assert!(steel < area_of(&p.outline), "{m}: the gap is open");
+        closed_with_area(s, steel);
+        // Each part where the close-up draws it.
+        for (part, ring) in p.parts.iter().zip(&s.parts) {
+            let j = d.joint(&s.joints[0]).unwrap();
+            let want = crate::outline_at(a, p, part, steel_start(a));
+            for (w, h) in want.iter().zip(&ring[0]) {
+                for i in 0..3 {
+                    assert!((w[i] + j.position[i] - h[i]).abs() < 1e-9, "{m}");
+                }
+            }
+        }
     }
     let c = solid(&solids, "C1");
     assert_eq!(c.ends[0].len(), 8);
     let p = arrival(&d, "N1", "C1").profile.clone().unwrap();
     closed_and_outward(c, &p.outline);
+}
+
+/// Two angles in a star (owner 2026-11-10: "the double in X corners are
+/// not well drafted as they go into another"): the member's solid is two
+/// separate angles heel to heel, no point of its section in both, the
+/// gusset's gap between their heels open; its face view two outlines;
+/// seen from the side two bands with the gap between them.
+#[test]
+fn a_star_is_two_angles_that_do_not_overlap() {
+    let mut text = TOWER.to_owned();
+    text.push_str(
+        "\n[[node]]\nid = \"N5\"\npoint = [\"4 m\", \"1 m\", \"5 m\"]\n\
+         \n[[member]]\nid = \"S1\"\nnodes = [\"N4\", \"N5\"]\nsection = \"2S-61x7\"\n",
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let solids = member_solids(&d);
+    let s = solid(&solids, "S1");
+    let a = arrival(&d, "N4", "S1");
+    let p = a.profile.as_ref().unwrap();
+    assert_eq!((p.parts.len(), s.parts.len()), (2, 2));
+    assert!(p.parts.iter().all(|o| o.len() == 6), "each an angle's L");
+    let inside = |o: &[[f64; 2]], q: [f64; 2]| -> bool {
+        let mut odd = false;
+        for k in 0..o.len() {
+            let (a, c) = (o[k], o[(k + 1) % o.len()]);
+            if (a[1] > q[1]) != (c[1] > q[1])
+                && q[0] < a[0] + (q[1] - a[1]) / (c[1] - a[1]) * (c[0] - a[0])
+            {
+                odd = !odd;
+            }
+        }
+        odd
+    };
+    // Over the section's box (about the member's axis): no point in both
+    // angles, each angle holding some, the axis (between the heels) in
+    // neither.
+    let half = p
+        .outline
+        .iter()
+        .map(|q| q[0].abs().max(q[1].abs()))
+        .fold(0.0, f64::max);
+    let n = 121;
+    let mut held = [0usize; 2];
+    for i in 0..n {
+        for k in 0..n {
+            let q = [
+                half * (2.0 * (i as f64 + 0.5) / n as f64 - 1.0),
+                half * (2.0 * (k as f64 + 0.5) / n as f64 - 1.0),
+            ];
+            let hit = [inside(&p.parts[0], q), inside(&p.parts[1], q)];
+            assert!(!(hit[0] && hit[1]), "{q:?} in both angles");
+            held[0] += usize::from(hit[0]);
+            held[1] += usize::from(hit[1]);
+        }
+    }
+    assert!(held[0] > 0 && held[0] == held[1], "{held:?}");
+    assert!(!p.parts.iter().any(|o| inside(o, [0.0, 0.0])));
+    // The heels 11 mm apart (the gusset's gap) in both directions.
+    let heel = |o: &[[f64; 2]]| {
+        *o.iter()
+            .min_by(|a, b| a[0].hypot(a[1]).total_cmp(&b[0].hypot(b[1])))
+            .unwrap()
+    };
+    let (h0, h1) = (heel(&p.parts[0]), heel(&p.parts[1]));
+    assert!((h0[0] - h1[0] - 0.011).abs() < 1e-9 && (h0[1] - h1[1] - 0.011).abs() < 1e-9);
+    // The face view: an outline per angle.
+    let j = d.joint("N4").unwrap();
+    let members = |marks: &[crate::Mark]| {
+        marks
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m,
+                    crate::Mark::Line {
+                        kind: crate::LineKind::Member,
+                        closed: true,
+                        ..
+                    }
+                )
+            })
+            .count()
+    };
+    let with = members(&crate::face_view(j, "y+").marks);
+    let singles = j.arrivals.iter().filter(|a| a.member != "S1").count();
+    assert_eq!(with, singles + 2);
+    // From the side: two bands, the gap between them, its cuts the
+    // solid's.
+    let e = crate::elevation(&crate::member_ends(&d, "S1").unwrap()).unwrap();
+    assert_eq!(e.bands.len(), 2);
+    assert_eq!(e.section, p.parts);
+    assert_eq!(e.cuts, s.cut);
+    let (lo, hi) = if e.bands[0][0] < e.bands[1][0] {
+        (e.bands[0], e.bands[1])
+    } else {
+        (e.bands[1], e.bands[0])
+    };
+    assert!((hi[0] - lo[1] - 0.011).abs() < 1e-9, "{lo:?} {hi:?}");
+    // A single angle: one piece, its outline.
+    let l = crate::elevation(&crate::member_ends(&d, "L1").unwrap()).unwrap();
+    assert_eq!((l.bands.len(), l.section.len()), (1, 1));
 }
 
 /// The time to work out the joint details and the solids of a large

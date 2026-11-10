@@ -383,6 +383,84 @@ impl Shape {
         self.part().is_some()
     }
 
+    /// The parts of a built-up shape as drawn, each its own outline
+    /// (counter-clockwise, the fillets left out), in the axes of
+    /// [`Shape::built_up_outline`] (the lower left of the shape's outline
+    /// box at the origin), where the properties place them: two angles
+    /// back to back or heel to heel with the gap between them, four in a
+    /// cross, two channels back to back. None for the other shapes.
+    /// Drawing only: no property is worked out from these.
+    pub fn built_up_parts(&self) -> Option<Vec<Vec<[f64; 2]>>> {
+        // An angle, its heel at `heel`, leg `b` along y towards `s[0]`
+        // (±1), leg `h` along z towards `s[1]`.
+        let angle = |heel: [f64; 2], s: [f64; 2], h: f64, b: f64, t: f64| {
+            let at = |y: f64, z: f64| [heel[0] + s[0] * y, heel[1] + s[1] * z];
+            let mut o = vec![
+                at(0.0, 0.0),
+                at(b, 0.0),
+                at(b, t),
+                at(t, t),
+                at(t, h),
+                at(0.0, h),
+            ];
+            // Mirrored once: turned the other way round.
+            if s[0] * s[1] < 0.0 {
+                o.reverse();
+            }
+            o
+        };
+        Some(match *self {
+            Shape::DoubleAngle { h, b, t, gap, .. } => vec![
+                angle([b, 0.0], [-1.0, 1.0], h, b, t),
+                angle([b + gap, 0.0], [1.0, 1.0], h, b, t),
+            ],
+            Shape::StarAngle { h, b, t, gap, .. } => vec![
+                angle([b + gap, h + gap], [1.0, 1.0], h, b, t),
+                angle([b, h], [-1.0, -1.0], h, b, t),
+            ],
+            Shape::CrossAngle { h, t, gap, .. } => [
+                ([h + gap, h + gap], [1.0, 1.0]),
+                ([h, h + gap], [-1.0, 1.0]),
+                ([h, h], [-1.0, -1.0]),
+                ([h + gap, h], [1.0, -1.0]),
+            ]
+            .into_iter()
+            .map(|(heel, s)| angle(heel, s, h, h, t))
+            .collect(),
+            Shape::DoubleChannel {
+                h, b, tw, tf, gap, ..
+            } => {
+                // The first channel's flanges towards −y, the second's
+                // towards +y.
+                let w = 2.0 * b + gap;
+                let (y0, y1) = (b - tw, b + gap + tw);
+                vec![
+                    vec![
+                        [0.0, 0.0],
+                        [b, 0.0],
+                        [b, h],
+                        [0.0, h],
+                        [0.0, h - tf],
+                        [y0, h - tf],
+                        [y0, tf],
+                        [0.0, tf],
+                    ],
+                    vec![
+                        [b + gap, 0.0],
+                        [w, 0.0],
+                        [w, tf],
+                        [y1, tf],
+                        [y1, h - tf],
+                        [w, h - tf],
+                        [w, h],
+                        [b + gap, h],
+                    ],
+                ]
+            }
+            _ => return None,
+        })
+    }
+
     /// The outer edge of a built-up shape, counter-clockwise, the lower
     /// left of its outline box at the origin, for drawings: the space
     /// between the angles filled (as by a filler plate), the fillets left

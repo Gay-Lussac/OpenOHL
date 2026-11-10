@@ -71,10 +71,11 @@ pub use joints::{
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
-    plate_solids, prism_faces, prism_faces_capped, section_at, steel_start,
+    outline_at, plate_solids, prism_faces, prism_faces_capped, section_at, steel_start,
 };
 pub use member_view::{
-    FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, flat_leg, member_capacity, member_ends,
+    Elevation, FlatLeg, Hole, MemberCapacity, MemberEnds, bolt_rules, elevation, flat_leg,
+    member_capacity, member_ends,
 };
 pub use ohl_structures::connections::{
     BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, WeldKind,

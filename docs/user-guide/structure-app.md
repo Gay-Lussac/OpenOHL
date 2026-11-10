@@ -352,7 +352,13 @@ their menu or from View.
   work point — exactly as the Detail view places it (Design › Joint
   details). An end seated on a member is seated with or without bolts
   given (since 2026-11-05; before, an end without bolts lay on its work
-  line). The plates, splices' covers and **bolts** are drawn with them
+  line). A **built-up section** is drawn as its parts (since
+  2026-11-10): two angles in a star heel to heel with the gap between
+  them open, four in a cross, two angles or two channels back to back —
+  in the 3D view, the Detail view's close-up and its face view alike
+  (before, as one body with the space between them filled). The braces
+  bolted onto a built-up leg are not seated on it yet: they still run to
+  the work point. The plates, splices' covers and **bolts** are drawn with them
   (the bolts once they are a few pixels wide; each through its own leg,
   orange where the layout is partly assumed). Near, its edges and its
   work line (thin) show; far, the work lines are drawn over it as
@@ -917,9 +923,16 @@ its list — from its own side:
 - in the **Detail view**, its **leg bolted laid flat**: both ends (the
   middle broken out when long), the heel's edge below, the holes and
   their bolts (orange where their place is partly assumed), each end's
-  end distance, pitch and gauge.
+  end distance, pitch and gauge. A member with no single leg to lay
+  flat — a built-up section (each of its parts drawn), an I or H, a
+  tube — is drawn **from the side** instead (since 2026-11-10): its
+  steel from where it stops at one end to where it stops at the other,
+  its work line and work points, and its cross-section beside it. The
+  holes and bolts laid flat, and the tools that place them, are for
+  single angles only.
 
-The Detail view shows the joint or the member selected last. A member
+The Detail view shows the joint or the member selected last (a member
+chosen in Member details' own list too). A member
 opened from a joint (the Edit tool on it in the face view, or selected)
 has **‹ Joint N2** buttons above it — the joint it came from first, then
 its other end — and **Escape** (the pointer over the Detail view, or the

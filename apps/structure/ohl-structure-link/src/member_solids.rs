@@ -20,7 +20,10 @@
 //! prism (when the two ends are seated differently, the section moves
 //! linearly from one end's place to the other's — each end exactly as
 //! the close-up draws it). The work line still runs to the work points;
-//! the steel stops short of them by the cuts.
+//! the steel stops short of them by the cuts. A built-up section (two
+//! angles in a star, four in a cross, two back to back) is a prism per
+//! part, the gap between them open (2026-11-10; before, one body with
+//! the gap filled).
 //!
 //! A member running on through a joint into the next as one part
 //! (`kind = "continuous"`, 2026-11-05) has no cut, no shift and no end
@@ -63,8 +66,13 @@ pub struct MemberSolid {
     /// The section's corners where its steel stops at each end
     /// ([`section_at`] from that end's joint), in the outline's order.
     pub ends: [Vec<[f64; 3]>; 2],
+    /// A built-up section's parts (2026-11-10): each angle's or
+    /// channel's corners at the two ends, as [`MemberSolid::ends`]; empty
+    /// for a section of one piece ([`MemberSolid::rings`]).
+    pub parts: Vec<[Vec<[f64; 3]>; 2]>,
     /// Its faces: the sides and the two ends (not at an end where it
-    /// runs on into the next member as one part).
+    /// runs on into the next member as one part); a built-up section's:
+    /// those of each of its parts.
     pub faces: Vec<SolidFace>,
     /// It runs on into the next member as one part at each end (no end
     /// face there).
@@ -86,6 +94,19 @@ impl MemberSolid {
         out
     }
 
+    /// The corners of each piece of steel at its two ends: a built-up
+    /// section's parts, else its one outline.
+    pub fn rings(&self) -> impl Iterator<Item = [&[[f64; 3]]; 2]> {
+        let one = self
+            .parts
+            .is_empty()
+            .then(|| [self.ends[0].as_slice(), self.ends[1].as_slice()]);
+        self.parts
+            .iter()
+            .map(|p| [p[0].as_slice(), p[1].as_slice()])
+            .chain(one)
+    }
+
     /// Its triangles.
     pub fn triangle_count(&self) -> usize {
         self.faces.iter().map(|f| f.triangles.len()).sum()
@@ -97,7 +118,13 @@ impl MemberSolid {
 /// turned by its axes, moved by the end's offset. The close-up's and the
 /// 3D view's corners alike.
 pub fn section_at(a: &Arrival, p: &Profile, along: f64) -> Vec<[f64; 3]> {
-    p.outline
+    outline_at(a, p, &p.outline, along)
+}
+
+/// The same for one of `p`'s outlines (`outline`: one of its
+/// [`Profile::pieces`], a built-up section's part).
+pub fn outline_at(a: &Arrival, p: &Profile, outline: &[[f64; 2]], along: f64) -> Vec<[f64; 3]> {
+    outline
         .iter()
         .map(|q| {
             std::array::from_fn(|i| {
@@ -256,17 +283,28 @@ fn solid_of(m: &str, e0: End<'_>, e1: End<'_>) -> Option<MemberSolid> {
     let c0 = steel_start(a0).min(length);
     let c1 = steel_start(a1).min(length - c0);
     let runs_on = [a0.continuous.is_some(), a1.continuous.is_some()];
-    let at = |e: End<'_>, c: f64| -> Vec<[f64; 3]> {
+    let at = |e: End<'_>, c: f64, outline: &[[f64; 2]]| -> Vec<[f64; 3]> {
         let prof = e.2.profile.as_ref().unwrap_or(p);
-        section_at(e.2, prof, c)
+        outline_at(e.2, prof, outline, c)
             .into_iter()
             .map(|q| add(q, e.1))
             .collect()
     };
-    let near = at(e0, c0);
-    let far = at(e1, c1);
+    let near = at(e0, c0, &p.outline);
+    let far = at(e1, c1, &p.outline);
     let caps = runs_on.map(|r| !r);
-    let faces = prism_faces_capped(&near, &far, &p.outline, p.axes[1], p.axes[2], caps)?;
+    // A built-up section: a prism per part, the gap between them open.
+    let mut parts = Vec::with_capacity(p.parts.len());
+    let mut faces = Vec::new();
+    if p.parts.is_empty() {
+        faces = prism_faces_capped(&near, &far, &p.outline, p.axes[1], p.axes[2], caps)?;
+    } else {
+        for o in &p.parts {
+            let (n, f) = (at(e0, c0, o), at(e1, c1, o));
+            faces.extend(prism_faces_capped(&n, &f, o, p.axes[1], p.axes[2], caps)?);
+            parts.push([n, f]);
+        }
+    }
     Some(MemberSolid {
         member: m.to_owned(),
         section: p.section.clone(),
@@ -275,6 +313,7 @@ fn solid_of(m: &str, e0: End<'_>, e1: End<'_>) -> Option<MemberSolid> {
         work: [e0.1, e1.1],
         cut: [c0, c1],
         ends: [near, far],
+        parts,
         faces,
         runs_on,
         misfit: a0.misfit || a1.misfit,

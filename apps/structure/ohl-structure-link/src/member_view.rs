@@ -148,6 +148,62 @@ pub fn flat_leg(m: &MemberEnds) -> Option<FlatLeg> {
     })
 }
 
+/// A member seen from the side (2026-11-10): what the member view draws
+/// of a member whose leg bolted is not laid flat ([`flat_leg`] none: a
+/// built-up section, an I or H, a tube, a section of values only).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Elevation {
+    /// Length between its work points, m.
+    pub length: f64,
+    /// Per end: where its steel stops from the work point, m (as the 3D
+    /// view's solid: [`crate::steel_start`], the second within what the
+    /// first leaves).
+    pub cuts: [f64; 2],
+    /// Each piece of its steel seen along its section's z: from where to
+    /// where it reaches across (its section's y, from the member's axis),
+    /// m. A built-up section: one per part, the gap between them open.
+    pub bands: Vec<[f64; 2]>,
+    /// The pieces' outlines in the section's plane (y, z), about the
+    /// member's axis, m: its cross-section, drawn beside.
+    pub section: Vec<Vec<[f64; 2]>>,
+    /// The outlines are the section's shape (false: a section of values
+    /// only, a square of its area).
+    pub shaped: bool,
+}
+
+/// `m` seen from the side; none: no cross-section at either end (below
+/// level 3).
+pub fn elevation(m: &MemberEnds) -> Option<Elevation> {
+    let p = m
+        .ends
+        .iter()
+        .flatten()
+        .find_map(|(_, a)| a.profile.as_ref())?;
+    let cut = |k: usize| {
+        m.ends[k]
+            .as_ref()
+            .map_or(0.0, |(_, a)| crate::steel_start(a))
+    };
+    let c0 = cut(0).min(m.length);
+    let c1 = cut(1).min(m.length - c0);
+    let section: Vec<Vec<[f64; 2]>> = p.pieces().map(<[_]>::to_vec).collect();
+    let bands = section
+        .iter()
+        .map(|o| {
+            o.iter().fold([f64::INFINITY, f64::NEG_INFINITY], |b, q| {
+                [b[0].min(q[0]), b[1].max(q[0])]
+            })
+        })
+        .collect();
+    Some(Elevation {
+        length: m.length,
+        cuts: [c0, c1],
+        bands,
+        section,
+        shaped: p.shaped,
+    })
+}
+
 /// A member's capacities as the ASCE 10-97 check works them out.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MemberCapacity {

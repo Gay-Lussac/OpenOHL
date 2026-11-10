@@ -90,6 +90,65 @@ fn the_scene_draws_the_solids_that_fit() {
     assert_eq!(tris - tris0, want - solids[0].triangle_count());
 }
 
+/// The angle tower with a member of two angles in a star, from N4 out
+/// to a joint of its own.
+pub(crate) fn star_tower() -> String {
+    format!(
+        "{ANGLES}\n[[node]]\nid = \"N6\"\npoint = [\"8 m\", \"1 m\", \"5 m\"]\n\
+         \n[[member]]\nid = \"S1\"\nnodes = [\"N4\", \"N6\"]\nsection = \"2S-61x7\"\n"
+    )
+}
+
+/// Two angles in a star (owner 2026-11-10: "the double in X corners are
+/// not well drafted as they go into another"): the 3D view and the
+/// close-up draw two angles, a closed prism each (an L: 6 sides and 2
+/// ends of 4 triangles), not one body with the space between the heels
+/// filled; the close-up's steel at N4 has each angle's corners.
+#[test]
+fn a_star_is_drawn_as_its_two_angles() {
+    let text = star_tower();
+    let d = ohl_structure_link::joint_details(&text, &library(), &Default::default()).unwrap();
+    let solids = ohl_structure_link::member_solids(&d);
+    let s = solids.iter().find(|s| s.member == "S1").unwrap();
+    assert_eq!(s.parts.len(), 2);
+    assert_eq!(s.triangle_count(), 2 * (6 * 2 + 2 * 4));
+    let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+        std::path::Path::new("a.ohls"),
+        &text,
+    )
+    .unwrap();
+    let g = ohl_structure_edit::geometry(&t, &Default::default());
+    let without: Vec<_> = solids
+        .iter()
+        .filter(|s| s.member != "S1")
+        .cloned()
+        .collect();
+    let (lines0, _, tris0) = crate::view::scene_for_tests(&g, &without, &[]);
+    let (lines, _, tris) = crate::view::scene_for_tests(&g, &solids, &[]);
+    assert_eq!(tris - tris0, s.triangle_count());
+    // Its edges: per angle two end outlines of 6 and 6 corners along it
+    // (its work line drawn either way, as a stick without its solid).
+    assert_eq!(lines - lines0, 2 * (6 + 6 + 6));
+    let j = d.joint("N4").unwrap();
+    let pieces = crate::close_up::pieces_with(j, false, f64::INFINITY, f64::INFINITY);
+    let corners: Vec<[f64; 3]> = pieces
+        .iter()
+        .filter(|p| p.bolt.is_none())
+        .flat_map(|p| p.p)
+        .map(|q| [0, 1, 2].map(|k| q[k] + j.position[k]))
+        .collect();
+    for ring in &s.parts {
+        for c in &ring[0] {
+            assert!(
+                corners
+                    .iter()
+                    .any(|q| (0..3).all(|k| (q[k] - c[k]).abs() < 1e-9)),
+                "corner {c:?} not in the close-up"
+            );
+        }
+    }
+}
+
 /// The angle tower of the joint tests in a folder with the example
 /// sections.
 fn angle_tower(tag: &str, text: &str) -> std::path::PathBuf {

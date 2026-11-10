@@ -184,21 +184,25 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
             continue;
         };
         let start = ohl_structure_link::steel_start(a).min(length);
-        let near = ohl_structure_link::section_at(a, p, start);
-        let far = ohl_structure_link::section_at(a, p, length);
-        let Some(faces) = ohl_structure_link::prism_faces_capped(
-            &near,
-            &far,
-            &p.outline,
-            p.axes[1],
-            p.axes[2],
-            [a.continuous.is_none(), true],
-        ) else {
-            continue;
-        };
         let base = if a.misfit { MISFIT } else { steel };
-        for f in faces {
-            add(f.triangles, base, Some(f.normal), None);
+        // A built-up section: each of its parts a prism of its own, the
+        // gap between them open.
+        for piece in p.pieces() {
+            let near = ohl_structure_link::outline_at(a, p, piece, start);
+            let far = ohl_structure_link::outline_at(a, p, piece, length);
+            let Some(faces) = ohl_structure_link::prism_faces_capped(
+                &near,
+                &far,
+                piece,
+                p.axes[1],
+                p.axes[2],
+                [a.continuous.is_none(), true],
+            ) else {
+                continue;
+            };
+            for f in faces {
+                add(f.triangles, base, Some(f.normal), None);
+            }
         }
     }
     // A flat plate of `thickness` on its outline `poly` (relative to the

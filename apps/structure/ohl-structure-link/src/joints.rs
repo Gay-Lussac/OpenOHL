@@ -126,6 +126,10 @@ pub struct Profile {
     /// The outline in the section's plane (y, z), m, around the member's
     /// axis (the centroid).
     pub outline: Vec<[f64; 2]>,
+    /// A built-up section's parts as drawn (2026-11-10): each angle or
+    /// channel its own outline in the same axes, the gap between them
+    /// open; empty for a section of one piece ([`Profile::pieces`]).
+    pub parts: Vec<Vec<[f64; 2]>>,
     /// For an angle: the heel (y, z) and the legs' lengths along y and z
     /// and its thickness, m.
     pub angle: Option<Angle>,
@@ -136,6 +140,16 @@ pub struct Profile {
     /// The outline is the section's shape (false: a section of values
     /// only, drawn as a square of its area).
     pub shaped: bool,
+}
+
+impl Profile {
+    /// The outlines its steel is drawn with: a built-up section's parts
+    /// (two angles heel to heel, four in a cross, two back to back), else
+    /// its one outline.
+    pub fn pieces(&self) -> impl Iterator<Item = &[[f64; 2]]> {
+        let one = self.parts.is_empty().then_some(self.outline.as_slice());
+        self.parts.iter().map(Vec::as_slice).chain(one)
+    }
 }
 
 /// An angle's geometry around its centroid.
@@ -2919,6 +2933,13 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
             .map(|p| [p[0] + ll[0], p[1] + ll[1]])
             .collect()
     };
+    // A built-up section's parts, each drawn on its own.
+    let parts: Vec<Vec<[f64; 2]>> = s
+        .shape
+        .as_ref()
+        .and_then(Shape::built_up_parts)
+        .map(|parts| parts.into_iter().map(&shift).collect())
+        .unwrap_or_default();
     let (outline, angle) = match s.shape {
         Some(Shape::EqualAngle { h, t, .. }) | Some(Shape::UnequalAngle { h, t, .. }) => {
             let b = match s.shape {
@@ -2962,7 +2983,8 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
             None,
         ),
         // Built-up: the outer edge, the space between the angles filled
-        // (each angle drawn: stage B3 of the built-up members).
+        // (for the member's size and where it is picked; its steel is
+        // drawn by its parts).
         Some(ref sh) if sh.is_built_up() => {
             (shift(sh.built_up_outline().unwrap_or_default()), None)
         }
@@ -2984,6 +3006,7 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
     Profile {
         axes,
         outline,
+        parts,
         angle,
         section: s.name.clone(),
         section_id: s.id.clone(),

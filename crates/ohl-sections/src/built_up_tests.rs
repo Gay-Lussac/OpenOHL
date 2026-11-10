@@ -308,6 +308,90 @@ fn built_up_outlines_for_drawings() {
     assert!(Shape::EqualAngle { h, t, r }.built_up_outline().is_none());
 }
 
+/// The drawings' parts (2026-11-10): each angle or channel its own
+/// outline, counter-clockwise, inside the section's box, their areas
+/// the section's (no fillets), no point of the box in two of them, and
+/// between them the gap the single outline fills.
+#[test]
+fn built_up_parts_for_drawings() {
+    let (h, b, t, gap) = (0.082, 0.054, 0.0064, 0.011);
+    let r = 0.0;
+    let area = |o: &[[f64; 2]]| -> f64 {
+        (0..o.len())
+            .map(|k| {
+                let (p, q) = (o[k], o[(k + 1) % o.len()]);
+                p[0] * q[1] - q[0] * p[1]
+            })
+            .sum::<f64>()
+            / 2.0
+    };
+    let inside = |o: &[[f64; 2]], p: [f64; 2]| -> bool {
+        let mut odd = false;
+        for k in 0..o.len() {
+            let (a, c) = (o[k], o[(k + 1) % o.len()]);
+            if (a[1] > p[1]) != (c[1] > p[1])
+                && p[0] < a[0] + (p[1] - a[1]) / (c[1] - a[1]) * (c[0] - a[0])
+            {
+                odd = !odd;
+            }
+        }
+        odd
+    };
+    for (shape, n) in [
+        (Shape::DoubleAngle { h, b, t, r, gap }, 2),
+        (Shape::StarAngle { h, b, t, r, gap }, 2),
+        (Shape::CrossAngle { h, t, r, gap }, 4),
+        (
+            Shape::DoubleChannel {
+                h: 0.3,
+                b: 0.1,
+                tw: 0.0095,
+                tf: 0.016,
+                r,
+                gap,
+            },
+            2,
+        ),
+    ] {
+        let name = shape.as_str();
+        let parts = shape.built_up_parts().unwrap();
+        assert_eq!(parts.len(), n, "{name}");
+        assert_eq!(shape.part().unwrap().1 as usize, n, "{name}");
+        let p = section(shape.clone()).properties();
+        let mut sum = 0.0;
+        for o in &parts {
+            let a = area(o);
+            assert!(a > 0.0, "{name}: counter-clockwise");
+            sum += a;
+            for q in o {
+                assert!(q[0] >= -1e-12 && q[0] <= p.width + 1e-12, "{name}");
+                assert!(q[1] >= -1e-12 && q[1] <= p.depth + 1e-12, "{name}");
+            }
+        }
+        close(sum, p.area, 1e-9);
+        // The single outline fills the space between them.
+        assert!(area(&shape.built_up_outline().unwrap()) > sum, "{name}");
+        // No point of the box in two parts; the box's middle (between
+        // the heels or the backs) in none.
+        let m = 97;
+        for i in 0..m {
+            for k in 0..m {
+                let q = [
+                    p.width * (i as f64 + 0.5) / m as f64,
+                    p.depth * (k as f64 + 0.5) / m as f64,
+                ];
+                let hits = parts.iter().filter(|o| inside(o, q)).count();
+                assert!(hits <= 1, "{name}: {q:?} in {hits} parts");
+            }
+        }
+        if !matches!(shape, Shape::DoubleAngle { .. }) {
+            let mid = [p.width / 2.0, p.depth / 2.0];
+            assert!(!parts.iter().any(|o| inside(o, mid)), "{name}");
+        }
+    }
+    assert!(Shape::EqualAngle { h, t, r }.built_up_parts().is_none());
+}
+
 /// Two channels back to back (2026-11-04), an invented UAP-like channel
 /// (h 300, b 100, tw 9.5, tf 16 mm, no root radius), webs 10 mm apart:
 /// A = 2 A1; the centroid in the middle; Iy = 2 I1y (the channels' axes

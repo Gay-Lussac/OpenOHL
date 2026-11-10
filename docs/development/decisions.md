@@ -10,6 +10,36 @@ of Parts A, B and C).
 
 ## 2026-11-10
 
+**Built-up sections drawn as their parts; the member view draws every member (owner, 2026-11-10)**
+
+The owner, on a real lattice tower: "the double in X corners are not
+well drafted as they go into another and the member view doesn't work".
+
+- **Each part drawn.** A built-up section (two angles in a star, four
+  in a cross, two angles or two channels back to back) was drawn as one
+  outline with the space between its parts filled, so the two angles of
+  a star ran into each other. The section library now gives each part's
+  outline where its properties place it (`Shape::built_up_parts`); the
+  joint details' `Profile` carries them (`parts`, `pieces()`), and the
+  3D view's solids, the Detail view's close-up and its face view draw a
+  prism or an outline per part, the gap open. The single outline
+  (`built_up_outline`) stays for the member's size, its picking and the
+  exports. Drawing only: no section property and no calculated value
+  changes.
+- **The member view.** It drew only an angle's leg bolted laid flat, so
+  it was empty for every other member — the corner legs of a large
+  tower among them. Such a member is now drawn from the side
+  (`ohl_structure_link::elevation`): each part of its steel between its
+  end cuts, its work line and work points, its cross-section beside it;
+  its caption says that the holes, bolts and their tools are for single
+  angles. A member chosen in Member details' own list is the one the
+  Detail view shows.
+- **Not done yet.** A brace bolted onto a built-up leg is still not
+  seated on it or cut against it (the seat and the cut need a single
+  angle at both ends): it runs to the work point, through the leg's
+  steel. The face view draws each part as the hull of its corners, so a
+  part seen end on is not yet an L.
+
 **Field volumes: runs along the alignment, each place computed once; the run's progress in steps (owner, 2026-11-10)**
 
 The owner saw surfaces of the electric and magnetic field volumes

@@ -1218,36 +1218,39 @@ fn solid(s: &mut Scene, edges: &mut Scene, m: &ohl_structure_link::MemberSolid, 
         }
     }
     let edge = shade(c, 0.3);
-    let [near, far] = &m.ends;
-    let n = near.len();
-    if n < 3 || far.len() != n {
-        return;
-    }
-    // Its ends' outlines (none where it runs on into the next member as
-    // one part: no seam there).
-    for (ring, on) in [(near, m.runs_on[0]), (far, m.runs_on[1])] {
-        if on {
+    // Each piece of its steel (a built-up section's parts, else its one
+    // outline).
+    for [near, far] in m.rings() {
+        let n = near.len();
+        if n < 3 || far.len() != n {
             continue;
         }
-        let mut l = ring.clone();
-        l.push(ring[0]);
-        edges.polyline(&l, edge, 1.0);
-    }
-    for i in 0..n {
-        let (a, b, c2) = (near[(i + n - 1) % n], near[i], near[(i + 1) % n]);
-        let u = [0, 1, 2].map(|k| b[k] - a[k]);
-        let v = [0, 1, 2].map(|k| c2[k] - b[k]);
-        let (lu, lv) = (
-            (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt(),
-            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt(),
-        );
-        if lu < 1e-12 || lv < 1e-12 {
-            continue;
+        // Its ends' outlines (none where it runs on into the next member
+        // as one part: no seam there).
+        for (ring, on) in [(near, m.runs_on[0]), (far, m.runs_on[1])] {
+            if on {
+                continue;
+            }
+            let mut l = ring.to_vec();
+            l.push(ring[0]);
+            edges.polyline(&l, edge, 1.0);
         }
-        let cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (lu * lv);
-        // A corner of 30° or more.
-        if cos < 0.866 {
-            edges.polyline(&[near[i], far[i]], edge, 1.0);
+        for i in 0..n {
+            let (a, b, c2) = (near[(i + n - 1) % n], near[i], near[(i + 1) % n]);
+            let u = [0, 1, 2].map(|k| b[k] - a[k]);
+            let v = [0, 1, 2].map(|k| c2[k] - b[k]);
+            let (lu, lv) = (
+                (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt(),
+                (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt(),
+            );
+            if lu < 1e-12 || lv < 1e-12 {
+                continue;
+            }
+            let cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (lu * lv);
+            // A corner of 30° or more.
+            if cos < 0.866 {
+                edges.polyline(&[near[i], far[i]], edge, 1.0);
+            }
         }
     }
 }

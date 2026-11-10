@@ -484,6 +484,83 @@ fn the_edit_tool_opens_where_it_is_edited() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
+/// The member view of a member without a leg to lay flat (owner
+/// 2026-11-10: "the member view doesn't work"): two angles in a star are
+/// drawn from the side, both angles, where the view was empty; a single
+/// angle still laid flat; and a member chosen in Member details' own list
+/// is the one the Detail view shows.
+#[test]
+fn the_member_view_draws_a_built_up_member() {
+    use crate::member_panel::Subject;
+    let path = copy_of("type-02.ohls", "member-view-star");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("star.ohls");
+    std::fs::write(&tower, crate::solids_tests::star_tower()).unwrap();
+    let mut h = harness(&tower);
+    h.state_mut().open_in_detail(Handle::Member("S1".into()));
+    h.run();
+    h.run();
+    assert!(h.state().is_open(Panel::MemberDetails) && h.state().is_open(Panel::JointView));
+    assert_eq!(h.state().joints.subject, Subject::Member);
+    assert_eq!(h.get_all_by_label("Member S1").count(), 1);
+    let details = h.state_mut().joint_details().unwrap();
+    let details = details.as_ref().as_ref().unwrap();
+    // What the view paints: the star's two angles from the side.
+    let rect = eframe::egui::Rect::from_min_size(
+        eframe::egui::pos2(0.0, 0.0),
+        eframe::egui::vec2(700.0, 420.0),
+    );
+    let drawn = |member: &str| {
+        let m = ohl_structure_link::member_ends(details, member).unwrap();
+        let leg = ohl_structure_link::flat_leg(&m);
+        let painter =
+            eframe::egui::Painter::new(h.ctx.clone(), eframe::egui::LayerId::background(), rect);
+        let n = crate::member_panel::paint_member(&painter, rect, &m, leg.as_ref(), false);
+        (leg.is_some(), n)
+    };
+    assert_eq!(drawn("S1"), (false, 2));
+    assert_eq!(drawn("D1"), (true, 1));
+    // Everything it draws within the view.
+    let m = ohl_structure_link::member_ends(details, "S1").unwrap();
+    let e = ohl_structure_link::elevation(&m).unwrap();
+    assert_eq!(e.bands.len(), 2);
+    assert!(e.bands.iter().all(|b| b[1] > b[0]));
+    if let Some(dir) = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS") {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(std::path::Path::new(&dir).join("member-view-star.png"))
+            .unwrap();
+    }
+    // Back on a joint, then another member chosen in Member details'
+    // list: the Detail view shows that member.
+    h.state_mut().open_in_detail(Handle::Joint("N2".into()));
+    h.run();
+    assert_eq!(h.state().joints.subject, Subject::Joint);
+    h.state_mut().selected.clear();
+    h.state_mut().focus(Panel::MemberDetails);
+    h.run();
+    // The list of members (still on S1, nothing selected).
+    h.get_all_by_role(eframe::egui::accesskit::Role::ComboBox)
+        .find(|n| n.accesskit_node().value().as_deref() == Some("S1"))
+        .expect("the members' list")
+        .click();
+    h.run();
+    h.get_by_label("H1").click();
+    h.run();
+    h.run();
+    assert_eq!(h.state().joints.member.as_deref(), Some("H1"));
+    assert_eq!(h.state().joints.subject, Subject::Member);
+    assert_eq!(h.get_all_by_label("Member H1").count(), 1);
+}
+
 /// Member details (owner 2026-11-02: "the same view of the members as for
 /// the joints … see live the impacts on the bar's resistance"): the Edit
 /// tool on a member opens it and the Detail view on the member laid flat;

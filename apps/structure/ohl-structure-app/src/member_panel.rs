@@ -15,7 +15,9 @@
 //!   governs, KL/r, what was assumed, and the usage under the last FE
 //!   run's forces (the bolts and holes do not change the forces);
 //! - in the Detail view (on top of the 3D view), its leg bolted laid flat with
-//!   the holes and bolts of both ends.
+//!   the holes and bolts of both ends; a member with no single leg to
+//!   lay flat (a built-up section, an I or H, a tube) from the side
+//!   instead, with its cross-section (2026-11-10).
 
 use std::sync::Arc;
 
@@ -151,6 +153,13 @@ impl StructureApp {
         if chosen != id {
             self.selected = vec![Handle::Member(chosen.clone())];
             self.scroll_to = Some(Handle::Member(chosen.clone()));
+            // The Detail view follows (2026-11-10): the member chosen
+            // here, with the way back to the joint it showed.
+            if self.joints.subject == Subject::Joint {
+                self.joints.back = self.joints.joint.clone();
+                self.joints.picked = None;
+            }
+            self.joints.subject = Subject::Member;
         }
         self.joints.member = Some(chosen.clone());
         let Some(m) = ohl_structure_link::member_ends(details, &chosen) else {
@@ -331,14 +340,17 @@ impl StructureApp {
 /// The member's leg bolted, laid flat, painted into `rect`: the whole
 /// length at one scale when its holes show (else its two ends enlarged
 /// with a break between), the holes with their bolts, the end distance,
-/// pitch and gauge of each end.
+/// pitch and gauge of each end. A member without a leg to lay flat (a
+/// built-up section, an I or H, a tube: `leg` none) is drawn from the
+/// side instead ([`paint_elevation`], 2026-11-10). Returns the pieces of
+/// steel drawn (0: a member without a cross-section, its caption only).
 pub fn paint_member(
     painter: &egui::Painter,
     rect: egui::Rect,
     m: &MemberEnds,
     leg: Option<&FlatLeg>,
     dark: bool,
-) {
+) -> usize {
     let ink = if dark {
         egui::Color32::from_gray(225)
     } else {
@@ -355,11 +367,17 @@ pub fn paint_member(
         );
     };
     let Some(leg) = leg else {
-        title(format!(
-            "member {}: its leg bolted is drawn for an angle (a cross-section from the library)",
-            m.member
-        ));
-        return;
+        return match ohl_structure_link::elevation(m) {
+            Some(e) => paint_elevation(painter, rect, m, &e, dark),
+            None => {
+                title(format!(
+                    "member {}: no cross-section yet, so nothing to draw (give it one in the \
+                     Members table)",
+                    m.member
+                ));
+                0
+            }
+        };
     };
     // The same fit as the tools ([`crate::detail_tools::MemberFit`]).
     let fit = crate::detail_tools::MemberFit::new(rect, leg);
@@ -493,4 +511,178 @@ pub fn paint_member(
         leg.width * 1000.0,
         leg.other_width * 1000.0
     ));
+    1
+}
+
+/// A member without a leg to lay flat, painted into `rect` from the side
+/// (owner 2026-11-10: "the member view doesn't work" — it was empty for
+/// these): each piece of its steel (a built-up section's parts, the gap
+/// between them open) seen along its section's z, from where it stops at
+/// one end to where it stops at the other (its two ends enlarged with a
+/// break between when it is long), its work line and work points, and on
+/// the right its cross-section at the same scale. Returns the pieces
+/// drawn.
+pub fn paint_elevation(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    m: &MemberEnds,
+    e: &ohl_structure_link::Elevation,
+    dark: bool,
+) -> usize {
+    let ink = if dark {
+        egui::Color32::from_gray(225)
+    } else {
+        egui::Color32::from_gray(20)
+    };
+    let grey = egui::Color32::from_gray(140);
+    let blue = egui::Color32::from_rgb(90, 150, 230);
+    let all = || e.section.iter().flatten();
+    let lo = |k: usize| all().map(|q| q[k]).fold(f64::INFINITY, f64::min);
+    let hi = |k: usize| all().map(|q| q[k]).fold(f64::NEG_INFINITY, f64::max);
+    if e.section.is_empty() || !lo(0).is_finite() {
+        return 0;
+    }
+    let (y0, y1, z0, z1) = (lo(0), hi(0), lo(1), hi(1));
+    let (wide, deep) = ((y1 - y0).max(1e-3), (z1 - z0).max(1e-3));
+    // Each end out to a little past where its steel stops, at least
+    // 0.25 m, at most half the member.
+    let reach = |k: usize| (e.cuts[k].max(0.0) + 0.1).max(0.25).min(e.length / 2.0);
+    let (r0, r1) = (reach(0), reach(1));
+    let broken = r0 + r1 < e.length * 0.999;
+    let shown = if broken { r0 + r1 + 0.08 } else { e.length };
+    // The side view, a space, the cross-section; the caption below.
+    let (margin, space) = (30.0, 40.0);
+    let k = ((f64::from(rect.width()) - 2.0 * margin - space) / (shown + wide))
+        .min((f64::from(rect.height()) - 2.0 * margin - 40.0) / wide.max(deep))
+        .max(1.0);
+    let left = f64::from(rect.center().x) - ((shown + wide) * k + space) / 2.0;
+    let mid = f64::from(rect.center().y) - 10.0;
+    let x_of = |along: f64| -> f32 {
+        let s = if !broken || along <= r0 {
+            along
+        } else if along >= e.length - r1 {
+            along - (e.length - r1) + r0 + 0.08
+        } else {
+            r0 + 0.04
+        };
+        (left + s * k) as f32
+    };
+    // Across (the section's y) up the drawing, about the two views' middle.
+    let y_of = |across: f64| (mid - (across - (y0 + y1) / 2.0) * k) as f32;
+    let pos = |x: f32, y: f32| egui::pos2(x, y);
+    let outline = egui::Stroke::new(1.6, ink);
+    let (c0, c1) = (e.cuts[0], e.length - e.cuts[1]);
+    let xb = x_of(e.length / 2.0);
+    let pieces: Vec<(f32, f32)> = if broken {
+        vec![(x_of(c0), xb - 6.0), (xb + 6.0, x_of(c1))]
+    } else {
+        vec![(x_of(c0), x_of(c1))]
+    };
+    for band in &e.bands {
+        for (xa, xz) in &pieces {
+            painter.rect_stroke(
+                egui::Rect::from_two_pos(pos(*xa, y_of(band[0])), pos(*xz, y_of(band[1]))),
+                0.0,
+                outline,
+                egui::StrokeKind::Middle,
+            );
+        }
+    }
+    // Its work line (the member's axis), through the break.
+    painter.add(egui::Shape::dashed_line(
+        &[pos(x_of(0.0), y_of(0.0)), pos(x_of(e.length), y_of(0.0))],
+        egui::Stroke::new(1.0, grey),
+        9.0,
+        4.0,
+    ));
+    if broken {
+        for dx in [-6.0, 6.0] {
+            painter.line_segment(
+                [
+                    pos(xb + dx - 4.0, y_of(y0) + 6.0),
+                    pos(xb + dx + 4.0, y_of(y1) - 6.0),
+                ],
+                egui::Stroke::new(1.0, grey),
+            );
+        }
+        painter.text(
+            pos(xb, y_of(y1) - 12.0),
+            egui::Align2::CENTER_BOTTOM,
+            format!("{:.3} m", e.length),
+            egui::FontId::proportional(11.0),
+            grey,
+        );
+    }
+    // The work points, and where the steel stops short of them.
+    for (end, along) in [(0, 0.0), (1, e.length)] {
+        let x = x_of(along);
+        painter.add(egui::Shape::dashed_line(
+            &[pos(x, y_of(y0) + 10.0), pos(x, y_of(y1) - 10.0)],
+            egui::Stroke::new(1.0, blue),
+            5.0,
+            3.0,
+        ));
+        let joint = m.ends[end].as_ref().map_or("—", |x| x.0.as_str());
+        let text = if e.cuts[end] > 0.0 {
+            format!("{joint}: stops {:.0} mm", e.cuts[end] * 1000.0)
+        } else {
+            joint.to_owned()
+        };
+        painter.text(
+            pos(x, y_of(y1) - 12.0),
+            if end == 0 {
+                egui::Align2::LEFT_BOTTOM
+            } else {
+                egui::Align2::RIGHT_BOTTOM
+            },
+            text,
+            egui::FontId::proportional(10.5),
+            blue,
+        );
+    }
+    // The cross-section on the right, at the same scale: z up.
+    let sx = left + shown * k + space;
+    let section_at = |q: &[f64; 2]| {
+        pos(
+            (sx + (q[0] - y0) * k) as f32,
+            (mid + ((z0 + z1) / 2.0 - q[1]) * k) as f32,
+        )
+    };
+    for o in &e.section {
+        painter.add(egui::Shape::closed_line(
+            o.iter().map(section_at).collect(),
+            outline,
+        ));
+    }
+    painter.text(
+        pos(
+            (sx + wide * k / 2.0) as f32,
+            (mid + deep * k / 2.0) as f32 + 6.0,
+        ),
+        egui::Align2::CENTER_TOP,
+        "cross-section",
+        egui::FontId::proportional(10.5),
+        grey,
+    );
+    let section = m.section.as_deref().unwrap_or("its section");
+    let what = match (e.shaped, e.section.len()) {
+        (false, _) => "a section of values only, drawn as a square of its area".to_owned(),
+        (true, 1) => "seen from the side".to_owned(),
+        (true, n) => format!("seen from the side, its {n} parts each drawn on its own"),
+    };
+    // The caption at the top, wrapped to the view (the tools sit at its
+    // bottom).
+    let caption = painter.layout(
+        format!(
+            "member {} — {section}: {what}, with where its steel stops at each end; its \
+             cross-section on the right. Holes and bolts laid flat, and the tools that place \
+             them, are for single angles only.",
+            m.member
+        ),
+        egui::FontId::proportional(11.0),
+        ink,
+        rect.width() - 12.0,
+    );
+    painter.galley(rect.left_top() + egui::vec2(6.0, 6.0), caption, ink);
+    e.bands.len()
 }

@@ -231,15 +231,19 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
                 // The steel from where it stops (its cut) to the drawing's
                 // reach.
                 let start = a.cut.value.unwrap_or(0.0).min(length);
-                let pts: Vec<[f64; 2]> = [start, length]
-                    .iter()
-                    .flat_map(|s| p.outline.iter().map(move |q| to(corner(*s, *q))))
-                    .collect();
-                marks.push(Mark::Line {
-                    points: hull(pts),
-                    closed: true,
-                    kind: LineKind::Member,
-                });
+                // A built-up section: each of its parts on its own (two
+                // angles heel to heel with the gap between them).
+                for piece in p.pieces() {
+                    let pts: Vec<[f64; 2]> = [start, length]
+                        .iter()
+                        .flat_map(|s| piece.iter().map(move |q| to(corner(*s, *q))))
+                        .collect();
+                    marks.push(Mark::Line {
+                        points: hull(pts),
+                        closed: true,
+                        kind: LineKind::Member,
+                    });
+                }
                 if let Some(g) = p.angle {
                     marks.push(Mark::Line {
                         points: vec![to(corner(start, g.heel)), to(corner(length, g.heel))],
