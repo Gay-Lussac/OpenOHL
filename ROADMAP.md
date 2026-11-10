@@ -32,7 +32,7 @@ Guiding principles:
 - **Multi-user from day one**: every edit is a command applied by a session.
 
 **Contents**
-- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18; U7, U8, U10, U11; Phases 1–5 for the line
+- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18, O22–O26; U7, U8, U10, U11; Phases 1–5 for the line
 - [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19–O21; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): O2, O9, O11, O17; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
@@ -647,6 +647,132 @@ the plugin's own tests.
 > plugin for hvlbuzz.
 > **Owner:** (2026-10-27) Draft the fields, magnetic field first, from
 > the public theory; go ahead.
+
+### O22. Cable mechanics: further models
+From a review of the cable mechanics on 2026-11-10 (the models offered,
+against what line design practice uses). In the order proposed:
+
+1. **Say the bimetallic default.** A bimetallic conductor's aluminium
+   takes compression without limit by default (hot sags smaller than with
+   the aluminium going slack). It is not in the safe-side list and no
+   result says it: add both, and name the conductors concerned.
+2. **Strain strings as hanging cables.** A strain string is a straight
+   bar with half its weight at each end. On a tight span that is a
+   millimetre; on a slack span (a few kN, a substation span with heavy
+   strings) the string itself sags by decimetres and the chord shortens by
+   centimetres. A string as a heavy cable element (its own catenary).
+3. **Sagging at a final condition and by catenary constant.** A section
+   is strung at an initial tension. Wanted: the tension (or the catenary
+   constant, or a sag) given at the state after creep or after load, the
+   initial stringing worked back from it; and sagging found automatically
+   against tension limits.
+4. **Wind on wires with a direction and with height.** The wind is one
+   pressure, square to every span. Wanted: a wind direction (the part
+   square to each span acting, with the part along it — a load case with
+   the wind along the line loads the wires at angle and dead-end
+   structures, which cannot be said today), the pressure growing with
+   height above ground, gust and span factors as a design code gives
+   them (the factors themselves from the code plugins), ice growing with
+   height.
+5. **A section left in the blocks, the other model.** A section not
+   clipped in rolls over frictionless sheaves in every weather case. The
+   other common model fixes the wire lengths at equal tension at the
+   sagging condition and lets the strings swing: offer it as a choice
+   (tension to 0.6 %, sag to a few centimetres, either way per span).
+6. **Creep at elevated temperature**, for conductors run hot.
+7. **Smaller:** a partial break of a bundle (some subconductors); point
+   loads in a span with a part across or along the line; gap-type
+   conductors; a share of a span's pull per set where one attachment
+   point carries several sets (today per point).
+
+Three hand-sized comparison cases to keep with the benchmarks: three
+inclined spans in the blocks, clipped, and in the blocks then clipped; a
+slack span with heavy strain strings; ice given as a load with wind.
+(Structures giving under the wires' pull: O7.)
+> **Owner:** (2026-11-10) To work on next.
+
+### O23. Fields and line parameters: inputs and outputs
+From a review on 2026-11-10.
+
+1. **Line parameter totals by the wire's length.** The totals of a span
+   are the values per kilometre times the span's horizontal length: low
+   by the sag (0.1–0.3 %, said in the theory) and by the slope, which the
+   theory does not say (1.5 % at 10°, 6.4 % at 20°). Take the wire's
+   length, or say it.
+2. **A current per wire.** One balanced current per circuit is given.
+   Wanted: magnitude and angle per phase (unbalance — far from the line a
+   net current governs the magnetic field, so balanced-only input is not
+   conservative there) and an earth-wire current typed instead of
+   computed.
+3. **The electric field's major axis and vertical component**, beside the
+   rms of the vector (the magnetic field has both already).
+4. **The voltage of the electric field**: the nominal voltage is taken;
+   offer the highest operating voltage, and say which was used.
+5. **Other lines in the same field run** (a parallel or crossing line of
+   the project).
+6. **Smaller:** milligauss beside microtesla; line parameters per unit on
+   a base power.
+
+Five comparison cases to keep with the validation (a single circuit on a
+level span, magnetic and electric; with and without an earth wire and a
+bundle; an inclined span; a double circuit with two phasings; line
+parameters on a level and a steep span).
+> **Owner:** (2026-11-10) To work on next.
+
+### O24. Clearances: the zone down to the ground, and reports
+From a review on 2026-11-10.
+
+1. **A vertical rule "down to the ground".** A vertical clearance rule
+   looks above (or below) each point within its band in plan. A wire
+   passing *beside* a tall object, below its top, is then not found by a
+   vertical rule alone — on the unsafe side unless the class also has a
+   radial rule or a screen. Wanted: an option of the rule making the
+   point stand for the whole height from the ground up to it (a building,
+   a mast: the zone is the band in plan, from the ground to the point
+   plus the vertical distance), the default for the classes it suits to
+   be decided.
+2. **A horizontal-only measure between wires** (the distance in plan,
+   whatever the height difference), beside the radial and the vertical.
+3. **A printable clearance report**: per finding a cross-section at its
+   place (the wire positions checked, the target, the required zone),
+   beside the tables, the CSV and the drawings.
+> **Owner:** (2026-11-10) To work on next.
+
+### O25. Vegetation and danger trees: questionable trees, work sites
+From a review on 2026-11-10.
+
+1. **Trees without ground nearby.** A vegetation point with no ground
+   within the search distance is left out of the fall-in check and only
+   counted. List them as *questionable* (where they are, why), so that
+   none is silently unchecked.
+2. **Grow-in with a horizontal and a vertical distance.** Grow-in is one
+   radial distance. Wanted: separate distances across and up (a rectangle
+   round the wire), as clearance rules have, beside the radial one.
+3. **Work sites.** Findings grouped into sites (neighbouring points as
+   one area with its size and its worst finding), for the people who cut.
+4. **Export for maps**: the findings and sites as KML and shapefiles.
+5. **Decide the default of the ground stopping a falling tree**: the
+   trunk rests on the ground today (the physical choice, said in the
+   report); the full circle of the tree top flags more below steep
+   slopes and is the conservative choice.
+> **Owner:** (2026-11-10) To work on next.
+
+### O26. Sheets: free annotation, tables and pages
+From a review on 2026-11-10 of what a sheet can hold.
+
+1. **Free annotation on a sheet**: lines, arrows, clouds, dimensions and
+   texts placed by hand on a given sheet (a remark tied to an object
+   needs a CAD program afterwards today), kept with the project.
+2. **Report tables on a sheet**: any table of results (clearances, loads,
+   a bill of materials of the sheet's structures) placed as an inset,
+   beside the revision and stringing tables there are.
+3. **Title, notes and appendix pages** in a set of sheets, and several
+   station ranges per route.
+4. **A material list per structure** in its text block.
+5. **The true plan** (not straightened along the alignment) above or
+   below the profile as a choice, and a plan detail inset.
+6. **DXF beyond R12**: line weights, true colours, embedded logos.
+> **Owner:** (2026-11-10) To work on next.
 
 ## Unfinished or approximate (known limitations)
 
