@@ -1431,8 +1431,11 @@ pub fn run_keeping(
     if model3d.is_some() {
         let kv = |ps: &[[f64; 3]]| -> Vec<f64> { e_at(ps).into_iter().map(|e| e / 1e3).collect() };
         let views = src.line.alignment_views();
-        for c in &settings.cuts {
+        for (k, c) in settings.cuts.iter().enumerate() {
             magnetic::check_cancel(progress)?;
+            if let Some(p) = progress {
+                p.next_step(format!("cut {} of {}", k + 1, settings.cuts.len()));
+            }
             let placed = magnetic::place_cut(src, &views, &spans, &axes, c).map_err(|e| {
                 format!(
                     "cut {}: {e}",
@@ -1510,6 +1513,7 @@ pub fn run_keeping(
                 })
                 .unwrap_or_default()
         };
+        let mut boxes: Vec<VolumeBox> = Vec::new();
         for v in &settings.volumes {
             magnetic::check_cancel(progress)?;
             let run =
@@ -1539,16 +1543,17 @@ pub fn run_keeping(
                 top: high.unwrap_or(low + 50.0) + v.above,
                 step: v.step,
             };
+            let name = format!(
+                "volume {}–{}",
+                spans[run[0]].from,
+                spans[run[run.len() - 1]].to
+            );
+            let before: Vec<&VolumeBox> = boxes.iter().collect();
             let values: VolumeValues = match (&model3d, settings.ground_model) {
                 (Some(m), GroundModel::Tiled(_)) => {
                     let (tile, margin) = (settings.volume_tile, settings.volume_margin);
                     let len = bounds.path.length();
                     let (parts, tiles) = volume_parts(len, bounds.width, tile, margin);
-                    let name = format!(
-                        "volume {}–{}",
-                        spans[run[0]].from,
-                        spans[run[run.len() - 1]].to
-                    );
                     if parts == 1 {
                         let fl = with_floor(progress, "volume", tiles, || {
                             Floor::under(m, &bounds.path, bounds.width, tile, margin, &ground)
@@ -1560,7 +1565,15 @@ pub fn run_keeping(
                         let f = |ps: &[[f64; 3]]| -> Vec<f64> {
                             ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
                         };
-                        field_views::volume(&bounds, &settings.levels, &f, &pieces, progress)?
+                        field_views::volume_beside(
+                            &bounds,
+                            &settings.levels,
+                            &f,
+                            &pieces,
+                            progress,
+                            &before,
+                            &name,
+                        )?
                     } else {
                         // Too large for one floor (owner, 2026-11-01):
                         // a floor per part, each lattice point taking
@@ -1603,11 +1616,40 @@ pub fn run_keeping(
                                 })
                                 .collect()
                         };
-                        field_views::volume(&bounds, &settings.levels, &f, &pieces, progress)?
+                        field_views::volume_beside(
+                            &bounds,
+                            &settings.levels,
+                            &f,
+                            &pieces,
+                            progress,
+                            &before,
+                            &name,
+                        )?
                     }
                 }
-                _ => field_views::volume(&bounds, &settings.levels, &kv, &pieces, progress)?,
+                _ => field_views::volume_beside(
+                    &bounds,
+                    &settings.levels,
+                    &kv,
+                    &pieces,
+                    progress,
+                    &before,
+                    &name,
+                )?,
             };
+            let elsewhere = field_views::elsewhere_text(&values);
+            if !elsewhere.is_empty() {
+                notes.push(format!(
+                    "{name}: {elsewhere}{}",
+                    if matches!(settings.ground_model, GroundModel::Tiled(_)) {
+                        " (there with that volume's tiled floor)"
+                    } else {
+                        ""
+                    }
+                ));
+            }
+            drop(before);
+            boxes.push(bounds);
             volumes.push(magnetic::FieldVolume {
                 from: spans[run[0]].from.clone(),
                 to: spans[run[run.len() - 1]].to.clone(),

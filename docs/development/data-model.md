@@ -812,7 +812,9 @@ take a run of spans following each other, 2026-10-29), `values`:
 `top`, `step`},
 `surfaces` [(level, `contour::Mesh` {`vertices`, `triangles`})],
 `deviation` per level, `computed`, `full`, `above` per level, `left_out`
-per level (thin short pieces of surface left out, 2026-10-31)}, `pieces`,
+per level (thin short pieces of surface left out, 2026-10-31),
+`elsewhere` (coarse cells lying wholly in a volume computed before, left
+to it: `volume_beside`, 2026-11-10; absent in older saved runs: 0)}, `pieces`,
 `left_out`}], `pieces` (`Pieces` {`count`, `longest`, `off_wire`,
 `interpolation`}), a `Deviation` being {`points`, `median`, `p90`, `max`}
 (relative to the level, or to the whole line's field for `left_out`);

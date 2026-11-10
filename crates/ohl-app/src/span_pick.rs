@@ -293,26 +293,35 @@ impl SpanPick {
         (out, all)
     }
 
-    /// The ticked spans in `set`, in the line's order, as runs of spans
-    /// following each other: each run's first and last structure and how
-    /// many spans it holds.
+    /// The ticked spans in `set` as runs of spans following each other:
+    /// each run's first and last structure and how many spans it holds.
+    /// Along each alignment in its own order, whatever the order the line
+    /// lists its spans in (owner, 2026-11-10: two spans following each
+    /// other on the ground are one volume, not two overlapping at the
+    /// structure between them); a run stays on its alignment.
     fn runs_of(
         &mut self,
         model: &crate::model::Model,
         spans: &Spans,
         set: &BTreeSet<SpanIds>,
     ) -> Vec<(SpanIds, usize)> {
-        let (mut chosen, _) = self.chosen(model, spans);
-        chosen.sort_unstable();
+        let groups = self.groups(model, spans);
         let mut out: Vec<(SpanIds, usize)> = Vec::new();
-        for k in chosen.into_iter().filter(|&k| set.contains(&spans[k])) {
-            let (a, b) = &spans[k];
-            match out.last_mut() {
-                Some(last) if last.0.1 == *a => {
-                    last.0.1 = b.clone();
-                    last.1 += 1;
+        for g in groups.iter() {
+            let aligned = g.alignment.is_some();
+            let first = out.len();
+            for &k in &g.spans {
+                if !(self.ticked(&spans[k], aligned) && set.contains(&spans[k])) {
+                    continue;
                 }
-                _ => out.push(((a.clone(), b.clone()), 1)),
+                let (a, b) = &spans[k];
+                match out[first..].last_mut() {
+                    Some(last) if last.0.1 == *a => {
+                        last.0.1 = b.clone();
+                        last.1 += 1;
+                    }
+                    _ => out.push(((a.clone(), b.clone()), 1)),
+                }
             }
         }
         out

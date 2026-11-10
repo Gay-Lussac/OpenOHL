@@ -10,6 +10,44 @@ of Parts A, B and C).
 
 ## 2026-11-10
 
+**Field volumes: runs along the alignment, each place computed once; the run's progress in steps (owner, 2026-11-10)**
+
+The owner saw surfaces of the electric and magnetic field volumes
+computed and shown several times, depending on the spans asked, and a
+progress bar always close to 100 % that then fell back.
+
+- **Runs along the alignment.** The ticked spans were joined into runs
+  in the order the line lists its spans; two spans following each other
+  on the ground but listed apart became two volumes overlapping at the
+  structure between them. Runs are now built along each alignment in
+  its own order and stay on their alignment; the engine finds a run's
+  spans wherever the line lists them (`run_spans`).
+- **Each place once.** A volume takes every wire near it, so where two
+  boxes overlap (alignments side by side, a branch) both computed and
+  drew the same surface. A later volume now leaves the coarse cells
+  lying wholly in an earlier volume's box to that volume
+  (`field_views::volume_beside`, `VolumeValues::elsewhere`, a note on
+  the result). The coarse lattice is still computed everywhere (1/64 of
+  the points; the volume's statistics stay whole). No computed value
+  changes; the surfaces of the two volumes overlap by at most one
+  coarse cell at the earlier box's edge. With a tiled floor (electric
+  field) the surface in an overlap is the earlier volume's, with its
+  floor: said in the note and the theory.
+- **Not done:** reusing a finished volume in the next run. A volume is
+  one run of spans; a run extended by a span is another volume. Reuse
+  needs volumes per span joined at the structures (a larger change to
+  the engine), to do if still too slow.
+- **Progress in steps.** The bar was the time gone over the time gone
+  plus the time left, with the points to compute discovered as the run
+  went (coarse lattice, then the fine points near the surfaces): always
+  nearly full, then falling back. A run now counts steps
+  (`Progress::plan_steps`, `next_step`, `step_now`): one per cut, one
+  per other kind, two per volume (coarse, fine); the bar is the step's
+  own points and starts at 0 with each step. A fine lattice's later
+  rounds (a surface followed into neighbouring cells) still add points
+  to their step: the bar may step back a little there.
+
+
 **Where the profile's two side lines run: the corridor's edges, a distance from the axis, or under the outermost conductors of the lowest arm (owner, 2026-11-10)**
 
 The two side terrain lines of the profile sheets ran only along the

@@ -516,12 +516,19 @@ impl MagneticFieldWindow {
         self.common.hidden.clear();
         self.common.saving.stale = None;
         self.common.job.start_at(ctx, model.revision(), move || {
+            progress.plan_steps(field_common::steps_planned(
+                &steps
+                    .iter()
+                    .map(|(_, s)| (s.cuts.len(), s.volumes.len()))
+                    .collect::<Vec<_>>(),
+                unsolved,
+                0,
+            ));
             if unsolved {
-                progress.set_stage(format!("solving the weather case {}", case.name));
+                progress.next_step(format!("solving the weather case {}", case.name));
                 let s = crate::model::Solved::with_wind(&line, &library, case.clone(), wind);
                 shapes = s.shapes;
                 jumpers = s.jumpers;
-                progress.set_stage(String::new());
             }
             let (ground, ground_note) = ground_source.read()?;
             let (shapes, per_notes) =
@@ -541,7 +548,10 @@ impl MagneticFieldWindow {
             let mut field: Option<MagneticField> = None;
             let mut wires = None;
             for (what, s) in &steps {
-                progress.set_stage(what.clone());
+                // The engine steps through cuts and volumes itself.
+                if s.cuts.is_empty() && s.volumes.is_empty() {
+                    progress.next_step(what.clone());
+                }
                 let (f, w) = magnetic::run_keeping(&src, s, Some(&progress))?;
                 if w.is_some() {
                     wires = w;
@@ -805,18 +815,7 @@ impl MagneticFieldWindow {
                 }
                 help::footer(ui, WINDOW, |ui| {
                     let running = self.common.progress.as_ref().map(|p| {
-                        let total = p.total.load(Ordering::Relaxed).max(1);
-                        let done = p.done.load(Ordering::Relaxed);
-                        let elapsed = self.common.job.elapsed().unwrap_or_default();
-                        let mut pr =
-                            check_ui::Progress::with_left(elapsed, p.seconds_left(elapsed));
-                        let stage = p.stage();
-                        pr.text = if stage.is_empty() {
-                            format!("{done} of {total} points; {}", pr.text)
-                        } else {
-                            format!("{stage}; {}", pr.text)
-                        };
-                        pr
+                        field_common::run_progress(p, self.common.job.elapsed().unwrap_or_default())
                     });
                     let f = check_ui::RunFooter {
                         running,

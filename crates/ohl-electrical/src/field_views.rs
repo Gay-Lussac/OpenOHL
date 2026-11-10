@@ -56,6 +56,37 @@ pub struct Progress {
     floors_wall: AtomicU64,
     /// Floors solved at the same time (0 taken as 1).
     floors_at_once: AtomicUsize,
+    /// The steps the run is made of, as planned ([`Progress::plan_steps`]).
+    steps: AtomicUsize,
+    /// The step under way ([`Progress::next_step`]).
+    step: std::sync::Mutex<StepNow>,
+}
+
+/// The step under way: its number (from 1; 0: none yet), what it does,
+/// the points done and to compute when it began, and when that was.
+#[derive(Debug, Default)]
+struct StepNow {
+    number: usize,
+    label: String,
+    done: usize,
+    total: usize,
+    since: Option<Instant>,
+}
+
+/// A run's step as shown ([`Progress::step_now`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Step {
+    /// Its number, from 1.
+    pub number: usize,
+    /// The steps planned (at least `number`).
+    pub of: usize,
+    /// What it does.
+    pub label: String,
+    /// The share of its points computed (none: it has none yet).
+    pub fraction: Option<f32>,
+    /// The time its points left take at the speed of those computed, s
+    /// (none: not known yet).
+    pub left: Option<f64>,
 }
 
 /// The floors under way.
@@ -72,6 +103,51 @@ fn floor_cost(tiles: usize) -> u64 {
 }
 
 impl Progress {
+    /// `n` more steps the run will take (owner, 2026-11-10: "step 1 of x
+    /// increasing, then resetting to 0 with step 2"): said before they
+    /// begin, so the count stands from the start.
+    pub fn plan_steps(&self, n: usize) {
+        self.steps.fetch_add(n, Ordering::Relaxed);
+    }
+
+    /// The next step begins: its points are counted from here, so its bar
+    /// starts at 0 and fills as they are computed.
+    pub fn next_step(&self, label: impl Into<String>) {
+        if let Ok(mut s) = self.step.lock() {
+            *s = StepNow {
+                number: s.number + 1,
+                label: label.into(),
+                done: self.done.load(Ordering::Relaxed),
+                total: self.total.load(Ordering::Relaxed),
+                since: Some(Instant::now()),
+            };
+        }
+    }
+
+    /// The step under way (none: the run has no steps, or none began).
+    pub fn step_now(&self) -> Option<Step> {
+        let s = self.step.lock().ok()?;
+        if s.number == 0 {
+            return None;
+        }
+        let done = self.done.load(Ordering::Relaxed).saturating_sub(s.done);
+        let total = self.total.load(Ordering::Relaxed).saturating_sub(s.total);
+        let fraction = (total > 0).then(|| (done as f32 / total as f32).min(1.0));
+        let left = match s.since {
+            Some(t) if done > 0 && total >= done => {
+                Some(t.elapsed().as_secs_f64() / done as f64 * (total - done) as f64)
+            }
+            _ => None,
+        };
+        Some(Step {
+            number: s.number,
+            of: self.steps.load(Ordering::Relaxed).max(s.number),
+            label: s.label.clone(),
+            fraction,
+            left,
+        })
+    }
+
     /// Says what is under way.
     pub fn set_stage(&self, text: impl Into<String>) {
         if let Ok(mut s) = self.stage.lock() {
@@ -707,6 +783,33 @@ impl Path {
             .fold(f64::INFINITY, f64::min)
     }
 
+    /// Whether plan point `p` lies within `width` either side of the path
+    /// as [`Path::place`] lays it out: in one of its straights' four-sided
+    /// fields (mitred at the bends, cut square at the path's ends).
+    pub fn holds(&self, p: [f64; 2], width: f64) -> bool {
+        (0..self.points.len() - 1).any(|k| {
+            let (a, b) = (self.points[k], self.points[k + 1]);
+            let (na, nb) = (self.normals[k], self.normals[k + 1]);
+            let quad = [
+                [a[0] - width * na[0], a[1] - width * na[1]],
+                [b[0] - width * nb[0], b[1] - width * nb[1]],
+                [b[0] + width * nb[0], b[1] + width * nb[1]],
+                [a[0] + width * na[0], a[1] + width * na[1]],
+            ];
+            // Crossings of a ray from `p` (even: outside).
+            let mut inside = false;
+            for i in 0..4 {
+                let (u, v) = (quad[i], quad[(i + 1) % 4]);
+                if (u[1] > p[1]) != (v[1] > p[1])
+                    && p[0] < u[0] + (p[1] - u[1]) / (v[1] - u[1]) * (v[0] - u[0])
+                {
+                    inside = !inside;
+                }
+            }
+            inside
+        })
+    }
+
     /// Whether offsets up to `width` either side stay unfolded: the
     /// places at a station move ahead with it everywhere across.
     pub fn unfolded(&self, width: f64) -> bool {
@@ -767,6 +870,12 @@ impl VolumeBox {
             .path
             .place(p[0] * along, -self.width + p[1] * self.step);
         [xy[0], xy[1], self.bottom + p[2] * self.step]
+    }
+
+    /// Whether place `p` lies in the box: within its width of the path
+    /// and between its bottom and top.
+    pub fn holds(&self, p: [f64; 3]) -> bool {
+        p[2] >= self.bottom && p[2] <= self.top && self.path.holds([p[0], p[1]], self.width)
     }
 
     /// Points of the full fine lattice and of the coarse one.
@@ -840,6 +949,11 @@ pub struct VolumeValues {
     /// earth wire, a tube centimetres thick the lattice met here and
     /// there).
     pub left_out: Vec<usize>,
+    /// Coarse cells lying wholly in a volume computed before this one
+    /// ([`volume_beside`]): left to it — not refined here, no surface
+    /// drawn here.
+    #[serde(default)]
+    pub elsewhere: usize,
 }
 
 /// What a volume's level left out ([`VolumeValues::left_out`]), in
@@ -878,10 +992,63 @@ pub fn volume(
     pieces: &[[[f64; 3]; 2]],
     progress: Option<&Progress>,
 ) -> Result<VolumeValues, String> {
-    volume_in_parts(bounds, levels, field, pieces, progress, PART_POINTS)
+    volume_in_parts(
+        bounds,
+        levels,
+        field,
+        pieces,
+        progress,
+        PART_POINTS,
+        &[],
+        "volume",
+    )
+}
+
+/// [`volume`] beside the volumes computed before it (`earlier`, their
+/// boxes): a coarse cell lying wholly in one of them is left to it — its
+/// fine points are not computed again and no surface is drawn in it here
+/// (owner, 2026-11-10: the same surfaces computed and shown several times
+/// where volumes overlap). The cells across an earlier box's edge are
+/// computed here, so the two volumes' surfaces overlap by at most a coarse
+/// cell and leave no gap. `name`: the volume in the run's steps.
+pub fn volume_beside(
+    bounds: &VolumeBox,
+    levels: &[f64],
+    field: Field<'_, f64>,
+    pieces: &[[[f64; 3]; 2]],
+    progress: Option<&Progress>,
+    earlier: &[&VolumeBox],
+    name: &str,
+) -> Result<VolumeValues, String> {
+    volume_in_parts(
+        bounds,
+        levels,
+        field,
+        pieces,
+        progress,
+        PART_POINTS,
+        earlier,
+        name,
+    )
+}
+
+/// What a volume left to the volumes before it, in words (empty:
+/// nothing).
+pub fn elsewhere_text(v: &VolumeValues) -> String {
+    if v.elsewhere == 0 {
+        return String::new();
+    }
+    let cells = v.bounds.dims().map(|n| (n - 1) / COARSE);
+    let all = (cells[0] * cells[1] * cells[2]).max(1);
+    format!(
+        "{:.0} % of its box lies in a volume computed before it: computed and drawn there, \
+         not again here",
+        100.0 * v.elsewhere as f64 / all as f64
+    )
 }
 
 /// [`volume`] with parts of at most `part_points` lattice points.
+#[allow(clippy::too_many_arguments)]
 fn volume_in_parts(
     bounds: &VolumeBox,
     levels: &[f64],
@@ -889,6 +1056,8 @@ fn volume_in_parts(
     pieces: &[[[f64; 3]; 2]],
     progress: Option<&Progress>,
     part_points: usize,
+    earlier: &[&VolumeBox],
+    name: &str,
 ) -> Result<VolumeValues, String> {
     if !(bounds.step > 0.0
         && bounds.path.length() > 0.0
@@ -924,12 +1093,24 @@ fn volume_in_parts(
         full,
         above: vec![0.0; levels.len()],
         left_out: vec![0; levels.len()],
+        elsewhere: 0,
     };
+    // Each part two steps (coarse, fine); the first part's are planned by
+    // who asked for the volume.
+    let parts = cells.max(1).div_ceil(per);
+    if let Some(p) = progress {
+        p.plan_steps(2 * (parts - 1));
+    }
     let mut coarse_points = 0usize;
     let mut carry: Option<Vec<f64>> = None;
     let mut c0 = 0;
     while c0 < cells.max(1) {
         let c1 = (c0 + per).min(cells.max(1));
+        let what = if parts > 1 {
+            format!("{name}, part {} of {parts}", c0 / per + 1)
+        } else {
+            name.to_owned()
+        };
         let part = volume_part(
             bounds,
             levels,
@@ -938,8 +1119,11 @@ fn volume_in_parts(
             progress,
             (c0 * COARSE, c1 * COARSE),
             carry.take(),
+            earlier,
+            &what,
         )?;
         out.computed += part.computed;
+        out.elsewhere += part.elsewhere;
         coarse_points += part.coarse_points;
         for (k, n) in part.above.iter().enumerate() {
             out.above[k] += *n as f64;
@@ -986,6 +1170,8 @@ struct VolumePart {
     coarse_points: usize,
     left_out: Vec<usize>,
     last_plane: Vec<f64>,
+    /// Coarse cells left to an earlier volume.
+    elsewhere: usize,
 }
 
 /// The part of `bounds`'s lattice from fine station index `i0` to `i1`
@@ -1001,6 +1187,8 @@ fn volume_part(
     progress: Option<&Progress>,
     (i0, i1): (usize, usize),
     first: Option<Vec<f64>>,
+    earlier: &[&VolumeBox],
+    what: &str,
 ) -> Result<VolumePart, String> {
     let dd = bounds.dims();
     let d = [i1 - i0 + 1, dd[1], dd[2]];
@@ -1034,6 +1222,9 @@ fn volume_part(
             p.total.fetch_add(n, Ordering::Relaxed);
         }
     };
+    if let Some(p) = progress {
+        p.next_step(format!("{what}: coarse lattice"));
+    }
     add_total(todo.len());
     let coords = |n: usize| {
         let i = n % d[0];
@@ -1156,6 +1347,36 @@ fn volume_part(
             }
         }
     }
+    // The cells wholly in one volume computed before: left to it (its
+    // surface there is drawn already; [`volume_beside`]).
+    let mut taken = vec![false; flag.len()];
+    if !earlier.is_empty() {
+        for k in 0..cells[2] {
+            for j in 0..cells[1] {
+                for i in 0..cells[0] {
+                    let corner = |n: usize| {
+                        place([
+                            ((i + (n & 1)) * COARSE) as f64,
+                            ((j + ((n >> 1) & 1)) * COARSE) as f64,
+                            ((k + ((n >> 2) & 1)) * COARSE) as f64,
+                        ])
+                    };
+                    let first = corner(0);
+                    if earlier
+                        .iter()
+                        .any(|b| b.holds(first) && (1..8).all(|n| b.holds(corner(n))))
+                    {
+                        taken[cid(i, j, k)] = true;
+                        flag[cid(i, j, k)] = false;
+                    }
+                }
+            }
+        }
+    }
+    let elsewhere = taken.iter().filter(|&&t| t).count();
+    if let Some(p) = progress {
+        p.next_step(format!("{what}: fine lattice"));
+    }
     // Their fine points; then, while a level crosses a face of a cell
     // computed fine, the cell beyond it too (the surface goes on there).
     let mut new_cells: Vec<[usize; 3]> = Vec::new();
@@ -1202,7 +1423,9 @@ fn volume_part(
                         }
                         beyond[axis] += 1;
                     }
-                    if flag[cid(beyond[0], beyond[1], beyond[2])] {
+                    if flag[cid(beyond[0], beyond[1], beyond[2])]
+                        || taken[cid(beyond[0], beyond[1], beyond[2])]
+                    {
                         continue;
                     }
                     // The face's fine values.
@@ -1271,6 +1494,7 @@ fn volume_part(
         coarse_points: coarse_values.len(),
         left_out,
         last_plane,
+        elsewhere,
     })
 }
 
@@ -1380,6 +1604,80 @@ mod tests {
         }
     }
 
+    /// Owner, 2026-11-10: where two volumes overlap, the place is computed
+    /// and drawn once. A second volume half over the first leaves the
+    /// cells wholly in the first to it: fewer points, no surface there
+    /// (but for the cells across the first's edge), the same surface
+    /// beyond; a volume wholly in another draws nothing. And the run goes
+    /// in steps, each counting its own points from zero.
+    #[test]
+    fn a_volume_beside_another_is_computed_once() {
+        let f = |p: [f64; 3]| 1.0 / (p[1].powi(2) + (p[2] - 30.0).powi(2)).sqrt().max(1e-6);
+        let along = |x0: f64, x1: f64| VolumeBox {
+            path: Path::new(vec![[x0, 0.0, 0.0], [x1, 0.0, 0.0]]).unwrap(),
+            width: 40.0,
+            bottom: 0.0,
+            top: 60.0,
+            step: 0.5,
+        };
+        let (first, second) = (along(0.0, 40.0), along(20.0, 60.0));
+        assert!(first.holds([10.0, 39.0, 30.0]) && !first.holds([10.0, 41.0, 30.0]));
+        assert!(!first.holds([-1.0, 0.0, 30.0]) && !first.holds([10.0, 0.0, 61.0]));
+        let pieces = [[[-10.0, 0.0, 30.0], [70.0, 0.0, 30.0]]];
+        let levels = [1.0 / 15.0];
+        let alone = volume(&second, &levels, &each(f), &pieces, None).unwrap();
+        assert_eq!(alone.elsewhere, 0);
+        let progress = Progress::default();
+        progress.plan_steps(2);
+        let beside = volume_beside(
+            &second,
+            &levels,
+            &each(f),
+            &pieces,
+            Some(&progress),
+            &[&first],
+            "volume b",
+        )
+        .unwrap();
+        assert!(beside.elsewhere > 0 && !elsewhere_text(&beside).is_empty());
+        assert!(
+            (beside.computed as f64) < 0.7 * alone.computed as f64,
+            "{} of {}",
+            beside.computed,
+            alone.computed
+        );
+        // No surface in the first's box, but for the coarse cell across
+        // its end; the surface beyond it as alone, on the tube.
+        let coarse = second.step * COARSE as f64;
+        let m = &beside.surfaces[0].1;
+        assert!(!m.triangles.is_empty());
+        for p in &m.vertices {
+            assert!(p[0] >= 40.0 - coarse - 1e-9, "{p:?}");
+            let r = (p[1].powi(2) + (p[2] - 30.0).powi(2)).sqrt();
+            assert!((r - 15.0).abs() < 0.8, "{r}");
+        }
+        let far = |m: &Mesh| m.vertices.iter().filter(|p| p[0] > 41.0).count();
+        assert_eq!(far(m), far(&alone.surfaces[0].1));
+        // The steps: two, the second under way, its points its own.
+        let step = progress.step_now().unwrap();
+        assert_eq!((step.number, step.of), (2, 2));
+        assert_eq!(step.label, "volume b: fine lattice");
+        assert_eq!(step.fraction, Some(1.0));
+        // Wholly in another: nothing drawn, the coarse lattice alone.
+        let inside = volume_beside(
+            &along(10.0, 30.0),
+            &levels,
+            &each(f),
+            &pieces,
+            None,
+            &[&first],
+            "volume c",
+        )
+        .unwrap();
+        assert!(inside.surfaces[0].1.triangles.is_empty());
+        assert!(inside.computed * 20 < inside.full);
+    }
+
     /// A volume in parts (owner, 2026-11-01: less memory on long lines):
     /// along the bent tube, parts of a few coarse cells give the same
     /// surface as one part — the same triangles, the same points
@@ -1414,6 +1712,8 @@ mod tests {
             &pieces,
             None,
             3 * COARSE * d[1] * d[2],
+            &[],
+            "volume",
         )
         .unwrap();
         assert!((d[0] - 1) / COARSE > 6, "several parts");

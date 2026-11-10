@@ -413,7 +413,15 @@ nor not in general (the images oppose their sources' near fields).
   opens) take the panel's plane as it is.
 - **Volumes**: the isosurfaces of the levels in a box over a
   span (± the width, from the lowest ground under it to some metres over
-  the highest wire), see below.
+  the highest wire), see below. Where the boxes of two volumes overlap
+  (two alignments side by side, a branch leaving a structure), the
+  coarse cells lying wholly in the volume computed first are left to
+  it: the later volume does not refine them and draws no surface in
+  them, so each place is computed and drawn once (2026-11-10). Every
+  value drawn is computed as before; only which lattice carries the
+  surface there changes, and at the first box's edge the two surfaces
+  overlap by at most one coarse cell (four steps) and may show a seam,
+  a matter of the drawing alone.
 - **Given points** (e.g. places of sensitive use) from a CSV file: x, y and
   an elevation or a height above the ground.
 

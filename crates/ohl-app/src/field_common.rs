@@ -929,3 +929,52 @@ pub(crate) fn add_run_notes(
         );
     }
 }
+
+/// A field run under way as its footer says it (owner, 2026-11-10: "step
+/// 1 of x increasing, then resetting to 0 with step 2 and so on"): the
+/// step, its bar from its own points, the time gone and the time its
+/// points left take. Before the first step (or a run without steps): the
+/// points as a whole.
+pub fn run_progress(p: &Progress, elapsed: std::time::Duration) -> crate::check_ui::Progress {
+    use std::sync::atomic::Ordering;
+    let stage = p.stage();
+    let Some(step) = p.step_now() else {
+        let total = p.total.load(Ordering::Relaxed).max(1);
+        let done = p.done.load(Ordering::Relaxed);
+        let mut pr = crate::check_ui::Progress::with_left(elapsed, p.seconds_left(elapsed));
+        pr.text = if stage.is_empty() {
+            format!("{done} of {total} points; {}", pr.text)
+        } else {
+            format!("{stage}; {}", pr.text)
+        };
+        return pr;
+    };
+    let mut text = format!("step {} of {}: {}", step.number, step.of, step.label);
+    if !stage.is_empty() && stage != step.label {
+        text.push_str(&format!(" — {stage}"));
+    }
+    text.push_str(&format!("; {:.0} s", elapsed.as_secs_f64()));
+    if let Some(l) = step.left.filter(|l| *l >= 1.0) {
+        text.push_str(&format!(
+            ", about {} left of this step",
+            crate::check_ui::left_text(l)
+        ));
+    }
+    crate::check_ui::Progress {
+        fraction: step.fraction,
+        text,
+    }
+}
+
+/// The steps a field run of `kinds` takes (each: its cuts, its volumes),
+/// and one for the weather case when it is solved first and `more` for
+/// what follows: a step per cut, two per volume (its coarse and its fine
+/// lattice), one per other kind.
+pub fn steps_planned(kinds: &[(usize, usize)], unsolved: bool, more: usize) -> usize {
+    usize::from(unsolved)
+        + more
+        + kinds
+            .iter()
+            .map(|&(cuts, volumes)| (cuts + 2 * volumes).max(1))
+            .sum::<usize>()
+}

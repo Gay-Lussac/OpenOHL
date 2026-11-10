@@ -1773,7 +1773,7 @@ pub struct Progress {
 }
 
 /// A time left in words: seconds, then minutes.
-fn left_text(l: f64) -> String {
+pub(crate) fn left_text(l: f64) -> String {
     if l < 90.0 {
         format!("{l:.0} s")
     } else {

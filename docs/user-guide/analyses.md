@@ -1008,8 +1008,12 @@ setup cuts … and also ask if we want the profiles"): **2D: cuts and
 profiles** — the cuts at the stations asked in the table and, with
 **profiles too** ticked, the profiles (and the points from CSV) — or
 **3D: volumes** — only the volumes of the spans with *Volume* ticked. A
-run computes each kind as a step of its own, one after another (its
-progress says which: "2 cut(s)", "the profiles", "1 volume(s)"): the
+run computes each kind one after another, in steps the footer counts
+("step 3 of 7: volume A–B: fine lattice"; since 2026-11-10): a step per
+cut, one for the profiles, two per volume (its coarse lattice, then its
+fine one). The bar is the step's own — it starts at 0 with each step
+and fills as the step's points are computed — with the time gone and
+the time the step's points left take. The
 cuts and the volumes from the wires in 3D, the profiles by their model
 (*Profiles by* 3D or 2D, 4 Model). The isolines *from above* are no
 longer offered (2026-11-01). **The span table**:
@@ -1121,7 +1125,13 @@ field (isolines, surfaces)** while the window is open:
   (some seconds each), from the run's wires.
 - **Volume**: isosurfaces of the levels over the spans with *Volume*
   ticked in the table (one volume along each run of them following each
-  other, bent at the line angles: no seam at the structures; its step
+  other along their alignment, whatever order the line lists them in,
+  bent at the line angles: no seam at the structures. Where two volumes
+  overlap — two alignments side by side, a branch — the place is
+  computed and drawn once, in the volume computed first: the later one
+  leaves it out and its note says what share of its box that is
+  (2026-11-10; the surfaces meet with an overlap of at most four steps,
+  where a hairline seam may show; no value changes). Its step
   under the table; **Results › Show in 3D** turns the 3D view to it),
   ± the width, from the ground to 10 m over the highest wire, the lattice every
   step (default 2 m), drawn translucent in the 3D view. A coarse lattice

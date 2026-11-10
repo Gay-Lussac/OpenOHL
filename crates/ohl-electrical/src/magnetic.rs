@@ -3015,8 +3015,11 @@ pub fn run_keeping(
             })
         };
         let views = src.line.alignment_views();
-        for c in &settings.cuts {
+        for (k, c) in settings.cuts.iter().enumerate() {
             check_cancel(progress)?;
+            if let Some(p) = progress {
+                p.next_step(format!("cut {} of {}", k + 1, settings.cuts.len()));
+            }
             let placed = place_cut(src, &views, &spans, &axes, c).map_err(|e| {
                 format!(
                     "cut {}: {e}",
@@ -3076,6 +3079,7 @@ pub fn run_keeping(
         } else {
             m.segments()
         };
+        let mut boxes: Vec<VolumeBox> = Vec::new();
         for v in &settings.volumes {
             check_cancel(progress)?;
             let run = run_spans(&spans, &v.from, &v.to).map_err(|e| format!("volume: {e}"))?;
@@ -3110,13 +3114,25 @@ pub fn run_keeping(
             };
             let w = local(&bounds.path, bounds.width);
             let wires = w.as_ref().unwrap_or(m);
-            let values = field_views::volume(
+            let name = format!(
+                "volume {}–{}",
+                spans[run[0]].from,
+                spans[run[run.len() - 1]].to
+            );
+            let values = field_views::volume_beside(
                 &bounds,
                 &settings.levels,
                 &|ps: &[[f64; 3]]| ut_of(wires, ps),
                 &pieces,
                 progress,
+                &boxes.iter().collect::<Vec<_>>(),
+                &name,
             )?;
+            let elsewhere = field_views::elsewhere_text(&values);
+            if !elsewhere.is_empty() {
+                notes.push(format!("{name}: {elsewhere}"));
+            }
+            boxes.push(bounds);
             let pts: Vec<[f64; 3]> = values
                 .surfaces
                 .iter()
@@ -3170,11 +3186,12 @@ pub fn run_keeping(
 
 /// The spans from structure `from` to structure `to` along the line, in
 /// order (consecutive spans, each starting where the one before ends); a
-/// single span also either way round. The next span of a run is any later
-/// one in the line's order that starts where the run ends, not only the
-/// next listed: another line's spans placed in between (a crossing line,
-/// a branch) do not break it (2026-10-31: a grid over a run with a
-/// crossing line's spans listed among its own was refused).
+/// single span also either way round. The next span of a run is any
+/// one that starts where the run ends, wherever the line lists it:
+/// another line's spans placed in between (a crossing line, a branch) do
+/// not break it (2026-10-31: a grid over a run with a crossing line's
+/// spans listed among its own was refused), nor does a run listed against
+/// its direction (2026-11-10: the runs follow the alignments).
 pub(crate) fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<usize>, String> {
     // Breadth first from every span leaving `from`, each span reached once:
     // the run with the fewest spans.
@@ -3196,7 +3213,7 @@ pub(crate) fn run_spans(spans: &[LineSpan], from: &str, to: &str) -> Result<Vec<
             run.reverse();
             return Ok(run);
         }
-        for j in k + 1..spans.len() {
+        for j in 0..spans.len() {
             if !seen[j] && spans[j].from == spans[k].to {
                 seen[j] = true;
                 came[j] = Some(k);
@@ -3431,6 +3448,9 @@ mod tests {
         assert_eq!(run_spans(&spans, "C2", "C1"), Ok(vec![2]));
         assert!(run_spans(&spans, "T4", "T1").is_err());
         assert!(run_spans(&spans, "C1", "T4").is_err());
+        // A run listed against its direction is found too (2026-11-10).
+        let back = vec![span("T2", "T3"), span("T1", "T2")];
+        assert_eq!(run_spans(&back, "T1", "T3"), Ok(vec![1, 0]));
     }
 
     /// The per-polyline sum is the sum of [`segment_field`] over its

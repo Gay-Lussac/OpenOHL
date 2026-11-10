@@ -454,7 +454,19 @@ solved once.
 ![In plan: an alignment with an angle point and the wires along it; a cut at a station perpendicular to the alignment, a cut at the angle point along the bisector, a profile square to its span's axis](../images/theory/field-cut-plane.svg)
 
 - **Volumes** are lattices in a box over a run of ticked spans that
-  follow each other (one volume, no seam at the structures).
+  follow each other (one volume, no seam at the structures). Where the
+  boxes of two volumes overlap (two alignments side by side, a branch
+  leaving a structure), the coarse cells lying wholly in the volume
+  computed first are left to it: the later volume does not refine them
+  and draws no surface in them, so each place is computed and drawn
+  once (2026-11-10). Every value drawn is computed as before; only
+  which lattice carries the surface there changes, and at the first
+  box's edge the two surfaces overlap by at most one coarse cell (four
+  steps) and may show a seam, a matter of the drawing alone. With a
+  tiled floor each volume has its own floor: in an overlap the surface
+  shown is the first volume's, computed with that volume's floor — the
+  same approximation as elsewhere in that volume, said in the later
+  volume's note.
 
 **The conductor surface gradient** (the field at a subconductor's
 surface, for the corona noise; 2026-11-04, 2D only) is a calculation of
