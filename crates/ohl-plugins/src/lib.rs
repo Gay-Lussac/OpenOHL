@@ -783,9 +783,11 @@ pub fn discover(root: &Path) -> Vec<Found> {
 }
 
 /// Installs the plugin in directory `from` into `root` (the user's plugin
-/// directory), as `root/<name>`: the manifest and its entry file for a
-/// WebAssembly plugin (not its build tree); the whole directory, without
-/// `target` and hidden entries, for a Python plugin. Refused when the
+/// directory), as `root/<name>`: the whole directory, without `target`
+/// and hidden entries — so the files its manifest names (sheet templates,
+/// class schemes, data) come with it — and, for a WebAssembly plugin, its
+/// entry file out of the build tree (not the rest of that tree). Refused
+/// when the
 /// plugin cannot be used ([`Found::problem`]) or, unless `replace`, when
 /// it is installed already. Returns the installed directory.
 pub fn install(from: &Path, root: &Path, replace: bool) -> Result<PathBuf, PluginError> {
@@ -827,7 +829,7 @@ pub fn install(from: &Path, root: &Path, replace: bool) -> Result<PathBuf, Plugi
     std::fs::create_dir_all(&to).map_err(io)?;
     match manifest.plugin.tier {
         Tier::Wasm => {
-            std::fs::copy(manifest_path(from), to.join(MANIFEST_FILE)).map_err(io)?;
+            copy_tree(from, &to, 0).map_err(io)?;
             let source = manifest.entry_path();
             let real = |p: &Path| p.canonicalize().map_err(io);
             if !real(&source)?.starts_with(real(from)?) {
@@ -2618,6 +2620,25 @@ mod tests {
         let installed = discover(&root);
         assert_eq!(installed.len(), 1);
         assert_eq!(installed[0].problem(), None);
+        // A WebAssembly plugin comes with the files beside its manifest
+        // (those the manifest names) and its entry, not its build tree.
+        let wasm = root.join("wasm-src");
+        std::fs::create_dir_all(wasm.join("classes")).unwrap();
+        std::fs::create_dir_all(wasm.join("target/release/deps")).unwrap();
+        std::fs::write(
+            wasm.join(MANIFEST_FILE),
+            "[plugin]\nname=\"with-files\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"target/release/x.wasm\"",
+        )
+        .unwrap();
+        std::fs::write(wasm.join("classes/a.ohlc"), "").unwrap();
+        std::fs::write(wasm.join("target/release/x.wasm"), "").unwrap();
+        std::fs::write(wasm.join("target/release/deps/big"), "").unwrap();
+        let to = install(&wasm, &root, false).unwrap();
+        assert!(to.join("classes/a.ohlc").is_file());
+        assert!(to.join("target/release/x.wasm").is_file());
+        assert!(!to.join("target/release/deps").exists());
+        std::fs::remove_dir_all(&to).unwrap();
+        std::fs::remove_dir_all(&wasm).unwrap();
         // Another interface version: found, not usable, not installed.
         let other = root.join("other-src");
         std::fs::create_dir_all(&other).unwrap();
