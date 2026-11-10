@@ -599,6 +599,27 @@ fn offline_branch_comes_back_through_a_bundle() {
         let bundle = c.export_bundle("field").unwrap();
         let text = serde_json::to_string(&bundle).unwrap();
         let back: crate::versions::Bundle = serde_json::from_str(&text).unwrap();
+        // A bundle cut short — the moved T6 named by the head's tree is
+        // not in it — is refused and leaves nothing (review 2026-11-10:
+        // only the tree itself was looked for).
+        let mut cut = back.clone();
+        let tree: serde_json::Value =
+            serde_json::from_str(&cut.blobs[&cut.revisions.last().unwrap().tree]).unwrap();
+        let t6_blob = tree["objects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o[1] == "T6")
+            .unwrap()[3]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(cut.blobs.remove(&t6_blob).is_some());
+        let revisions = s.revisions().unwrap().len();
+        let e = s.import_bundle("ben", &cut, None).unwrap_err();
+        assert!(e.to_string().contains("structure T6"), "{e}");
+        assert_eq!(s.revisions().unwrap().len(), revisions);
+        assert!(!s.is_line("field"));
         assert_eq!(s.import_bundle("ben", &back, None).unwrap(), 1);
         // Again: nothing new, the branch is there.
         assert!(s.import_bundle("ben", &back, None).is_ok());
@@ -862,4 +883,209 @@ fn a_merge_is_checked_with_its_libraries() {
     let refused = s.merge("ana", "alt", None, &Choices::new()).unwrap_err();
     assert!(refused.to_string().contains("type-05"), "{refused}");
     assert!(s.status().unwrap().changes.is_empty());
+}
+
+/// The place of an object among its kind merges as its value does, a note
+/// left without its object goes with it, and the lines are counted ahead
+/// and behind (review 2026-11-10).
+#[test]
+fn places_notes_and_counts_through_a_merge() {
+    use crate::annotations::{Anchor, Annotation, AnnotationKind};
+    let (_, mut s) = with_branch("places");
+    let key = (Kind::Structure, "T2".to_owned());
+    let place = |s: &Session| s.working_state().unwrap().objects[&key].0;
+    let first = place(&s);
+    // The other line: T2 moved to the end of the structures (its value as
+    // it is), and a note on T7.
+    s.checkout("ana", "alt").unwrap();
+    let value = (*s.working_state().unwrap().objects[&key].1).clone();
+    s.apply(
+        "ana",
+        Command::Put {
+            kind: Kind::Structure,
+            id: "T2".into(),
+            value,
+            ord: Some(first + 100),
+        },
+    )
+    .unwrap();
+    s.commit("ana", "T2 last").unwrap();
+    let note = Annotation {
+        id: "n1".into(),
+        kind: AnnotationKind::Dimension,
+        tool: "distance".into(),
+        anchors: vec![
+            Anchor::Structure {
+                structure: "T7".into(),
+            },
+            Anchor::Point {
+                at: [0.0, 0.0, 0.0],
+                what: "ground".into(),
+            },
+        ],
+        text: String::new(),
+        author: "ana".into(),
+        time: String::new(),
+        last: None,
+    };
+    s.apply("ana", note.put()).unwrap();
+    s.commit("ana", "a note on T7").unwrap();
+    // This line: T2 shifted (its place as it was), T7 deleted.
+    s.checkout("ana", "main").unwrap();
+    let t2 = position(&s, "T2");
+    shift(&mut s, "ana", "T2", 3.0).unwrap();
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Structure,
+            id: "T7".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    s.commit("ana", "T2 east, T7 gone").unwrap();
+    assert_eq!(s.ahead_behind("main", "alt").unwrap(), (1, 2));
+    assert_eq!(s.ahead_behind("alt", "main").unwrap(), (2, 1));
+    assert_eq!(s.ahead_behind("main", "main").unwrap(), (0, 0));
+
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
+    assert_eq!(plan.problem, None);
+    assert!(
+        plan.notes.iter().any(|n| n.contains("n1")),
+        "{:?}",
+        plan.notes
+    );
+    s.merge("ana", "alt", None, &Choices::new()).unwrap();
+    // This line's value at the other line's place.
+    assert_eq!(position(&s, "T2")[0], t2[0] + 3.0);
+    assert_eq!(place(&s), first + 100);
+    // The note on the deleted structure is not taken.
+    assert!(s.annotations().is_empty());
+    assert!(s.line().structure("T7").is_none());
+    assert_eq!(s.ahead_behind("main", "alt").unwrap(), (2, 0));
+}
+
+/// One line renames a structure, the other moves it (review 2026-11-10):
+/// the move goes onto the renamed structure — not a "deleted against
+/// changed" conflict whose one choice put the old structure back beside
+/// the renamed one and whose other lost the move. Either way round.
+#[test]
+fn a_rename_meets_an_edit() {
+    for renamed_here in [true, false] {
+        let (_, mut s) = with_branch(if renamed_here { "rename-a" } else { "rename-b" });
+        let t6 = position(&s, "T6");
+        let rename = |s: &mut Session| {
+            s.apply(
+                "ana",
+                Command::Rename {
+                    kind: Kind::Structure,
+                    id: "T6".into(),
+                    new_id: "T6A".into(),
+                },
+            )
+            .unwrap();
+            s.commit("ana", "T6 is T6A").unwrap();
+        };
+        let moved = |s: &mut Session| {
+            shift(s, "ana", "T6", 4.0).unwrap();
+            s.commit("ana", "T6 east").unwrap();
+        };
+        s.checkout("ana", "alt").unwrap();
+        if renamed_here {
+            moved(&mut s)
+        } else {
+            rename(&mut s)
+        }
+        s.checkout("ana", "main").unwrap();
+        if renamed_here {
+            rename(&mut s)
+        } else {
+            moved(&mut s)
+        }
+        let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+        assert!(
+            plan.conflicts
+                .iter()
+                .all(|c| !c.key.starts_with("structure:")),
+            "{:?}",
+            plan.conflicts
+        );
+        // What moved with it (its alignment point) may need a choice: the
+        // move's side.
+        let side = if renamed_here {
+            Side::Theirs
+        } else {
+            Side::Ours
+        };
+        let choices: Choices = plan
+            .conflicts
+            .iter()
+            .map(|c| (c.key.clone(), side))
+            .collect();
+        s.merge("ana", "alt", None, &choices).unwrap();
+        assert!(s.line().structure("T6").is_none());
+        assert_eq!(position(&s, "T6A")[0], t6[0] + 4.0);
+        // The section through it follows the new id.
+        assert!(
+            s.line()
+                .sections
+                .iter()
+                .flat_map(|x| &x.points)
+                .all(|p| p.structure != "T6")
+        );
+    }
+}
+
+/// One line deletes a structure, the other — which left it as it was —
+/// ties a new alignment point to it (review 2026-11-10): no object
+/// changed on both lines, so there was no conflict, the merged line was
+/// not valid and the merge refused with nothing to choose. Now a choice:
+/// the deletion (the point is then not taken) or the structure kept.
+#[test]
+fn a_deletion_meets_a_use() {
+    for keep in [false, true] {
+        let (_, mut s) = with_branch(if keep { "del-keep" } else { "del-drop" });
+        s.checkout("ana", "alt").unwrap();
+        let mut p = s.line().alignment_points[0].clone();
+        p.id = "P9".into();
+        p.structure = Some("T7".into());
+        p.position = position(&s, "T7");
+        s.apply(
+            "ana",
+            Command::Put {
+                kind: Kind::AlignmentPoint,
+                id: "P9".into(),
+                value: serde_json::to_value(&p).unwrap(),
+                ord: None,
+            },
+        )
+        .unwrap();
+        s.commit("ana", "a point at T7").unwrap();
+        s.checkout("ana", "main").unwrap();
+        s.apply(
+            "ana",
+            Command::Delete {
+                kind: Kind::Structure,
+                id: "T7".into(),
+                confirm: true,
+            },
+        )
+        .unwrap();
+        s.commit("ana", "T7 gone").unwrap();
+        let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+        let c: Vec<&str> = plan.conflicts.iter().map(|c| c.key.as_str()).collect();
+        assert_eq!(c, ["structure:T7"], "{:?}", plan.conflicts);
+        assert!(plan.conflicts[0].what.contains("alignment_point P9"));
+        assert!(s.merge("ana", "alt", None, &Choices::new()).is_err());
+        let side = if keep { Side::Theirs } else { Side::Ours };
+        let choices = Choices::from([("structure:T7".to_owned(), side)]);
+        let plan = s.merge_plan("alt", &choices).unwrap();
+        assert_eq!(plan.problem, None);
+        s.merge("ana", "alt", None, &choices).unwrap();
+        let point = s.line().alignment_points.iter().any(|p| p.id == "P9");
+        assert_eq!(s.line().structure("T7").is_some(), keep);
+        assert_eq!(point, keep);
+        assert!(s.status().unwrap().changes.is_empty());
+    }
 }

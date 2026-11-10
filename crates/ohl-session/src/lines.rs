@@ -145,7 +145,7 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, Sess
 /// the objects when the session opens.
 pub(crate) fn migrate(conn: &Connection) -> Result<(), SessionError> {
     if !has_column(conn, "model_object", "line")? {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(conn)?;
         tx.execute_batch(
             "ALTER TABLE model_object RENAME TO model_object_v2;
              CREATE TABLE model_object (
@@ -524,7 +524,7 @@ impl Session {
                     .expect("a free name");
             }
             let objects = objects_of_line(&line);
-            let tx = self.conn.unchecked_transaction()?;
+            let tx = crate::Step::begin(&self.conn)?;
             write_objects(&tx, &new, &objects)?;
             tx.execute(
                 "INSERT INTO vc_ref (name, kind, revision, user, note) VALUES (?1, 'branch', NULL, ?2, ?3)",
@@ -578,7 +578,7 @@ impl Session {
                 };
                 // Its line's objects only, as these branches always had
                 // (their revision's library files left out: tombstones).
-                let tx = self.conn.unchecked_transaction()?;
+                let tx = crate::Step::begin(&self.conn)?;
                 tx.execute(
                     "UPDATE vc_ref SET base = ?1 WHERE name = ?2 AND kind = 'branch'",
                     params![rev, r.name],
@@ -877,7 +877,7 @@ impl Session {
             (objects, Some((rev, base)))
         };
         let revision = base.as_ref().map(|(rev, _)| rev.clone());
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         tx.execute(
             "INSERT INTO vc_ref (name, kind, revision, user, note, base) VALUES (?1, 'branch', ?2, ?3, ?4, ?2)",
             params![name, revision, user, format!("from {from}")],
@@ -947,7 +947,7 @@ impl Session {
             )));
         }
         let reviews = self.ref_deletion(name)?.reviews;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         tx.execute("DELETE FROM model_object WHERE line = ?1", params![name])?;
         tx.execute("DELETE FROM spatial_index WHERE line = ?1", params![name])?;
         tx.execute(
@@ -970,7 +970,7 @@ impl Session {
     pub fn rename_line(&mut self, user: &str, from: &str, to: &str) -> Result<(), SessionError> {
         self.may_manage_line(user, from)?;
         let to = self.check_ref_name(to)?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         for table in ["model_object", "oplog", "spatial_index"] {
             tx.execute(
                 &format!("UPDATE {table} SET line = ?2 WHERE line = ?1"),
@@ -1060,11 +1060,11 @@ impl Session {
         };
         let their_line = &self.others[from].line;
         let (patch, kept) = keep_both(&base, &ours, &theirs, Some(their_line), choices)?;
-        let (merged, mut conflicts) = merge_states_with(&base, &ours, &theirs, &patch, choices);
+        let (mut merged, mut conflicts) = merge_states_with(&base, &ours, &theirs, &patch, choices);
         conflicts.extend(kept);
         let settled = conflicts.iter().all(|c| c.chosen.is_some());
         let problem = if settled {
-            crate::versions::merged_problem(&merged, &ours)
+            crate::versions::settle_merged(&mut merged, &ours, &mut Vec::new())
         } else {
             None
         };

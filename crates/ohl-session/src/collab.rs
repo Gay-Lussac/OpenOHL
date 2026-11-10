@@ -648,7 +648,7 @@ impl Session {
         } else {
             ReviewState::Rejected
         };
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         tx.execute(
             "UPDATE vc_review SET state = ?1 WHERE id = ?2",
             params![state.as_str(), id],
@@ -733,7 +733,7 @@ impl Session {
         let outcome = self.with_line(&target, |s| {
             s.merge_as(user, &revision, Some(&message), choices, true)
         })?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         tx.execute(
             "UPDATE vc_review SET state = 'merged' WHERE id = ?1",
             params![id],

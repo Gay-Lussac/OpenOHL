@@ -934,19 +934,61 @@ pub fn merge_states_with(
         .chain(theirs.objects.keys())
         .chain(patch.keys())
         .collect();
+    let their = |key: &(Kind, String)| match patch.get(key) {
+        Some(p) => p.as_ref(),
+        None => theirs.objects.get(key),
+    };
+    // Objects one side renamed and the other changed (2026-11-10): the
+    // change goes onto the new id. Before, it was "deleted against
+    // changed": taking the change brought the old object back beside the
+    // renamed one, keeping the deletion lost the change unsaid.
+    let renamed_ours = renames(base, |k| ours.objects.get(k), ours.objects.iter());
+    let renamed_theirs = renames(
+        base,
+        their,
+        theirs
+            .objects
+            .iter()
+            .filter(|(k, _)| !patch.contains_key(*k))
+            .chain(patch.iter().filter_map(|(k, v)| Some((k, v.as_ref()?)))),
+    );
+    let mut moved: Vec<((Kind, String), Placed)> = Vec::new();
     for key in keys {
-        let (b, o, t) = (
-            base.objects.get(key),
-            ours.objects.get(key),
-            match patch.get(key) {
-                Some(p) => p.as_ref(),
-                None => theirs.objects.get(key),
-            },
-        );
+        // Renamed here, changed there: the changed value under the new id
+        // (at the renamed object's place), the old id gone.
+        let onto = |to: &String, changed: Option<&Placed>, renamed: Option<&Placed>| {
+            let (changed, renamed) = (changed?, renamed?);
+            let mut value = (*changed.1).clone();
+            value["id"] = Value::String(to.clone());
+            Some(((key.0, to.clone()), (renamed.0, Arc::new(value))))
+        };
+        if let Some(to) = renamed_ours.get(key)
+            && let Some(b) = base.objects.get(key)
+            && their(key).is_some_and(|t| !same(Some(&b.1), Some(&t.1)))
+            && let Some(m) = onto(to, their(key), ours.objects.get(&(key.0, to.clone())))
+        {
+            moved.push(m);
+            continue;
+        }
+        if let Some(to) = renamed_theirs.get(key)
+            && let Some(b) = base.objects.get(key)
+            && ours
+                .objects
+                .get(key)
+                .is_some_and(|o| !same(Some(&b.1), Some(&o.1)))
+            && let Some(m) = onto(to, ours.objects.get(key), their(&(key.0, to.clone())))
+        {
+            moved.push(m);
+            continue;
+        }
+        let (b, o, t) = (base.objects.get(key), ours.objects.get(key), their(key));
         let (bv, ov, tv) = (b.map(|x| &x.1), o.map(|x| &x.1), t.map(|x| &x.1));
         let okey = object_key(key.0, &key.1);
         let what = format!("{} {}", key.0.as_str(), key.1);
-        // The place: ours, unless only theirs moved it.
+        // The place among its kind, merged as a value is (2026-11-10): the
+        // side that moved it; both moved it differently: ours (an order
+        // is not worth a conflict). Before, a side that changed only the
+        // value took its unmoved place with it, losing the other's move.
         let ord = |o: Option<&Placed>, t: Option<&Placed>| match (o, t) {
             (Some(o), Some(t)) if b.map(|b| b.0) == Some(o.0) => t.0,
             (Some(o), _) => o.0,
@@ -957,9 +999,9 @@ pub fn merge_states_with(
             o.or(t)
                 .map(|_| (ord(o, t), ov.cloned().expect("same, present")))
         } else if same(bv, ov) {
-            t.cloned()
+            t.map(|t| (ord(o, Some(t)), Arc::clone(&t.1)))
         } else if same(bv, tv) {
-            o.cloned()
+            o.map(|o| (ord(Some(o), t), Arc::clone(&o.1)))
         } else if let (Some(bv), Some(ov), Some(tv)) = (bv, ov, tv) {
             match merge_fields(&okey, &what, bv, ov, tv, choices, &mut conflicts) {
                 Some(v) => Some((ord(o, t), Arc::new(v))),
@@ -976,6 +1018,81 @@ pub fn merge_states_with(
         };
         if let Some(x) = taken {
             merged.objects.insert(key.clone(), x);
+        }
+    }
+    // (After the loop: the renamed object's own key was taken as added.)
+    merged.objects.extend(moved);
+    // One side deleted an object, the other — which left it as it was —
+    // made or changed something that is on it (2026-11-10): no object was
+    // changed on both sides, so there was no conflict, the merged line was
+    // not valid and the merge refused with nothing to choose. Now a
+    // choice: the deletion (what the other side put on the object is then
+    // not taken) or the object kept.
+    let deleted: Vec<(&(Kind, String), &Placed, Side)> = base
+        .objects
+        .iter()
+        .filter(|(k, _)| KEPT_BOTH.contains(&k.0) && !merged.objects.contains_key(*k))
+        .filter_map(|(k, b)| match (ours.objects.get(k), their(k)) {
+            (None, Some(t)) if same(Some(&b.1), Some(&t.1)) => Some((k, b, Side::Ours)),
+            (Some(o), None) if same(Some(&b.1), Some(&o.1)) => Some((k, b, Side::Theirs)),
+            _ => None,
+        })
+        .collect();
+    for (k, b, deleter) in deleted {
+        let of = |side: Side, k: &(Kind, String)| match side {
+            Side::Ours => ours.objects.get(k),
+            _ => their(k),
+        };
+        let keeper = match deleter {
+            Side::Ours => Side::Theirs,
+            _ => Side::Ours,
+        };
+        // What the keeping side made or changed that is on the object.
+        let on_it: Vec<(Kind, String)> = merged
+            .objects
+            .iter()
+            // (Objects of the line: a note on it goes with it, below.)
+            .filter(|(m, _)| KEPT_BOTH.contains(&m.0))
+            .filter(|(m, v)| {
+                of(keeper, m).is_some_and(|x| same(Some(&x.1), Some(&v.1)))
+                    && !same(base.objects.get(*m).map(|x| &x.1), Some(&v.1))
+                    && refers(&v.1, k.0, &k.1)
+            })
+            .map(|(m, _)| m.clone())
+            .collect();
+        if on_it.is_empty() {
+            continue;
+        }
+        let okey = object_key(k.0, &k.1);
+        let chosen = one_side(choices.get(&okey));
+        let names: Vec<String> = on_it
+            .iter()
+            .map(|m| format!("{} {}", m.0.as_str(), m.1))
+            .collect();
+        conflicts.push(Conflict {
+            key: okey,
+            what: format!(
+                "{} {} (deleted on one line; on the other, on it: {})",
+                k.0.as_str(),
+                k.1,
+                names.join(", ")
+            ),
+            base: Some((*b.1).clone()),
+            ours: (deleter != Side::Ours).then(|| (*b.1).clone()),
+            theirs: (deleter != Side::Theirs).then(|| (*b.1).clone()),
+            chosen,
+            keep_both: None,
+        });
+        if chosen.unwrap_or(Side::Ours) == deleter {
+            // Deleted: what was put on it as the deleting side has it.
+            for m in on_it {
+                match of(deleter, &m) {
+                    Some(x) => merged.objects.insert(m, x.clone()),
+                    None => merged.objects.remove(&m),
+                };
+            }
+        } else {
+            merged.objects.insert(k.clone(), b.clone());
         }
     }
     let names: BTreeSet<&(String, String)> = base
@@ -1021,6 +1138,70 @@ pub fn merge_states_with(
     (merged, conflicts)
 }
 
+/// Whether the object `value` refers to object `id` of `kind`: a text
+/// equal to the id under a name that holds such an id (a section point's
+/// or jumper end's `structure`, a spacer end's `section`, an alignment's
+/// `route` and `points`, a structure's `routes`, a tap's `jumper`).
+fn refers(value: &Value, kind: Kind, id: &str) -> bool {
+    let names: &[&str] = match kind {
+        Kind::Structure => &["structure"],
+        Kind::Section => &["section"],
+        Kind::Jumper => &["jumper"],
+        Kind::Route => &["route", "routes"],
+        Kind::Alignment => &["alignment"],
+        Kind::AlignmentPoint => &["points"],
+        _ => &[],
+    };
+    fn walk(v: &Value, under: &str, names: &[&str], id: &str) -> bool {
+        match v {
+            Value::String(s) => s == id && names.contains(&under),
+            Value::Array(a) => a.iter().any(|x| walk(x, under, names, id)),
+            Value::Object(o) => o.iter().any(|(k, x)| walk(x, k, names, id)),
+            _ => false,
+        }
+    }
+    !names.is_empty() && walk(value, "", names, id)
+}
+
+/// The objects of `base` a side renamed: old key → new id. Told by the
+/// content: an object of the base the side lacks, and one of the same
+/// kind it has and the base lacks, alike in all but their id (a rename
+/// with an edit of the same object is not told: it stays a conflict).
+/// `side`: the side's object of a key; `all`: its objects. Only the kinds
+/// that are renamed ([`KEPT_BOTH`]).
+fn renames<'a>(
+    base: &State,
+    side: impl Fn(&(Kind, String)) -> Option<&'a Placed>,
+    all: impl Iterator<Item = (&'a (Kind, String), &'a Placed)>,
+) -> BTreeMap<(Kind, String), String> {
+    let gone: Vec<(&(Kind, String), &Placed)> = base
+        .objects
+        .iter()
+        .filter(|(k, _)| KEPT_BOTH.contains(&k.0) && side(k).is_none())
+        .collect();
+    let mut out = BTreeMap::new();
+    if gone.is_empty() {
+        return out;
+    }
+    let alike = |a: &Value, b: &Value| match (a.as_object(), b.as_object()) {
+        (Some(a), Some(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(k, v)| k == "id" || b.get(k).is_some_and(|w| w == v))
+        }
+        _ => false,
+    };
+    for (k, v) in all.filter(|(k, _)| !base.objects.contains_key(*k)) {
+        if let Some((old, _)) = gone
+            .iter()
+            .find(|(old, b)| old.0 == k.0 && !out.contains_key(*old) && alike(&b.1, &v.1))
+        {
+            out.insert((*old).clone(), k.1.clone());
+        }
+    }
+    out
+}
+
 /// A choice of one side: [`Side::Both`] where both cannot be kept (a
 /// conflict that is not two objects made under one id, or one already
 /// renamed by [`keep_both`]) is no choice.
@@ -1028,17 +1209,45 @@ fn one_side(choice: Option<&Side>) -> Option<Side> {
     choice.copied().filter(|s| *s != Side::Both)
 }
 
-/// Why the line of the merged state `merged` is not valid, if so: as any
-/// command checks it, and — typed structures taking their wire points
-/// from the library files, which merge too — **with its libraries**
-/// (2026-11-10: one side takes a set off a structure type or deletes the
-/// type's file, the other strings a section there; each line is valid, the
-/// merged one resolved is not, and failed to solve only later). A problem
-/// with the libraries that `ours` has already is not the merge's (a
-/// project keeping its types in a folder, not in the file): not reported.
-pub(crate) fn merged_problem(merged: &State, ours: &State) -> Option<String> {
-    if let Err(e) = merged.line() {
-        return Some(e.to_string());
+/// Finishes a merged state whose conflicts are all settled, and says why
+/// its line is not valid, if so.
+///
+/// - **Notes left without their object** (one side deleted a structure,
+///   the other put a note on it) go with it, as a deletion by a user takes
+///   them ([`crate::annotations::orphaned`]); each is said in `notes`.
+/// - The line is checked as any command checks it, and — typed structures
+///   taking their wire points from the library files, which merge too —
+///   **with its libraries** (one side takes a set off a structure type or
+///   deletes the type's file, the other strings a section there; each line
+///   is valid, the merged one resolved is not, and failed to solve only
+///   later). A problem with the libraries that `ours` has already is not
+///   the merge's (a project keeping its types in a folder, not in the
+///   file): not reported.
+pub(crate) fn settle_merged(
+    merged: &mut State,
+    ours: &State,
+    notes: &mut Vec<String>,
+) -> Option<String> {
+    let line = match merged.line() {
+        Ok(l) => l,
+        Err(e) => return Some(e.to_string()),
+    };
+    let orphaned = crate::annotations::orphaned(
+        merged
+            .objects
+            .iter()
+            .filter(|((k, _), _)| *k == Kind::Annotation)
+            .map(|((_, id), (_, v))| (id, &**v)),
+        &line,
+    );
+    for id in orphaned {
+        merged.objects.remove(&(Kind::Annotation, id.clone()));
+        notes.push(format!(
+            "note {id}: what it was put on is not in the merged line — not taken"
+        ));
+    }
+    if !line.structures.iter().any(|s| s.structure_type.is_some()) {
+        return None;
     }
     let resolved = |s: &State| {
         resolved_line(s).and_then(|l| l.validate().map(drop).map_err(|e| e.to_string()))
@@ -1645,6 +1854,25 @@ impl Session {
         Ok(self.merge_bases(a, b)?.into_iter().next())
     }
 
+    /// How many revisions project line (or tag, or revision) `a` has that
+    /// `b` lacks, and `b` that `a` lacks: (ahead, behind) of `a` against
+    /// `b`. One read of the history; a line without a revision has none.
+    pub fn ahead_behind(&self, a: &str, b: &str) -> Result<(usize, usize), SessionError> {
+        let parents = self.parents()?;
+        let of = |name: &str| -> Result<BTreeMap<String, usize>, SessionError> {
+            Ok(match self.find_ref(name)? {
+                Some(r) => r.revision.map(|id| ancestors_in(&parents, &id)),
+                None => Some(ancestors_in(&parents, &self.resolve_revision(name)?)),
+            }
+            .unwrap_or_default())
+        };
+        let (of_a, of_b) = (of(a)?, of(b)?);
+        Ok((
+            of_a.keys().filter(|r| !of_b.contains_key(*r)).count(),
+            of_b.keys().filter(|r| !of_a.contains_key(*r)).count(),
+        ))
+    }
+
     /// The latest common ancestors of two revisions, the one merged
     /// against first ([`Session::merge_base`]).
     pub fn merge_bases(&self, a: &str, b: &str) -> Result<Vec<String>, SessionError> {
@@ -1720,7 +1948,7 @@ impl Session {
         if !confirm {
             return Err(refused(format!("{d} — repeat with confirmation to apply")));
         }
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         tx.execute("DELETE FROM vc_ref WHERE name = ?1", params![name])?;
         for id in &d.reviews {
             tx.execute(
@@ -1899,10 +2127,10 @@ impl Session {
             plan.merged = merged;
             plan.conflicts = conflicts;
         }
-        plan.changes = diff(&working, &plan.merged);
         if plan.unresolved().is_empty() {
-            plan.problem = merged_problem(&plan.merged, &working);
+            plan.problem = settle_merged(&mut plan.merged, &working, &mut plan.notes);
         }
+        plan.changes = diff(&working, &plan.merged);
         Ok(plan)
     }
 
@@ -1936,7 +2164,8 @@ impl Session {
         let plan = self.merge_plan(other, choices)?;
         if plan.kind == MergeKind::UpToDate {
             return Err(refused(format!(
-                "branch \"{branch}\" already contains {other}"
+                "project line \"{branch}\" already contains {other} (changes of it that were \
+                 reverted since come back by reverting that revert)"
             )));
         }
         let unresolved = plan.unresolved();
@@ -2150,6 +2379,33 @@ impl Session {
             if !has(&r.tree)? {
                 return Err(refused(format!("bundle: tree of {} missing", r.short())));
             }
+            // Everything a new revision's tree names is there too (a
+            // bundle cut short was taken, its revisions unreadable later).
+            if !known.contains(&r.id) {
+                let text = match bundle.blobs.get(&r.tree) {
+                    Some(t) => t.clone(),
+                    None => self.read_blob(&r.tree)?,
+                };
+                let tree: Tree = serde_json::from_str(&text)
+                    .map_err(|e| refused(format!("bundle: tree of {}: {e}", r.short())))?;
+                let named = tree
+                    .objects
+                    .iter()
+                    .map(|o| (&o.3, format!("{} {}", o.0.as_str(), o.1)))
+                    .chain(
+                        tree.libraries
+                            .iter()
+                            .map(|l| (&l.2, format!("library file {}/{}", l.0, l.1))),
+                    );
+                for (h, what) in named {
+                    if !has(h)? {
+                        return Err(refused(format!(
+                            "bundle: {what} of revision {} is missing (the file is not whole)",
+                            r.short()
+                        )));
+                    }
+                }
+            }
             seen.insert(r.id.clone());
             if !known.contains(&r.id) {
                 new.push(r);
@@ -2192,40 +2448,44 @@ impl Session {
                 self.check_ref_name(&name)?;
             }
         }
-        let tx = self.conn.unchecked_transaction()?;
-        for (h, text) in &bundle.blobs {
-            Self::write_blob(&tx, h, text)?;
-        }
-        for r in &new {
-            tx.execute(
-                "INSERT INTO vc_revision (id, parents, author, time, message, tree, seq) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    r.id,
-                    serde_json::to_string(&r.parents).expect("serialises"),
-                    r.author,
-                    r.time,
-                    r.message,
-                    r.tree,
-                    r.seq
-                ],
-            )?;
-        }
-        if existing.is_some() {
-            tx.execute(
-                "UPDATE vc_ref SET revision = ?1 WHERE name = ?2",
-                params![bundle.head, name],
-            )?;
-        }
-        tx.commit()?;
-        // The line's working state: the bundle's head.
-        if existing.is_some() && self.is_line(&name) {
-            let state = self.revision_state(&bundle.head)?;
-            self.with_line(&name, |s| {
-                s.set_working(user, &state, &format!("bundle {} imported", bundle.branch))
-            })?;
-        } else if existing.is_none() {
-            self.create_line(user, &name, &bundle.head)?;
-        }
+        // The blobs, the revisions and the line: all of it or nothing.
+        self.unit(|s| {
+            let tx = crate::Step::begin(&s.conn)?;
+            for (h, text) in &bundle.blobs {
+                Self::write_blob(&tx, h, text)?;
+            }
+            for r in &new {
+                tx.execute(
+                    "INSERT INTO vc_revision (id, parents, author, time, message, tree, seq) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        r.id,
+                        serde_json::to_string(&r.parents).expect("serialises"),
+                        r.author,
+                        r.time,
+                        r.message,
+                        r.tree,
+                        r.seq
+                    ],
+                )?;
+            }
+            if existing.is_some() {
+                tx.execute(
+                    "UPDATE vc_ref SET revision = ?1 WHERE name = ?2",
+                    params![bundle.head, name],
+                )?;
+            }
+            tx.commit()?;
+            // The line's working state: the bundle's head.
+            if existing.is_some() && s.is_line(&name) {
+                let state = s.revision_state(&bundle.head)?;
+                s.with_line(&name, |s| {
+                    s.set_working(user, &state, &format!("bundle {} imported", bundle.branch))
+                })?;
+            } else if existing.is_none() {
+                s.create_line(user, &name, &bundle.head)?;
+            }
+            Ok(())
+        })?;
         Ok(new.len())
     }
 }

@@ -87,7 +87,45 @@ of work** (2026-11-10, `Session::unit`): the logged command, its note, the
 revision (and Bring in's two recordings before it) are written inside one
 savepoint, and the states the commands replace in memory are kept — moved,
 not copied — and put back if a later step fails; before, a failure between
-the steps left a merge looking like uncommitted changes. **Revert** is a three-way merge of the working
+the steps left a merge looking like uncommitted changes.
+
+More of 2026-11-10 (the version-management review), each with its test:
+
+- **A rename against an edit.** One side renamed an object (told by its
+  content: gone under the old id, one alike in all but the id added), the
+  other changed it: the change is taken under the new id. Before it was
+  "deleted against changed" — one choice brought the old object back
+  beside the renamed one, the other lost the change. A rename *with* an
+  edit of the same object on one side is not told and stays a conflict.
+- **The place among a kind** (the order of alignments and their points,
+  of structures) is merged as a value is: the side that moved it; both
+  moved it differently: ours, without a conflict. Before, a side that
+  changed only the value took its old place with it.
+- **Notes left without their object** (one side deleted a structure, the
+  other put a note on it) are not taken, as a deletion by a user takes
+  them; the plan's notes say which.
+- **A merge that is already contained** says that reverted changes come
+  back by reverting the revert.
+- **Bundles** are verified in full before anything is written — every
+  object and library file a new revision's tree names must be in the
+  bundle or the project — and blobs, revisions and the line are imported
+  as one unit of work.
+- `Session::ahead_behind(a, b)`: how many revisions each of two lines has
+  that the other lacks (one read of the history).
+
+- **A deletion against a use.** One side deleted an object, the other —
+  which left it as it was — made or changed an object of the line that is
+  on it (a section through the structure, an alignment point tied to it):
+  nothing was changed on both sides, so there was no conflict, the merged
+  line was not valid and the merge was refused with nothing to choose. It
+  is now a conflict on the deleted object: the deletion (what the other
+  side put on it is then as the deleting side has it, or not taken) or
+  the object kept. References are told by name (`structure`, `section`,
+  `route`/`routes`, `points`, `jumper`).
+
+Not built yet: lists (a section's points, a structure's wire points) and
+library files merged entry by entry rather than whole; conflicts of one
+logged command settled together. **Revert** is a three-way merge of the working
 state with the reverted revision as base and its first parent as theirs.
 
 **Edit rights** (`ols_session::collab`): a grant limits a user, or every user
