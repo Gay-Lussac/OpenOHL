@@ -474,22 +474,31 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
             .result()
             .1
     );
-    harness.get_by_label("Stop").click();
-    // Free within a few frames (under the full check's load the click
-    // was once not taken on the first frame, 2026-11-08): no run, no
-    // result taken from it.
-    for _ in 0..10 {
+    // Stop clicked, and free at once. A click in the harness goes to where
+    // the button stood in the frame before; while a run counts its steps
+    // the footer's text changes and the button can have moved by the next
+    // frame, so the click misses (seen four times under the full check's
+    // load, 2026-11-08 and 2026-11-10 — with ten frames and then with 30 s
+    // of frames after ONE click: the run was never stopped, not slow to
+    // stop). So: click it wherever it is now, each frame, until the run is
+    // free; at most 30 s. No run, no result taken from it.
+    let stopped = std::time::Instant::now();
+    loop {
+        if let Some(stop) = harness.query_by_label("Stop") {
+            stop.click();
+        }
         harness.step();
-        if !harness
+        let running = harness
             .state_mut()
             .ready()
             .unwrap()
             .radial_clearances
             .result()
-            .1
-        {
+            .1;
+        if !running || stopped.elapsed().as_secs() >= 30 {
             break;
         }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
     let r = harness.state_mut().ready().unwrap();
     let (report, running) = r.radial_clearances.result();
