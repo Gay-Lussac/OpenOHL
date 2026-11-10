@@ -331,6 +331,8 @@ fn rich_line() -> Line {
     };
     // A structure's own load cases (per-pylon sets, 2026-11-03).
     line.structures[0].load_cases = vec!["wind 90°".into(), "construction & T1".into()];
+    // A structure taking no load case (2026-11-10).
+    line.structures[1].no_load_cases = true;
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
     }

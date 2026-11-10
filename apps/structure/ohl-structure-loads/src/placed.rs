@@ -9,7 +9,7 @@
 //! ```json
 //! {
 //!   "format": "ohl-structure-line-values",
-//!   "version": 4,
+//!   "version": 6,
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
 //!   "structure_type": "type-02",
@@ -45,7 +45,16 @@
 //! direction — any angle, `from` in degrees — its ice and snow on the
 //! members, its strength factor), and `from_deg` on a structure wind
 //! from an angle; older files have none: the structure's own recipes as
-//! before.
+//! before. Version 6 (owner 2026-11-10) added four quantities among the
+//! `values` of each point and case: the horizontal pull of its back spans
+//! and of its ahead spans, along each span, in the structure's axes,
+//! unfactored — `pull_back_transverse`, `pull_back_longitudinal`,
+//! `pull_ahead_transverse`, `pull_ahead_longitudinal` (N; "back": the
+//! span before the point in its section's order of points, "ahead": the
+//! span after it; a side without a span: 0). They are shares of
+//! `transverse` and `longitudinal`, not forces added to them: a structure
+//! load case's line forces scale them (`back`, `ahead`, percent). Older
+//! files have none: such line forces then get "no line value".
 
 use std::path::{Path, PathBuf};
 
@@ -57,9 +66,9 @@ use crate::table::LineValues;
 /// `format` of a line-values file.
 pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// `version` of a line-values file (2: `sources`; 3: `missing`; 4:
-/// `structure_wind` in the values; 5: `library_cases`; older files are
-/// read too).
-pub const LINE_VALUES_FILE_VERSION: u32 = 5;
+/// `structure_wind` in the values; 5: `library_cases`; 6: the spans'
+/// pulls among the values; older files are read too).
+pub const LINE_VALUES_FILE_VERSION: u32 = 6;
 
 /// A section or jumper at the placed structure that did not solve in one
 /// of the line's cases: the values of that case lack its forces.

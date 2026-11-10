@@ -67,6 +67,8 @@ transverse = 1.5
 longitudinal = 1.0
 sets = [1, 2]                         # optional (default: every point)
 off = ["A3"]                          # points whose line forces are left out
+# back = 5.0                          # optional: % of the back spans' solved pull (below)
+# ahead = 0.0                         # optional: % of the ahead spans'
 
 [load_case.structure]                 # 2. loads on the structure itself
 self_weight = 1.35
@@ -109,6 +111,8 @@ One table per line result taken:
 | `vertical`, `transverse`, `longitudinal` | 1 | The factor on each axis (vertical down, transverse right of the line, longitudinal ahead). |
 | `sets` | every point | Only the points carrying these sets. |
 | `off` | none | Points (labels) whose line forces are left out — works on the line with a conductor removed. |
+| `back` | 100 | The share of the **back spans'** solved horizontal pull taken, in percent (0 or more; 100: as solved; 0: none). Version 4; see [A share of the spans' pull](#a-share-of-the-spans-pull-back-ahead). |
+| `ahead` | 100 | The same of the **ahead spans**. |
 
 In the load table: per point carrying a wire (a set) or given a value by
 the line in that result, one row (source `line`, row **1001** for the
@@ -118,6 +122,60 @@ its row with no force, noted "off" (a value typed over it stays on the
 same row whether it is off or on). A value the line does not give makes
 the row **no line value** (force 0; so does every line value of a
 structure opened on its own); it can be typed into the table.
+
+### A share of the spans' pull (`back`, `ahead`)
+
+*Built, in active development, not approved yet* (owner, 2026-11-10:
+the line calculates the forces and transmits them; the load cases are
+made on the structure from those forces and factors).
+
+With each point's force the line sends the **horizontal pull of its back
+spans and of its ahead spans**, along each span, in the structure's axes
+(`pull_back_transverse`, `pull_back_longitudinal`, `pull_ahead_transverse`,
+`pull_ahead_longitudinal`; unfactored). They are shares of the force
+sent, not loads added to it. *Back* is the span before the point in its
+section's order of points, *ahead* the span after it; a section starting
+or ending at the point has one side only (the other 0), so at a dead end
+holding two sections the one ending there is the back side and the one
+starting there the ahead side.
+
+`back` and `ahead` say how much of each pull the case takes, in percent.
+Per point, before the factors:
+
+```text
+transverse   = sent_T − (1 − back/100)·pull_back_T − (1 − ahead/100)·pull_ahead_T
+longitudinal = sent_L − (1 − back/100)·pull_back_L − (1 − ahead/100)·pull_ahead_L
+vertical     = sent_V                       (unchanged)
+```
+
+then × `transverse`, `longitudinal`, `vertical` as before; `sets` and
+`off` pick the points as before. **Effect on the results**: with
+`back = 5.0`, `ahead = 0.0` at a suspension point in still air (where the
+two pulls balance) the structure takes 5 % of the back span's pull along
+the line — a longitudinal load where the solved case has none; the
+vertical load, the wind across the spans (the transverse force less the
+pulls' own transverse parts at a line angle) and the jumpers stay.
+100 / 100, or neither given, is the force exactly as solved. A share
+above 100 is allowed and said in the case's sentence. **No extra solve
+time**: the line is not solved again, the pulls come with the forces.
+
+**NOT ON THE SAFE SIDE by itself**: this is a load *assumption* — a share
+of the solved pull — not an equilibrium state. With one side really
+slack the strings swing and the tensions change: the real one-sided pull
+can be smaller or larger. Every row of such line forces says so in its
+note, as do the solved case's notes, the report and the exports'
+notes. The exact treatment is a line result solved with the one-sided
+condition (a broken or removed wire, [Loads for
+structures](desktop-app.md#loads-for-structures)); the theory is in
+[Structure analysis](../theory/structures-fe.md#a-share-of-the-spans-pull-a-load-assumption).
+
+Line values without the pulls (a line-values file older than version 6,
+a structure opened on its own): a row that scales a side gets **no line
+value** (naming the pulls missing) — never the unscaled force. A
+negative share, or one that is not a number, is refused when the file is
+read. In the Load case editor: the columns **Back %** and **Ahead %** of
+the line forces (empty: 100); the Line loads panel lists the four pulls
+per point and case.
 
 ## 2. Loads on the structure itself (`[load_case.structure]`)
 
@@ -337,6 +395,8 @@ longitudinal ahead, vertical down.
 | `ice` | The ice on the wires, down | not yet: typed |
 | `structure_wind` | A pressure (Pa) on `members`: the line case's wind on the structure body, unfactored | yes |
 | `structure_wind_factored` | The same × the case's structure wind factor: the pressure the line's own structure checks put on the body | yes |
+| `pull_back_transverse`, `pull_back_longitudinal` | The horizontal pull of the point's back spans, along each span, across and along the line, unfactored (a share of `transverse` / `longitudinal`; [A share of the spans' pull](#a-share-of-the-spans-pull-back-ahead)); version 4 | yes (line values 6) |
+| `pull_ahead_transverse`, `pull_ahead_longitudinal` | The same of the ahead spans | yes (line values 6) |
 
 The two structure winds are the load case's own values for the
 structures when its `.ohllc` gives them (`[case.structure]`,
@@ -402,6 +462,8 @@ points = "all"
 
 The same `[[load_case]]` tables as in the structure file; `format` and
 `version` as in every OpenOHL file. **Versions**: a `.ohlslc` is written
+at 4 when a case's line forces give `back` or `ahead` (or an older load
+takes a `pull_…` value; a structure file is then version 10), else
 at 3 when a case has the parts (line forces, loads on the structure
 itself), else at 2 when an older load takes the line's `structure_wind`,
 else at 1; a structure file with the parts is version 7 (OHL-Structure

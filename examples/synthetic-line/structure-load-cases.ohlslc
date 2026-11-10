@@ -3,9 +3,10 @@
 # imported into another. Values are invented; they only show the format.
 # Each case has its line forces (a line result of the line: a weather
 # case, a wind case twice) with a factor per axis, and the loads on the
-# structure itself; the last case is in the older form (still read).
+# structure itself; one case takes a share of the back and ahead spans'
+# pull (version 4); the last case is in the older form (still read).
 format = "ohl-structure-load-cases"
-version = 3
+version = 4
 name = "Synthetic example structure load cases"
 
 [[load_case]]
@@ -64,6 +65,21 @@ self_weight = 1.1
 value = "1.5 kN"
 direction = "down"
 points = "all"
+
+[[load_case]]
+name = "unbalanced pull, set 1"
+description = """Invented shares, NOT from any code: the wires of set 1 pull with 5 % of
+their solved horizontal pull from the back spans and nothing from the ahead spans.
+A load assumption, not an equilibrium state (said in the load table)."""
+
+[[load_case.line]]
+result = "everyday"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+sets = [1]
+back = 5.0    # percent of the back spans' solved horizontal pull (absent: 100)
+ahead = 0.0   # percent of the ahead spans' (0: none)
 
 [[load_case]]
 name = "one-sided pull"

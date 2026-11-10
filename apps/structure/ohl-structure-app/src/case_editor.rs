@@ -75,6 +75,93 @@ fn shown(x: f64) -> String {
     t.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
+/// The headers of the line forces grid, with their hovers.
+const LINE_FORCES_HEADERS: [(&str, &str); 9] = [
+    (
+        "Line result",
+        "The line result (a weather case; a wind case twice)",
+    ),
+    ("Vertical", "Factor on the vertical forces (down)"),
+    (
+        "Transverse",
+        "Factor on the transverse forces (right of the line)",
+    ),
+    ("Longitudinal", "Factor on the longitudinal forces (ahead)"),
+    (
+        "At",
+        "Every point, or the points of these sets (numbers, ;)",
+    ),
+    ("Back %", BACK_SHARE_HOVER),
+    ("Ahead %", AHEAD_SHARE_HOVER),
+    (
+        "Points",
+        "A tick per attachment point: its line forces on or off",
+    ),
+    ("", ""),
+];
+
+/// What "back spans %" does to the results.
+const BACK_SHARE_HOVER: &str = "Back spans %: the wires' horizontal pull from the back spans is taken at this \
+     share of the solved pull — 100 (or empty): as solved; 0: none; e.g. 5: 5 % of it. The \
+     vertical load, the wind across the spans and the jumpers stay; the factors apply after. A \
+     load assumption, not an equilibrium state and not on the safe side by itself (the real \
+     one-sided pull with swinging strings can be smaller or larger): said in the load table \
+     and the results. Back: the span before the point in its section's order. Needs the pulls \
+     from the line (OHL-Design; else the rows have no value). No extra solve time: the line is \
+     not solved again.";
+
+/// What "ahead spans %" does to the results.
+const AHEAD_SHARE_HOVER: &str = "Ahead spans %: the wires' horizontal pull from the ahead spans is taken at \
+     this share of the solved pull — 100 (or empty): as solved; 0: none; e.g. 5: 5 % of it. The \
+     vertical load, the wind across the spans and the jumpers stay; the factors apply after. A \
+     load assumption, not an equilibrium state and not on the safe side by itself (the real \
+     one-sided pull with swinging strings can be smaller or larger): said in the load table \
+     and the results. Ahead: the span after the point in its section's order. Needs the pulls \
+     from the line (OHL-Design; else the rows have no value). No extra solve time: the line is \
+     not solved again.";
+
+/// A share of the spans' pull typed, percent: empty — none given (100);
+/// else a number of 0 or more.
+fn span_share(typed: &str, side: &str) -> Result<Option<f64>, String> {
+    let t = typed.trim().trim_end_matches('%').trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    match t.parse::<f64>() {
+        Ok(x) if x.is_finite() && x >= 0.0 => Ok(Some(x)),
+        _ => Err(format!(
+            "{side} spans %: \"{t}\" is not a share in percent (0 or more; empty: 100, as solved)"
+        )),
+    }
+}
+
+/// The two cells of a line forces row for the shares of the spans' pull
+/// ("back spans %", "ahead spans %"; empty: 100): the side edited and its
+/// share, or why what was typed is none.
+fn span_share_cells(
+    ui: &mut egui::Ui,
+    buffers: &mut std::collections::HashMap<String, (String, String)>,
+    k: usize,
+    i: usize,
+    l: &LineForces,
+) -> Option<Result<(&'static str, Option<f64>), String>> {
+    let mut out = None;
+    for (side, value) in [("back", l.back), ("ahead", l.ahead)] {
+        let typed = cell(
+            ui,
+            buffers,
+            format!("line/{k}/{i}/{side}"),
+            &value.map(shown).unwrap_or_default(),
+            50.0,
+            "100",
+        );
+        if let Some(t) = typed {
+            out = Some(span_share(&t, side).map(|share| (side, share)));
+        }
+    }
+    out
+}
+
 /// Set numbers typed (`1; 2`, `1, 2`; empty: none).
 fn sets(typed: &str) -> Result<Vec<u32>, String> {
     typed
@@ -631,27 +718,7 @@ impl StructureApp {
         egui::Grid::new(("line-forces-grid", k))
             .striped(true)
             .show(ui, |ui| {
-                for h in [
-                    (
-                        "Line result",
-                        "The line result (a weather case; a wind case twice)",
-                    ),
-                    ("Vertical", "Factor on the vertical forces (down)"),
-                    (
-                        "Transverse",
-                        "Factor on the transverse forces (right of the line)",
-                    ),
-                    ("Longitudinal", "Factor on the longitudinal forces (ahead)"),
-                    (
-                        "At",
-                        "Every point, or the points of these sets (numbers, ;)",
-                    ),
-                    (
-                        "Points",
-                        "A tick per attachment point: its line forces on or off",
-                    ),
-                    ("", ""),
-                ] {
+                for h in LINE_FORCES_HEADERS {
                     ui.strong(h.0).on_hover_text(h.1);
                 }
                 ui.end_row();
@@ -727,6 +794,18 @@ impl StructureApp {
                             }
                             Err(e) => self.message = Some((format!("sets: {e}"), true)),
                         }
+                    }
+                    match span_share_cells(ui, buffers, k, i, l) {
+                        Some(Ok((side, share))) => {
+                            let r = &mut next.line[i];
+                            match side {
+                                "back" => r.back = share,
+                                _ => r.ahead = share,
+                            }
+                            change = Some((format!("{side} spans' share"), next.clone(), PARTS));
+                        }
+                        Some(Err(e)) => self.message = Some((e, true)),
+                        None => {}
                     }
                     let mut toggled: Option<String> = None;
                     crate::layout::options_menu(
@@ -1360,5 +1439,35 @@ impl StructureApp {
             Some((_, Ok(()))) => self.message = None,
             None => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod share_tests {
+    use super::*;
+
+    /// What is typed in "back spans %" / "ahead spans %": empty is none
+    /// given (100, as solved), a number of 0 or more a share in percent (a
+    /// trailing % allowed); anything else is refused, saying which side.
+    #[test]
+    fn a_share_typed() {
+        assert_eq!(span_share("", "back"), Ok(None));
+        assert_eq!(span_share("  ", "ahead"), Ok(None));
+        assert_eq!(span_share("5", "back"), Ok(Some(5.0)));
+        assert_eq!(span_share("0", "ahead"), Ok(Some(0.0)));
+        assert_eq!(span_share("12.5 %", "back"), Ok(Some(12.5)));
+        assert_eq!(span_share("150", "back"), Ok(Some(150.0)));
+        for bad in ["-1", "nan", "inf", "five"] {
+            let e = span_share(bad, "ahead").unwrap_err();
+            assert!(e.starts_with("ahead spans %"), "{e}");
+        }
+        // The hovers say the effect and the cost.
+        for h in [BACK_SHARE_HOVER, AHEAD_SHARE_HOVER] {
+            assert!(h.contains("share of the solved pull"));
+            assert!(h.contains("not an equilibrium"));
+            assert!(h.contains("No extra solve time"));
+        }
+        assert_eq!(LINE_FORCES_HEADERS[5].0, "Back %");
+        assert_eq!(LINE_FORCES_HEADERS[6].0, "Ahead %");
     }
 }

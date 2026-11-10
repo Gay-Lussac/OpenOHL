@@ -133,8 +133,28 @@ impl Part {
     }
 }
 
+/// What every line forces table taking a share of the spans' pull
+/// (`back`, `ahead`) says of itself, after "NOT ON THE SAFE SIDE: " — in
+/// its rows' notes, the case's sentence, the runs and the reports.
+pub const SPAN_SHARE_ASSUMPTION: &str = "the back/ahead spans' horizontal pull taken as a share \
+     of the solved pull is a load ASSUMPTION, not an equilibrium state — the real one-sided \
+     pull, with the strings swinging and the wires' tensions changing, can be smaller or larger \
+     (the exact treatment: solve the line with the one-sided condition)";
+
 /// Line forces (part 1): a line result's forces at the attachment points
-/// (unfactored, as the line sends them), a factor on each axis.
+/// (unfactored, as the line sends them), a factor on each axis — and,
+/// since version 4 (owner, 2026-11-10), the share of the back and of the
+/// ahead spans' horizontal pull taken (`back`, `ahead`, percent). Per
+/// point, before the factors:
+///
+/// force(T, L) = sent(T, L) − (1 − back/100)·pull_back(T, L)
+///             − (1 − ahead/100)·pull_ahead(T, L); vertical as sent.
+///
+/// The pulls are the line's ([`LineQuantity::PULL_BACK`],
+/// [`LineQuantity::PULL_AHEAD`]: the solved horizontal pull of each side's
+/// spans along the span); the wind across the spans, the vertical load and
+/// the jumpers stay. A load assumption, not an equilibrium state
+/// ([`SPAN_SHARE_ASSUMPTION`]); it costs no solve.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LineForces {
@@ -156,6 +176,14 @@ pub struct LineForces {
     /// the line with a conductor removed).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub off: Vec<String>,
+    /// The share of the back spans' solved horizontal pull taken,
+    /// percent (0 or more; none: 100, as solved; 0: none of it; above 100
+    /// allowed, noted). Version 4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub back: Option<f64>,
+    /// The same of the ahead spans.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ahead: Option<f64>,
 }
 
 impl LineForces {
@@ -168,7 +196,28 @@ impl LineForces {
             longitudinal: 1.0,
             sets: Vec::new(),
             off: Vec::new(),
+            back: None,
+            ahead: None,
         }
+    }
+
+    /// Whether `back` or `ahead` is given, whatever the value (the file
+    /// is then of version 4).
+    pub fn uses_span_shares(&self) -> bool {
+        self.back.is_some() || self.ahead.is_some()
+    }
+
+    /// Whether it changes the spans' pull (a share given that is not
+    /// 100 %): a load assumption, said so wherever it shows
+    /// ([`SPAN_SHARE_ASSUMPTION`]). 100 % is the force as solved.
+    pub fn scales_span_pull(&self) -> bool {
+        self.span_reductions() != [0.0; 2]
+    }
+
+    /// The part of the back and of the ahead spans' pull taken **off**
+    /// the force sent: 1 − percent/100 each (none given: 0, nothing off).
+    pub fn span_reductions(&self) -> [f64; 2] {
+        [self.back, self.ahead].map(|p| p.map_or(0.0, |p| 1.0 - p / 100.0))
     }
 
     /// The factors in the table's order: transverse, longitudinal,
@@ -188,6 +237,16 @@ impl LineForces {
         ] {
             if !f.is_finite() {
                 return Err(format!("{what} factor {f}"));
+            }
+        }
+        for (what, p) in [("back", self.back), ("ahead", self.ahead)] {
+            if let Some(p) = p
+                && !(p.is_finite() && p >= 0.0)
+            {
+                return Err(format!(
+                    "{what} = {p}: the share of the {what} spans' solved pull in percent, 0 or \
+                     more (100: as solved, 0: none)"
+                ));
             }
         }
         for (k, p) in self.off.iter().enumerate() {
@@ -790,7 +849,29 @@ pub fn line_forces_text(l: &LineForces) -> String {
     if !l.off.is_empty() {
         s.push_str(&format!(" (without {})", l.off.join(", ")));
     }
+    if l.uses_span_shares() {
+        s.push_str(&format!("; {}", span_share_text(l)));
+    }
     s
+}
+
+/// The shares of the spans' pull a line forces table takes, in words:
+/// "back spans' pull at 5 %, ahead spans' pull at 0 % of the solved pull"
+/// (a share above 100 % said).
+pub fn span_share_text(l: &LineForces) -> String {
+    let side = |what: &str, p: Option<f64>| {
+        let p = p.unwrap_or(100.0);
+        format!(
+            "{what} spans' pull at {} %{}",
+            plain(p),
+            if p > 100.0 { " (above 100 %)" } else { "" }
+        )
+    };
+    format!(
+        "{}, {} of the solved pull",
+        side("back", l.back),
+        side("ahead", l.ahead)
+    )
 }
 
 /// A body wind in words: "wind on the body from the left, 650 Pa × 1.5".

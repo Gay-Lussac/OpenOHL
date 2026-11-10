@@ -1165,6 +1165,7 @@ pub(crate) mod tests {
             earthing_resistance_ohm: None,
             local: Default::default(),
             load_cases: Vec::new(),
+            no_load_cases: false,
             fields: Default::default(),
         };
         let mut st = st;

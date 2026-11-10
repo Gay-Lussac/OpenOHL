@@ -18,13 +18,16 @@ use crate::parts::{LineForces, OwnLoads, PART_BLOCK};
 
 /// `format` of a structure load-case file.
 pub const STRUCTURE_LOAD_CASE_FILE_FORMAT: &str = "ohl-structure-load-cases";
-/// Newest format version read. Version 3 adds a case's two parts (owner,
+/// Newest format version read. Version 4 (owner, 2026-11-10) adds the
+/// shares of the back and ahead spans' pull a case's line forces take
+/// (`back`, `ahead` of `[[load_case.line]]`, percent) and the line
+/// quantities of those pulls (`pull_back_transverse`, …). Version 3 adds a case's two parts (owner,
 /// 2026-10-25): line forces (`[[load_case.line]]`) and loads on the
 /// structure itself (`[load_case.structure]`). Version 2 adds the line
 /// quantities `structure_wind` and `structure_wind_factored` (a surface
 /// load taking the line case's wind on the structure body). A file is
 /// written at the lowest version its cases need ([`written_version`]).
-pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 3;
+pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 4;
 /// File extension of structure load-case files.
 pub const STRUCTURE_LOAD_CASE_FILE_EXTENSION: &str = "ohlslc";
 /// The case today's `[[load]]` (nodal forces) is read as.
@@ -77,11 +80,25 @@ pub enum LineQuantity {
     /// `[case.structure]` factor, else its transverse factor): the
     /// pressure the line's own structure checks put on the body.
     StructureWindFactored,
+    /// The horizontal pull of the wires' back spans on the point, along
+    /// each span, its part across the line (to the right), unfactored
+    /// (line-values file version 6, 2026-11-10): a share of `transverse`,
+    /// not a force added to it. "Back": the span before the point in its
+    /// section's order of points; a section starting there has none (0).
+    PullBackTransverse,
+    /// The same, its part along the line (ahead positive: a back span on
+    /// a straight line pulls back, negative).
+    PullBackLongitudinal,
+    /// The pull of the ahead spans (the span after the point in its
+    /// section's order), its part across the line.
+    PullAheadTransverse,
+    /// The same, its part along the line.
+    PullAheadLongitudinal,
 }
 
 impl LineQuantity {
     /// Every quantity.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 17] = [
         Self::Transverse,
         Self::Longitudinal,
         Self::Vertical,
@@ -95,7 +112,17 @@ impl LineQuantity {
         Self::Ice,
         Self::StructureWind,
         Self::StructureWindFactored,
+        Self::PullBackTransverse,
+        Self::PullBackLongitudinal,
+        Self::PullAheadTransverse,
+        Self::PullAheadLongitudinal,
     ];
+
+    /// The spans' pulls a line forces' `back` share scales: transverse,
+    /// longitudinal.
+    pub const PULL_BACK: [Self; 2] = [Self::PullBackTransverse, Self::PullBackLongitudinal];
+    /// The spans' pulls a line forces' `ahead` share scales.
+    pub const PULL_AHEAD: [Self; 2] = [Self::PullAheadTransverse, Self::PullAheadLongitudinal];
 
     /// The name in files.
     pub fn as_str(self) -> &'static str {
@@ -113,6 +140,10 @@ impl LineQuantity {
             Self::Ice => "ice",
             Self::StructureWind => "structure_wind",
             Self::StructureWindFactored => "structure_wind_factored",
+            Self::PullBackTransverse => "pull_back_transverse",
+            Self::PullBackLongitudinal => "pull_back_longitudinal",
+            Self::PullAheadTransverse => "pull_ahead_transverse",
+            Self::PullAheadLongitudinal => "pull_ahead_longitudinal",
         }
     }
 
@@ -125,6 +156,18 @@ impl LineQuantity {
     /// not a force at a point.
     pub fn is_pressure(self) -> bool {
         matches!(self, Self::StructureWind | Self::StructureWindFactored)
+    }
+
+    /// The horizontal pull of the back or ahead spans (line-values file
+    /// version 6; a structure load-case file naming one is version 4).
+    pub fn is_span_pull(self) -> bool {
+        matches!(
+            self,
+            Self::PullBackTransverse
+                | Self::PullBackLongitudinal
+                | Self::PullAheadTransverse
+                | Self::PullAheadLongitudinal
+        )
     }
 
     /// A wire tension (acts along the line, towards its span).
@@ -143,12 +186,16 @@ impl LineQuantity {
             | Self::TransverseFactored
             | Self::WireWind
             | Self::StructureWind
-            | Self::StructureWindFactored => 0,
+            | Self::StructureWindFactored
+            | Self::PullBackTransverse
+            | Self::PullAheadTransverse => 0,
             Self::Longitudinal
             | Self::LongitudinalFactored
             | Self::TensionBack
             | Self::TensionAhead
-            | Self::TensionMax => 1,
+            | Self::TensionMax
+            | Self::PullBackLongitudinal
+            | Self::PullAheadLongitudinal => 1,
             Self::Vertical | Self::VerticalFactored | Self::Ice => 2,
         }
     }
@@ -554,6 +601,16 @@ impl LoadCaseRecipe {
         !self.line.is_empty() || self.structure.is_some()
     }
 
+    /// It needs version 4: line forces taking a share of the back or
+    /// ahead spans' pull, or an older load taking one of those pulls.
+    pub fn uses_span_pulls(&self) -> bool {
+        self.line.iter().any(LineForces::uses_span_shares)
+            || self
+                .loads
+                .iter()
+                .any(|l| l.what.is_some_and(LineQuantity::is_span_pull))
+    }
+
     /// The case as the TOML text of its `[[load_case]]` table (its keys at
     /// the top: `name`, `[[line]]`, `[structure]`, `[[load]]`, …), loads on
     /// the structure itself with nothing in them left out — what an edit
@@ -621,10 +678,14 @@ impl LoadCaseRecipe {
 }
 
 /// The version a structure load-case file holding `cases` is written at:
+/// 4 when a case takes a share of the spans' pull (`back`, `ahead`, or a
+/// load of a `pull_…` quantity), else
 /// 3 when a case has the parts (line forces, loads on the structure
 /// itself), else 2 when a load takes a structure wind of the line, else 1.
 pub fn written_version(cases: &[LoadCaseRecipe]) -> u32 {
-    if cases.iter().any(LoadCaseRecipe::has_parts) {
+    if cases.iter().any(LoadCaseRecipe::uses_span_pulls) {
+        4
+    } else if cases.iter().any(LoadCaseRecipe::has_parts) {
         3
     } else if cases
         .iter()

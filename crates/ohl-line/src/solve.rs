@@ -104,6 +104,20 @@ pub struct SpanShape {
     /// The most the wire lies off the polyline `points`, m
     /// ([`polyline_error`]).
     pub polyline_error: f64,
+    /// The wire's pull on each of the span's two end clamps, N (a vector,
+    /// line axes, the whole bundle's): on the clamp at its back end, then
+    /// on the clamp at its ahead end — the force the span's wire puts on
+    /// that clamp (towards the span, and down by the wire's weight it
+    /// carries there). An output only: nothing of the solve reads it.
+    ///
+    /// Finite elements: the end force of the span's first and last
+    /// catenary element as solved (exact; the two spans' pulls at a clamp
+    /// add up to [`SectionShape::pulls`] there). Ruling span: by its own
+    /// model — the span's end tension along the end tangent of its curve
+    /// (the catenary of the one horizontal tension in the plane of its
+    /// load), the clamps where they hang in still air at stringing: not an
+    /// equilibrium with the strings. A broken or removed span: zeros.
+    pub end_pulls: [Point; 2],
 }
 
 /// The most a catenary through `points` lies off their polyline, m: the
@@ -2897,6 +2911,7 @@ fn solve_fe(
                 sag: 0.0,
                 surface_radius: 0.0,
                 polyline_error: 0.0,
+                end_pulls: [[0.0; 3]; 2],
             });
             continue;
         }
@@ -2951,6 +2966,15 @@ fn solve_fe(
             mid_point: p(mid),
             low_point: p(low),
             sag,
+            // The whole bundle's (the model is one subconductor).
+            end_pulls: {
+                let n = f64::from(section.bundle.max(1));
+                let last = elements[elements.len() - 1];
+                [
+                    p(solution.cables[elements[0]].force_i * n),
+                    p(solution.cables[last].force_j * n),
+                ]
+            },
         });
     }
     // Forces of the whole bundle (the model is one subconductor).

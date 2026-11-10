@@ -158,7 +158,12 @@ ohl-structure Structures/type-02.ohls --structure T2 \
 - **Line loads** lists, with each case's **source** (load case, or a
   weather case sent on its own: factored = unfactored), the line's values per point (with its sets and
   phases) and load case: transverse, longitudinal, vertical, unfactored
-  and factored by the line's load case, in kN. **Other places of this
+  and factored by the line's load case, in kN, and (2026-11-10) the
+  horizontal pull of its back and of its ahead spans, across and along
+  the line (*back pull T / L*, *ahead pull T / L*: shares of the
+  unfactored force, [Structure load
+  cases](structure-load-cases.md#a-share-of-the-spans-pull-back-ahead);
+  "—" from line values older than version 6). **Other places of this
   structure** lists the other placed structures of the same type with
   the governing (largest) factored value per point and direction and its
   case — for comparison only: each place keeps its own loads.
@@ -1152,7 +1157,14 @@ case on the right:
   **line result** (a list of those the line sent, each with its weather
   case's wind on hover; opened on its own, typed by name), the
   **vertical**, **transverse** and **longitudinal** factors, **at**
-  (empty: every point, or set numbers), **Points (n off)** — a tick per
+  (empty: every point, or set numbers), **Back %** and **Ahead %**
+  (2026-11-10; empty: 100) — the share of the back and of the ahead
+  spans' solved horizontal pull the case takes: 100 as solved, 0 none;
+  the vertical load and the wind across the spans stay; a load
+  assumption, not an equilibrium state (the rows and the results say
+  "NOT ON THE SAFE SIDE"); no extra solve time ([Structure load
+  cases](structure-load-cases.md#a-share-of-the-spans-pull-back-ahead))
+  —, **Points (n off)** — a tick per
   attachment point (its label, sets and phases) turning its line forces
   on or off; the menu stays open on a tick — and 🗑; **Add line forces**.
   Without line results a line says where they come from (OHL-Design ›

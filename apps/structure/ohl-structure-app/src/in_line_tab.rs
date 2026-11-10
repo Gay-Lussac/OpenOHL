@@ -14,8 +14,12 @@ use ohl_structure_loads::{LineQuantity, LineValues};
 
 use crate::app::{StructureApp, error_label};
 
-/// The six values per point and case, in the table's order.
-const QUANTITIES: [(LineQuantity, &str, &str); 6] = [
+/// What the spans' pulls are, for their columns' hovers.
+const PULL_TIP: &str = "The horizontal pull of the wires' spans on this side of the point, along      each span, unfactored: a share of the transverse / longitudinal force (not added to it).      Back: the span before the point in its section's order; ahead: the span after it. A load      case's line forces can take a share of it (back spans %, ahead spans %). —: an older      line-values file without them.";
+
+/// The values per point and case, in the table's order: the forces,
+/// unfactored and factored, then the spans' pulls (line-values file 6).
+const QUANTITIES: [(LineQuantity, &str, &str); 10] = [
     (
         LineQuantity::Transverse,
         "transverse [kN]",
@@ -37,6 +41,26 @@ const QUANTITIES: [(LineQuantity, &str, &str); 6] = [
         LineQuantity::VerticalFactored,
         "vertical × [kN]",
         "Factored",
+    ),
+    (
+        LineQuantity::PullBackTransverse,
+        "back pull T [kN]",
+        PULL_TIP,
+    ),
+    (
+        LineQuantity::PullBackLongitudinal,
+        "back pull L [kN]",
+        PULL_TIP,
+    ),
+    (
+        LineQuantity::PullAheadTransverse,
+        "ahead pull T [kN]",
+        PULL_TIP,
+    ),
+    (
+        LineQuantity::PullAheadLongitudinal,
+        "ahead pull L [kN]",
+        PULL_TIP,
     ),
 ];
 

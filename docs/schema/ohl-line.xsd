@@ -524,6 +524,11 @@
                 <xs:documentation>Resistance of the structure's earthing (footing) to remote earth, ohms (2026-10-29); absent: the line's (electrical), else 10 ohms assumed.</xs:documentation>
               </xs:annotation>
             </xs:attribute>
+            <xs:attribute name="no_load_cases" type="xs:boolean" default="false">
+              <xs:annotation>
+                <xs:documentation>The structure takes no load case (version 14, 2026-11-10): no case of the load case library is computed or checked for it, and it is listed as taking none. Not together with load_case elements (refused).</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
 

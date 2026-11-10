@@ -989,6 +989,23 @@ pub struct AttachmentLoad {
     /// longitudinal, vertical) — with `"every"`, the span whose break
     /// gives the largest; none: no broken wire.
     pub broken_span: Option<[usize; 3]>,
+    /// The horizontal pull of the wires' **back spans** on the point,
+    /// along each span, in the structure's axes (transverse, longitudinal),
+    /// N, unfactored (2026-11-10): for every section held there, the
+    /// part along the span (in plan, clamp to clamp) of the end pull
+    /// (`ohl_line::solve::SpanShape::end_pulls`) of the span **before**
+    /// the point in the section's order of points — a share of
+    /// [`AttachmentLoad::local`], not a load added to it. A section
+    /// starting at the point has no back span (nothing from it); a clamp
+    /// held from several points of the structure (a V) shares its pull
+    /// equally between them (the sum over the points is the pull); zeros
+    /// from the ruling span and for a broken span. The wind across the
+    /// span, the vertical load and the jumpers are not in it. What a
+    /// structure load case's `back` percentage scales (OHL-Structure).
+    pub pull_back: [f64; 2],
+    /// The same of the spans **after** the point in each section's order
+    /// (the ahead spans).
+    pub pull_ahead: [f64; 2],
 }
 
 /// The loads of a load case.
@@ -1211,6 +1228,11 @@ pub fn missing_wires(line: &Line, kind: WireKind, id: &str, reason: &str) -> Vec
         .collect()
 }
 
+/// What is said of a structure that takes no load case
+/// (`ohl_line::Structure::no_load_cases`), wherever loads and checks are
+/// listed per structure.
+pub const TAKES_NO_LOAD_CASE: &str = "takes no load case";
+
 /// The default exit clauses of one section solve.
 pub fn default_budget() -> Budget {
     ohl_wirefe::default_fe_budget()
@@ -1242,7 +1264,12 @@ use ohl_line::links::axes;
 /// local conditions for strength (`ohl_line::local::localized`). Each
 /// structure takes only the cases of its set
 /// ([`ohl_line::Line::load_cases_for`]): the loads of a structure not
-/// taking a case are left out of that case. A case with ice on the
+/// taking a case are left out of that case, and a structure taking no
+/// load case at all (`ohl_line::Structure::no_load_cases`, 2026-11-10)
+/// has none in any — said in every case's notes
+/// ([`TAKES_NO_LOAD_CASE`]). Each load at a point carries the horizontal
+/// pull of its back and ahead spans ([`AttachmentLoad::pull_back`],
+/// [`AttachmentLoad::pull_ahead`]; an output only, 2026-11-10). A case with ice on the
 /// structures and no density fails as a whole. What was assumed is in
 /// [`CaseLoads::notes`].
 ///
@@ -1458,7 +1485,7 @@ pub fn structure_loads(
                 .iter()
                 .map(|l: &AttachmentLoad| l.structure.as_str())
                 .chain(missing.iter().map(|m| m.structure.as_str()))
-                .filter(|s| !takes(s))
+                .filter(|s| !takes(s) && !line.takes_no_load_case(s))
                 .collect();
             out_of.sort_unstable();
             out_of.dedup();
@@ -1474,6 +1501,15 @@ pub fn structure_loads(
             for b in &mut each {
                 b.loads.retain(|l| takes(&l.structure));
             }
+        }
+        // Structures taking no load case at all: said with every case.
+        let none = line.structures_without_load_cases();
+        if !none.is_empty() {
+            notes.push(format!(
+                "{TAKES_NO_LOAD_CASE} ({} structure(s): no loads computed, no check made): {}",
+                none.len(),
+                none.join(", ")
+            ));
         }
         if case.ices_or_snows(w) {
             notes.push(
@@ -1642,6 +1678,11 @@ fn envelope(e: &mut AttachmentLoad, l: &AttachmentLoad, line: &Line) {
             e.factored[i] = l.factored[i];
             e.local[i] = l.local[i];
             kept[i] = theirs[i];
+            // The spans' pulls of the break giving the component.
+            if i < 2 {
+                e.pull_back[i] = l.pull_back[i];
+                e.pull_ahead[i] = l.pull_ahead[i];
+            }
         }
     }
     e.broken_span = Some(kept);
@@ -1720,6 +1761,7 @@ fn case_loads(
     };
 
     let mut solved = Vec::with_capacity(results.len());
+    let mut pulls: Vec<PointPulls> = Vec::new();
     for (section, result) in line.sections.iter().zip(results) {
         let shape = match result {
             Ok(shape) => shape,
@@ -1734,7 +1776,12 @@ fn case_loads(
                 continue;
             }
         };
-        for (point, supports) in section.points.iter().zip(&shape.attachment_loads) {
+        for (k, (point, supports)) in section
+            .points
+            .iter()
+            .zip(&shape.attachment_loads)
+            .enumerate()
+        {
             let structure = line.structure(&point.structure);
             // The sets hanging on the same strings.
             let sets: Vec<u32> = structure
@@ -1749,6 +1796,13 @@ fn case_loads(
                     )
                 })
                 .unwrap_or_else(|| vec![point.set]);
+            pulls.push(PointPulls {
+                structure: point.structure.clone(),
+                set: point.set,
+                sets: sets.clone(),
+                labels: supports.iter().map(|s| s.label.clone()).collect(),
+                pulls: span_pulls(&shape, k),
+            });
             for support in supports {
                 let place = Place {
                     structure: &point.structure,
@@ -1877,7 +1931,102 @@ fn case_loads(
             l.broken_span = span_of;
         }
     }
+    add_span_pulls(&mut at, line, &pulls);
     (at, failed, missing)
+}
+
+/// The spans' horizontal pulls on one section point's clamp, for
+/// [`AttachmentLoad::pull_back`] and [`AttachmentLoad::pull_ahead`].
+struct PointPulls {
+    structure: String,
+    /// The section point's set.
+    set: u32,
+    /// The sets hanging on the same strings.
+    sets: Vec<u32>,
+    /// The structure points the section reports its loads at there (none:
+    /// another section sharing the strings reports them).
+    labels: Vec<String>,
+    /// Back, ahead: line axes (x, y), N.
+    pulls: [[f64; 2]; 2],
+}
+
+/// The horizontal pull on the clamp of section point `k` of `shape` from
+/// the span before it and from the span after it (back, ahead; line axes
+/// x, y; N, the whole bundle's): of each span's end pull
+/// (`ohl_line::solve::SpanShape::end_pulls`) the part along the span in
+/// plan, clamp to clamp — the wind across the span and the vertical load
+/// are not in it. A section end has one side only (the other zero); a
+/// broken span pulls nothing.
+fn span_pulls(shape: &ohl_line::solve::SectionShape, k: usize) -> [[f64; 2]; 2] {
+    let along = |pull: Point, here: Point, there: Point| {
+        let d = [there[0] - here[0], there[1] - here[1]];
+        let n = d[0].hypot(d[1]);
+        if n <= 0.0 {
+            return [0.0; 2];
+        }
+        let u = [d[0] / n, d[1] / n];
+        let size = pull[0] * u[0] + pull[1] * u[1];
+        [size * u[0], size * u[1]]
+    };
+    let clamp = |i: usize| shape.clamps.get(i).copied();
+    let back = k
+        .checked_sub(1)
+        .and_then(|b| Some((shape.spans.get(b)?, clamp(k)?, clamp(b)?)))
+        .map_or([0.0; 2], |(span, here, there)| {
+            along(span.end_pulls[1], here, there)
+        });
+    let ahead = shape
+        .spans
+        .get(k)
+        .and_then(|span| Some((span, clamp(k)?, clamp(k + 1)?)))
+        .map_or([0.0; 2], |(span, here, there)| {
+            along(span.end_pulls[0], here, there)
+        });
+    [back, ahead]
+}
+
+/// Puts the spans' pulls on the loads of the points holding their clamps
+/// ([`AttachmentLoad::pull_back`], [`AttachmentLoad::pull_ahead`]; in the
+/// structure's axes): each clamp's shared equally between the structure
+/// points its section reports its loads at, or — a section sharing its
+/// strings with one that reports them (a TAK) — between that one's.
+fn add_span_pulls(
+    at: &mut BTreeMap<(String, String), AttachmentLoad>,
+    line: &Line,
+    pulls: &[PointPulls],
+) {
+    for p in pulls {
+        if p.pulls == [[0.0; 2]; 2] {
+            continue;
+        }
+        let labels = if p.labels.is_empty() {
+            pulls
+                .iter()
+                .find(|o| {
+                    o.structure == p.structure && !o.labels.is_empty() && o.sets.contains(&p.set)
+                })
+                .map_or(&p.labels, |o| &o.labels)
+        } else {
+            &p.labels
+        };
+        let (right, ahead) = axes(
+            line.structure(&p.structure)
+                .map_or(0.0, |s| s.orientation_deg),
+        );
+        let share = 1.0 / labels.len().max(1) as f64;
+        for label in labels {
+            let Some(e) = at.get_mut(&(p.structure.clone(), label.clone())) else {
+                continue;
+            };
+            for (sum, f) in [
+                (&mut e.pull_back, p.pulls[0]),
+                (&mut e.pull_ahead, p.pulls[1]),
+            ] {
+                sum[0] += share * (f[0] * right[0] + f[1] * right[1]);
+                sum[1] += share * (f[0] * ahead[0] + f[1] * ahead[1]);
+            }
+        }
+    }
 }
 
 /// A point of a structure a load acts at.
@@ -1915,6 +2064,8 @@ fn add(
             local: [0.0; 3],
             factored: [0.0; 3],
             broken_span: None,
+            pull_back: [0.0; 2],
+            pull_ahead: [0.0; 2],
         });
     if !e.sections.iter().any(|s| s == source) {
         e.sections.push(source.to_owned());
@@ -2032,6 +2183,8 @@ pub fn add_structure_wind(
                     factored: [local[0] * body.factor, local[1] * body.factor, 0.0],
 
                     broken_span: None,
+                    pull_back: [0.0; 2],
+                    pull_ahead: [0.0; 2],
                 });
             }
         }
@@ -2093,3 +2246,6 @@ mod v4_tests;
 
 #[cfg(test)]
 mod local_tests;
+
+#[cfg(test)]
+mod pull_tests;

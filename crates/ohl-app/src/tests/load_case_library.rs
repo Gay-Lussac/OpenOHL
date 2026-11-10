@@ -327,3 +327,48 @@ fn the_loads_window_shows_ice_rows_and_the_cases_notes() {
     );
     h.get_by_label_contains("no snow on the ground given");
 }
+
+/// A structure's Load cases › **none** (owner 2026-11-10): one command
+/// (one undo) — the structure takes no load case, the Structures table
+/// says so, and "as its type" gives it its cases back.
+#[test]
+fn a_structure_can_take_no_load_case() {
+    let mut h = app(synthetic_project("lc-none"));
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.select(Selection::Structure("T2".into()));
+    }
+    h.run();
+    h.get_by_label("none").click();
+    h.run();
+    let cell = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let rows = crate::tables::TableKind::Structures.rows(&r.model, r.case);
+        let row = rows.iter().find(|x| x.key == "T2").unwrap();
+        row.cells[crate::tables::TableKind::Structures.column("load cases")].clone()
+    };
+    {
+        let m = &h.state_mut().ready().unwrap().model;
+        assert!(m.line.structure("T2").unwrap().no_load_cases);
+        assert!(!m.line.takes_load_case("T2", "wind"));
+        assert!(m.line.takes_load_case("T1", "wind"));
+    }
+    assert_eq!(cell(&mut h), crate::load_case_sets::NO_CASE);
+    h.get_by_label_contains("Takes no load case");
+    h.get_by_label_contains("as its type").click();
+    h.run();
+    assert!(
+        !h.state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .structure("T2")
+            .unwrap()
+            .no_load_cases
+    );
+    assert_eq!(cell(&mut h), "every case");
+    // One undo: none again.
+    h.state_mut().ready().unwrap().model.undo().unwrap();
+    assert_eq!(cell(&mut h), crate::load_case_sets::NO_CASE);
+}

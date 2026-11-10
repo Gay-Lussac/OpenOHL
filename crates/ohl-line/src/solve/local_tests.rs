@@ -398,3 +398,148 @@ fn local_ice_loads_its_span() {
         base.spans[0].sag
     );
 }
+
+/// The sum of a section point's two end pulls (the span before it at its
+/// ahead end, the span after it at its back end).
+fn end_pulls_at(s: &SectionShape, k: usize) -> Vector3<f64> {
+    let mut sum = Vector3::zeros();
+    if k > 0 {
+        sum += v(s.spans[k - 1].end_pulls[1]);
+    }
+    if k < s.spans.len() {
+        sum += v(s.spans[k].end_pulls[0]);
+    }
+    sum
+}
+
+/// The spans' end pulls ([`SpanShape::end_pulls`], 2026-11-10) on the two
+/// level 300 m spans, still air. The identities the solve's own outputs
+/// allow:
+///
+/// - at every clamp the two spans' end pulls add up to the wires' pull on
+///   it ([`SectionShape::pulls`], from the strings' side of the clamp's
+///   equilibrium);
+/// - at the suspension string (T2) their horizontal parts balance the
+///   string's horizontal force — here both zero, the string plumb, and
+///   each span's horizontal pull is its horizontal tension, towards its
+///   span (−x back, +x ahead);
+/// - at a dead end (T1, T3) the single pull's horizontal part is the
+///   span's solved horizontal tension, along the span;
+/// - the load on T2 ([`SectionShape::attachment_loads`]) is the two end
+///   pulls plus the string's whole weight, 800 N down.
+#[test]
+fn end_pulls_balance_in_still_air() {
+    let (line, cable) = two_spans();
+    let case = windy(10.0, 0.0, 0.0);
+    let s = solve_section(
+        &line,
+        &line.sections[0],
+        &cable,
+        &case,
+        &default_fe_budget(),
+    )
+    .unwrap();
+    for k in 0..3 {
+        let d = end_pulls_at(&s, k) - v(s.pulls[k]);
+        assert!(d.norm() < 1e-3, "clamp {k}: {d:?}");
+    }
+    let (h0, h1) = (s.spans[0].horizontal_tension, s.spans[1].horizontal_tension);
+    // Dead ends: H along the span, into it.
+    let first = s.spans[0].end_pulls[0];
+    assert!((first[0] - h0).abs() < 1e-6 * h0, "{first:?} {h0}");
+    assert!(first[1].abs() < 1e-6, "{first:?}");
+    assert!(first[2] < 0.0, "{first:?}");
+    let last = s.spans[1].end_pulls[1];
+    assert!((last[0] + h1).abs() < 1e-6 * h1, "{last:?} {h1}");
+    // The suspension point: −H back, +H ahead; together nothing
+    // horizontal, as the plumb string's force.
+    let (back, ahead) = (s.spans[0].end_pulls[1], s.spans[1].end_pulls[0]);
+    assert!((back[0] + h0).abs() < 1e-6 * h0, "{back:?}");
+    assert!((ahead[0] - h1).abs() < 1e-6 * h1, "{ahead:?}");
+    let string = &s.strings[1][0];
+    let along = v(string.bottom) - v(string.top);
+    let on_clamp = -along / along.norm() * string.force;
+    let sum = end_pulls_at(&s, 1);
+    assert!((sum.x + on_clamp.x).abs() < 1e-3, "{sum:?} {on_clamp:?}");
+    assert!((sum.y + on_clamp.y).abs() < 1e-3, "{sum:?} {on_clamp:?}");
+    // On the structure: the pulls and the string's weight.
+    let t2 = s.attachment_loads[1]
+        .iter()
+        .fold(Vector3::zeros(), |a, l| a + v(l.force));
+    let expected = sum + Vector3::new(0.0, 0.0, -800.0);
+    assert!((t2 - expected).norm() < 1e-3, "{t2:?} {expected:?}");
+}
+
+/// In wind and ice the end pulls still add up to the wires' pull on every
+/// clamp (a vector identity: the wind across the spans is in them), and
+/// a bundle's are the whole bundle's.
+#[test]
+fn end_pulls_add_up_in_wind_and_for_a_bundle() {
+    let (mut line, cable) = two_spans();
+    let case = windy(-5.0, 10.0, 450.0);
+    let budget = default_fe_budget();
+    let one = solve_section(&line, &line.sections[0], &cable, &case, &budget).unwrap();
+    for k in 0..3 {
+        let d = end_pulls_at(&one, k) - v(one.pulls[k]);
+        assert!(d.norm() < 1e-3, "clamp {k}: {d:?}");
+    }
+    // The wind across the span is in the pull: a part across the line.
+    assert!(one.spans[0].end_pulls[0][1].abs() > 100.0);
+    line.sections[0].bundle = 2;
+    let two = solve_section(&line, &line.sections[0], &cable, &case, &budget).unwrap();
+    for k in 0..3 {
+        let d = end_pulls_at(&two, k) - v(two.pulls[k]);
+        assert!(d.norm() < 1e-3, "clamp {k}: {d:?}");
+    }
+    let ratio = v(two.spans[0].end_pulls[0]).norm() / v(one.spans[0].end_pulls[0]).norm();
+    assert!((ratio - 2.0).abs() < 0.05, "{ratio}");
+}
+
+/// A broken span pulls on neither of its clamps; the remaining span's
+/// pulls are still the wires' pull on the clamps.
+#[test]
+fn a_broken_span_has_no_end_pulls() {
+    let (line, cable) = two_spans();
+    let case = windy(10.0, 0.0, 0.0);
+    let s = &line.sections[0];
+    let budget = default_fe_budget();
+    let broken =
+        solve_section_broken(&line, s, &cable, &case, 1, &budget, &Coupling::default()).unwrap();
+    assert_eq!(broken.spans[1].end_pulls, [[0.0; 3]; 2]);
+    let d = end_pulls_at(&broken, 1) - v(broken.pulls[1]);
+    assert!(d.norm() < 1e-3, "{d:?}");
+}
+
+/// The ruling span gives the end pulls by its own model: in still air
+/// the one horizontal tension along each span, into it, and down by the
+/// catenary's end slope (the end tension along the end tangent).
+#[test]
+fn the_ruling_span_gives_its_end_pulls() {
+    let (mut line, cable) = two_spans();
+    line.sections[0].calculation = Calculation::INITIAL_RS;
+    let case = windy(10.0, 0.0, 0.0);
+    let s = solve_section(
+        &line,
+        &line.sections[0],
+        &cable,
+        &case,
+        &default_fe_budget(),
+    )
+    .unwrap();
+    for span in &s.spans {
+        let h = span.horizontal_tension;
+        let [a, b] = span.end_pulls;
+        assert!((a[0] - h).abs() < 1e-6 * h, "{a:?} {h}");
+        assert!((b[0] + h).abs() < 1e-6 * h, "{b:?} {h}");
+        assert!(a[1].abs() < 1e-9 && b[1].abs() < 1e-9);
+        // The end tension: |pull| = T at the end, the largest in a level
+        // span.
+        let t = v(a).norm().max(v(b).norm());
+        assert!(
+            (t - span.max_tension).abs() < 1e-6 * t,
+            "{t} {}",
+            span.max_tension
+        );
+        assert!(a[2] < 0.0 && b[2] < 0.0);
+    }
+}

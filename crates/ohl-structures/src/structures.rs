@@ -186,7 +186,13 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "ohls";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
-/// Newest format version read. Version 9 (2026-11-02) adds the
+/// Newest format version read. Version 10 (2026-11-10) adds the shares
+/// of the back and ahead spans' pull a load case's line forces take
+/// (`back`, `ahead` in `[[load_case.line]]`, percent) and the load
+/// quantities of those pulls (`pull_back_transverse`, … in
+/// `[[load_case.load]]`) — raw tables here, read by the structure
+/// application; a file is written at 10 only when a case uses them.
+/// Version 9 (2026-11-02) adds the
 /// connections of the members at the joints and the gusset plates
 /// (`[[connection]]`, `[[plate]]`, [`crate::connections`]); a file is written
 /// at 9 only when it has them. Version 8 (2026-10-27) adds a member's
@@ -217,7 +223,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 9;
+pub const STRUCTURE_FILE_VERSION: u32 = 10;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

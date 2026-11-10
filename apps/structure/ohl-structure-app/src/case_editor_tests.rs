@@ -132,6 +132,10 @@ fn line_forces_are_added_a_point_unticked_and_the_wind_mirrored() {
         h.state().file.as_ref().unwrap().undo_name(),
         Some("add line forces of case 1")
     );
+    // The shares of the spans' pull have their columns (empty: 100).
+    h.get_by_label("Back %");
+    h.get_by_label("Ahead %");
+    assert_eq!((c.line[0].back, c.line[0].ahead), (None, None));
     // The sentence and the rows.
     h.get_by_label_contains(
         "storm — wind from the left: vertical × 1.0, transverse × 1.0, longitudinal × 1.0 at \

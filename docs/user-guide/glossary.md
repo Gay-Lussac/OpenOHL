@@ -360,6 +360,16 @@ broken span. *German:* Seilriss (to confirm).
 case with wind ([Line file](line-file.md#local-winds-per-span)).
 *Replaces:* span wind, wind zone. *German:* örtlicher Wind (to confirm).
 
+**Back span, ahead span** (of a point of a structure) — the span before
+the point and the span after it **in its section's order of points**. A
+section starting at the point has no back span, one ending there no
+ahead span. The **spans' pull** is the horizontal force of that span's
+wire on the point, along the span; a structure load case may take a
+share of it (`back`, `ahead`, percent — a load assumption, [Structure
+load cases](structure-load-cases.md#a-share-of-the-spans-pull-back-ahead)).
+*Replaces:* % longitudinal load, unbalanced tension share. *German:*
+rückwärtiges / vorwärtiges Spannfeld *(to confirm)*.
+
 ## Clearances
 
 ![Sag, vertical clearance; a span cut across with the swing band and the

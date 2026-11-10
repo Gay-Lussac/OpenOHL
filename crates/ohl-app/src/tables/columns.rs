@@ -121,7 +121,7 @@ pub(super) const STRUCTURES: &[Column] = &[
         "load cases",
         150.0,
         Derived,
-        "the load cases of the library it takes: how many and which (its own, else its type's, else every case); set in its Properties › Load cases, per type in Line › Criteria › Load cases per structure type",
+        "the load cases of the library it takes: how many and which (its own, else its type's, else every case; \"none: takes no load case\": no loads are computed and no structure check is made for it, said so in the results); set in its Properties › Load cases, per type in Line › Criteria › Load cases per structure type",
     ),
 ];
 

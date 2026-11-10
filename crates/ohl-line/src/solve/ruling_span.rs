@@ -339,7 +339,20 @@ pub(super) fn solve_rs(
             .iter()
             .min_by(|p, q| p.z.total_cmp(&q.z))
             .expect("points");
+        // The end pulls by this model: the end tension along the curve's
+        // end tangent (the curve is a + d·t + along_load·below(t), below =
+        // d.z·t − y(x)), into the span.
+        let tangent = |x: f64| {
+            let t = d + along_load * (d.z - horizontal * sol.slope(Length::from_si(x)));
+            if t.norm() > 0.0 { t / t.norm() } else { t }
+        };
+        let bundle = f64::from(section.bundle.max(1));
+        let end_pulls = [
+            p(tangent(0.0) * (sol.tension_left().si() * bundle)),
+            p(-tangent(horizontal) * (sol.tension_right().si() * bundle)),
+        ];
         out.push(SpanShape {
+            end_pulls,
             polyline_error: polyline_error(&points, h / q),
             points: points.iter().map(|q| p(*q)).collect(),
             horizontal_tension: h,

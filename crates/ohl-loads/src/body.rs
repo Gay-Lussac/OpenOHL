@@ -128,6 +128,8 @@ pub fn add_structure_loads(
                     local,
                     factored: [0.0, 0.0, weight * r.case.vertical],
                     broken_span: None,
+                    pull_back: [0.0; 2],
+                    pull_ahead: [0.0; 2],
                 });
             }
         }

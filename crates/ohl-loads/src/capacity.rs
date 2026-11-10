@@ -285,7 +285,8 @@ pub const APPROXIMATE_FE: &str =
 pub struct CaseUsage {
     /// Load case name.
     pub case: String,
-    /// Every structure with loads in this case.
+    /// Every structure with loads in this case, and the structures that
+    /// take no load case (not checked, saying so).
     pub structures: Vec<StructureUsage>,
 }
 
@@ -526,11 +527,19 @@ pub fn usage_with_sections(
             for m in &r.missing {
                 by_structure.entry(m.structure.as_str()).or_default();
             }
+            // A structure taking no load case: listed, not checked.
+            for id in line.structures_without_load_cases() {
+                by_structure.entry(id).or_default();
+            }
             let structures = by_structure
                 .into_iter()
                 .map(|(id, points)| {
                     let structure = line.structure(id);
                     let type_id = structure.and_then(|s| s.structure_type.clone());
+                    if line.takes_no_load_case(id) {
+                        let angle = angles.get(id).copied().unwrap_or(0.0);
+                        return without_load_case(id, type_id, angle);
+                    }
                     let type_def = type_id.as_deref().and_then(|t| types.get(t));
                     let capacity = type_def.and_then(|t| t.capacity.as_ref());
                     let analysed = type_def.is_some_and(|t| {
@@ -832,6 +841,28 @@ pub fn usage_with_sections(
             }
         })
         .collect()
+}
+
+/// A structure that takes no load case
+/// (`ohl_line::Structure::no_load_cases`) in a case's usage: listed, no
+/// check made (never a pass), saying so.
+fn without_load_case(id: &str, structure_type: Option<String>, angle: f64) -> StructureUsage {
+    StructureUsage {
+        structure: id.to_owned(),
+        structure_type,
+        line_angle_deg: angle,
+        wind_span: 0.0,
+        weight_span: None,
+        spans: None,
+        loads: None,
+        fe: None,
+        pole: None,
+        notes: vec![format!(
+            "{}: not checked (no loads computed for it)",
+            crate::TAKES_NO_LOAD_CASE
+        )],
+        missing: Vec::new(),
+    }
 }
 
 /// The governing load case of every structure: the one using most of its

@@ -14,9 +14,14 @@
 //! sets, points turned off) and **loads on the structure itself**
 //! ([`OwnLoads`]: its self weight, the wind on its body as the line's own
 //! member wind, ice or a weight per metre on members, point loads); its
-//! strength factor and a description. Kept in the structure file as
+//! strength factor and a description. Line forces may take a **share of
+//! the back and ahead spans' horizontal pull** (`back`, `ahead`, percent;
+//! version 4, owner 2026-11-10: the line transmits the pulls, the load
+//! case is made here — a load assumption, not an equilibrium state, said
+//! "NOT ON THE SAFE SIDE" on its rows; [`LineForces`]). Kept in the
+//! structure file as
 //! `[[load_case]]`, or on their own in a structure load-case file
-//! (`.ohlslc`, version 3) for export and import:
+//! (`.ohlslc`, version 3, or 4 with those shares) for export and import:
 //!
 //! ```toml
 //! format = "ohl-structure-load-cases"
@@ -114,9 +119,9 @@ mod recipe;
 mod table;
 
 pub use parts::{
-    BodyWindLoad, Converted, IceLoad, LineForces, OwnLoads, PART_BLOCK, Part, PointLoad, SnowLoad,
-    WindFrom, convert_older, describe, ice_text, line_forces_text, mirror_wind, point_text,
-    snow_text, wind_text,
+    BodyWindLoad, Converted, IceLoad, LineForces, OwnLoads, PART_BLOCK, Part, PointLoad,
+    SPAN_SHARE_ASSUMPTION, SnowLoad, WindFrom, convert_older, describe, ice_text, line_forces_text,
+    mirror_wind, point_text, snow_text, span_share_text, wind_text,
 };
 pub use placed::{
     CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, MissingWire,
@@ -135,5 +140,7 @@ pub use table::{
 
 #[cfg(test)]
 mod parts_tests;
+#[cfg(test)]
+mod span_share_tests;
 #[cfg(test)]
 mod tests;

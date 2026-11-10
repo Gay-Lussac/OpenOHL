@@ -254,6 +254,73 @@ factors on the actions — the wires solved under the factored wind and ice,
 a factor on the tension. Not built: the factors stay on the components
 (owner-specified load cases); the load case library's help says so.
 
+## A share of the spans' pull: a load assumption
+
+*Built, in active development, not approved yet* (owner, 2026-11-10).
+
+The line solves each weather case as an equilibrium: at every attachment
+point the force sent to the structure, \\( \\mathbf F \\), is what the
+strings put on it. With it the line sends, per point, the **horizontal
+pull of the spans on either side**: for each section held at the point,
+the end force of the span before the point (*back*) and of the span
+after it (*ahead*, both in the section's order of points) on the clamp —
+the finite-element solve's end force of that span's first or last
+catenary element, the whole bundle's — of which only the part along the
+span in plan (clamp to clamp) is taken, \\( \\mathbf P_b \\) and
+\\( \\mathbf P_a \\), written in the structure's axes (transverse,
+longitudinal). In still air at a suspension point
+\\( \\mathbf P_b + \\mathbf P_a \\) is the horizontal part of
+\\( \\mathbf F \\) (checked in the tests to the solver's tolerance); the
+wind across the spans, the weights and the jumpers are in
+\\( \\mathbf F \\) but not in the pulls.
+
+A structure load case's line forces may take a share \\( \\beta_b \\),
+\\( \\beta_a \\) of each pull (`back`, `ahead`, in percent):
+
+\\[ F'_{T,L} = F_{T,L} - (1-\\beta_b)\\,P_{b\\,T,L} - (1-\\beta_a)\\,P_{a\\,T,L}, \\qquad F'_V = F_V , \\]
+
+and then the case's factors on the three components. With
+\\( \\beta_b = \\beta_a = 1 \\) it is the solved force, bit for bit.
+Example (invented): a suspension point in still air with
+\\( P_{b,L} = -20 \\) kN, \\( P_{a,L} = +20 \\) kN, \\( F_L = 0 \\);
+\\( \\beta_b = 0.05 \\), \\( \\beta_a = 0 \\):
+\\( F'_L = 0 - 0.95\\cdot(-20) - 1.0\\cdot 20 = -1 \\) kN, 5 % of the back
+span's pull, towards the back span.
+
+**This is a load assumption, not an equilibrium state, and not
+conservative by itself.** It reproduces the common "share of the
+tension" convention for unbalanced longitudinal loads of line design
+programs: the pull of one side is
+replaced by a percentage of its solved value while everything else is
+kept as solved. In reality a wire that loses tension on one side lets the
+suspension strings swing towards the other, the spans' lengths and
+tensions change along the whole section, and the vertical loads shift
+with the clamps: the real one-sided pull on a given structure can be
+**smaller or larger** than the assumed share. Nothing in the percentage is derived from the line: it is
+the user's (or a design code's) number, and the program cites no clause
+for it.
+
+**The exact treatment** is to solve the line with the one-sided
+condition — a broken or removed wire, different ice on the spans — with
+the strings swinging ([a broken wire](wirefe.md#a-broken-wire), [a
+weather case per span](wirefe.md#a-weather-case-per-span)) and to send
+that line result; those are built and can be taken in a structure load
+case instead. The share is offered because load trees specify it; every
+load-table row made with it, the solved case's notes, the report and the
+exports say **"NOT ON THE SAFE SIDE"** with the reason.
+
+Further simplifications, all part of the same assumption: a clamp held
+from several structure points (a V-string, strings hanging from strings)
+shares its spans' pull **equally** between them — the sum on the
+structure is the pull, the split between the points is not the strings'
+statics; a section sharing its strings with another (a TAK) puts its
+pull on the points that report the assembly's loads; the ruling-span
+method gives the structure loads no pulls (the structure loads are
+always finite-element solves); a broken span has none. "Back" and
+"ahead" follow each section's own order of points, not the line's
+direction: a section running against the line has them swapped (the
+Line loads panel shows the four values, with their signs).
+
 ## The structures' wind of a load case
 
 The wind on a structure's own body is \\( q = p_s\\, \\gamma_s \\): \\( p_s \\) the load case's `[case.structure]` `wind_pressure`, else its weather case's `wind_pressure`; \\( \\gamma_s \\) its `wind_factor`, else its `transverse` factor (`ohl_loads::LoadCase::structure_wind`). The wires and strings always take the weather case's pressure and the transverse factor, so a design code treating the wind on structures apart from the wind on the conductors writes the structures' values there (by hand, or a design-code plugin). One rule for every use: the height bands (\\( p_s\\,c_d\\,A \\) unfactored, \\( \\times\\gamma_s \\) factored), the member wind above, the pole's \\( p \\) below, and the line cases in OHL-Structure (sent in the line values as \\( p_s \\), \\( \\gamma_s \\) and the side; there a surface load of \\( q \\) on every member, and the pole's wind). Without the table, \\( q \\) is the weather case's pressure times the transverse factor, as before. Example (invented): a wind case of 600 Pa with transverse 1.4 and `[case.structure]` 900 Pa × 1.2 gives the wires 600 × 1.4 = 840 Pa and the structures 900 × 1.2 = 1 080 Pa; a band of 10 m² with drag 3 carries 900 × 30 = 27 kN, factored 32.4 kN (validation cases `loadwind-001` and `-002`, `benchmarks/weather/load_case_wind.toml`; the line's checks and OHL-Structure's pole check of the same case agree to the last digit, `apps/structure/ohl-structure-tests/tests/structure_wind.rs`).

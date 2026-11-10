@@ -118,7 +118,14 @@ use ohl_structures_fe::{Loads, Model, NodalLoad};
 /// (transverse, longitudinal, vertical down), and the wind on the
 /// structure's own body (`ohl_loads::CaseLoads::structure_wind`: pressure,
 /// factor, side — the case's `[case.structure]` values or its weather
-/// case's pressure and transverse factor). The wind bands' loads (no
+/// case's pressure and transverse factor), and (2026-11-10) the
+/// horizontal pull of the point's back spans and of its ahead spans,
+/// along each span, in the structure's axes (transverse, longitudinal),
+/// unfactored (`ohl_loads::AttachmentLoad::pull_back`, `pull_ahead`:
+/// "back" is the span before the point in its section's order of points,
+/// "ahead" the span after it; a side without a span 0) — what a structure
+/// load case's `back` and `ahead` shares scale; the line only transmits
+/// them. The wind bands' loads (no
 /// point) are left out: the structure application puts the body wind on
 /// the members; tensions per span, wind on the wires and ice on their own
 /// are not given by the line's structure loads yet (the recipes using
@@ -169,6 +176,13 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
                 (LineQuantity::TransverseFactored, l.factored[0]),
                 (LineQuantity::LongitudinalFactored, l.factored[1]),
                 (LineQuantity::VerticalFactored, l.factored[2]),
+                // The spans' horizontal pulls (line-values file 6): a
+                // side without a span sends 0, so that "not sent" is an
+                // older file only.
+                (LineQuantity::PullBackTransverse, l.pull_back[0]),
+                (LineQuantity::PullBackLongitudinal, l.pull_back[1]),
+                (LineQuantity::PullAheadTransverse, l.pull_ahead[0]),
+                (LineQuantity::PullAheadLongitudinal, l.pull_ahead[1]),
             ];
             for (quantity, value) in quantities {
                 out.values.push(LineValue {
@@ -430,11 +444,13 @@ pub fn structure_case_loads(
         Vec::new()
     } else {
         // The line results go to every structure: the per-pylon sets are
-        // of the library's cases.
+        // of the library's cases (also "no load case", 2026-11-10: the
+        // forces the line transmits are not load cases).
         let mut every = line.clone();
         every.structure_loads.type_load_cases.clear();
         for s in &mut every.structures {
             s.load_cases.clear();
+            s.no_load_cases = false;
         }
         ohl_loads::structure_loads(
             &every,
@@ -472,7 +488,10 @@ pub fn structure_case_loads(
 /// cases") placed structure `structure`'s set of the line's load case
 /// library (`ohl_line::Line::load_cases_for`) — their values as load
 /// cases, and as its load cases in OHL-Structure
-/// ([`PlacedValues::library_cases`], [`library_recipes`]).
+/// ([`PlacedValues::library_cases`], [`library_recipes`]). A structure
+/// that takes no load case (`ohl_line::Structure::no_load_cases`) gets
+/// none of the library's, and the file's note says so; the line results
+/// are sent all the same.
 pub fn placed_values_with(
     sent: &StructureCaseLoads,
     line: &Line,
@@ -491,6 +510,20 @@ pub fn placed_values_with(
     }
     let mut out = placed_values(&own, &sent.weather, &missing, line, structure, line_name);
     out.library_cases = library_recipes(&own, &sent.library_weather, line, structure);
+    // A structure taking no load case (2026-11-10): none of the library's
+    // — said, with the line results still sent (the forces the line
+    // transmits; its own load cases in OHL-Structure may take them).
+    if line.takes_no_load_case(structure) {
+        let said = format!(
+            "{structure} {} in the line (its Properties › Load cases › none): no load case of \
+             the line's library is sent for it, and the line makes no structure check of it",
+            ohl_loads::TAKES_NO_LOAD_CASE
+        );
+        out.note = Some(match out.note.take() {
+            Some(n) => format!("{said} · {n}"),
+            None => said,
+        });
+    }
     out
 }
 
@@ -1432,6 +1465,17 @@ fn analyse_one(
             }
             None => {}
         }
+    }
+    // Line forces taking a share of the spans' pull: a load assumption
+    // (2026-11-10), said with the case.
+    if table
+        .case(&case.name)
+        .any(|r| r.note.contains(ohl_structure_loads::SPAN_SHARE_ASSUMPTION))
+    {
+        notes.push(format!(
+            "NOT ON THE SAFE SIDE: {}",
+            ohl_structure_loads::SPAN_SHARE_ASSUMPTION
+        ));
     }
     if table.case(&case.name).any(|r| r.note.contains("moment")) {
         notes.push("moments of [[load]] are not in the table: left out".into());

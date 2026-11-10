@@ -402,6 +402,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         earthing_resistance_ohm,
         local,
         load_cases,
+        no_load_cases,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -418,6 +419,10 @@ fn write_structure(out: &mut String, s: &Structure) {
     }
     if let Some(r) = earthing_resistance_ohm {
         attr(out, "earthing_resistance_ohm", &num(*r));
+    }
+    // It takes no load case (2026-11-10).
+    if *no_load_cases {
+        attr(out, "no_load_cases", "true");
     }
     nonempty(out, "description", description);
     if points.is_empty()
@@ -1494,6 +1499,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "height_adjust",
             "soil_resistivity_ohm_m",
             "earthing_resistance_ohm",
+            "no_load_cases",
             "description",
         ],
         &[
@@ -1757,6 +1763,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 Ok(text(c, "name")?.to_owned())
             })
             .collect::<Result<_, String>>()?,
+        no_load_cases: flag(e, "no_load_cases")?,
         id,
         fields: read_fields(e)?,
     })

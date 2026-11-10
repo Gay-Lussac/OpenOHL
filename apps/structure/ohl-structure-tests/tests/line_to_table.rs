@@ -88,8 +88,9 @@ fn a_placed_structure_gets_its_table_from_the_line() {
     assert_eq!(labels, ["A1", "A11"]);
     assert_eq!(values.points[0].sets, [1]);
     assert_eq!(values.points[1].sets, [11]);
-    // Six values per point and case.
-    assert_eq!(values.values.len(), 2 * 3 * 6);
+    // Ten values per point and case: the forces unfactored and factored,
+    // and the back and ahead spans' pulls (2026-11-10).
+    assert_eq!(values.values.len(), 2 * 3 * 10);
     let v = values
         .get("ice", "A1", &[1], LineQuantity::Vertical)
         .unwrap();

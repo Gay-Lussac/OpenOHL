@@ -215,7 +215,17 @@ file to 6 after any edit leaving such a load,
 `ohl_structure_edit::raise_for_line_pressures`); the line-values file
 went to **4** (`structure_wind` in the values, always written). The two parts of a structure load case (`[[load_case.line]]`,
 `[load_case.structure]`, 2026-10-25) made `.ohlslc` **3** and `.ohls`
-**7** (each written only when a case has them).
+**7** (each written only when a case has them). The shares of the
+back and ahead spans' pull (owner, 2026-11-10: `back`, `ahead` of
+`[[load_case.line]]`, and the line quantities `pull_back_transverse`,
+`pull_back_longitudinal`, `pull_ahead_transverse`,
+`pull_ahead_longitudinal`) made `.ohlslc` **4** and `.ohls` **10** (each
+written only when a case uses them: `ohl_structure_loads::written_version`,
+`ohl_structure_edit::raise_for_line_pressures` → `SPAN_SHARES_VERSION`)
+and the line-values file **6** (the four pulls among the values, always
+written); a structure taking no load case (`Structure.no_load_cases`)
+made the line file **14** (written only by a line with one,
+`Line::to_json`; OHL XML `no_load_cases="true"` on `<structure>`).
 
 ### Coordinates and angles
 
@@ -392,6 +402,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `height_adjust` | f64 | m | typed: feet above the ground at `position` (may be negative) | — |
 | `weather_groups` | `[string]` | — | its weather case groups (2026-10-25): read and kept, **not read by the checks** since 2026-11-03 (a check run notes them once, `ohl_app::local_solve::Local::notes`); not read by the solve; no table column since 2026-11-03 | `.ohlwc` `[[group]] name` |
 | `load_cases` | `[string]` | — | 2026-11-03, per-pylon sets: names of cases of the line's load case library this structure takes (empty: its type's default `structure_loads.type_load_cases`, else every case; `Line::load_cases_for`); `ohl_loads::structure_loads` computes its loads only in those cases; not read by the solve (`incremental::same_but_drawing`); OHL XML `<load_case name/>` in `<structure>` | load case **names** |
+| `no_load_cases` | bool | — | 2026-11-10 (owner): the structure takes **no** load case — `Line::takes_load_case` false for every case, `Line::takes_no_load_case`, `Line::structures_without_load_cases`; `ohl_loads::structure_loads` computes no loads for it and says so in every case's `notes` (`ohl_loads::TAKES_NO_LOAD_CASE`), `ohl_loads::capacity` lists it not checked with that note (never a pass), `ohl_structure_link::placed_values_with` sends none of the library's cases and says so in the file's `note` (the line results are still sent); refused together with a non-empty `load_cases` (`Line::validate`); line file **14**, written only when true; not read by the solve (`incremental::same_but_drawing`); OHL XML attribute `no_load_cases="true"`; edited in Properties › Load cases › none (`load_case_sets::structures_command`), shown in the Structures table's load cases column | — |
 | `local` | `LocalConditions` | factors; m; Pa; m | 2026-11-03 (`ohl_line::local`): `wind_static`, `wind_clearance`, `wire_ice` (factors), `structure_ice` (m), `snow_ground` (s_k, Pa), `snow_altitude` (h₀ for SIA 261 (10), `local::snow_on_ground`), `wind_study` (Pa, above 0; 2026-11-04: the internal clearances' wind at the structure with Use local conditions, `ohl_app::internal_clearances::wind_study`, bounded by the rule file's `[check] wind_study_min` and taken in its `wind_study_cases`, `CheckScope::takes_wind_study`; the weather case groups' `structure_wind` columns copied into it once, `GroupStudy::{of, pending, command}`, one undoable `Command::Batch` of structure puts); `LocalConditions::snow`, `check`; `local::localized(line, Purpose::{Strength, Clearance})` sets each span's wind and ice factors from its two structures' by `SolverOptions::local_spans` (`SpanRule::{Worst, Mean}`), a span's own kept; `local::has_local`; OHL XML `<local wind_static wind_clearance wire_ice structure_ice_m snow_ground_pa snow_altitude_m wind_study_pa/>`, `<solver local_spans>`; not read by the base solve (`incremental::same_but_drawing`). Desktop (2026-11-03): the Structures table's columns `wind static`, `wind clearance`, `wire ice`, `structure ice mm` (×1000 m), `snow s_k kN/m²` (×1000 Pa), `snow h0 m`, `wind study Pa`; the checks' **Use local conditions** (`ohl_app::local_solve`: `prepare(line, ticked, purpose) -> Local` — the line localized when ticked and `has_local`, else the line as it is with no other solve; `Local::{line, applied, notes, sections(line, library, case), solved(library, case), finish(check, took)}`; the solves go through ohl-line's memo of whole solves, keyed by every field of the localized line, the library and the case, so the checks of one purpose share them; `RUNS` keeps each check's last run time with and without for the switch's hover) | `.ohlwc` none |
 | `soil_resistivity_ohm_m` | f64? | Ω·m | soil resistivity measured at the structure (2026-10-27; line file version 11 when set; OHL XML attribute `soil_resistivity_ohm_m`); the line parameters take on each span the geometric mean of its two structures' (one measured: that one; none: the line's `electrical`) | — |
 | `earthing_resistance_ohm` | f64? | Ω | resistance of its earthing (footing) to remote earth (2026-10-29; line file version 11 when set; OHL XML attribute `earthing_resistance_ohm`; the Structures table's **earthing Ω**); the magnetic field's earth wire network leads the structure's current into the ground through it (none: the line's `electrical`, else 10 Ω assumed; `Line::earthing_resistance`) | — |
@@ -1266,6 +1277,14 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   2026-10-22 a vertical clearance from the target straight up to the
   wire's height, `checks::vertical_mark`, the same x and y at both ends;
   `clearance::Finding::at` in the app holds that point). Both come from the solve:
+  (`SpanShape::end_pulls`, 2026-11-10: the wire's pull on each of the
+  span's two end clamps, `[Point; 2]`, N, line axes, the whole bundle's —
+  the end force of the span's first and last catenary element as solved,
+  an output only, derived, never stored or part of a cache key: the
+  shapes are not serialised and the memo keys are the inputs; the two
+  spans' pulls at a clamp add up to `SectionShape::pulls` there; ruling
+  span: the end tension along its curve's end tangent; a broken span:
+  zeros.)
   `SpanShape` and `JumperShape` (`ohl-line`) carry `surface_radius` and
   `polyline_error` (`ohl_line::solve::polyline_error`: the largest
   sagitta of a piece on a circle of radius H/w; 0 for a rigid or stiff
@@ -2201,7 +2220,17 @@ words). `add_structure_loads(results, line, types, sections, weather)`
 case) and the ice and snow per structure as loads without a point ("ice
 on the structure", "snow on the structure"; `analysis::body_weights` on
 the model's members with a profile, `analysis::pole_ice` on a pole's
-shaft). `AttachmentLoad::broken_span`
+shaft). `AttachmentLoad::pull_back` and `pull_ahead` (`[f64; 2]`,
+2026-11-10; transverse, longitudinal in the structure's axes, N,
+unfactored): the horizontal pull of the point's back and ahead spans,
+along each span in plan (`span_pulls`: of `SpanShape::end_pulls` the
+part along clamp to clamp; "back" the span before the point in its
+section's order, "ahead" the span after; a clamp held from several
+structure points shares it equally, `add_span_pulls`; a share of
+`local`, not added to it; the envelope of a broken wire in every span
+keeps the pulls of the break giving each component); not in the loads
+CSV; sent to OHL-Structure as four line quantities.
+`AttachmentLoad::broken_span`
 
 (`Option<[usize; 3]>`, 2026-10-25): in a broken-wire case the broken
 span (from 1) giving each component (transverse, longitudinal,
@@ -2239,9 +2268,13 @@ The structure application's recipes
 (`apps/structure/ohl-structure-loads`, [crates](structure-app.md)): in a
 `.ohls` as `[[load_case]]` (the core keeps them as raw tables,
 `StructureType::load_cases`), or on their own in a `.ohlslc` file
-(`format = "ohl-structure-load-cases"`, version 3: a case's two parts
+(`format = "ohl-structure-load-cases"`, version 4: `back` and `ahead`
+of a case's line forces and the line quantities `pull_back_*`,
+`pull_ahead_*` (`LineQuantity::is_span_pull`, 17 quantities in
+`LineQuantity::ALL`; in a `.ohls` version **10**,
+`ohl_structure_edit::SPAN_SHARES_VERSION`); 3: a case's two parts
 `line[]` and `structure`; 2: the line quantities `structure_wind*`; 1
-and 2 read too; written at the lowest version the cases need,
+to 3 read too; written at the lowest version the cases need,
 `written_version`). In a `.ohls` the parts make the file version **7**
 (`ohl_structure_edit::PARTS_VERSION`, raised after any edit leaving a
 case with `line` or `structure`, `raise_for_line_pressures`). Full
@@ -2251,7 +2284,7 @@ spec: [structure-load-cases-spec.md](structure-load-cases-spec.md).
 | Item | Fields | Refers to |
 |---|---|---|
 | `LoadCaseRecipe` (`[[load_case]]`) | `name`, `description` (several lines), `strength`, `line[]`, `structure`, and the older form: `line_case`, `self_weight`, `load[]`; `self_weight_factor()`: `structure.self_weight` when given (the case's `self_weight` must then be 1, checked), else `self_weight` | `line_case` ─► a line result (older loads) |
-| `LineForces` (`[[load_case.line]]`, 1. line forces) | `result`, `vertical`, `transverse`, `longitudinal` (factors, default 1, always written), `sets[]` (default every point), `off[]` (point labels whose line forces are left out) | `result` ─► a line result name (`PlacedValues::cases`, `<weather> — wind from the left/right`) |
+| `LineForces` (`[[load_case.line]]`, 1. line forces) | `result`, `vertical`, `transverse`, `longitudinal` (factors, default 1, always written), `sets[]` (default every point), `off[]` (point labels whose line forces are left out), `back`, `ahead` (f64?, percent ≥ 0, absent = 100; `.ohlslc` 4 / `.ohls` 10, 2026-11-10: the share of the back / ahead spans' solved horizontal pull taken — force(T, L) = sent − (1 − back/100)·pull_back − (1 − ahead/100)·pull_ahead, vertical unchanged, then the factors; `LineForces::span_reductions`, `table::span_share_off`; a load assumption: rows noted "NOT ON THE SAFE SIDE: " + `SPAN_SHARE_ASSUMPTION`; without the pulls from the line the row is "no line value") | `result` ─► a line result name (`PlacedValues::cases`, `<weather> — wind from the left/right`) |
 | `OwnLoads` (`[load_case.structure]`, 2. loads on the structure itself) | `self_weight?`, `wind[]`, `ice[]`, `point[]`, `snow[]` (2026-11-03) | — |
 | `BodyWindLoad` (`[[load_case.structure.wind]]`) | `from` (`WindFrom`: `left`, `right`, `ahead`, `back`, `ahead_left`, `ahead_right`, `back_left`, `back_right`, or since 2026-11-03 an angle in degrees, `WindFrom::Angle`, written as a number: 0 from the right, 90 from ahead; `from_degrees` gives a name for the eight angles), `pressure` (Pa) **or** `pressure_of` (a line result: its `CaseWind.pressure`, unfactored), `factor` | `pressure_of` ─► a line result |
 | `SnowLoad` (`[[load_case.structure.snow]]`, 2026-11-03) | `load` (Pa, on the plan), `members` (`"all"` or ids), `factor`; rows of source `snow`, `Part::Snow` from 5001; `MemberAreas::plan_area` | member ids |
@@ -2339,8 +2372,13 @@ file format.
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ohl_structure_loads::PlacedValues`, JSON,
-`format = "ohl-structure-line-values"`, version 5; versions 1 to 4 are
-read too; 4 adds `structure_wind` in `values` and in each of `others`;
+`format = "ohl-structure-line-values"`, version 6; versions 1 to 5 are
+read too; 6 (2026-11-10) adds four `LineQuantity` values per point and
+case among `values` — `pull_back_transverse`, `pull_back_longitudinal`,
+`pull_ahead_transverse`, `pull_ahead_longitudinal` (N, structure axes,
+unfactored; `AttachmentLoad::pull_back` / `pull_ahead`; a side without a
+span 0; absent in older files) — and `note` may say that the structure
+takes no load case in the line; 4 adds `structure_wind` in `values` and in each of `others`;
 5 (2026-11-03) adds `library_cases` — the placed structure's set of the
 line's load case library as `LoadCaseRecipe`s (line forces with the
 case's factors, `self_weight`, body wind from the case's direction with

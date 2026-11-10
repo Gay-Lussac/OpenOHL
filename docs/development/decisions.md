@@ -10,6 +10,70 @@ of Parts A, B and C).
 
 ## 2026-11-10
 
+**The line transmits the spans' pulls; the unbalanced load case is made on the structure. A structure may take no load case (owner, 2026-11-10)**
+
+Another program's load-case command "% longitudinal load = p" on the back
+or ahead spans of a structure was compared with that program's own
+results: the horizontal pull of the chosen wire side, along its span, is
+replaced by p/100 of its solved value; the vertical load from that span,
+the wind across the span and the jumper loads stay. Asked where this
+should live, the owner decided, in substance: **this is only in the
+structure. OHL-Design calculates the forces and transmits them to the
+structure; the load cases are then constructed on the structure from
+those forces and applied factors.** The unit chosen by the owner:
+percent (`back = 5.0`).
+
+So:
+
+- **The line only transmits more.** The wire solve gives, per span, the
+  wire's pull on each of its two end clamps
+  (`SpanShape::end_pulls`, an output: no solved result changes); the
+  structure loads carry, per attachment point, the horizontal pull of its
+  back spans and of its ahead spans along each span
+  (`AttachmentLoad::pull_back`, `pull_ahead`); the line-values file
+  (version 6) sends them as four quantities. The line's own load-case
+  file (`.ohllc`) is **not** extended.
+- **The structure applies the rule.** A structure load case's line
+  forces take two optional percentages, `back` and `ahead` (absent: 100):
+  force = sent − (1 − back/100)·pull_back − (1 − ahead/100)·pull_ahead on
+  the transverse and longitudinal components, the vertical unchanged,
+  then the factors (`.ohlslc` version 4, `.ohls` version 10, each written
+  only when used).
+- **It is a load assumption, not an equilibrium state**, and not
+  conservative by itself: said "NOT ON THE SAFE SIDE" on every row made
+  with it, in the solved case's notes, the report and the exports
+  ([safe side](safe-side.md), [theory](../theory/structures-fe.md#a-share-of-the-spans-pull-a-load-assumption)).
+  The exact treatment — the line solved with the one-sided condition —
+  exists (broken and removed wires) and is named there.
+
+Decided on the way (the brief left them open):
+
+- *Back* and *ahead* are the span before and after the point **in its
+  section's order of points** (not the line's direction); a section end
+  has one side, the other sends 0, so that "not sent" can only mean older
+  line values.
+- Only the pull's part **along the span in plan** is sent: the wind
+  across the span stays in the force, as verified.
+- A clamp held from several structure points shares its pull equally
+  between them; a side at 100 % needs no pull, any other share without
+  the pulls gives the row "no line value" — never the unscaled force.
+- 100 / 100 written out is the solved force and carries no not-safe
+  note (nothing is assumed); the file is version 4 all the same.
+
+**A structure may take no load case** (also approved 2026-11-10): until
+now an empty `load_cases` meant "its type's default, else every case",
+with no way to say none. Added: `no_load_cases = true` on the structure
+(additive; with a list: refused as contradictory). Such a structure has
+no loads in any case and no check — and is **said so** everywhere loads
+and checks are listed per structure ("takes no load case": every case's
+notes, the usage table as *not checked*, never as passing, the
+Structures table, the line-values note for OHL-Structure). The line
+results (unfactored weather cases) are still sent to OHL-Structure: they
+are the forces the line transmits, not load cases. The line file is
+raised to version 14 only for a line with such a structure, so that an
+older program refuses it rather than computing loads for that structure;
+OHL XML: `no_load_cases="true"` on `<structure>`.
+
 **The weather case groups are read when the libraries change, not every frame; what else was worked out every frame (owner, 2026-11-10)**
 
 A review of what the applications do on every frame found the weather

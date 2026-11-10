@@ -94,6 +94,10 @@ pub struct LineValues {
     /// The values.
     #[serde(default)]
     pub values: Vec<LineValue>,
+    /// (Since line-values file version 6 the values include the spans'
+    /// pulls, [`LineQuantity::PULL_BACK`] and [`LineQuantity::PULL_AHEAD`],
+    /// per point; none in older files.)
+    ///
     /// The wind on the structure's own body per line case (line-values
     /// file version 4; none in older files).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -916,7 +920,10 @@ fn part_rows(
 /// The rows of one line forces table (`number`: its row number): per
 /// point carrying a wire (a set) or given a value by the line in its
 /// result (only those of its sets when it names some), the line's
-/// transverse, longitudinal and vertical forces, each × its factor; a
+/// transverse, longitudinal and vertical forces, each × its factor —
+/// with `back` or `ahead` given, less the part of the spans' pull not
+/// taken ([`span_share_off`]), noted as a load assumption not on the safe
+/// side; a
 /// point turned off (`off`) keeps its row with no force, noted "off" (a
 /// value typed over it stays on the same row whether it is off or on).
 fn line_force_rows(
@@ -984,11 +991,64 @@ fn line_force_rows(
             )));
             continue;
         }
+        let mut sent = values.map(Option::unwrap_or_default);
+        if l.scales_span_pull() {
+            // Said on every row of such a table (2026-11-10).
+            row.note = format!(
+                "{text}; NOT ON THE SAFE SIDE: {}",
+                crate::parts::SPAN_SHARE_ASSUMPTION
+            );
+            match span_share_off(l, t, line) {
+                Ok(off) => {
+                    sent[0] -= off[0];
+                    sent[1] -= off[1];
+                }
+                Err(why) => {
+                    rows.push(row.missing(why));
+                    continue;
+                }
+            }
+        }
         let f = l.factors();
-        row.force = [0, 1, 2].map(|k| values[k].unwrap_or_default() * f[k]);
+        row.force = [0, 1, 2].map(|k| sent[k] * f[k]);
         rows.push(row);
     }
     rows
+}
+
+/// What line forces `l` take off the force sent at point `t` (transverse,
+/// longitudinal; N, before the factors): (1 − back/100) of the back
+/// spans' pull and (1 − ahead/100) of the ahead spans' — the line's
+/// values there ([`LineQuantity::PULL_BACK`], [`LineQuantity::PULL_AHEAD`];
+/// the point's own, else the sum over its sets). A side at 100 % (or not
+/// given) takes nothing off and needs no pull. Err: the line did not send
+/// the pulls needed (older line values, a structure opened on its own) —
+/// the row's "missing", never the unscaled force.
+fn span_share_off(l: &LineForces, t: &Target, line: &LineValues) -> Result<[f64; 2], String> {
+    let mut off = [0.0; 2];
+    let mut lacking: Vec<&str> = Vec::new();
+    let sides = [LineQuantity::PULL_BACK, LineQuantity::PULL_AHEAD];
+    for (share, quantities) in l.span_reductions().into_iter().zip(sides) {
+        if share == 0.0 {
+            continue;
+        }
+        for (k, q) in quantities.into_iter().enumerate() {
+            match line.get(&l.result, &t.label, &t.sets, q) {
+                Some(pull) => off[k] += share * pull,
+                None => lacking.push(q.as_str()),
+            }
+        }
+    }
+    if lacking.is_empty() {
+        Ok(off)
+    } else {
+        Err(format!(
+            "no line value: {} in \"{}\" (the line did not send the spans' pulls the back/ahead \
+             shares need: line values of version 6, from OHL-Design)",
+            lacking.join(", "),
+            l.result
+        ))
+    }
 }
 
 /// Whether case `case`'s loads on the structure itself include any (a

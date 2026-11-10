@@ -7,7 +7,9 @@
 //! structure and composed of cases from the library"): each structure
 //! takes the cases of its own set ([`ohl_line::Structure::load_cases`]),
 //! else its type's ([`ohl_line::StructureLoads::type_load_cases`]), else
-//! every case of the load case library ([`ohl_line::Line::load_cases_for`]).
+//! every case of the load case library ([`ohl_line::Line::load_cases_for`])
+//! — or none at all ([`ohl_line::Structure::no_load_cases`], owner
+//! 2026-11-10: no loads, no checks, said so).
 //!
 //! - the Structures table's **load cases** column ([`cell`]);
 //! - a structure's Properties: **Load cases** — "as its type" or its own
@@ -60,8 +62,12 @@ pub fn library_names(model: &Model) -> Result<Vec<String>, String> {
 
 /// Structure `s`'s set in words for the Structures table: the cell (a
 /// count and the names, `2: wind, ice`; the type's `type: 2: …`; none:
-/// `every case`) — its hover shows the whole text.
+/// `every case`; a structure taking no load case: [`NO_CASE`]) — its hover
+/// shows the whole text.
 pub fn cell(line: &ohl_line::Line, s: &ohl_line::Structure) -> String {
+    if s.no_load_cases {
+        return NO_CASE.to_owned();
+    }
     let set = line.load_cases_for(s);
     let names = set.join(", ");
     match (s.load_cases.is_empty(), set.is_empty()) {
@@ -71,13 +77,22 @@ pub fn cell(line: &ohl_line::Line, s: &ohl_line::Structure) -> String {
     }
 }
 
+/// The Structures table's cell of a structure that takes no load case.
+pub const NO_CASE: &str = "none: takes no load case";
+
+/// What "none" does, for its hover.
+const NO_CASE_HOVER: &str = "This structure takes no load case: no loads are computed for it and      no structure check is made (Checks › Structure loads lists it as \"takes no load case\",      never as passing; OHL-Structure gets no load case of the library for it). The wires are      solved as before: nothing else changes, no solve time.";
+
 /// The command giving each of `ids` the load cases `set` (empty: as its
-/// type), on the stored line; one command for all (one undo).
+/// type; `none`: no load case at all, `set` then left out), on the stored
+/// line; one command for all (one undo).
 pub fn structures_command(
     model: &Model,
     ids: &[String],
     set: &[String],
+    none: bool,
 ) -> Result<(String, Command), String> {
+    let set: &[String] = if none { &[] } else { set };
     let stored = model
         .stored_line()
         .ok_or("read-only: open a project to edit")?;
@@ -87,10 +102,11 @@ pub fn structures_command(
             .structure(id)
             .ok_or_else(|| format!("no structure {id}"))?
             .clone();
-        if s.load_cases == set {
+        if s.load_cases == set && s.no_load_cases == none {
             continue;
         }
         s.load_cases = set.to_vec();
+        s.no_load_cases = none;
         commands.push(Command::Put {
             kind: Kind::Structure,
             id: id.clone(),
@@ -101,7 +117,9 @@ pub fn structures_command(
     let what = format!(
         "load cases of {}: {}",
         ids.join(", "),
-        if set.is_empty() {
+        if none {
+            "none".to_owned()
+        } else if set.is_empty() {
             "as its type".to_owned()
         } else {
             set.join(", ")
@@ -141,8 +159,8 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
         .on_hover_text(
             "The load cases of the library this structure takes (Checks › Structure loads, \
              and OHL-Structure for it): its own, else its type's (Line › Criteria › Load cases \
-             per structure type), else every case. No other cost: a case is solved once for \
-             the whole line.",
+             per structure type), else every case — or none: no loads and no checks for it, \
+             said so in the results. No other cost: a case is solved once for the whole line.",
         );
     let names = match library_names(model) {
         Ok(n) => n,
@@ -158,22 +176,24 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
         .and_then(|t| line.structure_loads.type_load_cases.get(t))
         .cloned()
         .unwrap_or_default();
-    let own = !s.load_cases.is_empty();
+    let none = s.no_load_cases;
+    let own = !none && !s.load_cases.is_empty();
     let as_type = if type_set.is_empty() {
         "as its type (every case)".to_owned()
     } else {
         format!("as its type ({})", type_set.join(", "))
     };
-    let mut set: Option<Vec<String>> = None;
+    // The set chosen, and whether it is "none".
+    let mut set: Option<(Vec<String>, bool)> = None;
     ui.add_enabled_ui(editable, |ui| {
         ui.horizontal_wrapped(|ui| {
             if ui
-                .radio(!own, as_type)
+                .radio(!own && !none, as_type)
                 .on_hover_text("No set of its own: its type's, else every case")
                 .clicked()
-                && own
+                && (own || none)
             {
-                set = Some(Vec::new());
+                set = Some((Vec::new(), false));
             }
             if ui
                 .radio(own, "its own")
@@ -181,13 +201,30 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
                 .clicked()
                 && !own
             {
-                set = Some(if type_set.is_empty() {
+                let cases = if type_set.is_empty() {
                     names.clone()
                 } else {
                     type_set.clone()
-                });
+                };
+                set = Some((cases, false));
+            }
+            if ui
+                .radio(none, "none")
+                .on_hover_text(NO_CASE_HOVER)
+                .clicked()
+                && !none
+            {
+                set = Some((Vec::new(), true));
             }
         });
+        if none {
+            ui.label(
+                egui::RichText::new("Takes no load case: no loads, no structure check.")
+                    .small()
+                    .weak(),
+            )
+            .on_hover_text(NO_CASE_HOVER);
+        }
         if own {
             egui::ScrollArea::vertical()
                 .id_salt(("structure-load-cases", id))
@@ -216,7 +253,7 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
                                 .cloned()
                                 .collect();
                             next.dedup();
-                            set = Some(next);
+                            set = Some((next, false));
                         }
                     }
                 });
@@ -235,7 +272,9 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
                 .on_hover_text(format!(
                     "{} take the load cases of {id} ({}), in one command",
                     others.join(", "),
-                    if own {
+                    if none {
+                        "none".to_owned()
+                    } else if own {
                         s.load_cases.join(", ")
                     } else {
                         "as their type".to_owned()
@@ -243,7 +282,7 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
                 ))
                 .clicked()
         {
-            match structures_command(model, &others, &s.load_cases) {
+            match structures_command(model, &others, &s.load_cases, none) {
                 Ok((what, command)) => {
                     out = Some(crate::edit::Action::Command { what, command });
                 }
@@ -253,8 +292,8 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
     })
     .response
     .on_disabled_hover_text(model.can_edit().err().unwrap_or_default());
-    if let Some(set) = set {
-        match structures_command(model, &[id.to_owned()], &set) {
+    if let Some((set, none)) = set {
+        match structures_command(model, &[id.to_owned()], &set, none) {
             Ok((what, command)) => out = Some(crate::edit::Action::Command { what, command }),
             Err(e) => log::warn!("{e}"),
         }
@@ -363,7 +402,8 @@ pub fn types_ui(ui: &mut egui::Ui, model: &Model) -> Option<(String, Command)> {
                         .structures
                         .iter()
                         .filter(|s| {
-                            s.structure_type.as_deref() == Some(t) && !s.load_cases.is_empty()
+                            s.structure_type.as_deref() == Some(t)
+                                && (!s.load_cases.is_empty() || s.no_load_cases)
                         })
                         .count();
                     let title = format!(

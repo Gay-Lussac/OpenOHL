@@ -857,9 +857,10 @@ impl LoadsPage {
                 .structures
                 .iter()
                 .partition(|s| model.line.takes_load_case(&s.id, &c.name));
+            let none = model.line.structures_without_load_cases();
             ui.label(
                 egui::RichText::new(format!(
-                    "taken by {} of {} structures (their load case sets); not by: {}",
+                    "taken by {} of {} structures (their load case sets); not by: {}{}",
                     with.len(),
                     model.line.structures.len(),
                     if without.is_empty() {
@@ -870,6 +871,15 @@ impl LoadsPage {
                             .map(|s| s.id.as_str())
                             .collect::<Vec<_>>()
                             .join(", ")
+                    },
+                    if none.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            " — of them {}: {} (not checked)",
+                            ohl_loads::TAKES_NO_LOAD_CASE,
+                            none.join(", ")
+                        )
                     }
                 ))
                 .small()
@@ -878,7 +888,9 @@ impl LoadsPage {
             .on_hover_text(
                 "Each structure takes the load cases of its set (Structures table › load \
                  cases, or its type's in Line › Criteria › Load cases per structure type; \
-                 none: every case). A structure not taking this case has no loads in it.",
+                 none: every case). A structure not taking this case has no loads in it; one \
+                 that takes no load case at all (its Properties › Load cases › none) has no \
+                 loads in any and is not checked — listed as such, never as passing.",
             );
         }
         // What the case assumed (wind side, local conditions, removed and

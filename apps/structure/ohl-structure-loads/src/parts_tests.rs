@@ -277,8 +277,8 @@ fn the_parts_read_check_and_set_the_version() {
     );
     // The older form alone stays at version 1.
     assert_eq!(written_version(&[LoadCaseRecipe::new("plain")]), 1);
-    // A version 2 program says "newer".
-    let newer = CASES.replace("version = 3", "version = 4");
+    // A newer version is said to be.
+    let newer = CASES.replace("version = 3", "version = 5");
     assert!(
         StructureLoadCases::parse(&newer)
             .unwrap_err()

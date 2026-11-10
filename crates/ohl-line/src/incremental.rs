@@ -367,6 +367,7 @@ fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
         local: _,
         // (Read by the structure loads only, after the solve.)
         load_cases: _,
+        no_load_cases: _,
         fields,
     } = a;
     *id == b.id

@@ -69,7 +69,11 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 13 adds a system's operating current
+/// Latest line file version: 14 adds a structure that takes no load case
+/// (`no_load_cases`, [`Structure::no_load_cases`]; owner 2026-11-10),
+/// written only by a line with one (else 13 or older, [`Line::to_json`]:
+/// an older program must not read such a line and compute loads for that
+/// structure); 13 adds a system's operating current
 /// (`current_a`, [`electrical::System::current_a`]; owner 2026-11-04),
 /// written only by a line with one (else 12 or older, [`Line::to_json`]);
 /// 12 adds the torus among a string's own
@@ -104,7 +108,11 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 13;
+pub const LINE_FILE_VERSION: u32 = 14;
+
+/// The version before a structure taking no load case: what a line
+/// without one is written as (when a system has an operating current).
+const BEFORE_NO_LOAD_CASES_VERSION: u32 = 13;
 
 /// The version before the systems' operating current: what a line
 /// without one is written as (when it has a torus).
@@ -1404,6 +1412,15 @@ pub struct Structure {
     /// when the loads are computed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_cases: Vec<String>,
+    /// It takes **no** load case (owner 2026-11-10; line file 14, written
+    /// only when true): no case of the line's load case library is
+    /// computed or checked for it, and it is said so wherever loads and
+    /// checks are listed per structure ("takes no load case" — never
+    /// shown as passing). With it, `load_cases` must be empty (refused:
+    /// a list and none contradict). False: `load_cases` as before (empty:
+    /// its type's default, else every case).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_load_cases: bool,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1453,6 +1470,8 @@ struct StructureFile {
     local: local::LocalConditions,
     #[serde(default)]
     load_cases: Vec<String>,
+    #[serde(default)]
+    no_load_cases: bool,
     #[serde(default)]
     fields: Fields,
 }
@@ -1504,6 +1523,7 @@ impl From<StructureFile> for Structure {
             earthing_resistance_ohm: f.earthing_resistance_ohm,
             local: f.local,
             load_cases: f.load_cases,
+            no_load_cases: f.no_load_cases,
             fields: f.fields,
         }
     }
@@ -2324,6 +2344,10 @@ impl Defaults {
         }
         Ok(())
     }
+}
+
+fn is_false(x: &bool) -> bool {
+    !*x
 }
 
 pub(crate) fn is_zero(x: &f64) -> bool {
@@ -3476,7 +3500,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 13 with a system's
+    /// line, so an older program still reads it: 14 with a structure
+    /// taking no load case, else 13 with a system's
     /// operating current, else 12 with a torus among a
     /// string's own volumes, else 11 with electrical
     /// settings other than the defaults or a soil resistivity at a structure, else 10 with the simplified
@@ -3502,8 +3527,10 @@ impl Line {
             })
         });
         let current = self.systems.iter().any(|s| s.current_a.is_some());
+        let no_cases = self.structures.iter().any(|s| s.no_load_cases);
         let written = match (sheaves, winds, shapes) {
-            _ if current => LINE_FILE_VERSION,
+            _ if no_cases => LINE_FILE_VERSION,
+            _ if current => BEFORE_NO_LOAD_CASES_VERSION,
             _ if torus => BEFORE_CURRENT_VERSION,
             _ if !self.electrical.is_default()
                 || self.structures.iter().any(|s| {
@@ -3563,8 +3590,13 @@ impl Line {
     /// The load cases of `structure` (per-pylon sets, owner 2026-11-03):
     /// its own ([`Structure::load_cases`]), else its type's default
     /// ([`StructureLoads::type_load_cases`]); empty: every case of the
-    /// line's load case library.
+    /// line's load case library — or none at all for a structure that
+    /// takes no load case ([`Structure::no_load_cases`]: ask
+    /// [`Line::takes_load_case`], which knows).
     pub fn load_cases_for<'a>(&'a self, structure: &'a Structure) -> &'a [String] {
+        if structure.no_load_cases {
+            return &[];
+        }
         if !structure.load_cases.is_empty() {
             return &structure.load_cases;
         }
@@ -3576,18 +3608,41 @@ impl Line {
     }
 
     /// Whether structure `id` takes load case `case` ([`Line::load_cases_for`];
-    /// a structure not in the line: every case).
+    /// a structure not in the line: every case; one taking no load case,
+    /// [`Structure::no_load_cases`]: none).
     pub fn takes_load_case(&self, id: &str, case: &str) -> bool {
         self.structure(id).is_none_or(|s| {
+            if s.no_load_cases {
+                return false;
+            }
             let set = self.load_cases_for(s);
             set.is_empty() || set.iter().any(|c| c == case)
         })
     }
 
-    /// Whether any structure or type gives its own load cases.
+    /// Whether structure `id` takes no load case at all
+    /// ([`Structure::no_load_cases`]).
+    pub fn takes_no_load_case(&self, id: &str) -> bool {
+        self.structure(id).is_some_and(|s| s.no_load_cases)
+    }
+
+    /// The structures taking no load case, by id, in the line's order.
+    pub fn structures_without_load_cases(&self) -> Vec<&str> {
+        self.structures
+            .iter()
+            .filter(|s| s.no_load_cases)
+            .map(|s| s.id.as_str())
+            .collect()
+    }
+
+    /// Whether any structure or type gives its own load cases (or takes
+    /// none).
     pub fn has_load_case_sets(&self) -> bool {
         !self.structure_loads.type_load_cases.is_empty()
-            || self.structures.iter().any(|s| !s.load_cases.is_empty())
+            || self
+                .structures
+                .iter()
+                .any(|s| !s.load_cases.is_empty() || s.no_load_cases)
     }
 
     /// The limits of string `label` of structure `structure` (not checked
@@ -3814,6 +3869,18 @@ impl Line {
             return invalid(format!(
                 "structure {}: earthing resistance must be a number of Ω > 0",
                 s.id
+            ));
+        }
+        if let Some(s) = self
+            .structures
+            .iter()
+            .find(|s| s.no_load_cases && !s.load_cases.is_empty())
+        {
+            return invalid(format!(
+                "structure {}: no_load_cases and load_cases ({}) contradict: give the list, or \
+                 no_load_cases = true for a structure that takes none",
+                s.id,
+                s.load_cases.join(", ")
             ));
         }
         ohl_core::files::check_header(

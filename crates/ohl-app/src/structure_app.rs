@@ -1615,7 +1615,9 @@ mod tests {
             v.values.values.iter().map(|x| x.case.as_str()).collect();
         assert_eq!(
             v.values.values.len(),
-            2 * 3 * 6,
+            // Per point and case: the forces unfactored and factored, and
+            // the back and ahead spans' pulls (2026-11-10).
+            2 * 3 * 10,
             "{cases:?} of {:?}",
             v.cases
         );

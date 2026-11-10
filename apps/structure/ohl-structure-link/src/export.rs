@@ -721,6 +721,17 @@ pub fn export_structure(
                 None if case == MODEL_CASE => f64::from(u8::from(model.analysis.self_weight)),
                 None => 1.0,
             };
+            // Line forces taking a share of the spans' pull (2026-11-10):
+            // said with the export.
+            if table
+                .case(case)
+                .any(|r| r.note.contains(ohl_structure_loads::SPAN_SHARE_ASSUMPTION))
+            {
+                out.notes.push(format!(
+                    "NOT ON THE SAFE SIDE: case {case}: {}",
+                    ohl_structure_loads::SPAN_SHARE_ASSUMPTION
+                ));
+            }
             let mut loads = Vec::new();
             for r in table.case(case).filter(|r| r.missing.is_none()) {
                 // Table: right, ahead, down; structure axes: z up.

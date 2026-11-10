@@ -34,7 +34,8 @@ The names are those of the line file:
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…"
              height_adjust="0.5"                 <!-- feet 0.5 m above the ground -->
              soil_resistivity_ohm_m="8.5"           <!-- soil resistivity measured here, Ω·m -->
-             earthing_resistance_ohm="6.2">         <!-- its earthing (footing), Ω (2026-10-29) -->
+             earthing_resistance_ohm="6.2"          <!-- its earthing (footing), Ω (2026-10-29) -->
+             no_load_cases="true">                  <!-- it takes no load case (version 14, 2026-11-10): no loads, no checks, said so; not with <load_case> -->
     <weather_group name="…"/>                   <!-- its weather case groups (kept, no longer used) -->
     <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa, and wind_study_pa: a wind study's pressure for the internal clearances, 2026-11-04) -->
     <load_case name="…"/>                       <!-- its load cases (2026-11-03); none: its type's, else every case -->

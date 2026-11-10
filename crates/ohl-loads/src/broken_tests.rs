@@ -240,6 +240,8 @@ fn the_envelope_of_the_breaks_is_no_bound_of_a_combination() {
         local: [0.0, l, v],
         factored: [0.0, l, v],
         broken_span: Some([span; 3]),
+        pull_back: [0.0; 2],
+        pull_ahead: [0.0; 2],
     };
     let (one, two) = (load(1, 10e3, 1e3), load(2, -9e3, 5e3));
     let mut e = one.clone();

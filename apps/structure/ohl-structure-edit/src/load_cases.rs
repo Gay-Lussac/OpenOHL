@@ -586,9 +586,15 @@ fn unplace(item: &mut Item) {
 /// version of the generators' options too) when a recipe's load takes a
 /// pressure of the line ([`LINE_PRESSURES`]), and to version 7
 /// ([`PARTS_VERSION`]) when a case has line forces or loads on the
-/// structure itself ([`PART_KEYS`]); a file without a `version` stays so.
+/// structure itself ([`PART_KEYS`]), and to version 10
+/// ([`SPAN_SHARES_VERSION`]) when a case's line forces take a share of
+/// the spans' pull (`back`, `ahead`) or a load takes one of those pulls
+/// ([`SPAN_PULLS`]); a file without a `version` stays so.
 /// Run after every edit ([`crate::StructureFile::edit`]).
 pub fn raise_for_line_pressures(doc: &mut DocumentMut) {
+    if uses_span_pulls(doc) {
+        crate::edits::raise_version(doc, SPAN_SHARES_VERSION);
+    }
     let parts = doc
         .get("load_case")
         .and_then(Item::as_array_of_tables)
@@ -619,6 +625,42 @@ pub fn raise_for_line_pressures(doc: &mut DocumentMut) {
     if uses {
         crate::edits::raise_version(doc, crate::body::OPTIONS_VERSION);
     }
+}
+
+/// The structure file version of the shares of the spans' pull
+/// (2026-11-10): `back`, `ahead` of a case's line forces, a load of one of
+/// [`SPAN_PULLS`].
+pub const SPAN_SHARES_VERSION: i64 = 10;
+
+/// The line quantities of the back and ahead spans' pull.
+pub const SPAN_PULLS: [&str; 4] = [
+    "pull_back_transverse",
+    "pull_back_longitudinal",
+    "pull_ahead_transverse",
+    "pull_ahead_longitudinal",
+];
+
+/// Whether a case of the file takes a share of the spans' pull (`back` or
+/// `ahead` in its line forces) or a load takes one of [`SPAN_PULLS`].
+fn uses_span_pulls(doc: &DocumentMut) -> bool {
+    let tables = |c: &toml_edit::Table, key: &str, f: &dyn Fn(&toml_edit::Table) -> bool| {
+        c.get(key)
+            .and_then(Item::as_array_of_tables)
+            .is_some_and(|rows| rows.iter().any(f))
+    };
+    doc.get("load_case")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(|cases| {
+            cases.iter().any(|c| {
+                tables(c, "line", &|l| {
+                    l.contains_key("back") || l.contains_key("ahead")
+                }) || tables(c, "load", &|l| {
+                    l.get("what")
+                        .and_then(Item::as_str)
+                        .is_some_and(|w| SPAN_PULLS.contains(&w))
+                })
+            })
+        })
 }
 
 /// A case of given forces to store in the file: the line's forces at
@@ -1037,5 +1079,36 @@ pressure = "650 Pa"
         let t = reads(&d);
         assert!(!t.load_cases[0].contains_key("line"));
         assert!(!t.load_cases[0].contains_key("structure"));
+    }
+
+    /// Line forces taking a share of the spans' pull (`back`, `ahead`),
+    /// or a load of one of the pulls, raise the file to version 10;
+    /// without them it stays at the parts' version.
+    #[test]
+    fn span_shares_raise_the_version_to_10() {
+        let start = || -> DocumentMut {
+            format!("format = \"ohl-structure\"\nversion = 3\n{FILE}")
+                .parse()
+                .unwrap()
+        };
+        let mut d = start();
+        let plain = "[[line]]\nresult = \"calm\"\n";
+        set_case_tables(&mut d, 0, plain, &PART_KEYS).unwrap();
+        raise_for_line_pressures(&mut d);
+        assert_eq!(d["version"].as_integer(), Some(PARTS_VERSION));
+        let shares = "[[line]]\nresult = \"calm\"\nback = 5.0\nahead = 0.0\n";
+        set_case_tables(&mut d, 0, shares, &PART_KEYS).unwrap();
+        raise_for_line_pressures(&mut d);
+        assert_eq!(d["version"].as_integer(), Some(SPAN_SHARES_VERSION));
+        let t = reads(&d);
+        let line = &t.load_cases[0]["line"].as_array().unwrap()[0];
+        assert_eq!(line["back"].as_float(), Some(5.0));
+        assert_eq!(line["ahead"].as_float(), Some(0.0));
+        // An older load of a pull.
+        let mut d = start();
+        let k = add_load(&mut d, 0, true).unwrap();
+        set_load_field(&mut d, 0, k, "what", "pull_back_longitudinal").unwrap();
+        raise_for_line_pressures(&mut d);
+        assert_eq!(d["version"].as_integer(), Some(SPAN_SHARES_VERSION));
     }
 }

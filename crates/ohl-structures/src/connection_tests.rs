@@ -252,7 +252,7 @@ fn version_9_is_read() {
     ))
     .unwrap();
     assert_eq!(t.connections.len(), 1);
-    assert!(parse(&format!("format = \"ohl-structure\"\nversion = 10\n{BODY}")).is_err());
+    assert!(parse(&format!("format = \"ohl-structure\"\nversion = 11\n{BODY}")).is_err());
 }
 
 /// The leg L1–L2 in line through N2 with a section, the diagonal D1.
