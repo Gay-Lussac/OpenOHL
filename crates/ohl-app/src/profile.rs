@@ -569,6 +569,72 @@ impl ProfileView {
             self.show = Some(default_show(line, &routes));
         }
         let show = self.show.clone().expect("chosen above");
+        self.header_ui(ui, line, &routes, &show, drawings);
+        // The line width: the drawings' (one setting).
+        let depth = drawings.line_width();
+        self.build(ui, model, case, &routes, &show, depth)?;
+        let (sheets, curves) = sheet_preview(
+            ui,
+            drawings,
+            model,
+            case,
+            &self.drawing.as_ref().expect("built").1,
+        );
+        let (rect, response) =
+            ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        let width = f64::from(rect.width()).max(1.0);
+        let height = f64::from(rect.height()).max(1.0);
+        // A fixed ratio: pixels per metre of height, from the stations'.
+        let ratio = model.profile_ratio.filter(|k| *k > 0.0);
+        let ([s0, s1], area_done) = self.navigate(ui, &response, rect, width, ratio, buttons);
+        let (z0, z1) = self.heights_shown(&[s0, s1], ratio, width, height);
+        self.shown = Some(([s0, s1], [z0, z1], [width, height]));
+        self.rect = Some(rect);
+        let fr = Frame {
+            rect,
+            s0,
+            s1,
+            z0,
+            z1,
+            width,
+        };
+        let painter = ui.painter_at(rect);
+        paint_grid(&painter, &fr);
+        self.paint_vegetation(&painter, &fr, depth);
+        self.paint_marks(&painter, &fr, depth);
+        let view_key: ViewKey = [
+            s0.to_bits(),
+            s1.to_bits(),
+            z0.to_bits(),
+            z1.to_bits(),
+            u64::from(rect.min.x.to_bits()),
+            u64::from(rect.min.y.to_bits()),
+            u64::from(rect.max.x.to_bits()),
+            u64::from(rect.max.y.to_bits()),
+        ];
+        self.paint_corridor(&painter, &fr, model, view_key);
+        self.paint_ground_lines(&painter, &fr, model);
+        self.paint_joints(&painter, &fr);
+        self.paint_structures(&painter, &fr, model, selection);
+        self.paint_wires(&painter, &fr, model, case, selection, view_key);
+        self.paint_sheets(&painter, &fr, sheets, curves);
+        self.paint_title(&painter, &fr, ratio);
+        self.hover_and_measure(ui, &response, &fr, snaps);
+        self.area_ui(ui, &fr, area_done);
+        self.clicks(ui, &response, &fr, snaps, selection, buttons)
+    }
+
+    /// The bar above the view: what the profile is of, the line width,
+    /// the sheet preview's menu.
+    fn header_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        line: &ohl_line::Line,
+        routes: &[ohl_line::route::AlignmentView],
+        show: &Show,
+        drawings: &mut crate::drawings::Drawings,
+    ) {
+        let has = |r: &str| routes.iter().any(|a| a.route == r);
         ui.horizontal(|ui| {
             ui.label("Profile of");
             let label = |s: &Show| match s {
@@ -577,10 +643,10 @@ impl ProfileView {
                 Show::All => "all alignments, in order".to_owned(),
             };
             egui::ComboBox::from_id_salt("profile-route")
-                .selected_text(label(&show))
+                .selected_text(label(show))
                 .show_ui(ui, |ui| {
                     let mut pick = |ui: &mut egui::Ui, s: Show, text: String| {
-                        if ui.selectable_label(show == s, text).clicked() {
+                        if ui.selectable_label(*show == s, text).clicked() {
                             self.show = Some(s);
                             self.range = None;
                         }
@@ -633,8 +699,19 @@ impl ProfileView {
             // Ticks keep it open.
             crate::menu::options_menu(ui, "Profile sheets", |ui| drawings.preview_menu(ui));
         });
-        // The line width: the drawings' (one setting).
-        let depth = drawings.line_width();
+    }
+
+    /// Makes the drawing of what is shown when it is not the one kept
+    /// (none: an alignment has no profile, said in the view).
+    fn build(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        case: usize,
+        routes: &[ohl_line::route::AlignmentView],
+        show: &Show,
+        depth: f64,
+    ) -> Option<()> {
         let key = (show.clone(), case, depth.to_bits());
         if self.drawing.as_ref().is_none_or(|(k, _)| *k != key) {
             let solved = model.cases.get(case);
@@ -705,77 +782,28 @@ impl ProfileView {
             self.back = None;
             self.wires = None;
         }
-        let built = &self.drawing.as_ref().expect("built").1;
-        let d = &built.drawing;
-        // The sheet preview: the export's sheets of the alignments shown,
-        // each moved as its alignment is on this profile.
-        let mut sheets: Vec<(f64, &str, &ohl_drawing::SheetLayout)> = Vec::new();
-        // The lines below the lowest conductor the sheets carry.
-        let mut curves: Vec<(f64, &ohl_drawing::curves::Curve)> = Vec::new();
-        match drawings.preview(model, case) {
-            None => {}
-            Some(Err(e)) => {
-                crate::menu::message(
-                    ui,
-                    format!("Sheet preview: {e}"),
-                    Some(ui.visuals().warn_fg_color),
-                );
-            }
-            Some(Ok(p)) if p.paper.is_none() => {
-                ui.label(
-                    egui::RichText::new(
-                        "Sheet preview: the export writes one continuous drawing (no sheet \
-                         format chosen in Plans & sheets › Profile sheets…)",
-                    )
-                    .small()
-                    .weak(),
-                );
-            }
-            Some(Ok(p)) => {
-                for (at, name) in &built.joints {
-                    let id = name.strip_prefix("alignment ").unwrap_or(name);
-                    if let Some(r) = p.route(id) {
-                        sheets.extend(r.sheets.iter().map(|s| (*at, r.id.as_str(), s)));
-                        curves.extend(r.curves.iter().map(|c| (*at, c)));
-                    }
-                }
-                // Those of the alignments shown.
-                let warnings: Vec<String> = p
-                    .warnings()
-                    .into_iter()
-                    .filter(|w| {
-                        sheets
-                            .iter()
-                            .any(|(_, id, _)| w.starts_with(&format!("route {id}: ")))
-                    })
-                    .collect();
-                let page = p.paper.as_deref().unwrap_or("");
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Sheet preview: {} sheet(s) {page}, {} warning(s) — as Plans & sheets › \
-                         Profile sheets… writes them",
-                        sheets.len(),
-                        warnings.len()
-                    ))
-                    .small(),
-                );
-                if !warnings.is_empty() {
-                    crate::menu::message(ui, warnings.join("\n"), Some(ui.visuals().warn_fg_color));
-                }
-            }
-        }
-        let (rect, response) =
-            ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        Some(())
+    }
+
+    /// Moves the view as the pointer says (drag, scroll, double-click) and
+    /// follows a box or lasso being drawn: the stations shown now, and
+    /// the area when one was finished.
+    fn navigate(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        rect: egui::Rect,
+        width: f64,
+        ratio: Option<f64>,
+        buttons: (egui::PointerButton, egui::PointerButton),
+    ) -> ([f64; 2], Option<crate::area::Area>) {
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
         let range = self.range.get_or_insert([0.0, d.length.max(1.0)]);
-        let width = f64::from(rect.width()).max(1.0);
-        let height = f64::from(rect.height()).max(1.0);
-        // A fixed ratio: pixels per metre of height, from the stations'.
-        let ratio = model.profile_ratio.filter(|k| *k > 0.0);
         let vscale = |r: &[f64; 2]| ratio.map(|k| k * width / (r[1] - r[0]).max(1e-9));
         let before = *range;
         // Alt + drag of the selecting button: a box or lasso of the LiDAR
         // points dotted (the view does not move meanwhile).
-        let (area_done, drawing) = crate::area::frame(&mut self.area, ui, &response, buttons.0);
+        let (area_done, drawing) = crate::area::frame(&mut self.area, ui, response, buttons.0);
         if response.dragged() && !drawing {
             let ds = -f64::from(response.drag_delta().x) / width * (range[1] - range[0]);
             range[0] += ds;
@@ -810,6 +838,20 @@ impl ProfileView {
             *range = [0.0, d.length.max(1.0)];
             self.z_centre = None;
         }
+        (*range, area_done)
+    }
+
+    /// The heights shown at the stations `range`: those of what is
+    /// visible, or at a fixed ratio those the view's height holds.
+    fn heights_shown(
+        &mut self,
+        range: &[f64; 2],
+        ratio: Option<f64>,
+        width: f64,
+        height: f64,
+    ) -> (f64, f64) {
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
+        let vscale = |r: &[f64; 2]| ratio.map(|k| k * width / (r[1] - r[0]).max(1e-9));
         let [s0, s1] = *range;
         // Heights of what is visible (found again when the stations
         // shown change).
@@ -859,37 +901,14 @@ impl ProfileView {
                 (z0 - pad, z1 + pad)
             }
         };
-        self.shown = Some(([s0, s1], [z0, z1], [width, height]));
-        self.rect = Some(rect);
-        let to_screen = move |s: f64, z: f64| {
-            egui::pos2(
-                rect.min.x + ((s - s0) / (s1 - s0) * width) as f32,
-                rect.max.y - ((z - z0) / (z1 - z0) * f64::from(rect.height())) as f32,
-            )
-        };
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(24, 28, 34));
-        // Height grid.
-        let step = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
-            .into_iter()
-            .find(|s| (z1 - z0) / s <= 8.0)
-            .unwrap_or(1000.0);
-        let mut z = (z0 / step).ceil() * step;
-        while z < z1 {
-            let y = to_screen(s0, z).y;
-            painter.line_segment(
-                [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
-                egui::Stroke::new(1.0, egui::Color32::from_gray(45)),
-            );
-            painter.text(
-                egui::pos2(rect.max.x - 4.0, y - 2.0),
-                egui::Align2::RIGHT_BOTTOM,
-                format!("{z:.0}"),
-                egui::FontId::proportional(10.0),
-                egui::Color32::from_gray(130),
-            );
-            z += step;
-        }
+        (z0, z1)
+    }
+
+    /// The vegetation check's grow-in points and danger trees.
+    fn paint_vegetation(&mut self, painter: &egui::Painter, fr: &Frame, depth: f64) {
+        let Frame { rect, s0, s1, .. } = *fr;
+        let to_screen = fr.to_screen();
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
         // What Checks › Vegetation found within the line width: grow-in
         // points (cyan dots), danger trees (an orange trunk).
         let [grows, falls] = self.vegetation_layers;
@@ -943,6 +962,13 @@ impl ProfileView {
                 }
             }
         }
+    }
+
+    /// The clearance marks.
+    fn paint_marks(&mut self, painter: &egui::Painter, fr: &Frame, depth: f64) {
+        let Frame { s0, s1, .. } = *fr;
+        let to_screen = fr.to_screen();
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
         // The clearances below a requirement within the line width: each
         // end at its own station (a vertical one: one station, a vertical
         // stroke from the target up to the wire's height).
@@ -965,20 +991,25 @@ impl ProfileView {
                 painter.circle_filled(b, 2.5, target);
             }
         }
+    }
+
+    /// The corridor behind the line: survey and LiDAR dots, the ground at
+    /// its edges and under the centreline, the 3D drawings in it.
+    fn paint_corridor(
+        &mut self,
+        painter: &egui::Painter,
+        fr: &Frame,
+        model: &Model,
+        view_key: ViewKey,
+    ) {
+        let Frame { rect, s0, s1, .. } = *fr;
+        let to_screen = fr.to_screen();
+        let built = &self.drawing.as_ref().expect("built").1;
+        let d = &built.drawing;
         let visible = |p: &[f64; 2]| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0);
         // The corridor: survey points, the ground at its edges, the 3D
         // drawings in it (those not hidden), under the centreline ground;
         // made again when the view moves.
-        let view_key: ViewKey = [
-            s0.to_bits(),
-            s1.to_bits(),
-            z0.to_bits(),
-            z1.to_bits(),
-            u64::from(rect.min.x.to_bits()),
-            u64::from(rect.min.y.to_bits()),
-            u64::from(rect.max.x.to_bits()),
-            u64::from(rect.max.y.to_bits()),
-        ];
         let hidden = {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -1089,6 +1120,14 @@ impl ProfileView {
         if let Some((_, shapes)) = &self.back {
             painter.extend(shapes.iter().cloned());
         }
+    }
+
+    /// The lines on the ground beside the line, along the profile.
+    fn paint_ground_lines(&mut self, painter: &egui::Painter, fr: &Frame, model: &Model) {
+        let Frame { s0, s1, .. } = *fr;
+        let to_screen = fr.to_screen();
+        let built = &self.drawing.as_ref().expect("built").1;
+        let visible = |p: &[f64; 2]| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0);
         // The lines on the ground beside the line (View › Lines on the
         // ground beside the line, "in the profile too"): the ground along
         // each, by the station of its points; the right side (near)
@@ -1139,6 +1178,15 @@ impl ProfileView {
                 }
             }
         }
+    }
+
+    /// Where each alignment begins (several shown).
+    fn paint_joints(&self, painter: &egui::Painter, fr: &Frame) {
+        let Frame {
+            rect, s0, s1, z0, ..
+        } = *fr;
+        let to_screen = fr.to_screen();
+        let built = &self.drawing.as_ref().expect("built").1;
         // All alignments: where each begins.
         if built.joints.len() > 1 {
             for (at, name) in &built.joints {
@@ -1159,6 +1207,20 @@ impl ProfileView {
                 );
             }
         }
+    }
+
+    /// The structures: members, sticks or a mast line, a pole's
+    /// silhouette, the name.
+    fn paint_structures(
+        &self,
+        painter: &egui::Painter,
+        fr: &Frame,
+        model: &Model,
+        selection: &Selection,
+    ) {
+        let Frame { rect, s0, s1, .. } = *fr;
+        let to_screen = fr.to_screen();
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
         for m in &d.structures {
             // Only those within the stretch shown (with room for their
             // width and name).
@@ -1252,6 +1314,21 @@ impl ProfileView {
                 col,
             );
         }
+    }
+
+    /// The wires, and the section labels and sags on them.
+    fn paint_wires(
+        &mut self,
+        painter: &egui::Painter,
+        fr: &Frame,
+        model: &Model,
+        case: usize,
+        selection: &Selection,
+        view_key: ViewKey,
+    ) {
+        let Frame { rect, s0, s1, .. } = *fr;
+        let to_screen = fr.to_screen();
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
         // Coloured and coded as Line › Sections › Display options say (made
         // again when the view, the selection or the styles change).
         let display = &model.section_display;
@@ -1313,7 +1390,23 @@ impl ProfileView {
         }
         // Section labels and sags (Line › Sections › Display options), on this
         // route's traces of the spans.
-        paint_span_notes(&painter, rect, model, case, &d.wires, to_screen);
+        paint_span_notes(painter, rect, model, case, &d.wires, to_screen);
+    }
+
+    /// The sheet preview: the lines the sheets carry, the match lines and
+    /// the strip of sheets along the bottom.
+    fn paint_sheets(
+        &mut self,
+        painter: &egui::Painter,
+        fr: &Frame,
+        sheets: Sheets<'_>,
+        curves: Curves<'_>,
+    ) {
+        let Frame {
+            rect, s0, s1, z0, ..
+        } = *fr;
+        let to_screen = fr.to_screen();
+        let built = &self.drawing.as_ref().expect("built").1;
         // The sheet preview: match lines across the view at each sheet's
         // ends, the sheets in a strip along the bottom (warned ones amber,
         // the part beyond what the sheet holds darker), their numbers.
@@ -1411,6 +1504,13 @@ impl ProfileView {
                 );
             }
         }
+    }
+
+    /// The line at the top: what is shown, from where to where, at which
+    /// ratio.
+    fn paint_title(&self, painter: &egui::Painter, fr: &Frame, ratio: Option<f64>) {
+        let Frame { rect, s0, s1, .. } = *fr;
+        let d = &self.drawing.as_ref().expect("built").1.drawing;
         painter.text(
             rect.left_top() + egui::vec2(8.0, 6.0),
             egui::Align2::LEFT_TOP,
@@ -1427,103 +1527,32 @@ impl ProfileView {
             egui::FontId::proportional(11.0),
             egui::Color32::from_gray(150),
         );
-        // Picking: structures by station, wires by nearest point. Select
-        // held, a left-click selects; another tool, a left-click uses it
-        // and a right-click selects ([`crate::controls::click_buttons`]).
-        let pick = |pos: egui::Pos2| -> Selection {
-            let mut best: Option<(f32, Selection)> = None;
-            let mut consider = |d: f32, s: Selection| {
-                let on = s.kind().is_some_and(|k| snaps.on(k));
-                if on && d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
-                    best = Some((d, s));
-                }
-            };
-            for m in &d.structures {
-                let a = to_screen(m.station, m.base);
-                let b = to_screen(m.station, m.top);
-                let dx = (pos.x - a.x).abs();
-                if pos.y >= b.y - 12.0 && pos.y <= a.y + 4.0 {
-                    consider(dx - 3.0, Selection::Structure(m.id.clone()));
-                }
-            }
-            for w in &d.wires {
-                let Some(sel) = trace_selection(&w.label) else {
-                    continue;
-                };
-                let dmin = w
-                    .points
-                    .iter()
-                    .map(|p| to_screen(p[0], p[2]).distance(pos))
-                    .fold(f32::INFINITY, f32::min);
-                consider(dmin, sel);
-            }
-            // The LiDAR points dotted (every one drawn can be clicked; a
-            // point under another's dot is drawn as that one).
-            if let Some((d, p)) = self
-                .lidar_dots
-                .iter()
-                .map(|(q, p)| (q.distance(pos), *p))
-                .min_by(|a, b| a.0.total_cmp(&b.0))
-                .filter(|(d, _)| *d <= 12.0)
-            {
-                // Over the wires at about the same distance (as in 3D).
-                consider((d - 4.0).max(0.0), Selection::LidarPoint(p));
-            }
-            best.map_or(Selection::None, |b| b.1)
-        };
+    }
+
+    /// What is under the cursor while a measuring tool is held, and the
+    /// measuring tools' lines and points.
+    fn hover_and_measure(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        fr: &Frame,
+        snaps: &crate::selection::Snaps,
+    ) {
+        let rect = fr.rect;
+        let to_screen = fr.to_screen();
+        let built = &self.drawing.as_ref().expect("built").1;
+        let d = &built.drawing;
         // One alignment shown (not several one after the other): a point
         // of the profile's plane is a point on its axis.
         let single = built.joints.len() <= 1;
-        // What a click of the tool button at `pos` finds: the object, on a
-        // wire the point of it clicked, else the point of the profile's
-        // plane there (on the axis, at the cursor's height).
-        let use_at = |pos: egui::Pos2| {
-            let target = pick(pos);
-            let s = s0 + f64::from(pos.x - rect.min.x) / width * (s1 - s0);
-            let z = z0 + f64::from(rect.max.y - pos.y) / f64::from(rect.height()) * (z1 - z0);
-            let at = single.then(|| {
-                let xy = ohl_line::route::point_at(&d.centreline, s, 0.0);
-                [xy[0], xy[1], z]
-            });
-            let mut on: Option<(f32, [f64; 3])> = None;
-            if matches!(target, Selection::Span { .. } | Selection::Jumper(_)) {
-                for w in d
-                    .wires
-                    .iter()
-                    .filter(|w| trace_selection(&w.label).as_ref() == Some(&target))
-                {
-                    for k in 1..w.points.len().min(w.xy.len()) {
-                        let (p, q) = (w.points[k - 1], w.points[k]);
-                        let (a, b) = (to_screen(p[0], p[2]), to_screen(q[0], q[2]));
-                        let ab = b - a;
-                        let len2 = ab.length_sq();
-                        let u = if len2 > 0.0 {
-                            ((pos - a).dot(ab) / len2).clamp(0.0, 1.0)
-                        } else {
-                            0.0
-                        };
-                        let e = (a + ab * u).distance(pos);
-                        if on.is_none_or(|o| e < o.0) {
-                            let u = f64::from(u);
-                            let (xa, xb) = (w.xy[k - 1], w.xy[k]);
-                            on = Some((
-                                e,
-                                [
-                                    xa[0] + u * (xb[0] - xa[0]),
-                                    xa[1] + u * (xb[1] - xa[1]),
-                                    p[2] + u * (q[2] - p[2]),
-                                ],
-                            ));
-                        }
-                    }
-                }
-            }
-            crate::selection::Use {
-                target,
-                at,
-                on: on.map(|o| o.1),
-            }
+        let picker = Picker {
+            fr: *fr,
+            d,
+            lidar_dots: &self.lidar_dots,
+            snaps,
+            single,
         };
+        let use_at = |pos: egui::Pos2| picker.use_at(pos);
         if !self.measuring {
             self.hover_use = None;
         } else if let Some(pos) = response.hover_pos() {
@@ -1546,7 +1575,12 @@ impl ProfileView {
                 None,
             );
         }
-        let (select_button, tool_button) = buttons;
+    }
+
+    /// A box or lasso: the LiDAR points it selected when finished, the
+    /// one being drawn.
+    fn area_ui(&mut self, ui: &egui::Ui, fr: &Frame, area_done: Option<crate::area::Area>) {
+        let rect = fr.rect;
         if let Some(area) = area_done {
             let started = std::time::Instant::now();
             let picked: Vec<crate::model::LidarPoint> = self
@@ -1563,6 +1597,40 @@ impl ProfileView {
         if let Some(a) = &self.area {
             a.paint(&ui.painter_at(rect));
         }
+    }
+
+    /// The clicks: select, the right-click's place and its menu, the
+    /// tool's use (what it found).
+    fn clicks(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        fr: &Frame,
+        snaps: &crate::selection::Snaps,
+        selection: &mut Selection,
+        buttons: (egui::PointerButton, egui::PointerButton),
+    ) -> Option<crate::selection::Use> {
+        let Frame {
+            rect,
+            s0,
+            s1,
+            width,
+            ..
+        } = *fr;
+        let to_screen = fr.to_screen();
+        let built = &self.drawing.as_ref().expect("built").1;
+        let d = &built.drawing;
+        let single = built.joints.len() <= 1;
+        let picker = Picker {
+            fr: *fr,
+            d,
+            lidar_dots: &self.lidar_dots,
+            snaps,
+            single,
+        };
+        let pick = |pos: egui::Pos2| picker.pick(pos);
+        let use_at = |pos: egui::Pos2| picker.use_at(pos);
+        let (select_button, tool_button) = buttons;
         if response.clicked_by(select_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
@@ -1629,6 +1697,267 @@ impl ProfileView {
     }
 }
 
+/// Where a frame draws: the view's rectangle, the stations and heights
+/// shown, the rectangle's width in points.
+#[derive(Clone, Copy)]
+struct Frame {
+    rect: egui::Rect,
+    s0: f64,
+    s1: f64,
+    z0: f64,
+    z1: f64,
+    width: f64,
+}
+
+impl Frame {
+    /// Where a station and a height are on the screen.
+    fn to_screen(self) -> impl Fn(f64, f64) -> egui::Pos2 + Copy + use<> {
+        let Frame {
+            rect,
+            s0,
+            s1,
+            z0,
+            z1,
+            width,
+        } = self;
+        move |s: f64, z: f64| {
+            egui::pos2(
+                rect.min.x + ((s - s0) / (s1 - s0) * width) as f32,
+                rect.max.y - ((z - z0) / (z1 - z0) * f64::from(rect.height())) as f32,
+            )
+        }
+    }
+}
+
+/// The sheet preview's sheets: where each one's alignment begins on the
+/// profile, the alignment, the sheet.
+type Sheets<'a> = Vec<(f64, &'a str, &'a ohl_drawing::SheetLayout)>;
+
+/// The lines below the lowest conductor the sheets carry: where each
+/// one's alignment begins on the profile, the line.
+type Curves<'a> = Vec<(f64, &'a ohl_drawing::curves::Curve)>;
+
+/// The export's sheets of the alignments shown, each moved as its
+/// alignment is on this profile, and the lines below the lowest conductor
+/// they carry; what the preview says is written above the view.
+fn sheet_preview<'a>(
+    ui: &mut egui::Ui,
+    drawings: &'a mut crate::drawings::Drawings,
+    model: &Model,
+    case: usize,
+    built: &Built,
+) -> (Sheets<'a>, Curves<'a>) {
+    // The sheet preview: the export's sheets of the alignments shown,
+    // each moved as its alignment is on this profile.
+    let mut sheets: Vec<(f64, &str, &ohl_drawing::SheetLayout)> = Vec::new();
+    // The lines below the lowest conductor the sheets carry.
+    let mut curves: Vec<(f64, &ohl_drawing::curves::Curve)> = Vec::new();
+    match drawings.preview(model, case) {
+        None => {}
+        Some(Err(e)) => {
+            crate::menu::message(
+                ui,
+                format!("Sheet preview: {e}"),
+                Some(ui.visuals().warn_fg_color),
+            );
+        }
+        Some(Ok(p)) if p.paper.is_none() => {
+            ui.label(
+                egui::RichText::new(
+                    "Sheet preview: the export writes one continuous drawing (no sheet \
+                         format chosen in Plans & sheets › Profile sheets…)",
+                )
+                .small()
+                .weak(),
+            );
+        }
+        Some(Ok(p)) => {
+            for (at, name) in &built.joints {
+                let id = name.strip_prefix("alignment ").unwrap_or(name);
+                if let Some(r) = p.route(id) {
+                    sheets.extend(r.sheets.iter().map(|s| (*at, r.id.as_str(), s)));
+                    curves.extend(r.curves.iter().map(|c| (*at, c)));
+                }
+            }
+            // Those of the alignments shown.
+            let warnings: Vec<String> = p
+                .warnings()
+                .into_iter()
+                .filter(|w| {
+                    sheets
+                        .iter()
+                        .any(|(_, id, _)| w.starts_with(&format!("route {id}: ")))
+                })
+                .collect();
+            let page = p.paper.as_deref().unwrap_or("");
+            ui.label(
+                egui::RichText::new(format!(
+                    "Sheet preview: {} sheet(s) {page}, {} warning(s) — as Plans & sheets › \
+                         Profile sheets… writes them",
+                    sheets.len(),
+                    warnings.len()
+                ))
+                .small(),
+            );
+            if !warnings.is_empty() {
+                crate::menu::message(ui, warnings.join("\n"), Some(ui.visuals().warn_fg_color));
+            }
+        }
+    }
+    (sheets, curves)
+}
+
+/// The background and the height grid.
+fn paint_grid(painter: &egui::Painter, fr: &Frame) {
+    let Frame {
+        rect, s0, z0, z1, ..
+    } = *fr;
+    let to_screen = fr.to_screen();
+    painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(24, 28, 34));
+    // Height grid.
+    let step = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
+        .into_iter()
+        .find(|s| (z1 - z0) / s <= 8.0)
+        .unwrap_or(1000.0);
+    let mut z = (z0 / step).ceil() * step;
+    while z < z1 {
+        let y = to_screen(s0, z).y;
+        painter.line_segment(
+            [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
+            egui::Stroke::new(1.0, egui::Color32::from_gray(45)),
+        );
+        painter.text(
+            egui::pos2(rect.max.x - 4.0, y - 2.0),
+            egui::Align2::RIGHT_BOTTOM,
+            format!("{z:.0}"),
+            egui::FontId::proportional(10.0),
+            egui::Color32::from_gray(130),
+        );
+        z += step;
+    }
+}
+
+/// What a click finds: where the frame draws, the drawing, the LiDAR
+/// points dotted, the kinds picked, whether one alignment is shown.
+struct Picker<'a> {
+    fr: Frame,
+    d: &'a RouteDrawing,
+    lidar_dots: &'a [(egui::Pos2, crate::model::LidarPoint)],
+    snaps: &'a crate::selection::Snaps,
+    single: bool,
+}
+
+impl Picker<'_> {
+    /// What is at `pos`.
+    fn pick(&self, pos: egui::Pos2) -> Selection {
+        let (d, snaps) = (self.d, self.snaps);
+        let to_screen = self.fr.to_screen();
+        // Picking: structures by station, wires by nearest point. Select
+        // held, a left-click selects; another tool, a left-click uses it
+        // and a right-click selects ([`crate::controls::click_buttons`]).
+        let mut best: Option<(f32, Selection)> = None;
+        let mut consider = |d: f32, s: Selection| {
+            let on = s.kind().is_some_and(|k| snaps.on(k));
+            if on && d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
+                best = Some((d, s));
+            }
+        };
+        for m in &d.structures {
+            let a = to_screen(m.station, m.base);
+            let b = to_screen(m.station, m.top);
+            let dx = (pos.x - a.x).abs();
+            if pos.y >= b.y - 12.0 && pos.y <= a.y + 4.0 {
+                consider(dx - 3.0, Selection::Structure(m.id.clone()));
+            }
+        }
+        for w in &d.wires {
+            let Some(sel) = trace_selection(&w.label) else {
+                continue;
+            };
+            let dmin = w
+                .points
+                .iter()
+                .map(|p| to_screen(p[0], p[2]).distance(pos))
+                .fold(f32::INFINITY, f32::min);
+            consider(dmin, sel);
+        }
+        // The LiDAR points dotted (every one drawn can be clicked; a
+        // point under another's dot is drawn as that one).
+        if let Some((d, p)) = self
+            .lidar_dots
+            .iter()
+            .map(|(q, p)| (q.distance(pos), *p))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .filter(|(d, _)| *d <= 12.0)
+        {
+            // Over the wires at about the same distance (as in 3D).
+            consider((d - 4.0).max(0.0), Selection::LidarPoint(p));
+        }
+        best.map_or(Selection::None, |b| b.1)
+    }
+
+    /// What a click of the tool button at `pos` finds.
+    fn use_at(&self, pos: egui::Pos2) -> crate::selection::Use {
+        // What a click of the tool button at `pos` finds: the object, on a
+        // wire the point of it clicked, else the point of the profile's
+        // plane there (on the axis, at the cursor's height).
+        let Frame {
+            rect,
+            s0,
+            s1,
+            z0,
+            z1,
+            width,
+        } = self.fr;
+        let (d, single) = (self.d, self.single);
+        let to_screen = self.fr.to_screen();
+        let target = self.pick(pos);
+        let s = s0 + f64::from(pos.x - rect.min.x) / width * (s1 - s0);
+        let z = z0 + f64::from(rect.max.y - pos.y) / f64::from(rect.height()) * (z1 - z0);
+        let at = single.then(|| {
+            let xy = ohl_line::route::point_at(&d.centreline, s, 0.0);
+            [xy[0], xy[1], z]
+        });
+        let mut on: Option<(f32, [f64; 3])> = None;
+        if matches!(target, Selection::Span { .. } | Selection::Jumper(_)) {
+            for w in d
+                .wires
+                .iter()
+                .filter(|w| trace_selection(&w.label).as_ref() == Some(&target))
+            {
+                for k in 1..w.points.len().min(w.xy.len()) {
+                    let (p, q) = (w.points[k - 1], w.points[k]);
+                    let (a, b) = (to_screen(p[0], p[2]), to_screen(q[0], q[2]));
+                    let ab = b - a;
+                    let len2 = ab.length_sq();
+                    let u = if len2 > 0.0 {
+                        ((pos - a).dot(ab) / len2).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let e = (a + ab * u).distance(pos);
+                    if on.is_none_or(|o| e < o.0) {
+                        let u = f64::from(u);
+                        let (xa, xb) = (w.xy[k - 1], w.xy[k]);
+                        on = Some((
+                            e,
+                            [
+                                xa[0] + u * (xb[0] - xa[0]),
+                                xa[1] + u * (xb[1] - xa[1]),
+                                p[2] + u * (q[2] - p[2]),
+                            ],
+                        ));
+                    }
+                }
+            }
+        }
+        crate::selection::Use {
+            target,
+            at,
+            on: on.map(|o| o.1),
+        }
+    }
+}
 /// The pixels of a view already drawn on (one bit each).
 pub(crate) struct PixelSet {
     origin: egui::Pos2,

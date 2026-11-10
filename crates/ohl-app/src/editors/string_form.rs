@@ -944,33 +944,8 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
     let ahead = model.line.display.ahead_deg;
     let mut reset = false;
     if f.new {
-        ui.horizontal(|ui| {
-            ui.label("set");
-            crate::style::field(ui, egui::DragValue::new(&mut f.set).range(1..=9999));
-            ui.label("shape");
-            let top = f
-                .strings
-                .first()
-                .and_then(|x| f.points.iter().find(|p| p.label == x.top))
-                .map_or([0.0, 0.0, 20.0], |p| p.at);
-            let mut chosen = None;
-            egui::ComboBox::from_id_salt("string-preset")
-                .selected_text("replace with…")
-                .show_ui(ui, |ui| {
-                    for p in Preset::ALL {
-                        if ui.selectable_label(false, p.name()).clicked() {
-                            chosen = Some(p);
-                        }
-                    }
-                });
-            if let Some(p) = chosen {
-                f.preset(p, top, model);
-            }
-        });
+        preset_ui(ui, f, model);
     }
-    let help = |ui: &mut egui::Ui, text: &str| {
-        ui.label(egui::RichText::new(text).small().weak());
-    };
     let structure = model.line.structure(&f.structure);
     // Points of the structure strings may hang from (with the new ones of
     // the form), and where each is (local).
@@ -988,111 +963,282 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
     egui::ScrollArea::vertical()
         .max_height(460.0)
         .show(ui, |ui| {
-            ui.strong("Strings");
-            help(
-                ui,
-                "A string is one straight insulating member: from the point it hangs from (on the structure, \
+            strings_ui(ui, f, model, &point_names, ahead);
+            loose_wires_ui(ui, f);
+            add_string_ui(ui, f, model, &point_names);
+            new_points_ui(ui, f, model, &new_points);
+        });
+    if f.overrides_type {
+        ui.label(
+            egui::RichText::new("These strings are the structure's own, over its type's.").small(),
+        );
+        reset = ui.button("Back to the type's strings").clicked();
+    }
+    reset
+}
+
+/// A small, weak line of explanation.
+fn help(ui: &mut egui::Ui, text: &str) {
+    ui.label(egui::RichText::new(text).small().weak());
+}
+
+/// A new string's set, and a shape to replace its strings with.
+fn preset_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) {
+    ui.horizontal(|ui| {
+        ui.label("set");
+        crate::style::field(ui, egui::DragValue::new(&mut f.set).range(1..=9999));
+        ui.label("shape");
+        let top = f
+            .strings
+            .first()
+            .and_then(|x| f.points.iter().find(|p| p.label == x.top))
+            .map_or([0.0, 0.0, 20.0], |p| p.at);
+        let mut chosen = None;
+        egui::ComboBox::from_id_salt("string-preset")
+            .selected_text("replace with…")
+            .show_ui(ui, |ui| {
+                for p in Preset::ALL {
+                    if ui.selectable_label(false, p.name()).clicked() {
+                        chosen = Some(p);
+                    }
+                }
+            });
+        if let Some(p) = chosen {
+            f.preset(p, top, model);
+        }
+    });
+}
+
+/// An entry of the string library as a string may take it: its name,
+/// whether it is a V's leg, what the string takes.
+type LibraryChoice = (String, bool, LibraryString);
+
+/// The string library's entries ([`LibraryChoice`]).
+fn library_strings(model: &Model) -> Vec<LibraryChoice> {
+    model
+        .types
+        .as_ref()
+        .map(|(_, lib)| {
+            lib.iter()
+                .map(|a| {
+                    use ohl_structures::AssemblyKind as K;
+                    let v = a.kind == K::VString;
+                    let share = if v { 0.5 } else { 1.0 };
+                    (
+                        a.name.clone(),
+                        v,
+                        LibraryString {
+                            id: a.id.clone(),
+                            length: a.length.si(),
+                            weight: a.weight.si() * share,
+                            wind_area: a.wind_area.si() * share,
+                            stiffness: a.axial_stiffness.si(),
+                            strain: a.kind == K::Strain,
+                        },
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// What the parts of a string's row share: which string it is, whether
+/// it makes its wire point, its length, the strings' tops, the points and
+/// the wire points it may hang from, the wire points it may end at, the
+/// library's entries, the names its wire point may not take, the
+/// project's direction ahead.
+#[derive(Clone, Copy)]
+struct Row<'a> {
+    k: usize,
+    owns: bool,
+    length: &'a Option<f64>,
+    tops: &'a [Option<[f64; 3]>],
+    point_names: &'a [String],
+    others: &'a [String],
+    ends: &'a [String],
+    library: &'a [LibraryChoice],
+    names: &'a [String],
+    ahead: f64,
+}
+
+/// What a string's row asks for, done once the row is drawn.
+#[derive(Default)]
+struct RowAsks {
+    /// Ends at another wire point (none: one of its own, made).
+    ends_at: Option<Option<String>>,
+    /// Hung from another point.
+    retop: Option<String>,
+    /// A length typed (kept: what it moves follows) or, for a string
+    /// making its wire point alone, angles typed (its wire point there,
+    /// what hangs below along).
+    want_len: Option<f64>,
+    want_at: Option<[f64; 3]>,
+    /// An entry of the library chosen.
+    pick: Option<usize>,
+    /// A wire point renamed: (old, new) for its strings.
+    rename: Option<(String, String)>,
+}
+
+/// The strings: a row each, and what the rows ask for done.
+fn strings_ui(
+    ui: &mut egui::Ui,
+    f: &mut StringForm,
+    model: &Model,
+    point_names: &[String],
+    ahead: f64,
+) {
+    ui.strong("Strings");
+    help(
+        ui,
+        "A string is one straight insulating member: from the point it hangs from (on the structure, \
                  or the bottom of another string) to its wire point, which it makes: placed from \
                  its top by an angle from straight down, a direction and its length (where it is \
                  before the wire is strung; once strung it is drawn where the calculation puts \
                  it). With a set number a wire is clamped at the wire point (sections and jumpers \
                  end on it); without one, other strings may hang from it. A second leg of a V \
                  ends at another string's wire point.",
-            );
-            // (name, a V's leg, what the string takes).
-            let library: Vec<(String, bool, LibraryString)> = model
-                .types
-                .as_ref()
-                .map(|(_, lib)| {
-                    lib.iter()
-                        .map(|a| {
-                            use ohl_structures::AssemblyKind as K;
-                            let v = a.kind == K::VString;
-                            let share = if v { 0.5 } else { 1.0 };
-                            (
-                                a.name.clone(),
-                                v,
-                                LibraryString {
-                                    id: a.id.clone(),
-                                    length: a.length.si(),
-                                    weight: a.weight.si() * share,
-                                    wind_area: a.wind_area.si() * share,
-                                    stiffness: a.axial_stiffness.si(),
-                                    strain: a.kind == K::Strain,
-                                },
-                            )
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let tops: Vec<Option<[f64; 3]>> = f
-                .strings
+    );
+    // (name, a V's leg, what the string takes).
+    let library = library_strings(model);
+    let tops: Vec<Option<[f64; 3]>> = f
+        .strings
+        .iter()
+        .map(|x| {
+            f.points
                 .iter()
-                .map(|x| {
-                    f.points
-                        .iter()
-                        .find(|p| p.label == x.top)
-                        .map(|p| p.at)
-                        .or_else(|| f.wires.iter().find(|w| w.label == x.top).map(|w| w.at))
-                })
-                .collect();
-            let lengths: Vec<Option<f64>> = f.strings.iter().map(|x| f.length(x)).collect();
-            // The string that makes each wire point: the first to it.
-            let owner = |f: &StringForm, wire: &str| f.strings.iter().position(|x| x.wire == wire);
-            let mut remove = None;
-            for (k, length) in lengths.iter().enumerate() {
-                let owns = owner(f, &f.strings[k].wire) == Some(k);
-                let others: Vec<String> = f.top_choices(model, k);
-                let ends = f.end_choices(model, k);
-                let mut ends_at: Option<Option<String>> = None;
-                let mut retop: Option<String> = None;
-                // A length typed (kept: what it moves follows) or, for a
-                // string making its wire point alone, angles typed (its
-                // wire point there, what hangs below along).
-                let mut want_len: Option<f64> = None;
-                let mut want_at: Option<[f64; 3]> = None;
-                let mut pick: Option<usize> = None;
-                // A wire point renamed: (old, new) for its strings.
-                let mut rename: Option<(String, String)> = None;
-                // Names its wire point may not take (its own current one
-                // aside).
-                let wire_now = f.strings[k].wire.clone();
-                let structure = model.line.structure(&f.structure);
-                let names: Vec<String> = f
-                    .points
+                .find(|p| p.label == x.top)
+                .map(|p| p.at)
+                .or_else(|| f.wires.iter().find(|w| w.label == x.top).map(|w| w.at))
+        })
+        .collect();
+    let lengths: Vec<Option<f64>> = f.strings.iter().map(|x| f.length(x)).collect();
+    // The string that makes each wire point: the first to it.
+    let owner = |f: &StringForm, wire: &str| f.strings.iter().position(|x| x.wire == wire);
+    let mut remove = None;
+    for (k, length) in lengths.iter().enumerate() {
+        let owns = owner(f, &f.strings[k].wire) == Some(k);
+        let others: Vec<String> = f.top_choices(model, k);
+        let ends = f.end_choices(model, k);
+        // Names its wire point may not take (its own current one
+        // aside).
+        let wire_now = f.strings[k].wire.clone();
+        let structure = model.line.structure(&f.structure);
+        let names: Vec<String> = f
+            .points
+            .iter()
+            .map(|p| p.label.clone())
+            .chain(f.wires.iter().map(|w| w.label.clone()))
+            .chain(f.strings.iter().map(|x| x.label.clone()))
+            .chain(structure.into_iter().flat_map(|s| {
+                s.points
                     .iter()
                     .map(|p| p.label.clone())
-                    .chain(f.wires.iter().map(|w| w.label.clone()))
-                    .chain(f.strings.iter().map(|x| x.label.clone()))
-                    .chain(structure.into_iter().flat_map(|s| {
-                        s.points
-                            .iter()
-                            .map(|p| p.label.clone())
-                            .chain(s.wires.iter().map(|w| w.label.clone()))
-                            .chain(s.strings.iter().map(|x| x.label.clone()))
-                    }))
-                    .filter(|l| *l != wire_now)
-                    .collect();
-                let clash = |text: &str, own: &str| text != own && names.iter().any(|l| l == text);
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    let x = &mut f.strings[k];
-                    ui.horizontal(|ui| {
-                        ui.label("string");
-                        ui.add(egui::TextEdit::singleline(&mut x.label).desired_width(110.0));
-                        match length {
-                            Some(l) => ui.label(format!("{l:.3} m long")),
-                            None => ui.label("—"),
-                        };
-                        if ui
-                            .small_button("×")
-                            .on_hover_text("Take this string away, with the wire point it makes")
-                            .clicked()
-                        {
-                            remove = Some(k);
-                        }
-                    });
-                    if !library.is_empty() {
-                        ui.horizontal(|ui| {
+                    .chain(s.wires.iter().map(|w| w.label.clone()))
+                    .chain(s.strings.iter().map(|x| x.label.clone()))
+            }))
+            .filter(|l| *l != wire_now)
+            .collect();
+        let cx = Row {
+            k,
+            owns,
+            length,
+            tops: &tops,
+            point_names,
+            others: &others,
+            ends: &ends,
+            library: &library,
+            names: &names,
+            ahead,
+        };
+        let mut asks = RowAsks::default();
+        egui::Frame::group(ui.style())
+            .show(ui, |ui| string_row_ui(ui, f, &cx, &mut asks, &mut remove));
+        apply_asks(f, model, &cx, asks, &lengths);
+    }
+    if let Some(k) = remove {
+        f.strings.remove(k);
+        f.drop_unused_wires();
+    }
+    if let Some(note) = &f.note {
+        crate::menu::error_label(ui, egui::RichText::new(note).small());
+    }
+}
+
+/// A string's row: its name and library entry, where it hangs and ends,
+/// its loads and limits, a V's leg's length, the wire point it makes.
+fn string_row_ui(
+    ui: &mut egui::Ui,
+    f: &mut StringForm,
+    cx: &Row<'_>,
+    asks: &mut RowAsks,
+    remove: &mut Option<usize>,
+) {
+    let Row {
+        k,
+        owns,
+        tops,
+        ahead,
+        ..
+    } = *cx;
+    let x = &mut f.strings[k];
+    string_head_ui(ui, x, cx, asks, remove);
+    string_ends_ui(ui, x, cx, asks);
+    string_loads_ui(ui, x);
+    // A V's leg (strings meeting at one wire point): its
+    // length only; where the legs meet follows from both.
+    let legs = f
+        .strings
+        .iter()
+        .filter(|y| y.wire == f.strings[k].wire)
+        .count();
+    leg_length_ui(ui, f, cx, legs, asks);
+    // The wire point it makes.
+    if owns
+        && let Some(top) = tops[k]
+        && let Some(w) = f.wires.iter_mut().find(|w| w.label == f.strings[k].wire)
+    {
+        wire_place_ui(ui, w, top, legs, ahead, asks);
+        wire_name_ui(ui, w, cx, f.set, asks);
+        ui.horizontal(|ui| {
+            ui.label("wire point description");
+            ui.add(
+                egui::TextEdit::singleline(&mut w.description)
+                    .desired_width(220.0)
+                    .hint_text("what it is (free text)"),
+            );
+        });
+    }
+}
+
+/// A string's name, length and remove button, its library entry, its
+/// description.
+fn string_head_ui(
+    ui: &mut egui::Ui,
+    x: &mut StringRow,
+    cx: &Row<'_>,
+    asks: &mut RowAsks,
+    remove: &mut Option<usize>,
+) {
+    let Row {
+        k, length, library, ..
+    } = *cx;
+    ui.horizontal(|ui| {
+        ui.label("string");
+        ui.add(egui::TextEdit::singleline(&mut x.label).desired_width(110.0));
+        match length {
+            Some(l) => ui.label(format!("{l:.3} m long")),
+            None => ui.label("—"),
+        };
+        if ui
+            .small_button("×")
+            .on_hover_text("Take this string away, with the wire point it makes")
+            .clicked()
+        {
+            *remove = Some(k);
+        }
+    });
+    if !library.is_empty() {
+        ui.horizontal(|ui| {
                             ui.label("library label");
                             egui::ComboBox::from_id_salt(("string-library", k))
                                 .selected_text(x.insulator.as_deref().unwrap_or("(given here)"))
@@ -1114,7 +1260,7 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                                             .selectable_label(x.insulator.as_deref() == Some(a.2.id.as_str()), text)
                                             .clicked()
                                         {
-                                            pick = Some(n);
+                                            asks.pick = Some(n);
                                         }
                                     }
                                 })
@@ -1125,16 +1271,28 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                                      makes a dead end. Given here: a label is given when applied",
                                 );
                         });
-                    }
-                    ui.horizontal(|ui| {
-                        ui.label("description");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut x.description)
-                                .desired_width(260.0)
-                                .hint_text("what it is (free text)"),
-                        );
-                    });
-                    ui.horizontal(|ui| {
+    }
+    ui.horizontal(|ui| {
+        ui.label("description");
+        ui.add(
+            egui::TextEdit::singleline(&mut x.description)
+                .desired_width(260.0)
+                .hint_text("what it is (free text)"),
+        );
+    });
+}
+
+/// What a string hangs from and where it ends.
+fn string_ends_ui(ui: &mut egui::Ui, x: &mut StringRow, cx: &Row<'_>, asks: &mut RowAsks) {
+    let Row {
+        k,
+        owns,
+        point_names,
+        others,
+        ends,
+        ..
+    } = *cx;
+    ui.horizontal(|ui| {
                         ui.label("hangs from")
                             .on_hover_text("The point of the structure it is attached to");
                         egui::ComboBox::from_id_salt(("string-top", k))
@@ -1142,9 +1300,9 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                             .height(300.0)
                             .show_ui(ui, |ui| {
                                 ui.label(egui::RichText::new("points of the structure").small().weak());
-                                for t in &point_names {
+                                for t in point_names {
                                     if ui.selectable_label(x.top == *t, t).clicked() && x.top != *t {
-                                        retop = Some(t.clone());
+                                        asks.retop = Some(t.clone());
                                     }
                                 }
                                 ui.separator();
@@ -1155,9 +1313,9 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                                     .small()
                                     .weak(),
                                 );
-                                for w in &others {
+                                for w in others {
                                     if ui.selectable_label(x.top == *w, w).clicked() && x.top != *w {
-                                        retop = Some(w.clone());
+                                        asks.retop = Some(w.clone());
                                     }
                                 }
                             });
@@ -1175,16 +1333,20 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                             .selected_text(shown)
                             .show_ui(ui, |ui| {
                                 if ui.selectable_label(owns, "its own wire point").clicked() && !owns {
-                                    ends_at = Some(None);
+                                    asks.ends_at = Some(None);
                                 }
-                                for w in &ends {
+                                for w in ends {
                                     if ui.selectable_label(false, format!("the wire point {w}")).clicked() {
-                                        ends_at = Some(Some(w.clone()));
+                                        asks.ends_at = Some(Some(w.clone()));
                                     }
                                 }
                             });
                     });
-                    ui.horizontal(|ui| {
+}
+
+/// A string's weight, wind area, compression and limits.
+fn string_loads_ui(ui: &mut egui::Ui, x: &mut StringRow) {
+    ui.horizontal(|ui| {
                         ui.label("weight");
                         value(ui, &mut x.weight, 1.0, " N")
                             .on_hover_text("Its own weight, half at each end");
@@ -1208,371 +1370,424 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                             *c = c.max(0.0);
                         }
                     });
-                    limits_ui(ui, &mut x.limits);
-                    // A V's leg (strings meeting at one wire point): its
-                    // length only; where the legs meet follows from both.
-                    let legs = f.strings.iter().filter(|y| y.wire == f.strings[k].wire).count();
-                    if legs > 1
-                        && let (Some(top), Some(length)) = (tops[k], *length)
-                    {
-                        let mut len = length;
-                        ui.horizontal(|ui| {
-                            ui.label("length");
-                            if ui
-                                .add(
-                                    egui::DragValue::new(&mut len)
-                                        .range(0.01..=50.0)
-                                        .speed(0.01)
-                                        .max_decimals(3)
-                                        .suffix(" m"),
-                                )
-                                .on_hover_text(
-                                    "Its length: the other leg keeps its own; the point where they meet \
-                                     moves (and what hangs below it along)",
-                                )
-                                .changed()
-                            {
-                                want_len = Some(len);
-                            }
-                            if let Some(w) = f.wires.iter().find(|w| w.label == f.strings[k].wire) {
-                                let (down, dir, _) = polar(top, w.at);
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "down/up {down:.1}°, direction {:.1}° (from where the legs meet)",
-                                        (dir + ahead).rem_euclid(360.0)
-                                    ))
-                                    .small()
-                                    .weak(),
-                                );
-                            }
-                        });
-                    }
-                    // The wire point it makes.
-                    if owns
-                        && let Some(top) = tops[k]
-                        && let Some(w) = f.wires.iter_mut().find(|w| w.label == f.strings[k].wire)
-                    {
-                        // Shown in the project's convention (ahead at its
-                        // angle, clockwise seen from above).
-                        let (mut down, dir, mut len) = polar(top, w.at);
-                        let mut dir = (dir + ahead).rem_euclid(360.0);
-                        let mut changed = false;
-                        // A V's tip: from its legs' lengths (above).
-                        if legs == 1 {
-                        ui.horizontal(|ui| {
-                            ui.label("down/up");
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(&mut down)
-                                        .range(0.0..=180.0)
-                                        .speed(0.5)
-                                        .max_decimals(2)
-                                        .suffix("°"),
-                                )
-                                .on_hover_text("Angle from straight down: 0° down, 90° level, 180° straight up")
-                                .changed();
-                            ui.label("direction");
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(&mut dir)
-                                        .range(0.0..=360.0)
-                                        .speed(0.5)
-                                        .max_decimals(2)
-                                        .suffix("°"),
-                                )
-                                .on_hover_text(
-                                    format!(
-                                        "Direction in plan, clockwise seen from above: ahead along the line {:.0}°, \
-                                         to the right {:.0}°, back {:.0}°, to the left {:.0}° \
-                                         (Line › Structures › Angles around structures)",
-                                        ahead,
-                                        (ahead + 90.0) % 360.0,
-                                        (ahead + 180.0) % 360.0,
-                                        (ahead + 270.0) % 360.0
-                                    ),
-                                )
-                                .changed();
-                            ui.label("length");
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(&mut len)
-                                        .range(0.01..=50.0)
-                                        .speed(0.01)
-                                        .max_decimals(3)
-                                        .suffix(" m"),
-                                )
-                                .on_hover_text("Its length: from its top to its wire point")
-                                .changed();
-                        });
-                        }
-                        if changed {
-                            want_at =
-                                Some(from_polar(top, down, (dir - ahead).rem_euclid(360.0), len.max(0.01)));
-                        }
-                        ui.horizontal(|ui| {
-                            ui.label("wire point");
-                            // Typed into a copy: its strings follow each
-                            // valid name; one taken or empty waits (shown
-                            // red) and is dropped when the field is left.
-                            let id = ui.id().with(("wire-label", k));
-                            let (own, mut text) = ui
-                                .data_mut(|d| d.get_temp::<(String, String)>(id))
-                                .unwrap_or_else(|| (w.label.clone(), w.label.clone()));
-                            let bad = if text.trim().is_empty() {
-                                Some("give it a name")
-                            } else if clash(&text, &own) {
-                                Some("taken: another point, wire point or string has this name")
-                            } else {
-                                None
-                            };
-                            let mut edit = egui::TextEdit::singleline(&mut text).desired_width(90.0);
-                            if bad.is_some() {
-                                edit = edit.text_color(ui.visuals().error_fg_color);
-                            }
-                            let r = ui.add(edit);
-                            if let Some(why) = bad {
-                                r.clone().on_hover_text(why);
-                            }
-                            if r.changed() {
-                                let ok = !text.trim().is_empty() && !clash(&text, &own);
-                                if ok && text != w.label {
-                                    rename = Some((w.label.clone(), text.clone()));
-                                    w.label = text.clone();
-                                }
-                                ui.data_mut(|d| d.insert_temp(id, (own, text)));
-                            } else if !r.has_focus() {
-                                ui.data_mut(|d| d.remove::<(String, String)>(id));
-                            }
-                            let mut has = w.set.is_some();
-                            if ui
-                                .checkbox(&mut has, "set")
-                                .on_hover_text(
-                                    "A wire is clamped here: sections and jumpers end on its set number. \
-                                     Without: other strings may hang from it",
-                                )
-                                .changed()
-                            {
-                                w.set = has.then_some(f.set.max(1));
-                            }
-                            if let Some(set) = &mut w.set {
-                                crate::style::field(ui, egui::DragValue::new(set).range(1..=9999));
-                                ui.label("clamp");
-                                egui::ComboBox::from_id_salt(("wire-dead-end", k))
-                                    .selected_text(if w.dead_end { "strain" } else { "suspension" })
-                                    .width(90.0)
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut w.dead_end, false, "suspension");
-                                        ui.selectable_value(&mut w.dead_end, true, "strain");
-                                    })
-                                    .response
-                                    .on_hover_text(
-                                        "Suspension: the wire runs through, its strings hang. Strain: \
-                                         a dead end, its strings are tension strings lined up with \
-                                         their conductor",
-                                    );
-                            }
-                            ui.label("counterweight");
-                            value(ui, &mut w.weight, 10.0, " N")
-                                .on_hover_text("A weight hanging at the clamp (0: none)");
-                            w.weight = w.weight.max(0.0);
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("wire point description");
-                            ui.add(
-                                egui::TextEdit::singleline(&mut w.description)
-                                    .desired_width(220.0)
-                                    .hint_text("what it is (free text)"),
-                            );
-                        });
-                    }
-                });
-                // Its strings follow a wire point renamed.
-                if let Some((old, new)) = rename {
-                    for x in &mut f.strings {
-                        if x.wire == old {
-                            x.wire.clone_from(&new);
-                        }
-                        if x.top == old {
-                            x.top.clone_from(&new);
-                        }
-                    }
-                }
-                // The library's values (and the wire point at its length).
-                if let Some(n) = pick {
-                    let a = library[n].2.clone();
-                    f.take_from_library(k, &a);
-                }
-                // Hung from another point: its length kept.
-                if let Some(top) = retop {
-                    f.note = f.hang_from(model, k, &top).err();
-                }
-                if let Some(len) = want_len {
-                    f.note = f.set_length(k, len).err();
-                }
-                if let Some(at) = want_at {
-                    let wire = f.strings[k].wire.clone();
-                    f.place_wire(&wire, at);
-                    f.note = None;
-                }
-                match ends_at {
-                    Some(Some(w)) => {
-                        f.note = f.end_at(model, k, &w).err();
-                    }
-                    Some(None) => {
-                        let label = f.free_label(model, "W");
-                        let top = tops[k].unwrap_or([0.0, 0.0, 20.0]);
-                        f.wires.push(WireRow { description: Default::default(),
-                            label: label.clone(),
-                            at: from_polar(top, 0.0, 0.0, lengths[k].unwrap_or(3.0)),
-                            set: None,
-                            weight: 0.0,
-                            dead_end: false,
-                            dead_end_was: false,
-                        });
-                        f.strings[k].wire = label;
-                    }
-                    None => {}
-                }
-            }
-            if let Some(k) = remove {
-                f.strings.remove(k);
-                f.drop_unused_wires();
-            }
-            if let Some(note) = &f.note {
-                crate::menu::error_label(ui, egui::RichText::new(note).small());
-            }
-            // Wire points no string reaches: the wire clamped straight to
-            // the structure.
-            for w in f.wires.iter_mut() {
-                if f.strings.iter().any(|x| x.wire == w.label) {
-                    continue;
-                }
-                ui.horizontal(|ui| {
-                    ui.label(format!("wire point {} — clamped straight to the structure", w.label));
-                    for (i, name) in ["across", "along", "up"].iter().enumerate() {
-                        ui.label(*name);
-                        value(ui, &mut w.at[i], 0.05, " m");
-                    }
-                });
-            }
+    limits_ui(ui, &mut x.limits);
+}
+
+/// A V's leg (one of `legs` strings meeting at one wire point): its
+/// length.
+fn leg_length_ui(ui: &mut egui::Ui, f: &StringForm, cx: &Row<'_>, legs: usize, asks: &mut RowAsks) {
+    let Row {
+        k,
+        length,
+        tops,
+        ahead,
+        ..
+    } = *cx;
+    if legs > 1
+        && let (Some(top), Some(length)) = (tops[k], *length)
+    {
+        let mut len = length;
+        ui.horizontal(|ui| {
+            ui.label("length");
             if ui
-                .small_button("+ string")
-                .on_hover_text("Another string with its own wire point, 3 m straight down (to set)")
-                .clicked()
-                && let Some(top) = point_names.first().cloned()
+                .add(
+                    egui::DragValue::new(&mut len)
+                        .range(0.01..=50.0)
+                        .speed(0.01)
+                        .max_decimals(3)
+                        .suffix(" m"),
+                )
+                .on_hover_text(
+                    "Its length: the other leg keeps its own; the point where they meet \
+                                     moves (and what hangs below it along)",
+                )
+                .changed()
             {
-                let label = f.free_label(model, "S");
-                let wire = f.free_label(model, "W");
-                let at = f
-                    .points
-                    .iter()
-                    .find(|p| p.label == top)
-                    .map_or([0.0, 0.0, 20.0], |p| p.at);
-                f.wires.push(WireRow { description: Default::default(),
-                    label: wire.clone(),
-                    at: from_polar(at, 0.0, 0.0, 3.0),
-                    set: None,
-                    weight: 0.0,
-                    dead_end: false,
-                    dead_end_was: false,
-                });
-                f.strings.push(StringRow {
-                    label,
-                    top,
-                    wire,
-                    ..Default::default()
-                });
+                asks.want_len = Some(len);
             }
-            ui.separator();
-            ui.strong("New points on the structure");
-            help(
-                ui,
-                "A string hangs from a point of the structure; the structure's points are listed \
-                 under \"hangs from\". Add one here where none fits (across: to the right looking \
-                 ahead, along: ahead, up: from the base).",
-            );
-            let mut drop = None;
-            // A typed structure: each new point on one of its type's attach
-            // joints (only those are offered), at an offset from it.
-            let attach = crate::link_tool::attach_joints(model, &f.structure);
-            for &k in &new_points {
-                let p = &mut f.points[k];
-                if !attach.is_empty() && !f.joints.contains_key(&p.label) {
-                    // The nearest attach joint, the distance kept as the
-                    // offset (shown: change it here).
-                    if let Some(j) = attach.iter().min_by(|a, b| {
-                        let d = |q: &[f64; 3]| (0..3).map(|i| (q[i] - p.at[i]).powi(2)).sum::<f64>();
-                        d(&a.1).total_cmp(&d(&b.1))
-                    }) {
-                        f.joints.insert(p.label.clone(), j.clone());
-                    }
-                }
-                ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut p.label).desired_width(90.0));
-                    if !attach.is_empty() {
-                        let mut chosen = f.joints.get(&p.label).map(|j| j.0.clone()).unwrap_or_default();
-                        egui::ComboBox::from_id_salt(("new-point-joint", k))
-                            .selected_text(format!("on {chosen}"))
-                            .width(90.0)
-                            .show_ui(ui, |ui| {
-                                for (j, _) in &attach {
-                                    ui.selectable_value(&mut chosen, j.clone(), j);
-                                }
-                            })
-                            .response
-                            .on_hover_text(
-                                "The attach joint of the structure's type it is linked to (only \
-                                 attach joints take strings); chosen, the point is put on it",
-                            );
-                        if f.joints.get(&p.label).map(|j| &j.0) != Some(&chosen)
-                            && let Some(j) = attach.iter().find(|j| j.0 == chosen)
-                        {
-                            p.at = j.1;
-                            f.joints.insert(p.label.clone(), j.clone());
-                        }
-                    }
-                    for (i, name) in ["across", "along", "up"].iter().enumerate() {
-                        ui.label(*name);
-                        value(ui, &mut p.at[i], 0.05, " m");
-                    }
-                    if let Some((_, at)) = f.joints.get(&p.label) {
-                        let o = [0, 1, 2].map(|i| p.at[i] - at[i]);
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "offset {:.3} m",
-                                (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()
-                            ))
-                            .small(),
-                        )
-                        .on_hover_text(crate::link_tool::offset_words(o));
-                    }
-                    ui.add(
-                        egui::TextEdit::singleline(&mut p.description)
-                            .desired_width(140.0)
-                            .hint_text("description"),
-                    );
-                    if ui.small_button("×").clicked() {
-                        drop = Some(k);
-                    }
-                });
-            }
-            if let Some(k) = drop {
-                let label = f.points[k].label.clone();
-                if !f.strings.iter().any(|x| x.top == label) {
-                    f.points.remove(k);
-                }
-            }
-            if ui.small_button("+ point").clicked() {
-                let label = f.free_label(model, "A");
-                let at = f.points.last().map_or([0.0, 0.0, 20.0], |p| p.at);
-                f.points.push(PointRow { description: Default::default(), label, at });
+            if let Some(w) = f.wires.iter().find(|w| w.label == f.strings[k].wire) {
+                let (down, dir, _) = polar(top, w.at);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "down/up {down:.1}°, direction {:.1}° (from where the legs meet)",
+                        (dir + ahead).rem_euclid(360.0)
+                    ))
+                    .small()
+                    .weak(),
+                );
             }
         });
-    if f.overrides_type {
-        ui.label(
-            egui::RichText::new("These strings are the structure's own, over its type's.").small(),
-        );
-        reset = ui.button("Back to the type's strings").clicked();
     }
-    reset
+}
+
+/// Where a string puts the wire point it makes: its angles and length
+/// from its top.
+fn wire_place_ui(
+    ui: &mut egui::Ui,
+    w: &WireRow,
+    top: [f64; 3],
+    legs: usize,
+    ahead: f64,
+    asks: &mut RowAsks,
+) {
+    // Shown in the project's convention (ahead at its
+    // angle, clockwise seen from above).
+    let (mut down, dir, mut len) = polar(top, w.at);
+    let mut dir = (dir + ahead).rem_euclid(360.0);
+    let mut changed = false;
+    // A V's tip: from its legs' lengths (above).
+    if legs == 1 {
+        ui.horizontal(|ui| {
+            ui.label("down/up");
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut down)
+                        .range(0.0..=180.0)
+                        .speed(0.5)
+                        .max_decimals(2)
+                        .suffix("°"),
+                )
+                .on_hover_text("Angle from straight down: 0° down, 90° level, 180° straight up")
+                .changed();
+            ui.label("direction");
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut dir)
+                        .range(0.0..=360.0)
+                        .speed(0.5)
+                        .max_decimals(2)
+                        .suffix("°"),
+                )
+                .on_hover_text(format!(
+                    "Direction in plan, clockwise seen from above: ahead along the line {:.0}°, \
+                                         to the right {:.0}°, back {:.0}°, to the left {:.0}° \
+                                         (Line › Structures › Angles around structures)",
+                    ahead,
+                    (ahead + 90.0) % 360.0,
+                    (ahead + 180.0) % 360.0,
+                    (ahead + 270.0) % 360.0
+                ))
+                .changed();
+            ui.label("length");
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut len)
+                        .range(0.01..=50.0)
+                        .speed(0.01)
+                        .max_decimals(3)
+                        .suffix(" m"),
+                )
+                .on_hover_text("Its length: from its top to its wire point")
+                .changed();
+        });
+    }
+    if changed {
+        asks.want_at = Some(from_polar(
+            top,
+            down,
+            (dir - ahead).rem_euclid(360.0),
+            len.max(0.01),
+        ));
+    }
+}
+
+/// The wire point a string makes: its name, set, clamp and
+/// counterweight (`form_set`: the set the form proposes).
+fn wire_name_ui(
+    ui: &mut egui::Ui,
+    w: &mut WireRow,
+    cx: &Row<'_>,
+    form_set: u32,
+    asks: &mut RowAsks,
+) {
+    let Row { k, names, .. } = *cx;
+    let clash = |text: &str, own: &str| text != own && names.iter().any(|l| l == text);
+    ui.horizontal(|ui| {
+        ui.label("wire point");
+        // Typed into a copy: its strings follow each
+        // valid name; one taken or empty waits (shown
+        // red) and is dropped when the field is left.
+        let id = ui.id().with(("wire-label", k));
+        let (own, mut text) = ui
+            .data_mut(|d| d.get_temp::<(String, String)>(id))
+            .unwrap_or_else(|| (w.label.clone(), w.label.clone()));
+        let bad = if text.trim().is_empty() {
+            Some("give it a name")
+        } else if clash(&text, &own) {
+            Some("taken: another point, wire point or string has this name")
+        } else {
+            None
+        };
+        let mut edit = egui::TextEdit::singleline(&mut text).desired_width(90.0);
+        if bad.is_some() {
+            edit = edit.text_color(ui.visuals().error_fg_color);
+        }
+        let r = ui.add(edit);
+        if let Some(why) = bad {
+            r.clone().on_hover_text(why);
+        }
+        if r.changed() {
+            let ok = !text.trim().is_empty() && !clash(&text, &own);
+            if ok && text != w.label {
+                asks.rename = Some((w.label.clone(), text.clone()));
+                w.label = text.clone();
+            }
+            ui.data_mut(|d| d.insert_temp(id, (own, text)));
+        } else if !r.has_focus() {
+            ui.data_mut(|d| d.remove::<(String, String)>(id));
+        }
+        let mut has = w.set.is_some();
+        if ui
+            .checkbox(&mut has, "set")
+            .on_hover_text(
+                "A wire is clamped here: sections and jumpers end on its set number. \
+                                     Without: other strings may hang from it",
+            )
+            .changed()
+        {
+            w.set = has.then_some(form_set.max(1));
+        }
+        if let Some(set) = &mut w.set {
+            crate::style::field(ui, egui::DragValue::new(set).range(1..=9999));
+            ui.label("clamp");
+            egui::ComboBox::from_id_salt(("wire-dead-end", k))
+                .selected_text(if w.dead_end { "strain" } else { "suspension" })
+                .width(90.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut w.dead_end, false, "suspension");
+                    ui.selectable_value(&mut w.dead_end, true, "strain");
+                })
+                .response
+                .on_hover_text(
+                    "Suspension: the wire runs through, its strings hang. Strain: \
+                                         a dead end, its strings are tension strings lined up with \
+                                         their conductor",
+                );
+        }
+        ui.label("counterweight");
+        value(ui, &mut w.weight, 10.0, " N")
+            .on_hover_text("A weight hanging at the clamp (0: none)");
+        w.weight = w.weight.max(0.0);
+    });
+}
+
+/// What a string's row asked for, done: its wire point renamed, the
+/// library's values taken, hung elsewhere, its length or place set, ended
+/// at another wire point or at one of its own.
+fn apply_asks(
+    f: &mut StringForm,
+    model: &Model,
+    cx: &Row<'_>,
+    asks: RowAsks,
+    lengths: &[Option<f64>],
+) {
+    let Row {
+        k, tops, library, ..
+    } = *cx;
+    let RowAsks {
+        ends_at,
+        retop,
+        want_len,
+        want_at,
+        pick,
+        rename,
+    } = asks;
+    // Its strings follow a wire point renamed.
+    if let Some((old, new)) = rename {
+        for x in &mut f.strings {
+            if x.wire == old {
+                x.wire.clone_from(&new);
+            }
+            if x.top == old {
+                x.top.clone_from(&new);
+            }
+        }
+    }
+    // The library's values (and the wire point at its length).
+    if let Some(n) = pick {
+        let a = library[n].2.clone();
+        f.take_from_library(k, &a);
+    }
+    // Hung from another point: its length kept.
+    if let Some(top) = retop {
+        f.note = f.hang_from(model, k, &top).err();
+    }
+    if let Some(len) = want_len {
+        f.note = f.set_length(k, len).err();
+    }
+    if let Some(at) = want_at {
+        let wire = f.strings[k].wire.clone();
+        f.place_wire(&wire, at);
+        f.note = None;
+    }
+    match ends_at {
+        Some(Some(w)) => {
+            f.note = f.end_at(model, k, &w).err();
+        }
+        Some(None) => {
+            let label = f.free_label(model, "W");
+            let top = tops[k].unwrap_or([0.0, 0.0, 20.0]);
+            f.wires.push(WireRow {
+                description: Default::default(),
+                label: label.clone(),
+                at: from_polar(top, 0.0, 0.0, lengths[k].unwrap_or(3.0)),
+                set: None,
+                weight: 0.0,
+                dead_end: false,
+                dead_end_was: false,
+            });
+            f.strings[k].wire = label;
+        }
+        None => {}
+    }
+}
+
+/// The wire points no string reaches: clamped straight to the structure.
+fn loose_wires_ui(ui: &mut egui::Ui, f: &mut StringForm) {
+    // Wire points no string reaches: the wire clamped straight to
+    // the structure.
+    for w in f.wires.iter_mut() {
+        if f.strings.iter().any(|x| x.wire == w.label) {
+            continue;
+        }
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "wire point {} — clamped straight to the structure",
+                w.label
+            ));
+            for (i, name) in ["across", "along", "up"].iter().enumerate() {
+                ui.label(*name);
+                value(ui, &mut w.at[i], 0.05, " m");
+            }
+        });
+    }
+}
+
+/// "+ string": another string with its own wire point.
+fn add_string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model, point_names: &[String]) {
+    if ui
+        .small_button("+ string")
+        .on_hover_text("Another string with its own wire point, 3 m straight down (to set)")
+        .clicked()
+        && let Some(top) = point_names.first().cloned()
+    {
+        let label = f.free_label(model, "S");
+        let wire = f.free_label(model, "W");
+        let at = f
+            .points
+            .iter()
+            .find(|p| p.label == top)
+            .map_or([0.0, 0.0, 20.0], |p| p.at);
+        f.wires.push(WireRow {
+            description: Default::default(),
+            label: wire.clone(),
+            at: from_polar(at, 0.0, 0.0, 3.0),
+            set: None,
+            weight: 0.0,
+            dead_end: false,
+            dead_end_was: false,
+        });
+        f.strings.push(StringRow {
+            label,
+            top,
+            wire,
+            ..Default::default()
+        });
+    }
+}
+
+/// The new points on the structure: a row each, "+ point".
+fn new_points_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model, new_points: &[usize]) {
+    ui.separator();
+    ui.strong("New points on the structure");
+    help(
+        ui,
+        "A string hangs from a point of the structure; the structure's points are listed \
+                 under \"hangs from\". Add one here where none fits (across: to the right looking \
+                 ahead, along: ahead, up: from the base).",
+    );
+    let mut drop = None;
+    // A typed structure: each new point on one of its type's attach
+    // joints (only those are offered), at an offset from it.
+    let attach = crate::link_tool::attach_joints(model, &f.structure);
+    for &k in new_points {
+        let p = &mut f.points[k];
+        if !attach.is_empty() && !f.joints.contains_key(&p.label) {
+            // The nearest attach joint, the distance kept as the
+            // offset (shown: change it here).
+            if let Some(j) = attach.iter().min_by(|a, b| {
+                let d = |q: &[f64; 3]| (0..3).map(|i| (q[i] - p.at[i]).powi(2)).sum::<f64>();
+                d(&a.1).total_cmp(&d(&b.1))
+            }) {
+                f.joints.insert(p.label.clone(), j.clone());
+            }
+        }
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut p.label).desired_width(90.0));
+            if !attach.is_empty() {
+                let mut chosen = f
+                    .joints
+                    .get(&p.label)
+                    .map(|j| j.0.clone())
+                    .unwrap_or_default();
+                egui::ComboBox::from_id_salt(("new-point-joint", k))
+                    .selected_text(format!("on {chosen}"))
+                    .width(90.0)
+                    .show_ui(ui, |ui| {
+                        for (j, _) in &attach {
+                            ui.selectable_value(&mut chosen, j.clone(), j);
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "The attach joint of the structure's type it is linked to (only \
+                                 attach joints take strings); chosen, the point is put on it",
+                    );
+                if f.joints.get(&p.label).map(|j| &j.0) != Some(&chosen)
+                    && let Some(j) = attach.iter().find(|j| j.0 == chosen)
+                {
+                    p.at = j.1;
+                    f.joints.insert(p.label.clone(), j.clone());
+                }
+            }
+            for (i, name) in ["across", "along", "up"].iter().enumerate() {
+                ui.label(*name);
+                value(ui, &mut p.at[i], 0.05, " m");
+            }
+            if let Some((_, at)) = f.joints.get(&p.label) {
+                let o = [0, 1, 2].map(|i| p.at[i] - at[i]);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "offset {:.3} m",
+                        (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()
+                    ))
+                    .small(),
+                )
+                .on_hover_text(crate::link_tool::offset_words(o));
+            }
+            ui.add(
+                egui::TextEdit::singleline(&mut p.description)
+                    .desired_width(140.0)
+                    .hint_text("description"),
+            );
+            if ui.small_button("×").clicked() {
+                drop = Some(k);
+            }
+        });
+    }
+    if let Some(k) = drop {
+        let label = f.points[k].label.clone();
+        if !f.strings.iter().any(|x| x.top == label) {
+            f.points.remove(k);
+        }
+    }
+    if ui.small_button("+ point").clicked() {
+        let label = f.free_label(model, "A");
+        let at = f.points.last().map_or([0.0, 0.0, 20.0], |p| p.at);
+        f.points.push(PointRow {
+            description: Default::default(),
+            label,
+            at,
+        });
+    }
 }

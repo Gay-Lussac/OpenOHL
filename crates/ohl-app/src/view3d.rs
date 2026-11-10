@@ -869,36 +869,7 @@ impl View3d {
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.rect = Some(rect);
         self.drawn = true;
-        // The first structures of a line that had none: fitted to them.
-        if self.camera.is_some()
-            && !self.fitted_on_line
-            && self.clip.is_none()
-            && !model.line.structures.is_empty()
-        {
-            self.camera = None;
-        }
-        let fitted_on_line = &mut self.fitted_on_line;
-        let camera = self.camera.get_or_insert_with(|| {
-            // The line's structures, else its wires, else its alignments,
-            // else the ground.
-            let mut s = scene::layer(model, Layer::Structures, case, selection);
-            if s.bounds().is_none() {
-                s = scene::layer(model, Layer::Wires, case, selection);
-            }
-            *fitted_on_line = s.bounds().is_some();
-            for layer in [Layer::Alignment, Layer::Ground] {
-                if s.bounds().is_none() {
-                    s = scene::layer(model, layer, case, selection);
-                }
-            }
-            s.bounds().map_or(
-                Camera::fit(&ohl_render::Bounds {
-                    min: model.origin,
-                    max: model.origin,
-                }),
-                |b| Camera::fit(&b),
-            )
-        });
+        self.fit_camera(model, case, selection);
         // Input.
         let size = [f64::from(rect.width()), f64::from(rect.height())];
         let local = |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)];
@@ -924,7 +895,7 @@ impl View3d {
             _ => Vec::new(),
         };
         let clip = self.clip;
-        let still = *camera;
+        let still = self.camera.expect("fitted above");
         let project_handle = clipped_projector(&still, size, clip);
         let on_handle = |at: [f64; 2], skip: Option<&ohl_structure_edit::Handle>| {
             spots
@@ -955,6 +926,109 @@ impl View3d {
             && self.handles.drag.is_none()
             && response.hovered()
             && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+        let fr = Frame {
+            model,
+            case,
+            visible,
+            snaps,
+            lod,
+            rect,
+            size,
+            centre,
+            clip,
+        };
+        self.press_handle(
+            &response,
+            &fr,
+            structure,
+            pointer,
+            pressed_on_handle,
+            on_handle,
+        );
+        self.follow_handle_drag(ui, &fr, structure, pointer, primary_down, on_handle);
+        if self.handles.swallow && !primary_down {
+            self.handles.swallow = false;
+        }
+        let handle_drag = self.handles.drag.is_some() || self.handles.swallow;
+        // Which button's click selects and which uses the held tool (the
+        // Select tool held or not; drags are not clicks).
+        let (select_button, tool_button) = crate::controls::click_buttons(select_held);
+        if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
+            self.left_press_on_handle = pressed_on_handle;
+        }
+        let clicks = if self.captured {
+            self.captured_input(ui, centre, select_button, tool_button)
+        } else {
+            self.pointer_input(
+                ui,
+                &response,
+                &fr,
+                pressed_on_handle,
+                handle_drag,
+                (select_button, tool_button),
+            )
+        };
+        self.fly(ui, &response, handle_drag);
+        let used = self.pick_and_use(ui, &response, &fr, selection, pointer, clicks);
+        self.rebuild_layers(ui, rs, &fr, selection);
+        let frustum = self.build_chunks(ui, rs, &fr);
+        self.stream_cloud(ui, rs, &fr, frustum);
+        let painter = self.render_image(ui, rs, &fr);
+        self.paint_over(painter, &fr, selection, spots, structure);
+        used
+    }
+
+    /// Fits the camera when there is none (and again to the first
+    /// structures of a line that had none).
+    fn fit_camera(&mut self, model: &Model, case: usize, selection: &Selection) {
+        // The first structures of a line that had none: fitted to them.
+        if self.camera.is_some()
+            && !self.fitted_on_line
+            && self.clip.is_none()
+            && !model.line.structures.is_empty()
+        {
+            self.camera = None;
+        }
+        let fitted_on_line = &mut self.fitted_on_line;
+        self.camera.get_or_insert_with(|| {
+            // The line's structures, else its wires, else its alignments,
+            // else the ground.
+            let mut s = scene::layer(model, Layer::Structures, case, selection);
+            if s.bounds().is_none() {
+                s = scene::layer(model, Layer::Wires, case, selection);
+            }
+            *fitted_on_line = s.bounds().is_some();
+            for layer in [Layer::Alignment, Layer::Ground] {
+                if s.bounds().is_none() {
+                    s = scene::layer(model, layer, case, selection);
+                }
+            }
+            s.bounds().map_or(
+                Camera::fit(&ohl_render::Bounds {
+                    min: model.origin,
+                    max: model.origin,
+                }),
+                |b| Camera::fit(&b),
+            )
+        });
+    }
+
+    /// A press on the drag handle under the pointer: its drag starts, or
+    /// is refused and said why.
+    fn press_handle(
+        &mut self,
+        response: &egui::Response,
+        fr: &Frame<'_>,
+        structure: Option<&ohl_line::Structure>,
+        pointer: Option<egui::Pos2>,
+        pressed_on_handle: bool,
+        on_handle: impl Fn(
+            [f64; 2],
+            Option<&ohl_structure_edit::Handle>,
+        ) -> Option<(f64, crate::handles::Spot)>,
+    ) {
+        let rect = fr.rect;
+        let local = fr.local();
         if pressed_on_handle
             && let (Some(t), Some(h), Some(s)) = (
                 self.handles.target.clone(),
@@ -992,6 +1066,25 @@ impl View3d {
                 (None, _) => {}
             }
         }
+    }
+
+    /// A handle being dragged: held to an axis or plane by the keys,
+    /// followed, snapped, and ended when the button is released.
+    fn follow_handle_drag(
+        &mut self,
+        ui: &egui::Ui,
+        fr: &Frame<'_>,
+        structure: Option<&ohl_line::Structure>,
+        pointer: Option<egui::Pos2>,
+        primary_down: bool,
+        on_handle: impl Fn(
+            [f64; 2],
+            Option<&ohl_structure_edit::Handle>,
+        ) -> Option<(f64, crate::handles::Spot)>,
+    ) {
+        let size = fr.size;
+        let local = fr.local();
+        let camera = self.camera.as_ref().expect("fitted above");
         if let Some(d) = self.handles.drag.as_mut()
             && let Some(s) = structure.filter(|s| s.id == d.structure)
         {
@@ -1046,171 +1139,198 @@ impl View3d {
             // Its structure went (or is no longer edited).
             self.handles.drag = None;
         }
-        if self.handles.swallow && !primary_down {
-            self.handles.swallow = false;
-        }
-        let handle_drag = self.handles.drag.is_some() || self.handles.swallow;
-        // Which button's click selects and which uses the held tool (the
-        // Select tool held or not; drags are not clicks).
-        let (select_button, tool_button) = crate::controls::click_buttons(select_held);
-        if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
-            self.left_press_on_handle = pressed_on_handle;
-        }
+    }
+
+    /// The mouse captured (first person): its movement turns the view,
+    /// clicks aim with the crosshair, Ctrl + wheel sets the speed.
+    fn captured_input(
+        &mut self,
+        ui: &egui::Ui,
+        centre: [f64; 2],
+        select_button: egui::PointerButton,
+        tool_button: egui::PointerButton,
+    ) -> Clicks {
+        let camera = self.camera.as_mut().expect("fitted above");
         let mut pick_at: Option<([f64; 2], bool)> = None;
-        // A box or lasso drawn (released this frame).
-        let mut area_done: Option<crate::area::Area> = None;
-        // A click of the tool button uses the held tool on what is there.
         let mut use_at: Option<[f64; 2]> = None;
-        if self.captured {
-            // Raw mouse movement turns the view (mouse down: look down).
-            let d = ui.input(|i| {
-                i.events.iter().fold(egui::Vec2::ZERO, |acc, e| match e {
-                    egui::Event::MouseMoved(d) => acc + *d,
-                    _ => acc,
+        // Raw mouse movement turns the view (mouse down: look down).
+        let d = ui.input(|i| {
+            i.events.iter().fold(egui::Vec2::ZERO, |acc, e| match e {
+                egui::Event::MouseMoved(d) => acc + *d,
+                _ => acc,
+            })
+        });
+        if d != egui::Vec2::ZERO {
+            log::trace!("3D view: mouse moved {d:?}");
+            let k = self.controls.mouse_sensitivity;
+            camera.look(f64::from(d.x) * k, -f64::from(d.y) * k);
+        }
+        // Clicks aim with the crosshair; the release of the press that
+        // captured the mouse is no click (of either role).
+        let swallowed =
+            |b: egui::PointerButton| self.swallow_release && b == egui::PointerButton::Primary;
+        let (click, double) = ui.input(|i| {
+            (
+                i.pointer.button_clicked(select_button),
+                i.pointer.button_double_clicked(select_button),
+            )
+        });
+        if !swallowed(select_button) && (click || double) {
+            pick_at = Some((centre, double));
+        }
+        if !swallowed(tool_button) && ui.input(|i| i.pointer.button_clicked(tool_button)) {
+            use_at = Some(centre);
+        }
+        if self.swallow_release
+            && ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+        {
+            self.swallow_release = false;
+        }
+        // Ctrl + wheel sets the speed (the wheel alone does nothing).
+        // Raw wheel events: egui turns Ctrl + wheel into a zoom.
+        let notches = ui.input(|i| {
+            i.events
+                .iter()
+                .map(|e| match e {
+                    egui::Event::MouseWheel {
+                        unit,
+                        delta,
+                        modifiers,
+                        ..
+                    } if modifiers.ctrl => {
+                        f64::from(delta.y)
+                            * match unit {
+                                egui::MouseWheelUnit::Line => 1.0,
+                                egui::MouseWheelUnit::Point => 1.0 / 40.0,
+                                egui::MouseWheelUnit::Page => 10.0,
+                            }
+                    }
+                    _ => 0.0,
                 })
-            });
-            if d != egui::Vec2::ZERO {
-                log::trace!("3D view: mouse moved {d:?}");
-                let k = self.controls.mouse_sensitivity;
-                camera.look(f64::from(d.x) * k, -f64::from(d.y) * k);
+                .sum::<f64>()
+        });
+        if notches != 0.0 {
+            self.controls.speed = (self.controls.speed * (notches * 0.1).exp()).clamp(1.0, 2000.0);
+        }
+        Clicks {
+            pick_at,
+            area_done: None,
+            use_at,
+        }
+    }
+
+    /// The mouse free: a press may capture it, clicks select or use the
+    /// tool, Alt + drag draws an area, drags and the wheel move the view.
+    fn pointer_input(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        fr: &Frame<'_>,
+        pressed_on_handle: bool,
+        handle_drag: bool,
+        buttons: (egui::PointerButton, egui::PointerButton),
+    ) -> Clicks {
+        let size = fr.size;
+        let local = fr.local();
+        let (select_button, tool_button) = buttons;
+        let camera = self.camera.as_mut().expect("fitted above");
+        let mut pick_at: Option<([f64; 2], bool)> = None;
+        let mut use_at: Option<[f64; 2]> = None;
+        // Keys act while the pointer is over the view or it has focus.
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
+        // Capture on the press itself (a click that moves a little is
+        // a drag, not a click); the release of that press selects
+        // nothing.
+        let pressed_here = response.hovered()
+            && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+        if pressed_here {
+            log::info!(
+                "3D view: press (scheme {}, captures the mouse: {})",
+                self.controls.name,
+                self.controls.capture
+            );
+        }
+        let alt = ui.input(|i| i.modifiers.alt);
+        if self.controls.capture && pressed_here && !pressed_on_handle && !handle_drag && !alt {
+            Self::set_captured(&mut self.captured, ui.ctx(), true);
+            // Swallow its release, unless it came in the same frame.
+            self.swallow_release =
+                !ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+            response.request_focus();
+        }
+        // In the first-person scheme the left button only captures the
+        // mouse here (its clicks act once captured).
+        let acts =
+            |b: egui::PointerButton| !(self.controls.capture && b == egui::PointerButton::Primary);
+        // A left-click on a drag handle (released without moving) only
+        // selects, also with a tool held.
+        let on_handle = self.left_press_on_handle;
+        let tool_click = acts(tool_button)
+            && response.clicked_by(tool_button)
+            && !(tool_button == egui::PointerButton::Primary && on_handle);
+        let select_click = acts(select_button)
+            && (response.clicked_by(select_button) || response.double_clicked_by(select_button));
+        let handle_click = acts(tool_button)
+            && tool_button == egui::PointerButton::Primary
+            && on_handle
+            && (response.clicked() || response.double_clicked());
+        if let Some(pos) = response.interact_pointer_pos() {
+            if select_click {
+                pick_at = Some((local(pos), response.double_clicked_by(select_button)));
+            } else if handle_click {
+                pick_at = Some((local(pos), false));
             }
-            // Clicks aim with the crosshair; the release of the press that
-            // captured the mouse is no click (of either role).
-            let swallowed =
-                |b: egui::PointerButton| self.swallow_release && b == egui::PointerButton::Primary;
-            let (click, double) = ui.input(|i| {
-                (
-                    i.pointer.button_clicked(select_button),
-                    i.pointer.button_double_clicked(select_button),
-                )
-            });
-            if !swallowed(select_button) && (click || double) {
-                pick_at = Some((centre, double));
-            }
-            if !swallowed(tool_button) && ui.input(|i| i.pointer.button_clicked(tool_button)) {
-                use_at = Some(centre);
-            }
-            if self.swallow_release
-                && ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
-            {
-                self.swallow_release = false;
-            }
-            // Ctrl + wheel sets the speed (the wheel alone does nothing).
-            // Raw wheel events: egui turns Ctrl + wheel into a zoom.
-            let notches = ui.input(|i| {
-                i.events
-                    .iter()
-                    .map(|e| match e {
-                        egui::Event::MouseWheel {
-                            unit,
-                            delta,
-                            modifiers,
-                            ..
-                        } if modifiers.ctrl => {
-                            f64::from(delta.y)
-                                * match unit {
-                                    egui::MouseWheelUnit::Line => 1.0,
-                                    egui::MouseWheelUnit::Point => 1.0 / 40.0,
-                                    egui::MouseWheelUnit::Page => 10.0,
-                                }
-                        }
-                        _ => 0.0,
-                    })
-                    .sum::<f64>()
-            });
-            if notches != 0.0 {
-                self.controls.speed =
-                    (self.controls.speed * (notches * 0.1).exp()).clamp(1.0, 2000.0);
-            }
-        } else {
-            // Keys act while the pointer is over the view or it has focus.
-            if response.clicked() || response.drag_started() {
-                response.request_focus();
-            }
-            // Capture on the press itself (a click that moves a little is
-            // a drag, not a click); the release of that press selects
-            // nothing.
-            let pressed_here = response.hovered()
-                && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
-            if pressed_here {
-                log::info!(
-                    "3D view: press (scheme {}, captures the mouse: {})",
-                    self.controls.name,
-                    self.controls.capture
-                );
-            }
-            let alt = ui.input(|i| i.modifiers.alt);
-            if self.controls.capture && pressed_here && !pressed_on_handle && !handle_drag && !alt {
-                Self::set_captured(&mut self.captured, ui.ctx(), true);
-                // Swallow its release, unless it came in the same frame.
-                self.swallow_release =
-                    !ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
-                response.request_focus();
-            }
-            // In the first-person scheme the left button only captures the
-            // mouse here (its clicks act once captured).
-            let acts = |b: egui::PointerButton| {
-                !(self.controls.capture && b == egui::PointerButton::Primary)
-            };
-            // A left-click on a drag handle (released without moving) only
-            // selects, also with a tool held.
-            let on_handle = self.left_press_on_handle;
-            let tool_click = acts(tool_button)
-                && response.clicked_by(tool_button)
-                && !(tool_button == egui::PointerButton::Primary && on_handle);
-            let select_click = acts(select_button)
-                && (response.clicked_by(select_button)
-                    || response.double_clicked_by(select_button));
-            let handle_click = acts(tool_button)
-                && tool_button == egui::PointerButton::Primary
-                && on_handle
-                && (response.clicked() || response.double_clicked());
-            if let Some(pos) = response.interact_pointer_pos() {
-                if select_click {
-                    pick_at = Some((local(pos), response.double_clicked_by(select_button)));
-                } else if handle_click {
-                    pick_at = Some((local(pos), false));
-                }
-                if tool_click {
-                    use_at = Some(local(pos));
-                }
-            }
-            // Alt + drag of the selecting button: a box or lasso of LiDAR
-            // points (not on a drag handle).
-            let (done, drawing) = if handle_drag || self.left_press_on_handle {
-                (None, false)
-            } else {
-                crate::area::frame(&mut self.area, ui, &response, select_button)
-            };
-            area_done = done;
-            if response.dragged()
-                && !drawing
-                && !(handle_drag && response.dragged_by(egui::PointerButton::Primary))
-            {
-                let d = response.drag_delta();
-                let (dx, dy) = (f64::from(d.x), f64::from(d.y));
-                let action = [
-                    egui::PointerButton::Primary,
-                    egui::PointerButton::Secondary,
-                    egui::PointerButton::Middle,
-                ]
-                .into_iter()
-                .find(|b| response.dragged_by(*b))
-                .map_or(Drag::None, |b| self.controls.drag(b));
-                match action {
-                    Drag::Orbit => camera.orbit(dx * 0.008, dy * 0.008),
-                    Drag::Look => camera.look(dx * 0.004, -dy * 0.004),
-                    Drag::Pan => camera.pan(dx, dy, size[1]),
-                    Drag::None => {}
-                }
-            }
-            if response.hovered() {
-                let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-                if scroll != 0.0 {
-                    camera.zoom((-f64::from(scroll) * 0.002).exp());
-                }
+            if tool_click {
+                use_at = Some(local(pos));
             }
         }
+        // Alt + drag of the selecting button: a box or lasso of LiDAR
+        // points (not on a drag handle).
+        let (done, drawing) = if handle_drag || self.left_press_on_handle {
+            (None, false)
+        } else {
+            crate::area::frame(&mut self.area, ui, response, select_button)
+        };
+        let area_done = done;
+        if response.dragged()
+            && !drawing
+            && !(handle_drag && response.dragged_by(egui::PointerButton::Primary))
+        {
+            let d = response.drag_delta();
+            let (dx, dy) = (f64::from(d.x), f64::from(d.y));
+            let action = [
+                egui::PointerButton::Primary,
+                egui::PointerButton::Secondary,
+                egui::PointerButton::Middle,
+            ]
+            .into_iter()
+            .find(|b| response.dragged_by(*b))
+            .map_or(Drag::None, |b| self.controls.drag(b));
+            match action {
+                Drag::Orbit => camera.orbit(dx * 0.008, dy * 0.008),
+                Drag::Look => camera.look(dx * 0.004, -dy * 0.004),
+                Drag::Pan => camera.pan(dx, dy, size[1]),
+                Drag::None => {}
+            }
+        }
+        if response.hovered() {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                camera.zoom((-f64::from(scroll) * 0.002).exp());
+            }
+        }
+        Clicks {
+            pick_at,
+            area_done,
+            use_at,
+        }
+    }
+
+    /// Flies with the keys held.
+    fn fly(&mut self, ui: &egui::Ui, response: &egui::Response, handle_drag: bool) {
+        let camera = self.camera.as_mut().expect("fitted above");
         // Not flying while a handle is dragged (Shift + Z holds a plane),
         // nor while Alt is held or an area drawn (Alt + Shift: a lasso).
         let area_keys = self.area.is_some() || ui.input(|i| i.modifiers.alt);
@@ -1234,31 +1354,40 @@ impl View3d {
                 ui.ctx().request_repaint();
             }
         }
+    }
+
+    /// What the frame's clicks and the pointer find: the Link tool's
+    /// joint, the points of an area drawn, the tool's use (returned), what
+    /// is under the cursor for a measuring tool, the selection picked.
+    /// (One part: all of it reads the LiDAR points drawn, borrowed once.)
+    fn pick_and_use(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        fr: &Frame<'_>,
+        selection: &mut Selection,
+        pointer: Option<egui::Pos2>,
+        clicks: Clicks,
+    ) -> Option<selection::Use> {
+        let Frame {
+            model,
+            case,
+            visible,
+            snaps,
+            size,
+            centre,
+            clip,
+            ..
+        } = *fr;
+        let Clicks {
+            pick_at,
+            area_done,
+            use_at,
+        } = clicks;
         let radius = if self.captured { 10.0 } else { 14.0 };
-        // The Link tool: the joint under the pointer (the crosshair in
-        // first person); the tool click on one links the point there.
-        if let Some(link) = self.link.as_mut() {
-            let project = clipped_projector(camera, size, clip);
-            let at = if self.captured {
-                Some(centre)
-            } else {
-                pointer.map(local)
-            };
-            link.hovered = at.and_then(|at| {
-                link.joints
-                    .iter()
-                    .filter_map(|j| {
-                        let (q, _) = project(j.at)?;
-                        let d = (q[0] - at[0]).hypot(q[1] - at[1]);
-                        (d <= radius).then_some((d, j.id.clone()))
-                    })
-                    .min_by(|a, b| a.0.total_cmp(&b.0))
-                    .map(|(_, id)| id)
-            });
-            if use_at.is_some() && link.click().is_some() {
-                use_at = None;
-            }
-        }
+        let use_at = self.link_hover(fr, pointer, radius, use_at);
+        let local = fr.local();
+        let camera = self.camera.as_mut().expect("fitted above");
         let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
         if let Some(area) = area_done {
             let started = std::time::Instant::now();
@@ -1358,6 +1487,62 @@ impl View3d {
                 camera.distance = camera.distance.min(150.0);
             }
         }
+        used
+    }
+
+    /// The Link tool: the joint under the pointer; a tool click on one
+    /// is the link's (the click left, none then).
+    fn link_hover(
+        &mut self,
+        fr: &Frame<'_>,
+        pointer: Option<egui::Pos2>,
+        radius: f64,
+        mut use_at: Option<[f64; 2]>,
+    ) -> Option<[f64; 2]> {
+        let Frame {
+            size, centre, clip, ..
+        } = *fr;
+        let local = fr.local();
+        let camera = self.camera.as_ref().expect("fitted above");
+        // The Link tool: the joint under the pointer (the crosshair in
+        // first person); the tool click on one links the point there.
+        if let Some(link) = self.link.as_mut() {
+            let project = clipped_projector(camera, size, clip);
+            let at = if self.captured {
+                Some(centre)
+            } else {
+                pointer.map(local)
+            };
+            link.hovered = at.and_then(|at| {
+                link.joints
+                    .iter()
+                    .filter_map(|j| {
+                        let (q, _) = project(j.at)?;
+                        let d = (q[0] - at[0]).hypot(q[1] - at[1]);
+                        (d <= radius).then_some((d, j.id.clone()))
+                    })
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(_, id)| id)
+            });
+            if use_at.is_some() && link.click().is_some() {
+                use_at = None;
+            }
+        }
+        use_at
+    }
+
+    /// Makes the changed layers again (the chunked ones indexed, the
+    /// point cloud opened).
+    fn rebuild_layers(
+        &mut self,
+        ui: &egui::Ui,
+        rs: &egui_wgpu::RenderState,
+        fr: &Frame<'_>,
+        selection: &Selection,
+    ) {
+        let Frame {
+            model, case, lod, ..
+        } = *fr;
         // Upload changed layers, render, show.
         let device = &rs.device;
         let rebuild = crate::perf::span("3d layers rebuilt");
@@ -1439,6 +1624,26 @@ impl View3d {
             self.gpu.insert(layer, GpuScene::new(device, &s));
         }
         drop(rebuild);
+    }
+
+    /// The chunks: planned for this view, the missing ones built within
+    /// the frame's budget; the view's frustum.
+    fn build_chunks(
+        &mut self,
+        ui: &egui::Ui,
+        rs: &egui_wgpu::RenderState,
+        fr: &Frame<'_>,
+    ) -> Frustum {
+        let Frame {
+            model,
+            visible,
+            lod,
+            rect,
+            clip,
+            ..
+        } = *fr;
+        let device = &rs.device;
+        let camera = self.camera.as_ref().expect("fitted above");
         // Chunks: the level of each by its distance, the missing ones built
         // nearest first within the frame's budget.
         let planning = crate::perf::span("3d chunk plan");
@@ -1512,6 +1717,26 @@ impl View3d {
             ui.ctx().request_repaint();
         }
         drop(building);
+        frustum
+    }
+
+    /// The point cloud's nodes for this view.
+    fn stream_cloud(
+        &mut self,
+        ui: &egui::Ui,
+        rs: &egui_wgpu::RenderState,
+        fr: &Frame<'_>,
+        frustum: Frustum,
+    ) {
+        let Frame {
+            model,
+            visible,
+            lod,
+            rect,
+            ..
+        } = *fr;
+        let device = &rs.device;
+        let camera = self.camera.as_ref().expect("fitted above");
         let streaming = crate::perf::span("3d point stream");
         // The point cloud: the nodes for this view within the budget.
         if let Some(p) = &mut self.points {
@@ -1532,6 +1757,24 @@ impl View3d {
             }
         }
         drop(streaming);
+    }
+
+    /// Renders the visible layers (the image kept while nothing changes)
+    /// and shows the image; the view's painter.
+    fn render_image(
+        &mut self,
+        ui: &egui::Ui,
+        rs: &egui_wgpu::RenderState,
+        fr: &Frame<'_>,
+    ) -> egui::Painter {
+        let Frame {
+            visible,
+            rect,
+            clip,
+            ..
+        } = *fr;
+        let device = &rs.device;
+        let camera = self.camera.as_ref().expect("fitted above");
         let rendering = crate::perf::span("3d render");
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         renderer.set_clip(clip);
@@ -1640,6 +1883,28 @@ impl View3d {
             a.paint(&painter);
         }
         drop(rendering);
+        painter
+    }
+
+    /// What is written and drawn over the image: the labels, the measured
+    /// lines, a result's case, the overlays, the handles, the crosshair.
+    fn paint_over(
+        &self,
+        painter: egui::Painter,
+        fr: &Frame<'_>,
+        selection: &Selection,
+        spots: Vec<crate::handles::Spot>,
+        structure: Option<&ohl_line::Structure>,
+    ) {
+        let Frame {
+            model,
+            case,
+            rect,
+            size,
+            clip,
+            ..
+        } = *fr;
+        let camera = self.camera.as_ref().expect("fitted above");
         let labels = crate::perf::span("3d labels");
         // Section labels and sags, structures' names and the other
         // labels (Sections and Line › Structures › Display options).
@@ -1675,105 +1940,9 @@ impl View3d {
         }
         drop(labels);
         let _overlays = crate::perf::span("3d overlays");
-        // A measured line: on top, its label at its middle.
-        if let Some((a, b, label)) = &self.measure
-            && let (Some(p), Some(q)) = (screen(*a), screen(*b))
-        {
-            for (w, c) in [
-                (5.0, egui::Color32::from_black_alpha(180)),
-                (2.5, egui::Color32::from_rgb(255, 210, 60)),
-            ] {
-                painter.line_segment([p, q], egui::Stroke::new(w, c));
-            }
-            for x in [p, q] {
-                painter.circle_filled(x, 4.5, egui::Color32::from_rgb(255, 210, 60));
-            }
-            let mid = p + (q - p) * 0.5;
-            let galley = painter.layout_no_wrap(
-                label.clone(),
-                egui::FontId::proportional(14.0),
-                egui::Color32::WHITE,
-            );
-            let at = mid + egui::vec2(8.0, -8.0 - galley.size().y);
-            painter.rect_filled(
-                egui::Rect::from_min_size(at, galley.size()).expand(3.0),
-                3.0,
-                egui::Color32::from_black_alpha(170),
-            );
-            painter.galley(at, galley, egui::Color32::WHITE);
-        }
-        // Wires measured at their own wind: on top, each labelled at its
-        // middle.
-        for (k, (points, label)) in self.measure_wires.iter().enumerate() {
-            let colour = if k == 0 {
-                egui::Color32::from_rgb(80, 220, 255)
-            } else {
-                egui::Color32::from_rgb(255, 110, 220)
-            };
-            let shown: Vec<Option<egui::Pos2>> = points.iter().map(|p| screen(*p)).collect();
-            // Each run in view one polyline, its points less than a pixel
-            // apart on the screen left out (display only: the points
-            // measured stay as they are; 2026-11-04, a shape per segment
-            // before).
-            for run in shown.split(Option::is_none) {
-                let line = thin_on_screen(run.iter().flatten().copied());
-                if line.len() < 2 {
-                    continue;
-                }
-                for (w, c) in [(4.5, egui::Color32::from_black_alpha(170)), (2.0, colour)] {
-                    painter.add(egui::Shape::line(line.clone(), egui::Stroke::new(w, c)));
-                }
-            }
-            if let Some(Some(mid)) = shown.get(shown.len() / 2) {
-                let galley =
-                    painter.layout_no_wrap(label.clone(), egui::FontId::proportional(13.0), colour);
-                let at = *mid + egui::vec2(8.0, 6.0 + 18.0 * k as f32);
-                painter.rect_filled(
-                    egui::Rect::from_min_size(at, galley.size()).expand(3.0),
-                    3.0,
-                    egui::Color32::from_black_alpha(170),
-                );
-                painter.galley(at, galley, colour);
-            }
-        }
-        // A check result's weather case (and wind), said beside its
-        // finding in its wire's colour without a box (owner, 2026-10-27:
-        // view notes in the object's colour); its wire at the finding's
-        // wind dashed, when the case drawn does not show it.
-        if let Some(rc) = &model.result_case {
-            let [r, g, b] = rc.colour;
-            let colour = egui::Color32::from_rgb(r, g, b);
-            for w in &rc.wires {
-                let shown: Vec<Option<egui::Pos2>> = w.iter().map(|p| screen(*p)).collect();
-                for run in shown.split(Option::is_none) {
-                    let points: Vec<egui::Pos2> = run.iter().flatten().copied().collect();
-                    if points.len() > 1 {
-                        painter.extend(egui::Shape::dashed_line(
-                            &points,
-                            egui::Stroke::new(2.0, colour),
-                            8.0,
-                            5.0,
-                        ));
-                    }
-                }
-            }
-            if let Some(at) = screen(rc.at) {
-                let text = if rc.solving() {
-                    format!("{} (its wind: solving…)", rc.says)
-                } else if rc.wires.is_empty() {
-                    rc.says.clone()
-                } else {
-                    format!("{} (dashed: the wire at that wind)", rc.says)
-                };
-                painter.text(
-                    at + egui::vec2(10.0, -10.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    text,
-                    egui::FontId::proportional(14.0),
-                    colour,
-                );
-            }
-        }
+        self.paint_measure(&painter, screen);
+        self.paint_measure_wires(&painter, screen);
+        paint_result_case(&painter, model, screen);
         // The kept ones' labels within the label distance, as the others.
         self.user_measure.paint(&painter, &|p| screen(p), near);
         // Structures coloured by usage: the legend.
@@ -1812,30 +1981,191 @@ impl View3d {
             Self::paint_handles(&self.handles, &painter, &spots, structure, screen);
         }
         if self.captured {
-            let c = rect.center();
-            for (a, b) in [
-                (egui::vec2(-9.0, 0.0), egui::vec2(9.0, 0.0)),
-                (egui::vec2(0.0, -9.0), egui::vec2(0.0, 9.0)),
+            paint_crosshair(&painter, rect);
+        }
+    }
+
+    /// The measured line, its label at its middle.
+    fn paint_measure(
+        &self,
+        painter: &egui::Painter,
+        screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+    ) {
+        // A measured line: on top, its label at its middle.
+        if let Some((a, b, label)) = &self.measure
+            && let (Some(p), Some(q)) = (screen(*a), screen(*b))
+        {
+            for (w, c) in [
+                (5.0, egui::Color32::from_black_alpha(180)),
+                (2.5, egui::Color32::from_rgb(255, 210, 60)),
             ] {
-                painter.line_segment(
-                    [c + a, c + b],
-                    egui::Stroke::new(4.0, egui::Color32::from_black_alpha(160)),
-                );
-                painter.line_segment([c + a, c + b], egui::Stroke::new(2.0, egui::Color32::WHITE));
+                painter.line_segment([p, q], egui::Stroke::new(w, c));
             }
-            // Only how to get out; every key: Help › Controls › 3D.
-            painter.text(
-                rect.center_top() + egui::vec2(0.0, 8.0),
-                egui::Align2::CENTER_TOP,
-                "Esc: free the mouse",
-                egui::FontId::proportional(12.0),
+            for x in [p, q] {
+                painter.circle_filled(x, 4.5, egui::Color32::from_rgb(255, 210, 60));
+            }
+            let mid = p + (q - p) * 0.5;
+            let galley = painter.layout_no_wrap(
+                label.clone(),
+                egui::FontId::proportional(14.0),
                 egui::Color32::WHITE,
             );
+            let at = mid + egui::vec2(8.0, -8.0 - galley.size().y);
+            painter.rect_filled(
+                egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+                3.0,
+                egui::Color32::from_black_alpha(170),
+            );
+            painter.galley(at, galley, egui::Color32::WHITE);
         }
-        used
+    }
+
+    /// The wires measured at their own wind, each labelled at its middle.
+    fn paint_measure_wires(
+        &self,
+        painter: &egui::Painter,
+        screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+    ) {
+        // Wires measured at their own wind: on top, each labelled at its
+        // middle.
+        for (k, (points, label)) in self.measure_wires.iter().enumerate() {
+            let colour = if k == 0 {
+                egui::Color32::from_rgb(80, 220, 255)
+            } else {
+                egui::Color32::from_rgb(255, 110, 220)
+            };
+            let shown: Vec<Option<egui::Pos2>> = points.iter().map(|p| screen(*p)).collect();
+            // Each run in view one polyline, its points less than a pixel
+            // apart on the screen left out (display only: the points
+            // measured stay as they are; 2026-11-04, a shape per segment
+            // before).
+            for run in shown.split(Option::is_none) {
+                let line = thin_on_screen(run.iter().flatten().copied());
+                if line.len() < 2 {
+                    continue;
+                }
+                for (w, c) in [(4.5, egui::Color32::from_black_alpha(170)), (2.0, colour)] {
+                    painter.add(egui::Shape::line(line.clone(), egui::Stroke::new(w, c)));
+                }
+            }
+            if let Some(Some(mid)) = shown.get(shown.len() / 2) {
+                let galley =
+                    painter.layout_no_wrap(label.clone(), egui::FontId::proportional(13.0), colour);
+                let at = *mid + egui::vec2(8.0, 6.0 + 18.0 * k as f32);
+                painter.rect_filled(
+                    egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+                    3.0,
+                    egui::Color32::from_black_alpha(170),
+                );
+                painter.galley(at, galley, colour);
+            }
+        }
     }
 }
 
+/// What a frame's parts share: the model and the case shown, the layers
+/// visible, the kinds picked, the levels of detail; where the view is,
+/// its size and centre in points, the box it is clipped to.
+#[derive(Clone, Copy)]
+struct Frame<'a> {
+    model: &'a Model,
+    case: usize,
+    visible: &'a HashSet<Layer>,
+    snaps: &'a selection::Snaps,
+    lod: &'a crate::lod::LodSettings,
+    rect: egui::Rect,
+    size: [f64; 2],
+    centre: [f64; 2],
+    clip: Option<Clip>,
+}
+
+impl Frame<'_> {
+    /// A position on the screen in the view's own points (from its top
+    /// left).
+    fn local(self) -> impl Fn(egui::Pos2) -> [f64; 2] + Copy + use<> {
+        let rect = self.rect;
+        move |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)]
+    }
+}
+
+/// What the pointer asked for in a frame: a pick (where, a double-click
+/// or not), a box or lasso drawn (released this frame), a click of the
+/// tool button (where).
+struct Clicks {
+    pick_at: Option<([f64; 2], bool)>,
+    area_done: Option<crate::area::Area>,
+    use_at: Option<[f64; 2]>,
+}
+
+/// A check result's weather case said beside its finding, its wire at
+/// the finding's wind dashed.
+fn paint_result_case(
+    painter: &egui::Painter,
+    model: &Model,
+    screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+) {
+    // A check result's weather case (and wind), said beside its
+    // finding in its wire's colour without a box (owner, 2026-10-27:
+    // view notes in the object's colour); its wire at the finding's
+    // wind dashed, when the case drawn does not show it.
+    if let Some(rc) = &model.result_case {
+        let [r, g, b] = rc.colour;
+        let colour = egui::Color32::from_rgb(r, g, b);
+        for w in &rc.wires {
+            let shown: Vec<Option<egui::Pos2>> = w.iter().map(|p| screen(*p)).collect();
+            for run in shown.split(Option::is_none) {
+                let points: Vec<egui::Pos2> = run.iter().flatten().copied().collect();
+                if points.len() > 1 {
+                    painter.extend(egui::Shape::dashed_line(
+                        &points,
+                        egui::Stroke::new(2.0, colour),
+                        8.0,
+                        5.0,
+                    ));
+                }
+            }
+        }
+        if let Some(at) = screen(rc.at) {
+            let text = if rc.solving() {
+                format!("{} (its wind: solving…)", rc.says)
+            } else if rc.wires.is_empty() {
+                rc.says.clone()
+            } else {
+                format!("{} (dashed: the wire at that wind)", rc.says)
+            };
+            painter.text(
+                at + egui::vec2(10.0, -10.0),
+                egui::Align2::LEFT_BOTTOM,
+                text,
+                egui::FontId::proportional(14.0),
+                colour,
+            );
+        }
+    }
+}
+
+/// The crosshair of the captured mouse, and how to free it.
+fn paint_crosshair(painter: &egui::Painter, rect: egui::Rect) {
+    let c = rect.center();
+    for (a, b) in [
+        (egui::vec2(-9.0, 0.0), egui::vec2(9.0, 0.0)),
+        (egui::vec2(0.0, -9.0), egui::vec2(0.0, 9.0)),
+    ] {
+        painter.line_segment(
+            [c + a, c + b],
+            egui::Stroke::new(4.0, egui::Color32::from_black_alpha(160)),
+        );
+        painter.line_segment([c + a, c + b], egui::Stroke::new(2.0, egui::Color32::WHITE));
+    }
+    // Only how to get out; every key: Help › Controls › 3D.
+    painter.text(
+        rect.center_top() + egui::vec2(0.0, 8.0),
+        egui::Align2::CENTER_TOP,
+        "Esc: free the mouse",
+        egui::FontId::proportional(12.0),
+        egui::Color32::WHITE,
+    );
+}
 #[cfg(test)]
 mod thin_tests {
     use super::thin_on_screen;

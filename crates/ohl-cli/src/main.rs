@@ -1892,23 +1892,23 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         structures: structure_dir_arg,
         sections: sections_arg,
         insulators: insulator_dir,
-        temperature,
-        wind_pressure,
-        wind_from,
-        ice_thickness,
-        ice_load,
+        temperature: _,
+        wind_pressure: _,
+        wind_from: _,
+        ice_thickness: _,
+        ice_load: _,
         loads_per,
         blocks,
-        ice_density,
-        weather,
-        case,
-        tag,
+        ice_density: _,
+        weather: _,
+        case: _,
+        tag: _,
         html,
         csv,
         spans_csv,
-        load_cases,
-        loads_csv,
-        usage_csv,
+        load_cases: _,
+        loads_csv: _,
+        usage_csv: _,
         stations,
         terrain,
         lidar,
@@ -1937,16 +1937,16 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         field,
         fields,
         revision,
-        orientation,
-        paper_sizes,
-        mixed_sizes,
+        orientation: _,
+        paper_sizes: _,
+        mixed_sizes: _,
         same_paper,
         corridor_width,
         profile_lines,
         profile_distance,
         profile_circuits,
         sheet_lidar_classes,
-        versions,
+        versions: _,
         role,
         conductor_clearance,
         no_bands,
@@ -1962,12 +1962,12 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         plugin,
     } = args;
     use ohl_core::files::shipped_library;
-    use ohl_core::units::{Density, ForcePerLength, Length, Stress, Temperature};
+
     let library = &library.clone().unwrap_or_else(|| shipped_library("cables"));
     let insulator_dir = &insulator_dir
         .clone()
         .unwrap_or_else(|| shipped_library("insulators"));
-    use ohl_weather::{WeatherCase, WeatherCases};
+    use ohl_weather::WeatherCase;
     // Pylon files: given, else the project's Structures/ folder, else the
     // shared library.
     let structure_dir: &std::path::Path =
@@ -1999,237 +1999,12 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         } else {
             Some(io_run::registry(plugin)?)
         };
-        let cases: Vec<WeatherCase> = match weather {
-            Some(path) => {
-                let set = WeatherCases::load(path)?;
-                // The creep-stretch cases from the whole file.
-                line.set_weather_cases(&set.cases);
-                let chosen = set.select(case, tag)?;
-                println!(
-                    "weather: {} — {} of {} cases",
-                    if set.name.is_empty() {
-                        path.display().to_string()
-                    } else {
-                        set.name.clone()
-                    },
-                    chosen.len(),
-                    set.cases.len()
-                );
-                chosen
-            }
-            None => {
-                if !case.is_empty() || !tag.is_empty() {
-                    return Err("--case and --tag choose cases of a --weather file".into());
-                }
-                let c = WeatherCase {
-                    wind_pressure: Stress::from_pascals(*wind_pressure),
-                    wind_from: match wind_from.as_str() {
-                        "right" => ohl_weather::WindSide::Right,
-                        "left" => ohl_weather::WindSide::Left,
-                        other => {
-                            return Err(format!("--wind-from {other}: write left or right"));
-                        }
-                    },
-                    ice_thickness: Length::from_millimeters(*ice_thickness),
-                    ice_load: ice_load.map(ForcePerLength::from_newtons_per_meter),
-                    ice_density: ice_density.map(Density::from_kilograms_per_cubic_meter),
-                    ..WeatherCase::still("command line", Temperature::from_celsius(*temperature))
-                };
-                c.validate()?;
-                vec![c]
-            }
-        };
-        if cases.is_empty() {
-            return Err("no weather case to run".into());
-        }
+        let cases = weather_cases(args, &mut line)?;
         // Report tables for the table formats (XLSX).
         let mut extra_tables = Vec::new();
-        if let (Some(lc), Some(w)) = (load_cases, weather) {
-            let set = ohl_loads::LoadCases::load(lc)?;
-            let all = WeatherCases::load(w)?.cases;
-            let started = std::time::Instant::now();
-            let mut results = ohl_loads::structure_loads(
-                &line,
-                &library,
-                &all,
-                &set.cases,
-                &ohl_wirefe::default_fe_budget(),
-            )?;
-            // The structures' sections (the models' members and the wind
-            // and ice on them).
-            let sections = match sections_arg
-                .clone()
-                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
-            {
-                Some(p) => ohl_sections::SectionLibrary::load(&p)?,
-                None => ohl_sections::SectionLibrary::default(),
-            };
-            // The wind on the structures' bands, and the ice and snow on
-            // them (load case file version 4).
-            ohl_loads::add_structure_loads(&mut results, &line, &types, &sections, &all);
-            println!(
-                "structure loads: {} load cases in {:.1?}",
-                results.len(),
-                started.elapsed()
-            );
-            for r in &results {
-                let max = |k: usize| {
-                    r.loads
-                        .iter()
-                        .map(|l| l.factored[k].abs())
-                        .fold(0.0, f64::max)
-                        / 1000.0
-                };
-                println!(
-                    "  {:<24} {:>4} supports  largest factored kN: transverse {:>8.2}  \
-                     longitudinal {:>8.2}  vertical {:>8.2}{}",
-                    r.case.name,
-                    r.loads.len(),
-                    max(0),
-                    max(1),
-                    max(2),
-                    if r.failed.is_empty() {
-                        String::new()
-                    } else {
-                        format!(
-                            "  ({} sections failed: {})",
-                            r.failed.len(),
-                            r.failed.join("; ")
-                        )
-                    }
-                );
-                for b in r.case.broken_wires() {
-                    println!("    broken wire: {}", b.describe());
-                }
-                for n in &r.notes {
-                    println!("    note: {n}");
-                }
-            }
-            extra_tables.push(ohl_io::tables::Table::from_csv(
-                "Structure loads",
-                &ohl_loads::to_csv(&results),
-            ));
-            if let Some(out) = loads_csv {
-                std::fs::write(out, ohl_loads::to_csv(&results))
-                    .map_err(|e| format!("{}: {e}", out.display()))?;
-                println!("  written to {}", out.display());
-            }
-            // Structure checks: the types' allowable spans and loads.
-            let usage = ohl_loads::capacity::usage_with_sections(
-                &line, &types, &sections, &library, &all, &results,
-            );
-            let governing = ohl_loads::capacity::governing(&usage);
-            if !governing.is_empty() {
-                let over = governing
-                    .iter()
-                    .filter(|(_, s)| s.governing().is_some_and(|g| g.usage > 1.0))
-                    .count();
-                println!(
-                    "structure usage: {} structures checked, {over} over 100 %",
-                    governing.len()
-                );
-                for (case, s) in governing.iter().take(10) {
-                    let g = s.governing().expect("checked");
-                    println!(
-                        "  {:<12} {:>12}  {:<20} {}{}",
-                        s.structure,
-                        if g.usage.is_finite() {
-                            format!("{:.1} %", g.usage * 100.0)
-                        } else {
-                            "not allowed".into()
-                        },
-                        case,
-                        g.governs,
-                        if s.is_incomplete() {
-                            "  (incomplete)"
-                        } else if s.is_approximate() {
-                            "  (approximate)"
-                        } else {
-                            ""
-                        }
-                    );
-                }
-            }
-            // Structures whose loads miss a wire not solved: not checked
-            // in that case, whatever their usage.
-            let incomplete: Vec<String> = usage
-                .iter()
-                .flat_map(|c| {
-                    c.structures.iter().filter(|s| s.is_incomplete()).map(|s| {
-                        format!("{} in {} ({})", s.structure, c.case, s.not_checked_text())
-                    })
-                })
-                .collect();
-            if !incomplete.is_empty() {
-                println!(
-                    "structure usage incomplete (a section or jumper not solved), {}:",
-                    incomplete.len()
-                );
-                for line in incomplete.iter().take(20) {
-                    println!("  {line}");
-                }
-            }
-            // Structures whose finite-element check kept tension-only
-            // members active (their set did not settle): approximate.
-            let approximate: Vec<String> = usage
-                .iter()
-                .flat_map(|c| {
-                    c.structures
-                        .iter()
-                        .filter(|s| s.is_approximate())
-                        .map(|s| format!("{} in {}", s.structure, c.case))
-                })
-                .collect();
-            if !approximate.is_empty() {
-                println!(
-                    "structure usage approximate (tension-only members kept active, their \
-                     set did not settle; to be treated later), {}:",
-                    approximate.len()
-                );
-                for line in approximate.iter().take(20) {
-                    println!("  {line}");
-                }
-            }
-            extra_tables.push(ohl_io::tables::Table::from_csv(
-                "Structure usage",
-                &ohl_loads::capacity::usage_csv(&usage),
-            ));
-            if let Some(out) = usage_csv {
-                std::fs::write(out, ohl_loads::capacity::usage_csv(&usage))
-                    .map_err(|e| format!("{}: {e}", out.display()))?;
-                println!("  written to {}", out.display());
-            }
-        }
+        structure_loads_report(args, &line, &library, &types, &mut extra_tables)?;
         if *stations {
-            for alignment in line.alignment_views() {
-                println!(
-                    "Alignment {} {} (route {})",
-                    alignment.id, alignment.name, alignment.route
-                );
-                println!(
-                    "  {:<12} {:>11} {:>9} {:>10} {:>10}  also on routes",
-                    "structure", "station m", "offset m", "angle °", "ahead m"
-                );
-                // Print tiny rounding values as 0.00, not -0.00.
-                let clean = |x: f64| if x.abs() < 0.005 { 0.0 } else { x };
-                for st in alignment.stations(&line).map_err(|e| e.to_string())? {
-                    // The structure's routes other than this alignment's.
-                    let others: Vec<String> = line
-                        .routes_of(&st.structure)
-                        .into_iter()
-                        .filter(|r| *r != alignment.route)
-                        .collect();
-                    println!(
-                        "  {:<12} {:>11.2} {:>9.2} {:>10.2} {:>10.2}  {}",
-                        st.structure,
-                        clean(st.station),
-                        clean(st.offset),
-                        clean(st.line_angle_deg),
-                        clean(st.ahead_span),
-                        others.join(", ")
-                    );
-                }
-            }
+            print_stations(&line)?;
         }
         let mut prepared = clearance_run::prepare(
             &line,
@@ -2302,93 +2077,13 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 "  {:<12} {:<22} {:>5} {:>12} {:>10} {:>6}",
                 "section", "circuit / phase", "spans", "max T (kN)", "max sag", "iter"
             );
-            let mut shapes = Vec::new();
-            for (section, result) in line.sections.iter().zip(results) {
-                match result {
-                    Ok(shape) => {
-                        let max_t = shape
-                            .spans
-                            .iter()
-                            .map(|s| s.max_tension)
-                            .fold(0.0, f64::max);
-                        let max_sag = shape.spans.iter().map(|s| s.sag).fold(0.0, f64::max);
-                        println!(
-                            "  {:<12} {:<22} {:>5} {:>12.2} {:>8.2} m {:>6}",
-                            section.id,
-                            format!("{} {}", section.circuit_name, section.phase_label),
-                            shape.spans.len(),
-                            max_t / 1e3,
-                            max_sag,
-                            shape.iterations
-                        );
-                        // Slack strings of a V (or more): the clamp hangs on
-                        // the others.
-                        for (point, strings) in section.points.iter().zip(&shape.strings) {
-                            if strings.len() >= 2 {
-                                for x in strings.iter().filter(|x| x.slack) {
-                                    println!(
-                                        "  {:<12}   slack string {} at {} set {}",
-                                        "", x.label, point.structure, point.set
-                                    );
-                                }
-                            }
-                        }
-                        for flag in &shape.flags {
-                            println!("  {:<12}   {flag}", "");
-                        }
-                        shapes.push(shape);
-                    }
-                    Err(error) => {
-                        failed += 1;
-                        println!("  {:<12} error: {error}", section.id);
-                    }
-                }
-            }
+            let shapes = print_sections(&line, results, &mut failed);
             println!(
                 "solved {} of {} sections in {elapsed:.1?}",
                 shapes.len(),
                 line.sections.len()
             );
-            let mut jumpers = Vec::new();
-            if !line.jumpers.is_empty() {
-                println!(
-                    "  {:<16} {:>10} {:>9} {:>11}",
-                    "jumper", "length m", "sag m", "max T (N)"
-                );
-                for (jumper, result) in line.jumpers.iter().zip(ohl_line::jumper::solve_jumpers(
-                    &line, &library, case, &shapes,
-                )) {
-                    match result {
-                        Ok(shape) => {
-                            println!(
-                                "  {:<16} {:>10.3} {:>9.3} {:>11.0}{}",
-                                jumper.id,
-                                shape.unstressed_length,
-                                shape.sag,
-                                shape.max_tension,
-                                shape
-                                    .supports
-                                    .iter()
-                                    .flat_map(|s| &s.strings)
-                                    .map(|s| {
-                                        let name = if s.label.is_empty() {
-                                            "support string"
-                                        } else {
-                                            s.label.as_str()
-                                        };
-                                        format!("   {name} {:.0} N", s.force)
-                                    })
-                                    .collect::<String>()
-                            );
-                            jumpers.push(shape);
-                        }
-                        Err(error) => {
-                            failed += 1;
-                            println!("  {:<16} error: {error}", jumper.id);
-                        }
-                    }
-                }
-            }
+            let jumpers = solve_jumpers_report(&line, &library, case, &shapes, &mut failed);
             // The rules by calculation (owner, 2026-11-01): each group on
             // the wires solved by its own (none: the sections' own, as
             // printed above).
@@ -2554,49 +2249,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 Some(t) => sheet_run::resolve(t, Some(file), plugin)?,
                 None => ohl_drawing::SheetTemplate::builtin(),
             });
-            // The optimised layout (--page optimised, or the template's).
-            let mut optimise = match page {
-                Some("optimised") => {
-                    let names = if paper_sizes.is_empty() {
-                        ohl_drawing::paper::default_sizes()
-                    } else {
-                        paper_sizes.clone()
-                    };
-                    Some(ohl_drawing::paper::Optimise::from_names(
-                        &names,
-                        *mixed_sizes,
-                    )?)
-                }
-                None if sheet_template.is_some() => template.optimise(),
-                _ => None,
-            };
-            if let Some(o) = &mut optimise {
-                match orientation.as_deref() {
-                    Some("landscape") => o.portrait = false,
-                    Some("portrait") => o.landscape = false,
-                    _ => {}
-                }
-            }
-            let page = match page {
-                Some("optimised") => None,
-                Some(name) => Some(ohl_drawing::page_format(name).ok_or_else(|| {
-                    format!(
-                        "unknown page format \"{name}\" (a standard paper size such as A1, \
-                         A3x3, B2, \"ANSI D\", WIDTHxHEIGHT in mm, or optimised)"
-                    )
-                })?),
-                None if sheet_template.is_some() => template.page(),
-                None => None,
-            };
-            let page = match (page, orientation.as_deref()) {
-                (Some(p), Some("portrait")) => Some(p.portrait()),
-                (Some(p), Some("landscape")) if p.height > p.width => Some(ohl_drawing::Page {
-                    name: p.name.trim_end_matches(" portrait").to_owned(),
-                    width: p.height,
-                    height: p.width,
-                }),
-                (p, _) => p,
-            };
+            let (optimise, page) = sheet_page(args, page, sheet_template, &template)?;
             let sheet_fields = sheet_run::fields(fields.as_deref(), field, revision)?;
             let options = ohl_drawing::Options {
                 horizontal_scale: *hscale,
@@ -2711,45 +2364,8 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                     .as_deref()
                     .or_else(|| project::is_project(file).then_some(file.as_path())),
             )?;
-            // Other versions of the line: solved in the same weather cases.
-            let mut other_versions = Vec::new();
-            for v in versions {
-                let (given, role, label) = sheet_run::parse_version(v)?;
-                let mut vline =
-                    sheet_run::version_line(file, &given, structure_dir, insulator_dir)?;
-                // A line file is called by its line's name.
-                let name = if std::path::Path::new(&given).is_file() && !vline.name.is_empty() {
-                    vline.name.clone()
-                } else {
-                    given
-                };
-                let weather: Vec<WeatherCase> =
-                    solved_cases.iter().map(|(c, _, _)| c.clone()).collect();
-                vline.set_weather_cases(&weather);
-                let solved: Vec<_> = solved_cases
-                    .iter()
-                    .map(|(case, _, _)| {
-                        let shapes: Vec<ohl_line::solve::SectionShape> =
-                            ohl_line::solve::solve_line(&vline, &library, case)
-                                .into_iter()
-                                .filter_map(Result::ok)
-                                .collect();
-                        let jumpers: Vec<ohl_line::jumper::JumperShape> =
-                            ohl_line::jumper::solve_jumpers(&vline, &library, case, &shapes)
-                                .into_iter()
-                                .filter_map(Result::ok)
-                                .collect();
-                        (case.name.clone(), shapes, jumpers)
-                    })
-                    .collect();
-                println!(
-                    "version {name} ({role}): {} structures, {} sections, solved in {} case(s)",
-                    vline.structures.len(),
-                    vline.sections.len(),
-                    solved.len()
-                );
-                other_versions.push((name, role, label, vline, solved));
-            }
+            let other_versions =
+                other_versions(args, structure_dir, insulator_dir, &library, &solved_cases)?;
             let mut target = ohl_drawing::export::Export {
                 page: page.clone(),
                 optimise: optimise.clone(),
@@ -2762,53 +2378,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                      set's page): one continuous drawing, not in the one PDF"
                 );
             }
-            // Isoclearance lines: once for every route of the drawing.
-            let isolines = match &spec.isoclearance {
-                None => Vec::new(),
-                Some((iso, swing_arc)) => {
-                    let ground = ground.ok_or("isoclearance lines need the ground (--terrain)")?;
-                    let cases: Vec<WeatherCase> =
-                        solved_cases.iter().map(|(c, _, _)| c.clone()).collect();
-                    // Exit clause: an hour for the solves and the lines.
-                    let budget = ohl_core::budget::Budget::new()
-                        .time_limit(std::time::Duration::from_secs(3600));
-                    let positions = ohl_clearance::positions::solve_positions(
-                        &line,
-                        &library,
-                        &cases,
-                        ohl_clearance::positions::PositionOptions {
-                            swing_arc: *swing_arc,
-                            ..Default::default()
-                        },
-                        &budget,
-                    )?;
-                    let corridor = ohl_lidar::Corridor::along_spans(&line, *plan_width);
-                    let bounds = corridor
-                        .bounds()
-                        .ok_or("isoclearance lines: no span to draw them along")?;
-                    let t = std::time::Instant::now();
-                    let found = ohl_clearance::isoclearance::isoclearance(
-                        &positions,
-                        ground,
-                        bounds,
-                        &|x, y| corridor.contains(x, y),
-                        iso,
-                        &budget,
-                    )?;
-                    println!(
-                        "isoclearance: {} lines every {} m up to {} m over the line width ({:.1?})",
-                        found.contours.len(),
-                        iso.interval,
-                        iso.max_level,
-                        t.elapsed()
-                    );
-                    found
-                        .contours
-                        .into_iter()
-                        .map(|c| (c.level, c.points))
-                        .collect::<Vec<_>>()
-                }
-            };
+            let isolines = isoclearance_lines(spec, args, &line, &library, ground, &solved_cases)?;
             // The template's weather cases (`[cases]`): each kind of
             // wire drawn in its own, and the stringing band's, among the
             // cases solved (--case).
@@ -3115,6 +2685,611 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
     }
 }
 
+/// A weather case solved: the case, its sections' shapes, its jumpers'.
+type SolvedCase = (
+    ohl_weather::WeatherCase,
+    Vec<ohl_line::solve::SectionShape>,
+    Vec<ohl_line::jumper::JumperShape>,
+);
+
+/// Another version of the line drawn on the sheets: its name, role and
+/// label, the line, and its solution in each weather case (the case's
+/// name, the sections' shapes, the jumpers').
+type OtherVersion = (
+    String,
+    String,
+    String,
+    ohl_line::Line,
+    Vec<(
+        String,
+        Vec<ohl_line::solve::SectionShape>,
+        Vec<ohl_line::jumper::JumperShape>,
+    )>,
+);
+
+/// An isoclearance line: its clearance, m, and its points.
+type IsoLine = (f64, Vec<[f64; 3]>);
+
+/// `ohl line`: the weather cases to run — those chosen of the --weather
+/// file (the line is given the whole file's), else the command line's one.
+fn weather_cases(
+    args: &LineArgs,
+    line: &mut ohl_line::Line,
+) -> Result<Vec<ohl_weather::WeatherCase>, String> {
+    use ohl_core::units::{Density, ForcePerLength, Length, Stress, Temperature};
+    use ohl_weather::{WeatherCase, WeatherCases};
+    let LineArgs {
+        temperature,
+        wind_pressure,
+        wind_from,
+        ice_thickness,
+        ice_load,
+        ice_density,
+        weather,
+        case,
+        tag,
+        ..
+    } = args;
+    let cases: Vec<WeatherCase> = match weather {
+        Some(path) => {
+            let set = WeatherCases::load(path)?;
+            // The creep-stretch cases from the whole file.
+            line.set_weather_cases(&set.cases);
+            let chosen = set.select(case, tag)?;
+            println!(
+                "weather: {} — {} of {} cases",
+                if set.name.is_empty() {
+                    path.display().to_string()
+                } else {
+                    set.name.clone()
+                },
+                chosen.len(),
+                set.cases.len()
+            );
+            chosen
+        }
+        None => {
+            if !case.is_empty() || !tag.is_empty() {
+                return Err("--case and --tag choose cases of a --weather file".into());
+            }
+            let c = WeatherCase {
+                wind_pressure: Stress::from_pascals(*wind_pressure),
+                wind_from: match wind_from.as_str() {
+                    "right" => ohl_weather::WindSide::Right,
+                    "left" => ohl_weather::WindSide::Left,
+                    other => {
+                        return Err(format!("--wind-from {other}: write left or right"));
+                    }
+                },
+                ice_thickness: Length::from_millimeters(*ice_thickness),
+                ice_load: ice_load.map(ForcePerLength::from_newtons_per_meter),
+                ice_density: ice_density.map(Density::from_kilograms_per_cubic_meter),
+                ..WeatherCase::still("command line", Temperature::from_celsius(*temperature))
+            };
+            c.validate()?;
+            vec![c]
+        }
+    };
+    if cases.is_empty() {
+        return Err("no weather case to run".into());
+    }
+    Ok(cases)
+}
+
+/// `ohl line` with load cases and a weather file: the structure loads
+/// printed and written, then the structures' usage; both as tables for
+/// the table formats.
+fn structure_loads_report(
+    args: &LineArgs,
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    extra_tables: &mut Vec<ohl_io::tables::Table>,
+) -> Result<(), String> {
+    use ohl_weather::WeatherCases;
+    let LineArgs {
+        file,
+        sections: sections_arg,
+        weather,
+        load_cases,
+        loads_csv,
+        usage_csv,
+        ..
+    } = args;
+    if let (Some(lc), Some(w)) = (load_cases, weather) {
+        let set = ohl_loads::LoadCases::load(lc)?;
+        let all = WeatherCases::load(w)?.cases;
+        let started = std::time::Instant::now();
+        let mut results = ohl_loads::structure_loads(
+            line,
+            library,
+            &all,
+            &set.cases,
+            &ohl_wirefe::default_fe_budget(),
+        )?;
+        // The structures' sections (the models' members and the wind
+        // and ice on them).
+        let sections = match sections_arg
+            .clone()
+            .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
+        {
+            Some(p) => ohl_sections::SectionLibrary::load(&p)?,
+            None => ohl_sections::SectionLibrary::default(),
+        };
+        // The wind on the structures' bands, and the ice and snow on
+        // them (load case file version 4).
+        ohl_loads::add_structure_loads(&mut results, line, types, &sections, &all);
+        println!(
+            "structure loads: {} load cases in {:.1?}",
+            results.len(),
+            started.elapsed()
+        );
+        for r in &results {
+            let max = |k: usize| {
+                r.loads
+                    .iter()
+                    .map(|l| l.factored[k].abs())
+                    .fold(0.0, f64::max)
+                    / 1000.0
+            };
+            println!(
+                "  {:<24} {:>4} supports  largest factored kN: transverse {:>8.2}  \
+                     longitudinal {:>8.2}  vertical {:>8.2}{}",
+                r.case.name,
+                r.loads.len(),
+                max(0),
+                max(1),
+                max(2),
+                if r.failed.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "  ({} sections failed: {})",
+                        r.failed.len(),
+                        r.failed.join("; ")
+                    )
+                }
+            );
+            for b in r.case.broken_wires() {
+                println!("    broken wire: {}", b.describe());
+            }
+            for n in &r.notes {
+                println!("    note: {n}");
+            }
+        }
+        extra_tables.push(ohl_io::tables::Table::from_csv(
+            "Structure loads",
+            &ohl_loads::to_csv(&results),
+        ));
+        if let Some(out) = loads_csv {
+            std::fs::write(out, ohl_loads::to_csv(&results))
+                .map_err(|e| format!("{}: {e}", out.display()))?;
+            println!("  written to {}", out.display());
+        }
+        let usage = structure_usage_report(line, types, &sections, library, &all, &results);
+        extra_tables.push(ohl_io::tables::Table::from_csv(
+            "Structure usage",
+            &ohl_loads::capacity::usage_csv(&usage),
+        ));
+        if let Some(out) = usage_csv {
+            std::fs::write(out, ohl_loads::capacity::usage_csv(&usage))
+                .map_err(|e| format!("{}: {e}", out.display()))?;
+            println!("  written to {}", out.display());
+        }
+    }
+    Ok(())
+}
+
+/// The structure checks of [`structure_loads_report`]: the usage worked
+/// out, the governing ones printed, the incomplete and approximate ones
+/// listed.
+fn structure_usage_report(
+    line: &ohl_line::Line,
+    types: &ohl_structures::StructureLibrary,
+    sections: &ohl_sections::SectionLibrary,
+    library: &ohl_cables::Library,
+    all: &[ohl_weather::WeatherCase],
+    results: &[ohl_loads::CaseLoads],
+) -> Vec<ohl_loads::capacity::CaseUsage> {
+    // Structure checks: the types' allowable spans and loads.
+    let usage =
+        ohl_loads::capacity::usage_with_sections(line, types, sections, library, all, results);
+    let governing = ohl_loads::capacity::governing(&usage);
+    if !governing.is_empty() {
+        let over = governing
+            .iter()
+            .filter(|(_, s)| s.governing().is_some_and(|g| g.usage > 1.0))
+            .count();
+        println!(
+            "structure usage: {} structures checked, {over} over 100 %",
+            governing.len()
+        );
+        for (case, s) in governing.iter().take(10) {
+            let g = s.governing().expect("checked");
+            println!(
+                "  {:<12} {:>12}  {:<20} {}{}",
+                s.structure,
+                if g.usage.is_finite() {
+                    format!("{:.1} %", g.usage * 100.0)
+                } else {
+                    "not allowed".into()
+                },
+                case,
+                g.governs,
+                if s.is_incomplete() {
+                    "  (incomplete)"
+                } else if s.is_approximate() {
+                    "  (approximate)"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+    // Structures whose loads miss a wire not solved: not checked
+    // in that case, whatever their usage.
+    let incomplete: Vec<String> = usage
+        .iter()
+        .flat_map(|c| {
+            c.structures
+                .iter()
+                .filter(|s| s.is_incomplete())
+                .map(|s| format!("{} in {} ({})", s.structure, c.case, s.not_checked_text()))
+        })
+        .collect();
+    if !incomplete.is_empty() {
+        println!(
+            "structure usage incomplete (a section or jumper not solved), {}:",
+            incomplete.len()
+        );
+        for line in incomplete.iter().take(20) {
+            println!("  {line}");
+        }
+    }
+    // Structures whose finite-element check kept tension-only
+    // members active (their set did not settle): approximate.
+    let approximate: Vec<String> = usage
+        .iter()
+        .flat_map(|c| {
+            c.structures
+                .iter()
+                .filter(|s| s.is_approximate())
+                .map(|s| format!("{} in {}", s.structure, c.case))
+        })
+        .collect();
+    if !approximate.is_empty() {
+        println!(
+            "structure usage approximate (tension-only members kept active, their \
+                     set did not settle; to be treated later), {}:",
+            approximate.len()
+        );
+        for line in approximate.iter().take(20) {
+            println!("  {line}");
+        }
+    }
+    usage
+}
+
+/// `ohl line --stations`: every alignment's structures with their
+/// stations.
+fn print_stations(line: &ohl_line::Line) -> Result<(), String> {
+    for alignment in line.alignment_views() {
+        println!(
+            "Alignment {} {} (route {})",
+            alignment.id, alignment.name, alignment.route
+        );
+        println!(
+            "  {:<12} {:>11} {:>9} {:>10} {:>10}  also on routes",
+            "structure", "station m", "offset m", "angle °", "ahead m"
+        );
+        // Print tiny rounding values as 0.00, not -0.00.
+        let clean = |x: f64| if x.abs() < 0.005 { 0.0 } else { x };
+        for st in alignment.stations(line).map_err(|e| e.to_string())? {
+            // The structure's routes other than this alignment's.
+            let others: Vec<String> = line
+                .routes_of(&st.structure)
+                .into_iter()
+                .filter(|r| *r != alignment.route)
+                .collect();
+            println!(
+                "  {:<12} {:>11.2} {:>9.2} {:>10.2} {:>10.2}  {}",
+                st.structure,
+                clean(st.station),
+                clean(st.offset),
+                clean(st.line_angle_deg),
+                clean(st.ahead_span),
+                others.join(", ")
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A weather case's sections as solved, printed (a row each, the slack
+/// strings and the flags); the shapes of those solved, the others counted
+/// in `failed`.
+fn print_sections(
+    line: &ohl_line::Line,
+    results: Vec<Result<ohl_line::solve::SectionShape, ohl_line::LineError>>,
+    failed: &mut i32,
+) -> Vec<ohl_line::solve::SectionShape> {
+    let mut shapes = Vec::new();
+    for (section, result) in line.sections.iter().zip(results) {
+        match result {
+            Ok(shape) => {
+                let max_t = shape
+                    .spans
+                    .iter()
+                    .map(|s| s.max_tension)
+                    .fold(0.0, f64::max);
+                let max_sag = shape.spans.iter().map(|s| s.sag).fold(0.0, f64::max);
+                println!(
+                    "  {:<12} {:<22} {:>5} {:>12.2} {:>8.2} m {:>6}",
+                    section.id,
+                    format!("{} {}", section.circuit_name, section.phase_label),
+                    shape.spans.len(),
+                    max_t / 1e3,
+                    max_sag,
+                    shape.iterations
+                );
+                // Slack strings of a V (or more): the clamp hangs on
+                // the others.
+                for (point, strings) in section.points.iter().zip(&shape.strings) {
+                    if strings.len() >= 2 {
+                        for x in strings.iter().filter(|x| x.slack) {
+                            println!(
+                                "  {:<12}   slack string {} at {} set {}",
+                                "", x.label, point.structure, point.set
+                            );
+                        }
+                    }
+                }
+                for flag in &shape.flags {
+                    println!("  {:<12}   {flag}", "");
+                }
+                shapes.push(shape);
+            }
+            Err(error) => {
+                *failed += 1;
+                println!("  {:<12} error: {error}", section.id);
+            }
+        }
+    }
+    shapes
+}
+
+/// A weather case's jumpers solved and printed; the shapes of those
+/// solved, the others counted in `failed`.
+fn solve_jumpers_report(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    case: &ohl_weather::WeatherCase,
+    shapes: &[ohl_line::solve::SectionShape],
+    failed: &mut i32,
+) -> Vec<ohl_line::jumper::JumperShape> {
+    let mut jumpers = Vec::new();
+    if !line.jumpers.is_empty() {
+        println!(
+            "  {:<16} {:>10} {:>9} {:>11}",
+            "jumper", "length m", "sag m", "max T (N)"
+        );
+        for (jumper, result) in line
+            .jumpers
+            .iter()
+            .zip(ohl_line::jumper::solve_jumpers(line, library, case, shapes))
+        {
+            match result {
+                Ok(shape) => {
+                    println!(
+                        "  {:<16} {:>10.3} {:>9.3} {:>11.0}{}",
+                        jumper.id,
+                        shape.unstressed_length,
+                        shape.sag,
+                        shape.max_tension,
+                        shape
+                            .supports
+                            .iter()
+                            .flat_map(|s| &s.strings)
+                            .map(|s| {
+                                let name = if s.label.is_empty() {
+                                    "support string"
+                                } else {
+                                    s.label.as_str()
+                                };
+                                format!("   {name} {:.0} N", s.force)
+                            })
+                            .collect::<String>()
+                    );
+                    jumpers.push(shape);
+                }
+                Err(error) => {
+                    *failed += 1;
+                    println!("  {:<16} error: {error}", jumper.id);
+                }
+            }
+        }
+    }
+    jumpers
+}
+
+/// A drawing's paper: the optimised layout (--page optimised, or the
+/// template's) and the page (--page, or the template's), turned as
+/// --orientation says.
+fn sheet_page(
+    args: &LineArgs,
+    page: Option<&str>,
+    sheet_template: Option<&String>,
+    template: &ohl_drawing::SheetTemplate,
+) -> Result<
+    (
+        Option<ohl_drawing::paper::Optimise>,
+        Option<ohl_drawing::Page>,
+    ),
+    String,
+> {
+    let LineArgs {
+        orientation,
+        paper_sizes,
+        mixed_sizes,
+        ..
+    } = args;
+    // The optimised layout (--page optimised, or the template's).
+    let mut optimise = match page {
+        Some("optimised") => {
+            let names = if paper_sizes.is_empty() {
+                ohl_drawing::paper::default_sizes()
+            } else {
+                paper_sizes.clone()
+            };
+            Some(ohl_drawing::paper::Optimise::from_names(
+                &names,
+                *mixed_sizes,
+            )?)
+        }
+        None if sheet_template.is_some() => template.optimise(),
+        _ => None,
+    };
+    if let Some(o) = &mut optimise {
+        match orientation.as_deref() {
+            Some("landscape") => o.portrait = false,
+            Some("portrait") => o.landscape = false,
+            _ => {}
+        }
+    }
+    let page = match page {
+        Some("optimised") => None,
+        Some(name) => Some(ohl_drawing::page_format(name).ok_or_else(|| {
+            format!(
+                "unknown page format \"{name}\" (a standard paper size such as A1, \
+                         A3x3, B2, \"ANSI D\", WIDTHxHEIGHT in mm, or optimised)"
+            )
+        })?),
+        None if sheet_template.is_some() => template.page(),
+        None => None,
+    };
+    let page = match (page, orientation.as_deref()) {
+        (Some(p), Some("portrait")) => Some(p.portrait()),
+        (Some(p), Some("landscape")) if p.height > p.width => Some(ohl_drawing::Page {
+            name: p.name.trim_end_matches(" portrait").to_owned(),
+            width: p.height,
+            height: p.width,
+        }),
+        (p, _) => p,
+    };
+    Ok((optimise, page))
+}
+
+/// The other versions of the line (--version), each solved in the
+/// weather cases solved.
+fn other_versions(
+    args: &LineArgs,
+    structure_dir: &std::path::Path,
+    insulator_dir: &std::path::Path,
+    library: &ohl_cables::Library,
+    solved_cases: &[SolvedCase],
+) -> Result<Vec<OtherVersion>, String> {
+    use ohl_weather::WeatherCase;
+    let LineArgs { file, versions, .. } = args;
+    // Other versions of the line: solved in the same weather cases.
+    let mut other_versions = Vec::new();
+    for v in versions {
+        let (given, role, label) = sheet_run::parse_version(v)?;
+        let mut vline = sheet_run::version_line(file, &given, structure_dir, insulator_dir)?;
+        // A line file is called by its line's name.
+        let name = if std::path::Path::new(&given).is_file() && !vline.name.is_empty() {
+            vline.name.clone()
+        } else {
+            given
+        };
+        let weather: Vec<WeatherCase> = solved_cases.iter().map(|(c, _, _)| c.clone()).collect();
+        vline.set_weather_cases(&weather);
+        let solved: Vec<_> = solved_cases
+            .iter()
+            .map(|(case, _, _)| {
+                let shapes: Vec<ohl_line::solve::SectionShape> =
+                    ohl_line::solve::solve_line(&vline, library, case)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                        .collect();
+                let jumpers: Vec<ohl_line::jumper::JumperShape> =
+                    ohl_line::jumper::solve_jumpers(&vline, library, case, &shapes)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                        .collect();
+                (case.name.clone(), shapes, jumpers)
+            })
+            .collect();
+        println!(
+            "version {name} ({role}): {} structures, {} sections, solved in {} case(s)",
+            vline.structures.len(),
+            vline.sections.len(),
+            solved.len()
+        );
+        other_versions.push((name, role, label, vline, solved));
+    }
+    Ok(other_versions)
+}
+
+/// A drawing's isoclearance lines (none asked for: none): each one's
+/// clearance and its points.
+fn isoclearance_lines(
+    spec: &DrawingSpec,
+    args: &LineArgs,
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    ground: Option<&ohl_terrain::Terrain>,
+    solved_cases: &[SolvedCase],
+) -> Result<Vec<IsoLine>, String> {
+    use ohl_weather::WeatherCase;
+    let plan_width = &args.plan_width;
+    // Isoclearance lines: once for every route of the drawing.
+    let isolines = match &spec.isoclearance {
+        None => Vec::new(),
+        Some((iso, swing_arc)) => {
+            let ground = ground.ok_or("isoclearance lines need the ground (--terrain)")?;
+            let cases: Vec<WeatherCase> = solved_cases.iter().map(|(c, _, _)| c.clone()).collect();
+            // Exit clause: an hour for the solves and the lines.
+            let budget =
+                ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(3600));
+            let positions = ohl_clearance::positions::solve_positions(
+                line,
+                library,
+                &cases,
+                ohl_clearance::positions::PositionOptions {
+                    swing_arc: *swing_arc,
+                    ..Default::default()
+                },
+                &budget,
+            )?;
+            let corridor = ohl_lidar::Corridor::along_spans(line, *plan_width);
+            let bounds = corridor
+                .bounds()
+                .ok_or("isoclearance lines: no span to draw them along")?;
+            let t = std::time::Instant::now();
+            let found = ohl_clearance::isoclearance::isoclearance(
+                &positions,
+                ground,
+                bounds,
+                &|x, y| corridor.contains(x, y),
+                iso,
+                &budget,
+            )?;
+            println!(
+                "isoclearance: {} lines every {} m up to {} m over the line width ({:.1?})",
+                found.contours.len(),
+                iso.interval,
+                iso.max_level,
+                t.elapsed()
+            );
+            found
+                .contours
+                .into_iter()
+                .map(|c| (c.level, c.points))
+                .collect::<Vec<_>>()
+        }
+    };
+    Ok(isolines)
+}
 fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool) -> ExitCode {
     use ohl_structures::{
         InsulatorAssembly, InsulatorLibrary, LibraryItem, StructureLibrary, StructureType,

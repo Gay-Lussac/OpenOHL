@@ -573,25 +573,7 @@ impl TablePage {
         // Its own columns, then the plugins'.
         let own = kind.columns().len();
         let plugin_columns = kind.plugin_columns(model);
-        let columns: Vec<(Cow<'static, str>, f32, Edit, Cow<'static, str>)> = kind
-            .columns()
-            .iter()
-            .map(|c| (Cow::Borrowed(c.0), c.1, c.2, Cow::Borrowed(c.3)))
-            .chain(plugin_columns.iter().map(|c| {
-                let help = if c.in_use {
-                    format!("{} (plugin {})", c.help, c.plugin)
-                } else {
-                    c.help.clone()
-                };
-                let title = if c.in_use {
-                    c.title.clone()
-                } else {
-                    format!("{} (unused)", c.title)
-                };
-                let width = (title.chars().count() as f32 * 7.5).clamp(80.0, 180.0);
-                (Cow::Owned(title), width, Yes, Cow::Owned(help))
-            }))
-            .collect();
+        let columns = columns_of(kind, &plugin_columns);
         let choices_of = |c: usize, cells: &[String]| {
             if c < own {
                 return choices(kind, c, model, cells);
@@ -608,29 +590,110 @@ impl TablePage {
             cells.resize(columns.len(), String::new());
         }
         let rows = self.cached_rows(kind, model, case);
-        // The route worked on: its rows only (owner, 2026-11-01), said.
-        if let Some(route) = &model.work_route
-            && !matches!(
-                kind,
-                TableKind::Insulators
-                    | TableKind::StringShapes
-                    | TableKind::Routes
-                    | TableKind::WeatherCases
-                    | TableKind::LoadTypes
-            )
-        {
-            ui.label(
-                egui::RichText::new(format!(
-                    "Route {route} worked on: its rows only (View › Work on route › All routes \
-                     shows every row)"
-                ))
-                .small()
-                .color(ui.visuals().warn_fg_color),
+        let row_height = 20.0;
+        let buttons = 52.0;
+        let type_column = (kind == TableKind::Structures).then(|| kind.column("type"));
+        let extension_column = kind.column_of("extension");
+        let cx = Table {
+            kind,
+            model,
+            case,
+            selection,
+            editable,
+            columns: &columns,
+            choices_of: &choices_of,
+            none_of: &none_of,
+            type_column,
+            extension_column,
+            row_height,
+            buttons,
+        };
+        let mut asks = Asks::default();
+        route_note(ui, kind, model);
+        self.toolbar_ui(ui, &cx, &mut asks, &rows);
+        self.confirm_ui(ui, &mut asks);
+        weather_cases_note(ui, kind, model);
+        self.alignments_ui(ui, &cx, &mut asks);
+        self.alignment_points_ui(ui, kind, model);
+        self.apply_ui(ui, &cx, &mut asks);
+        let order = self.order(kind, &rows);
+        let added = self.added.len();
+        // The grid: a line at every column edge and under every row, from
+        // the columns' widths (each cell `width` wide, 2 apart, after the
+        // two row buttons) — every row the same widths whatever its cells.
+        let widths: Vec<f32> = columns.iter().map(|c| c.1).collect();
+        let grid = move |ui: &egui::Ui, row: egui::Rect| {
+            let stroke =
+                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
+            let p = ui.painter();
+            let mut x = row.left() + buttons - 1.0;
+            p.line_segment(
+                [egui::pos2(x, row.top()), egui::pos2(x, row.bottom())],
+                stroke,
             );
+            for w in &widths {
+                x += w + 2.0;
+                p.line_segment(
+                    [egui::pos2(x, row.top()), egui::pos2(x, row.bottom())],
+                    stroke,
+                );
+            }
+            p.line_segment(
+                [
+                    egui::pos2(row.left() + buttons - 1.0, row.bottom() + 1.0),
+                    egui::pos2(x, row.bottom() + 1.0),
+                ],
+                stroke,
+            );
+        };
+        egui::ScrollArea::horizontal().show(ui, |ui| {
+            let header = self.header_ui(ui, &cx);
+            grid(ui, header.response.rect);
+            ui.add_space(2.0);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show_rows(ui, row_height, order.len() + added, |ui, range| {
+                    for i in range {
+                        if i >= order.len() {
+                            // A new row.
+                            let k = i - order.len();
+                            let cells = self.new_row_ui(ui, &cx, &mut asks, k);
+                            grid(ui, cells.response.rect);
+                            continue;
+                        }
+                        let row = &rows[order[i]];
+                        let cells = self.row_ui(ui, &cx, &mut asks, row);
+                        grid(ui, cells.response.rect);
+                    }
+                });
+        });
+        let Asks {
+            action,
+            open_tool,
+            open_picker,
+            ..
+        } = asks;
+        if let Some((cell, text)) = open_tool {
+            self.open_color_tool(kind, cell, &text);
         }
-        let mut action = None;
-        let mut apply = false;
-        let mut confirmed = false;
+        if let Some((cell, t, e)) = open_picker {
+            self.open_type_picker(cell, &t, &e);
+        }
+        self.tools_ui(ui, kind, model, tools);
+        action
+    }
+
+    /// The bar above the table: the filter, Add row, Apply, Revert, the
+    /// number of rows, the String builder's menu.
+    fn toolbar_ui(&mut self, ui: &mut egui::Ui, cx: &Table<'_>, asks: &mut Asks, rows: &[Row]) {
+        let Table {
+            kind,
+            model,
+            case,
+            editable,
+            columns,
+            ..
+        } = *cx;
         ui.horizontal(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
@@ -654,7 +717,7 @@ impl TablePage {
                 self.confirm = None;
             }
             let n = self.pending();
-            apply = ui
+            asks.apply = ui
                 .add_enabled(
                     editable && n > 0,
                     egui::Button::new(format!("Apply {n} changes")),
@@ -679,7 +742,7 @@ impl TablePage {
                 ui.menu_button("String builder ▾", |ui| {
                     for a in library.iter() {
                         if ui.button(format!("{} — {}", a.id, a.name)).clicked() {
-                            action = Some(TableAction::StringBuilder(a.id.clone()));
+                            asks.action = Some(TableAction::StringBuilder(a.id.clone()));
                         }
                     }
                 })
@@ -693,6 +756,10 @@ impl TablePage {
                 ui.label(egui::RichText::new("read-only").small().weak());
             }
         });
+    }
+
+    /// What the deletions take with them, to be confirmed.
+    fn confirm_ui(&mut self, ui: &mut egui::Ui, asks: &mut Asks) {
         if let Some(takes) = &self.confirm {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
@@ -708,37 +775,24 @@ impl TablePage {
                 });
             ui.horizontal(|ui| {
                 if ui.button("Apply all that").clicked() {
-                    apply = true;
-                    confirmed = true;
+                    asks.apply = true;
+                    asks.confirmed = true;
                 }
                 if ui.button("Cancel").clicked() {
                     self.confirm = None;
                 }
             });
         }
-        if kind == TableKind::WeatherCases {
-            ui.label(
-                egui::RichText::new(match &model.sources.weather {
-                    Some(p) => format!(
-                        "{} — Apply writes the file (comments kept) and solves the model again",
-                        crate::menu::file_label(model, p)
-                    ),
-                    None if weather_path(model).is_some() => "The project uses a default case (15 °C): add cases here (+ Add row), Apply keeps them in the project".into(),
-                    None => "The model uses a default case (15 °C): make a case file in Line › Criteria › Weather cases library and choose Use for the model".into(),
-                })
-                .small()
-                .weak(),
-            );
-            // An iced wind case without an ice density (physics review
-            // 2026-10-26): said, asking for one.
-            for note in model.cases.iter().filter_map(|c| c.case.ice_density_note()) {
-                crate::menu::message(
-                    ui,
-                    egui::RichText::new(note).small(),
-                    Some(ui.visuals().warn_fg_color),
-                );
-            }
-        }
+    }
+
+    /// Alignments: a new route made here, and what the table is.
+    fn alignments_ui(&mut self, ui: &mut egui::Ui, cx: &Table<'_>, asks: &mut Asks) {
+        let Table {
+            kind,
+            model,
+            editable,
+            ..
+        } = *cx;
         if kind == TableKind::Alignments {
             // An alignment needs a route: one is made here when there is none.
             let stored = model.stored_line().unwrap_or(&model.line);
@@ -767,7 +821,7 @@ impl TablePage {
                     match crate::editors::new_route(stored, &name, &name) {
                         Ok((what, command)) => {
                             self.new_route.clear();
-                            action = Some(TableAction::Apply(Changes {
+                            asks.action = Some(TableAction::Apply(Changes {
                                 commands: vec![(what, command)],
                                 ..Changes::default()
                             }));
@@ -782,6 +836,10 @@ impl TablePage {
                     .weak(),
             );
         }
+    }
+
+    /// Alignment points: the alignment shown, and what the table is.
+    fn alignment_points_ui(&mut self, ui: &mut egui::Ui, kind: TableKind, model: &Model) {
         if kind == TableKind::AlignmentPoints {
             let stored = model.stored_line().unwrap_or(&model.line);
             ui.horizontal(|ui| {
@@ -817,9 +875,16 @@ impl TablePage {
                     .weak(),
             );
         }
-        if apply {
-            match self.prepare(kind, model, case, confirmed) {
-                Ok(Some(c)) => action = Some(TableAction::Apply(c)),
+    }
+
+    /// Apply asked for: the changes prepared; and the page's message.
+    fn apply_ui(&mut self, ui: &mut egui::Ui, cx: &Table<'_>, asks: &mut Asks) {
+        let Table {
+            kind, model, case, ..
+        } = *cx;
+        if asks.apply {
+            match self.prepare(kind, model, case, asks.confirmed) {
+                Ok(Some(c)) => asks.action = Some(TableAction::Apply(c)),
                 Ok(None) => {}
                 Err(e) => self.message = Some((e, true)),
             }
@@ -834,6 +899,10 @@ impl TablePage {
                 ui.colored_label(crate::menu::ok_color(ui), t);
             }
         }
+    }
+
+    /// The rows shown, in the order shown: filtered and sorted.
+    fn order(&self, kind: TableKind, rows: &[Row]) -> Vec<usize> {
         // Filter and sort (on the cells as shown, edits included).
         let shown_cell = |r: &Row, c: usize| -> String {
             self.edits
@@ -881,463 +950,375 @@ impl TablePage {
                 if up { o } else { o.reverse() }
             });
         }
-        let row_height = 20.0;
-        let buttons = 52.0;
+        order
+    }
+
+    /// The header: a column's name sorts by it.
+    fn header_ui(&mut self, ui: &mut egui::Ui, cx: &Table<'_>) -> egui::InnerResponse<()> {
+        let Table {
+            columns,
+            row_height,
+            ..
+        } = *cx;
         // Headers of two lines: the name, then the unit.
         let header_height = if columns.iter().any(|c| c.0.contains('\n')) {
             34.0
         } else {
             row_height
         };
-        let added = self.added.len();
-        // A colour cell's tool button clicked: the cell and its text.
-        let mut open_tool: Option<(ColorCell, String)> = None;
-        // A structure's type cell clicked: the cell, its type and extension.
-        let mut open_picker: Option<(TypeCell, String, String)> = None;
-        let type_column = (kind == TableKind::Structures).then(|| kind.column("type"));
-        let extension_column = kind.column_of("extension");
-        // The grid: a line at every column edge and under every row, from
-        // the columns' widths (each cell `width` wide, 2 apart, after the
-        // two row buttons) — every row the same widths whatever its cells.
-        let widths: Vec<f32> = columns.iter().map(|c| c.1).collect();
-        let grid = move |ui: &egui::Ui, row: egui::Rect| {
-            let stroke =
-                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
-            let p = ui.painter();
-            let mut x = row.left() + buttons - 1.0;
-            p.line_segment(
-                [egui::pos2(x, row.top()), egui::pos2(x, row.bottom())],
-                stroke,
-            );
-            for w in &widths {
-                x += w + 2.0;
-                p.line_segment(
-                    [egui::pos2(x, row.top()), egui::pos2(x, row.bottom())],
-                    stroke,
-                );
-            }
-            p.line_segment(
-                [
-                    egui::pos2(row.left() + buttons - 1.0, row.bottom() + 1.0),
-                    egui::pos2(x, row.bottom() + 1.0),
-                ],
-                stroke,
-            );
-        };
-        egui::ScrollArea::horizontal().show(ui, |ui| {
-            let header = ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                // Where the rows have their two buttons.
-                ui.add_sized([24.0, header_height], egui::Label::new(""));
-                ui.add_sized([24.0, header_height], egui::Label::new(""));
-                for (c, col) in columns.iter().enumerate() {
-                    let arrow = match self.sort {
-                        Some((s, true)) if s == c => " ⏶",
-                        Some((s, false)) if s == c => " ⏷",
-                        _ => "",
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            // Where the rows have their two buttons.
+            ui.add_sized([24.0, header_height], egui::Label::new(""));
+            ui.add_sized([24.0, header_height], egui::Label::new(""));
+            for (c, col) in columns.iter().enumerate() {
+                let arrow = match self.sort {
+                    Some((s, true)) if s == c => " ⏶",
+                    Some((s, false)) if s == c => " ⏷",
+                    _ => "",
+                };
+                // One style in every table: sentence case, the unit
+                // its help gives in brackets ("E [m]"; the column's
+                // key stays as it is).
+                let shown = crate::style::column_header(&col.0, &col.3);
+                let text = egui::RichText::new(format!("{shown}{arrow}")).strong();
+                if ui
+                    .add_sized([col.1, header_height], egui::Button::new(text).frame(false))
+                    .on_hover_text(format!("{} — click to sort", col.3))
+                    .clicked()
+                {
+                    self.sort = match self.sort {
+                        Some((s, true)) if s == c => Some((c, false)),
+                        Some((s, false)) if s == c => None,
+                        _ => Some((c, true)),
                     };
-                    // One style in every table: sentence case, the unit
-                    // its help gives in brackets ("E [m]"; the column's
-                    // key stays as it is).
-                    let shown = crate::style::column_header(&col.0, &col.3);
-                    let text = egui::RichText::new(format!("{shown}{arrow}")).strong();
-                    if ui
-                        .add_sized([col.1, header_height], egui::Button::new(text).frame(false))
-                        .on_hover_text(format!("{} — click to sort", col.3))
-                        .clicked()
-                    {
-                        self.sort = match self.sort {
-                            Some((s, true)) if s == c => Some((c, false)),
-                            Some((s, false)) if s == c => None,
-                            _ => Some((c, true)),
-                        };
-                    }
                 }
-            });
-            grid(ui, header.response.rect);
-            ui.add_space(2.0);
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show_rows(ui, row_height, order.len() + added, |ui, range| {
-                    for i in range {
-                        if i >= order.len() {
-                            // A new row.
-                            let k = i - order.len();
-                            let cells = ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 2.0;
-                                if ui
-                                    .add_sized([buttons - 2.0, row_height], egui::Button::new("🗑"))
-                                    .on_hover_text("Remove this new row")
-                                    .clicked()
-                                {
-                                    self.added.remove(k);
-                                    self.confirm = None;
-                                    return;
-                                }
-                                for (c, col) in columns.iter().enumerate() {
-                                    if col.2 == Derived {
-                                        ui.add_sized(
-                                            [col.1, row_height],
-                                            egui::Label::new(egui::RichText::new("new").weak()),
-                                        );
-                                        continue;
-                                    }
-                                    if Some(c) == type_column {
-                                        if type_cell(
-                                            ui,
-                                            [col.1, row_height],
-                                            &self.added[k][c],
-                                            Some(crate::menu::ok_color(ui)),
-                                        ) {
-                                            let e = extension_column
-                                                .and_then(|e| self.added[k].get(e).cloned())
-                                                .unwrap_or_default();
-                                            open_picker = Some((
-                                                TypeCell::New { index: k },
-                                                self.added[k][c].clone(),
-                                                e,
-                                            ));
-                                        }
-                                        continue;
-                                    }
-                                    if let Some(list) = choices_of(c, &self.added[k]) {
-                                        let mut text = self.added[k][c].clone();
-                                        if choice_cell(
-                                            ui,
-                                            ("new", kind, k, c),
-                                            col.1,
-                                            &mut text,
-                                            list,
-                                            Some(crate::menu::ok_color(ui)),
-                                            none_of(c),
-                                        ) {
-                                            self.added[k][c] = text;
-                                        }
-                                        continue;
-                                    }
-                                    if col.0 == "colour" {
-                                        let (tool, _) = color_cell(
-                                            ui,
-                                            [col.1, row_height],
-                                            &mut self.added[k][c],
-                                            Some(crate::menu::ok_color(ui)),
-                                            false,
-                                            &col.3,
-                                        );
-                                        if tool {
-                                            open_tool = Some((
-                                                ColorCell::New { index: k, column: c },
-                                                self.added[k][c].clone(),
-                                            ));
-                                        }
-                                        continue;
-                                    }
-                                    let edit = egui::TextEdit::singleline(&mut self.added[k][c])
-                                        .text_color(crate::menu::ok_color(ui));
-                                    ui.add_sized([col.1, row_height], edit);
-                                }
-                            });
-                            grid(ui, cells.response.rect);
-                            continue;
-                        }
-                        let row = &rows[order[i]];
-                        let deleted = self.deleted.contains(&row.key);
-                        let cells = ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 2.0;
-                            let selected = match kind {
-                                TableKind::WeatherCases => row.key == case.to_string(),
-                                _ => crate::selection::is_selected(selection, model, &row.select),
-                            };
-                            let go = ui
-                                .add_sized(
-                                    [24.0, row_height],
-                                    egui::Button::selectable(selected, "⤴"),
-                                )
-                                .on_hover_text(match kind {
-                                    TableKind::WeatherCases => "Show this weather case",
-                                    TableKind::Structures => {
-                                        "Select it and bring the views to it (right-click: \
-                                         Replace structure…, Open this type in \
-                                         OHL-Structure…, Cross-section here)"
-                                    }
-                                    _ => "Select it and bring the views to it",
-                                });
-                            // A structure: replaced by another type.
-                            if let (TableKind::Structures, Selection::Structure(id)) =
-                                (kind, &row.select)
-                            {
-                                go.context_menu(|ui| {
-                                    if ui
-                                        .add_enabled(
-                                            editable,
-                                            egui::Button::new("Replace structure…"),
-                                        )
-                                        .on_hover_text(
-                                            "Another structure type in its place: matching wire \
-                                             points are rewired, the others you map",
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(TableAction::Replace(id.clone()));
-                                        ui.close();
-                                    }
-                                    if ui
-                                        .button(crate::type_workspace::EDIT_IN_APP)
-                                        .on_hover_text(
-                                            "Its structure type in OHL-Structure (its own window), with the loads of \
-                                             this place; one without a type is made a \
-                                             structure file first",
-                                        )
-                                        .clicked()
-                                    {
-                                        action =
-                                            Some(TableAction::EditInStructureApp(id.clone()));
-                                        ui.close();
-                                    }
-                                    if ui
-                                        .button("Cross-section here")
-                                        .on_hover_text(
-                                            "A cut across the line in the plane of its \
-                                             cross-arms, in a tab of its own",
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(TableAction::CrossSection(id.clone()));
-                                        ui.close();
-                                    }
-                                });
-                            }
-                            if go.clicked() {
-                                action = Some(match kind {
-                                    TableKind::WeatherCases => {
-                                        TableAction::ShowCase(row.key.parse().unwrap_or(0))
-                                    }
-                                    _ => TableAction::Select(row.select.clone()),
-                                });
-                            }
-                            if kind == TableKind::ConductorPaths {
-                                // Reverse: its starts become its ends and
-                                // back (pending until Apply).
-                                let shown = self
-                                    .edits
-                                    .get(&row.key)
-                                    .and_then(|e| e.get(&4))
-                                    .cloned()
-                                    .unwrap_or_else(|| row.cells[4].clone());
-                                let starts: Vec<&str> =
-                                    shown.split(';').map(str::trim).collect();
-                                let flipped: Vec<String> = circuit_ends(&row.cells)
-                                    .into_iter()
-                                    .filter(|p| !starts.contains(&p.as_str()))
-                                    .collect();
-                                if ui
-                                    .add_enabled(
-                                        editable && !flipped.is_empty(),
-                                        egui::Button::new("⬌")
-                                            .min_size(egui::vec2(24.0, row_height)),
-                                    )
-                                    .on_hover_text("Reverse: its starts become its ends and its ends its starts (on Apply)")
-                                    .clicked()
-                                {
-                                    self.edits
-                                        .entry(row.key.clone())
-                                        .or_default()
-                                        .insert(4, flipped.join("; "));
-                                    self.confirm = None;
-                                }
-                            } else if ui
-                                .add_enabled(
-                                    editable && !kind.fixed_rows(),
-                                    egui::Button::selectable(deleted, "🗑")
-                                        .min_size(egui::vec2(24.0, row_height)),
-                                )
-                                .on_hover_text(if deleted {
-                                    "Marked for deletion: click to keep it"
-                                } else {
-                                    "Delete it (on Apply)"
-                                })
-                                .clicked()
-                            {
-                                if deleted {
-                                    self.deleted.remove(&row.key);
-                                } else {
-                                    self.deleted.insert(row.key.clone());
-                                }
-                                self.confirm = None;
-                            }
-                            for (c, col) in columns.iter().enumerate() {
-                                let original = &row.cells[c];
-                                if deleted || col.2 != Yes || !editable {
-                                    let mut t = egui::RichText::new(original).weak();
-                                    if deleted {
-                                        t = t.strikethrough().color(ui.visuals().error_fg_color);
-                                    }
-                                    // A colour read-only: on its colour.
-                                    let swatch = (col.0 == "colour" && !deleted)
-                                        .then(|| ohl_core::text::parse_rgb(original.trim()))
-                                        .flatten()
-                                        .map(crate::color_tool::color32);
-                                    if let Some(fill) = swatch {
-                                        let (rect, _) = ui.allocate_exact_size(
-                                            egui::vec2(col.1, row_height),
-                                            egui::Sense::hover(),
-                                        );
-                                        ui.painter().rect_filled(rect.shrink(1.0), 2.0, fill);
-                                        ui.painter().text(
-                                            rect.left_center() + egui::vec2(4.0, 0.0),
-                                            egui::Align2::LEFT_CENTER,
-                                            original,
-                                            egui::TextStyle::Body.resolve(ui.style()),
-                                            crate::color_tool::text_on(fill),
-                                        );
-                                        continue;
-                                    }
-                                    let number = crate::style::unit_of(&col.3).is_some();
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(col.1, row_height),
-                                        if number {
-                                            egui::Layout::right_to_left(egui::Align::Center)
-                                        } else {
-                                            egui::Layout::left_to_right(egui::Align::Center)
-                                        },
-                                        |ui| {
-                                            ui.set_min_size(egui::vec2(col.1, row_height));
-                                            ui.add(egui::Label::new(t).truncate())
-                                        },
-                                    )
-                                    .inner
-                                    .on_hover_text(
-                                        match col.2 {
-                                            Derived => format!("{original} — counted, not typed"),
-                                            New => format!("{original} — {}", col.3),
-                                            Yes => original.clone(),
-                                        },
-                                    );
-                                    continue;
-                                }
-                                let edited = self.edits.get(&row.key).and_then(|e| e.get(&c));
-                                let mut text = edited.cloned().unwrap_or_else(|| original.clone());
-                                // A default shown (not stored): dimmed until typed over.
-                                let default = edited.is_none()
-                                    && row.defaulted.get(c).copied().unwrap_or(false);
-                                let dim = ui.visuals().weak_text_color();
-                                if Some(c) == type_column {
-                                    if type_cell(
-                                        ui,
-                                        [col.1, row_height],
-                                        &text,
-                                        edited.is_some().then_some(ui.visuals().warn_fg_color),
-                                    ) {
-                                        let e = extension_column.unwrap_or(c);
-                                        let shown_extension = self
-                                            .edits
-                                            .get(&row.key)
-                                            .and_then(|x| x.get(&e))
-                                            .cloned()
-                                            .unwrap_or_else(|| row.cells[e].clone());
-                                        open_picker = Some((
-                                            TypeCell::Row {
-                                                key: row.key.clone(),
-                                                structure_type: original.clone(),
-                                                extension: row.cells[e].clone(),
-                                            },
-                                            text.clone(),
-                                            shown_extension,
-                                        ));
-                                    }
-                                    continue;
-                                }
-                                if let Some(list) = choices_of(c, &row.cells) {
-                                    let color = match (edited, default) {
-                                        (Some(_), _) => Some(ui.visuals().warn_fg_color),
-                                        (None, true) => Some(dim),
-                                        _ => None,
-                                    };
-                                    if choice_cell(
-                                        ui,
-                                        (kind, &row.key, c),
-                                        col.1,
-                                        &mut text,
-                                        list,
-                                        color,
-                                        none_of(c),
-                                    ) {
-                                        self.set(&row.key, c, &text, original);
-                                    }
-                                    continue;
-                                }
-                                if col.0 == "colour" {
-                                    let hover = if default {
-                                        format!(
-                                            "default (not set on it; type or pick to set it) — {}",
-                                            col.3
-                                        )
-                                    } else {
-                                        col.3.to_string()
-                                    };
-                                    let (tool, changed) = color_cell(
-                                        ui,
-                                        [col.1, row_height],
-                                        &mut text,
-                                        edited.is_some().then_some(ui.visuals().warn_fg_color),
-                                        default,
-                                        &hover,
-                                    );
-                                    if changed {
-                                        self.set(&row.key, c, &text, original);
-                                    }
-                                    if tool {
-                                        open_tool = Some((
-                                            ColorCell::Row {
-                                                key: row.key.clone(),
-                                                column: c,
-                                                // A default: set even when the same.
-                                                original: if default {
-                                                    String::new()
-                                                } else {
-                                                    original.clone()
-                                                },
-                                            },
-                                            text.clone(),
-                                        ));
-                                    }
-                                    continue;
-                                }
-                                let mut edit = egui::TextEdit::singleline(&mut text);
-                                // A number (a column with a unit): right-
-                                // aligned, as the read-only numbers.
-                                if crate::style::unit_of(&col.3).is_some() {
-                                    edit = edit.horizontal_align(egui::Align::RIGHT);
-                                }
-                                if edited.is_some() {
-                                    edit = edit.text_color(ui.visuals().warn_fg_color);
-                                } else if default {
-                                    edit = edit.text_color(dim);
-                                }
-                                let hover = if default {
-                                    format!("default (not set on it; type to set it) — {}", col.3)
-                                } else {
-                                    col.3.to_string()
-                                };
-                                if ui
-                                    .add_sized([col.1, row_height], edit)
-                                    .on_hover_text(hover)
-                                    .changed()
-                                {
-                                    self.set(&row.key, c, &text, original);
-                                }
-                            }
-                        });
-                        grid(ui, cells.response.rect);
+            }
+        })
+    }
+
+    /// New row `k`: its remove button and its cells.
+    fn new_row_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        cx: &Table<'_>,
+        asks: &mut Asks,
+        k: usize,
+    ) -> egui::InnerResponse<()> {
+        let Table {
+            kind,
+            columns,
+            choices_of,
+            none_of,
+            type_column,
+            extension_column,
+            row_height,
+            buttons,
+            ..
+        } = *cx;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            if ui
+                .add_sized([buttons - 2.0, row_height], egui::Button::new("🗑"))
+                .on_hover_text("Remove this new row")
+                .clicked()
+            {
+                self.added.remove(k);
+                self.confirm = None;
+                return;
+            }
+            for (c, col) in columns.iter().enumerate() {
+                if col.2 == Derived {
+                    ui.add_sized(
+                        [col.1, row_height],
+                        egui::Label::new(egui::RichText::new("new").weak()),
+                    );
+                    continue;
+                }
+                if Some(c) == type_column {
+                    if type_cell(
+                        ui,
+                        [col.1, row_height],
+                        &self.added[k][c],
+                        Some(crate::menu::ok_color(ui)),
+                    ) {
+                        let e = extension_column
+                            .and_then(|e| self.added[k].get(e).cloned())
+                            .unwrap_or_default();
+                        asks.open_picker =
+                            Some((TypeCell::New { index: k }, self.added[k][c].clone(), e));
                     }
-                });
-        });
-        if let Some((cell, text)) = open_tool {
-            self.open_color_tool(kind, cell, &text);
+                    continue;
+                }
+                if let Some(list) = choices_of(c, &self.added[k]) {
+                    let mut text = self.added[k][c].clone();
+                    if choice_cell(
+                        ui,
+                        ("new", kind, k, c),
+                        col.1,
+                        &mut text,
+                        list,
+                        Some(crate::menu::ok_color(ui)),
+                        none_of(c),
+                    ) {
+                        self.added[k][c] = text;
+                    }
+                    continue;
+                }
+                if col.0 == "colour" {
+                    let (tool, _) = color_cell(
+                        ui,
+                        [col.1, row_height],
+                        &mut self.added[k][c],
+                        Some(crate::menu::ok_color(ui)),
+                        false,
+                        &col.3,
+                    );
+                    if tool {
+                        asks.open_tool = Some((
+                            ColorCell::New {
+                                index: k,
+                                column: c,
+                            },
+                            self.added[k][c].clone(),
+                        ));
+                    }
+                    continue;
+                }
+                let edit = egui::TextEdit::singleline(&mut self.added[k][c])
+                    .text_color(crate::menu::ok_color(ui));
+                ui.add_sized([col.1, row_height], edit);
+            }
+        })
+    }
+
+    /// An existing row: its two buttons and its cells.
+    fn row_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        cx: &Table<'_>,
+        asks: &mut Asks,
+        row: &Row,
+    ) -> egui::InnerResponse<()> {
+        let Table {
+            editable, columns, ..
+        } = *cx;
+        let deleted = self.deleted.contains(&row.key);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            go_button(ui, cx, asks, row);
+            self.row_button(ui, cx, row, deleted);
+            for (c, col) in columns.iter().enumerate() {
+                if deleted || col.2 != Yes || !editable {
+                    fixed_cell(ui, cx, row, c, deleted);
+                    continue;
+                }
+                self.edit_cell(ui, cx, asks, row, c);
+            }
+        })
+    }
+
+    /// A row's second button: Reverse (Conductor paths), else delete or
+    /// keep.
+    fn row_button(&mut self, ui: &mut egui::Ui, cx: &Table<'_>, row: &Row, deleted: bool) {
+        let Table {
+            kind,
+            editable,
+            row_height,
+            ..
+        } = *cx;
+        if kind == TableKind::ConductorPaths {
+            // Reverse: its starts become its ends and
+            // back (pending until Apply).
+            let shown = self
+                .edits
+                .get(&row.key)
+                .and_then(|e| e.get(&4))
+                .cloned()
+                .unwrap_or_else(|| row.cells[4].clone());
+            let starts: Vec<&str> = shown.split(';').map(str::trim).collect();
+            let flipped: Vec<String> = circuit_ends(&row.cells)
+                .into_iter()
+                .filter(|p| !starts.contains(&p.as_str()))
+                .collect();
+            if ui
+                .add_enabled(
+                    editable && !flipped.is_empty(),
+                    egui::Button::new("⬌").min_size(egui::vec2(24.0, row_height)),
+                )
+                .on_hover_text(
+                    "Reverse: its starts become its ends and its ends its starts (on Apply)",
+                )
+                .clicked()
+            {
+                self.edits
+                    .entry(row.key.clone())
+                    .or_default()
+                    .insert(4, flipped.join("; "));
+                self.confirm = None;
+            }
+        } else if ui
+            .add_enabled(
+                editable && !kind.fixed_rows(),
+                egui::Button::selectable(deleted, "🗑").min_size(egui::vec2(24.0, row_height)),
+            )
+            .on_hover_text(if deleted {
+                "Marked for deletion: click to keep it"
+            } else {
+                "Delete it (on Apply)"
+            })
+            .clicked()
+        {
+            if deleted {
+                self.deleted.remove(&row.key);
+            } else {
+                self.deleted.insert(row.key.clone());
+            }
+            self.confirm = None;
         }
-        if let Some((cell, t, e)) = open_picker {
-            self.open_type_picker(cell, &t, &e);
+    }
+
+    /// A cell that can be edited: the type's button, a choice, a colour
+    /// or a text typed.
+    fn edit_cell(
+        &mut self,
+        ui: &mut egui::Ui,
+        cx: &Table<'_>,
+        asks: &mut Asks,
+        row: &Row,
+        c: usize,
+    ) {
+        let Table {
+            kind,
+            choices_of,
+            none_of,
+            type_column,
+            extension_column,
+            row_height,
+            ..
+        } = *cx;
+        let col = &cx.columns[c];
+        let original = &row.cells[c];
+        let edited = self.edits.get(&row.key).and_then(|e| e.get(&c));
+        let mut text = edited.cloned().unwrap_or_else(|| original.clone());
+        // A default shown (not stored): dimmed until typed over.
+        let default = edited.is_none() && row.defaulted.get(c).copied().unwrap_or(false);
+        let dim = ui.visuals().weak_text_color();
+        if Some(c) == type_column {
+            if type_cell(
+                ui,
+                [col.1, row_height],
+                &text,
+                edited.is_some().then_some(ui.visuals().warn_fg_color),
+            ) {
+                let e = extension_column.unwrap_or(c);
+                let shown_extension = self
+                    .edits
+                    .get(&row.key)
+                    .and_then(|x| x.get(&e))
+                    .cloned()
+                    .unwrap_or_else(|| row.cells[e].clone());
+                asks.open_picker = Some((
+                    TypeCell::Row {
+                        key: row.key.clone(),
+                        structure_type: original.clone(),
+                        extension: row.cells[e].clone(),
+                    },
+                    text.clone(),
+                    shown_extension,
+                ));
+            }
+            return;
         }
+        if let Some(list) = choices_of(c, &row.cells) {
+            let color = match (edited, default) {
+                (Some(_), _) => Some(ui.visuals().warn_fg_color),
+                (None, true) => Some(dim),
+                _ => None,
+            };
+            if choice_cell(
+                ui,
+                (kind, &row.key, c),
+                col.1,
+                &mut text,
+                list,
+                color,
+                none_of(c),
+            ) {
+                self.set(&row.key, c, &text, original);
+            }
+            return;
+        }
+        if col.0 == "colour" {
+            let hover = if default {
+                format!(
+                    "default (not set on it; type or pick to set it) — {}",
+                    col.3
+                )
+            } else {
+                col.3.to_string()
+            };
+            let (tool, changed) = color_cell(
+                ui,
+                [col.1, row_height],
+                &mut text,
+                edited.is_some().then_some(ui.visuals().warn_fg_color),
+                default,
+                &hover,
+            );
+            if changed {
+                self.set(&row.key, c, &text, original);
+            }
+            if tool {
+                asks.open_tool = Some((
+                    ColorCell::Row {
+                        key: row.key.clone(),
+                        column: c,
+                        // A default: set even when the same.
+                        original: if default {
+                            String::new()
+                        } else {
+                            original.clone()
+                        },
+                    },
+                    text.clone(),
+                ));
+            }
+            return;
+        }
+        let mut edit = egui::TextEdit::singleline(&mut text);
+        // A number (a column with a unit): right-
+        // aligned, as the read-only numbers.
+        if crate::style::unit_of(&col.3).is_some() {
+            edit = edit.horizontal_align(egui::Align::RIGHT);
+        }
+        if edited.is_some() {
+            edit = edit.text_color(ui.visuals().warn_fg_color);
+        } else if default {
+            edit = edit.text_color(dim);
+        }
+        let hover = if default {
+            format!("default (not set on it; type to set it) — {}", col.3)
+        } else {
+            col.3.to_string()
+        };
+        if ui
+            .add_sized([col.1, row_height], edit)
+            .on_hover_text(hover)
+            .changed()
+        {
+            self.set(&row.key, c, &text, original);
+        }
+    }
+
+    /// The structure picker and the colour tool, open for a cell.
+    fn tools_ui(
+        &mut self,
+        ui: &egui::Ui,
+        kind: TableKind,
+        model: &Model,
+        tools: &mut TableTools<'_>,
+    ) {
         if let Some((cell, picker)) = &mut self.type_picker {
             let id = egui::Id::new(("structure-picker", kind));
             match picker.show(ui.ctx(), id, model, tools.rs, tools.preview) {
@@ -1369,8 +1350,244 @@ impl TablePage {
                 None => {}
             }
         }
-        action
     }
+}
+
+/// A column as the page shows it: title, width, how it is edited, help.
+type PageColumn = (Cow<'static, str>, f32, Edit, Cow<'static, str>);
+
+/// What [`choices`] gives: the values a cell is chosen from and whether
+/// several can be ticked; `None`: typed.
+type Choices = Option<(Vec<String>, bool)>;
+
+/// What the page's parts share: the table, the model and the case shown,
+/// the selection, whether it can be edited, the columns, a cell's choices
+/// and its "none", the type and extension columns (Structures), the rows'
+/// height and the width of their two buttons.
+#[derive(Clone, Copy)]
+struct Table<'a> {
+    kind: TableKind,
+    model: &'a Model,
+    case: usize,
+    selection: &'a Selection,
+    editable: bool,
+    columns: &'a [PageColumn],
+    choices_of: &'a dyn Fn(usize, &[String]) -> Choices,
+    none_of: &'a dyn Fn(usize) -> Option<&'static str>,
+    type_column: Option<usize>,
+    extension_column: Option<usize>,
+    row_height: f32,
+    buttons: f32,
+}
+
+/// What the page's parts ask for.
+#[derive(Default)]
+struct Asks {
+    /// What the page asks of the application.
+    action: Option<TableAction>,
+    /// Apply clicked,
+    apply: bool,
+    /// and what the deletions take with them confirmed.
+    confirmed: bool,
+    /// A colour cell's tool button clicked: the cell and its text.
+    open_tool: Option<(ColorCell, String)>,
+    /// A structure's type cell clicked: the cell, its type and extension.
+    open_picker: Option<(TypeCell, String, String)>,
+}
+
+/// The page's columns: the table's own, then the plugins'.
+fn columns_of(kind: TableKind, plugin_columns: &[PluginColumn]) -> Vec<PageColumn> {
+    kind.columns()
+        .iter()
+        .map(|c| (Cow::Borrowed(c.0), c.1, c.2, Cow::Borrowed(c.3)))
+        .chain(plugin_columns.iter().map(|c| {
+            let help = if c.in_use {
+                format!("{} (plugin {})", c.help, c.plugin)
+            } else {
+                c.help.clone()
+            };
+            let title = if c.in_use {
+                c.title.clone()
+            } else {
+                format!("{} (unused)", c.title)
+            };
+            let width = (title.chars().count() as f32 * 7.5).clamp(80.0, 180.0);
+            (Cow::Owned(title), width, Yes, Cow::Owned(help))
+        }))
+        .collect()
+}
+
+/// The route worked on: its rows only (owner, 2026-11-01), said.
+fn route_note(ui: &mut egui::Ui, kind: TableKind, model: &Model) {
+    if let Some(route) = &model.work_route
+        && !matches!(
+            kind,
+            TableKind::Insulators
+                | TableKind::StringShapes
+                | TableKind::Routes
+                | TableKind::WeatherCases
+                | TableKind::LoadTypes
+        )
+    {
+        ui.label(
+            egui::RichText::new(format!(
+                "Route {route} worked on: its rows only (View › Work on route › All routes \
+                     shows every row)"
+            ))
+            .small()
+            .color(ui.visuals().warn_fg_color),
+        );
+    }
+}
+
+/// Weather cases: where they are kept, and the cases that want an ice
+/// density.
+fn weather_cases_note(ui: &mut egui::Ui, kind: TableKind, model: &Model) {
+    if kind == TableKind::WeatherCases {
+        ui.label(
+                egui::RichText::new(match &model.sources.weather {
+                    Some(p) => format!(
+                        "{} — Apply writes the file (comments kept) and solves the model again",
+                        crate::menu::file_label(model, p)
+                    ),
+                    None if weather_path(model).is_some() => "The project uses a default case (15 °C): add cases here (+ Add row), Apply keeps them in the project".into(),
+                    None => "The model uses a default case (15 °C): make a case file in Line › Criteria › Weather cases library and choose Use for the model".into(),
+                })
+                .small()
+                .weak(),
+            );
+        // An iced wind case without an ice density (physics review
+        // 2026-10-26): said, asking for one.
+        for note in model.cases.iter().filter_map(|c| c.case.ice_density_note()) {
+            crate::menu::message(
+                ui,
+                egui::RichText::new(note).small(),
+                Some(ui.visuals().warn_fg_color),
+            );
+        }
+    }
+}
+
+/// A row's first button: selects it (shows the weather case); a
+/// structure's has a menu.
+fn go_button(ui: &mut egui::Ui, cx: &Table<'_>, asks: &mut Asks, row: &Row) {
+    let Table {
+        kind,
+        model,
+        case,
+        selection,
+        editable,
+        row_height,
+        ..
+    } = *cx;
+    let selected = match kind {
+        TableKind::WeatherCases => row.key == case.to_string(),
+        _ => crate::selection::is_selected(selection, model, &row.select),
+    };
+    let go = ui
+        .add_sized([24.0, row_height], egui::Button::selectable(selected, "⤴"))
+        .on_hover_text(match kind {
+            TableKind::WeatherCases => "Show this weather case",
+            TableKind::Structures => {
+                "Select it and bring the views to it (right-click: \
+                                         Replace structure…, Open this type in \
+                                         OHL-Structure…, Cross-section here)"
+            }
+            _ => "Select it and bring the views to it",
+        });
+    // A structure: replaced by another type.
+    if let (TableKind::Structures, Selection::Structure(id)) = (kind, &row.select) {
+        go.context_menu(|ui| {
+            if ui
+                .add_enabled(editable, egui::Button::new("Replace structure…"))
+                .on_hover_text(
+                    "Another structure type in its place: matching wire \
+                                             points are rewired, the others you map",
+                )
+                .clicked()
+            {
+                asks.action = Some(TableAction::Replace(id.clone()));
+                ui.close();
+            }
+            if ui
+                .button(crate::type_workspace::EDIT_IN_APP)
+                .on_hover_text(
+                    "Its structure type in OHL-Structure (its own window), with the loads of \
+                                             this place; one without a type is made a \
+                                             structure file first",
+                )
+                .clicked()
+            {
+                asks.action = Some(TableAction::EditInStructureApp(id.clone()));
+                ui.close();
+            }
+            if ui
+                .button("Cross-section here")
+                .on_hover_text(
+                    "A cut across the line in the plane of its \
+                                             cross-arms, in a tab of its own",
+                )
+                .clicked()
+            {
+                asks.action = Some(TableAction::CrossSection(id.clone()));
+                ui.close();
+            }
+        });
+    }
+    if go.clicked() {
+        asks.action = Some(match kind {
+            TableKind::WeatherCases => TableAction::ShowCase(row.key.parse().unwrap_or(0)),
+            _ => TableAction::Select(row.select.clone()),
+        });
+    }
+}
+
+/// A cell that is not edited (derived, read-only, or of a row marked for
+/// deletion): its text, a colour on its colour.
+fn fixed_cell(ui: &mut egui::Ui, cx: &Table<'_>, row: &Row, c: usize, deleted: bool) {
+    let row_height = cx.row_height;
+    let col = &cx.columns[c];
+    let original = &row.cells[c];
+    let mut t = egui::RichText::new(original).weak();
+    if deleted {
+        t = t.strikethrough().color(ui.visuals().error_fg_color);
+    }
+    // A colour read-only: on its colour.
+    let swatch = (col.0 == "colour" && !deleted)
+        .then(|| ohl_core::text::parse_rgb(original.trim()))
+        .flatten()
+        .map(crate::color_tool::color32);
+    if let Some(fill) = swatch {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(col.1, row_height), egui::Sense::hover());
+        ui.painter().rect_filled(rect.shrink(1.0), 2.0, fill);
+        ui.painter().text(
+            rect.left_center() + egui::vec2(4.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            original,
+            egui::TextStyle::Body.resolve(ui.style()),
+            crate::color_tool::text_on(fill),
+        );
+        return;
+    }
+    let number = crate::style::unit_of(&col.3).is_some();
+    ui.allocate_ui_with_layout(
+        egui::vec2(col.1, row_height),
+        if number {
+            egui::Layout::right_to_left(egui::Align::Center)
+        } else {
+            egui::Layout::left_to_right(egui::Align::Center)
+        },
+        |ui| {
+            ui.set_min_size(egui::vec2(col.1, row_height));
+            ui.add(egui::Label::new(t).truncate())
+        },
+    )
+    .inner
+    .on_hover_text(match col.2 {
+        Derived => format!("{original} — counted, not typed"),
+        New => format!("{original} — {}", col.3),
+        Yes => original.clone(),
+    });
 }
 
 /// A structure's type cell: a button showing the type (marked in `mark`

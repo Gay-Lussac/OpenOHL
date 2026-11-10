@@ -2027,6 +2027,59 @@ impl eframe::App for App {
             }
             self.applied_scale = Some(self.ui_scale);
         }
+        self.loading_frame();
+        let file = self.sources.file.display().to_string();
+        let ctx = ui.ctx().clone();
+        crate::files::file_keys(&ctx, &mut self.file_action);
+        self.bare_menu(ui);
+        match &mut self.state {
+            State::Empty => {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    crate::files::start_page(ui, &self.recent, &mut self.file_action);
+                });
+            }
+            State::Loading { progress, .. } => {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    ui.heading(format!("Loading {file}"));
+                    ui.spinner();
+                    for p in progress.iter() {
+                        ui.label(p);
+                    }
+                });
+            }
+            State::Failed(e) => {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    ui.heading(format!("Could not load {file}"));
+                    crate::menu::error_label(ui, e.as_str());
+                });
+            }
+            State::Structure(desk) => {
+                desk.ui(ui, self.render_state.as_ref(), &mut self.ahead_alone)
+            }
+            State::Ready(_) => {
+                self.ready_hooks(ui);
+                let commands = self.ready_bars(ui, &ctx);
+                let windows = crate::perf::span("plugins and windows");
+                self.plugins_frame(ui, &ctx, commands);
+                self.check_windows(&ctx);
+                self.field_windows(&ctx);
+                self.string_windows(&ctx);
+                self.settings_windows(ui, &ctx);
+                drop(windows);
+                self.dock_frame(ui, &ctx);
+            }
+        }
+        self.app_windows(&ctx);
+    }
+}
+
+/// The parts of a frame ([`eframe::App::ui`]). Those of a frame with a
+/// model begin by taking it from the state (they are only called with
+/// one).
+impl App {
+    /// A model being loaded: its progress taken, the model shown when it
+    /// is there.
+    fn loading_frame(&mut self) {
         if let State::Loading { rx, progress } = &mut self.state {
             let mut done = None;
             loop {
@@ -2062,9 +2115,10 @@ impl eframe::App for App {
                 None => {}
             }
         }
-        let file = self.sources.file.display().to_string();
-        let ctx = ui.ctx().clone();
-        crate::files::file_keys(&ctx, &mut self.file_action);
+    }
+
+    /// Without a model: only the File and Help menus.
+    fn bare_menu(&mut self, ui: &mut egui::Ui) {
         if !matches!(self.state, State::Ready(_)) {
             // Only the File menu without a model.
             egui::Panel::top("top").show(ui, |ui| {
@@ -2095,582 +2149,555 @@ impl eframe::App for App {
                 });
             });
         }
-        match &mut self.state {
-            State::Empty => {
-                egui::CentralPanel::default().show(ui, |ui| {
-                    crate::files::start_page(ui, &self.recent, &mut self.file_action);
-                });
+    }
+
+    /// A model's per-frame hooks: what is solved, the keys, the popups,
+    /// the tool windows.
+    fn ready_hooks(&mut self, ui: &egui::Ui) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        ready.captured_before = ready.view3d.captured;
+        ready.escape_busy = escape_busy(ui.ctx(), ready);
+        let hooks = crate::perf::span("frame hooks");
+        ready.remote_frame();
+        // The line worked on and its uncommitted changes: counted
+        // again only when the project changed.
+        ready.line_status.refresh(&ready.model);
+        {
+            let _t = crate::perf::span("hooks: solving");
+            ready.solving_frame(ui.ctx());
+        }
+        ready.structure_apps_frame(ui.ctx());
+        crate::structure_app::report_window(ui.ctx(), &mut ready.structure_apps);
+        history_window(ui.ctx(), ready);
+        crate::versions::window(ui.ctx(), ready);
+        goto_key(ui.ctx(), ready);
+        cut_key(ui.ctx(), ready);
+        edit_keys(ui.ctx(), ready);
+        {
+            let _t = crate::perf::span("hooks: clearances");
+            clearance_frame(ui.ctx(), ready);
+            // A result's weather case on its spans: until the
+            // selection or its window changes.
+            ready.result_case_frame();
+        }
+        {
+            let _t = crate::perf::span("hooks: popups");
+            popups(ui.ctx(), ready);
+        }
+        crate::dockable::begin_frame(ui.ctx());
+        {
+            let _t = crate::perf::span("hooks: tool windows");
+            // The plugins' class schemes, offered beside a file.
+            if let Some(d) = &mut ready.survey_import {
+                d.plugin_schemes = self.plugins.class_schemes();
             }
-            State::Loading { progress, .. } => {
-                egui::CentralPanel::default().show(ui, |ui| {
-                    ui.heading(format!("Loading {file}"));
-                    ui.spinner();
-                    for p in progress.iter() {
-                        ui.label(p);
-                    }
-                });
-            }
-            State::Failed(e) => {
-                egui::CentralPanel::default().show(ui, |ui| {
-                    ui.heading(format!("Could not load {file}"));
-                    crate::menu::error_label(ui, e.as_str());
-                });
-            }
-            State::Structure(desk) => {
-                desk.ui(ui, self.render_state.as_ref(), &mut self.ahead_alone)
-            }
-            State::Ready(ready) => {
-                ready.captured_before = ready.view3d.captured;
-                ready.escape_busy = escape_busy(ui.ctx(), ready);
-                let hooks = crate::perf::span("frame hooks");
-                ready.remote_frame();
-                // The line worked on and its uncommitted changes: counted
-                // again only when the project changed.
-                ready.line_status.refresh(&ready.model);
-                {
-                    let _t = crate::perf::span("hooks: solving");
-                    ready.solving_frame(ui.ctx());
-                }
-                ready.structure_apps_frame(ui.ctx());
-                crate::structure_app::report_window(ui.ctx(), &mut ready.structure_apps);
-                history_window(ui.ctx(), ready);
-                crate::versions::window(ui.ctx(), ready);
-                goto_key(ui.ctx(), ready);
-                cut_key(ui.ctx(), ready);
-                edit_keys(ui.ctx(), ready);
-                {
-                    let _t = crate::perf::span("hooks: clearances");
-                    clearance_frame(ui.ctx(), ready);
-                    // A result's weather case on its spans: until the
-                    // selection or its window changes.
-                    ready.result_case_frame();
-                }
-                {
-                    let _t = crate::perf::span("hooks: popups");
-                    popups(ui.ctx(), ready);
-                }
-                crate::dockable::begin_frame(ui.ctx());
-                {
-                    let _t = crate::perf::span("hooks: tool windows");
-                    // The plugins' class schemes, offered beside a file.
-                    if let Some(d) = &mut ready.survey_import {
-                        d.plugin_schemes = self.plugins.class_schemes();
-                    }
-                    tool_windows(ui.ctx(), ready, self.render_state.as_ref());
-                }
-                drop(hooks);
-                let bars = crate::perf::span("status and menus");
-                egui::Panel::bottom("status").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        match ready.model.can_edit() {
-                            Ok(()) => ui.label(
-                                egui::RichText::new(format!(
-                                    "editing as {}",
-                                    ready.model.editing.as_ref().map_or("", |e| e.user.as_str())
-                                ))
-                                .small(),
-                            ),
-                            Err(why) => {
-                                ui.label(egui::RichText::new(format!("read-only: {why}")).small())
-                            }
-                        };
-                        if ready.line_status.in_project() {
-                            ui.separator();
-                            if crate::line_status::chip(ui, &ready.line_status) {
-                                ready.versions.open_commit();
-                            }
-                        }
-                        if !ready.model.solving.is_empty() {
-                            ui.separator();
-                            ui.spinner();
-                            let names: Vec<&str> = ready
-                                .model
-                                .solving
-                                .iter()
-                                .filter_map(|(k, _, _)| ready.model.cases.get(*k))
-                                .map(|c| c.case.name.as_str())
-                                .collect();
-                            ui.label(
-                                egui::RichText::new(format!("solving {}…", names.join(", ")))
-                                    .small(),
-                            );
-                        }
-                        if ready.hotbar.tool().measuring()
-                            && let Some(text) = ready.measuring.readout()
-                        {
-                            ui.separator();
-                            ui.label(egui::RichText::new(text).small());
-                        }
-                        if let Some((text, error)) = &ready.status {
-                            ui.separator();
-                            // In a short sentence, the whole text on
-                            // hover (an edit's log entry, what was solved).
-                            let (short, detail) = crate::notices::shown(text);
-                            let t = egui::RichText::new(short).small();
-                            let r = if *error {
-                                crate::menu::error_label(ui, t)
-                            } else {
-                                ui.label(t)
-                            };
-                            if let Some(d) = detail {
-                                r.on_hover_text(d);
-                            }
-                        }
-                    });
-                });
-                // The message also as a notice (errors stay until closed).
-                self.notices.observe_with(
-                    &ready.status,
-                    ctx.input(|i| i.time),
-                    crate::notices::plain,
-                );
-                self.notices.ui(&ctx, crate::notices::TICK);
-                let mut commands: Vec<crate::menu::Command> = Vec::new();
-                egui::Panel::top("top").show(ui, |ui| {
-                    egui::MenuBar::new().ui(ui, |ui| {
-                        let path = ready.model.sources.file.clone();
-                        let shared = match (&ready.model.remote, &self.hosting) {
-                            (None, _) => crate::files::Shared::No,
-                            (Some(_), Some(_)) => crate::files::Shared::Hosting,
-                            (Some(_), None) => crate::files::Shared::Joined,
-                        };
-                        crate::files::file_menu(
-                            ui,
-                            &self.recent,
-                            Some(&path),
-                            shared,
-                            &mut self.file_action,
-                            |ui| file_entries(ui, ready, &mut commands),
-                        );
-                        menus(
-                            ui,
-                            ready,
-                            &mut self.dock,
-                            &mut commands,
-                            &mut self.customize,
-                            &mut self.about,
-                            &mut self.ui_scale,
-                        );
-                        // The quick bar right of the menus (Undo, Redo,
-                        // Save first), as in OHL-Structure: icon buttons
-                        // set apart from the menus.
-                        ui.add_space(12.0);
-                        ui.separator();
-                        ui.add_space(4.0);
-                        if let Some(c) = self.quickbar.ui(ui) {
-                            commands.push(c);
-                        }
-                        if ui
-                            .small_button("⚙")
-                            .on_hover_text("Customize the quick bar")
-                            .clicked()
-                        {
-                            self.customize = true;
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.strong(&ready.model.line.name);
-                        ui.separator();
-                        ui.label(ready.selection.describe());
-                    });
-                });
-                drop(bars);
-                let windows = crate::perf::span("plugins and windows");
-                for c in commands {
-                    run_command(ui.ctx(), ready, &mut self.dock, c);
-                }
-                match ready.plugin_request.take() {
-                    Some(PluginRequest::Manager) => {
-                        self.plugins.open = true;
-                        self.plugins.refresh();
-                    }
-                    Some(PluginRequest::Import) => self.plugins.open_window(false),
-                    Some(PluginRequest::Export) => self.plugins.open_window(true),
-                    None => {}
-                }
-                for (what, arg) in ready.console.poll(&ctx) {
-                    let answer = crate::python::serve(ready, &what, &arg);
-                    crate::python::answer(answer);
-                }
-                if ready.surfaces.open {
-                    self.plugins.want_formats();
-                }
-                if let Some(line) = self.plugins.poll(&ctx) {
-                    ready.perform(crate::edit::Action::Command {
-                        what: format!("imported {}", line.name),
-                        command: ohl_session::Command::ReplaceLine { line },
-                    });
-                }
-                self.plugins.manager_ui(&ctx);
-                // The plugins' table columns (installed, removed, turned
-                // on or off).
-                let columns = self.plugins.table_columns();
-                if ready.model.plugin_columns != columns {
-                    ready.model.plugin_columns = columns;
-                }
-                ready.model.set_check_plugins(self.plugins.check_dirs());
-                ready.drawings.set_template_plugins(
-                    self.plugins.sheet_template_dirs(),
-                    crate::preset_edits::of_model(&ready.model).0,
-                );
-                if let Some((plugin, dir)) = self.plugins.edit_presets.take() {
-                    ready.preset_editor.open_on(&plugin, Some(dir));
-                }
-                crate::codes::window(&ctx, ready, &self.plugins);
-                crate::preset_edits::window(&ctx, ready, &self.plugins);
-                crate::import_into::window(&ctx, ready, &mut self.plugins);
-                crate::wire_colours::window(&ctx, ready, &self.plugins);
-                let galloping = ready.galloping.ui(&ctx, &ready.model);
-                let wirefit = ready.wirefit.ui(&ctx, &ready.model);
-                if let Some(target) = galloping {
-                    // The span drawn in the results' weather case.
-                    ready.go_to(target.clone());
-                    if let Some(case) = ready.galloping.result_case() {
-                        ready.show_check_case(crate::dockable::Panel::Galloping, target, &case);
-                    }
-                } else if let Some(target) = wirefit {
-                    ready.go_to(target);
-                }
-                // The vegetation panel (its plugin presets read once).
-                if ready.vegetation.open
-                    || ready.safety_volume.open
-                    || ready.vertical_clearances.open
-                    || ready.radial_clearances.open
-                    || ready.wire_tensions.open
-                    || ready.lightning.open
-                    || ready.ice_shedding.open
-                    || ready.string_checks.open
-                    || ready.internal_clearances.open
-                    || ready.clearances.open
-                {
-                    crate::rule_editor::ensure_presets(&ctx, ready, &self.plugins);
-                }
-                let out = ready.vegetation.ui(
-                    &ctx,
-                    &ready.model,
-                    &ready.rule_editor.presets.list,
-                    &mut self.palette,
-                );
-                crate::vegetation::handle(ready, out);
-                // Its report drawn on its layers while the panel is open,
-                // taken off once it is closed.
-                if let Some(overlay) = ready.vegetation.overlay_change(&ready.model) {
-                    let lines = ready.vegetation.isoclearance_lines();
-                    ready.drawings.set_isoclearance(lines);
-                    ready.view3d.vegetation = overlay.clone();
-                    ready.plan.vegetation = overlay.clone();
-                    ready.profile.set_vegetation(overlay);
-                    ready
-                        .view3d
-                        .dirty
-                        .extend([Layer::GrowIn, Layer::FallIn, Layer::Isoclearance]);
-                }
-                // The safety volumes: drawn while the window is open.
-                let out =
-                    ready
-                        .safety_volume
-                        .ui(&ctx, &ready.model, &ready.rule_editor.presets.list);
-                crate::safety_volume::handle(ready, out);
-                if let Some(overlay) = ready.safety_volume.overlay_change() {
-                    ready.view3d.safety_volume = overlay.clone();
-                    ready.plan.safety_volume = overlay;
-                    ready.view3d.dirty.insert(Layer::SafetyVolume);
-                }
-                // The checks that were pages: windows like every check
-                // window (owner, 2026-10-27), docked with their 📌.
-                check_page_windows(&ctx, ready);
-                // The line of a result gone with its window (or a new run,
-                // a report opened: no result picked).
-                let window = match ready.view3d.measure_from {
-                    crate::phase_distance::Kind::Span => &ready.phase_distance,
-                    crate::phase_distance::Kind::UnequalWind => &ready.unequal_wind,
+            tool_windows(ui.ctx(), ready, self.render_state.as_ref());
+        }
+        drop(hooks);
+    }
+
+    /// The status bar, the notices and the menu bar; the commands the
+    /// menus and the quick bar ask for.
+    fn ready_bars(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) -> Vec<crate::menu::Command> {
+        let State::Ready(ready) = &mut self.state else {
+            return Vec::new();
+        };
+        let bars = crate::perf::span("status and menus");
+        status_bar(ui, ready);
+        // The message also as a notice (errors stay until closed).
+        self.notices
+            .observe_with(&ready.status, ctx.input(|i| i.time), crate::notices::plain);
+        self.notices.ui(ctx, crate::notices::TICK);
+        let mut commands: Vec<crate::menu::Command> = Vec::new();
+        egui::Panel::top("top").show(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                let path = ready.model.sources.file.clone();
+                let shared = match (&ready.model.remote, &self.hosting) {
+                    (None, _) => crate::files::Shared::No,
+                    (Some(_), Some(_)) => crate::files::Shared::Hosting,
+                    (Some(_), None) => crate::files::Shared::Joined,
                 };
-                let closed = !window.open;
-                if (ready.view3d.measure.is_some() || !ready.view3d.measure_wires.is_empty())
-                    && (closed || window.picked.is_none())
+                crate::files::file_menu(
+                    ui,
+                    &self.recent,
+                    Some(&path),
+                    shared,
+                    &mut self.file_action,
+                    |ui| file_entries(ui, ready, &mut commands),
+                );
+                menus(
+                    ui,
+                    ready,
+                    &mut self.dock,
+                    &mut commands,
+                    &mut self.customize,
+                    &mut self.about,
+                    &mut self.ui_scale,
+                );
+                // The quick bar right of the menus (Undo, Redo,
+                // Save first), as in OHL-Structure: icon buttons
+                // set apart from the menus.
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(4.0);
+                if let Some(c) = self.quickbar.ui(ui) {
+                    commands.push(c);
+                }
+                if ui
+                    .small_button("⚙")
+                    .on_hover_text("Customize the quick bar")
+                    .clicked()
                 {
-                    ready.view3d.measure = None;
-                    ready.view3d.measure_wires.clear();
+                    self.customize = true;
                 }
-                for (measure, out) in [
-                    (
-                        ohl_clearance::Measure::Vertical,
-                        ready.vertical_clearances.ui(
-                            &ctx,
-                            &mut ready.model,
-                            &ready.rule_editor.presets.list,
-                        ),
-                    ),
-                    (
-                        ohl_clearance::Measure::Radial,
-                        ready.radial_clearances.ui(
-                            &ctx,
-                            &mut ready.model,
-                            &ready.rule_editor.presets.list,
-                        ),
-                    ),
-                ] {
-                    clearance_zone_out(ready, measure, out);
-                }
-                let out =
-                    ready
-                        .wire_tensions
-                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
-                wire_tensions_out(ready, out);
-                let out =
-                    ready
-                        .lightning
-                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
-                crate::lightning::handle(ready, out);
-                let out =
-                    ready
-                        .ice_shedding
-                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
-                crate::ice_shedding::handle(ready, out);
-                ready.magnetic_field.keep(&mut ready.model, &ctx);
-                ready.electric_field.keep(&mut ready.model, &ctx);
-                ready.building_fields.keep(&mut ready.model, &ctx);
-                ready.galloping.keep(&mut ready.model, &ctx);
-                ready.wirefit.keep(&mut ready.model, &ctx);
-                ready.vegetation.keep(&mut ready.model, &ctx);
-                ready.safety_volume.keep(&mut ready.model, &ctx);
-                ready.phase_distance.keep(&mut ready.model, &ctx);
-                ready.unequal_wind.keep(&mut ready.model, &ctx);
-                ready.magnetic_field.ui(&ctx, &ready.model);
-                ready.electric_field.ui(&ctx, &ready.model);
-                ready
-                    .building_fields
-                    .ui(&ctx, &ready.model, &self.plugins.field_preset_dirs());
-                // The buildings' cuts and places handed to the field
-                // windows (2026-11-03), run there.
-                if let Some(h) = ready.building_fields.hand_over.take() {
-                    for (w, limit) in [(0, h.limits.0), (1, h.limits.1)] {
-                        if w == 0 {
-                            ready.magnetic_field.set_buildings(Some(h.preset.clone()));
-                            if limit.is_some() {
-                                ready.magnetic_field.set_limit(limit);
-                            }
-                            ready.magnetic_field.show(h.case);
-                        } else {
-                            ready.electric_field.set_buildings(Some(h.preset.clone()));
-                            if limit.is_some() {
-                                ready.electric_field.set_limit(limit);
-                            }
-                            ready.electric_field.show(h.case);
-                        }
-                    }
-                }
-                // A run saved in Performed checks (2026-11-01).
-                for apply in [
-                    ready.magnetic_field.apply.take(),
-                    ready.electric_field.apply.take(),
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    let (what, command) = apply;
-                    ready.perform(crate::edit::Action::Command { what, command });
-                }
-                // What their Results ask (owner, 2026-10-31): a cut opened
-                // in a cross-section panel, the 3D view turned to a volume.
-                for (requests, layer) in [
-                    (
-                        std::mem::take(&mut ready.magnetic_field.requests),
-                        Layer::MagneticField,
-                    ),
-                    (
-                        std::mem::take(&mut ready.electric_field.requests),
-                        Layer::ElectricField,
-                    ),
-                ] {
-                    for r in requests {
-                        field_request(ready, r, layer);
-                    }
-                }
-                // The field in the cross-section panels open, and its
-                // drawing in the views while the window is open.
-                let panels: Vec<_> = ready
-                    .xsections
-                    .views
-                    .values()
-                    .filter_map(|v| Some((v.placed.as_ref()?.plane, v.spec.width, v.heights?)))
-                    .collect();
-                ready
-                    .magnetic_field
-                    .panel_cuts(panels.clone(), &ready.model, &ctx);
-                ready.electric_field.panel_cuts(panels, &ready.model, &ctx);
-                if let Some(overlay) = ready.magnetic_field.overlay_change(&ready.model) {
-                    ready.view3d.magnetic_field = overlay.clone();
-                    ready.plan.magnetic_field = overlay;
-                    ready.view3d.dirty.insert(Layer::MagneticField);
-                }
-                if let Some(overlay) = ready.electric_field.overlay_change(&ready.model) {
-                    ready.view3d.electric_field = overlay.clone();
-                    ready.plan.electric_field = overlay;
-                    ready.view3d.dirty.insert(Layer::ElectricField);
-                }
-                let out = ready.line_parameters.ui(&ctx, &ready.model);
-                if let Some(spans) = out.select {
-                    ready.go_to_all(spans);
-                }
-                if let Some(settings) = out.settings {
-                    let command = ready
-                        .model
-                        .editing
-                        .as_ref()
-                        .map(|e| e.session.electrical_command(settings));
-                    if let Ok(command) = command {
-                        ready.perform(crate::edit::Action::Command {
-                            what: "electrical settings".into(),
-                            command,
-                        });
-                    }
-                }
-                let out =
-                    ready
-                        .string_checks
-                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
-                string_checks_out(ready, out);
-                let out = ready.internal_clearances.ui(
-                    &ctx,
+            });
+            ui.horizontal(|ui| {
+                ui.strong(&ready.model.line.name);
+                ui.separator();
+                ui.label(ready.selection.describe());
+            });
+        });
+        drop(bars);
+        commands
+    }
+
+    /// The commands run, what the plugins ask and give, and the windows
+    /// that read them.
+    fn plugins_frame(
+        &mut self,
+        ui: &egui::Ui,
+        ctx: &egui::Context,
+        commands: Vec<crate::menu::Command>,
+    ) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        for c in commands {
+            run_command(ui.ctx(), ready, &mut self.dock, c);
+        }
+        match ready.plugin_request.take() {
+            Some(PluginRequest::Manager) => {
+                self.plugins.open = true;
+                self.plugins.refresh();
+            }
+            Some(PluginRequest::Import) => self.plugins.open_window(false),
+            Some(PluginRequest::Export) => self.plugins.open_window(true),
+            None => {}
+        }
+        for (what, arg) in ready.console.poll(ctx) {
+            let answer = crate::python::serve(ready, &what, &arg);
+            crate::python::answer(answer);
+        }
+        if ready.surfaces.open {
+            self.plugins.want_formats();
+        }
+        if let Some(line) = self.plugins.poll(ctx) {
+            ready.perform(crate::edit::Action::Command {
+                what: format!("imported {}", line.name),
+                command: ohl_session::Command::ReplaceLine { line },
+            });
+        }
+        self.plugins.manager_ui(ctx);
+        // The plugins' table columns (installed, removed, turned
+        // on or off).
+        let columns = self.plugins.table_columns();
+        if ready.model.plugin_columns != columns {
+            ready.model.plugin_columns = columns;
+        }
+        ready.model.set_check_plugins(self.plugins.check_dirs());
+        ready.drawings.set_template_plugins(
+            self.plugins.sheet_template_dirs(),
+            crate::preset_edits::of_model(&ready.model).0,
+        );
+        if let Some((plugin, dir)) = self.plugins.edit_presets.take() {
+            ready.preset_editor.open_on(&plugin, Some(dir));
+        }
+        crate::codes::window(ctx, ready, &self.plugins);
+        crate::preset_edits::window(ctx, ready, &self.plugins);
+        crate::import_into::window(ctx, ready, &mut self.plugins);
+        crate::wire_colours::window(ctx, ready, &self.plugins);
+    }
+
+    /// The check windows: galloping and the wire fit, vegetation, the
+    /// safety volumes, the checks that were pages, the clearances, the
+    /// wire tensions, lightning, ice shedding.
+    fn check_windows(&mut self, ctx: &egui::Context) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        let galloping = ready.galloping.ui(ctx, &ready.model);
+        let wirefit = ready.wirefit.ui(ctx, &ready.model);
+        if let Some(target) = galloping {
+            // The span drawn in the results' weather case.
+            ready.go_to(target.clone());
+            if let Some(case) = ready.galloping.result_case() {
+                ready.show_check_case(crate::dockable::Panel::Galloping, target, &case);
+            }
+        } else if let Some(target) = wirefit {
+            ready.go_to(target);
+        }
+        // The vegetation panel (its plugin presets read once).
+        if ready.vegetation.open
+            || ready.safety_volume.open
+            || ready.vertical_clearances.open
+            || ready.radial_clearances.open
+            || ready.wire_tensions.open
+            || ready.lightning.open
+            || ready.ice_shedding.open
+            || ready.string_checks.open
+            || ready.internal_clearances.open
+            || ready.clearances.open
+        {
+            crate::rule_editor::ensure_presets(ctx, ready, &self.plugins);
+        }
+        let out = ready.vegetation.ui(
+            ctx,
+            &ready.model,
+            &ready.rule_editor.presets.list,
+            &mut self.palette,
+        );
+        crate::vegetation::handle(ready, out);
+        // Its report drawn on its layers while the panel is open,
+        // taken off once it is closed.
+        if let Some(overlay) = ready.vegetation.overlay_change(&ready.model) {
+            let lines = ready.vegetation.isoclearance_lines();
+            ready.drawings.set_isoclearance(lines);
+            ready.view3d.vegetation = overlay.clone();
+            ready.plan.vegetation = overlay.clone();
+            ready.profile.set_vegetation(overlay);
+            ready
+                .view3d
+                .dirty
+                .extend([Layer::GrowIn, Layer::FallIn, Layer::Isoclearance]);
+        }
+        // The safety volumes: drawn while the window is open.
+        let out = ready
+            .safety_volume
+            .ui(ctx, &ready.model, &ready.rule_editor.presets.list);
+        crate::safety_volume::handle(ready, out);
+        if let Some(overlay) = ready.safety_volume.overlay_change() {
+            ready.view3d.safety_volume = overlay.clone();
+            ready.plan.safety_volume = overlay;
+            ready.view3d.dirty.insert(Layer::SafetyVolume);
+        }
+        // The checks that were pages: windows like every check
+        // window (owner, 2026-10-27), docked with their 📌.
+        check_page_windows(ctx, ready);
+        // The line of a result gone with its window (or a new run,
+        // a report opened: no result picked).
+        let window = match ready.view3d.measure_from {
+            crate::phase_distance::Kind::Span => &ready.phase_distance,
+            crate::phase_distance::Kind::UnequalWind => &ready.unequal_wind,
+        };
+        let closed = !window.open;
+        if (ready.view3d.measure.is_some() || !ready.view3d.measure_wires.is_empty())
+            && (closed || window.picked.is_none())
+        {
+            ready.view3d.measure = None;
+            ready.view3d.measure_wires.clear();
+        }
+        for (measure, out) in [
+            (
+                ohl_clearance::Measure::Vertical,
+                ready.vertical_clearances.ui(
+                    ctx,
                     &mut ready.model,
                     &ready.rule_editor.presets.list,
-                );
-                internal_clearances_out(ready, out);
-                // Layers drawn from results out of date: dimmed.
-                crate::revision::frame(ready);
-                if let Some(mut w) = ready.class_window.take() {
-                    let mut open = true;
-                    let default = self.default_class_scheme.clone();
-                    let schemes = self.plugins.class_schemes();
-                    let action = w.ui(
-                        &ctx,
-                        &mut open,
-                        &mut ready.model,
-                        default.as_ref(),
-                        &schemes,
-                    );
-                    if let Some(a) = action {
-                        use crate::class_colors::ClassAction;
-                        let chosen = match a {
-                            ClassAction::Recolor => None,
-                            ClassAction::UseForProject(p) => Some(p),
-                            ClassAction::UseForAll(p) => {
-                                self.default_class_scheme = p.clone();
-                                Some(p)
-                            }
-                        };
-                        if let Some(p) = chosen {
-                            match ready.model.use_class_scheme(p) {
-                                Ok(()) => w.dirty = false,
-                                Err(e) => w.status = Some((e, true)),
-                            }
-                        }
-                        ready.view3d.recolor_points();
-                        ready.xsections.invalidate();
-                        ready.refresh_views();
+                ),
+            ),
+            (
+                ohl_clearance::Measure::Radial,
+                ready
+                    .radial_clearances
+                    .ui(ctx, &mut ready.model, &ready.rule_editor.presets.list),
+            ),
+        ] {
+            clearance_zone_out(ready, measure, out);
+        }
+        let out = ready
+            .wire_tensions
+            .ui(ctx, &mut ready.model, &ready.rule_editor.presets.list);
+        wire_tensions_out(ready, out);
+        let out = ready
+            .lightning
+            .ui(ctx, &mut ready.model, &ready.rule_editor.presets.list);
+        crate::lightning::handle(ready, out);
+        let out = ready
+            .ice_shedding
+            .ui(ctx, &mut ready.model, &ready.rule_editor.presets.list);
+        crate::ice_shedding::handle(ready, out);
+    }
+
+    /// The field windows: what is kept, the windows, the buildings handed
+    /// over, the runs saved, what their results ask, the cuts' panels and
+    /// the overlays.
+    fn field_windows(&mut self, ctx: &egui::Context) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        ready.magnetic_field.keep(&mut ready.model, ctx);
+        ready.electric_field.keep(&mut ready.model, ctx);
+        ready.building_fields.keep(&mut ready.model, ctx);
+        ready.galloping.keep(&mut ready.model, ctx);
+        ready.wirefit.keep(&mut ready.model, ctx);
+        ready.vegetation.keep(&mut ready.model, ctx);
+        ready.safety_volume.keep(&mut ready.model, ctx);
+        ready.phase_distance.keep(&mut ready.model, ctx);
+        ready.unequal_wind.keep(&mut ready.model, ctx);
+        ready.magnetic_field.ui(ctx, &ready.model);
+        ready.electric_field.ui(ctx, &ready.model);
+        ready
+            .building_fields
+            .ui(ctx, &ready.model, &self.plugins.field_preset_dirs());
+        // The buildings' cuts and places handed to the field
+        // windows (2026-11-03), run there.
+        if let Some(h) = ready.building_fields.hand_over.take() {
+            for (w, limit) in [(0, h.limits.0), (1, h.limits.1)] {
+                if w == 0 {
+                    ready.magnetic_field.set_buildings(Some(h.preset.clone()));
+                    if limit.is_some() {
+                        ready.magnetic_field.set_limit(limit);
                     }
-                    if open {
-                        ready.class_window = Some(w);
+                    ready.magnetic_field.show(h.case);
+                } else {
+                    ready.electric_field.set_buildings(Some(h.preset.clone()));
+                    if limit.is_some() {
+                        ready.electric_field.set_limit(limit);
                     }
-                }
-                let ground_was = ready.model.ground.as_ref().map(std::sync::Arc::as_ptr);
-                let mut ground_shown = ready.visible.contains(&Layer::Ground);
-                let shown_before = ground_shown;
-                if ready
-                    .surfaces
-                    .ui(&ctx, &mut ready.model, &mut self.plugins, &mut ground_shown)
-                {
-                    // A new ground is shown; the tick shows or hides it.
-                    let new_ground =
-                        ready.model.ground.as_ref().map(std::sync::Arc::as_ptr) != ground_was;
-                    if new_ground || (ground_shown && !shown_before) {
-                        ready.visible.insert(Layer::Ground);
-                    } else if !ground_shown && shown_before {
-                        ready.visible.remove(&Layer::Ground);
-                    }
-                    if !ready.model.other_surfaces.is_empty() {
-                        ready.visible.insert(Layer::Surfaces);
-                    }
-                    // The surfaces themselves are drawn again (the other
-                    // layers follow them: draped alignments, clearances).
-                    ready.view3d.dirty.insert(Layer::Ground);
-                    ready.view3d.dirty.insert(Layer::Surfaces);
-                    ready.clearances.stale = true;
-                    ready.xsections.invalidate();
-                    ready.refresh_views();
-                }
-                let editable = ready.model.can_edit().map_err(|e| e.to_string());
-                self.plugins.format_ui(&ctx, &ready.model, editable);
-                if let Some(path) = ready.open_project.take() {
-                    self.file_action = Some(crate::files::FileAction::Open(Some(path)));
-                } else if std::mem::take(&mut ready.reopen) {
-                    self.file_action = Some(crate::files::FileAction::Open(Some(
-                        ready.model.sources.file.clone(),
-                    )));
-                }
-                if let Some(tab) = crate::menu::take_page_request(&ctx) {
-                    ready.release_mouse = true;
-                    open_page(&mut self.dock, tab);
-                }
-                if let Some((tab, filter)) = ready.open_page.take() {
-                    open_page(&mut self.dock, tab);
-                    if let (Tab::Table(k), Some(f)) = (tab, filter) {
-                        ready.tables.entry(k).or_default().filter = f;
-                    }
-                }
-                if self.customize {
-                    let mut open = true;
-                    egui::Window::new("Customize the quick bar")
-                        .open(&mut open)
-                        .collapsible(false)
-                        .show(ui.ctx(), |ui| self.quickbar.customize_ui(ui));
-                    self.customize = open;
-                }
-                drop(windows);
-                sync_docked(&ctx, &mut self.dock);
-                // The structure being edited: its handles in the 3D view.
-                let dock = &self.dock;
-                ready.view3d.handles.target = ready.handle_target(|t| dock.find_tab(t).is_some());
-                ready.ground_lines_frame(Some(&ctx));
-                // The cuts' panels: what the main view rebuilds, rebuilt;
-                // their slabs outlined in the main view.
-                ready.xsections.hand_on(&mut ready.view3d);
-                ready.view3d.cut_outlines = ready.xsections.outlines();
-                let _dock = crate::perf::span("dock");
-                egui::CentralPanel::default()
-                    .frame(egui::Frame::NONE)
-                    .show(ui, |ui| {
-                        DockArea::new(&mut self.dock)
-                            .show_close_buttons(true)
-                            .show_leaf_close_all_buttons(false)
-                            .show_inside(
-                                ui,
-                                &mut Viewer {
-                                    ready,
-                                    ctx: ctx.clone(),
-                                    rs: self.render_state.as_ref(),
-                                    lod: &mut self.lod,
-                                    palette: &mut self.palette,
-                                    layer_groups: &mut self.layer_groups,
-                                    scripts: self.plugins.python_scripts(),
-                                },
-                            );
-                    });
-                // A right-click's menu; Escape with nothing else to give
-                // up: back to Select.
-                context_menu_window(&ctx, ready);
-                escape_to_select(&ctx, ready);
-                for (tab, place) in std::mem::take(&mut ready.dock_moves) {
-                    move_page(&mut self.dock, tab, place);
-                }
-                // Changes made while the pages were drawn: the cuts' panels
-                // follow in the next frame.
-                if ready.xsections.hand_on(&mut ready.view3d) {
-                    ctx.request_repaint();
+                    ready.electric_field.show(h.case);
                 }
             }
         }
+        // A run saved in Performed checks (2026-11-01).
+        for apply in [
+            ready.magnetic_field.apply.take(),
+            ready.electric_field.apply.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let (what, command) = apply;
+            ready.perform(crate::edit::Action::Command { what, command });
+        }
+        // What their Results ask (owner, 2026-10-31): a cut opened
+        // in a cross-section panel, the 3D view turned to a volume.
+        for (requests, layer) in [
+            (
+                std::mem::take(&mut ready.magnetic_field.requests),
+                Layer::MagneticField,
+            ),
+            (
+                std::mem::take(&mut ready.electric_field.requests),
+                Layer::ElectricField,
+            ),
+        ] {
+            for r in requests {
+                field_request(ready, r, layer);
+            }
+        }
+        // The field in the cross-section panels open, and its
+        // drawing in the views while the window is open.
+        let panels: Vec<_> = ready
+            .xsections
+            .views
+            .values()
+            .filter_map(|v| Some((v.placed.as_ref()?.plane, v.spec.width, v.heights?)))
+            .collect();
+        ready
+            .magnetic_field
+            .panel_cuts(panels.clone(), &ready.model, ctx);
+        ready.electric_field.panel_cuts(panels, &ready.model, ctx);
+        if let Some(overlay) = ready.magnetic_field.overlay_change(&ready.model) {
+            ready.view3d.magnetic_field = overlay.clone();
+            ready.plan.magnetic_field = overlay;
+            ready.view3d.dirty.insert(Layer::MagneticField);
+        }
+        if let Some(overlay) = ready.electric_field.overlay_change(&ready.model) {
+            ready.view3d.electric_field = overlay.clone();
+            ready.plan.electric_field = overlay;
+            ready.view3d.dirty.insert(Layer::ElectricField);
+        }
+    }
+
+    /// The line parameters, the string checks and the internal
+    /// clearances; the layers of results out of date dimmed.
+    fn string_windows(&mut self, ctx: &egui::Context) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        let out = ready.line_parameters.ui(ctx, &ready.model);
+        if let Some(spans) = out.select {
+            ready.go_to_all(spans);
+        }
+        if let Some(settings) = out.settings {
+            let command = ready
+                .model
+                .editing
+                .as_ref()
+                .map(|e| e.session.electrical_command(settings));
+            if let Ok(command) = command {
+                ready.perform(crate::edit::Action::Command {
+                    what: "electrical settings".into(),
+                    command,
+                });
+            }
+        }
+        let out = ready
+            .string_checks
+            .ui(ctx, &mut ready.model, &ready.rule_editor.presets.list);
+        string_checks_out(ready, out);
+        let out =
+            ready
+                .internal_clearances
+                .ui(ctx, &mut ready.model, &ready.rule_editor.presets.list);
+        internal_clearances_out(ready, out);
+        // Layers drawn from results out of date: dimmed.
+        crate::revision::frame(ready);
+    }
+
+    /// The LiDAR classes, the surfaces, the plugins' formats, a project
+    /// or a page asked for, the quick bar's customizing.
+    fn settings_windows(&mut self, ui: &egui::Ui, ctx: &egui::Context) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        if let Some(mut w) = ready.class_window.take() {
+            let mut open = true;
+            let default = self.default_class_scheme.clone();
+            let schemes = self.plugins.class_schemes();
+            let action = w.ui(ctx, &mut open, &mut ready.model, default.as_ref(), &schemes);
+            if let Some(a) = action {
+                use crate::class_colors::ClassAction;
+                let chosen = match a {
+                    ClassAction::Recolor => None,
+                    ClassAction::UseForProject(p) => Some(p),
+                    ClassAction::UseForAll(p) => {
+                        self.default_class_scheme = p.clone();
+                        Some(p)
+                    }
+                };
+                if let Some(p) = chosen {
+                    match ready.model.use_class_scheme(p) {
+                        Ok(()) => w.dirty = false,
+                        Err(e) => w.status = Some((e, true)),
+                    }
+                }
+                ready.view3d.recolor_points();
+                ready.xsections.invalidate();
+                ready.refresh_views();
+            }
+            if open {
+                ready.class_window = Some(w);
+            }
+        }
+        let ground_was = ready.model.ground.as_ref().map(std::sync::Arc::as_ptr);
+        let mut ground_shown = ready.visible.contains(&Layer::Ground);
+        let shown_before = ground_shown;
+        if ready
+            .surfaces
+            .ui(ctx, &mut ready.model, &mut self.plugins, &mut ground_shown)
+        {
+            // A new ground is shown; the tick shows or hides it.
+            let new_ground = ready.model.ground.as_ref().map(std::sync::Arc::as_ptr) != ground_was;
+            if new_ground || (ground_shown && !shown_before) {
+                ready.visible.insert(Layer::Ground);
+            } else if !ground_shown && shown_before {
+                ready.visible.remove(&Layer::Ground);
+            }
+            if !ready.model.other_surfaces.is_empty() {
+                ready.visible.insert(Layer::Surfaces);
+            }
+            // The surfaces themselves are drawn again (the other
+            // layers follow them: draped alignments, clearances).
+            ready.view3d.dirty.insert(Layer::Ground);
+            ready.view3d.dirty.insert(Layer::Surfaces);
+            ready.clearances.stale = true;
+            ready.xsections.invalidate();
+            ready.refresh_views();
+        }
+        let editable = ready.model.can_edit().map_err(|e| e.to_string());
+        self.plugins.format_ui(ctx, &ready.model, editable);
+        if let Some(path) = ready.open_project.take() {
+            self.file_action = Some(crate::files::FileAction::Open(Some(path)));
+        } else if std::mem::take(&mut ready.reopen) {
+            self.file_action = Some(crate::files::FileAction::Open(Some(
+                ready.model.sources.file.clone(),
+            )));
+        }
+        if let Some(tab) = crate::menu::take_page_request(ctx) {
+            ready.release_mouse = true;
+            open_page(&mut self.dock, tab);
+        }
+        if let Some((tab, filter)) = ready.open_page.take() {
+            open_page(&mut self.dock, tab);
+            if let (Tab::Table(k), Some(f)) = (tab, filter) {
+                ready.tables.entry(k).or_default().filter = f;
+            }
+        }
+        if self.customize {
+            let mut open = true;
+            egui::Window::new("Customize the quick bar")
+                .open(&mut open)
+                .collapsible(false)
+                .show(ui.ctx(), |ui| self.quickbar.customize_ui(ui));
+            self.customize = open;
+        }
+    }
+
+    /// The dock with its pages, and what follows them: the right-click's
+    /// menu, Escape, the pages moved, the cuts' panels.
+    fn dock_frame(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let State::Ready(ready) = &mut self.state else {
+            return;
+        };
+        sync_docked(ctx, &mut self.dock);
+        // The structure being edited: its handles in the 3D view.
+        let dock = &self.dock;
+        ready.view3d.handles.target = ready.handle_target(|t| dock.find_tab(t).is_some());
+        ready.ground_lines_frame(Some(ctx));
+        // The cuts' panels: what the main view rebuilds, rebuilt;
+        // their slabs outlined in the main view.
+        ready.xsections.hand_on(&mut ready.view3d);
+        ready.view3d.cut_outlines = ready.xsections.outlines();
+        let _dock = crate::perf::span("dock");
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                DockArea::new(&mut self.dock)
+                    .show_close_buttons(true)
+                    .show_leaf_close_all_buttons(false)
+                    .show_inside(
+                        ui,
+                        &mut Viewer {
+                            ready,
+                            ctx: ctx.clone(),
+                            rs: self.render_state.as_ref(),
+                            lod: &mut self.lod,
+                            palette: &mut self.palette,
+                            layer_groups: &mut self.layer_groups,
+                            scripts: self.plugins.python_scripts(),
+                        },
+                    );
+            });
+        // A right-click's menu; Escape with nothing else to give
+        // up: back to Select.
+        context_menu_window(ctx, ready);
+        escape_to_select(ctx, ready);
+        for (tab, place) in std::mem::take(&mut ready.dock_moves) {
+            move_page(&mut self.dock, tab, place);
+        }
+        // Changes made while the pages were drawn: the cuts' panels
+        // follow in the next frame.
+        if ready.xsections.hand_on(&mut ready.view3d) {
+            ctx.request_repaint();
+        }
+    }
+
+    /// The windows of the application itself: About, the File menu's
+    /// windows and actions, the plugin manager without a project.
+    fn app_windows(&mut self, ctx: &egui::Context) {
         if self.about {
             let mut open = true;
             egui::Window::new(format!("About {}", crate::APP_NAME))
@@ -2678,21 +2705,21 @@ impl eframe::App for App {
                 .collapsible(false)
                 .resizable(false)
                 .default_width(420.0)
-                .show(&ctx, crate::help::about_ui);
+                .show(ctx, crate::help::about_ui);
             self.about = open;
         }
         // The File menu's windows and actions.
-        self.share_windows(&ctx);
-        self.import_project_windows(&ctx);
+        self.share_windows(ctx);
+        self.import_project_windows(ctx);
         // The plugin manager without a project (the start screen's
         // Plugins…): with one, it is drawn with the project's windows.
         if !matches!(self.state, State::Ready(_)) && self.plugins.open {
-            let _ = self.plugins.poll(&ctx);
-            self.plugins.manager_ui(&ctx);
+            let _ = self.plugins.poll(ctx);
+            self.plugins.manager_ui(ctx);
         }
         if let Some(np) = &mut self.new_project {
             let mut open = true;
-            if let Some(path) = np.ui(&ctx, &mut open) {
+            if let Some(path) = np.ui(ctx, &mut open) {
                 self.new_project = None;
                 self.file_action = Some(crate::files::FileAction::Open(Some(path)));
             } else if !open {
@@ -2705,7 +2732,7 @@ impl eframe::App for App {
             egui::Window::new("Unsaved changes")
                 .collapsible(false)
                 .resizable(false)
-                .show(&ctx, |ui| {
+                .show(ctx, |ui| {
                     ui.label("These changes are not saved:");
                     for l in &lost {
                         ui.label(format!("• {l}"));
@@ -2722,16 +2749,74 @@ impl eframe::App for App {
             match choice {
                 Some(true) => {
                     self.confirm_discard = None;
-                    self.file_action(&ctx, action, true);
+                    self.file_action(ctx, action, true);
                 }
                 Some(false) => self.confirm_discard = None,
                 None => {}
             }
         }
         if let Some(action) = self.file_action.take() {
-            self.file_action(&ctx, action, false);
+            self.file_action(ctx, action, false);
             // Its window or the next state shows now, not at the next input.
             ctx.request_repaint();
         }
     }
+}
+
+/// The status bar: who edits, the line's status, what is being solved, a
+/// measuring tool's readout, the last message.
+fn status_bar(ui: &mut egui::Ui, ready: &mut Ready) {
+    egui::Panel::bottom("status").show(ui, |ui| {
+        ui.horizontal(|ui| {
+            match ready.model.can_edit() {
+                Ok(()) => ui.label(
+                    egui::RichText::new(format!(
+                        "editing as {}",
+                        ready.model.editing.as_ref().map_or("", |e| e.user.as_str())
+                    ))
+                    .small(),
+                ),
+                Err(why) => ui.label(egui::RichText::new(format!("read-only: {why}")).small()),
+            };
+            if ready.line_status.in_project() {
+                ui.separator();
+                if crate::line_status::chip(ui, &ready.line_status) {
+                    ready.versions.open_commit();
+                }
+            }
+            if !ready.model.solving.is_empty() {
+                ui.separator();
+                ui.spinner();
+                let names: Vec<&str> = ready
+                    .model
+                    .solving
+                    .iter()
+                    .filter_map(|(k, _, _)| ready.model.cases.get(*k))
+                    .map(|c| c.case.name.as_str())
+                    .collect();
+                ui.label(egui::RichText::new(format!("solving {}…", names.join(", "))).small());
+            }
+            if ready.hotbar.tool().measuring()
+                && let Some(text) = ready.measuring.readout()
+            {
+                ui.separator();
+                ui.label(egui::RichText::new(text).small());
+            }
+            if let Some((text, error)) = &ready.status {
+                ui.separator();
+                // In a short sentence, the whole text on
+                // hover (an edit's log entry, what was solved).
+                let (short, detail) = crate::notices::shown(text);
+                let t = egui::RichText::new(short).small();
+                let r = if *error {
+                    crate::menu::error_label(ui, t)
+                } else {
+                    ui.label(t)
+                };
+                if let Some(d) = detail {
+                    r.on_hover_text(d);
+                }
+            }
+        });
+    });
 }

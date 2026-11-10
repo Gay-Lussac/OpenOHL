@@ -198,73 +198,17 @@ impl Ready {
         // Follow and snap: the first click picks the object; then a click
         // keeps the measurement found.
         if tool == Tool::Follow {
-            let f = &mut self.measuring.follow;
-            // On nothing that can be followed: the object selected (a
-            // left click first, then the tool's), if it can be.
-            let subject = crate::follow::Subject::of_part(&self.model, &u.target).or_else(|| {
-                f.subject
-                    .is_none()
-                    .then(|| crate::follow::Subject::of_part(&self.model, &self.selection))
-                    .flatten()
-            });
-            match (&f.live, subject) {
-                (Some(m), _) if f.subject.is_some() => {
-                    let user = self.model.user_name();
-                    let time = self
-                        .model
-                        .session()
-                        .and_then(|s| s.now().ok())
-                        .unwrap_or_default();
-                    self.measuring.done.push(m.clone());
-                    let k = self.measuring.done.len() - 1;
-                    self.measuring.keep(k, &user, time);
-                    self.measuring.open = true;
-                }
-                (_, Some(subject)) => {
-                    f.subject = Some(subject.clone());
-                    f.live = None;
-                    self.select(subject.selection());
-                }
-                _ => self.hint(tool),
-            }
+            self.follow_click(tool, &u);
             return;
         }
         // The Note tool: a note's window on what was clicked.
         if tool == Tool::Note {
-            let anchor = crate::measure::anchor_of(&self.model, self.case, &u);
-            let pick = anchor
-                .as_ref()
-                .and_then(|a| crate::measure::pick_of(&self.model, self.case, a));
-            match (anchor, pick) {
-                (Some(anchor), Some(pick)) => {
-                    self.measuring.note = Some(crate::measure::NoteDraft {
-                        anchor,
-                        what: pick.what,
-                        text: String::new(),
-                    });
-                    self.measuring.note_opened = true;
-                }
-                _ => self.hint(tool),
-            }
+            self.note_click(tool, &u);
             return;
         }
         // A measuring tool: a pick (no editing rights needed).
         if let Some(kind) = tool.measure() {
-            let case_name = self
-                .model
-                .cases
-                .get(self.case)
-                .map_or(String::new(), |c| c.case.name.clone());
-            match crate::measure::resolve(&self.model, self.case, &u) {
-                Some(pick) => {
-                    self.status = self
-                        .measuring
-                        .click(&self.model, kind, &case_name, pick)
-                        .err()
-                        .map(|e| (e, true));
-                }
-                None => self.hint(tool),
-            }
+            self.measure_click(tool, kind, &u);
             return;
         }
         let target = u.target;
@@ -314,8 +258,6 @@ impl Ready {
             }
             t => t,
         };
-        use crate::editors::{Form, SectionForm, StringForm, StructureForm};
-        let model = &self.model;
         match (tool, &target) {
             (Tool::Move, Selection::Structure(id)) => {
                 let id = id.clone();
@@ -343,6 +285,101 @@ impl Ready {
                     self.hint(tool);
                 }
             }
+            _ => self.use_edit_tool(tool, target, u.at, u.on),
+        }
+    }
+
+    /// The Follow tool: the first click picks the object, the next keeps
+    /// the measurement found.
+    fn follow_click(&mut self, tool: crate::tools::Tool, u: &crate::selection::Use) {
+        let f = &mut self.measuring.follow;
+        // On nothing that can be followed: the object selected (a
+        // left click first, then the tool's), if it can be.
+        let subject = crate::follow::Subject::of_part(&self.model, &u.target).or_else(|| {
+            f.subject
+                .is_none()
+                .then(|| crate::follow::Subject::of_part(&self.model, &self.selection))
+                .flatten()
+        });
+        match (&f.live, subject) {
+            (Some(m), _) if f.subject.is_some() => {
+                let user = self.model.user_name();
+                let time = self
+                    .model
+                    .session()
+                    .and_then(|s| s.now().ok())
+                    .unwrap_or_default();
+                self.measuring.done.push(m.clone());
+                let k = self.measuring.done.len() - 1;
+                self.measuring.keep(k, &user, time);
+                self.measuring.open = true;
+            }
+            (_, Some(subject)) => {
+                f.subject = Some(subject.clone());
+                f.live = None;
+                self.select(subject.selection());
+            }
+            _ => self.hint(tool),
+        }
+    }
+
+    /// The Note tool: a note's window on what was clicked.
+    fn note_click(&mut self, tool: crate::tools::Tool, u: &crate::selection::Use) {
+        let anchor = crate::measure::anchor_of(&self.model, self.case, u);
+        let pick = anchor
+            .as_ref()
+            .and_then(|a| crate::measure::pick_of(&self.model, self.case, a));
+        match (anchor, pick) {
+            (Some(anchor), Some(pick)) => {
+                self.measuring.note = Some(crate::measure::NoteDraft {
+                    anchor,
+                    what: pick.what,
+                    text: String::new(),
+                });
+                self.measuring.note_opened = true;
+            }
+            _ => self.hint(tool),
+        }
+    }
+
+    /// A measuring tool: a pick of what was clicked.
+    fn measure_click(
+        &mut self,
+        tool: crate::tools::Tool,
+        kind: crate::measure::Kind,
+        u: &crate::selection::Use,
+    ) {
+        let case_name = self
+            .model
+            .cases
+            .get(self.case)
+            .map_or(String::new(), |c| c.case.name.clone());
+        match crate::measure::resolve(&self.model, self.case, u) {
+            Some(pick) => {
+                self.status = self
+                    .measuring
+                    .click(&self.model, kind, &case_name, pick)
+                    .err()
+                    .map(|e| (e, true));
+            }
+            None => self.hint(tool),
+        }
+    }
+
+    /// The Edit and Add jumper tools on `target` (the ground under the
+    /// click `at`, the point of a wire clicked `on`); the other tools:
+    /// [`Ready::use_add_tool`].
+    fn use_edit_tool(
+        &mut self,
+        tool: crate::tools::Tool,
+        target: Selection,
+        at: Option<[f64; 3]>,
+        on: Option<[f64; 3]>,
+    ) {
+        use crate::editors::{Form, StringForm};
+        use crate::tools::Tool;
+        let model = &self.model;
+        match (tool, &target) {
             // Its pylon: the type in the pylon workspace, a structure
             // without a type in the structure editor (as Strings and points… in
             // Properties).
@@ -393,179 +430,16 @@ impl Ready {
                     crate::editors::JumperForm::of(model, id).map(|f| Form::Jumper(Box::new(f)));
                 self.select(target);
             }
-            (Tool::AddJumper, Selection::Structure(id)) => {
-                let (jumpers, unpaired) = crate::editors::missing_jumpers(model, id);
-                let id = id.clone();
-                if jumpers.is_empty() {
-                    self.status = Some((
-                        format!(
-                            "Add jumper: none missing at {id}{}",
-                            if unpaired.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" ({})", unpaired.join("; "))
-                            }
-                        ),
-                        !unpaired.is_empty(),
-                    ));
-                    return;
-                }
-                let n = jumpers.len();
-                let commands = jumpers
-                    .iter()
-                    .map(|j| ohl_session::Command::Put {
-                        kind: ohl_session::Kind::Jumper,
-                        id: j.id.clone(),
-                        value: serde_json::to_value(j).expect("a jumper"),
-                        ord: None,
-                    })
-                    .collect();
-                if self.perform(crate::edit::Action::Command {
-                    what: format!("added {n} jumpers at {id}"),
-                    command: ohl_session::Command::Batch { commands },
-                }) && !unpaired.is_empty()
-                {
-                    self.status = Some((
-                        format!(
-                            "added {n} jumpers at {id}; not joined: {}",
-                            unpaired.join("; ")
-                        ),
-                        false,
-                    ));
-                }
-            }
+            (Tool::AddJumper, Selection::Structure(_)) => self.add_missing_jumpers(&target),
             // A suspension string of the structure (to a wire point without
             // a set: not one holding a wire), after the first end: the
             // jumper passes through a clamp on it, in click order.
-            (Tool::AddJumper, Selection::String { structure, label })
-                if self.jumper_from.is_some() =>
-            {
-                let st = model.line.structure(structure);
-                let wire = st.and_then(|s| s.string(label)).map(|x| x.wire.clone());
-                let helping = st.zip(wire.as_ref()).is_some_and(|(s, w)| {
-                    s.wire(w).is_some_and(|w| w.set.is_none())
-                        && !s
-                            .component(w)
-                            .wires
-                            .iter()
-                            .any(|&i| s.wires[i].set.is_some())
-                });
-                match wire {
-                    Some(w) if helping => {
-                        if self
-                            .jumper_via
-                            .iter()
-                            .any(|v| v.0 == *structure && v.1 == w)
-                        {
-                            self.status = Some((
-                                format!("Add jumper: {structure} {w} holds the jumper already"),
-                                true,
-                            ));
-                            return;
-                        }
-                        self.jumper_via.push((structure.clone(), w));
-                        let via: Vec<String> = self
-                            .jumper_via
-                            .iter()
-                            .map(|v| format!("{} {}", v.0, v.1))
-                            .collect();
-                        let from = self.jumper_from.clone().expect("checked");
-                        self.status = Some((
-                            format!(
-                                "Add jumper from {} set {} through {}: click more suspension strings, then the other end",
-                                from.structure,
-                                from.set,
-                                via.join(", ")
-                            ),
-                            false,
-                        ));
-                    }
-                    _ => {
-                        self.status = Some((
-                            format!(
-                                "Add jumper: {structure} {label} holds a wire (its wire point has a set): click a suspension string to a wire point without a set, or the other end"
-                            ),
-                            true,
-                        ));
-                    }
-                }
+            (Tool::AddJumper, Selection::String { .. }) if self.jumper_from.is_some() => {
+                self.jumper_through_string(&target)
             }
             // A tap: a clamp on a span point or on a jumper point.
             (Tool::AddJumper, Selection::SpanPoint { .. } | Selection::JumperPoint { .. }) => {
-                let (tap, object) = match &target {
-                    Selection::SpanPoint { section, label } => (
-                        ohl_line::Tap::Span(ohl_line::SpanPointRef {
-                            section: section.clone(),
-                            point: label.clone(),
-                        }),
-                        model
-                            .line
-                            .sections
-                            .iter()
-                            .find(|s| &s.id == section)
-                            .and_then(|s| s.span_points.iter().find(|p| &p.label == label))
-                            .and_then(|p| p.object.clone()),
-                    ),
-                    Selection::JumperPoint { jumper, label } => (
-                        ohl_line::Tap::Jumper {
-                            jumper: jumper.clone(),
-                            point: label.clone(),
-                        },
-                        model
-                            .line
-                            .jumpers
-                            .iter()
-                            .find(|j| &j.id == jumper)
-                            .and_then(|j| j.points.iter().find(|p| &p.label == label))
-                            .and_then(|p| p.object.clone()),
-                    ),
-                    _ => unreachable!("matched"),
-                };
-                if !object.is_some_and(|o| o.kind == ohl_line::ObjectKind::Clamp) {
-                    self.status = Some((
-                        format!(
-                            "Add jumper: {} holds no clamp — put a clamp object there (Add on span, object, a tap clamp template), then start the jumper from it",
-                            tap.text()
-                        ),
-                        true,
-                    ));
-                    return;
-                }
-                let first = match (self.jumper_from.take(), self.jumper_tap.take()) {
-                    (_, Some(t)) if t == tap => {
-                        self.status = Some(("Add jumper: cancelled".into(), false));
-                        return;
-                    }
-                    (_, Some(t)) => Some(ohl_line::JumperEnd::tap(t)),
-                    (Some(p), None) => Some(ohl_line::JumperEnd::Wire(p)),
-                    (None, None) => None,
-                };
-                match first {
-                    None => {
-                        self.status = Some((
-                            format!(
-                                "Add jumper from the tap {}: click its other end (a string, or another tap's clamp; the same one again or Escape: cancel)",
-                                tap.text()
-                            ),
-                            false,
-                        ));
-                        self.jumper_tap = Some(tap);
-                    }
-                    Some(from) => {
-                        match crate::editors::new_tap_jumper(
-                            model,
-                            from,
-                            ohl_line::JumperEnd::tap(tap.clone()),
-                        ) {
-                            Ok(j) => {
-                                let what =
-                                    format!("added jumper {} on the tap {}", j.id, tap.text());
-                                self.add_jumper(j, what, true);
-                            }
-                            Err(e) => self.status = Some((e, true)),
-                        }
-                    }
-                }
+                self.jumper_tap_click(&target)
             }
             (Tool::AddJumper, Selection::Attachment { structure, set })
                 if self.jumper_tap.is_some() =>
@@ -584,167 +458,299 @@ impl Ready {
                     Err(e) => self.status = Some((e, true)),
                 }
             }
-            (Tool::AddJumper, Selection::Attachment { structure, set }) => {
-                let p = ohl_line::SectionPoint::new(structure.clone(), *set);
-                // A jumper ends where a section's wire is clamped: a wire
-                // point whose set no section uses is refused (a string the
-                // jumper should pass through, its set given by mistake —
-                // else one jumper would be laid as several).
-                if !model.line.sections.iter().any(|s| s.points.contains(&p)) {
-                    let wire = model
-                        .line
-                        .wire_point(&p)
-                        .map_or(String::new(), |w| format!(" (wire point {})", w.label));
+            (Tool::AddJumper, Selection::Attachment { .. }) => self.jumper_end_click(&target),
+            _ => self.use_add_tool(tool, target, at, on),
+        }
+    }
+
+    /// Add jumper on a structure: the jumpers missing there, added.
+    fn add_missing_jumpers(&mut self, target: &Selection) {
+        let model = &self.model;
+        let Selection::Structure(id) = target else {
+            return;
+        };
+        let (jumpers, unpaired) = crate::editors::missing_jumpers(model, id);
+        let id = id.clone();
+        if jumpers.is_empty() {
+            self.status = Some((
+                format!(
+                    "Add jumper: none missing at {id}{}",
+                    if unpaired.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({})", unpaired.join("; "))
+                    }
+                ),
+                !unpaired.is_empty(),
+            ));
+            return;
+        }
+        let n = jumpers.len();
+        let commands = jumpers
+            .iter()
+            .map(|j| ohl_session::Command::Put {
+                kind: ohl_session::Kind::Jumper,
+                id: j.id.clone(),
+                value: serde_json::to_value(j).expect("a jumper"),
+                ord: None,
+            })
+            .collect();
+        if self.perform(crate::edit::Action::Command {
+            what: format!("added {n} jumpers at {id}"),
+            command: ohl_session::Command::Batch { commands },
+        }) && !unpaired.is_empty()
+        {
+            self.status = Some((
+                format!(
+                    "added {n} jumpers at {id}; not joined: {}",
+                    unpaired.join("; ")
+                ),
+                false,
+            ));
+        }
+    }
+
+    /// Add jumper on a suspension string, after the first end: the jumper
+    /// passes through a clamp on it.
+    fn jumper_through_string(&mut self, target: &Selection) {
+        let model = &self.model;
+        let Selection::String { structure, label } = target else {
+            return;
+        };
+        let st = model.line.structure(structure);
+        let wire = st.and_then(|s| s.string(label)).map(|x| x.wire.clone());
+        let helping = st.zip(wire.as_ref()).is_some_and(|(s, w)| {
+            s.wire(w).is_some_and(|w| w.set.is_none())
+                && !s
+                    .component(w)
+                    .wires
+                    .iter()
+                    .any(|&i| s.wires[i].set.is_some())
+        });
+        match wire {
+            Some(w) if helping => {
+                if self
+                    .jumper_via
+                    .iter()
+                    .any(|v| v.0 == *structure && v.1 == w)
+                {
                     self.status = Some((
-                        format!(
-                            "Add jumper: set {set} on {structure}{wire} holds no section, so no jumper ends there. To pass the jumper through this string, untick its wire point's set in the string window (Edit on the string); then click it between the jumper's ends"
-                        ),
+                        format!("Add jumper: {structure} {w} holds the jumper already"),
                         true,
                     ));
                     return;
                 }
-                match self.jumper_from.take() {
-                    None => {
-                        self.status = Some((
-                            format!(
-                                "Add jumper from {structure} set {set}: click the suspension strings it passes through in order (if any), then the other end (the same one again or Escape: cancel)"
-                            ),
-                            false,
-                        ));
-                        self.jumper_from = Some(p);
-                        self.jumper_via.clear();
+                self.jumper_via.push((structure.clone(), w));
+                let via: Vec<String> = self
+                    .jumper_via
+                    .iter()
+                    .map(|v| format!("{} {}", v.0, v.1))
+                    .collect();
+                let from = self.jumper_from.clone().expect("checked");
+                self.status = Some((
+                    format!(
+                        "Add jumper from {} set {} through {}: click more suspension strings, then the other end",
+                        from.structure,
+                        from.set,
+                        via.join(", ")
+                    ),
+                    false,
+                ));
+            }
+            _ => {
+                self.status = Some((
+                    format!(
+                        "Add jumper: {structure} {label} holds a wire (its wire point has a set): click a suspension string to a wire point without a set, or the other end"
+                    ),
+                    true,
+                ));
+            }
+        }
+    }
+
+    /// Add jumper on a span point or a jumper point: a tap on its clamp
+    /// (the jumper's first end, or its other end).
+    fn jumper_tap_click(&mut self, target: &Selection) {
+        let model = &self.model;
+        let (tap, object) = match &target {
+            Selection::SpanPoint { section, label } => (
+                ohl_line::Tap::Span(ohl_line::SpanPointRef {
+                    section: section.clone(),
+                    point: label.clone(),
+                }),
+                model
+                    .line
+                    .sections
+                    .iter()
+                    .find(|s| &s.id == section)
+                    .and_then(|s| s.span_points.iter().find(|p| &p.label == label))
+                    .and_then(|p| p.object.clone()),
+            ),
+            Selection::JumperPoint { jumper, label } => (
+                ohl_line::Tap::Jumper {
+                    jumper: jumper.clone(),
+                    point: label.clone(),
+                },
+                model
+                    .line
+                    .jumpers
+                    .iter()
+                    .find(|j| &j.id == jumper)
+                    .and_then(|j| j.points.iter().find(|p| &p.label == label))
+                    .and_then(|p| p.object.clone()),
+            ),
+            _ => unreachable!("matched"),
+        };
+        if !object.is_some_and(|o| o.kind == ohl_line::ObjectKind::Clamp) {
+            self.status = Some((
+                format!(
+                    "Add jumper: {} holds no clamp — put a clamp object there (Add on span, object, a tap clamp template), then start the jumper from it",
+                    tap.text()
+                ),
+                true,
+            ));
+            return;
+        }
+        let first = match (self.jumper_from.take(), self.jumper_tap.take()) {
+            (_, Some(t)) if t == tap => {
+                self.status = Some(("Add jumper: cancelled".into(), false));
+                return;
+            }
+            (_, Some(t)) => Some(ohl_line::JumperEnd::tap(t)),
+            (Some(p), None) => Some(ohl_line::JumperEnd::Wire(p)),
+            (None, None) => None,
+        };
+        match first {
+            None => {
+                self.status = Some((
+                    format!(
+                        "Add jumper from the tap {}: click its other end (a string, or another tap's clamp; the same one again or Escape: cancel)",
+                        tap.text()
+                    ),
+                    false,
+                ));
+                self.jumper_tap = Some(tap);
+            }
+            Some(from) => {
+                match crate::editors::new_tap_jumper(
+                    model,
+                    from,
+                    ohl_line::JumperEnd::tap(tap.clone()),
+                ) {
+                    Ok(j) => {
+                        let what = format!("added jumper {} on the tap {}", j.id, tap.text());
+                        self.add_jumper(j, what, true);
                     }
-                    Some(from) if from == p => {
-                        self.jumper_via.clear();
-                        self.status = Some(("Add jumper: cancelled".into(), false));
-                    }
-                    Some(from) if !self.jumper_via.is_empty() => {
-                        let via = std::mem::take(&mut self.jumper_via);
-                        match crate::editors::new_jumper_through(model, &from, &p, &via) {
-                            Ok(j) => {
-                                let what = format!(
-                                    "added jumper {} through {} suspension strings",
-                                    j.id,
-                                    via.len()
-                                );
-                                // Its window: the lengths between its clamps.
-                                self.add_jumper(j, what, true);
-                            }
-                            Err(e) => self.status = Some((e, true)),
-                        }
-                    }
-                    // Its window first (owner, 2026-10-25): how it is
-                    // given always asked, the length offered the least
-                    // between its ends; added on Apply.
-                    Some(from) => match crate::editors::new_jumper(model, &from, &p, &[]) {
-                        Ok(j) => {
-                            self.status = Some((
-                                format!(
-                                    "Add jumper {}: choose how it is given (length, sag or rigid) in its window, then Apply",
-                                    j.id
-                                ),
-                                false,
-                            ));
-                            self.editor = Some(crate::editors::Form::Jumper(Box::new(
-                                crate::editors::JumperForm::new(model, j),
-                            )));
-                        }
-                        Err(e) => self.status = Some((e, true)),
-                    },
+                    Err(e) => self.status = Some((e, true)),
                 }
             }
-            (Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment, _) => {
-                use crate::alignment_tools::{CoordDialog, CoordFor};
-                let stored = model.stored_line().unwrap_or(&model.line);
-                // What was clicked gives the point: an alignment
-                // point (used as it is: a junction), a structure (tied
-                // under it), a survey or LiDAR point shown (its
-                // coordinates); else the coordinates are asked for. A new
-                // point has no id yet.
-                let point = match &target {
-                    Selection::AlignmentPoint { id } => stored.alignment_point(id).cloned(),
-                    Selection::Structure(id) => {
-                        model.line.structure(id).map(|s| ohl_line::AlignmentPoint {
-                            structure: Some(s.id.clone()),
-                            ..ohl_line::AlignmentPoint::free("", s.position)
-                        })
+        }
+    }
+
+    /// Add jumper on a string holding a section's wire: the jumper's
+    /// first end, or its other end (the jumper made).
+    fn jumper_end_click(&mut self, target: &Selection) {
+        let model = &self.model;
+        let Selection::Attachment { structure, set } = target else {
+            return;
+        };
+        let p = ohl_line::SectionPoint::new(structure.clone(), *set);
+        // A jumper ends where a section's wire is clamped: a wire
+        // point whose set no section uses is refused (a string the
+        // jumper should pass through, its set given by mistake —
+        // else one jumper would be laid as several).
+        if !model.line.sections.iter().any(|s| s.points.contains(&p)) {
+            let wire = model
+                .line
+                .wire_point(&p)
+                .map_or(String::new(), |w| format!(" (wire point {})", w.label));
+            self.status = Some((
+                format!(
+                    "Add jumper: set {set} on {structure}{wire} holds no section, so no jumper ends there. To pass the jumper through this string, untick its wire point's set in the string window (Edit on the string); then click it between the jumper's ends"
+                ),
+                true,
+            ));
+            return;
+        }
+        match self.jumper_from.take() {
+            None => {
+                self.status = Some((
+                    format!(
+                        "Add jumper from {structure} set {set}: click the suspension strings it passes through in order (if any), then the other end (the same one again or Escape: cancel)"
+                    ),
+                    false,
+                ));
+                self.jumper_from = Some(p);
+                self.jumper_via.clear();
+            }
+            Some(from) if from == p => {
+                self.jumper_via.clear();
+                self.status = Some(("Add jumper: cancelled".into(), false));
+            }
+            Some(from) if !self.jumper_via.is_empty() => {
+                let via = std::mem::take(&mut self.jumper_via);
+                match crate::editors::new_jumper_through(model, &from, &p, &via) {
+                    Ok(j) => {
+                        let what = format!(
+                            "added jumper {} through {} suspension strings",
+                            j.id,
+                            via.len()
+                        );
+                        // Its window: the lengths between its clamps.
+                        self.add_jumper(j, what, true);
                     }
-                    Selection::SurveyPoint(_) | Selection::LidarPoint(_) => {
-                        crate::selection::position(model, &target)
-                            .map(|p| ohl_line::AlignmentPoint::free("", p))
-                    }
-                    _ => None,
-                };
-                match tool {
-                    // Always its window: the coordinates (from what was
-                    // clicked) and whether it joins the nearest alignment.
-                    Tool::AddAlignment => match point {
-                        Some(p) if !p.id.is_empty() => {
-                            self.status = Some((
-                                format!("there is an alignment point here already: {}", p.id),
-                                true,
-                            ));
-                        }
-                        Some(p) => {
-                            let mut d = CoordDialog::new(CoordFor::AddAlignment, Some(p.position));
-                            d.structure = p.structure;
-                            self.coord_dialog = Some(d);
-                        }
-                        None => {
-                            self.coord_dialog = Some(CoordDialog::new(CoordFor::AddAlignment, u.at))
-                        }
-                    },
-                    _ => {
-                        let purpose = if tool == Tool::NewAlignment {
-                            CoordFor::NewAlignment
-                        } else {
-                            CoordFor::Reroute
-                        };
-                        match point {
-                            Some(p) => self.place_alignment_point(purpose, p),
-                            None => self.coord_dialog = Some(CoordDialog::new(purpose, u.at)),
-                        }
-                    }
+                    Err(e) => self.status = Some((e, true)),
                 }
+            }
+            // Its window first (owner, 2026-10-25): how it is
+            // given always asked, the length offered the least
+            // between its ends; added on Apply.
+            Some(from) => match crate::editors::new_jumper(model, &from, &p, &[]) {
+                Ok(j) => {
+                    self.status = Some((
+                        format!(
+                            "Add jumper {}: choose how it is given (length, sag or rigid) in its window, then Apply",
+                            j.id
+                        ),
+                        false,
+                    ));
+                    self.editor = Some(crate::editors::Form::Jumper(Box::new(
+                        crate::editors::JumperForm::new(model, j),
+                    )));
+                }
+                Err(e) => self.status = Some((e, true)),
+            },
+        }
+    }
+
+    /// The alignment, On span, Add string, Add structure, Link and String
+    /// wire tools on `target`, and what no tool acts on.
+    fn use_add_tool(
+        &mut self,
+        tool: crate::tools::Tool,
+        target: Selection,
+        at: Option<[f64; 3]>,
+        on: Option<[f64; 3]>,
+    ) {
+        use crate::editors::{Form, SectionForm, StringForm, StructureForm};
+        use crate::tools::Tool;
+        let model = &self.model;
+        match (tool, &target) {
+            (Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment, _) => {
+                self.alignment_click(tool, target, at)
             }
             (Tool::OnSpan, Selection::Jumper(id)) => {
-                self.editor = crate::span_tool::SpanForm::on_jumper(model, self.case, id, u.on)
-                    .map(Form::Span);
+                self.editor =
+                    crate::span_tool::SpanForm::on_jumper(model, self.case, id, on).map(Form::Span);
                 self.select(target);
             }
             (Tool::OnSpan, Selection::Span { section, span }) => {
-                self.editor =
-                    crate::span_tool::SpanForm::new(model, self.case, section, *span, u.on)
-                        .map(Form::Span);
+                self.editor = crate::span_tool::SpanForm::new(model, self.case, section, *span, on)
+                    .map(Form::Span);
                 self.select(target);
             }
             // A spacer: from a span point to another.
-            (Tool::AddString, Selection::SpanPoint { section, label }) => {
-                let p = ohl_line::SpanPointRef {
-                    section: section.clone(),
-                    point: label.clone(),
-                };
-                match self.spacer_from.take() {
-                    None => {
-                        self.status = Some((
-                            format!(
-                                "Add spacer from {section} span point {label}: click the span point at its other end (the same one again or Escape: cancel)"
-                            ),
-                            false,
-                        ));
-                        self.spacer_from = Some(p);
-                    }
-                    Some(from) if from == p => {
-                        self.status = Some(("Add spacer: cancelled".into(), false));
-                    }
-                    Some(from) => {
-                        self.editor = Some(Form::Spacer(crate::span_tool::SpacerForm::new(
-                            model, from, p,
-                        )));
-                    }
-                }
-                self.select(target);
-            }
+            (Tool::AddString, Selection::SpanPoint { .. }) => self.spacer_click(target),
             (Tool::Edit, Selection::Span { section, .. }) => {
                 self.editor = SectionForm::of(model, section).map(Form::Section);
                 self.select(target);
@@ -762,7 +768,7 @@ impl Ready {
                 let at = free
                     .as_ref()
                     .map(|p| p.2)
-                    .or(u.at)
+                    .or(at)
                     .or_else(|| model.line.alignment_point(id).map(|p| p.position))
                     .unwrap_or_else(|| structure_spot(model));
                 let mut f = StructureForm::new_at(model, at);
@@ -775,7 +781,7 @@ impl Ready {
             // Where it was clicked; with no ground there, the first free
             // alignment point (the window gives its place).
             (Tool::AddStructure, _) => {
-                let at = u.at.unwrap_or_else(|| structure_spot(model));
+                let at = at.unwrap_or_else(|| structure_spot(model));
                 self.editor = Some(Form::Structure(StructureForm::new_at(model, at)));
             }
             (
@@ -789,26 +795,7 @@ impl Ready {
                 self.editor = StringForm::hanging_from(model, structure, label).map(Form::String);
                 self.select(target);
             }
-            (Tool::Link, Selection::Point { structure, label }) => {
-                match crate::link_tool::overlay(&self.model, structure, label) {
-                    Ok(o) => {
-                        self.status = Some((
-                            format!(
-                                "Link {label} of {structure}: click a ringed joint of its \
-                                 type ({} joint(s) it may be linked to; Escape: cancel)",
-                                o.joints.len()
-                            ),
-                            false,
-                        ));
-                        self.link_from = Some((structure.clone(), label.clone()));
-                    }
-                    Err(e) => {
-                        self.link_from = None;
-                        self.status = Some((format!("Link: {e}"), true));
-                    }
-                }
-                self.select(target);
-            }
+            (Tool::Link, Selection::Point { .. }) => self.link_click(target),
             (Tool::Link, _) => {
                 if self.link_from.take().is_some() {
                     self.status = Some((
@@ -819,28 +806,7 @@ impl Ready {
                     self.hint(tool);
                 }
             }
-            (Tool::StringWire, Selection::Attachment { structure, set }) => {
-                let p = ohl_line::SectionPoint::new(structure.clone(), *set);
-                if self.chain.last() == Some(&p) {
-                    return;
-                }
-                if self.chain.contains(&p) {
-                    self.status = Some((
-                        format!("String wire: {structure} set {set} is in the section already"),
-                        true,
-                    ));
-                    return;
-                }
-                self.chain.push(p);
-                self.update_draft();
-                self.status = Some((
-                    format!(
-                        "String wire: {} points — click the next string, Enter: section, Backspace: undo a point, Escape: cancel",
-                        self.chain.len()
-                    ),
-                    false,
-                ));
-            }
+            (Tool::StringWire, Selection::Attachment { .. }) => self.string_wire_click(&target),
             (_, Selection::None) => {
                 self.status = Some((
                     format!("{}: nothing here — {}", tool.name(), tool.help()),
@@ -849,6 +815,154 @@ impl Ready {
             }
             _ => self.hint(tool),
         }
+    }
+
+    /// The alignment tools: the point clicked placed, or its coordinates
+    /// asked for.
+    fn alignment_click(
+        &mut self,
+        tool: crate::tools::Tool,
+        target: Selection,
+        at: Option<[f64; 3]>,
+    ) {
+        use crate::tools::Tool;
+        let model = &self.model;
+        use crate::alignment_tools::{CoordDialog, CoordFor};
+        let stored = model.stored_line().unwrap_or(&model.line);
+        // What was clicked gives the point: an alignment
+        // point (used as it is: a junction), a structure (tied
+        // under it), a survey or LiDAR point shown (its
+        // coordinates); else the coordinates are asked for. A new
+        // point has no id yet.
+        let point = match &target {
+            Selection::AlignmentPoint { id } => stored.alignment_point(id).cloned(),
+            Selection::Structure(id) => {
+                model.line.structure(id).map(|s| ohl_line::AlignmentPoint {
+                    structure: Some(s.id.clone()),
+                    ..ohl_line::AlignmentPoint::free("", s.position)
+                })
+            }
+            Selection::SurveyPoint(_) | Selection::LidarPoint(_) => {
+                crate::selection::position(model, &target)
+                    .map(|p| ohl_line::AlignmentPoint::free("", p))
+            }
+            _ => None,
+        };
+        match tool {
+            // Always its window: the coordinates (from what was
+            // clicked) and whether it joins the nearest alignment.
+            Tool::AddAlignment => match point {
+                Some(p) if !p.id.is_empty() => {
+                    self.status = Some((
+                        format!("there is an alignment point here already: {}", p.id),
+                        true,
+                    ));
+                }
+                Some(p) => {
+                    let mut d = CoordDialog::new(CoordFor::AddAlignment, Some(p.position));
+                    d.structure = p.structure;
+                    self.coord_dialog = Some(d);
+                }
+                None => self.coord_dialog = Some(CoordDialog::new(CoordFor::AddAlignment, at)),
+            },
+            _ => {
+                let purpose = if tool == Tool::NewAlignment {
+                    CoordFor::NewAlignment
+                } else {
+                    CoordFor::Reroute
+                };
+                match point {
+                    Some(p) => self.place_alignment_point(purpose, p),
+                    None => self.coord_dialog = Some(CoordDialog::new(purpose, at)),
+                }
+            }
+        }
+    }
+
+    /// Add string on a span point: a spacer from it, or to it.
+    fn spacer_click(&mut self, target: Selection) {
+        use crate::editors::Form;
+        let model = &self.model;
+        let Selection::SpanPoint { section, label } = &target else {
+            return;
+        };
+        let p = ohl_line::SpanPointRef {
+            section: section.clone(),
+            point: label.clone(),
+        };
+        match self.spacer_from.take() {
+            None => {
+                self.status = Some((
+                    format!(
+                        "Add spacer from {section} span point {label}: click the span point at its other end (the same one again or Escape: cancel)"
+                    ),
+                    false,
+                ));
+                self.spacer_from = Some(p);
+            }
+            Some(from) if from == p => {
+                self.status = Some(("Add spacer: cancelled".into(), false));
+            }
+            Some(from) => {
+                self.editor = Some(Form::Spacer(crate::span_tool::SpacerForm::new(
+                    model, from, p,
+                )));
+            }
+        }
+        self.select(target);
+    }
+
+    /// The Link tool on a structure's point: the joints it may be linked
+    /// to, ringed.
+    fn link_click(&mut self, target: Selection) {
+        let Selection::Point { structure, label } = &target else {
+            return;
+        };
+        match crate::link_tool::overlay(&self.model, structure, label) {
+            Ok(o) => {
+                self.status = Some((
+                    format!(
+                        "Link {label} of {structure}: click a ringed joint of its \
+                                 type ({} joint(s) it may be linked to; Escape: cancel)",
+                        o.joints.len()
+                    ),
+                    false,
+                ));
+                self.link_from = Some((structure.clone(), label.clone()));
+            }
+            Err(e) => {
+                self.link_from = None;
+                self.status = Some((format!("Link: {e}"), true));
+            }
+        }
+        self.select(target);
+    }
+
+    /// String wire on a string: the next point of the section.
+    fn string_wire_click(&mut self, target: &Selection) {
+        let Selection::Attachment { structure, set } = target else {
+            return;
+        };
+        let p = ohl_line::SectionPoint::new(structure.clone(), *set);
+        if self.chain.last() == Some(&p) {
+            return;
+        }
+        if self.chain.contains(&p) {
+            self.status = Some((
+                format!("String wire: {structure} set {set} is in the section already"),
+                true,
+            ));
+            return;
+        }
+        self.chain.push(p);
+        self.update_draft();
+        self.status = Some((
+            format!(
+                "String wire: {} points — click the next string, Enter: section, Backspace: undo a point, Escape: cancel",
+                self.chain.len()
+            ),
+            false,
+        ));
     }
 
     /// The Link tool's overlay of the 3D view: the point chosen and the
