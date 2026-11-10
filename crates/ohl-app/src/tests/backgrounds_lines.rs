@@ -413,8 +413,6 @@ fn lines_images() {
     harness.run();
     harness.get_by_label("Versions").click();
     harness.run();
-    harness.get_by_label_contains("Project lines").hover();
-    harness.run();
     harness
         .render()
         .unwrap()
@@ -470,7 +468,7 @@ fn the_line_worked_on_and_those_shown_are_remembered() {
 }
 
 /// The working tree: a lane per line, where each started, merges, the
-/// lines deleted; opened from Lines › Project lines › Working tree; admins
+/// lines deleted; opened from Versions › Working tree; admins
 /// roll a line back from it.
 #[test]
 fn the_working_tree_shows_the_lines_through_time() {
@@ -586,8 +584,6 @@ fn the_working_tree_shows_the_lines_through_time() {
         .build_eframe(|_| App::with_model(m, None));
     harness.run();
     harness.get_by_label("Versions").click();
-    harness.run();
-    harness.get_by_label_contains("Project lines").hover();
     harness.run();
     harness.get_by_label("Working tree…").click();
     harness.run();

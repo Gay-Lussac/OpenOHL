@@ -29,8 +29,9 @@ point clouds](../user-guide/project.md).
   from …**, move a structure there, and compare it with the main line
   shown beside it. See [Project lines and
   stages](../user-guide/project-lines.md).
-- **Versions › History…** lists every edit; **Revisions and branches…**
-  keeps named revisions, branches and reviews. See [Versions, branches
+- **Versions › Operation log…** lists every edit; **Revisions, tags and
+  reviews…** keeps named revisions, tags and reviews; **Commit…** records
+  the line as a revision. See [Versions, branches
   and reviews](../user-guide/versions.md).
 
 ## What next

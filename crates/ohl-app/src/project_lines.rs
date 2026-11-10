@@ -170,57 +170,88 @@ fn show(r: &mut Ready, name: &str, on: bool) {
     r.view3d.dirty.insert(Layer::OtherLines);
 }
 
-/// The Versions menu (it stays open while lines are ticked).
+/// The Versions menu (it stays open while lines are ticked): what is
+/// worked on, committing, the lines, the windows of the history, the
+/// offline copy, then the lines shown next to the one worked on.
 pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
     let Some(current) = r.model.session().map(|s| s.current_line().to_owned()) else {
         ui.label(
             egui::RichText::new("Project lines are kept in a project (.ohl): open one").small(),
         );
+        ui.separator();
+        history_entries(ui, r);
         return;
     };
     let all = lines(r);
-    ui.label(egui::RichText::new(format!("Working on: {current}")).strong())
-        .on_hover_text("Your edits go to this project line; the others are not changed");
-    ui.menu_button("Project lines", |ui| {
-        if ui
-            .button("Project lines…")
-            .on_hover_text(
-                "Every line of the project: choose the one you work on and those shown next \
-                 to it; rename, delete",
-            )
-            .clicked()
-        {
-            r.lines_window = Some(LinesWindow::Manage);
-            ui.close();
-        }
-        if ui
-            .button("Working tree…")
-            .on_hover_text(
-                "The lines through time, left to right: when each started, which exist, where \
-                 they were merged; admins roll a line back",
-            )
-            .clicked()
-        {
-            r.working_tree.open = true;
-            ui.close();
-        }
-    });
+    status_label(ui, r);
     ui.separator();
-    let rights = Rights::of(r);
+    commit_entries(ui, r);
+    ui.separator();
+    line_entries(ui, r, &all, &current);
+    ui.separator();
+    history_entries(ui, r);
+    ui.separator();
+    ui.menu_button("Offline copy", |ui| {
+        crate::offline_copy::menu(ui, r, &current);
+    })
+    .response
+    .on_hover_text(
+        "A project line carried to another copy of the project and back, as one file (a bundle)",
+    );
+    ui.separator();
+    shown_ticks(ui, r, &all, &current);
+}
+
+/// The menu's first line: the line worked on and its uncommitted changes
+/// (as last counted, [`crate::line_status`]). A label: nothing opens.
+fn status_label(ui: &mut egui::Ui, r: &Ready) {
+    ui.label(egui::RichText::new(r.line_status.menu_text()).strong())
+        .on_hover_text(format!(
+            "{}.\nYour edits go to this project line; the others are not changed.",
+            r.line_status.details()
+        ));
+}
+
+/// Commit, and what a commit would record.
+fn commit_entries(ui: &mut egui::Ui, r: &mut Ready) {
     if ui
-        .button(format!("Description of {current}…"))
-        .on_hover_text("What this line is for: read it, edit it (its creator or an admin)")
+        .button("Commit…")
+        .on_hover_text(
+            "Records the line you work on and its library files as a revision, with a message \
+             saying what changed and why (the History page of Revisions, tags and reviews)",
+        )
         .clicked()
     {
-        let text = all
-            .iter()
-            .find(|l| l.name == current)
-            .map(|l| l.description.clone())
-            .unwrap_or_default();
-        r.lines_window = Some(LinesWindow::Description {
-            line: current.clone(),
-            text,
-        });
+        r.versions.open_commit();
+        ui.close();
+    }
+    if ui
+        .button("Changes since the last commit…")
+        .on_hover_text(
+            "What a commit would record: the line's last revision compared with the line as it \
+             is now, object by object and field by field (the Changes page of Revisions, tags \
+             and reviews); nothing is changed",
+        )
+        .clicked()
+    {
+        r.versions.open_changes();
+        ui.close();
+    }
+}
+
+/// The project lines: their window, a new one, bringing in, submitting,
+/// the description of the one worked on.
+fn line_entries(ui: &mut egui::Ui, r: &mut Ready, all: &[LineInfo], current: &str) {
+    let rights = Rights::of(r);
+    if ui
+        .button("Project lines…")
+        .on_hover_text(
+            "Every line of the project: choose the one you work on and those shown next \
+             to it; rename, delete",
+        )
+        .clicked()
+    {
+        r.lines_window = Some(LinesWindow::Manage);
         ui.close();
     }
     if ui
@@ -234,19 +265,19 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
         )
         .clicked()
     {
-        r.lines_window = Some(new_window(&all, &current));
+        r.lines_window = Some(new_window(all, current));
         ui.close();
     }
     let others: Vec<&LineInfo> = all.iter().filter(|l| l.name != current).collect();
     if ui
         .add_enabled(
             rights.edit && !others.is_empty(),
-            egui::Button::new("Bring in changes from another line…"),
+            egui::Button::new("Bring in changes…"),
         )
         .on_hover_text(
-            "e.g. corrections made on the main line since this phase started: changes to \
-             different objects combine by themselves; you choose where both lines changed the \
-             same one",
+            "The changes of another line into this one, e.g. corrections made on the main line \
+             since this phase started: changes to different objects combine by themselves; you \
+             choose where both lines changed the same one",
         )
         .clicked()
     {
@@ -266,11 +297,12 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
     if ui
         .add_enabled(
             rights.edit && current != MAIN && all.iter().any(LineInfo::is_main),
-            egui::Button::new("Submit this line for review into the main line…"),
+            egui::Button::new("Submit for review…"),
         )
         .on_hover_text(
-            "When a phase is ready: a reviewer or an admin approves it, then merges it into the \
-             main line (Versions › Reviews)",
+            "Asks for this line to be merged into the main line, when a phase is ready: a \
+             reviewer or an admin approves it, then merges it (Versions › Revisions, tags and \
+             reviews › Reviews)",
         )
         .clicked()
     {
@@ -279,7 +311,63 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
         });
         ui.close();
     }
-    ui.separator();
+    if ui
+        .button(format!("Description of {current}…"))
+        .on_hover_text("What this line is for: read it, edit it (its creator or an admin)")
+        .clicked()
+    {
+        let text = all
+            .iter()
+            .find(|l| l.name == current)
+            .map(|l| l.description.clone())
+            .unwrap_or_default();
+        r.lines_window = Some(LinesWindow::Description {
+            line: current.to_owned(),
+            text,
+        });
+        ui.close();
+    }
+}
+
+/// The windows of the history: the lines through time, the revisions,
+/// the operation log.
+fn history_entries(ui: &mut egui::Ui, r: &mut Ready) {
+    if ui
+        .button("Working tree…")
+        .on_hover_text(
+            "The lines through time, left to right: when each started, which exist, where \
+             they were merged; admins roll a line back",
+        )
+        .clicked()
+    {
+        r.working_tree.open = true;
+        ui.close();
+    }
+    if ui
+        .button(format!("{}…", crate::versions::TITLE))
+        .on_hover_text(
+            "The revisions of every line, the lines and tags, what changed between two \
+             revisions, merging, reviews and edit rights",
+        )
+        .clicked()
+    {
+        r.versions.open = true;
+        ui.close();
+    }
+    if ui
+        .button("Operation log…")
+        .on_hover_text("Every edit, one entry each: who did what and when; admins reverse entries")
+        .clicked()
+    {
+        r.history_open = true;
+        ui.close();
+    }
+}
+
+/// The lines shown next to the one worked on: a tick each (the menu
+/// stays open).
+fn shown_ticks(ui: &mut egui::Ui, r: &mut Ready, all: &[LineInfo], current: &str) {
+    let others: Vec<&LineInfo> = all.iter().filter(|l| l.name != current).collect();
     if others.is_empty() {
         ui.label(egui::RichText::new("No other line yet").small().weak());
         return;
@@ -358,9 +446,14 @@ fn object_key(c: &Conflict) -> &str {
     c.key.split('/').next().unwrap_or(&c.key)
 }
 
-/// The conflicts by object: its key, what it is, the fields.
-fn by_object(conflicts: &[Conflict]) -> Vec<(String, String, Vec<String>)> {
-    let mut out: Vec<(String, String, Vec<String>)> = Vec::new();
+/// A conflict's object: its key, what it is, the fields changed on both
+/// lines, and — both lines having made it under one id — the id the other
+/// line's takes when both are kept.
+type ConflictObject = (String, String, Vec<String>, Option<String>);
+
+/// The conflicts by object.
+fn by_object(conflicts: &[Conflict]) -> Vec<ConflictObject> {
+    let mut out: Vec<ConflictObject> = Vec::new();
     for c in conflicts {
         let key = object_key(c).to_owned();
         let field = c.key.split_once('/').map(|(_, f)| f.replace('/', " "));
@@ -376,7 +469,7 @@ fn by_object(conflicts: &[Conflict]) -> Vec<(String, String, Vec<String>)> {
                         .to_owned(),
                     None => c.what.clone(),
                 };
-                out.push((key, what, field.into_iter().collect()));
+                out.push((key, what, field.into_iter().collect(), c.keep_both.clone()));
             }
         }
     }
@@ -386,7 +479,7 @@ fn by_object(conflicts: &[Conflict]) -> Vec<(String, String, Vec<String>)> {
 /// One object both lines changed: keep which side.
 fn conflict_row(
     ui: &mut egui::Ui,
-    (key, what, fields): &(String, String, Vec<String>),
+    (key, what, fields, keep_both): &ConflictObject,
     from: &str,
     choices: &mut Choices,
 ) {
@@ -397,6 +490,14 @@ fn conflict_row(
     let mut side = choices.get(key).copied();
     ui.radio_value(&mut side, Some(Side::Ours), "keep this line's");
     ui.radio_value(&mut side, Some(Side::Theirs), format!("take {from}'s"));
+    if let Some(id) = keep_both {
+        ui.radio_value(&mut side, Some(Side::Both), "keep both")
+            .on_hover_text(format!(
+                "Each line made an object under this id. Both are kept: this line's as it is, \
+                 {from}'s as \"{id}\" — what refers to it on {from} (sections, jumpers, \
+                 alignment points…) follows"
+            ));
+    }
     if let Some(s) = side {
         choices.insert(key.clone(), s);
     }
@@ -772,7 +873,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             LinesWindow::Review { note } => {
                 ui.label(format!(
                     "Asks for {current} to be merged into the main line. Its uncommitted work is \
-                     committed first. A reviewer or an admin approves it in Versions › Reviews, \
+                     committed first. A reviewer or an admin approves it in Versions › Revisions, tags \
+                     and reviews › Reviews, \
                      then merges it — the main line changes only then. Keep working on \
                      {current} meanwhile: submit again when it changed."
                 ));
@@ -894,7 +996,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             LinesWindow::Delete(name) => {
                 ui.label(format!(
                     "The line {name} and its uncommitted work are deleted (its revisions stay: \
-                     Versions › New line from it brings it back). Open reviews of it are closed. \
+                     Versions › Revisions, tags and reviews › New line from it… brings it back). \
+                     Open reviews of it are closed. \
                      Whoever works on it is moved to another line. Not undone with ⌘Z."
                 ));
                 ui.horizontal(|ui| {

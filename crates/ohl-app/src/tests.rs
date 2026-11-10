@@ -37,6 +37,7 @@ mod thermal_pages;
 mod tutorial;
 mod types_drawings;
 mod ui_review;
+mod versions_menu;
 mod window;
 use clearances::*;
 use objects::*;

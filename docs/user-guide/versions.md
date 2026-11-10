@@ -16,7 +16,7 @@ git (DESIGN_GOALS §7, [ADR-0010](../adr/0010-version-control.md)):
   conflicting changes are listed and settled one by one;
 - **revert** makes a revision undoing another's changes.
 
-The operation log (`ohl project log`, Versions › History) still records every
+The operation log (`ohl project log`, Versions › Operation log…) still records every
 command; revisions are the named states between them.
 
 ## The working state
@@ -28,7 +28,7 @@ logged, undoable per user and per line). A **commit** records it as a
 revision of that branch. **Check out** chooses the line you work on: nothing
 changes, uncommitted work stays on its line. A tag or revision is not worked
 on directly: make a line from it (`branch NAME --at TAG`). In the desktop
-app, the line you work on is chosen per user (Versions › Project lines); on
+app, the line you work on is chosen per user (Versions › Project lines…); on
 the command line, `checkout` also sets the line the file opens on.
 
 In server mode every user works on their own line; a merge changes the line
@@ -89,8 +89,9 @@ shipped libraries). Limits: `--max-sections` (500) and `--time-limit`
 
 ## Merging and conflicts
 
-`merge` merges another branch into the current one, against their nearest
-common ancestor:
+`merge` merges another branch into the current one, against their latest
+common ancestor (where the two histories cross and there are several, the
+plan says which one it takes):
 
 - an object changed on one side only is taken from that side;
 - an object changed on both sides is merged **field by field** (one side
@@ -111,7 +112,12 @@ $ ohl project merge example.ohl "route B" --user tester --choose structure:T6=th
 
 `--choose KEY=ours|theirs` settles one conflict; an object's key
 (`structure:T6`) settles all its fields; library files have keys
-`library:cables/acsr.ohlw`. The merged line must be valid like after any
+`library:cables/acsr.ohlw`. Where **each side made an object under the same
+id** (both added a structure T13), the listing says so and
+`--choose structure:T13=both` keeps both: ours as it is, theirs as
+`T13 (2)`, and what refers to it on their side (sections through it,
+jumpers, alignment points) follows. A merge is written as a whole or not
+at all. The merged line must be valid like after any
 command (a section cannot run through a structure the other side deleted);
 otherwise the merge is refused with the reason. A branch with nothing new
 of its own is simply moved forward (fast-forward). The merge is one logged
@@ -189,21 +195,50 @@ The bundle holds the branch's revisions and their contents (`--as NAME` imports 
 are checked when it is read. Not yet: synchronising automatically when the
 copy reconnects.
 
+In the desktop app the same is **Versions › Offline copy**: **Export line
+as bundle…** writes the committed revisions of the line you work on to a
+file (uncommitted changes are not in it: commit first), and **Import
+bundle…** reads one. The files are the same as the command line's, so
+either side reads the other's. The import asks for the name of the project
+line the bundle ends on here — a new name makes a new line, the name of an
+existing line moves that line forward — and reports what was added in a
+small window. The line you work on is never moved by an import: when the
+bundle carries it, another name is proposed; take its changes afterwards
+with **Versions › Bring in changes…**. In a project joined on a server the
+import is greyed out: the bundle is imported into the server's project file
+with `ohl project bundle`, then everyone has it.
+
 ## In the desktop app
 
-**Versions › Revisions and branches…** opens the version window:
+The top of the **Versions** menu says which project line you work on and
+how many changes are not committed on it; the status bar says the same
+(**line: *name***, with a dot • while there are uncommitted changes; click
+it to commit). **Versions › Commit…** and **Changes since the last
+commit…** open the window below on its History and Changes pages; the
+whole menu is listed in [Project lines and stages](project-lines.md#the-versions-menu).
 
-- **History**: the revisions newest first (◆ a merge), with their branches
-  and tags; **Commit** with a message; branches with *Work on it* (the
-  project line you edit), *protect* (admins) and *Delete…* (lists what goes
-  first); per revision *Diff*, *Tag…*, *New line from it* and *Revert*.
+In the app's texts a branch is called a **project line**: each branch is
+one.
+
+**Versions › Revisions, tags and reviews…** opens the version window:
+
+- **History**: the revisions newest first (○ a revision, ◎ a merge), with
+  their project lines and tags — the newest 500 when there are more, said
+  above the list; **Commit** with a message; the lines with *Work on it*
+  (the project line you edit), *protect* (admins) and *Delete…* (asks
+  again, saying what goes with it: whether the line has uncommitted
+  changes, its open reviews); *New line at the last commit* (a line
+  starting at the last revision of the line you work on, without its
+  uncommitted changes — **Versions › New line from …** copies the line as
+  it is now); per revision *Diff*, *Tag…*, *New line from it…* (asks for
+  the name) and *Revert*.
 - **Changes**: two revisions (or a revision and the working state) compared
   field by field; **Engineering impact** solves the touched sections in the
   weather case shown, on the surface of the checks.
 - **Merge**: *Preview* lists what the merge does and its conflicts, each with
   *ours* / *theirs*; *Merge* when all are settled.
-- **Reviews**: submit a branch, approve or reject with a comment, merge an
-  approved one.
+- **Reviews**: submit a line, approve or reject with a comment, merge an
+  approved one (into its target, whichever line you work on).
 - **Rights** (admins): grants listed, revoked, made.
 
 Each project line has its own library files (a new line starts with

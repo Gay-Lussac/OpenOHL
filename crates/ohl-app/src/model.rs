@@ -581,6 +581,12 @@ pub struct Model {
     /// Counts the changes of `line` (a solve started before one is
     /// dropped).
     pub line_version: u64,
+    /// Counts the project operations (commits, merges, lines made or
+    /// deleted, library files written, what others did on a server) and
+    /// the changes of the line worked on: what is cached of the version
+    /// state ([`crate::line_status`]) is read again when it, or
+    /// `line_version`, changes.
+    pub project_version: u64,
     /// Sections drawn in their own weather cases (indices; the first one
     /// is reported and picked), instead of the cases shown (Sections table).
     pub display_cases: std::collections::BTreeMap<String, Vec<usize>>,
@@ -2681,6 +2687,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         remote: None,
         solving: Vec::new(),
         line_version: 0,
+        project_version: 0,
     };
     // The project lines this user showed (those that still exist).
     for name in shown_lines {

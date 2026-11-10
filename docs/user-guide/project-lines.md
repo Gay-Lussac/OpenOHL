@@ -53,21 +53,31 @@ a library changed on one line leaves the others as they are.
 
 ## The Versions menu
 
-The menu stays open while you tick lines to show.
+The menu reads top to bottom, in groups: what you work on; committing;
+the lines; the windows of the history; the offline copy; and last the
+lines shown next to yours. It stays open while you tick lines to show.
 
 | Item | What it does |
 |---|---|
-| **Working on: *name*** | The line your edits go to. |
-| **Project lines ›** **Project lines…** | The window listing every line: choose the one you work on and those shown; rename, delete (below). |
-| **Project lines ›** **Working tree…** | The lines through time (below). |
-| **Description of *name*…** | What the line you work on is for (below). |
+| **Working on: *name* · *N* uncommitted changes** | The line your edits go to, and how many objects and library files changed since its last commit (*no uncommitted changes* when none). A label: hover it for the counts by kind. |
+| **Commit…** | Records the line you work on as a revision, with a message: opens **Revisions, tags and reviews** on its History page, the message field ready. |
+| **Changes since the last commit…** | What a commit would record: the line's last revision compared with the line as it is now (the Changes page of the same window). Nothing is changed. |
+| **Project lines…** | The window listing every line: choose the one you work on and those shown; rename, delete (below). |
 | **New line from *name*…** | A copy of the line you work on, under a new name (e.g. *stage 1*). You keep working on your line until you choose the new one. |
-| **Bring in changes from another line…** | Brings what changed on another line (by default the main line) into yours. |
-| **Submit this line for review into the main line…** | When a stage is ready to go into the main line (greyed out on the main line itself). |
-| ☐ *line* … | Tick to show a line next to yours, in its colour; untick to hide it. |
+| **Bring in changes…** | Brings what changed on another line (by default the main line) into yours. |
+| **Submit for review…** | Asks for the line you work on to be merged into the main line, when a stage is ready (greyed out on the main line itself). |
+| **Description of *name*…** | What the line you work on is for (below). |
+| **Working tree…** | The lines through time (below). |
+| **Revisions, tags and reviews…** | The revisions of every line, the lines and tags, what changed between two revisions, merging, reviews and edit rights (see [Versions, branches and reviews](versions.md#in-the-desktop-app)). |
+| **Operation log…** | Every edit, one entry each: who did what; admins reverse entries. |
+| **Offline copy ›** **Export line as bundle…** | Writes the committed revisions of the line you work on to one file, to carry to another copy of the project (see [Offline work](versions.md#offline-work)). |
+| **Offline copy ›** **Import bundle…** | Reads such a file: its line is made, or moved forward, under a name you choose; a small window reports what was added. |
 | ☐ **whole lines (else only what differs)** | Draw the lines shown whole; by default only what differs from the line you work on. |
-| **History…** | The operation log: who did what; admins reverse entries. |
-| **Revisions and branches…** | Revisions, branches, tags, diff, merge, reviews and edit rights (see [Versions, branches and reviews](versions.md#in-the-desktop-app)). |
+| ☐ *line* … | Tick to show a line next to yours, in its colour; untick to hide it. |
+
+The **status bar** at the bottom of the window says the same at all
+times: **line: *name***, followed by a dot (•) while the line has
+uncommitted changes. Hover it for the counts; click it to commit.
 
 ## The Project lines window
 
@@ -89,14 +99,14 @@ Below the list: **New line from *name*…**, **Bring in changes…** and
 - **Rename** a line: its history, reviews, and whoever works on it follow the
   new name.
 - **Delete** a line: it goes with its uncommitted changes. Its committed
-  revisions stay in the file: *Versions › Revisions and branches › New line from it* brings
+  revisions stay in the file: *Versions › Revisions, tags and reviews › New line from it…* brings
   it back. Its open reviews are closed. Whoever was working on it is moved
   to another line. The line you work on and the project's only line cannot
   be deleted. Deleting is not undone with ⌘Z.
 
 ## The working tree
 
-**Versions › Project lines › Working tree…** (also in the Project lines
+**Versions › Working tree…** (also in the Project lines
 window) draws the history of the project lines. The oldest is on the left
 and time runs to the right: one column per revision, with the date under
 the first of each day.
@@ -160,7 +170,7 @@ It is kept in the project and follows a rename.
 | Approve and merge a review | — | if named reviewer | yes |
 | Roll a line back (working tree) | — | — | yes |
 
-Admins can also **protect** a line (Versions › Revisions and branches): it then changes only
+Admins can also **protect** a line (Versions › Revisions, tags and reviews): it then changes only
 through admins or approved reviews.
 
 ## A stage, step by step
@@ -172,23 +182,26 @@ through admins or approved reviews.
    *main* under **show** to see it next to your stage.
 3. Meanwhile, a colleague corrects structure T3 on the main line. Your stage does
    not change. When you want the correction, choose **Versions › Bring in
-   changes from another line…**, *changes of: main*.
+   changes…**, *changes of: main*.
    - If you did not change T3 yourself, it simply comes in: the window says
      **No conflict**. Press **Bring in**.
    - If you changed T3 too, the window lists *structure T3*. Choose **keep
      this line's** or **take main's** (or **All: …** for every object listed),
      then **Bring in**.
+   - If both of you *made* an object under the same id (each added a
+     structure T13), the row also offers **keep both**: yours stays T13,
+     main's comes in as *T13 (2)*, and what refers to it on main (sections
+     through it, jumpers, alignment points) follows.
 
    It is refused, changing nothing, while an object is not settled.
-4. When the stage is ready, choose **Versions › Submit this line for review
-   into the main line…**, with a note. Uncommitted work is committed first.
-5. A reviewer or an admin opens **Versions › Revisions and branches › Reviews**, checks the
+4. When the stage is ready, choose **Versions › Submit for review…**, with a note. Uncommitted work is committed first.
+5. A reviewer or an admin opens **Versions › Revisions, tags and reviews › Reviews**, checks the
    changes (**Changes**, with the engineering impact), **approves**, and
    **merges**. Only then does the main line change. If the stage changes
    after approval, it must be submitted again.
 
 Starting a line, bringing in changes and submitting a review record the
-lines' state as **revisions** (Versions › Revisions and branches shows them): they are the
+lines' state as **revisions** (Versions › Revisions, tags and reviews shows them): they are the
 common ground the next bring-in or merge compares against. Under the hood, project lines are the
 branches of the project's version history; see
 [Versions, branches and reviews](versions.md).

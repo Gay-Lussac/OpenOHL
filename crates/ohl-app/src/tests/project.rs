@@ -731,8 +731,6 @@ fn the_project_lines_window_lists_the_lines() {
     }
     harness.get_by_label("Versions").click();
     harness.run();
-    harness.get_by_label_contains("Project lines").hover();
-    harness.run();
     harness.get_by_label("Project lines…").click();
     harness.run();
     assert!(harness.query_by_label("main line").is_some());

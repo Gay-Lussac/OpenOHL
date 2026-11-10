@@ -295,7 +295,7 @@ pub struct Ready {
     pub display_window: Option<DisplayWindow>,
     /// A window of the Versions menu, when open.
     pub lines_window: Option<crate::project_lines::LinesWindow>,
-    /// Versions › Project lines › Working tree.
+    /// Versions › Working tree.
     pub working_tree: crate::working_tree::TreeWindow,
     /// The "Survey data display options" window, when open: its changes
     /// (applied with its Apply button).
@@ -316,10 +316,16 @@ pub struct Ready {
     pub plugin_request: Option<PluginRequest>,
     /// The Python console's page.
     pub console: crate::python::Console,
-    /// Versions › History is open.
+    /// Versions › Operation log is open.
     pub history_open: bool,
-    /// Versions › Revisions and branches: revisions, branches, merges, reviews.
+    /// Versions › Revisions, tags and reviews (also Commit and Changes
+    /// since the last commit): revisions, lines, tags, merges, reviews.
     pub versions: crate::versions::VersionsWindow,
+    /// The line worked on and its uncommitted changes, as last counted
+    /// (the Versions menu's first line, the status bar).
+    pub line_status: crate::line_status::LineStatus,
+    /// Versions › Offline copy › Import bundle, when open.
+    pub bundle_import: Option<Box<crate::offline_copy::ImportWindow>>,
     /// Checks › Structure loads.
     pub loads: crate::loads::LoadsPage,
     /// Checks › Thermal rating.
@@ -539,6 +545,8 @@ impl Ready {
             console: Default::default(),
             history_open: false,
             versions: Default::default(),
+            line_status: Default::default(),
+            bundle_import: None,
             loads: Default::default(),
             thermal: Default::default(),
             bom: Default::default(),
@@ -2116,6 +2124,9 @@ impl eframe::App for App {
                 ready.escape_busy = escape_busy(ui.ctx(), ready);
                 let hooks = crate::perf::span("frame hooks");
                 ready.remote_frame();
+                // The line worked on and its uncommitted changes: counted
+                // again only when the project changed.
+                ready.line_status.refresh(&ready.model);
                 {
                     let _t = crate::perf::span("hooks: solving");
                     ready.solving_frame(ui.ctx());
@@ -2163,6 +2174,12 @@ impl eframe::App for App {
                                 ui.label(egui::RichText::new(format!("read-only: {why}")).small())
                             }
                         };
+                        if ready.line_status.in_project() {
+                            ui.separator();
+                            if crate::line_status::chip(ui, &ready.line_status) {
+                                ready.versions.open_commit();
+                            }
+                        }
                         if !ready.model.solving.is_empty() {
                             ui.separator();
                             ui.spinner();

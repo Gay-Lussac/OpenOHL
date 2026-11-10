@@ -707,7 +707,11 @@ fn versions_commit_branch_checkout_and_merge() {
     harness.run();
     harness.state_mut().ready().unwrap().versions.open = true;
     harness.run();
-    assert!(harness.query_by_label_contains("On branch main").is_some());
+    assert!(
+        harness
+            .query_by_label_contains("On project line main")
+            .is_some()
+    );
     assert!(harness.query_by_label("T6 east").is_some());
     assert!(harness.query_by_label("as imported").is_some());
     // The working state against the head: the same.

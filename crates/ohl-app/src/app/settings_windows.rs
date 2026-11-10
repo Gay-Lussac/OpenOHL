@@ -685,14 +685,15 @@ pub(super) fn creep_stretch_window(ctx: &egui::Context, r: &mut Ready) {
     r.creep_stretch_window = (open && !ok && !cancel).then_some(draft);
 }
 
-/// Versions › History: the operation log; admins reverse entries.
+/// Versions › Operation log: who did what; admins reverse entries.
 pub(super) fn history_window(ctx: &egui::Context, r: &mut Ready) {
     if !r.history_open {
         return;
     }
     let mut open = true;
     let mut op = None;
-    egui::Window::new("History")
+    egui::Window::new("Operation log")
+        .id(egui::Id::new("operation-log-window"))
         .open(&mut open)
         .default_width(760.0)
         .show(ctx, |ui| {

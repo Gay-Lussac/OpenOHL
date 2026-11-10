@@ -812,6 +812,7 @@ pub(super) fn tool_windows(
     }
     crate::project_lines::window(ctx, r);
     crate::working_tree::window(ctx, r);
+    crate::offline_copy::window(ctx, r);
     let out = crate::thermal::window(ctx, &mut r.thermal, &r.model, r.clearances.rules.as_ref());
     if let Some(spans) = out.go {
         r.go_to_all(spans);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Versions › Project lines › Working tree: the history of the project lines
+//! Versions › Working tree: the history of the project lines
 //! drawn from left (oldest) to right (newest) — a lane per line, a dot per
 //! revision, where each line started from another and where lines were
 //! merged; the lines that exist, those deleted (grey), uncommitted work

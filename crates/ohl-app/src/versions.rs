@@ -2,19 +2,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Versions › Revisions and branches: the project's version control and collaboration
-//! (`ohl_session::versions`, `ohl_session::collab`).
+//! Versions › Revisions, tags and reviews: the project's version control and
+//! collaboration (`ohl_session::versions`, `ohl_session::collab`). Also
+//! opened by Versions › Commit (its History page, the message field ready)
+//! and Versions › Changes since the last commit (its Changes page, the
+//! line's last revision compared with the working state).
 //!
-//! - **History**: the revisions, newest first, with their branches and
-//!   tags; commit the working state with a message; make, switch, protect
-//!   and delete branches (project lines; work on one); tag, start a line
-//!   from or revert a revision.
+//! - **History**: the revisions, newest first, with their project lines
+//!   (the branches of the version control) and tags; commit the working
+//!   state with a message; make, work on, protect and delete lines; tag,
+//!   start a line from or revert a revision.
 //! - **Changes**: what differs between two revisions (or a revision and
 //!   the working state), field by field, and its engineering impact in the
 //!   weather case shown.
 //! - **Merge**: a branch into the current one; conflicts listed with a
 //!   choice of side for each.
-//! - **Reviews**: submit a branch, approve or reject, merge approved ones.
+//! - **Reviews**: submit a line, approve or reject, merge approved ones.
 //! - **Rights** (admins): who may edit what.
 //!
 //! Every change is a project operation (`ohl_server::Op`): through the
@@ -62,15 +65,25 @@ pub struct VersionsWindow {
     pub open: bool,
     page: Page,
     serial: u64,
-    /// A project line to work on (asked from the branch list).
+    /// A project line to work on (asked from the list of lines).
     switch_to: Option<String>,
+    /// A revision to start a project line from: its id and what it is in
+    /// words (the New project line window asks for the name).
+    new_line_at: Option<(String, String)>,
+    /// The commit message is given the keyboard (Versions › Commit).
+    focus_message: bool,
+    /// The Changes page compares as it is shown (Versions › Changes since
+    /// the last commit).
+    compare_now: bool,
     snapshot: Option<Snapshot>,
     message: String,
     new_branch: String,
     new_tag: String,
     tag_note: String,
     tag_at: Option<String>,
-    deleting: Option<Result<RefDeletion, String>>,
+    /// A line or tag to delete, asked again: what it drops, and whether
+    /// the line has uncommitted changes (deleted with it).
+    deleting: Option<Result<(RefDeletion, bool), String>>,
     from: String,
     to: String,
     changes: Option<Result<(String, Diff, State, State), String>>,
@@ -138,7 +151,13 @@ fn read(model: &Model, key: (u64, i64, u64)) -> Option<Snapshot> {
     })
 }
 
-/// Versions › Revisions and branches, when open.
+/// The window's title (the entry of the Versions menu that opens it).
+pub const TITLE: &str = "Revisions, tags and reviews";
+
+/// The most revisions listed (the newest).
+const REVISIONS_SHOWN: usize = 500;
+
+/// Versions › Revisions, tags and reviews, when open.
 pub fn window(ctx: &egui::Context, r: &mut Ready) {
     if !r.versions.open {
         return;
@@ -146,7 +165,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     let mut w = std::mem::take(&mut r.versions);
     let mut open = true;
     let mut ops: Vec<(String, Op)> = Vec::new();
-    egui::Window::new("Versions")
+    egui::Window::new(TITLE)
+        .id(egui::Id::new("versions-window"))
         .open(&mut open)
         .default_width(820.0)
         .show(ctx, |ui| {
@@ -156,6 +176,19 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     w.open = open;
     if let Some(name) = w.switch_to.take() {
         r.switch_line(&name);
+    }
+    // Asked as the working tree asks: the name, then Create.
+    if let Some((id, words)) = w.new_line_at.take() {
+        let names: Vec<String> = w
+            .snapshot
+            .iter()
+            .flat_map(|s| s.refs.iter().map(|x| x.name.clone()))
+            .collect();
+        r.lines_window = Some(crate::project_lines::LinesWindow::New {
+            name: crate::editors::next_id(names.iter().map(String::as_str), "phase 0"),
+            from: id.clone(),
+            at: Some((id, words)),
+        });
     }
     if !ops.is_empty() {
         // Library files changed by a checkout or merge: the project is
@@ -182,6 +215,25 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
 }
 
 impl VersionsWindow {
+    /// Versions › Commit: the History page, the message field ready.
+    pub fn open_commit(&mut self) {
+        self.open = true;
+        self.page = Page::History;
+        self.focus_message = true;
+    }
+
+    /// Versions › Changes since the last commit: the Changes page, the
+    /// line's last revision compared with its working state.
+    pub fn open_changes(&mut self) {
+        self.open = true;
+        self.page = Page::Changes;
+        self.from.clear();
+        self.to.clear();
+        self.changes = None;
+        self.impact = None;
+        self.compare_now = true;
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, r: &Ready, ops: &mut Vec<(String, Op)>) {
         let Some(s) = session(&r.model) else {
             ui.label("Version control needs a project file (.ohl).");
@@ -201,7 +253,7 @@ impl VersionsWindow {
                 Ok(st) => {
                     let head = match &st.head {
                         Head::Branch(b) => format!(
-                            "On branch {b}{}",
+                            "On project line {b}{}",
                             st.revision
                                 .as_deref()
                                 .map(|r| format!(" at {}", short(r)))
@@ -261,14 +313,20 @@ impl VersionsWindow {
         };
         ui.add_enabled_ui(can_edit, |ui| {
             ui.horizontal(|ui| {
-                ui.add(
+                let field = ui.add(
                     egui::TextEdit::singleline(&mut self.message)
                         .hint_text("Why: raised T12 by 3 m for the road crossing")
                         .desired_width(420.0),
                 );
+                if std::mem::take(&mut self.focus_message) {
+                    field.request_focus();
+                }
                 if ui
                     .add_enabled(!self.message.trim().is_empty(), egui::Button::new("Commit"))
-                    .on_hover_text("Record the line and its libraries as a revision of this branch")
+                    .on_hover_text(
+                        "Record the line and its libraries as a revision of this project line",
+                    )
+                    .on_disabled_hover_text("Say first what changed and why (the message)")
                     .clicked()
                 {
                     let message = std::mem::take(&mut self.message);
@@ -277,7 +335,7 @@ impl VersionsWindow {
             });
         });
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Branches and tags").strong());
+        ui.label(egui::RichText::new("Project lines and tags").strong());
         egui::Grid::new("version-refs")
             .striped(true)
             .spacing([10.0, 3.0])
@@ -285,7 +343,7 @@ impl VersionsWindow {
                 for x in &snap.refs {
                     let current = head == Some(Head::Branch(x.name.clone()));
                     let kind = match x.kind {
-                        RefKind::Branch => "branch",
+                        RefKind::Branch => "line",
                         RefKind::Tag => "tag",
                     };
                     let name = if current {
@@ -304,8 +362,8 @@ impl VersionsWindow {
                                 && ui
                                     .small_button("Work on it")
                                     .on_hover_text(
-                                        "Each branch is a project line: work on this one from \
-                                         now on (nothing changes; also Versions › Project lines)",
+                                        "Your edits go to this project line from now on (no \
+                                         line changes; also Versions › Project lines…)",
                                     )
                                     .clicked()
                             {
@@ -319,7 +377,7 @@ impl VersionsWindow {
                                     .changed()
                                 {
                                     ops.push((
-                                        format!("branch {} protection", x.name),
+                                        format!("project line {} protection", x.name),
                                         Op::ProtectBranch {
                                             name: x.name.clone(),
                                             protected: p,
@@ -327,9 +385,16 @@ impl VersionsWindow {
                                     ));
                                 }
                             }
-                            if !current && ui.small_button("Delete…").clicked() {
-                                self.deleting =
-                                    Some(s.ref_deletion(&x.name).map_err(|e| e.to_string()));
+                            if !current
+                                && ui
+                                    .small_button("Delete…")
+                                    .on_hover_text(
+                                        "Asked again, with what is dropped: its uncommitted \
+                                         changes, its open reviews (its revisions stay)",
+                                    )
+                                    .clicked()
+                            {
+                                self.deleting = Some(deletion(s, &x.name));
                             }
                         });
                     });
@@ -340,11 +405,12 @@ impl VersionsWindow {
         if let Some(d) = &self.deleting {
             let mut close = false;
             ui.group(|ui| match d {
-                Ok(d) => {
-                    ui.label(format!("{d}."));
+                Ok((d, uncommitted)) => {
+                    ui.label(deletion_text(d, *uncommitted));
                     weak(
                         ui,
-                        "The revisions stay in the project: a branch or tag made at the revision listed brings it back.",
+                        "The revisions stay in the project: a line or tag made at the revision \
+                         listed brings it back. Not undone with ⌘Z.",
                     );
                     ui.horizontal(|ui| {
                         if ui.button("Delete").clicked() {
@@ -375,20 +441,26 @@ impl VersionsWindow {
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.new_branch)
-                        .hint_text("new branch, e.g. alternative B")
+                        .hint_text("new project line, e.g. alternative B")
                         .desired_width(220.0),
                 );
                 if ui
                     .add_enabled(
                         !self.new_branch.trim().is_empty(),
-                        egui::Button::new("Make branch"),
+                        egui::Button::new("New line at the last commit"),
                     )
-                    .on_hover_text("At the current revision; check it out to work on it")
+                    .on_hover_text(
+                        "A project line starting at the last revision of the line you work on: \
+                         uncommitted changes are not copied (Versions › New line from … copies \
+                         the line as it is now). You keep working on this line; choose the new \
+                         one with Work on it, or in Versions › Project lines…",
+                    )
+                    .on_disabled_hover_text("Name the new line first; a line without a commit has no revision to start from")
                     .clicked()
                 {
                     let name = std::mem::take(&mut self.new_branch);
                     ops.push((
-                        format!("branch {name} made"),
+                        format!("project line {name} made"),
                         Op::CreateBranch { name, at: None },
                     ));
                 }
@@ -430,7 +502,15 @@ impl VersionsWindow {
             });
         }
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(format!("Revisions ({})", snap.revisions.len())).strong());
+        let all = snap.revisions.len();
+        ui.label(
+            egui::RichText::new(if all > REVISIONS_SHOWN {
+                format!("Revisions ({all}; the newest {REVISIONS_SHOWN} shown)")
+            } else {
+                format!("Revisions ({all})")
+            })
+            .strong(),
+        );
         if snap.revisions.is_empty() {
             weak(ui, "No revision yet: commit the working state.");
         }
@@ -444,7 +524,7 @@ impl VersionsWindow {
                     .striped(true)
                     .spacing(crate::check_help::GRID_SPACING)
                     .show(ui, |ui| {
-                        for rev in snap.revisions.iter().take(500) {
+                        for rev in snap.revisions.iter().take(REVISIONS_SHOWN) {
                             let labels: Vec<String> = snap
                                 .refs
                                 .iter()
@@ -463,10 +543,15 @@ impl VersionsWindow {
                             })
                             .on_hover_text(
                                 if rev.parents.is_empty() {
-                                    "first revision".to_owned()
+                                    "○ first revision".to_owned()
                                 } else {
                                     format!(
-                                        "parents: {}",
+                                        "{}: {}",
+                                        if rev.parents.len() > 1 {
+                                            "◎ a merge, of"
+                                        } else {
+                                            "○ a revision, after"
+                                        },
                                         rev.parents
                                             .iter()
                                             .map(|p| short(p))
@@ -498,20 +583,22 @@ impl VersionsWindow {
                                     }
                                     if !here
                                         && ui
-                                            .small_button("New line from it")
+                                            .small_button("New line from it…")
                                             .on_hover_text(
-                                                "A project line starting from this revision, to \
-                                                 work on (Versions › Project lines)",
+                                                "A project line starting from this revision: \
+                                                 its name is asked, then you choose it in \
+                                                 Versions › Project lines…",
                                             )
                                             .clicked()
                                     {
-                                        let name = format!("from {}", rev.short());
-                                        ops.push((
-                                            format!("project line {name} started"),
-                                            Op::CreateLine {
-                                                name,
-                                                from: rev.id.clone(),
-                                            },
+                                        self.new_line_at = Some((
+                                            rev.id.clone(),
+                                            format!(
+                                                "revision {} of {} — {}",
+                                                rev.short(),
+                                                rev.time.get(..10).unwrap_or(&rev.time),
+                                                rev.message
+                                            ),
                                         ));
                                     }
                                     if !rev.parents.is_empty()
@@ -545,14 +632,15 @@ impl VersionsWindow {
         };
         weak(
             ui,
-            "Compare two revisions (a branch, tag or revision id); \"To\" empty: the working state.",
+            "Compare two revisions (a project line, tag or revision id). \"From\" empty: the last \
+             commit of the line you work on; \"To\" empty: its working state.",
         );
         ui.horizontal(|ui| {
             ui.label("From");
             ref_combo(ui, "diff-from", &mut self.from, snap, "HEAD");
             ui.label("To");
             ref_combo(ui, "diff-to", &mut self.to, snap, "working state");
-            if ui.button("Compare").clicked() {
+            if ui.button("Compare").clicked() || std::mem::take(&mut self.compare_now) {
                 self.impact = None;
                 self.changes = Some(compare(s, &self.from, &self.to));
             }
@@ -718,6 +806,14 @@ impl VersionsWindow {
                             let mut pick = c.chosen;
                             ui.radio_value(&mut pick, Some(Side::Ours), "ours");
                             ui.radio_value(&mut pick, Some(Side::Theirs), "theirs");
+                            if let Some(id) = &c.keep_both {
+                                ui.radio_value(&mut pick, Some(Side::Both), "both")
+                                    .on_hover_text(format!(
+                                        "Each line made an object under this id. Both are kept: \
+                                         this line's as it is, the other's as \"{id}\" — what \
+                                         refers to it on the other line follows"
+                                    ));
+                            }
                             if pick != c.chosen
                                 && let Some(p) = pick
                             {
@@ -737,6 +833,9 @@ impl VersionsWindow {
         }
         if let Some(p) = &plan.problem {
             error(ui, &format!("The merged line is not valid: {p}"));
+        }
+        for n in &plan.notes {
+            ui.label(egui::RichText::new(n).small().weak());
         }
         if plan.kind == MergeKind::UpToDate {
             return;
@@ -781,7 +880,7 @@ impl VersionsWindow {
         ui.add_enabled_ui(can_edit, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Submit");
-                ref_combo(ui, "review-branch", &mut self.review_branch, snap, "branch");
+                ref_combo(ui, "review-branch", &mut self.review_branch, snap, "line");
                 ui.label("into");
                 if self.review_target.is_empty() {
                     self.review_target = ohl_session::versions::MAIN.into();
@@ -900,7 +999,7 @@ impl VersionsWindow {
                                     && ui
                                         .button("Merge")
                                         .on_hover_text(format!(
-                                            "Into {} (check it out first)",
+                                            "Into {}, whichever line you work on",
                                             rv.target
                                         ))
                                         .clicked()
@@ -1030,7 +1129,44 @@ impl VersionsWindow {
     }
 }
 
-/// A text field with a menu of the branches and tags.
+/// What deleting line or tag `name` drops, and whether the line has
+/// uncommitted changes.
+fn deletion(s: &ohl_session::Session, name: &str) -> Result<(RefDeletion, bool), String> {
+    let d = s.ref_deletion(name).map_err(|e| e.to_string())?;
+    let uncommitted =
+        d.kind == RefKind::Branch && s.is_line(name) && s.has_uncommitted(name).unwrap_or(false);
+    Ok((d, uncommitted))
+}
+
+/// The question asked before a line or tag is deleted: what goes with it.
+fn deletion_text(d: &RefDeletion, uncommitted: bool) -> String {
+    let at = d.revision.as_deref().map(short).unwrap_or("no revision");
+    let mut out = match d.kind {
+        RefKind::Branch => format!("Delete project line \"{}\" (at {at})?", d.name),
+        RefKind::Tag => format!("Delete tag \"{}\" (at {at})?", d.name),
+    };
+    if d.kind == RefKind::Branch {
+        out.push_str(if uncommitted {
+            " It has uncommitted changes: they are deleted with it (commit them on that line \
+             first to keep them)."
+        } else {
+            " It has no uncommitted changes."
+        });
+    }
+    if d.only_here > 0 {
+        out.push_str(&format!(
+            " {} revision(s) only on it stay in the file, reachable by id.",
+            d.only_here
+        ));
+    }
+    if !d.reviews.is_empty() {
+        let ids: Vec<String> = d.reviews.iter().map(|r| format!("#{r}")).collect();
+        out.push_str(&format!(" Open reviews closed: {}.", ids.join(", ")));
+    }
+    out
+}
+
+/// A text field with a menu of the project lines and tags.
 fn ref_combo(ui: &mut egui::Ui, id: &str, text: &mut String, snap: &Snapshot, hint: &str) {
     ui.add(
         egui::TextEdit::singleline(text)

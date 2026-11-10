@@ -956,26 +956,11 @@ fn checks_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
     }
 }
 
-/// Versions: the project lines, the operation log, revisions and branches.
+/// Versions: the line worked on and its uncommitted changes, committing,
+/// the project lines, the history's windows, the offline copy, the lines
+/// shown next to it ([`crate::project_lines::menu`]).
 fn versions_menu(ui: &mut egui::Ui, r: &mut Ready) {
     crate::project_lines::menu(ui, r);
-    ui.separator();
-    if ui
-        .button("History…")
-        .on_hover_text("The operation log: who did what; admins reverse entries")
-        .clicked()
-    {
-        r.history_open = true;
-        ui.close();
-    }
-    if ui
-        .button("Revisions and branches…")
-        .on_hover_text("Revisions, branches, tags, diff, merge, reviews and edit rights")
-        .clicked()
-    {
-        r.versions.open = true;
-        ui.close();
-    }
 }
 
 /// Help: the manual, About, Next steps, the controls of each view.

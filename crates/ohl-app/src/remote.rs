@@ -181,6 +181,7 @@ impl Model {
                 seq,
             } => {
                 let me = self.remote.as_ref().map(|r| r.link.user.clone());
+                self.project_version += 1;
                 let session = self.replica()?;
                 let result = ohl_server::client::replay(session, &user, &line, &op, seq);
                 let on_mine = line == session.current_line();
@@ -261,6 +262,8 @@ impl Model {
     /// here (the same code). Libraries, users, project lines and settings
     /// too.
     pub fn project_op(&mut self, what: &str, op: Op) -> Result<String, EditError> {
+        // What is cached of the version state is read again.
+        self.project_version += 1;
         // A library file written: what reads the libraries reads again.
         if matches!(op, Op::PutLibrary { .. } | Op::DeleteLibrary { .. }) {
             self.revisions.libraries += 1;

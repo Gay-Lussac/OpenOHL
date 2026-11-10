@@ -8,6 +8,108 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-10
+
+**Merging: both kept under one id, the latest common revision, all or nothing, checked with its libraries (version-management review, 2026-11-10)**
+
+The owner asked to improve the version management, with one rule: nothing
+is copied unnecessarily (loading time) and only changes are logged.
+
+- **An object each line made under the same id** (both added a structure
+  T13) was one conflict settled by dropping one of the two; what the
+  other line had put on its own (a section through it, a jumper) then
+  silently pointed at the object kept. The conflict now also offers
+  **both**: this line's stays, the other's comes under a free id
+  (`T13 (2)`, the import's naming) and what refers to it on the other line
+  follows by the rename command's rule, now one shared function. Offered
+  in Bring in changes, the Merge page and `--choose KEY=both`.
+- **The revision merged against** is a latest common ancestor (one no
+  other common ancestor descends from), not the nearest by distance: a
+  short side line brought in could make an old revision the nearest, and
+  values set back since were silently overwritten. A history that crosses
+  has several; the nearest of them is taken and the plan says so.
+- **A merge, a revert and Bring in are one unit of work**: written to the
+  file as a whole or not at all, and undone in memory if a step fails
+  (before: three separate writes; a failure in between left the merge
+  looking like uncommitted changes, and Bring in's two recordings could
+  stay after a refusal).
+- **The merged line is checked with its libraries**: a structure type's
+  file deleted or changed on one line and used on the other gave a line
+  that each side and the plain check accepted and that failed to resolve
+  afterwards. A problem this line has already (types kept in a folder,
+  not in the project) is not held against the merge.
+- **No copies.** A state (the working state, a revision's, a merged one)
+  shares its objects' data with the session and the other states; before,
+  every status, commit and merge plan copied every object, and checking a
+  state copied them again. Keeping both lays the few renamed objects over
+  the other line's state. A failed unit puts back the states its commands
+  replaced, which are kept as they are replaced.
+- Also from the review, a slowdown of 2026-11-09 fixed: the wire-to-wire
+  clearance check worked out each pair's requirement (and, with the
+  altitude term, each wire's highest point) once per pair of wire pieces;
+  now once per pair of wires. The results are the same.
+
+Still open from the review (not done): lists and library files merged
+entry by entry instead of whole; a rename on one line against an edit on
+the other; coupled objects (a tower and its alignment point) settled
+together; a merge that is invalid without a conflict turned into choices;
+a reverted merge brought in again; notes left on deleted objects; bundles
+verified in full; one merge window showing both values in engineering
+terms.
+
+**The Versions menu laid out by task; the line worked on always said (version-management review, 2026-11-10)**
+
+Follows the version-management review of 2026-11-10 (owner: "improve the
+version management"). No command changed what it does; this is where
+each is found, what it is called and what state is visible.
+
+- **Menu.** Versions reads, in groups: *Working on: line · N uncommitted
+  changes* (a label); **Commit…** and **Changes since the last commit…**
+  (the History and Changes pages of the revisions window — one commit
+  field, not a second one); **Project lines…**, **New line from …**,
+  **Bring in changes…**, **Submit for review…**, **Description of …**;
+  **Working tree…**, **Revisions, tags and reviews…** (was *Revisions and
+  branches…*, its window titled *Versions*: now titled as its entry),
+  **Operation log…** (was *History…*, which the revisions window's History
+  page also was called); **Offline copy ›** *Export line as bundle…* and
+  *Import bundle…*; the ticks of the lines shown next to it stay last and
+  keep the menu open. The *Project lines* submenu is gone.
+- **Status bar.** *line: name*, with a dot while the line has uncommitted
+  changes; the counts on hover; a click opens Commit.
+- **The counts are cached.** `Session::status()` (a diff of the working
+  state against the line's last revision) is called when the line or the
+  project changed — a counter of project operations in the model
+  (`project_version`), with the line's and the libraries' — never every
+  frame and not while an object is dragged. *How many revisions the main
+  line has that this one lacks* is not shown: the session offers no cheap
+  count of it yet.
+- **Offline copy.** The bundle of `ohl project bundle`, as the same JSON
+  file, from the desktop app. The import asks for the line's name (the
+  line worked on is never moved: another name is proposed) and reports in
+  a window with a box that scrolls. Greyed out in a project joined on a
+  server (there is no server operation for it; the replicas would differ).
+  Both run at once, in the frame, on the project's own session; the time
+  is said.
+- **Words.** The app's texts say *project line* where they said *branch*
+  (the revisions window's status line, its list of lines and tags, its
+  hovers); the merge page and the Bring in changes window are left as
+  they are for now (they are being reworked with the merge itself).
+  *Make branch* is **New line at the last commit**, its hover saying how
+  it differs from *New line from …* (no uncommitted changes copied). *New
+  line from it…* in the revisions window asks for the name as the working
+  tree does, instead of naming the line `from <id>` unasked. The revision
+  list says when only the newest 500 are shown. The user guide said ◆ for
+  a merge where the list draws ◎: the guide follows the list. Merging a
+  review said "check it out first": it merges into its target from any
+  line, and says so.
+- **Deleting a line from the revisions window** says whether the line has
+  uncommitted changes (they go with it), as the Project lines window
+  does. Whether, not how many: the session tells the app whether another
+  line has uncommitted changes (`has_uncommitted`), their count only for
+  the line worked on.
+
+Built and in active development; not approved yet.
+
 ## 2026-11-09
 
 **Clearance distances growing with the altitude (owner, 2026-11-09)**
