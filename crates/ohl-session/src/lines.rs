@@ -55,7 +55,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use crate::versions::{
-    Choices, Conflict, MAIN, MergeOutcome, RefKind, State, merge_states, short, state_hash,
+    Choices, Conflict, MAIN, MergeOutcome, RefKind, State, keep_both, merge_states_with, short,
+    state_hash,
 };
 use crate::{
     Applied, Kind, Object, Role, Session, SessionError, line_of, objects_of, refused, spatial,
@@ -295,7 +296,7 @@ pub(crate) fn objects_of_state(state: State) -> Objects {
                 Object {
                     ord,
                     version: 1,
-                    value: Arc::new(value),
+                    value,
                 },
             )
         })
@@ -476,7 +477,7 @@ impl Session {
     ) -> Result<(), SessionError> {
         let stored = spatial::load(&self.conn, name)?;
         if stored != *entries {
-            let tx = self.conn.unchecked_transaction()?;
+            let tx = crate::Step::begin(&self.conn)?;
             spatial::write_diff(&tx, name, &stored, entries)?;
             tx.commit()?;
         }
@@ -737,6 +738,9 @@ impl Session {
         // The commands keep the file's index of the line worked on.
         if !next.indexed {
             self.write_index(name, &next.spatial)?;
+            if let Some(kept) = &mut self.unit {
+                kept.indexed.push(name.to_owned());
+            }
         }
         let next = self.others.remove(name).expect("a line");
         let previous = LineState {
@@ -1054,10 +1058,13 @@ impl Session {
             Some(b) => self.revision_state(&b)?,
             None => State::default(),
         };
-        let (merged, conflicts) = merge_states(&base, &ours, &theirs, choices);
+        let their_line = &self.others[from].line;
+        let (patch, kept) = keep_both(&base, &ours, &theirs, Some(their_line), choices)?;
+        let (merged, mut conflicts) = merge_states_with(&base, &ours, &theirs, &patch, choices);
+        conflicts.extend(kept);
         let settled = conflicts.iter().all(|c| c.chosen.is_some());
         let problem = if settled {
-            merged.line().err().map(|e| e.to_string())
+            crate::versions::merged_problem(&merged, &ours)
         } else {
             None
         };
@@ -1099,16 +1106,20 @@ impl Session {
                 "the line brought up to date is not valid: {p}"
             )));
         }
-        self.with_line(from, |s| {
-            s.record(user, &format!("State of {from} brought into {into}"))
-        })?;
-        self.record(user, &format!("Before bringing in {from}"))?;
-        self.merge(
-            user,
-            from,
-            Some(&format!("Bring {from} into {into}")),
-            choices,
-        )
+        // Both lines' work recorded and the merge: all of it or nothing
+        // (a merge refused after the recording leaves no revision behind).
+        self.unit(|s| {
+            s.with_line(from, |s| {
+                s.record(user, &format!("State of {from} brought into {into}"))
+            })?;
+            s.record(user, &format!("Before bringing in {from}"))?;
+            s.merge(
+                user,
+                from,
+                Some(&format!("Bring {from} into {into}")),
+                choices,
+            )
+        })
     }
 
     /// Whether project line `name` has changes not committed (its working

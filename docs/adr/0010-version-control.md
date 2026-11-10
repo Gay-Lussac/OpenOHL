@@ -62,15 +62,32 @@ and those through changed structures, every section when a library changed
 reports largest sag, largest tension and smallest ground clearance; bounded
 by a section count and a time limit (`ols_core::budget`).
 
-**Merge** is three-way against the nearest common ancestor (breadth-first
-over the parents). Per object: equal on both sides, or changed on one side
+**Merge** is three-way against a **latest common ancestor**: a common
+ancestor that no other common ancestor descends from (2026-11-10; before,
+the nearest by distance, which a short side line brought in could make an
+old revision — values set back since were then silently overwritten and
+false conflicts raised). A history that crosses has several: the nearest
+of them is taken and the plan says so (`MergePlan::notes`). Per object: equal on both sides, or changed on one side
 only → taken; changed on both → merged field by field with the same rule;
 fields changed differently on both sides, or a deletion against a change,
 are **conflicts**, keyed `kind:id/field` (or `kind:id`, or
 `library:kind/name`) and settled by choosing ours or theirs per key (an
-object key settles all its fields). The merged line must validate like any
+object key settles all its fields). **An object each side made under the
+same id** (none in the ancestor: structure, section, jumper, spacer, route,
+alignment, alignment point) can also keep **both** (2026-11-10,
+`Side::Both`, `Conflict::keep_both`): theirs comes under a free id
+(`T13 (2)`, the import's naming) and what refers to it on their side
+follows by the rename command's rule (`rename_references`) — before, the
+side not chosen was dropped and its references silently pointed at the
+other object. Only the objects renamed are laid over their state
+(`Patch`); no state is copied. The merged line must validate like any
 command; otherwise the merge is refused with the reason. A branch behind the
-other is fast-forwarded. **Revert** is a three-way merge of the working
+other is fast-forwarded. A merge, a revert and Bring in are each **one unit
+of work** (2026-11-10, `Session::unit`): the logged command, its note, the
+revision (and Bring in's two recordings before it) are written inside one
+savepoint, and the states the commands replace in memory are kept — moved,
+not copied — and put back if a later step fails; before, a failure between
+the steps left a merge looking like uncommitted changes. **Revert** is a three-way merge of the working
 state with the reverted revision as base and its first parent as theirs.
 
 **Edit rights** (`ols_session::collab`): a grant limits a user, or every user

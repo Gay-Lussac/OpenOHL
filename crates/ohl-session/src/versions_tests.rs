@@ -610,3 +610,256 @@ fn offline_branch_comes_back_through_a_bundle() {
     s.merge("ana", "field", None, &Choices::new()).unwrap();
     assert_eq!(position(&s, "T6")[0], t6[0] + 7.0);
 }
+
+/// The revision a merge is made against (review 2026-11-10): a latest
+/// common ancestor, not the nearest by distance. Main B0 → m1 … m10; a
+/// short side line from B0 brought into main (M: parents m10, v1); line C
+/// made at m3 with eight revisions. B0 is nearer (2 + 11 steps) than m3
+/// (8 + 8), but m3 descends from it: m3 is the base. A history that
+/// crosses has two latest common revisions, the nearest first.
+#[test]
+fn the_merge_base_is_a_latest_common_revision() {
+    let mut parents: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut add = |id: &str, of: &[&str]| {
+        parents.insert(id.to_owned(), of.iter().map(|p| (*p).to_owned()).collect());
+    };
+    add("B0", &[]);
+    add("m1", &["B0"]);
+    for k in 2..=10 {
+        add(&format!("m{k}"), &[&format!("m{}", k - 1)]);
+    }
+    add("v1", &["B0"]);
+    add("M", &["m10", "v1"]);
+    add("c1", &["m3"]);
+    for k in 2..=8 {
+        add(&format!("c{k}"), &[&format!("c{}", k - 1)]);
+    }
+    assert_eq!(crate::versions::merge_bases_in(&parents, "M", "c8"), ["m3"]);
+    assert_eq!(crate::versions::merge_bases_in(&parents, "c8", "M"), ["m3"]);
+    // One side contains the other: that revision.
+    assert_eq!(
+        crate::versions::merge_bases_in(&parents, "m5", "m9"),
+        ["m5"]
+    );
+    // Nothing in common.
+    let mut two = parents.clone();
+    two.insert("z".into(), vec![]);
+    assert!(crate::versions::merge_bases_in(&two, "z", "M").is_empty());
+    // A criss-cross: x and y each merged into the other's line.
+    let mut cross: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (id, of) in [
+        ("r", vec![]),
+        ("x", vec!["r"]),
+        ("y", vec!["r"]),
+        ("p", vec!["x", "y"]),
+        ("q", vec!["y", "x"]),
+        ("p2", vec!["p"]),
+    ] {
+        cross.insert(id.into(), of.into_iter().map(str::to_owned).collect());
+    }
+    assert_eq!(
+        crate::versions::merge_bases_in(&cross, "p2", "q"),
+        ["x", "y"]
+    );
+}
+
+/// A structure of the example under id `id`, `dy` m to the side, as a put.
+fn structure_put(s: &Session, like: &str, id: &str, dy: f64) -> Command {
+    let mut st = s.line().structure(like).unwrap().clone();
+    st.id = id.to_owned();
+    st.position[1] += dy;
+    Command::Put {
+        kind: Kind::Structure,
+        id: id.to_owned(),
+        value: serde_json::to_value(&st).unwrap(),
+        ord: None,
+    }
+}
+
+/// Each line made a structure under the same id (review 2026-11-10): a
+/// conflict that can keep both — the other line's under an id of its own,
+/// the jumper made on it there following (it must not end up on this
+/// line's structure of that id).
+#[test]
+fn both_kept_where_each_line_made_the_same_id() {
+    let (path, mut s) = with_branch("keep-both");
+    s.checkout("ana", "alt").unwrap();
+    s.apply("ana", structure_put(&s, "T3", "T8", 40.0)).unwrap();
+    let mut j = s.line().jumpers[0].clone();
+    j.id = "J8".into();
+    for p in [&mut j.from, &mut j.to]
+        .into_iter()
+        .filter_map(ohl_line::JumperEnd::point_mut)
+    {
+        p.structure = "T8".into();
+    }
+    s.apply(
+        "ana",
+        Command::Put {
+            kind: Kind::Jumper,
+            id: "J8".into(),
+            value: serde_json::to_value(&j).unwrap(),
+            ord: None,
+        },
+    )
+    .unwrap();
+    s.commit("ana", "alt's T8 with a jumper").unwrap();
+    let theirs_at = position(&s, "T8");
+    s.checkout("ana", "main").unwrap();
+    s.apply("ana", structure_put(&s, "T3", "T8", -40.0))
+        .unwrap();
+    s.commit("ana", "main's T8").unwrap();
+    let ours_at = position(&s, "T8");
+    assert_ne!(ours_at, theirs_at);
+
+    // The conflict offers both, under the id the other line's would take.
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    let c = plan
+        .conflicts
+        .iter()
+        .find(|c| c.key == "structure:T8")
+        .expect("a conflict on T8");
+    assert_eq!(c.keep_both.as_deref(), Some("T8 (2)"));
+    assert_eq!(c.chosen, None);
+    // "Both" on a conflict that is not two new objects is no choice.
+    let not_both = Choices::from([("structure:T8".to_owned(), Side::Both)]);
+    let plan = s.merge_plan("alt", &not_both).unwrap();
+    assert!(plan.unresolved().is_empty(), "{:?}", plan.unresolved());
+    assert_eq!(plan.problem, None);
+    let kept = plan
+        .conflicts
+        .iter()
+        .find(|c| c.key == "structure:T8")
+        .unwrap();
+    assert_eq!(
+        (kept.chosen, kept.keep_both.as_deref()),
+        (Some(Side::Both), Some("T8 (2)"))
+    );
+
+    let out = s.merge("ana", "alt", None, &not_both).unwrap();
+    assert_eq!(out.revision.unwrap().parents.len(), 2);
+    assert_eq!(position(&s, "T8"), ours_at);
+    assert_eq!(position(&s, "T8 (2)"), theirs_at);
+    let j8 = s.line().jumpers.iter().find(|j| j.id == "J8").unwrap();
+    assert!(j8.points().all(|p| p.structure == "T8 (2)"));
+    assert!(s.status().unwrap().changes.is_empty());
+    // As stored: the same after opening the file again.
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    assert_eq!(position(&s, "T8 (2)"), theirs_at);
+
+    // Elsewhere "both" settles nothing: a field changed on both lines.
+    let (_, mut s) = with_branch("keep-both-not");
+    s.checkout("ana", "alt").unwrap();
+    shift(&mut s, "ana", "T6", 4.0).unwrap();
+    s.commit("ana", "T6 +4").unwrap();
+    s.checkout("ana", "main").unwrap();
+    shift(&mut s, "ana", "T6", -4.0).unwrap();
+    s.commit("ana", "T6 -4").unwrap();
+    let both = Choices::from([("structure:T6".to_owned(), Side::Both)]);
+    let plan = s.merge_plan("alt", &both).unwrap();
+    assert!(!plan.unresolved().is_empty());
+    assert!(plan.conflicts.iter().all(|c| c.keep_both.is_none()));
+    assert!(s.merge("ana", "alt", None, &both).is_err());
+}
+
+/// A unit of work that fails leaves nothing (review 2026-11-10: a merge
+/// was three separate writes): not in the file — the command's log entry
+/// and the revision made inside it are gone — and not in memory, where
+/// the state the command replaced is put back.
+#[test]
+fn a_failed_unit_leaves_nothing() {
+    let (path, mut s) = with_branch("unit");
+    let t6 = position(&s, "T6");
+    let (revisions, log) = (s.revisions().unwrap().len(), s.log().unwrap().len());
+    let failed: Result<(), SessionError> = s.unit(|s| {
+        shift(s, "ana", "T6", 7.0)?;
+        s.commit("ana", "inside the unit")?;
+        assert_eq!(position(s, "T6")[0], t6[0] + 7.0);
+        Err(SessionError::Refused("stopped".into()))
+    });
+    assert!(failed.is_err());
+    assert_eq!(position(&s, "T6"), t6);
+    assert_eq!(s.revisions().unwrap().len(), revisions);
+    assert_eq!(s.log().unwrap().len(), log);
+    assert!(s.status().unwrap().changes.is_empty());
+    // The session works on: a unit that succeeds stays, in memory and file.
+    s.unit(|s| {
+        shift(s, "ana", "T6", 2.0)?;
+        s.commit("ana", "kept").map(drop)
+    })
+    .unwrap();
+    assert_eq!(position(&s, "T6")[0], t6[0] + 2.0);
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    assert_eq!(position(&s, "T6")[0], t6[0] + 2.0);
+    assert_eq!(s.revisions().unwrap().len(), revisions + 1);
+}
+
+/// The merged line is checked with its libraries (review 2026-11-10): one
+/// line stops using a structure type and deletes its file, the other puts
+/// a structure on that type. Each line is valid; merged, the structure has
+/// no type any more — refused, where before it was accepted and failed to
+/// solve afterwards.
+#[test]
+fn a_merge_is_checked_with_its_libraries() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ohl-versions-{}-typed", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.ohl");
+    std::fs::remove_file(&path).ok();
+    let mut s = Session::open(&path).unwrap();
+    s.import(
+        &Line::load(&root.join("synthetic-line-typed.ohl.json")).unwrap(),
+        "ana",
+    )
+    .unwrap();
+    for (kind, folder, ext) in [
+        ("structures", "Structures", "ohls"),
+        ("insulators", "Insulators", "ohli"),
+    ] {
+        for f in std::fs::read_dir(root.join(folder)).unwrap() {
+            let f = f.unwrap().path();
+            if f.extension().is_some_and(|e| e == ext) {
+                let name = f.file_name().unwrap().to_string_lossy().into_owned();
+                let text = std::fs::read_to_string(&f).unwrap();
+                s.put_library_file("ana", kind, &name, &text).unwrap();
+            }
+        }
+    }
+    s.commit("ana", "as imported, with its libraries").unwrap();
+    s.create_branch("ana", "alt", None).unwrap();
+    let state = s.working_state().unwrap();
+    assert!(crate::versions::resolved_line(&state).is_ok());
+    let retype = |s: &mut Session, id: &str, to: &str| {
+        let mut st = s.line().structure(id).unwrap().clone();
+        st.structure_type = Some(to.to_owned());
+        s.apply(
+            "ana",
+            Command::Put {
+                kind: Kind::Structure,
+                id: id.to_owned(),
+                value: serde_json::to_value(&st).unwrap(),
+                ord: None,
+            },
+        )
+        .unwrap();
+    };
+    // The other line: T7 on type-05.
+    s.checkout("ana", "alt").unwrap();
+    retype(&mut s, "T7", "type-05");
+    s.commit("ana", "T7 on type-05").unwrap();
+    // This line: nothing on type-05 any more, its file deleted.
+    s.checkout("ana", "main").unwrap();
+    retype(&mut s, "T6", "type-06");
+    s.delete_library_file("ana", "structures", "type-05.ohls")
+        .unwrap();
+    s.commit("ana", "type-05 dropped").unwrap();
+    let plan = s.merge_plan("alt", &Choices::new()).unwrap();
+    assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
+    let problem = plan.problem.expect("the merged line lacks type-05");
+    assert!(problem.contains("type-05"), "{problem}");
+    let refused = s.merge("ana", "alt", None, &Choices::new()).unwrap_err();
+    assert!(refused.to_string().contains("type-05"), "{refused}");
+    assert!(s.status().unwrap().changes.is_empty());
+}

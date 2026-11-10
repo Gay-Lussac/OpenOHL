@@ -50,6 +50,7 @@
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 
 use ohl_line::Line;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -95,8 +96,10 @@ pub(crate) fn init(conn: &Connection) -> Result<(), SessionError> {
 /// A state of the project under version control.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
-    /// The line's objects by kind and id: place among their kind, JSON.
-    pub objects: BTreeMap<(Kind, String), (i64, Value)>,
+    /// The line's objects by kind and id: place among their kind, JSON
+    /// (shared with the session's and other states' — a state is made
+    /// and merged without copying the objects' data).
+    pub objects: BTreeMap<(Kind, String), (i64, Arc<Value>)>,
     /// Library files by kind and name: their text.
     pub libraries: BTreeMap<(String, String), String>,
 }
@@ -109,7 +112,7 @@ impl State {
             objects: objects
                 .iter()
                 .filter(|((k, _), _)| *k != Kind::Library)
-                .map(|(k, o)| (k.clone(), (o.ord, (*o.value).clone())))
+                .map(|(k, o)| (k.clone(), (o.ord, Arc::clone(&o.value))))
                 .collect(),
             libraries: BTreeMap::new(),
         };
@@ -134,7 +137,7 @@ impl State {
                     Object {
                         ord: *ord,
                         version: 1,
-                        value: std::sync::Arc::new(value.clone()),
+                        value: Arc::clone(value),
                     },
                 )
             })
@@ -356,15 +359,22 @@ pub enum Side {
     Ours,
     /// The branch merged in.
     Theirs,
+    /// Both objects, where each side made one under the same id
+    /// ([`Conflict::keep_both`]): the other side's under an id of its own,
+    /// what refers to it there following. Elsewhere: no choice.
+    Both,
 }
 
 impl Side {
-    /// Parses `ours` or `theirs`.
+    /// Parses `ours`, `theirs` or `both`.
     pub fn parse(s: &str) -> Result<Self, SessionError> {
         match s {
             "ours" => Ok(Self::Ours),
             "theirs" => Ok(Self::Theirs),
-            other => Err(refused(format!("\"{other}\": ours or theirs"))),
+            "both" => Ok(Self::Both),
+            other => Err(refused(format!(
+                "\"{other}\": ours, theirs or (an object made on both sides under one id) both"
+            ))),
         }
     }
 }
@@ -390,6 +400,10 @@ pub struct Conflict {
     pub theirs: Option<Value>,
     /// The side chosen, if any.
     pub chosen: Option<Side>,
+    /// Each side made an object under this id (none in the common
+    /// ancestor): both can be kept ([`Side::Both`]), the other side's
+    /// under this id.
+    pub keep_both: Option<String>,
 }
 
 /// What a merge does.
@@ -420,6 +434,9 @@ pub struct MergePlan {
     pub changes: Diff,
     /// Why the merged line is not valid (all conflicts chosen), if so.
     pub problem: Option<String>,
+    /// What to know about the plan (e.g. a history that crosses: which of
+    /// its latest common revisions the merge is made against).
+    pub notes: Vec<String>,
     /// The merged state (unresolved conflicts: ours).
     pub merged: State,
 }
@@ -764,6 +781,150 @@ pub fn merge_states(
     theirs: &State,
     choices: &Choices,
 ) -> (State, Vec<Conflict>) {
+    merge_states_with(base, ours, theirs, &Patch::new(), choices)
+}
+
+/// Objects of the other side as a merge takes them instead of the state's
+/// own: replaced or added (`Some`), or gone (`None`) — the few a
+/// [`keep_both`] renames, laid over the state (which is not copied).
+pub type Patch = BTreeMap<(Kind, String), Option<(i64, Arc<Value>)>>;
+
+/// The kinds two sides can both keep under one id ([`Side::Both`]): those
+/// the rename command renames, what refers to them following.
+const KEPT_BOTH: [Kind; 7] = [
+    Kind::Structure,
+    Kind::Section,
+    Kind::Jumper,
+    Kind::Spacer,
+    Kind::Route,
+    Kind::Alignment,
+    Kind::AlignmentPoint,
+];
+
+/// `id (2)`, `id (3)`…: the first that is no object of `kind` in any of
+/// the states nor in `patch` (the import's naming of an object kept
+/// beside another).
+fn free_id(kind: Kind, id: &str, states: [&State; 3], patch: &Patch) -> String {
+    (2..)
+        .map(|k| format!("{id} ({k})"))
+        .find(|c| {
+            let key = (kind, c.clone());
+            !patch.contains_key(&key) && states.iter().all(|s| !s.objects.contains_key(&key))
+        })
+        .expect("an id is free")
+}
+
+/// The other side's objects renamed for the objects made on both sides
+/// under one id that `choices` keep both of ([`Side::Both`]): each such
+/// object of `theirs` under a free id (`T13 (2)`), what refers to it in
+/// `theirs` following (the rename command's rule,
+/// `rename_references`) — as a [`Patch`] for
+/// [`merge_states_with`], and the conflicts so settled. `theirs_line`:
+/// the line of `theirs` where the caller holds it (else it is read from
+/// the state, only when a choice asks for it).
+pub fn keep_both(
+    base: &State,
+    ours: &State,
+    theirs: &State,
+    theirs_line: Option<&Line>,
+    choices: &Choices,
+) -> Result<(Patch, Vec<Conflict>), SessionError> {
+    let wanted: Vec<&(Kind, String)> = theirs
+        .objects
+        .keys()
+        .filter(|k| {
+            KEPT_BOTH.contains(&k.0)
+                && choices.get(&object_key(k.0, &k.1)) == Some(&Side::Both)
+                && !base.objects.contains_key(*k)
+                && ours
+                    .objects
+                    .get(*k)
+                    .is_some_and(|o| o.1 != theirs.objects[*k].1)
+        })
+        .collect();
+    let mut patch = Patch::new();
+    let mut settled = Vec::new();
+    if wanted.is_empty() {
+        return Ok((patch, settled));
+    }
+    let mut read: Option<Line> = None;
+    for (n, key) in wanted.into_iter().enumerate() {
+        let (kind, id) = (key.0, &key.1);
+        // The line the references are found in: theirs as it is, and
+        // after a first rename with that rename in it (a second object
+        // kept both — rare: the state with the patch, read again).
+        let line: &Line = if n == 0 {
+            match theirs_line {
+                Some(l) => l,
+                None => read.insert(theirs.line()?),
+            }
+        } else {
+            let mut patched = theirs.clone();
+            for (k, v) in &patch {
+                match v {
+                    Some(v) => patched.objects.insert(k.clone(), v.clone()),
+                    None => patched.objects.remove(k),
+                };
+            }
+            read.insert(patched.line()?)
+        };
+        let new_id = free_id(kind, id, [base, ours, theirs], &patch);
+        let (ord, value) = &theirs.objects[key];
+        let mut out = Vec::new();
+        crate::rename_references(line, kind, id, &new_id, &mut out)?;
+        let mut renamed = (**value).clone();
+        renamed["id"] = Value::String(new_id.clone());
+        patch.insert((kind, new_id.clone()), Some((*ord, Arc::new(renamed))));
+        patch.insert(key.clone(), None);
+        for c in out {
+            match c {
+                Command::Put {
+                    kind,
+                    id,
+                    value,
+                    ord,
+                } => {
+                    let k = (kind, id);
+                    let place = ord
+                        .or_else(|| match patch.get(&k) {
+                            Some(p) => p.as_ref().map(|p| p.0),
+                            None => theirs.objects.get(&k).map(|o| o.0),
+                        })
+                        .unwrap_or(0);
+                    patch.insert(k, Some((place, Arc::new(value))));
+                }
+                Command::Delete { kind, id, .. } => {
+                    patch.insert((kind, id), None);
+                }
+                other => {
+                    return Err(SessionError::Store(format!(
+                        "keeping both {} {id}: unexpected {other:?}",
+                        kind.as_str()
+                    )));
+                }
+            }
+        }
+        settled.push(Conflict {
+            key: object_key(kind, id),
+            what: format!("{} {id}", kind.as_str()),
+            base: None,
+            ours: ours.objects.get(key).map(|o| (*o.1).clone()),
+            theirs: Some((**value).clone()),
+            chosen: Some(Side::Both),
+            keep_both: Some(new_id),
+        });
+    }
+    Ok((patch, settled))
+}
+
+/// [`merge_states`] with `patch` laid over `theirs` ([`keep_both`]).
+pub fn merge_states_with(
+    base: &State,
+    ours: &State,
+    theirs: &State,
+    patch: &Patch,
+    choices: &Choices,
+) -> (State, Vec<Conflict>) {
     let mut merged = State::default();
     let mut conflicts = Vec::new();
     let keys: BTreeSet<&(Kind, String)> = base
@@ -771,37 +932,47 @@ pub fn merge_states(
         .keys()
         .chain(ours.objects.keys())
         .chain(theirs.objects.keys())
+        .chain(patch.keys())
         .collect();
     for key in keys {
         let (b, o, t) = (
             base.objects.get(key),
             ours.objects.get(key),
-            theirs.objects.get(key),
+            match patch.get(key) {
+                Some(p) => p.as_ref(),
+                None => theirs.objects.get(key),
+            },
         );
         let (bv, ov, tv) = (b.map(|x| &x.1), o.map(|x| &x.1), t.map(|x| &x.1));
         let okey = object_key(key.0, &key.1);
         let what = format!("{} {}", key.0.as_str(), key.1);
         // The place: ours, unless only theirs moved it.
-        let ord = |o: Option<&(i64, Value)>, t: Option<&(i64, Value)>| match (o, t) {
+        let ord = |o: Option<&Placed>, t: Option<&Placed>| match (o, t) {
             (Some(o), Some(t)) if b.map(|b| b.0) == Some(o.0) => t.0,
             (Some(o), _) => o.0,
             (None, Some(t)) => t.0,
             (None, None) => 0,
         };
-        let taken: Option<(i64, Value)> = if ov == tv {
+        let taken: Option<Placed> = if same(ov, tv) {
             o.or(t)
                 .map(|_| (ord(o, t), ov.cloned().expect("same, present")))
-        } else if bv == ov {
+        } else if same(bv, ov) {
             t.cloned()
-        } else if bv == tv {
+        } else if same(bv, tv) {
             o.cloned()
         } else if let (Some(bv), Some(ov), Some(tv)) = (bv, ov, tv) {
             match merge_fields(&okey, &what, bv, ov, tv, choices, &mut conflicts) {
-                Some(v) => Some((ord(o, t), v)),
+                Some(v) => Some((ord(o, t), Arc::new(v))),
                 None => whole_conflict(&okey, &what, b, o, t, choices, &mut conflicts),
             }
         } else {
-            whole_conflict(&okey, &what, b, o, t, choices, &mut conflicts)
+            let taken = whole_conflict(&okey, &what, b, o, t, choices, &mut conflicts);
+            // Made on both sides under one id: both can be kept.
+            if b.is_none() && o.is_some() && t.is_some() && KEPT_BOTH.contains(&key.0) {
+                conflicts.last_mut().expect("pushed").keep_both =
+                    Some(free_id(key.0, &key.1, [base, ours, theirs], patch));
+            }
+            taken
         };
         if let Some(x) = taken {
             merged.objects.insert(key.clone(), x);
@@ -828,7 +999,7 @@ pub fn merge_states(
             let lines = |x: Option<&String>| {
                 x.map(|x| Value::String(format!("{} lines", x.lines().count())))
             };
-            let chosen = choices.get(&ckey).copied();
+            let chosen = one_side(choices.get(&ckey));
             conflicts.push(Conflict {
                 key: ckey,
                 what: format!("library file {}/{}", key.0, key.1),
@@ -836,6 +1007,7 @@ pub fn merge_states(
                 ours: lines(o),
                 theirs: lines(t),
                 chosen,
+                keep_both: None,
             });
             match chosen {
                 Some(Side::Theirs) => t,
@@ -849,23 +1021,68 @@ pub fn merge_states(
     (merged, conflicts)
 }
 
+/// A choice of one side: [`Side::Both`] where both cannot be kept (a
+/// conflict that is not two objects made under one id, or one already
+/// renamed by [`keep_both`]) is no choice.
+fn one_side(choice: Option<&Side>) -> Option<Side> {
+    choice.copied().filter(|s| *s != Side::Both)
+}
+
+/// Why the line of the merged state `merged` is not valid, if so: as any
+/// command checks it, and — typed structures taking their wire points
+/// from the library files, which merge too — **with its libraries**
+/// (2026-11-10: one side takes a set off a structure type or deletes the
+/// type's file, the other strings a section there; each line is valid, the
+/// merged one resolved is not, and failed to solve only later). A problem
+/// with the libraries that `ours` has already is not the merge's (a
+/// project keeping its types in a folder, not in the file): not reported.
+pub(crate) fn merged_problem(merged: &State, ours: &State) -> Option<String> {
+    if let Err(e) = merged.line() {
+        return Some(e.to_string());
+    }
+    let resolved = |s: &State| {
+        resolved_line(s).and_then(|l| l.validate().map(drop).map_err(|e| e.to_string()))
+    };
+    match resolved(merged) {
+        Ok(()) => None,
+        Err(e) => resolved(ours)
+            .is_ok()
+            .then(|| format!("with the merged library files: {e}")),
+    }
+}
+
+/// An object of a state: its place among its kind and its JSON (shared).
+type Placed = (i64, Arc<Value>);
+
+/// Whether two objects' values are the same: one and the same (shared
+/// between the states — most objects of two lines of one project: no
+/// comparison of their data), or equal.
+fn same(a: Option<&Arc<Value>>, b: Option<&Arc<Value>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a == b,
+        _ => false,
+    }
+}
+
 fn whole_conflict(
     okey: &str,
     what: &str,
-    b: Option<&(i64, Value)>,
-    o: Option<&(i64, Value)>,
-    t: Option<&(i64, Value)>,
+    b: Option<&Placed>,
+    o: Option<&Placed>,
+    t: Option<&Placed>,
     choices: &Choices,
     conflicts: &mut Vec<Conflict>,
-) -> Option<(i64, Value)> {
-    let chosen = choices.get(okey).copied();
+) -> Option<Placed> {
+    let chosen = one_side(choices.get(okey));
     conflicts.push(Conflict {
         key: okey.to_owned(),
         what: what.to_owned(),
-        base: b.map(|x| x.1.clone()),
-        ours: o.map(|x| x.1.clone()),
-        theirs: t.map(|x| x.1.clone()),
+        base: b.map(|x| (*x.1).clone()),
+        ours: o.map(|x| (*x.1).clone()),
+        theirs: t.map(|x| (*x.1).clone()),
         chosen,
+        keep_both: None,
     });
     match chosen {
         Some(Side::Theirs) => t.cloned(),
@@ -896,7 +1113,7 @@ fn merge_fields(
             tv
         } else {
             let key = format!("{okey}/{}", path_text(p));
-            let chosen = choices.get(&key).or_else(|| choices.get(okey)).copied();
+            let chosen = one_side(choices.get(&key).or_else(|| choices.get(okey)));
             found.push(Conflict {
                 key,
                 what: format!("{what} {}", path_text(p)),
@@ -904,6 +1121,7 @@ fn merge_fields(
                 ours: ov.cloned(),
                 theirs: tv.cloned(),
                 chosen,
+                keep_both: None,
             });
             match chosen {
                 Some(Side::Theirs) => tv,
@@ -917,6 +1135,50 @@ fn merge_fields(
     let merged = unflatten(&leaves)?;
     conflicts.extend(found);
     Some(merged)
+}
+
+/// Ancestors of `id` (with itself) by distance, in the history `parents`.
+fn ancestors_in(parents: &BTreeMap<String, Vec<String>>, id: &str) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    let mut queue = VecDeque::from([(id.to_owned(), 0usize)]);
+    // Each revision is visited once: at most the number of revisions.
+    while let Some((r, d)) = queue.pop_front() {
+        if out.contains_key(&r) {
+            continue;
+        }
+        for p in parents.get(&r).into_iter().flatten() {
+            queue.push_back((p.clone(), d + 1));
+        }
+        out.insert(r, d);
+    }
+    out
+}
+
+/// The latest common ancestors of `a` and `b` in the history `parents`
+/// ([`Session::merge_bases`]): the common ancestors that are not an
+/// ancestor of another common ancestor, the nearest first (the sum of the
+/// distances, then the id). One walk from the common ancestors' parents
+/// marks the others: at most the number of revisions.
+pub(crate) fn merge_bases_in(
+    parents: &BTreeMap<String, Vec<String>>,
+    a: &str,
+    b: &str,
+) -> Vec<String> {
+    let (of_a, of_b) = (ancestors_in(parents, a), ancestors_in(parents, b));
+    let common: Vec<&String> = of_b.keys().filter(|r| of_a.contains_key(*r)).collect();
+    let mut older: BTreeSet<&String> = BTreeSet::new();
+    let mut queue: VecDeque<&String> = common
+        .iter()
+        .flat_map(|r| parents.get(*r).into_iter().flatten())
+        .collect();
+    while let Some(r) = queue.pop_front() {
+        if older.insert(r) {
+            queue.extend(parents.get(r).into_iter().flatten());
+        }
+    }
+    let mut latest: Vec<&String> = common.into_iter().filter(|r| !older.contains(r)).collect();
+    latest.sort_by_key(|r| (of_a[*r] + of_b[*r], (*r).clone()));
+    latest.into_iter().cloned().collect()
 }
 
 fn store(e: impl std::fmt::Display) -> SessionError {
@@ -962,7 +1224,7 @@ impl Session {
         let mut state = State::default();
         for (kind, id, ord, h) in tree.objects {
             let value: Value = serde_json::from_str(&self.read_blob(&h)?).map_err(store)?;
-            state.objects.insert((kind, id), (ord, value));
+            state.objects.insert((kind, id), (ord, Arc::new(value)));
         }
         for (kind, name, h) in tree.libraries {
             state.libraries.insert((kind, name), self.read_blob(&h)?);
@@ -1153,8 +1415,8 @@ impl Session {
                 continue;
             }
             if let Some((ord, h)) = ia.get(key) {
-                let value = serde_json::from_str(&self.read_blob(h)?).map_err(store)?;
-                a.objects.insert(key.clone(), (*ord, value));
+                let value: Value = serde_json::from_str(&self.read_blob(h)?).map_err(store)?;
+                a.objects.insert(key.clone(), (*ord, Arc::new(value)));
             }
             if let Some(x) = state.objects.get(key) {
                 b.objects.insert(key.clone(), x.clone());
@@ -1240,7 +1502,7 @@ impl Session {
             return Err(refused(format!("revision {} exists already", short(&id))));
         }
         let seq = self.last_seq()?;
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = crate::Step::begin(&self.conn)?;
         for (h, t) in &blobs {
             Self::write_blob(&tx, h, t)?;
         }
@@ -1360,37 +1622,33 @@ impl Session {
         Ok(())
     }
 
-    /// Ancestors of `id` (with itself) by distance.
-    pub(crate) fn ancestors(&self, id: &str) -> Result<BTreeMap<String, usize>, SessionError> {
-        let parents: BTreeMap<String, Vec<String>> = self
+    /// Every revision's parents (read once for the walks of one plan).
+    fn parents(&self) -> Result<BTreeMap<String, Vec<String>>, SessionError> {
+        Ok(self
             .revisions()?
             .into_iter()
             .map(|r| (r.id, r.parents))
-            .collect();
-        let mut out = BTreeMap::new();
-        let mut queue = VecDeque::from([(id.to_owned(), 0usize)]);
-        // Each revision is visited once: at most the number of revisions.
-        while let Some((r, d)) = queue.pop_front() {
-            if out.contains_key(&r) {
-                continue;
-            }
-            for p in parents.get(&r).into_iter().flatten() {
-                queue.push_back((p.clone(), d + 1));
-            }
-            out.insert(r, d);
-        }
-        Ok(out)
+            .collect())
     }
 
-    /// The nearest common ancestor of two revisions.
+    /// Ancestors of `id` (with itself) by distance.
+    pub(crate) fn ancestors(&self, id: &str) -> Result<BTreeMap<String, usize>, SessionError> {
+        Ok(ancestors_in(&self.parents()?, id))
+    }
+
+    /// The common ancestor two revisions are merged against: a **latest**
+    /// one — a common ancestor that no other common ancestor descends from
+    /// (the nearest by distance is not always one: a short side line
+    /// brought in makes an old revision near). Several such (a criss-cross
+    /// history): the nearest of them, then by id.
     pub fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>, SessionError> {
-        let of_a = self.ancestors(a)?;
-        let of_b = self.ancestors(b)?;
-        Ok(of_b
-            .iter()
-            .filter(|(r, _)| of_a.contains_key(*r))
-            .min_by_key(|(r, d)| (**d + of_a[*r], (*r).clone()))
-            .map(|(r, _)| r.clone()))
+        Ok(self.merge_bases(a, b)?.into_iter().next())
+    }
+
+    /// The latest common ancestors of two revisions, the one merged
+    /// against first ([`Session::merge_base`]).
+    pub fn merge_bases(&self, a: &str, b: &str) -> Result<Vec<String>, SessionError> {
+        Ok(merge_bases_in(&self.parents()?, a, b))
     }
 
     /// What deleting branch or tag `name` drops (nothing is changed).
@@ -1500,18 +1758,18 @@ impl Session {
         for (k, ((kind, name), text)) in target.libraries.iter().enumerate() {
             wanted.insert(
                 (Kind::Library, crate::library_id(kind, name)),
-                (k as i64, crate::library_value(kind, name, text)),
+                (k as i64, Arc::new(crate::library_value(kind, name, text))),
             );
         }
         let target_objects = &wanted;
         let mut prims = Vec::new();
         for (key, (ord, value)) in target_objects {
             match self.objects.get(key) {
-                Some(o) if *o.value == *value && o.ord == *ord => {}
+                Some(o) if o.ord == *ord && same(Some(&o.value), Some(value)) => {}
                 _ => prims.push(Command::Put {
                     kind: key.0,
                     id: key.1.clone(),
-                    value: value.clone(),
+                    value: (**value).clone(),
                     ord: Some(*ord),
                 }),
             }
@@ -1528,19 +1786,22 @@ impl Session {
         let applied = if prims.is_empty() {
             None
         } else {
-            let a = self.apply_as(
-                user,
-                Command::Batch { commands: prims },
-                "do",
-                None,
-                false,
-                false,
-            )?;
-            self.conn.execute(
-                "UPDATE oplog SET note = ?1 WHERE seq = ?2",
-                params![note, a.seq],
-            )?;
-            Some(a)
+            // The command and its note: one unit.
+            Some(self.unit(|s| {
+                let a = s.apply_as(
+                    user,
+                    Command::Batch { commands: prims },
+                    "do",
+                    None,
+                    false,
+                    false,
+                )?;
+                s.conn.execute(
+                    "UPDATE oplog SET note = ?1 WHERE seq = ?2",
+                    params![note, a.seq],
+                )?;
+                Ok(a)
+            })?)
         };
         Ok((applied, changed))
     }
@@ -1587,6 +1848,7 @@ impl Session {
             conflicts: vec![],
             changes: Diff::default(),
             problem: None,
+            notes: Vec::new(),
             merged: working.clone(),
         };
         let Some(ours) = ours else {
@@ -1596,11 +1858,28 @@ impl Session {
             plan.problem = plan.merged.line().err().map(|e| e.to_string());
             return Ok(plan);
         };
-        let ours_ancestors = self.ancestors(&ours)?;
-        if ours_ancestors.contains_key(&theirs) {
+        // The history read once for the plan's walks.
+        let parents = self.parents()?;
+        if ancestors_in(&parents, &ours).contains_key(&theirs) {
             return Ok(plan);
         }
-        let base = self.merge_base(&ours, &theirs)?;
+        let bases = merge_bases_in(&parents, &ours, &theirs);
+        let base = bases.first().cloned();
+        if let [first, rest @ ..] = &bases[..]
+            && !rest.is_empty()
+        {
+            plan.notes.push(format!(
+                "the two histories cross: {} latest common revisions ({}); merged against {} — \
+                 check what the merge changes",
+                bases.len(),
+                bases
+                    .iter()
+                    .map(|b| short(b))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                short(first)
+            ));
+        }
         plan.base = base.clone();
         if base.as_deref() == Some(ours.as_str()) {
             plan.kind = MergeKind::FastForward;
@@ -1612,18 +1891,17 @@ impl Session {
                 None => State::default(),
             };
             let ours_state = self.revision_state(&ours)?;
-            let (merged, conflicts) = merge_states(
-                &base_state,
-                &ours_state,
-                &self.revision_state(&theirs)?,
-                choices,
-            );
+            let theirs_state = self.revision_state(&theirs)?;
+            let (patch, kept) = keep_both(&base_state, &ours_state, &theirs_state, None, choices)?;
+            let (merged, mut conflicts) =
+                merge_states_with(&base_state, &ours_state, &theirs_state, &patch, choices);
+            conflicts.extend(kept);
             plan.merged = merged;
             plan.conflicts = conflicts;
         }
         plan.changes = diff(&working, &plan.merged);
         if plan.unresolved().is_empty() {
-            plan.problem = plan.merged.line().err().map(|e| e.to_string());
+            plan.problem = merged_problem(&plan.merged, &working);
         }
         Ok(plan)
     }
@@ -1665,7 +1943,8 @@ impl Session {
         if !unresolved.is_empty() {
             let list: Vec<String> = unresolved.iter().map(|c| c.key.clone()).collect();
             return Err(refused(format!(
-                "{} conflict(s) to settle (choose ours or theirs for each): {}",
+                "{} conflict(s) to settle (choose ours or theirs for each; both where each \
+                 side made an object under one id): {}",
                 list.len(),
                 list.join(", ")
             )));
@@ -1674,31 +1953,35 @@ impl Session {
             return Err(refused(format!("the merged line is not valid: {p}")));
         }
         let note = format!("merge {other} ({}) into {branch}", short(&plan.theirs));
-        let (applied, libraries_changed) = self.set_working(user, &plan.merged, &note)?;
-        let revision = match plan.kind {
-            MergeKind::FastForward => {
-                self.conn.execute(
-                    "UPDATE vc_ref SET revision = ?1 WHERE name = ?2 AND kind = 'branch'",
-                    params![plan.theirs, branch],
-                )?;
-                None
-            }
-            _ => {
-                let message = message
-                    .map(str::trim)
-                    .filter(|m| !m.is_empty())
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("Merge {other} into {branch}"));
-                let parents = vec![plan.ours.clone().expect("three-way"), plan.theirs.clone()];
-                let state = self.working_state()?;
-                Some(self.write_revision(user, &state, parents, &message, Some(&branch))?)
-            }
-        };
-        Ok(MergeOutcome {
-            kind: plan.kind,
-            revision,
-            applied,
-            libraries_changed,
+        // The working state, its log entry and the revision (or the line
+        // moved forward): all of them or none ([`Session::unit`]).
+        self.unit(|s| {
+            let (applied, libraries_changed) = s.set_working(user, &plan.merged, &note)?;
+            let revision = match plan.kind {
+                MergeKind::FastForward => {
+                    s.conn.execute(
+                        "UPDATE vc_ref SET revision = ?1 WHERE name = ?2 AND kind = 'branch'",
+                        params![plan.theirs, branch],
+                    )?;
+                    None
+                }
+                _ => {
+                    let message = message
+                        .map(str::trim)
+                        .filter(|m| !m.is_empty())
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("Merge {other} into {branch}"));
+                    let parents = vec![plan.ours.clone().expect("three-way"), plan.theirs.clone()];
+                    let state = s.working_state()?;
+                    Some(s.write_revision(user, &state, parents, &message, Some(&branch))?)
+                }
+            };
+            Ok(MergeOutcome {
+                kind: plan.kind,
+                revision,
+                applied,
+                libraries_changed,
+            })
         })
     }
 
@@ -1758,19 +2041,22 @@ impl Session {
             .line()
             .map_err(|e| refused(format!("the line without {}: {e}", rev.short())))?;
         let note = format!("revert {}", rev.short());
-        let (applied, libraries_changed) = self.set_working(user, &merged, &note)?;
         let message = message
             .map(str::trim)
             .filter(|m| !m.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| format!("Revert {}: {}", rev.short(), rev.message));
-        let state = self.working_state()?;
-        let revision = self.write_revision(user, &state, vec![head], &message, Some(&branch))?;
-        Ok(MergeOutcome {
-            kind: MergeKind::ThreeWay,
-            revision: Some(revision),
-            applied,
-            libraries_changed,
+        // The working state and its revision: both or neither.
+        self.unit(|s| {
+            let (applied, libraries_changed) = s.set_working(user, &merged, &note)?;
+            let state = s.working_state()?;
+            let revision = s.write_revision(user, &state, vec![head], &message, Some(&branch))?;
+            Ok(MergeOutcome {
+                kind: MergeKind::ThreeWay,
+                revision: Some(revision),
+                applied,
+                libraries_changed,
+            })
         })
     }
 

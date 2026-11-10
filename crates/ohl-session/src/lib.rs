@@ -1062,6 +1062,68 @@ pub struct Session {
     others: BTreeMap<String, lines::LineState>,
     /// The last line renamed (from, to): a session working on it follows.
     renamed: Option<(String, String)>,
+    /// While a unit of work runs ([`Session::unit`]): what to put back
+    /// should it fail.
+    unit: Option<UnitKept>,
+}
+
+/// What a unit of work keeps to undo itself in memory ([`Session::unit`]):
+/// the states its commands replaced (moved here, not copied), oldest
+/// first, and the lines whose spatial index it wrote to the file.
+#[derive(Default)]
+struct UnitKept {
+    replaced: Vec<(String, lines::LineState)>,
+    indexed: Vec<String>,
+}
+
+/// A step written to the file as a whole or not at all, inside a larger
+/// one or alone: an SQLite savepoint (alone it is a transaction, as
+/// before; inside a [`Session::unit`] it is part of the unit's). Left
+/// without [`Step::commit`], it is rolled back.
+pub(crate) struct Step<'c> {
+    conn: &'c Connection,
+    name: String,
+    done: bool,
+}
+
+impl<'c> Step<'c> {
+    pub(crate) fn begin(conn: &'c Connection) -> Result<Self, SessionError> {
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let name = format!(
+            "ohl_step_{}",
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+        Ok(Self {
+            conn,
+            name,
+            done: false,
+        })
+    }
+
+    pub(crate) fn commit(mut self) -> Result<(), SessionError> {
+        self.conn.execute_batch(&format!("RELEASE {}", self.name))?;
+        self.done = true;
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for Step<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.conn
+    }
+}
+
+impl Drop for Step<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            let _ = self
+                .conn
+                .execute_batch(&format!("ROLLBACK TO {0}; RELEASE {0}", self.name));
+        }
+    }
 }
 
 impl fmt::Debug for Session {
@@ -1070,6 +1132,196 @@ impl fmt::Debug for Session {
             .field("objects", &self.objects.len())
             .finish_non_exhaustive()
     }
+}
+
+/// What follows object `id` of `kind` renamed `new_id` in `line`, as puts
+/// into `out`: for a structure the section points, jumper ends and
+/// clamps, the alignment points tied to it and the circuit starts on it;
+/// for a section its spacers and the jumpers tapped on it; for a route
+/// its alignments and the structures giving it; for an alignment point
+/// its alignments; for a jumper the jumpers tapped on it. (The object
+/// itself is put and deleted by the caller: the rename command, and a
+/// merge keeping both of two objects made under one id.)
+pub(crate) fn rename_references(
+    line: &Line,
+    kind: Kind,
+    id: &str,
+    new_id: &str,
+    out: &mut Vec<Command>,
+) -> Result<(), SessionError> {
+    let (id, new_id) = (id.to_owned(), new_id.to_owned());
+    match kind {
+        Kind::Structure => {
+            for sec in &line.sections {
+                if sec.points.iter().any(|p| p.structure == id) {
+                    let mut sec = sec.clone();
+                    for p in &mut sec.points {
+                        if p.structure == id {
+                            p.structure = new_id.clone();
+                        }
+                    }
+                    out.push(Command::Put {
+                        kind: Kind::Section,
+                        id: sec.id.clone(),
+                        value: json(&sec),
+                        ord: None,
+                    });
+                }
+            }
+            for j in &line.jumpers {
+                let clamp_on =
+                    |c: &ohl_line::JumperClamp| c.structure.as_deref() == Some(id.as_str());
+                if j.points().any(|p| p.structure == id) || j.supports().iter().any(clamp_on) {
+                    let mut j = j.clone();
+                    for p in [&mut j.from, &mut j.to]
+                        .into_iter()
+                        .filter_map(ohl_line::JumperEnd::point_mut)
+                    {
+                        if p.structure == id {
+                            p.structure = new_id.clone();
+                        }
+                    }
+                    j.edit_supports(|cs| {
+                        for c in cs.iter_mut().filter(|c| clamp_on(c)) {
+                            c.structure = Some(new_id.clone());
+                        }
+                    });
+                    out.push(Command::Put {
+                        kind: Kind::Jumper,
+                        id: j.id.clone(),
+                        value: json(&j),
+                        ord: None,
+                    });
+                }
+            }
+            for mut p in line
+                .alignment_points
+                .iter()
+                .filter(|p| p.structure.as_deref() == Some(id.as_str()))
+                .cloned()
+            {
+                p.structure = Some(new_id.clone());
+                out.push(put(Kind::AlignmentPoint, &p.id.clone(), &p));
+            }
+            // The circuit starts on it.
+            out.extend(starts_renamed_in(line, |p| {
+                (p.structure == id).then(|| ohl_line::SectionPoint::new(new_id.clone(), p.set))
+            }));
+        }
+        // A section renamed: its spacers follow.
+        Kind::Section => {
+            for s in &line.spacers {
+                if s.a.section == id || s.b.section == id {
+                    let mut s = s.clone();
+                    for end in [&mut s.a, &mut s.b] {
+                        if end.section == id {
+                            end.section = new_id.clone();
+                        }
+                    }
+                    out.push(put(Kind::Spacer, &s.id.clone(), &s));
+                }
+            }
+            // And the jumpers hanging on taps on it.
+            for j in &line.jumpers {
+                let mut j = j.clone();
+                let mut changed = false;
+                for t in [&mut j.from, &mut j.to]
+                    .into_iter()
+                    .filter_map(ohl_line::JumperEnd::tap_mut)
+                {
+                    if let ohl_line::Tap::Span(r) = t
+                        && r.section == id
+                    {
+                        r.section = new_id.clone();
+                        changed = true;
+                    }
+                }
+                if changed {
+                    out.push(put(Kind::Jumper, &j.id.clone(), &j));
+                }
+            }
+        }
+        // A route renamed: its alignments and the structures
+        // giving it follow.
+        Kind::Route => {
+            for a in &line.alignments {
+                if a.route == id {
+                    let mut a = a.clone();
+                    a.route = new_id.clone();
+                    out.push(put(Kind::Alignment, &a.id, &a));
+                }
+            }
+            for st in &line.structures {
+                if st.routes.contains(&id) {
+                    let mut st = st.clone();
+                    for r in st.routes.iter_mut().filter(|r| **r == id) {
+                        *r = new_id.clone();
+                    }
+                    out.push(put(Kind::Structure, &st.id, &st));
+                }
+            }
+        }
+        Kind::Alignment => {}
+        // A point renamed: its alignments follow.
+        Kind::AlignmentPoint => {
+            for a in &line.alignments {
+                if a.points.contains(&id) {
+                    let mut a = a.clone();
+                    for p in a.points.iter_mut().filter(|p| **p == id) {
+                        *p = new_id.clone();
+                    }
+                    out.push(put(Kind::Alignment, &a.id, &a));
+                }
+            }
+        }
+        // A jumper renamed: the jumpers hanging on taps on its
+        // points follow.
+        Kind::Jumper => {
+            for j in &line.jumpers {
+                let mut j = j.clone();
+                let mut changed = false;
+                for t in [&mut j.from, &mut j.to]
+                    .into_iter()
+                    .filter_map(ohl_line::JumperEnd::tap_mut)
+                {
+                    if let ohl_line::Tap::Jumper { jumper, .. } = t
+                        && *jumper == id
+                    {
+                        *jumper = new_id.clone();
+                        changed = true;
+                    }
+                }
+                if changed {
+                    out.push(put(Kind::Jumper, &j.id.clone(), &j));
+                }
+            }
+        }
+        Kind::Spacer => {}
+        other => {
+            return Err(refused(format!(
+                "a {} is not renamed this way",
+                other.as_str()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The circuit starts of `line` with `rename` applied, as a put (none:
+/// no start changes).
+fn starts_renamed_in(
+    line: &Line,
+    rename: impl Fn(&ohl_line::SectionPoint) -> Option<ohl_line::SectionPoint>,
+) -> Option<Command> {
+    let mut meta = Meta::of(line);
+    let mut changed = false;
+    for p in &mut meta.circuit_starts {
+        if let Some(new) = rename(p) {
+            *p = new;
+            changed = true;
+        }
+    }
+    changed.then(|| starts_put(&meta.circuit_starts))
 }
 
 /// Removes the structure's own wire point with set `set` and what hangs
@@ -1634,6 +1886,7 @@ impl Session {
             current: versions::MAIN.to_owned(),
             others: BTreeMap::new(),
             renamed: None,
+            unit: None,
         };
         session.load_lines(by_line, gone, placed)?;
         Ok(session)
@@ -2399,159 +2652,7 @@ impl Session {
                     value,
                     ord: Some(old.ord),
                 });
-                match kind {
-                    Kind::Structure => {
-                        for sec in &self.line.sections {
-                            if sec.points.iter().any(|p| p.structure == id) {
-                                let mut sec = sec.clone();
-                                for p in &mut sec.points {
-                                    if p.structure == id {
-                                        p.structure = new_id.clone();
-                                    }
-                                }
-                                out.push(Command::Put {
-                                    kind: Kind::Section,
-                                    id: sec.id.clone(),
-                                    value: json(&sec),
-                                    ord: None,
-                                });
-                            }
-                        }
-                        for j in &self.line.jumpers {
-                            let clamp_on = |c: &ohl_line::JumperClamp| {
-                                c.structure.as_deref() == Some(id.as_str())
-                            };
-                            if j.points().any(|p| p.structure == id)
-                                || j.supports().iter().any(clamp_on)
-                            {
-                                let mut j = j.clone();
-                                for p in [&mut j.from, &mut j.to]
-                                    .into_iter()
-                                    .filter_map(ohl_line::JumperEnd::point_mut)
-                                {
-                                    if p.structure == id {
-                                        p.structure = new_id.clone();
-                                    }
-                                }
-                                j.edit_supports(|cs| {
-                                    for c in cs.iter_mut().filter(|c| clamp_on(c)) {
-                                        c.structure = Some(new_id.clone());
-                                    }
-                                });
-                                out.push(Command::Put {
-                                    kind: Kind::Jumper,
-                                    id: j.id.clone(),
-                                    value: json(&j),
-                                    ord: None,
-                                });
-                            }
-                        }
-                        for mut p in self.points_tied_to(&id) {
-                            p.structure = Some(new_id.clone());
-                            out.push(put(Kind::AlignmentPoint, &p.id.clone(), &p));
-                        }
-                        // The circuit starts on it.
-                        out.extend(self.starts_renamed(|p| {
-                            (p.structure == id)
-                                .then(|| ohl_line::SectionPoint::new(new_id.clone(), p.set))
-                        }));
-                    }
-                    // A section renamed: its spacers follow.
-                    Kind::Section => {
-                        for s in &self.line.spacers {
-                            if s.a.section == id || s.b.section == id {
-                                let mut s = s.clone();
-                                for end in [&mut s.a, &mut s.b] {
-                                    if end.section == id {
-                                        end.section = new_id.clone();
-                                    }
-                                }
-                                out.push(put(Kind::Spacer, &s.id.clone(), &s));
-                            }
-                        }
-                        // And the jumpers hanging on taps on it.
-                        for j in &self.line.jumpers {
-                            let mut j = j.clone();
-                            let mut changed = false;
-                            for t in [&mut j.from, &mut j.to]
-                                .into_iter()
-                                .filter_map(ohl_line::JumperEnd::tap_mut)
-                            {
-                                if let ohl_line::Tap::Span(r) = t
-                                    && r.section == id
-                                {
-                                    r.section = new_id.clone();
-                                    changed = true;
-                                }
-                            }
-                            if changed {
-                                out.push(put(Kind::Jumper, &j.id.clone(), &j));
-                            }
-                        }
-                    }
-                    // A route renamed: its alignments and the structures
-                    // giving it follow.
-                    Kind::Route => {
-                        for a in &self.line.alignments {
-                            if a.route == id {
-                                let mut a = a.clone();
-                                a.route = new_id.clone();
-                                out.push(put(Kind::Alignment, &a.id, &a));
-                            }
-                        }
-                        for st in &self.line.structures {
-                            if st.routes.contains(&id) {
-                                let mut st = st.clone();
-                                for r in st.routes.iter_mut().filter(|r| **r == id) {
-                                    *r = new_id.clone();
-                                }
-                                out.push(put(Kind::Structure, &st.id, &st));
-                            }
-                        }
-                    }
-                    Kind::Alignment => {}
-                    // A point renamed: its alignments follow.
-                    Kind::AlignmentPoint => {
-                        for a in &self.line.alignments {
-                            if a.points.contains(&id) {
-                                let mut a = a.clone();
-                                for p in a.points.iter_mut().filter(|p| **p == id) {
-                                    *p = new_id.clone();
-                                }
-                                out.push(put(Kind::Alignment, &a.id, &a));
-                            }
-                        }
-                    }
-                    // A jumper renamed: the jumpers hanging on taps on its
-                    // points follow.
-                    Kind::Jumper => {
-                        for j in &self.line.jumpers {
-                            let mut j = j.clone();
-                            let mut changed = false;
-                            for t in [&mut j.from, &mut j.to]
-                                .into_iter()
-                                .filter_map(ohl_line::JumperEnd::tap_mut)
-                            {
-                                if let ohl_line::Tap::Jumper { jumper, .. } = t
-                                    && *jumper == id
-                                {
-                                    *jumper = new_id.clone();
-                                    changed = true;
-                                }
-                            }
-                            if changed {
-                                out.push(put(Kind::Jumper, &j.id.clone(), &j));
-                            }
-                        }
-                    }
-                    Kind::Spacer => {}
-                    other => {
-                        return Err(refused(format!(
-                            "a {} is not renamed this way",
-                            other.as_str()
-                        )));
-                    }
-                }
+                rename_references(&self.line, kind, &id, &new_id, out)?;
                 out.push(Command::Delete {
                     kind,
                     id: id.clone(),
@@ -3233,15 +3334,7 @@ impl Session {
         &self,
         rename: impl Fn(&ohl_line::SectionPoint) -> Option<ohl_line::SectionPoint>,
     ) -> Option<Command> {
-        let mut meta = Meta::of(&self.line);
-        let mut changed = false;
-        for p in &mut meta.circuit_starts {
-            if let Some(new) = rename(p) {
-                *p = new;
-                changed = true;
-            }
-        }
-        changed.then(|| starts_put(&meta.circuit_starts))
+        starts_renamed_in(&self.line, rename)
     }
 
     /// The command setting the project's default values (Criteria ›
@@ -3250,6 +3343,53 @@ impl Session {
         let mut line = self.line.clone();
         line.defaults = defaults;
         line_settings_change(&self.line, &line)
+    }
+
+    /// Runs `f` as one unit of work: everything it writes to the file and
+    /// changes in memory stays, or — when it fails — nothing does (a merge
+    /// is a logged command, its note and a revision; a refusal or an error
+    /// half-way must not leave the first without the last). In the file: a
+    /// savepoint around the steps. In memory: the states the unit's
+    /// commands replaced are kept as they are replaced (moved, nothing is
+    /// copied) and put back on failure. A unit inside a unit is part of it.
+    pub(crate) fn unit<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, SessionError>,
+    ) -> Result<T, SessionError> {
+        if self.unit.is_some() {
+            return f(self);
+        }
+        self.conn.execute_batch("SAVEPOINT ohl_unit")?;
+        self.unit = Some(UnitKept::default());
+        let out = f(self);
+        let kept = self.unit.take().expect("set above");
+        let out = out.and_then(|v| {
+            self.conn.execute_batch("RELEASE ohl_unit")?;
+            Ok(v)
+        });
+        if out.is_err() {
+            // (After a failed RELEASE the savepoint is still there.)
+            let _ = self
+                .conn
+                .execute_batch("ROLLBACK TO ohl_unit; RELEASE ohl_unit");
+            for (name, state) in kept.replaced.into_iter().rev() {
+                if name == self.current {
+                    self.objects = state.objects;
+                    self.line = state.line;
+                    self.spatial = state.spatial;
+                } else if let Some(other) = self.others.get_mut(&name) {
+                    let indexed = other.indexed;
+                    *other = lines::LineState { indexed, ..state };
+                }
+            }
+            // An index written by the unit is not in the file any more.
+            for name in kept.indexed {
+                if let Some(other) = self.others.get_mut(&name) {
+                    other.indexed = false;
+                }
+            }
+        }
+        out
     }
 
     /// Applies `command` (validated, atomic), logs it as `entry_kind`.
@@ -3459,7 +3599,7 @@ impl Session {
         }
 
         // Persist atomically: points, objects and log entry.
-        let tx = self.conn.transaction()?;
+        let tx = Step::begin(&self.conn)?;
         let mut point_inverses = Vec::new();
         let mut points_changed = Vec::new();
         for p in point_prims {
@@ -3535,9 +3675,17 @@ impl Session {
         }
         spatial::write_diff(&tx, &self.current, &self.spatial, &spatial)?;
         tx.commit()?;
-        self.objects = objects;
-        self.line = line;
-        self.spatial = spatial;
+        // The state replaced: dropped, or kept (moved) by the unit of work
+        // this command is part of, to put back should the unit fail.
+        let replaced = lines::LineState {
+            objects: std::mem::replace(&mut self.objects, objects),
+            line: std::mem::replace(&mut self.line, line),
+            spatial: std::mem::replace(&mut self.spatial, spatial),
+            indexed: true,
+        };
+        if let Some(kept) = &mut self.unit {
+            kept.replaced.push((self.current.clone(), replaced));
+        }
         Ok(Applied {
             seq,
             objects: changed,

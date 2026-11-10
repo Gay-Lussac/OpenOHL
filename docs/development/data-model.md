@@ -2557,6 +2557,20 @@ it open, or with SQLite's own backup.
   background_image ─► background_tile · background_drawing
 ```
 
+**Merging** (`ohl_session::versions`, no table of its own; 2026-11-10):
+a merge is worked out as a `MergePlan` (`base`: a latest common ancestor,
+`Session::merge_bases`; `conflicts`; `notes`, e.g. a history that
+crosses) and settled by `Choices` (`Conflict::key` → `Side`: `ours`,
+`theirs`, or `both` where `Conflict::keep_both` names the id the other
+side's object takes — an object each side made under one id).
+`versions::keep_both` gives the few objects renamed as a `Patch` laid over
+the other side's state by `merge_states_with` (no state is copied);
+`rename_references` is the rename command's rule, shared. `Session::unit`
+runs a merge, a revert and Bring in as one unit of work (an SQLite
+savepoint; `Step` is a write step that nests in it); the file's schema is
+unchanged (still 6), and `both` is a new value of a choice sent to a
+server (`ohl-server`), which older servers refuse.
+
 #### Opening a file: schema checks and upgrades
 
 `Session::open` (every program that opens a project: `ohl-design`,

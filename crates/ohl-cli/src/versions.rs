@@ -284,7 +284,7 @@ fn choices(list: &[String]) -> Result<Choices, String> {
         .map(|c| {
             let (k, side) = c
                 .rsplit_once('=')
-                .ok_or_else(|| format!("--choose \"{c}\": KEY=ours or KEY=theirs"))?;
+                .ok_or_else(|| format!("--choose \"{c}\": KEY=ours, KEY=theirs or KEY=both"))?;
             Ok((k.trim().to_owned(), Side::parse(side.trim()).map_err(err)?))
         })
         .collect()
@@ -633,9 +633,16 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
                     match c.chosen {
                         Some(Side::Ours) => " — ours chosen",
                         Some(Side::Theirs) => " — theirs chosen",
+                        Some(Side::Both) => " — both kept",
                         None => "",
                     }
                 );
+                if let Some(id) = &c.keep_both {
+                    println!(
+                        "    made on both sides under one id: --choose {}=both keeps both, theirs as \"{id}\"",
+                        c.key
+                    );
+                }
             }
             if let Some(p) = &plan.problem {
                 println!("the merged line is not valid: {p}");

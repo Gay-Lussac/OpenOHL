@@ -764,3 +764,69 @@ fn full_copy_lines_of_older_files_open_and_work() {
         .unwrap();
     assert_eq!(schema, SCHEMA_VERSION.to_string());
 }
+
+/// Bring in, each line having made a structure under the same id (review
+/// 2026-11-10): the conflict offers "both"; chosen, the other line's
+/// comes under an id of its own with the alignment point tied to it there
+/// — and the other line itself is not changed.
+#[test]
+fn bringing_in_keeps_both_of_one_id() {
+    let (_path, mut s) = project("bring-both");
+    s.commit("ana", "start").unwrap();
+    s.create_line("ben", "phase 1", "main").unwrap();
+    let put = |s: &Session, dy: f64| {
+        let mut st = s.line().structure("T7").unwrap().clone();
+        st.id = "T8".into();
+        st.position[1] += dy;
+        Command::Put {
+            kind: Kind::Structure,
+            id: "T8".into(),
+            value: serde_json::to_value(&st).unwrap(),
+            ord: None,
+        }
+    };
+    // Main: T8 and an alignment point tied to it.
+    s.apply("cara", put(&s, 30.0)).unwrap();
+    let mut p = s.line().alignment_points[0].clone();
+    p.id = "P8".into();
+    p.structure = Some("T8".into());
+    p.position = s.line().structure("T8").unwrap().position;
+    s.apply(
+        "cara",
+        Command::Put {
+            kind: Kind::AlignmentPoint,
+            id: "P8".into(),
+            value: serde_json::to_value(&p).unwrap(),
+            ord: None,
+        },
+    )
+    .unwrap();
+    let mains = s.line().structure("T8").unwrap().position;
+    // The phase: its own T8 elsewhere.
+    s.select_line("phase 1").unwrap();
+    s.apply("ben", put(&s, -30.0)).unwrap();
+    let phases = s.line().structure("T8").unwrap().position;
+    let (conflicts, _) = s.bring_in_plan("main", &Choices::new()).unwrap();
+    let c = conflicts
+        .iter()
+        .find(|c| c.key == "structure:T8")
+        .expect("a conflict on T8");
+    assert_eq!(c.keep_both.as_deref(), Some("T8 (2)"));
+    let both = Choices::from([("structure:T8".to_owned(), Side::Both)]);
+    let (conflicts, problem) = s.bring_in_plan("main", &both).unwrap();
+    assert!(
+        conflicts.iter().all(|c| c.chosen.is_some()),
+        "{conflicts:?}"
+    );
+    assert_eq!(problem, None);
+    s.bring_in("ben", "main", &both).unwrap();
+    let line = s.line();
+    assert_eq!(line.structure("T8").unwrap().position, phases);
+    assert_eq!(line.structure("T8 (2)").unwrap().position, mains);
+    let p8 = line.alignment_points.iter().find(|p| p.id == "P8").unwrap();
+    assert_eq!(p8.structure.as_deref(), Some("T8 (2)"));
+    // Main keeps its own T8 under its id.
+    s.select_line("main").unwrap();
+    assert_eq!(s.line().structure("T8").unwrap().position, mains);
+    assert!(s.line().structure("T8 (2)").is_none());
+}
