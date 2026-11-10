@@ -222,6 +222,13 @@ impl PlansWindow {
         self.open = true;
     }
 
+    /// An export is running. A finished one, its report still shown, does
+    /// not hold the next back (owner, 2026-11-10): the new export's
+    /// window takes the report's place.
+    pub fn exporting(&self) -> bool {
+        self.job.as_ref().is_some_and(|j| j.done.is_none())
+    }
+
     /// The window's title, its menu item's name.
     pub fn title(&self) -> &'static str {
         if self.set_mode {
@@ -661,7 +668,7 @@ impl PlansWindow {
                     self.groups_ui(ui, model);
                 }
             }
-            start = crate::export_form::footer(ui, self.error.as_deref(), self.job.is_some());
+            start = crate::export_form::footer(ui, self.error.as_deref(), self.exporting());
         });
         // Its weather cases solved first ([`Self::wanted`]): the export
         // starts once they are.
@@ -797,6 +804,32 @@ mod tests {
             assert!(names.iter().any(|n| n.ends_with(what)), "{what}: {names:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Owner, 2026-11-10: a finished export whose report is not closed
+    /// yet does not hold the next export back; a running one does.
+    #[test]
+    fn a_finished_export_does_not_hold_the_next_back() {
+        let mut w = PlansWindow::of(PlanKind::Phase);
+        assert!(!w.exporting());
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        w.job = Some(Job::start(
+            "x".into(),
+            false,
+            &egui::Context::default(),
+            move |_| {
+                let _ = wait.recv_timeout(std::time::Duration::from_secs(30));
+                Ok("done".into())
+            },
+        ));
+        assert!(w.exporting());
+        go.send(()).unwrap();
+        let started = std::time::Instant::now();
+        while w.exporting() && started.elapsed().as_secs() < 30 {
+            w.job.as_mut().unwrap().poll();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(w.job.is_some() && !w.exporting());
     }
 
     /// Owner, 2026-11-03: routes and alignments chosen into one phase
