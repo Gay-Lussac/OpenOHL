@@ -1883,7 +1883,15 @@ pub enum PairMode {
 /// against each other.
 pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<PairResult> {
     let mut pairs: HashMap<(usize, usize), WireResult> = HashMap::new();
+    // What depends on the two wires only, worked out once per pair and not
+    // once per pair of their pieces: whether the pair is checked at all
+    // and what the rule requires of it (none: not checked).
+    let altitude = rule.altitude.is_some();
     for (i, wire) in a.iter().enumerate() {
+        // The wire's highest point only where the rule's distances grow
+        // with the altitude (it is a pass over its points).
+        let top = if altitude { wire.top() } else { 0.0 };
+        let mut of_pair: HashMap<usize, Option<Required>> = HashMap::new();
         for s in wire.points.windows(2) {
             let (p, q) = (s[0], s[1]);
             let mut candidates: Vec<(usize, usize)> = Vec::new();
@@ -1897,33 +1905,37 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
             let mut bad: Vec<(usize, bool, bool)> = Vec::new();
             for (j, k) in candidates {
                 let other = &b.wires[j];
-                let same_phase = other.circuit == wire.circuit && other.phase == wire.phase;
-                let circuits = rule.circuits.admits(&wire.circuit, &other.circuit);
-                let skip = match mode {
-                    PairMode::SameLine { include_same_phase } => {
-                        j <= i
-                            || !circuits
-                            || (!include_same_phase && same_phase)
-                            || connected(wire, other)
-                    }
-                    PairMode::SameLineOtherCase { include_same_phase } => {
-                        (other.section == wire.section && other.span == wire.span)
-                            || !circuits
-                            || (!include_same_phase && same_phase)
-                            || connected(wire, other)
-                    }
-                    PairMode::OtherLines => false,
-                };
-                if skip {
+                let required = *of_pair.entry(j).or_insert_with(|| {
+                    let same_phase = other.circuit == wire.circuit && other.phase == wire.phase;
+                    let circuits = rule.circuits.admits(&wire.circuit, &other.circuit);
+                    let skip = match mode {
+                        PairMode::SameLine { include_same_phase } => {
+                            j <= i
+                                || !circuits
+                                || (!include_same_phase && same_phase)
+                                || connected(wire, other)
+                        }
+                        PairMode::SameLineOtherCase { include_same_phase } => {
+                            (other.section == wire.section && other.span == wire.span)
+                                || !circuits
+                                || (!include_same_phase && same_phase)
+                                || connected(wire, other)
+                        }
+                        PairMode::OtherLines => false,
+                    };
+                    // The pair's voltage at the higher of the two wires.
+                    (!skip).then(|| {
+                        rule.required(
+                            rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()),
+                            if altitude { top.max(other.top()) } else { 0.0 },
+                        )
+                    })
+                });
+                let Some(required) = required else {
                     continue;
-                }
+                };
                 let (c, d) = b.segment(j, k);
                 let crossing = crossing_in_plan(p, q, c, d);
-                // The pair's voltage at the higher of the two wires.
-                let required = rule.required(
-                    rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()),
-                    wire.top().max(other.top()),
-                );
                 let reach = (required.largest() + rule.search_margin).min(b.reach);
                 // To the surfaces of both.
                 let off = wire.allowance() + b.allowances[j];
