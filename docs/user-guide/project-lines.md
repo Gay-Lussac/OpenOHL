@@ -185,20 +185,43 @@ through admins or approved reviews.
    changes…**, *changes of: main*.
    - If you did not change T3 yourself, it simply comes in: the window says
      **No conflict**. Press **Bring in**.
-   - If you changed T3 too, the window lists *structure T3*. Choose **keep
-     this line's** or **take main's** (or **All: …** for every object listed),
-     then **Bring in**.
+   - If you changed T3 too, the window lists *structure T3* under **Bring
+     changes of main into stage 1**. Choose **keep this line's** or **take
+     main's** (or **All: …** for every object listed), then **Bring in**.
    - If both of you *made* an object under the same id (each added a
      structure T13), the row also offers **keep both**: yours stays T13,
      main's comes in as *T13 (2)*, and what refers to it on main (sections
      through it, jumpers, alignment points) follows.
 
    It is refused, changing nothing, while an object is not settled.
+
+   **Reading a conflict.** Each object both lines changed is one row of a
+   list that scrolls (drag the grip under it to make it taller). The row
+   opens to the fields in question, in three columns: **common** (the
+   value both lines started from), **this line** and the other line — in
+   words: a position as *moved 4.0 m east, 1.2 m north*, a tension, sag,
+   temperature or angle with its unit and its difference (*12.50 kN
+   (+0.50)*), a type or cable by its name, a list by its count (*4 points,
+   2 differ*). The choice on the row settles the whole object; where the
+   fields combine, each field also has its own choice (*this line's* /
+   *main's*) — e.g. your position with main's type. **Show** selects the
+   object and brings the views to it, as it is on your line; tick *main*
+   under **Versions › Shown next to it** to see main's next to it.
+
+   What you settled is kept while the window is open and through a refusal;
+   choosing another line under *changes of* drops it (it belonged to the
+   line before), and closing the window with choices made asks first.
+   Everything the other line changed that you did not touch comes in as it
+   is; after the bring-in, **Revisions, tags and reviews › History ›
+   Diff** of the new revision lists all of it.
 4. When the stage is ready, choose **Versions › Submit for review…**, with a note. Uncommitted work is committed first.
 5. A reviewer or an admin opens **Versions › Revisions, tags and reviews › Reviews**, checks the
    changes (**Changes**, with the engineering impact), **approves**, and
-   **merges**. Only then does the main line change. If the stage changes
-   after approval, it must be submitted again.
+   presses **Merge…**: a window shows what the merge changes in the main
+   line and, where both lines changed the same object, the same list of
+   conflicts as Bring in, to settle there. **Merge** in that window makes
+   it — whichever line the reviewer works on. Only then does the main line
+   change. If the stage changes after approval, it must be submitted again.
 
 Starting a line, bringing in changes and submitting a review record the
 lines' state as **revisions** (Versions › Revisions, tags and reviews shows them): they are the

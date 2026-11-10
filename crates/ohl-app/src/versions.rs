@@ -15,9 +15,11 @@
 //! - **Changes**: what differs between two revisions (or a revision and
 //!   the working state), field by field, and its engineering impact in the
 //!   weather case shown.
-//! - **Merge**: a branch into the current one; conflicts listed with a
-//!   choice of side for each.
-//! - **Reviews**: submit a line, approve or reject, merge approved ones.
+//! - **Merge**: the changes of a project line, tag or revision brought
+//!   into the line worked on ([`crate::merge_conflicts`], as Versions ›
+//!   Bring in changes… shows it); refused with uncommitted work.
+//! - **Reviews**: submit a line, approve or reject, merge approved ones
+//!   (their conflicts settled in a window of their own, as a revert's).
 //! - **Rights** (admins): who may edit what.
 //!
 //! Every change is a project operation (`ohl_server::Op`): through the
@@ -29,11 +31,11 @@ use ohl_session::Role;
 use ohl_session::collab::{GRANT_KINDS, Grant, GrantEntry, Review, ReviewState};
 use ohl_session::impact::{Impact, ImpactOptions};
 use ohl_session::versions::{
-    Choices, Diff, Head, MergeKind, MergePlan, Ref, RefDeletion, RefKind, Revision, Side, State,
-    Status, diff, short,
+    Diff, Head, Ref, RefDeletion, RefKind, Revision, State, Status, diff, short,
 };
 
 use crate::app::Ready;
+use crate::merge_conflicts::{Settling, Source};
 use crate::model::Model;
 
 /// The pages of the window.
@@ -88,10 +90,18 @@ pub struct VersionsWindow {
     to: String,
     changes: Option<Result<(String, Diff, State, State), String>>,
     impact: Option<Impact>,
-    other: String,
-    plan: Option<Result<MergePlan, String>>,
-    choices: Choices,
+    /// The Merge page: the project line, tag or revision typed or picked.
+    pub(crate) other: String,
+    /// The Merge page: the merge previewed, its conflicts as settled so
+    /// far (kept when a merge is refused; dropped when it is made or
+    /// another side is previewed).
+    pub(crate) merge: Option<Settling>,
     merge_message: String,
+    /// A review's merge or a revision's revert being settled, in a window
+    /// of its own.
+    pub(crate) settle: Option<Settling>,
+    /// An object to select and bring the views to (Show of a conflict).
+    show: Option<crate::selection::Selection>,
     review_branch: String,
     review_target: String,
     reviewers: String,
@@ -159,21 +169,25 @@ const REVISIONS_SHOWN: usize = 500;
 
 /// Versions › Revisions, tags and reviews, when open.
 pub fn window(ctx: &egui::Context, r: &mut Ready) {
-    if !r.versions.open {
+    // (A merge or revert being settled keeps its window when this one is
+    // closed.)
+    if !r.versions.open && r.versions.settle.is_none() {
         return;
     }
     let mut w = std::mem::take(&mut r.versions);
-    let mut open = true;
     let mut ops: Vec<(String, Op)> = Vec::new();
-    egui::Window::new(TITLE)
-        .id(egui::Id::new("versions-window"))
-        .open(&mut open)
-        .default_width(820.0)
-        .show(ctx, |ui| {
-            ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
-            w.ui(ui, r, &mut ops)
-        });
-    w.open = open;
+    if w.open {
+        let mut open = true;
+        egui::Window::new(TITLE)
+            .id(egui::Id::new("versions-window"))
+            .open(&mut open)
+            .default_width(820.0)
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing = crate::check_help::ITEM_SPACING;
+                w.ui(ui, r, &mut ops)
+            });
+        w.open = open;
+    }
     if let Some(name) = w.switch_to.take() {
         r.switch_line(&name);
     }
@@ -190,6 +204,10 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             at: Some((id, words)),
         });
     }
+    settle_window(ctx, r, &mut w, &mut ops);
+    if let Some(target) = w.show.take() {
+        r.go_to(target);
+    }
     if !ops.is_empty() {
         // Library files changed by a checkout or merge: the project is
         // opened again to read them (local projects).
@@ -200,18 +218,106 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
         };
         let before = libraries(&r.model);
         for (what, op) in ops {
+            let settled = match &op {
+                Op::Merge { .. } => Some(true),
+                Op::Revert { .. } | Op::MergeReview { .. } => Some(false),
+                _ => None,
+            };
             r.project_op(&what, op);
+            // A merge made: its choices are done with. Refused: they are
+            // kept, and the window says why.
+            let refused = r.status.as_ref().filter(|s| s.1).map(|s| s.0.clone());
+            let slot = match settled {
+                Some(true) => &mut w.merge,
+                Some(false) => &mut w.settle,
+                None => continue,
+            };
+            match (refused, slot.as_mut()) {
+                (Some(why), Some(st)) => st.refused(why),
+                _ => *slot = None,
+            }
         }
         if r.model.remote.is_none() && libraries(&r.model) != before {
             r.reopen = true;
         }
         w.serial += 1;
-        w.plan = None;
         w.changes = None;
         w.impact = None;
         w.deleting = None;
     }
     r.versions = w;
+}
+
+/// A review's merge or a revision's revert being settled: what it does,
+/// its conflicts, what it changes; applied only from here (a revert is
+/// asked so before it is made). Closing with choices made is asked again.
+fn settle_window(
+    ctx: &egui::Context,
+    r: &Ready,
+    w: &mut VersionsWindow,
+    ops: &mut Vec<(String, Op)>,
+) {
+    let Some(mut st) = w.settle.take() else {
+        return;
+    };
+    let Some(current) = session(&r.model).map(|s| s.current_line().to_owned()) else {
+        return;
+    };
+    let can_edit = r.model.can_edit().is_ok();
+    let title = match &st.source {
+        Source::Revert { .. } => "Revert a revision",
+        _ => "Merge a review",
+    };
+    let (mut open, mut close) = (true, false);
+    egui::Window::new(title)
+        .id(egui::Id::new("versions-settle-window"))
+        .open(&mut open)
+        .collapsible(false)
+        .default_width(640.0)
+        .show(ctx, |ui| {
+            let mut resp = crate::merge_conflicts::panel(ui, r, &mut st);
+            if resp.commit_first {
+                w.open_commit();
+            }
+            if resp.show.is_some() {
+                w.show = resp.show.take();
+            }
+            if st.asking {
+                close = crate::merge_conflicts::close_question(ui, &mut st);
+                return;
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        can_edit && resp.is_ready(),
+                        egui::Button::new(st.source.apply_label()),
+                    )
+                    .on_hover_text(st.source.apply_hover())
+                    .on_disabled_hover_text(if can_edit {
+                        resp.why_not()
+                    } else {
+                        "Read-only"
+                    })
+                    .clicked()
+                {
+                    st.error = None;
+                    ops.push(st.source.op(&current, &st.choices, None));
+                }
+                if ui
+                    .button("Cancel")
+                    .on_hover_text("Nothing is changed")
+                    .clicked()
+                {
+                    close = st.close();
+                }
+            });
+        });
+    if !open && !close {
+        close = st.close();
+    }
+    if !close {
+        w.settle = Some(st);
+    }
 }
 
 impl VersionsWindow {
@@ -291,7 +397,7 @@ impl VersionsWindow {
         match self.page {
             Page::History => self.history(ui, s, &snap, can_edit, admin, ops),
             Page::Changes => self.changes_page(ui, r, &snap),
-            Page::Merge => self.merge_page(ui, &r.model, &snap, can_edit, ops),
+            Page::Merge => self.merge_page(ui, r, &snap, can_edit, ops),
             Page::Reviews => self.reviews_page(ui, &r.model, &snap, can_edit, ops),
             Page::Rights => self.rights_page(ui, &snap, admin, ops),
         }
@@ -311,6 +417,57 @@ impl VersionsWindow {
             Ok(st) => (Some(st.head.clone()), st.revision.clone()),
             Err(_) => (None, None),
         };
+        self.commit_row(ui, can_edit, ops);
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Project lines and tags").strong());
+        egui::Grid::new("version-refs")
+            .striped(true)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                for x in &snap.refs {
+                    let current = head == Some(Head::Branch(x.name.clone()));
+                    self.ref_row(ui, s, x, current, can_edit, admin, ops);
+                    ui.end_row();
+                }
+            });
+        self.deleting_ui(ui, ops);
+        self.new_line_row(ui, can_edit && head_rev.is_some(), ops);
+        self.tag_ui(ui, ops);
+        ui.add_space(4.0);
+        let all = snap.revisions.len();
+        ui.label(
+            egui::RichText::new(if all > REVISIONS_SHOWN {
+                format!("Revisions ({all}; the newest {REVISIONS_SHOWN} shown)")
+            } else {
+                format!("Revisions ({all})")
+            })
+            .strong(),
+        );
+        if snap.revisions.is_empty() {
+            weak(ui, "No revision yet: commit the working state.");
+        }
+        crate::check_help::list(
+            ui,
+            "versions-revisions",
+            360.0,
+            egui::ScrollArea::vertical().id_salt("revisions"),
+            |ui| {
+                egui::Grid::new("version-revisions")
+                    .striped(true)
+                    .spacing(crate::check_help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        for rev in snap.revisions.iter().take(REVISIONS_SHOWN) {
+                            let here = head_rev.as_deref() == Some(rev.id.as_str());
+                            self.revision_row(ui, snap, rev, here, can_edit);
+                            ui.end_row();
+                        }
+                    });
+            },
+        );
+    }
+
+    /// The commit message and Commit.
+    fn commit_row(&mut self, ui: &mut egui::Ui, can_edit: bool, ops: &mut Vec<(String, Op)>) {
         ui.add_enabled_ui(can_edit, |ui| {
             ui.horizontal(|ui| {
                 let field = ui.add(
@@ -334,74 +491,82 @@ impl VersionsWindow {
                 }
             });
         });
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new("Project lines and tags").strong());
-        egui::Grid::new("version-refs")
-            .striped(true)
-            .spacing([10.0, 3.0])
-            .show(ui, |ui| {
-                for x in &snap.refs {
-                    let current = head == Some(Head::Branch(x.name.clone()));
-                    let kind = match x.kind {
-                        RefKind::Branch => "line",
-                        RefKind::Tag => "tag",
-                    };
-                    let name = if current {
-                        egui::RichText::new(format!("{} (current)", x.name)).strong()
-                    } else {
-                        egui::RichText::new(&x.name)
-                    };
-                    ui.label(kind);
-                    ui.label(name);
-                    ui.label(x.revision.as_deref().map(short).unwrap_or("no revision"));
-                    ui.label(if x.protected { "protected" } else { "" });
-                    ui.horizontal(|ui| {
-                        ui.add_enabled_ui(can_edit, |ui| {
-                            if !current
-                                && x.kind == RefKind::Branch
-                                && ui
-                                    .small_button("Work on it")
-                                    .on_hover_text(
-                                        "Your edits go to this project line from now on (no \
-                                         line changes; also Versions › Project lines…)",
-                                    )
-                                    .clicked()
-                            {
-                                self.switch_to = Some(x.name.clone());
-                            }
-                            if x.kind == RefKind::Branch && admin {
-                                let mut p = x.protected;
-                                if ui
-                                    .checkbox(&mut p, "protect")
-                                    .on_hover_text("Changed only by admins or approved reviews")
-                                    .changed()
-                                {
-                                    ops.push((
-                                        format!("project line {} protection", x.name),
-                                        Op::ProtectBranch {
-                                            name: x.name.clone(),
-                                            protected: p,
-                                        },
-                                    ));
-                                }
-                            }
-                            if !current
-                                && ui
-                                    .small_button("Delete…")
-                                    .on_hover_text(
-                                        "Asked again, with what is dropped: its uncommitted \
-                                         changes, its open reviews (its revisions stay)",
-                                    )
-                                    .clicked()
-                            {
-                                self.deleting = Some(deletion(s, &x.name));
-                            }
-                        });
-                    });
-                    ui.label(&x.note);
-                    ui.end_row();
+    }
+
+    /// A project line or tag: what it is at; work on it, protect it,
+    /// delete it.
+    #[allow(clippy::too_many_arguments)]
+    fn ref_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        s: &ohl_session::Session,
+        x: &Ref,
+        current: bool,
+        can_edit: bool,
+        admin: bool,
+        ops: &mut Vec<(String, Op)>,
+    ) {
+        let kind = match x.kind {
+            RefKind::Branch => "line",
+            RefKind::Tag => "tag",
+        };
+        let name = if current {
+            egui::RichText::new(format!("{} (current)", x.name)).strong()
+        } else {
+            egui::RichText::new(&x.name)
+        };
+        ui.label(kind);
+        ui.label(name);
+        ui.label(x.revision.as_deref().map(short).unwrap_or("no revision"));
+        ui.label(if x.protected { "protected" } else { "" });
+        ui.horizontal(|ui| {
+            ui.add_enabled_ui(can_edit, |ui| {
+                if !current
+                    && x.kind == RefKind::Branch
+                    && ui
+                        .small_button("Work on it")
+                        .on_hover_text(
+                            "Your edits go to this project line from now on (no \
+                             line changes; also Versions › Project lines…)",
+                        )
+                        .clicked()
+                {
+                    self.switch_to = Some(x.name.clone());
+                }
+                if x.kind == RefKind::Branch && admin {
+                    let mut p = x.protected;
+                    if ui
+                        .checkbox(&mut p, "protect")
+                        .on_hover_text("Changed only by admins or approved reviews")
+                        .changed()
+                    {
+                        ops.push((
+                            format!("project line {} protection", x.name),
+                            Op::ProtectBranch {
+                                name: x.name.clone(),
+                                protected: p,
+                            },
+                        ));
+                    }
+                }
+                if !current
+                    && ui
+                        .small_button("Delete…")
+                        .on_hover_text(
+                            "Asked again, with what is dropped: its uncommitted \
+                             changes, its open reviews (its revisions stay)",
+                        )
+                        .clicked()
+                {
+                    self.deleting = Some(deletion(s, &x.name));
                 }
             });
+        });
+        ui.label(&x.note);
+    }
+
+    /// The question asked before a line or tag is deleted.
+    fn deleting_ui(&mut self, ui: &mut egui::Ui, ops: &mut Vec<(String, Op)>) {
         if let Some(d) = &self.deleting {
             let mut close = false;
             ui.group(|ui| match d {
@@ -437,7 +602,11 @@ impl VersionsWindow {
                 self.deleting = None;
             }
         }
-        ui.add_enabled_ui(can_edit && head_rev.is_some(), |ui| {
+    }
+
+    /// A new project line at the last commit of the line worked on.
+    fn new_line_row(&mut self, ui: &mut egui::Ui, enabled: bool, ops: &mut Vec<(String, Op)>) {
+        ui.add_enabled_ui(enabled, |ui| {
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.new_branch)
@@ -466,6 +635,10 @@ impl VersionsWindow {
                 }
             });
         });
+    }
+
+    /// The tag being made at a revision: its name and note.
+    fn tag_ui(&mut self, ui: &mut egui::Ui, ops: &mut Vec<(String, Op)>) {
         if let Some(at) = self.tag_at.clone() {
             ui.group(|ui| {
                 ui.label(format!("Tag revision {}", short(&at)));
@@ -501,128 +674,108 @@ impl VersionsWindow {
                 });
             });
         }
-        ui.add_space(4.0);
-        let all = snap.revisions.len();
-        ui.label(
-            egui::RichText::new(if all > REVISIONS_SHOWN {
-                format!("Revisions ({all}; the newest {REVISIONS_SHOWN} shown)")
-            } else {
-                format!("Revisions ({all})")
+    }
+
+    /// A revision: what it is, its lines and tags; compare, tag, start a
+    /// line from it, revert it (`here`: the line worked on is at it).
+    fn revision_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        snap: &Snapshot,
+        rev: &Revision,
+        here: bool,
+        can_edit: bool,
+    ) {
+        let labels: Vec<String> = snap
+            .refs
+            .iter()
+            .filter(|x| x.revision.as_deref() == Some(rev.id.as_str()))
+            .map(|x| match x.kind {
+                RefKind::Branch => x.name.clone(),
+                RefKind::Tag => format!("tag: {}", x.name),
             })
-            .strong(),
-        );
-        if snap.revisions.is_empty() {
-            weak(ui, "No revision yet: commit the working state.");
-        }
-        crate::check_help::list(
-            ui,
-            "versions-revisions",
-            360.0,
-            egui::ScrollArea::vertical().id_salt("revisions"),
-            |ui| {
-                egui::Grid::new("version-revisions")
-                    .striped(true)
-                    .spacing(crate::check_help::GRID_SPACING)
-                    .show(ui, |ui| {
-                        for rev in snap.revisions.iter().take(REVISIONS_SHOWN) {
-                            let labels: Vec<String> = snap
-                                .refs
-                                .iter()
-                                .filter(|x| x.revision.as_deref() == Some(rev.id.as_str()))
-                                .map(|x| match x.kind {
-                                    RefKind::Branch => x.name.clone(),
-                                    RefKind::Tag => format!("tag: {}", x.name),
-                                })
-                                .collect();
-                            let mark = if rev.parents.len() > 1 { "◎" } else { "○" };
-                            let here = head_rev.as_deref() == Some(rev.id.as_str());
-                            ui.label(if here {
-                                egui::RichText::new(mark).strong()
-                            } else {
-                                egui::RichText::new(mark).weak()
-                            })
-                            .on_hover_text(
-                                if rev.parents.is_empty() {
-                                    "○ first revision".to_owned()
-                                } else {
-                                    format!(
-                                        "{}: {}",
-                                        if rev.parents.len() > 1 {
-                                            "◎ a merge, of"
-                                        } else {
-                                            "○ a revision, after"
-                                        },
-                                        rev.parents
-                                            .iter()
-                                            .map(|p| short(p))
-                                            .collect::<Vec<_>>()
-                                            .join(", ")
-                                    )
-                                },
-                            );
-                            ui.monospace(rev.short());
-                            ui.label(labels.join(", "));
-                            ui.label(rev.time.get(..16).unwrap_or(&rev.time).replace('T', " "));
-                            ui.label(&rev.author);
-                            ui.label(&rev.message);
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .small_button("Diff")
-                                    .on_hover_text("What it changed (against its first parent)")
-                                    .clicked()
-                                {
-                                    self.from = rev.parents.first().cloned().unwrap_or_default();
-                                    self.to = rev.id.clone();
-                                    self.page = Page::Changes;
-                                    self.changes = None;
-                                    self.impact = None;
-                                }
-                                ui.add_enabled_ui(can_edit, |ui| {
-                                    if ui.small_button("Tag…").clicked() {
-                                        self.tag_at = Some(rev.id.clone());
-                                    }
-                                    if !here
-                                        && ui
-                                            .small_button("New line from it…")
-                                            .on_hover_text(
-                                                "A project line starting from this revision: \
-                                                 its name is asked, then you choose it in \
-                                                 Versions › Project lines…",
-                                            )
-                                            .clicked()
-                                    {
-                                        self.new_line_at = Some((
-                                            rev.id.clone(),
-                                            format!(
-                                                "revision {} of {} — {}",
-                                                rev.short(),
-                                                rev.time.get(..10).unwrap_or(&rev.time),
-                                                rev.message
-                                            ),
-                                        ));
-                                    }
-                                    if !rev.parents.is_empty()
-                                        && ui
-                                            .small_button("Revert")
-                                            .on_hover_text("A new revision undoing its changes")
-                                            .clicked()
-                                    {
-                                        ops.push((
-                                            format!("revision {} reverted", rev.short()),
-                                            Op::Revert {
-                                                revision: rev.id.clone(),
-                                                message: None,
-                                                choices: Choices::new(),
-                                            },
-                                        ));
-                                    }
-                                });
-                            });
-                            ui.end_row();
-                        }
-                    });
-            },
-        );
+            .collect();
+        let mark = if rev.parents.len() > 1 { "◎" } else { "○" };
+        ui.label(if here {
+            egui::RichText::new(mark).strong()
+        } else {
+            egui::RichText::new(mark).weak()
+        })
+        .on_hover_text(if rev.parents.is_empty() {
+            "○ first revision".to_owned()
+        } else {
+            format!(
+                "{}: {}",
+                if rev.parents.len() > 1 {
+                    "◎ a merge, of"
+                } else {
+                    "○ a revision, after"
+                },
+                rev.parents
+                    .iter()
+                    .map(|p| short(p))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        });
+        ui.monospace(rev.short());
+        ui.label(labels.join(", "));
+        ui.label(rev.time.get(..16).unwrap_or(&rev.time).replace('T', " "));
+        ui.label(&rev.author);
+        ui.label(&rev.message);
+        ui.horizontal(|ui| {
+            if ui
+                .small_button("Diff")
+                .on_hover_text("What it changed (against its first parent)")
+                .clicked()
+            {
+                self.from = rev.parents.first().cloned().unwrap_or_default();
+                self.to = rev.id.clone();
+                self.page = Page::Changes;
+                self.changes = None;
+                self.impact = None;
+            }
+            ui.add_enabled_ui(can_edit, |ui| {
+                if ui.small_button("Tag…").clicked() {
+                    self.tag_at = Some(rev.id.clone());
+                }
+                if !here
+                    && ui
+                        .small_button("New line from it…")
+                        .on_hover_text(
+                            "A project line starting from this revision: \
+                             its name is asked, then you choose it in \
+                             Versions › Project lines…",
+                        )
+                        .clicked()
+                {
+                    self.new_line_at = Some((
+                        rev.id.clone(),
+                        format!(
+                            "revision {} of {} — {}",
+                            rev.short(),
+                            rev.time.get(..10).unwrap_or(&rev.time),
+                            rev.message
+                        ),
+                    ));
+                }
+                if !rev.parents.is_empty()
+                    && ui
+                        .small_button("Revert…")
+                        .on_hover_text(
+                            "A new revision undoing its changes on the line \
+                             you work on: what it would change is shown \
+                             first, with the conflicts to settle where the \
+                             same objects were changed again since",
+                        )
+                        .clicked()
+                {
+                    self.settle = Some(Settling::new(Source::Revert {
+                        revision: rev.id.clone(),
+                    }));
+                }
+            });
+        });
     }
 
     fn changes_page(&mut self, ui: &mut egui::Ui, r: &Ready, snap: &Snapshot) {
@@ -702,28 +855,8 @@ impl VersionsWindow {
                 )
                 .on_hover_text("Solve the sections touched on both sides in the weather case shown")
                 .clicked()
-                && let Some(case) = &case
             {
-                let cases: Vec<_> = model.cases.iter().map(|c| c.case.clone()).collect();
-                let terrain = model.ground_for_checks();
-                let ground = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
-                let g: Option<ohl_session::impact::Ground<'_>> = match &terrain {
-                    Some(_) => Some(&ground),
-                    None => None,
-                };
-                self.impact = Some(ohl_session::impact::engineering_impact(
-                    a,
-                    b,
-                    d,
-                    &ImpactOptions {
-                        case,
-                        cases: &cases,
-                        fallback_cables: Some(&model.library),
-                        ground: g,
-                        max_sections: 200,
-                        time_limit: std::time::Duration::from_secs(10),
-                    },
-                ));
+                self.impact = impact_between(r, a, b, d);
             }
             if let Some(c) = &case {
                 weak(ui, format!("in \"{}\"", c.name));
@@ -734,111 +867,86 @@ impl VersionsWindow {
         }
     }
 
+    /// The Merge page: the changes of a project line, tag or revision
+    /// brought into the line worked on. What Versions › Bring in changes…
+    /// does for a line as it is now, for anything that has a revision —
+    /// without recording uncommitted work first (it is refused).
     fn merge_page(
         &mut self,
         ui: &mut egui::Ui,
-        model: &Model,
+        r: &Ready,
         snap: &Snapshot,
         can_edit: bool,
         ops: &mut Vec<(String, Op)>,
     ) {
-        let Some(s) = session(model) else {
+        let Some(current) = session(&r.model).map(|s| s.current_line().to_owned()) else {
             return;
         };
         weak(
             ui,
-            "Merge another branch into the current one. Changes that do not overlap merge by themselves; for each conflict choose ours (this branch) or theirs.",
+            format!(
+                "Brings the changes of a project line, a tag or a revision into the line you \
+                 work on ({current}): changes to different objects combine by themselves; where \
+                 both changed the same object, choose which to keep. Uncommitted work is not \
+                 recorded for you here (Versions › Bring in changes… does that, for a project \
+                 line as it is now)."
+            ),
         );
+        // Said before anything is previewed: a merge is refused with
+        // uncommitted work.
+        if self.merge.is_none()
+            && let Ok(st) = &snap.status
+            && !st.changes.is_empty()
+        {
+            let refusal = crate::merge_conflicts::Refusal {
+                text: format!(
+                    "{current} has uncommitted changes ({}): commit them first.",
+                    st.changes.summary()
+                ),
+                commit_here: true,
+            };
+            if crate::merge_conflicts::refusal_ui(ui, &refusal) {
+                self.open_commit();
+            }
+        }
         ui.horizontal(|ui| {
-            ui.label("Merge");
-            ref_combo(ui, "merge-other", &mut self.other, snap, "branch");
+            ui.label("Changes of");
+            ref_combo(
+                ui,
+                "merge-other",
+                &mut self.other,
+                snap,
+                "project line, tag or revision",
+            );
+            let other = self.other.trim();
             if ui
-                .add_enabled(!self.other.trim().is_empty(), egui::Button::new("Preview"))
+                .add_enabled(!other.is_empty(), egui::Button::new("Preview"))
+                .on_hover_text(
+                    "Works out what bringing it in would change and where both changed the same \
+                     object; nothing is changed. What was settled for another line, tag or \
+                     revision is dropped",
+                )
+                .on_disabled_hover_text("Name a project line, a tag or a revision first")
                 .clicked()
             {
-                self.plan = Some(
-                    s.merge_plan(&self.other, &self.choices)
-                        .map_err(|e| e.to_string()),
-                );
+                let source = Source::Merge {
+                    other: other.to_owned(),
+                };
+                // Another side: the choices made for the one before are
+                // not its. The same again: they are kept.
+                match &mut self.merge {
+                    Some(st) => st.set_source(source),
+                    None => self.merge = Some(Settling::new(source)),
+                }
             }
         });
-        let Some(plan) = &self.plan else {
+        let Some(st) = &mut self.merge else {
             return;
         };
-        let plan = match plan {
-            Ok(p) => p.clone(),
-            Err(e) => {
-                error(ui, e);
-                return;
-            }
-        };
-        ui.label(match plan.kind {
-            MergeKind::UpToDate => "Already contained: nothing to merge.".to_owned(),
-            MergeKind::FastForward => format!(
-                "Fast-forward to {}: {}",
-                short(&plan.theirs),
-                plan.changes.summary()
-            ),
-            MergeKind::ThreeWay => format!(
-                "Three-way merge with {} (common ancestor {}): {}",
-                short(&plan.theirs),
-                plan.base.as_deref().map(short).unwrap_or("none"),
-                plan.changes.summary()
-            ),
-        });
-        let mut changed = false;
-        if !plan.conflicts.is_empty() {
-            ui.label(egui::RichText::new(format!("Conflicts ({})", plan.conflicts.len())).strong());
-            egui::Grid::new("merge-conflicts")
-                .striped(true)
-                .spacing([10.0, 3.0])
-                .show(ui, |ui| {
-                    for h in ["what", "base", "ours", "theirs", "keep"] {
-                        ui.strong(h);
-                    }
-                    ui.end_row();
-                    for c in &plan.conflicts {
-                        ui.label(&c.what);
-                        ui.label(value(&c.base));
-                        ui.label(value(&c.ours));
-                        ui.label(value(&c.theirs));
-                        ui.horizontal(|ui| {
-                            let mut pick = c.chosen;
-                            ui.radio_value(&mut pick, Some(Side::Ours), "ours");
-                            ui.radio_value(&mut pick, Some(Side::Theirs), "theirs");
-                            if let Some(id) = &c.keep_both {
-                                ui.radio_value(&mut pick, Some(Side::Both), "both")
-                                    .on_hover_text(format!(
-                                        "Each line made an object under this id. Both are kept: \
-                                         this line's as it is, the other's as \"{id}\" — what \
-                                         refers to it on the other line follows"
-                                    ));
-                            }
-                            if pick != c.chosen
-                                && let Some(p) = pick
-                            {
-                                self.choices.insert(c.key.clone(), p);
-                                changed = true;
-                            }
-                        });
-                        ui.end_row();
-                    }
-                });
-        }
-        if changed {
-            self.plan = Some(
-                s.merge_plan(&self.other, &self.choices)
-                    .map_err(|e| e.to_string()),
-            );
-        }
-        if let Some(p) = &plan.problem {
-            error(ui, &format!("The merged line is not valid: {p}"));
-        }
-        for n in &plan.notes {
-            ui.label(egui::RichText::new(n).small().weak());
-        }
-        if plan.kind == MergeKind::UpToDate {
-            return;
+        ui.separator();
+        let mut resp = crate::merge_conflicts::panel(ui, r, st);
+        if resp.show.is_some() {
+            self.show = resp.show.take();
         }
         ui.add_enabled_ui(can_edit, |ui| {
             ui.horizontal(|ui| {
@@ -846,21 +954,27 @@ impl VersionsWindow {
                     egui::TextEdit::singleline(&mut self.merge_message)
                         .hint_text("message (default: Merge … into …)")
                         .desired_width(320.0),
-                );
-                let ready = plan.unresolved().is_empty() && plan.problem.is_none();
-                if ui.add_enabled(ready, egui::Button::new("Merge")).clicked() {
-                    let message = std::mem::take(&mut self.merge_message);
-                    ops.push((
-                        format!("{} merged", self.other),
-                        Op::Merge {
-                            other: self.other.clone(),
-                            message: (!message.trim().is_empty()).then_some(message),
-                            choices: std::mem::take(&mut self.choices),
-                        },
+                )
+                .on_hover_text("The message of the merge revision, in the history");
+                if ui
+                    .add_enabled(resp.is_ready(), egui::Button::new(st.source.apply_label()))
+                    .on_hover_text(st.source.apply_hover())
+                    .on_disabled_hover_text(resp.why_not())
+                    .clicked()
+                {
+                    st.error = None;
+                    let message = self.merge_message.trim();
+                    ops.push(st.source.op(
+                        &current,
+                        &st.choices,
+                        (!message.is_empty()).then(|| message.to_owned()),
                     ));
                 }
             });
         });
+        if resp.commit_first {
+            self.open_commit();
+        }
     }
 
     fn reviews_page(
@@ -942,83 +1056,91 @@ impl VersionsWindow {
             egui::ScrollArea::vertical().id_salt("reviews"),
             |ui| {
                 for rv in &snap.reviews {
-                    ui.group(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "#{} {} ➡ {} ({}) — {}",
-                                rv.id,
-                                rv.branch,
-                                rv.target,
-                                short(&rv.revision),
-                                rv.state.as_str()
-                            ))
-                            .strong(),
-                        );
-                        weak(
-                            ui,
-                            format!(
-                                "by {} {}; reviewers: {}",
-                                rv.author,
-                                rv.time.get(..16).unwrap_or(&rv.time).replace('T', " "),
-                                if rv.reviewers.is_empty() {
-                                    "admins".to_owned()
-                                } else {
-                                    rv.reviewers.join(", ")
-                                }
-                            ),
-                        );
-                        if !rv.note.is_empty() {
-                            ui.label(&rv.note);
-                        }
-                        for n in &rv.notes {
-                            ui.label(format!("{} {}: {}", n.user, n.verdict, n.comment));
-                        }
-                        let reviewer = rv.author != me && (admin || rv.reviewers.contains(&me));
-                        // The author merges too, once somebody else approved.
-                        ui.add_enabled_ui(can_edit && (reviewer || rv.author == me), |ui| {
-                            ui.horizontal(|ui| {
-                                if rv.state == ReviewState::Open && reviewer {
-                                    for (approve, label) in [(true, "Approve"), (false, "Reject")] {
-                                        if ui.button(label).clicked() {
-                                            ops.push((
-                                                format!(
-                                                    "review #{} {}",
-                                                    rv.id,
-                                                    if approve { "approved" } else { "rejected" }
-                                                ),
-                                                Op::DecideReview {
-                                                    id: rv.id,
-                                                    approve,
-                                                    comment: std::mem::take(&mut self.comment),
-                                                },
-                                            ));
-                                        }
-                                    }
-                                }
-                                if rv.state == ReviewState::Approved
-                                    && ui
-                                        .button("Merge")
-                                        .on_hover_text(format!(
-                                            "Into {}, whichever line you work on",
-                                            rv.target
-                                        ))
-                                        .clicked()
-                                {
-                                    ops.push((
-                                        format!("review #{} merged", rv.id),
-                                        Op::MergeReview {
-                                            id: rv.id,
-                                            message: None,
-                                            choices: Choices::new(),
-                                        },
-                                    ));
-                                }
-                            });
-                        });
-                    });
+                    ui.group(|ui| self.review_card(ui, rv, &me, admin, can_edit, ops));
                 }
             },
         );
+    }
+
+    /// One review: what it asks, its notes; approve or reject (its
+    /// reviewers), merge once approved (its conflicts settled in a window
+    /// of their own).
+    fn review_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        rv: &Review,
+        me: &str,
+        admin: bool,
+        can_edit: bool,
+        ops: &mut Vec<(String, Op)>,
+    ) {
+        ui.label(
+            egui::RichText::new(format!(
+                "#{} {} ➡ {} ({}) — {}",
+                rv.id,
+                rv.branch,
+                rv.target,
+                short(&rv.revision),
+                rv.state.as_str()
+            ))
+            .strong(),
+        );
+        weak(
+            ui,
+            format!(
+                "by {} {}; reviewers: {}",
+                rv.author,
+                rv.time.get(..16).unwrap_or(&rv.time).replace('T', " "),
+                if rv.reviewers.is_empty() {
+                    "admins".to_owned()
+                } else {
+                    rv.reviewers.join(", ")
+                }
+            ),
+        );
+        if !rv.note.is_empty() {
+            ui.label(&rv.note);
+        }
+        for n in &rv.notes {
+            ui.label(format!("{} {}: {}", n.user, n.verdict, n.comment));
+        }
+        let reviewer = rv.author != me && (admin || rv.reviewers.iter().any(|r| r == me));
+        // The author merges too, once somebody else approved.
+        ui.add_enabled_ui(can_edit && (reviewer || rv.author == me), |ui| {
+            ui.horizontal(|ui| {
+                if rv.state == ReviewState::Open && reviewer {
+                    for (approve, label) in [(true, "Approve"), (false, "Reject")] {
+                        if ui.button(label).clicked() {
+                            ops.push((
+                                format!(
+                                    "review #{} {}",
+                                    rv.id,
+                                    if approve { "approved" } else { "rejected" }
+                                ),
+                                Op::DecideReview {
+                                    id: rv.id,
+                                    approve,
+                                    comment: std::mem::take(&mut self.comment),
+                                },
+                            ));
+                        }
+                    }
+                }
+                if rv.state == ReviewState::Approved
+                    && ui
+                        .button("Merge…")
+                        .on_hover_text(format!(
+                            "Into {}, whichever line you work on: what the merge would change \
+                             is shown first, with the conflicts to settle where both lines \
+                             changed the same object",
+                            rv.target
+                        ))
+                        .clicked()
+                {
+                    self.settle = Some(Settling::new(Source::Review { id: rv.id }));
+                }
+            });
+        });
     }
 
     fn rights_page(
@@ -1209,7 +1331,35 @@ fn compare(
     Ok((format!("{} ➡ {b_name}", short(&a_id)), d, a, b))
 }
 
-fn impact_ui(ui: &mut egui::Ui, impact: &Impact) {
+/// The engineering impact of going from state `a` to state `b` (their
+/// differences `d`) in the weather case shown: the sections touched solved
+/// on both sides (at most 200, 10 s). `None`: no weather case is shown.
+pub(crate) fn impact_between(r: &Ready, a: &State, b: &State, d: &Diff) -> Option<Impact> {
+    let model = &r.model;
+    let case = &model.cases.get(r.case)?.case;
+    let cases: Vec<_> = model.cases.iter().map(|c| c.case.clone()).collect();
+    let terrain = model.ground_for_checks();
+    let ground = |x: f64, y: f64| terrain.as_ref().and_then(|t| t.height(x, y));
+    let g: Option<ohl_session::impact::Ground<'_>> = match &terrain {
+        Some(_) => Some(&ground),
+        None => None,
+    };
+    Some(ohl_session::impact::engineering_impact(
+        a,
+        b,
+        d,
+        &ImpactOptions {
+            case,
+            cases: &cases,
+            fallback_cables: Some(&model.library),
+            ground: g,
+            max_sections: 200,
+            time_limit: std::time::Duration::from_secs(10),
+        },
+    ))
+}
+
+pub(crate) fn impact_ui(ui: &mut egui::Ui, impact: &Impact) {
     egui::Grid::new("impact")
         .striped(true)
         .spacing([12.0, 3.0])

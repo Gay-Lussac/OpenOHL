@@ -24,6 +24,7 @@ mod field_setup;
 mod lidar;
 mod load_case_library;
 mod local_winds;
+mod merge_windows;
 mod multi_select;
 mod objects;
 mod plugins_hosting;

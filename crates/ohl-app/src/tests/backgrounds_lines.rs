@@ -426,11 +426,7 @@ fn lines_images() {
         .unwrap()
         .save(format!("{dir}/lines-window.png"))
         .unwrap();
-    harness.state_mut().ready().unwrap().lines_window = Some(LinesWindow::BringIn {
-        from: "main".into(),
-        choices: Default::default(),
-        plan: None,
-    });
+    harness.state_mut().ready().unwrap().lines_window = Some(LinesWindow::bring_in("main"));
     harness.run();
     harness.run();
     harness

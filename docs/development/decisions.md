@@ -49,13 +49,33 @@ is copied unnecessarily (loading time) and only changes are logged.
   altitude term, each wire's highest point) once per pair of wire pieces;
   now once per pair of wires. The results are the same.
 
-Still open from the review (not done): lists and library files merged
-entry by entry instead of whole; a rename on one line against an edit on
-the other; coupled objects (a tower and its alignment point) settled
-together; a merge that is invalid without a conflict turned into choices;
-a reverted merge brought in again; notes left on deleted objects; bundles
-verified in full; one merge window showing both values in engineering
-terms.
+**Merging: a rename against an edit, a deletion against a use, places, notes, bundles (version-management review, 2026-11-10)**
+
+- **A rename on one line, an edit on the other**: the edit is taken under
+  the new id (the rename told by content). Before: "deleted against
+  changed", one choice leaving the old object beside the renamed one, the
+  other losing the edit.
+- **A deletion on one line, a use on the other** (a new alignment point
+  tied to the structure, a section through it, the other line not having
+  touched the structure): a conflict on the deleted object — the deletion,
+  what was put on it then not taken, or the object kept. Before: no
+  conflict, an invalid line, a refusal with nothing to choose.
+- **The place of an object among its kind** merges as a value does; a
+  line that only edited an object no longer undoes the other's reordering.
+- **A note on an object the other line deleted** is not taken; the plan
+  says which.
+- **Bundles** are checked in full before anything is written and imported
+  as one unit of work; a file cut short is refused and leaves nothing.
+- `Session::ahead_behind` counts the revisions each of two lines has that
+  the other lacks (for the menu's "main has K newer"; not shown yet).
+
+Still open from the review: lists (a section's points, a structure's wire
+points) and library files merged entry by entry instead of whole; the
+conflicts of one logged command (a tower and its alignment point) settled
+as one; the merge windows' own plans for a revert and a review into
+another line taken from the session (they do not yet check the libraries
+before the engine does); the ahead/behind count and a bundle import on a
+joined project shown in the app.
 
 **The Versions menu laid out by task; the line worked on always said (version-management review, 2026-11-10)**
 
@@ -107,6 +127,68 @@ each is found, what it is called and what state is visible.
   does. Whether, not how many: the session tells the app whether another
   line has uncommitted changes (`has_uncommitted`), their count only for
   the line worked on.
+
+Built and in active development; not approved yet.
+
+**One window for every merge: readable conflicts, choices kept, a preview first (version-management review, 2026-11-10)**
+
+Follows the review of the same day; the engine is the entry above, this is
+what the user sees (`crates/ohl-app/src/merge_conflicts.rs`, its plans in
+`merge_plan.rs`, its wording in `merge_describe.rs`).
+
+- **One list of conflicts for every merge.** Versions › Bring in changes…,
+  the Merge page, the merge of a review and the revert of a revision show
+  the same thing under the same heading — "Bring changes of *main* into
+  *phase 1*": the objects both sides changed, one row each, with **keep
+  this line's / take *main*'s / keep both** (the last only where each side
+  made an object under one id), **All: …** for every row, and a **Show**
+  button that selects the object and brings the views to it. Each row opens
+  to its fields in three columns — common, this line, the other.
+  Before: two windows that looked and read differently (the Merge page: a
+  grid *what / base / ours / theirs*), and none for a review or a revert.
+- **Values in words, not stored JSON.** A position reads "moved 4.0 m
+  east, 1.2 m north, 0.3 m up"; a tension, sag, temperature or angle carries
+  its unit and its difference ("12.50 kN (+0.50)"); a type or cable is its
+  name; a list is counted ("4 points, 2 differ"). Fields not known to the
+  wording fall back to the stored value, cut short. Before: the JSON cut at
+  60 characters.
+- **Choices are never thrown away.** What was settled is kept until the
+  merge is made or another line, tag or revision is previewed (then it is
+  dropped: before, a conflict of the next line could arrive already
+  settled). A refused merge — uncommitted work, a line protected meanwhile —
+  keeps every choice and says why in the window; before, the Merge page
+  cleared them. Uncommitted work is said **before** Preview, with **Commit
+  first**. Bring in and the review/revert window ask before closing (Esc,
+  the cross, Cancel) when choices were made.
+- **A preview before anything is applied.** What the merge changes in the
+  line, object by object, the reason when the merged line would not be
+  valid, the engine's notes, and **Engineering impact** on demand (the line
+  as it is against the line merged, in the weather case shown; never by
+  itself). Bring in lists its conflicts and says that everything else comes
+  in as it is: the session works out the full list only for merges of
+  revisions (`merge_plan`), not for a bring-in (`bring_in_plan` gives the
+  conflicts and the validity only: open).
+- **Reviews and reverts with conflicts can be done in the app.** Both open
+  the same list in a window of their own (**Merge…** of an approved review,
+  **Revert…** of a revision) instead of running at once with no choices —
+  which failed whenever there was a conflict. A revert therefore asks
+  first: it shows what it would undo. A review is merged into its target
+  whichever line the reviewer works on, as decided before; the plan for a
+  target that is not the line worked on, and the plan of a revert, are put
+  together in the app from the session's own merge functions (the session
+  has no plan for them yet), and the session applies and checks the merge
+  itself.
+- **Kept as decided:** Bring in records both lines' uncommitted work first
+  and is refused while a conflict is open; the Merge page takes any
+  revision or tag and refuses uncommitted work; both entries stay.
+- **Nothing per frame.** A plan (conflicts, their wording, the list of
+  changes) is worked out when the choices, the line or the project change
+  (`Model::line_version`, `project_version`, the libraries' counter) — not
+  on every frame, not while an object is dragged; the Bring in window is no
+  longer copied each frame with its plan. The window functions were split
+  to one per part (Project lines, History).
+- **Wording:** "project line", "this line's / *name*'s" throughout; no
+  "branch", "ours" or "theirs" on the Merge page.
 
 Built and in active development; not approved yet.
 

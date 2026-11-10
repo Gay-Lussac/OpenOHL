@@ -11,13 +11,14 @@
 use eframe::egui;
 use ohl_server::Op;
 use ohl_session::lines::LineInfo;
-use ohl_session::versions::{Choices, Conflict, MAIN, Side};
+use ohl_session::versions::MAIN;
 
 use crate::app::Ready;
+use crate::merge_conflicts::{Settling, Source};
 use crate::scene::Layer;
 
 /// A window of the Versions menu.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum LinesWindow {
     /// Project lines: every line, which one is worked on, which are shown.
     Manage,
@@ -31,15 +32,9 @@ pub enum LinesWindow {
         /// and what it is in words (its line, when, its message).
         at: Option<(String, String)>,
     },
-    /// Bring in the changes of another line.
-    BringIn {
-        /// The line whose changes come in.
-        from: String,
-        /// Conflicts settled.
-        choices: Choices,
-        /// What it would give, worked out for (from, choices, log entry).
-        plan: Option<Box<PlanCache>>,
-    },
+    /// Bring in the changes of another line: which, the conflicts settled
+    /// so far and what it would give ([`crate::merge_conflicts`]).
+    BringIn(Settling),
     /// Submit the line worked on for review into the main line.
     Review {
         /// Note to the reviewers.
@@ -84,16 +79,12 @@ pub fn description_box(ui: &mut egui::Ui, id: &str, text: &str, height: f32) {
     });
 }
 
-/// A bring-in worked out: for which line, choices and log entry; the
-/// conflicts and whether the result is valid ([`Session::bring_in_plan`]).
-///
-/// [`Session::bring_in_plan`]: ohl_session::Session::bring_in_plan
-pub type PlanCache = (
-    String,
-    Choices,
-    i64,
-    Result<(Vec<Conflict>, Option<String>), String>,
-);
+impl LinesWindow {
+    /// Bring in the changes of line `from`, nothing settled yet.
+    pub fn bring_in(from: impl Into<String>) -> Self {
+        Self::BringIn(Settling::new(Source::BringIn { from: from.into() }))
+    }
+}
 
 /// What the user may do with project lines.
 struct Rights {
@@ -287,11 +278,7 @@ fn line_entries(ui: &mut egui::Ui, r: &mut Ready, all: &[LineInfo], current: &st
             .unwrap_or(&others[0])
             .name
             .clone();
-        r.lines_window = Some(LinesWindow::BringIn {
-            from,
-            choices: Choices::new(),
-            plan: None,
-        });
+        r.lines_window = Some(LinesWindow::bring_in(from));
         ui.close();
     }
     if ui
@@ -440,93 +427,491 @@ fn new_window(all: &[LineInfo], from: &str) -> LinesWindow {
     }
 }
 
-/// The object a conflict is about (`structure:T3` of
-/// `structure:T3/position`): one choice settles all its fields.
-fn object_key(c: &Conflict) -> &str {
-    c.key.split('/').next().unwrap_or(&c.key)
+/// What the user asked for in a window of the Versions menu: done once
+/// the window is drawn.
+#[derive(Default)]
+struct Asked {
+    /// A project operation, and what it is in words.
+    op: Option<(String, Op)>,
+    /// Operations after it, when it was made.
+    ops_after: Vec<(String, Op)>,
+    /// The line to work on.
+    switch: Option<String>,
+    /// A line to show or hide next to the one worked on.
+    toggle: Option<(String, bool)>,
+    /// The window shown next.
+    next: Option<LinesWindow>,
+    /// The working tree is opened.
+    open_tree: bool,
+    /// Show of a conflict: what to select and bring the views to.
+    show: Option<crate::selection::Selection>,
+    /// The window closes.
+    close: bool,
 }
 
-/// A conflict's object: its key, what it is, the fields changed on both
-/// lines, and — both lines having made it under one id — the id the other
-/// line's takes when both are kept.
-type ConflictObject = (String, String, Vec<String>, Option<String>);
+/// Bring in changes: the line they come from, then what
+/// [`crate::merge_conflicts::panel`] shows for it, and Bring in. Closing
+/// with choices made is asked again.
+fn bring_in_ui(
+    ui: &mut egui::Ui,
+    r: &Ready,
+    all: &[LineInfo],
+    current: &str,
+    st: &mut Settling,
+    asked: &mut Asked,
+) {
+    ui.label(format!(
+        "Brings the changes made on another line into {current}: changes to different objects \
+         combine by themselves; where both lines changed the same object, choose which to keep. \
+         The other line is not changed. Both lines' uncommitted work is first recorded as a \
+         revision of its own."
+    ));
+    ui.horizontal(|ui| {
+        ui.label("changes of");
+        let Source::BringIn { from } = &st.source else {
+            return;
+        };
+        let mut chosen = from.clone();
+        egui::ComboBox::from_id_salt("bring-in-from")
+            .selected_text(chosen.as_str())
+            .show_ui(ui, |ui| {
+                for l in all.iter().filter(|l| l.name != current) {
+                    ui.selectable_value(&mut chosen, l.name.clone(), &l.name)
+                        .on_hover_text(describe(l));
+                }
+            })
+            .response
+            .on_hover_text(
+                "The project line whose changes come in. Choosing another drops what was \
+                 settled for this one",
+            );
+        // Another line: the choices made for the one before are not its.
+        st.set_source(Source::BringIn { from: chosen });
+    });
+    ui.separator();
+    let mut resp = crate::merge_conflicts::panel(ui, r, st);
+    asked.show = resp.show.take();
+    if st.asking {
+        asked.close = crate::merge_conflicts::close_question(ui, st);
+        return;
+    }
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(resp.is_ready(), egui::Button::new(st.source.apply_label()))
+            .on_hover_text(st.source.apply_hover())
+            .on_disabled_hover_text(resp.why_not())
+            .clicked()
+        {
+            asked.op = Some(st.source.op(current, &st.choices, None));
+        }
+        if ui
+            .button("Cancel")
+            .on_hover_text("Nothing is changed")
+            .clicked()
+        {
+            asked.close = st.close();
+        }
+    });
+}
 
-/// The conflicts by object.
-fn by_object(conflicts: &[Conflict]) -> Vec<ConflictObject> {
-    let mut out: Vec<ConflictObject> = Vec::new();
-    for c in conflicts {
-        let key = object_key(c).to_owned();
-        let field = c.key.split_once('/').map(|(_, f)| f.replace('/', " "));
-        match out.iter_mut().find(|o| o.0 == key) {
-            Some(o) => o.2.extend(field),
-            None => {
-                let what = match &field {
-                    Some(f) => c
-                        .what
-                        .strip_suffix(f.as_str())
-                        .unwrap_or(&c.what)
-                        .trim()
-                        .to_owned(),
-                    None => c.what.clone(),
-                };
-                out.push((key, what, field.into_iter().collect(), c.keep_both.clone()));
+/// Project lines: every line, the one worked on, those shown; what is
+/// done with them.
+fn manage_ui(
+    ui: &mut egui::Ui,
+    r: &Ready,
+    all: &[LineInfo],
+    current: &str,
+    rights: &Rights,
+    asked: &mut Asked,
+) {
+    ui.label(
+        "Project lines are designs of the line kept in this project — the main line and, for \
+         example, the phases of the project. Each is edited on its own: your edits go to the \
+         line you work on, and Undo (⌘Z) undoes your edits on that line. Others can be shown \
+         next to it, in their colour.",
+    );
+    if r.model.remote.is_some() {
+        ui.label(
+            egui::RichText::new(
+                "On this server every user chooses their own line; nobody else's changes.",
+            )
+            .small()
+            .weak(),
+        );
+    }
+    ui.separator();
+    egui::Grid::new("project-lines")
+        .striped(true)
+        .spacing([12.0, 4.0])
+        .show(ui, |ui| {
+            for h in ["work on", "show", "line", "made by", "objects", ""] {
+                ui.label(egui::RichText::new(h).small().strong());
+            }
+            ui.end_row();
+            for l in all {
+                manage_row(ui, r, l, current, all.len(), rights, asked);
+                ui.end_row();
+            }
+        });
+    ui.separator();
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(
+                rights.edit,
+                egui::Button::new(format!("New line from {current}…")),
+            )
+            .clicked()
+        {
+            asked.next = Some(new_window(all, current));
+        }
+        if ui
+            .add_enabled(
+                rights.edit && all.len() > 1,
+                egui::Button::new("Bring in changes…"),
+            )
+            .clicked()
+        {
+            let from = all
+                .iter()
+                .find(|l| l.name != current && l.is_main())
+                .or_else(|| all.iter().find(|l| l.name != current))
+                .map(|l| l.name.clone())
+                .unwrap_or_default();
+            asked.next = Some(LinesWindow::bring_in(from));
+        }
+        if ui
+            .add_enabled(
+                rights.edit && current != MAIN && all.iter().any(LineInfo::is_main),
+                egui::Button::new("Submit for review…"),
+            )
+            .clicked()
+        {
+            asked.next = Some(LinesWindow::Review {
+                note: String::new(),
+            });
+        }
+        if ui.button("Working tree…").clicked() {
+            asked.open_tree = true;
+        }
+    });
+}
+
+/// One line of the Project lines window (`count`: how many lines the
+/// project has).
+fn manage_row(
+    ui: &mut egui::Ui,
+    r: &Ready,
+    l: &LineInfo,
+    current: &str,
+    count: usize,
+    rights: &Rights,
+    asked: &mut Asked,
+) {
+    let mine = l.name == current;
+    if ui
+        .radio(mine, "")
+        .on_hover_text("Work on this line: your edits go to it")
+        .clicked()
+        && !mine
+    {
+        asked.switch = Some(l.name.clone());
+    }
+    let mut on = mine || r.model.other_lines.iter().any(|o| o.name == l.name);
+    let tick = ui
+        .add_enabled(!mine, egui::Checkbox::without_text(&mut on))
+        .on_hover_text("Show it next to the line you work on")
+        .on_disabled_hover_text("The line you work on is always shown");
+    if tick.changed() {
+        asked.toggle = Some((l.name.clone(), on));
+    }
+    let mut name = egui::RichText::new(&l.name);
+    if mine {
+        name = name.strong();
+    } else if let Some(c) = shown_color(r, &l.name) {
+        name = name.color(c);
+    }
+    ui.label(name).on_hover_text(describe(l));
+    ui.label(if l.is_main() {
+        "main line".to_owned()
+    } else if l.user.is_empty() {
+        "—".to_owned()
+    } else {
+        l.user.clone()
+    });
+    ui.label(l.objects.to_string());
+    ui.horizontal(|ui| {
+        let may = rights.manage(l);
+        if ui
+            .add(egui::Button::new("Description…").small())
+            .on_hover_text(if l.description.trim().is_empty() {
+                "No description yet".to_owned()
+            } else {
+                l.description.chars().take(300).collect::<String>()
+            })
+            .clicked()
+        {
+            asked.next = Some(LinesWindow::Description {
+                line: l.name.clone(),
+                text: l.description.clone(),
+            });
+        }
+        if ui
+            .add_enabled(may.is_ok(), egui::Button::new("Rename…").small())
+            .on_disabled_hover_text(may.clone().err().unwrap_or_default())
+            .clicked()
+        {
+            asked.next = Some(LinesWindow::Rename {
+                from: l.name.clone(),
+                to: l.name.clone(),
+            });
+        }
+        let may_delete = may.and_then(|()| {
+            if mine {
+                Err("you work on it: choose another line first".into())
+            } else if count == 1 {
+                Err("the project's only line".into())
+            } else {
+                Ok(())
+            }
+        });
+        if ui
+            .add_enabled(may_delete.is_ok(), egui::Button::new("Delete…").small())
+            .on_disabled_hover_text(may_delete.err().unwrap_or_default())
+            .clicked()
+        {
+            asked.next = Some(LinesWindow::Delete(l.name.clone()));
+        }
+    });
+}
+
+/// New project line: its name, what it is a copy of.
+fn new_ui(
+    ui: &mut egui::Ui,
+    all: &[LineInfo],
+    name: &mut String,
+    from: &mut String,
+    at: &Option<(String, String)>,
+    asked: &mut Asked,
+) {
+    ui.label(
+        "A new project line starts as a copy of another — as it is now, changes not yet \
+         committed included. From then on each is edited on its own: corrections made on the \
+         other line reach the new one only when you bring them in (Versions › Bring in changes).",
+    );
+    // A revision in words; a line by its name.
+    let shown = |from: &String| match at {
+        Some((id, words)) if id == from => words.clone(),
+        _ => from.clone(),
+    };
+    egui::Grid::new("new-line").num_columns(2).show(ui, |ui| {
+        ui.label("name");
+        ui.text_edit_singleline(name);
+        ui.end_row();
+        ui.label("copy of");
+        egui::ComboBox::from_id_salt("new-line-from")
+            .selected_text(shown(from))
+            .width(360.0)
+            .show_ui(ui, |ui| {
+                if let Some((id, words)) = at {
+                    ui.selectable_value(from, id.clone(), words.as_str());
+                    ui.separator();
+                }
+                for l in all {
+                    ui.selectable_value(from, l.name.clone(), format!("{} as it is now", l.name));
+                }
+            });
+        ui.end_row();
+    });
+    ui.label(
+        egui::RichText::new(
+            "The line is yours: you and the admins may rename or delete it. You keep working \
+             on the line you are on; choose the new one in Project lines.",
+        )
+        .small()
+        .weak(),
+    );
+    ui.horizontal(|ui| {
+        if ui.button("Create").clicked() {
+            let n = name.trim().to_owned();
+            asked.op = Some((
+                format!("project line {n} started from {}", shown(from)),
+                Op::CreateLine {
+                    name: n,
+                    from: from.clone(),
+                },
+            ));
+        }
+        asked.close |= ui.button("Cancel").clicked();
+    });
+}
+
+/// Submit the line worked on for review into the main line.
+fn review_ui(ui: &mut egui::Ui, r: &Ready, current: &str, note: &mut String, asked: &mut Asked) {
+    ui.label(format!(
+        "Asks for {current} to be merged into the main line. Its uncommitted work is committed \
+         first. A reviewer or an admin approves it in Versions › Revisions, tags and reviews › \
+         Reviews, then merges it — the main line changes only then. Keep working on {current} \
+         meanwhile: submit again when it changed."
+    ));
+    ui.horizontal(|ui| {
+        ui.label("note");
+        ui.add(
+            egui::TextEdit::singleline(note)
+                .hint_text("e.g. stage 1 ready: structures 12 to 20 replaced")
+                .desired_width(360.0),
+        );
+    });
+    ui.horizontal(|ui| {
+        if ui.button("Submit").clicked() {
+            let dirty = r
+                .model
+                .session()
+                .and_then(|s| s.status().ok())
+                .is_some_and(|st| !st.changes.is_empty());
+            let message = if note.trim().is_empty() {
+                format!("{current} submitted for review")
+            } else {
+                note.trim().to_owned()
+            };
+            let review = (
+                format!("{current} submitted for review into the main line"),
+                Op::SubmitReview {
+                    branch: current.to_owned(),
+                    target: MAIN.to_owned(),
+                    reviewers: vec![],
+                    note: note.trim().to_owned(),
+                },
+            );
+            if dirty {
+                asked.op = Some((format!("{current} committed"), Op::Commit { message }));
+                asked.ops_after.push(review);
+            } else {
+                asked.op = Some(review);
             }
         }
-    }
-    out
+        asked.close |= ui.button("Cancel").clicked();
+    });
 }
 
-/// One object both lines changed: keep which side.
-fn conflict_row(
-    ui: &mut egui::Ui,
-    (key, what, fields, keep_both): &ConflictObject,
-    from: &str,
-    choices: &mut Choices,
-) {
-    let label = ui.label(what);
-    if !fields.is_empty() {
-        label.on_hover_text(format!("changed on both: {}", fields.join(", ")));
-    }
-    let mut side = choices.get(key).copied();
-    ui.radio_value(&mut side, Some(Side::Ours), "keep this line's");
-    ui.radio_value(&mut side, Some(Side::Theirs), format!("take {from}'s"));
-    if let Some(id) = keep_both {
-        ui.radio_value(&mut side, Some(Side::Both), "keep both")
-            .on_hover_text(format!(
-                "Each line made an object under this id. Both are kept: this line's as it is, \
-                 {from}'s as \"{id}\" — what refers to it on {from} (sections, jumpers, \
-                 alignment points…) follows"
+/// Rename a line.
+fn rename_ui(ui: &mut egui::Ui, from: &str, to: &mut String, asked: &mut Asked) {
+    ui.horizontal(|ui| {
+        ui.label("new name");
+        ui.text_edit_singleline(to);
+    });
+    ui.label(
+        egui::RichText::new("Its history, reviews and whoever works on it follow the new name.")
+            .small()
+            .weak(),
+    );
+    ui.horizontal(|ui| {
+        if ui.button("Rename").clicked() {
+            asked.op = Some((
+                format!("project line {from} renamed {}", to.trim()),
+                Op::RenameLine {
+                    from: from.to_owned(),
+                    to: to.trim().to_owned(),
+                },
             ));
+        }
+        asked.close |= ui.button("Cancel").clicked();
+    });
+}
+
+/// A line's description: edited by its creator or an admin, read by the
+/// others.
+fn description_ui(
+    ui: &mut egui::Ui,
+    all: &[LineInfo],
+    rights: &Rights,
+    line: &str,
+    text: &mut String,
+    asked: &mut Asked,
+) {
+    let info = all.iter().find(|l| l.name == line);
+    let may = info.map_or(Err("no such line".into()), |l| rights.manage(l));
+    ui.label(
+        egui::RichText::new(
+            "What this line is for: its scope, assumptions, status… (kept in the project, shown \
+             under the working tree).",
+        )
+        .small()
+        .weak(),
+    );
+    if let Err(why) = may {
+        description_box(ui, "description-read", text, DESCRIPTION_HEIGHT);
+        ui.label(
+            egui::RichText::new(format!("Read only: {why}"))
+                .small()
+                .weak(),
+        );
+        asked.close |= ui.button("Close").clicked();
+        return;
     }
-    if let Some(s) = side {
-        choices.insert(key.clone(), s);
-    }
-    ui.end_row();
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt("description-edit")
+            .max_height(DESCRIPTION_HEIGHT)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(text)
+                        .desired_rows(6)
+                        .desired_width(f32::INFINITY)
+                        .char_limit(ohl_session::lines::MAX_DESCRIPTION),
+                );
+            });
+    });
+    ui.horizontal(|ui| {
+        if ui.button("Save").clicked() {
+            asked.op = Some((
+                format!("description of {line} saved"),
+                Op::SetLineDescription {
+                    line: line.to_owned(),
+                    description: text.clone(),
+                },
+            ));
+        }
+        asked.close |= ui.button("Cancel").clicked();
+    });
+}
+
+/// Delete a line, asked again.
+fn delete_ui(ui: &mut egui::Ui, name: &str, asked: &mut Asked) {
+    ui.label(format!(
+        "The line {name} and its uncommitted work are deleted (its revisions stay: Versions › \
+         Revisions, tags and reviews › New line from it… brings it back). Open reviews of it \
+         are closed. Whoever works on it is moved to another line. Not undone with ⌘Z."
+    ));
+    ui.horizontal(|ui| {
+        if ui.button("Delete").clicked() {
+            asked.op = Some((
+                format!("project line {name} deleted"),
+                Op::DeleteLine {
+                    name: name.to_owned(),
+                },
+            ));
+        }
+        asked.close |= ui.button("Cancel").clicked();
+    });
 }
 
 /// The windows of the Versions menu.
 pub fn window(ctx: &egui::Context, r: &mut Ready) {
-    let Some(mut w) = r.lines_window.clone() else {
+    // (Taken, drawn and put back: nothing of it is copied.)
+    let Some(mut w) = r.lines_window.take() else {
         return;
     };
     let Some(current) = r.model.session().map(|s| s.current_line().to_owned()) else {
-        r.lines_window = None;
         return;
     };
     let all = lines(r);
     let rights = Rights::of(r);
-    let mut close = false;
-    // What to do once the window is drawn.
-    let mut op: Option<(String, Op)> = None;
-    let mut ops_after: Vec<(String, Op)> = Vec::new();
-    let mut switch: Option<String> = None;
-    let mut toggle: Option<(String, bool)> = None;
-    let mut next: Option<LinesWindow> = None;
-    let mut open_tree = false;
+    let mut asked = Asked::default();
     let title = match &w {
         LinesWindow::Manage => "Project lines".to_owned(),
         LinesWindow::New { .. } => "New project line".to_owned(),
-        LinesWindow::BringIn { .. } => format!("Bring changes into {current}"),
+        LinesWindow::BringIn(_) => format!("Bring changes into {current}"),
         LinesWindow::Review { .. } => format!("Submit {current} for review"),
         LinesWindow::Rename { from, .. } => format!("Rename project line {from}"),
         LinesWindow::Delete(n) => format!("Delete project line {n}?"),
@@ -538,480 +923,47 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
         .open(&mut open)
         .collapsible(false)
         .default_width(620.0)
-        .show(ctx, |ui| match &mut w {
-            LinesWindow::Manage => {
-                ui.label(
-                    "Project lines are designs of the line kept in this project — the main \
-                     line and, for example, the phases of the project. Each is edited on its \
-                     own: your edits go to the line you work on, and Undo (⌘Z) undoes your \
-                     edits on that line. Others can be shown next to it, in their colour.",
-                );
-                if r.model.remote.is_some() {
-                    ui.label(
-                        egui::RichText::new(
-                            "On this server every user chooses their own line; nobody else's \
-                             changes.",
-                        )
-                        .small()
-                        .weak(),
-                    );
+        .show(ctx, |ui| {
+            let asked = &mut asked;
+            match &mut w {
+                LinesWindow::Manage => manage_ui(ui, r, &all, &current, &rights, asked),
+                LinesWindow::New { name, from, at } => new_ui(ui, &all, name, from, at, asked),
+                LinesWindow::BringIn(st) => bring_in_ui(ui, r, &all, &current, st, asked),
+                LinesWindow::Review { note } => review_ui(ui, r, &current, note, asked),
+                LinesWindow::Rename { from, to } => rename_ui(ui, from, to, asked),
+                LinesWindow::Description { line, text } => {
+                    description_ui(ui, &all, &rights, line, text, asked)
                 }
-                ui.separator();
-                egui::Grid::new("project-lines")
-                    .striped(true)
-                    .spacing([12.0, 4.0])
-                    .show(ui, |ui| {
-                        for h in ["work on", "show", "line", "made by", "objects", ""] {
-                            ui.label(egui::RichText::new(h).small().strong());
-                        }
-                        ui.end_row();
-                        for l in &all {
-                            let mine = l.name == current;
-                            let mut chosen = mine;
-                            if ui
-                                .radio(chosen, "")
-                                .on_hover_text("Work on this line: your edits go to it")
-                                .clicked()
-                                && !mine
-                            {
-                                chosen = true;
-                                switch = Some(l.name.clone());
-                            }
-                            let _ = chosen;
-                            let mut on =
-                                mine || r.model.other_lines.iter().any(|o| o.name == l.name);
-                            let tick = ui
-                                .add_enabled(!mine, egui::Checkbox::without_text(&mut on))
-                                .on_hover_text("Show it next to the line you work on")
-                                .on_disabled_hover_text("The line you work on is always shown");
-                            if tick.changed() {
-                                toggle = Some((l.name.clone(), on));
-                            }
-                            let mut name = egui::RichText::new(&l.name);
-                            if mine {
-                                name = name.strong();
-                            } else if let Some(c) = shown_color(r, &l.name) {
-                                name = name.color(c);
-                            }
-                            ui.label(name).on_hover_text(describe(l));
-                            ui.label(if l.is_main() {
-                                "main line".to_owned()
-                            } else if l.user.is_empty() {
-                                "—".to_owned()
-                            } else {
-                                l.user.clone()
-                            });
-                            ui.label(l.objects.to_string());
-                            ui.horizontal(|ui| {
-                                let may = rights.manage(l);
-                                if ui
-                                    .add(egui::Button::new("Description…").small())
-                                    .on_hover_text(if l.description.trim().is_empty() {
-                                        "No description yet".to_owned()
-                                    } else {
-                                        l.description.chars().take(300).collect::<String>()
-                                    })
-                                    .clicked()
-                                {
-                                    next = Some(LinesWindow::Description {
-                                        line: l.name.clone(),
-                                        text: l.description.clone(),
-                                    });
-                                }
-                                if ui
-                                    .add_enabled(may.is_ok(), egui::Button::new("Rename…").small())
-                                    .on_disabled_hover_text(may.clone().err().unwrap_or_default())
-                                    .clicked()
-                                {
-                                    next = Some(LinesWindow::Rename {
-                                        from: l.name.clone(),
-                                        to: l.name.clone(),
-                                    });
-                                }
-                                let may_delete = may.and_then(|()| {
-                                    if mine {
-                                        Err("you work on it: choose another line first".into())
-                                    } else if all.len() == 1 {
-                                        Err("the project's only line".into())
-                                    } else {
-                                        Ok(())
-                                    }
-                                });
-                                if ui
-                                    .add_enabled(
-                                        may_delete.is_ok(),
-                                        egui::Button::new("Delete…").small(),
-                                    )
-                                    .on_disabled_hover_text(may_delete.err().unwrap_or_default())
-                                    .clicked()
-                                {
-                                    next = Some(LinesWindow::Delete(l.name.clone()));
-                                }
-                            });
-                            ui.end_row();
-                        }
-                    });
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            rights.edit,
-                            egui::Button::new(format!("New line from {current}…")),
-                        )
-                        .clicked()
-                    {
-                        next = Some(new_window(&all, &current));
-                    }
-                    if ui
-                        .add_enabled(
-                            rights.edit && all.len() > 1,
-                            egui::Button::new("Bring in changes…"),
-                        )
-                        .clicked()
-                    {
-                        let from = all
-                            .iter()
-                            .find(|l| l.name != current && l.is_main())
-                            .or_else(|| all.iter().find(|l| l.name != current))
-                            .map(|l| l.name.clone())
-                            .unwrap_or_default();
-                        next = Some(LinesWindow::BringIn {
-                            from,
-                            choices: Choices::new(),
-                            plan: None,
-                        });
-                    }
-                    if ui
-                        .add_enabled(
-                            rights.edit && current != MAIN && all.iter().any(LineInfo::is_main),
-                            egui::Button::new("Submit for review…"),
-                        )
-                        .clicked()
-                    {
-                        next = Some(LinesWindow::Review {
-                            note: String::new(),
-                        });
-                    }
-                    if ui.button("Working tree…").clicked() {
-                        open_tree = true;
-                    }
-                });
-            }
-            LinesWindow::New { name, from, at } => {
-                ui.label(
-                    "A new project line starts as a copy of another — as it is now, changes \
-                     not yet committed included. From then on each is edited on its own: \
-                     corrections made on the other line reach the new one only when you bring \
-                     them in (Versions › Bring in changes).",
-                );
-                egui::Grid::new("new-line").num_columns(2).show(ui, |ui| {
-                    ui.label("name");
-                    ui.text_edit_singleline(name);
-                    ui.end_row();
-                    ui.label("copy of");
-                    // A revision in words; a line by its name.
-                    let shown = match at {
-                        Some((id, words)) if id == from => words.clone(),
-                        _ => from.clone(),
-                    };
-                    egui::ComboBox::from_id_salt("new-line-from")
-                        .selected_text(shown)
-                        .width(360.0)
-                        .show_ui(ui, |ui| {
-                            if let Some((id, words)) = at {
-                                ui.selectable_value(from, id.clone(), words.as_str());
-                                ui.separator();
-                            }
-                            for l in &all {
-                                ui.selectable_value(
-                                    from,
-                                    l.name.clone(),
-                                    format!("{} as it is now", l.name),
-                                );
-                            }
-                        });
-                    ui.end_row();
-                });
-                ui.label(
-                    egui::RichText::new(
-                        "The line is yours: you and the admins may rename or delete it. You \
-                         keep working on the line you are on; choose the new one in Project \
-                         lines.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("Create").clicked() {
-                        let n = name.trim().to_owned();
-                        let source = match at {
-                            Some((id, words)) if id == from => words.clone(),
-                            _ => from.clone(),
-                        };
-                        op = Some((
-                            format!("project line {n} started from {source}"),
-                            Op::CreateLine {
-                                name: n,
-                                from: from.clone(),
-                            },
-                        ));
-                    }
-                    close |= ui.button("Cancel").clicked();
-                });
-            }
-            LinesWindow::BringIn {
-                from,
-                choices,
-                plan: cache,
-            } => {
-                ui.label(format!(
-                    "Brings the changes made on another line into {current}: changes to \
-                     different objects combine by themselves; where both lines changed the same \
-                     object, choose which to keep. The other line is not changed. Both lines' \
-                     uncommitted work is first recorded as a revision of its own."
-                ));
-                ui.horizontal(|ui| {
-                    ui.label("changes of");
-                    let before = from.clone();
-                    egui::ComboBox::from_id_salt("bring-in-from")
-                        .selected_text(from.as_str())
-                        .show_ui(ui, |ui| {
-                            for l in all.iter().filter(|l| l.name != current) {
-                                ui.selectable_value(from, l.name.clone(), &l.name);
-                            }
-                        });
-                    if *from != before {
-                        choices.clear();
-                    }
-                });
-                // Worked out again only when something changed.
-                let seq = r
-                    .model
-                    .session()
-                    .and_then(|s| s.last_seq().ok())
-                    .unwrap_or(0);
-                let fresh = cache
-                    .as_ref()
-                    .is_some_and(|c| c.0 == *from && c.1 == *choices && c.2 == seq);
-                if !fresh {
-                    let result = r
-                        .model
-                        .session()
-                        .ok_or_else(|| "no project".to_owned())
-                        .and_then(|s| s.bring_in_plan(from, choices).map_err(|e| e.to_string()));
-                    *cache = Some(Box::new((from.clone(), choices.clone(), seq, result)));
-                }
-                let plan = cache
-                    .as_ref()
-                    .map(|c| c.3.clone())
-                    .unwrap_or(Err(String::new()));
-                let ready = match &plan {
-                    Err(e) => {
-                        crate::menu::error_label(ui, e.as_str());
-                        false
-                    }
-                    Ok((conflicts, problem)) => {
-                        let objects = by_object(conflicts);
-                        if objects.is_empty() {
-                            ui.label("No conflict: everything combines by itself.");
-                        } else {
-                            ui.label(format!(
-                                "{} object(s) changed on both lines — keep which?",
-                                objects.len()
-                            ));
-                            egui::ScrollArea::vertical()
-                                .max_height(crate::menu::TEXT_BOX_HEIGHT)
-                                .show(ui, |ui| {
-                                    egui::Grid::new("bring-in-conflicts").striped(true).show(
-                                        ui,
-                                        |ui| {
-                                            for o in &objects {
-                                                conflict_row(ui, o, from, choices);
-                                            }
-                                        },
-                                    );
-                                });
-                            ui.horizontal(|ui| {
-                                if ui.small_button("All: keep this line's").clicked() {
-                                    for o in &objects {
-                                        choices.insert(o.0.clone(), Side::Ours);
-                                    }
-                                }
-                                if ui.small_button(format!("All: take {from}'s")).clicked() {
-                                    for o in &objects {
-                                        choices.insert(o.0.clone(), Side::Theirs);
-                                    }
-                                }
-                            });
-                        }
-                        if let Some(p) = problem {
-                            crate::menu::error_label(
-                                ui,
-                                format!("The line would not be valid: {p}"),
-                            );
-                        }
-                        conflicts.iter().all(|c| c.chosen.is_some()) && problem.is_none()
-                    }
-                };
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(ready, egui::Button::new("Bring in"))
-                        .on_disabled_hover_text("Choose a side for every conflict first")
-                        .clicked()
-                    {
-                        op = Some((
-                            format!("changes of {from} brought into {current}"),
-                            Op::BringIn {
-                                from: from.clone(),
-                                choices: choices.clone(),
-                            },
-                        ));
-                    }
-                    close |= ui.button("Cancel").clicked();
-                });
-            }
-            LinesWindow::Review { note } => {
-                ui.label(format!(
-                    "Asks for {current} to be merged into the main line. Its uncommitted work is \
-                     committed first. A reviewer or an admin approves it in Versions › Revisions, tags \
-                     and reviews › Reviews, \
-                     then merges it — the main line changes only then. Keep working on \
-                     {current} meanwhile: submit again when it changed."
-                ));
-                ui.horizontal(|ui| {
-                    ui.label("note");
-                    ui.add(
-                        egui::TextEdit::singleline(note)
-                            .hint_text("e.g. stage 1 ready: structures 12 to 20 replaced")
-                            .desired_width(360.0),
-                    );
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Submit").clicked() {
-                        let dirty = r
-                            .model
-                            .session()
-                            .and_then(|s| s.status().ok())
-                            .is_some_and(|st| !st.changes.is_empty());
-                        let message = if note.trim().is_empty() {
-                            format!("{current} submitted for review")
-                        } else {
-                            note.trim().to_owned()
-                        };
-                        let review = (
-                            format!("{current} submitted for review into the main line"),
-                            Op::SubmitReview {
-                                branch: current.clone(),
-                                target: MAIN.to_owned(),
-                                reviewers: vec![],
-                                note: note.trim().to_owned(),
-                            },
-                        );
-                        if dirty {
-                            op = Some((format!("{current} committed"), Op::Commit { message }));
-                            ops_after.push(review);
-                        } else {
-                            op = Some(review);
-                        }
-                    }
-                    close |= ui.button("Cancel").clicked();
-                });
-            }
-            LinesWindow::Rename { from, to } => {
-                ui.horizontal(|ui| {
-                    ui.label("new name");
-                    ui.text_edit_singleline(to);
-                });
-                ui.label(
-                    egui::RichText::new(
-                        "Its history, reviews and whoever works on it follow the new name.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("Rename").clicked() {
-                        op = Some((
-                            format!("project line {from} renamed {}", to.trim()),
-                            Op::RenameLine {
-                                from: from.clone(),
-                                to: to.trim().to_owned(),
-                            },
-                        ));
-                    }
-                    close |= ui.button("Cancel").clicked();
-                });
-            }
-            LinesWindow::Description { line, text } => {
-                let info = all.iter().find(|l| &l.name == line);
-                let may = info.map_or(Err("no such line".into()), |l| rights.manage(l));
-                ui.label(
-                    egui::RichText::new(
-                        "What this line is for: its scope, assumptions, status… (kept in the \
-                         project, shown under the working tree).",
-                    )
-                    .small()
-                    .weak(),
-                );
-                if may.is_ok() {
-                    egui::Frame::group(ui.style()).show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("description-edit")
-                            .max_height(DESCRIPTION_HEIGHT)
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
-                                ui.add(
-                                    egui::TextEdit::multiline(text)
-                                        .desired_rows(6)
-                                        .desired_width(f32::INFINITY)
-                                        .char_limit(ohl_session::lines::MAX_DESCRIPTION),
-                                );
-                            });
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() {
-                            op = Some((
-                                format!("description of {line} saved"),
-                                Op::SetLineDescription {
-                                    line: line.clone(),
-                                    description: text.clone(),
-                                },
-                            ));
-                        }
-                        close |= ui.button("Cancel").clicked();
-                    });
-                } else {
-                    description_box(ui, "description-read", text, DESCRIPTION_HEIGHT);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Read only: {}",
-                            may.err().unwrap_or_default()
-                        ))
-                        .small()
-                        .weak(),
-                    );
-                    close |= ui.button("Close").clicked();
-                }
-            }
-            LinesWindow::Delete(name) => {
-                ui.label(format!(
-                    "The line {name} and its uncommitted work are deleted (its revisions stay: \
-                     Versions › Revisions, tags and reviews › New line from it… brings it back). \
-                     Open reviews of it are closed. \
-                     Whoever works on it is moved to another line. Not undone with ⌘Z."
-                ));
-                ui.horizontal(|ui| {
-                    if ui.button("Delete").clicked() {
-                        op = Some((
-                            format!("project line {name} deleted"),
-                            Op::DeleteLine { name: name.clone() },
-                        ));
-                    }
-                    close |= ui.button("Cancel").clicked();
-                });
+                LinesWindow::Delete(name) => delete_ui(ui, name, asked),
             }
         });
-    close |= !open || ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    // Closed with its cross or Esc: a Bring in with choices made asks
+    // first.
+    if !asked.close && (!open || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
+        asked.close = match &mut w {
+            LinesWindow::BringIn(st) => st.close(),
+            _ => true,
+        };
+    }
+    finish(r, w, asked);
+}
+
+/// Does what a window of the Versions menu asked for, and keeps, changes
+/// or closes the window.
+fn finish(r: &mut Ready, mut w: LinesWindow, asked: Asked) {
+    let Asked {
+        op,
+        ops_after,
+        switch,
+        toggle,
+        mut next,
+        open_tree,
+        show: target,
+        mut close,
+    } = asked;
+    if let Some(target) = target {
+        r.go_to(target);
+    }
     if let Some((name, on)) = toggle {
         show(r, &name, on);
     }
@@ -1030,44 +982,41 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             Op::DeleteLine { name } => Some(name.clone()),
             _ => None,
         };
-        let failed = match r.model.project_op(&what, o) {
+        match r.model.project_op(&what, o) {
             Ok(m) => {
                 r.status = Some((m, false));
-                false
-            }
-            Err(e) => {
-                r.status = Some((e.to_string(), true));
-                true
-            }
-        };
-        if !failed {
-            for (what, o) in ops_after {
-                if let Err(e) = r.model.project_op(&what, o) {
-                    r.status = Some((e.to_string(), true));
-                    break;
+                for (what, o) in ops_after {
+                    if let Err(e) = r.model.project_op(&what, o) {
+                        r.status = Some((e.to_string(), true));
+                        break;
+                    }
+                    r.status = Some((what, false));
                 }
-                r.status = Some((what, false));
-            }
-            if let Some((from, to)) = renamed {
-                for o in &mut r.model.other_lines {
-                    if o.name == from {
-                        o.name = to.clone();
+                if let Some((from, to)) = renamed {
+                    for o in &mut r.model.other_lines {
+                        if o.name == from {
+                            o.name = to.clone();
+                        }
                     }
                 }
+                if let Some(name) = deleted {
+                    r.model.other_lines.retain(|o| o.name != name);
+                }
+                r.view3d.dirty.insert(Layer::OtherLines);
+                r.clearances.stale = true;
+                r.refresh_views();
+                // Back to the list, or closed.
+                next = matches!(w, LinesWindow::Delete(_) | LinesWindow::Rename { .. })
+                    .then_some(LinesWindow::Manage);
+                close = next.is_none();
             }
-            if let Some(name) = deleted {
-                r.model.other_lines.retain(|o| o.name != name);
+            Err(e) => {
+                // Said in the window too; what was settled is kept.
+                if let LinesWindow::BringIn(st) = &mut w {
+                    st.refused(e.to_string());
+                }
+                r.status = Some((e.to_string(), true));
             }
-            r.view3d.dirty.insert(Layer::OtherLines);
-            r.clearances.stale = true;
-            r.refresh_views();
-            // Back to the list, or closed.
-            next = matches!(
-                r.lines_window,
-                Some(LinesWindow::Delete(_)) | Some(LinesWindow::Rename { .. })
-            )
-            .then_some(LinesWindow::Manage);
-            close = next.is_none();
         }
     }
     r.lines_window = if let Some(n) = next {

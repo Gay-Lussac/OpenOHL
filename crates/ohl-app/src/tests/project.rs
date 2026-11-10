@@ -664,11 +664,7 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
             r.model.ensure_solved(k);
         }
         assert_eq!(r.model.line.structure("T2").unwrap().position, p, "a copy");
-        r.lines_window = Some(LinesWindow::BringIn {
-            from: "main".into(),
-            choices: Default::default(),
-            plan: None,
-        });
+        r.lines_window = Some(LinesWindow::bring_in("main"));
     }
     harness.run();
     assert!(harness.query_by_label_contains("No conflict").is_some());

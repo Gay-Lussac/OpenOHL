@@ -231,14 +231,31 @@ one.
   starting at the last revision of the line you work on, without its
   uncommitted changes — **Versions › New line from …** copies the line as
   it is now); per revision *Diff*, *Tag…*, *New line from it…* (asks for
-  the name) and *Revert*.
+  the name) and *Revert…* (a window shows what undoing the revision
+  changes, with the conflicts to settle where its objects were changed
+  again since; **Revert** there makes it — refused with uncommitted work).
 - **Changes**: two revisions (or a revision and the working state) compared
   field by field; **Engineering impact** solves the touched sections in the
   weather case shown, on the surface of the checks.
-- **Merge**: *Preview* lists what the merge does and its conflicts, each with
-  *ours* / *theirs*; *Merge* when all are settled.
-- **Reviews**: submit a line, approve or reject with a comment, merge an
-  approved one (into its target, whichever line you work on).
+- **Merge**: brings the changes of a project line, a tag or a revision
+  into the line you work on. Name it and press *Preview*: the page shows
+  **Bring changes of *name* into *your line*** — what the merge does, the
+  objects both changed (the list of conflicts described in
+  [Project lines and stages](project-lines.md#a-stage-step-by-step): *keep
+  this line's* / *take name's* / *keep both*, the fields in words, *Show*),
+  what it changes in your line object by object, and on demand its
+  **Engineering impact** (the touched sections solved as they are and as
+  merged, in the weather case shown). *Merge* when every conflict is
+  settled. It differs from **Versions › Bring in changes…** in two ways:
+  it takes anything that has a revision, and it does not record
+  uncommitted work for you — with uncommitted changes the page says so
+  before the preview and offers **Commit first**. What you settled is kept
+  through that, and through any refusal; previewing something else drops
+  it.
+- **Reviews**: submit a line, approve or reject with a comment, **Merge…**
+  an approved one (into its target, whichever line you work on): its
+  window shows what the merge changes and the conflicts to settle, as the
+  Merge page does.
 - **Rights** (admins): grants listed, revoked, made.
 
 Each project line has its own library files (a new line starts with
