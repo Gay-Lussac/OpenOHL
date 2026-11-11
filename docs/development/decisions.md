@@ -10,6 +10,40 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Gap-type conductors: the mechanism; the source is missing (roadmap O22 item 7)**
+
+- **What.** `bimetallic_behavior = "gap"` (wire library version **3**,
+  for such a wire type only): the outer strands unloaded in each
+  section's stringing state — an offset of their mechanical strain, set
+  where the core alone carries the section's mean tension — and no
+  compression. The knee point is the section's stringing temperature;
+  above it the core alone. Ruling span and finite elements (the latter
+  always through the components). With a stringing given after creep or
+  load: in the initial state worked back.
+- **The source is missing.** No primary description of gap-type
+  conductors is in hand; the theory says so and cites nothing (the
+  design's open question: build the mechanism before it arrives — the
+  recommended option, taken). The model is to be checked against the
+  source.
+- **A choice made here: the weight.** The data sheet's weight per metre
+  of the conductor **as it lies when strung** (the outer strands, most
+  of the mass, unstressed at that length): conservative by the core's
+  strain on its share of the mass (< 0.1 %). The design left "weight
+  conservation unchanged", which on the core's unstressed length would
+  have been 0.15 % light — not on the safe side. The finite elements
+  keep their convention (0.08 % less than the ruling span here: 5 mm of
+  sag in 6.4 m).
+- **Said.** "NOT ON THE SAFE SIDE: gap-type wire X (sections …) …" on
+  every result of the line: valid only for a conductor installed on its
+  core. On the benchmark the gap type sags **0.79 m less at 60 °C** than
+  the same components as an ordinary conductor (7.06 m against 7.85 m).
+- **Refused / not done.** A line's own bimetallic model cannot be "gap";
+  a gap type needs a core; `ohl sagtension` refuses it (its tables are
+  not of a section's stringing state); its jumpers are taken as a bird
+  cage (said); the wire form's hover (the option is listed).
+- **Validation.** `tbgap-001…003`, independent by quadrature; at 60 °C
+  the same value from a single-material cable of the core.
+
 **Creep at elevated temperature: the mechanism, no law (roadmap O22 item 6)**
 
 - **What is built.** A wire type may give a law of creep at elevated

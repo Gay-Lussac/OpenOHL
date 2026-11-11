@@ -179,6 +179,7 @@ type Parts<V> = Mutex<Option<Lru<V>>>;
 static PREPARED: Parts<Arc<Prepared>> = Mutex::new(None);
 static FINAL: Parts<FinalState> = Mutex::new(None);
 static STRINGING: Parts<Arc<Vec<f64>>> = Mutex::new(None);
+static GAP: Parts<ohl_cables::mechanics::Mechanics> = Mutex::new(None);
 
 fn recall<V: Clone>(memo: &Parts<V>, k: &Key) -> Option<V> {
     memo.lock()
@@ -260,6 +261,21 @@ pub(super) fn stringing(
     let t = Arc::new(solve()?);
     keep(&STRINGING, k, t.clone());
     Ok(t)
+}
+
+/// The mechanics of a gap-type conductor as strung in the section of
+/// `prepared` — its outer strands' offset set by that stringing state
+/// (`build` works them out) — from the memo when worked out before.
+pub(super) fn gap_mechanics(
+    prepared: &Prepared,
+    build: impl FnOnce() -> Result<ohl_cables::mechanics::Mechanics, LineError>,
+) -> Result<ohl_cables::mechanics::Mechanics, LineError> {
+    if let Some(m) = recall(&GAP, &prepared.key) {
+        return Ok(m);
+    }
+    let m = build()?;
+    keep(&GAP, prepared.key, m.clone());
+    Ok(m)
 }
 
 /// [`super::final_state`], from the memo when worked out before.
@@ -440,7 +456,7 @@ pub(crate) fn live_memo(
 
 /// Drops every memo (e.g. to measure a solve from scratch).
 pub fn forget_solves() {
-    for m in [&PREPARED as &dyn Forget, &FINAL, &STRINGING] {
+    for m in [&PREPARED as &dyn Forget, &FINAL, &STRINGING, &GAP] {
         m.forget();
     }
     if let Ok(mut m) = SOLVES.lock() {

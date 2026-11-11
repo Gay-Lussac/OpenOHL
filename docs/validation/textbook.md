@@ -105,6 +105,16 @@ the real strings (FE, clipped in) the spans carry −0.73 %, +0.26 % and
 | tbpl-001 | level 300 m, 2 kN at mid-span: slope jump P/H | closed form \\( C[\cosh(a+b) - \cosh b] \\) + reference | \\( 10^{-8} \\) |
 | tbpl-002 | inclined, 1.5 kN at 100 m | vertical balance, \\( T_B - T_A = wh \\) + jump + reference | \\( 10^{-8} \\) |
 
+### Gap-type conductor (`benchmarks/sagtension/textbook-gap.toml`)
+
+The bimetallic benchmark's components as a gap-type conductor (the outer strands unloaded in the stringing state), against an independent calculation by quadrature (`textbook_reference.py`, `gap`) ([theory](../theory/sagtension.md#gap-type-conductors)).
+
+| Case | What | Reference |
+|---|---|---|
+| `tbgap-001` | 300 m at 28 kN at 20 °C: the stringing state, sag 6.4205 m | independent; a plain catenary by hand |
+| `tbgap-002` | 60 °C: the core alone, 25 450.60 N, 7.0627 m (the same wire as a bird cage: 22 867.49 N, 7.853 m) | independent; the same from a single-material cable of the core |
+| `tbgap-003` | 0 °C: both components, 31 725.72 N, 5.6673 m | independent |
+
 ### Stringing given after creep (`benchmarks/sagtension/final-stringing.toml`)
 
 The references of the forward cases run backwards: asked for the tension an independent calculation gives after creep for a span strung initially at 25 kN, the line must find 25 kN initial ([theory](../theory/sagtension.md#stringing-given-at-a-final-condition)).

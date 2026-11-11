@@ -52,6 +52,8 @@ theory page. Status: **done** (with the date), **open**.
 
 | [Sag-tension](../theory/sagtension.md#creep-at-elevated-temperature) | A wire type's law of creep at elevated temperature (its coefficients: the maker's or a published predictor equation's — none is built in; the sources are missing) | A line with a time at high temperature and a wire type without a law: "NOT ON THE SAFE SIDE: wire type X gives no law of creep at elevated temperature — its creep during … is not counted" on every result of its sections after creep; with a law, every such result names its source (the user's coefficients) | done 2026-11-11 (mechanism only, in active development) |
 
+| [Sag-tension](../theory/sagtension.md#gap-type-conductors) | Whether a conductor given as a gap type is installed as one (strung by its core, the outer strands unloaded): the wire file's statement | "NOT ON THE SAFE SIDE: gap-type wire X (sections …): the outer strands taken as unloaded at each section's stringing state … a conductor installed otherwise sags more when hot" on every result of the line (0.79 m less sag at 60 °C than the same wire as an ordinary conductor on the benchmark span) | done 2026-11-11 (mechanism, in active development; its source is missing) |
+
 ## C. Limits of the method or clauses not covered: said where they apply
 
 | Where | Limit | Status |

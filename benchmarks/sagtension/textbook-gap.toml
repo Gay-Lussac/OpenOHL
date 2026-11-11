@@ -1,0 +1,143 @@
+# Gap-type conductor: the outer strands slide on the core and the
+# conductor is strung by tensioning the core alone, so the outer strands
+# carry nothing in the stringing state — the knee point IS the stringing
+# temperature (docs/theory/sagtension.md, "Gap-type conductors").
+#
+# Cable: the components of the bimetallic textbook cable
+# (textbook-bimetallic.toml: outer 402.8 mm², 55 GPa, 23e-6 /K; core
+# 65.8 mm², 190 GPa, 11.5e-6 /K; 1.6285 kg/m), as textbook input only, with
+# bimetallic_behavior = "gap". Level span 300 m, strung at H = 28 kN at
+# 20 °C. Solved by the ruling-span stress-strain model
+# (sagtension.nonlinear, initial state; both components linear).
+#
+# Expected values: benchmarks/reference/textbook_reference.py (gap_cases;
+# `python3 -I benchmarks/reference/textbook_reference.py gap`): the span by
+# quadrature, the two components' strains in closed form (the outer
+# strands' mechanical strain eps - a_o dt - offset, never in compression),
+# a secant root on log H of the conserved unstressed length.
+#
+# The weight: 15.970130 N/m per metre of the conductor AS IT LIES in the
+# stringing state (its outer strands, most of its mass, are unstressed at
+# that length; the core's own mass per metre is then taken too high by
+# its strain, 0.22 % of its share: conservative). The span carries
+# w (1 + eps_s) / (1 + eps) per metre, eps_s the strain when strung.
+#
+# Hand derivation:
+#   E_oA_o = 22.154 MN, E_cA_c = 12.502 MN.
+#   Strung (20 °C): a plain catenary of 15.970130 N/m at 28 kN: sag
+#   6.4205 m, mean tension 28 034.20 N, which the core alone carries:
+#   eps_s = 28034.20 / 12.502 MN = 2242.38 µstrain = the outer strands'
+#   offset (at 20 °C, the reference temperature, no thermal part): their
+#   load there is 0.
+#   60 °C (above the stringing temperature: the outer strands slack): the
+#   core alone — exactly a single-material cable with EA = 12.502 MN and
+#   alpha = 11.5e-6 /K strung at 28 kN at 20 °C with its weight taken the
+#   same way (the reference prints that cable too, from a plain linear
+#   strain: the same 25 450.60 N). The same components as an ordinary
+#   bird-cage conductor (both unstressed together, tbbim-001) give
+#   22 867.49 N and 7.853 m there: the gap type sags 0.79 m LESS at 60 °C
+#   — which holds only for a conductor installed on its core.
+#   0 °C (below it): both carry; the outer strands have picked up
+#   4217.27 N at the span's mean tension:
+#   E_oA_o (eps - 23e-6 x (-20) - 2242.38e-6).
+#
+# Tolerance: 1e-7 relative.
+
+[[case]]
+id = "tbgap-001"
+title = "Gap type: 300 m strung at 28 kN at 20 °C, the stringing state itself (the outer strands unloaded)"
+calculation = "sagtension.nonlinear"
+reference = "Independent quadrature + closed-form component strains (benchmarks/reference/textbook_reference.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 28000.0, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 6.420484711, rel_tol = 1e-7 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "28 kN"
+known_load = "15.970129525 N/m"
+known_temperature = "20 °C"
+creep_load = "15.970129525 N/m"
+creep_temperature = "20 °C"
+max_load = "15.970129525 N/m"
+max_temperature = "20 °C"
+load = "15.970129525 N/m"
+temperature = "20 °C"
+
+[case.inputs.cable]
+id = "gap-textbook"
+name = "Gap-type textbook cable"
+kind = "other"
+source = "Component values of the bimetallic textbook cable (textbook input only)"
+diameter = "28.1 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "140 kN"
+bimetallic_behavior = "gap"
+outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
+
+[[case]]
+id = "tbgap-002"
+title = "Gap type: the same at 60 °C (above the stringing temperature): the core alone, as a single-material cable of the core"
+calculation = "sagtension.nonlinear"
+reference = "Independent quadrature; the same value from a plain linear cable of the core's EA and expansion (benchmarks/reference/textbook_reference.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 25450.60353, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 7.062724233, rel_tol = 1e-7 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "28 kN"
+known_load = "15.970129525 N/m"
+known_temperature = "20 °C"
+creep_load = "15.970129525 N/m"
+creep_temperature = "20 °C"
+max_load = "15.970129525 N/m"
+max_temperature = "20 °C"
+load = "15.970129525 N/m"
+temperature = "60 °C"
+
+[case.inputs.cable]
+id = "gap-textbook"
+name = "Gap-type textbook cable"
+kind = "other"
+source = "Component values of the bimetallic textbook cable (textbook input only)"
+diameter = "28.1 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "140 kN"
+bimetallic_behavior = "gap"
+outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
+
+[[case]]
+id = "tbgap-003"
+title = "Gap type: the same at 0 °C (below the stringing temperature): the outer strands pick up load from zero"
+calculation = "sagtension.nonlinear"
+reference = "Independent quadrature + closed-form component strains (benchmarks/reference/textbook_reference.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 31725.71745, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 5.667255655, rel_tol = 1e-7 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "28 kN"
+known_load = "15.970129525 N/m"
+known_temperature = "20 °C"
+creep_load = "15.970129525 N/m"
+creep_temperature = "20 °C"
+max_load = "15.970129525 N/m"
+max_temperature = "20 °C"
+load = "15.970129525 N/m"
+temperature = "0 °C"
+
+[case.inputs.cable]
+id = "gap-textbook"
+name = "Gap-type textbook cable"
+kind = "other"
+source = "Component values of the bimetallic textbook cable (textbook input only)"
+diameter = "28.1 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "140 kN"
+bimetallic_behavior = "gap"
+outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }

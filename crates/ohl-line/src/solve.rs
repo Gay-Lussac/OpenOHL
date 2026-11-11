@@ -2913,7 +2913,14 @@ fn solve_fe(
             h.free[i].2 += Vector3::new(f[0], f[1], f[2]) / bundle;
         }
     }
-    let curves = curves_of(cable);
+    // (A gap-type conductor: with its outer strands unloaded in this
+    // section's stringing state.)
+    let curves = match curves_of(cable) {
+        Some(_) if cable.is_gap() => Some(memo::gap_mechanics(&prepared, || {
+            Ok(strung_section(line, section, cable, budget)?.0.mechanics)
+        })?),
+        other => other,
+    };
     // Curves: each span's tension in the stringing state (still air at the
     // reference temperature), where the reference lengths are cut.
     // (The same in every weather case: from the memo once worked out.)
@@ -3337,7 +3344,9 @@ fn knee_flags_fe(
     tensions: &[f64],
 ) -> Vec<String> {
     use ohl_cables::mechanics::{MaterialState, OuterState};
-    if cable.core.is_none() {
+    // (A gap type is past its knee above its stringing temperature by its
+    // nature: said once per line, not per span.)
+    if cable.core.is_none() || cable.is_gap() {
         return Vec::new();
     }
     let material = final_state.map_or(MaterialState::Initial, |f| f.material.clone());
@@ -3544,6 +3553,9 @@ mod point_force_tests;
 
 #[cfg(test)]
 mod hot_creep_tests;
+
+#[cfg(test)]
+mod gap_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]

@@ -13,6 +13,7 @@ Covers:
     benchmarks/sagtension/sag-to-limits.toml
     benchmarks/wirefe/point-force.toml
     benchmarks/sagtension/hot-creep.toml
+    benchmarks/sagtension/textbook-gap.toml
     benchmarks/sagtension/cigre-tb324.toml
     benchmarks/weather/textbook-ice-wind.toml
     benchmarks/wirefe/textbook-elastic-catenary.toml
@@ -349,14 +350,16 @@ def cos_multiplicative(spans, EA, alpha, H0, w0, t0, w1, t1, wind1=0.0):
     return math.exp(lh), unstressed(math.exp(lh), ice, wind, thermal)[1]
 
 
-def cos_additive(spans, strain, H0, w0, t0, w1, t1, wind1=0.0):
+def cos_additive(spans, strain, H0, w0, t0, w1, t1, wind1=0.0, weight_strain=None):
     """Equal-H section with the stress-strain model's additive strain:
     sum L_i / (1 + eps(Tmean_i, t)) conserved; strain(T, t) given. The own
     weight w0 is per metre of the unstressed cable at t0, the length
     L0 (1 + eps(0, t0)): span i carries w0 (1 + eps(0, t0)) / (1 + eps_i).
+    `weight_strain`: the strain of the length carrying w0 per metre instead
+    of the zero-tension one (a gap-type conductor: as it lies when strung).
     Returns H and each span's load per metre."""
     own, ice, wind = split(w0, w1, wind1)
-    m = strain(0.0, t0)
+    m = strain(0.0, t0) if weight_strain is None else weight_strain
 
     def unstressed(H, ice, wind, t):
         total, loads = 0.0, []
@@ -1482,6 +1485,68 @@ def bimetallic_cases():
          {"h_initial_n": H, "sag_initial_m": c["sag"]})
 
 
+def gap_strain(EAo, ao, EAc, ac, offset, t_ref=20.0):
+    """Total strain eps(T, t) of a gap-type conductor: two linear
+    components, the outer strands' mechanical strain eps - a_o dt - offset
+    (they take no compression), the core's eps - a_c dt."""
+
+    def strain(T, t):
+        dt = t - t_ref
+        eps = (T + EAo * (ao * dt + offset) + EAc * ac * dt) / (EAo + EAc)
+        if eps - ao * dt - offset >= 0.0:
+            return eps
+        return T / EAc + ac * dt  # outer strands slack: the core alone
+
+    return strain
+
+
+def gap_cases():
+    """tbgap-001...003 (benchmarks/sagtension/textbook-gap.toml): the
+    components of the bimetallic textbook cable as a gap-type conductor,
+    level 300 m, strung at 28 kN at 20 degC by tensioning the core alone:
+    the outer strands carry nothing there. Their offset is the core's
+    strain at the span's mean tension in that state. The weight is the
+    data sheet's per metre of the conductor as it lies in that state (the
+    outer strands unstressed at that length): the span carries
+    w (1 + eps_s) / (1 + eps) per metre, eps_s the strain when strung —
+    exactly w per metre there. At 60 degC the outer strands are slack: the
+    core alone — the same as a single-material cable of the core's EA and
+    expansion whose weight is taken the same way (printed beside it, from
+    a plain linear strain). At 0 degC both carry."""
+    print("== textbook-gap ==")
+    EAo, ao = 402.8e-6 * 55e9, 23e-6
+    EAc, ac = 65.8e-6 * 190e9, 11.5e-6
+    w = 1.6285 * G
+    spans = [(300.0, 0.0)]
+    # In the stringing state the span carries w per metre as it lies: a
+    # plain catenary, whose mean tension the core alone carries.
+    c = catenary_span(300.0, 0.0, 28_000.0, w)
+    offset = c["mean_tension"] / EAc  # at 20 degC, the reference temperature
+    strain = gap_strain(EAo, ao, EAc, ac, offset)
+    lies = strain(c["mean_tension"], 20.0)
+    show("tbgap stringing state", {"mean_tension_n": c["mean_tension"], "offset_microstrain": offset * 1e6,
+                                   "strain_microstrain": lies * 1e6,
+                                   "outer_load_n": EAo * max(lies - offset, 0.0)})
+    core_only = lambda T, t: T / EAc + ac * (t - 20.0)
+    for t in (20.0, 60.0, 0.0):
+        H, loads = cos_additive(spans, strain, 28_000.0, w, 20.0, w, t, weight_strain=lies)
+        c = catenary_span(300.0, 0.0, H, loads[0])
+        values = {"h_initial_n": H, "sag_initial_m": c["sag"]}
+        if t == 60.0:
+            Hc, lc = cos_additive(spans, core_only, 28_000.0, w, 20.0, w, t, weight_strain=lies)
+            values["core_alone_cable_h_n"] = Hc
+            values["core_alone_cable_sag_m"] = catenary_span(300.0, 0.0, Hc, lc[0])["sag"]
+        if t == 0.0:
+            eps = strain(c["mean_tension"], t)
+            values["outer_load_at_mean_n"] = EAo * (eps - ao * (t - 20.0) - offset)
+        show(f"tbgap at {t} degC", values)
+    # The same wire as a bird cage (tbbim-001) at 60 degC, for comparison.
+    cage = bimetallic_strain(EAo, ao, EAc, ac, 0.0)
+    Hb, lb = cos_additive(spans, cage, 28_000.0, w, 20.0, w, 60.0)
+    show("the same components as a bird cage at 60 degC (tbbim-001)",
+         {"h_initial_n": Hb, "sag_initial_m": catenary_span(300.0, 0.0, Hb, lb[0])["sag"]})
+
+
 def weather_cases():
     print("== textbook-ice-wind ==")
     for name, args in [
@@ -1590,6 +1655,9 @@ def main():
     if sys.argv[1:] == ["hotcreep"]:
         hot_creep_cases()
         return
+    if sys.argv[1:] == ["gap"]:
+        gap_cases()
+        return
     self_check()
     textbook_catenary()
     textbook_cos()
@@ -1603,6 +1671,7 @@ def main():
     ruling_span_cases()
     point_load_cases()
     bimetallic_cases()
+    gap_cases()
     weather_cases()
     elastic_catenary_cases()
     insulator_cases()

@@ -1018,15 +1018,24 @@ impl Calculation for Nonlinear {
         // `wind` (optional).
         let state = |load: &str, temperature: &str| load_state(inputs, load, temperature, weight);
         let budget = default_solver_budget();
-        let section = NonlinearSection::from_known_state(
-            vec![SpanGeometry::level(quantity_input::<Length>(
-                inputs, "span",
-            )?)],
-            mechanics,
-            state("known_load", "known_temperature")?,
-            quantity_input::<Force>(inputs, "known_tension")?,
-            &MaterialState::Initial,
-        )
+        let spans = vec![SpanGeometry::level(quantity_input::<Length>(
+            inputs, "span",
+        )?)];
+        let known = state("known_load", "known_temperature")?;
+        let known_tension = quantity_input::<Force>(inputs, "known_tension")?;
+        // A gap-type conductor: its outer strands unloaded in the known
+        // (stringing) state.
+        let section = if cable.is_gap() {
+            NonlinearSection::from_known_state_gap(spans, mechanics, known, known_tension)
+        } else {
+            NonlinearSection::from_known_state(
+                spans,
+                mechanics,
+                known,
+                known_tension,
+                &MaterialState::Initial,
+            )
+        }
         .map_err(|e| e.to_string())?;
         let states = final_states(
             &section,

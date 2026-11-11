@@ -1101,7 +1101,8 @@ impl LibraryPage {
 
     /// A wire library one of whose cables gives its `reference_temperature`
     /// is written at version 2, one with a law of creep at elevated
-    /// temperature (`hot_creep`) at version 3
+    /// temperature (`hot_creep`) or a gap-type conductor
+    /// (`bimetallic_behavior = "gap"`) at version 3
     /// ([`ohl_cables::WIRE_FILE_VERSION`]): its `version` raised when
     /// lower; without one it keeps its version.
     fn raise_wire_version(&mut self) {
@@ -1116,7 +1117,11 @@ impl LibraryPage {
                 .and_then(toml_edit::Item::as_array_of_tables)
                 .is_some_and(|cables| cables.iter().any(|c| c.contains_key(key)))
         };
-        let want = if any("hot_creep") {
+        let gap = doc
+            .get("cable")
+            .and_then(toml_edit::Item::as_array_of_tables)
+            .is_some_and(|cables| cables.iter().any(|c| bimetallic_behavior(c) == "gap"));
+        let want = if gap || any("hot_creep") {
             3
         } else if any("reference_temperature") {
             2
@@ -1782,7 +1787,7 @@ const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis 
 
 /// The bimetallic options (`bimetallic_behavior` of a cable): key (empty:
 /// not given, the line's choice), name.
-pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
+pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 4] = [
     (
         "",
         "The line's choice (Line › Criteria › Bimetallic conductor model)",
@@ -1794,6 +1799,12 @@ pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
     (
         "compression",
         "Outer strands can go into compression at high temperature",
+    ),
+    (
+        "gap",
+        "Gap type: the knee point is the stringing temperature of each section; above it the \
+         core alone. Smaller hot sags; valid only for conductors installed on the core. No \
+         solve time.",
     ),
 ];
 

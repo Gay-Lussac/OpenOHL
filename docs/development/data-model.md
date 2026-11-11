@@ -1102,7 +1102,7 @@ One directory per kind; TOML with units in the values. Each item has an
 
 | Kind (`LibraryKind`) | Extension | Format id | Items per file | Rust type | Guide |
 |---|---|---|---|---|---|
-| `Cables` | `.ohlw` | `ohl-wire` (version 3: a wire type's optional `[cable.hot_creep]`; 2: its optional `reference_temperature`) | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
+| `Cables` | `.ohlw` | `ohl-wire` (version 3: a wire type's optional `[cable.hot_creep]` and `bimetallic_behavior = "gap"`; 2: its optional `reference_temperature`) | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
 | `Insulators` | `.ohli` | `ohl-insulator` | one | `ohl_structures::InsulatorAssembly` | [Structure library](../user-guide/structure-library.md#insulator-assemblies-ohli) |
 | `StructureTypes` | `.ohls` | `ohl-structure` | one | `ohl_structures::StructureType` | [Structure library](../user-guide/structure-library.md) |
 | (structure templates: shipped `libraries/structure-templates`, the project's `Structure templates` folder — the folders' names before 2026-10-21, `pylon-templates`, `Pylon templates`, `PylonTemplates/`, still read; not kept in the project file) | `.ohlpt` | `ohl-structure-template` (`ohl-pylon-template` before 2026-10-21, read) | one | `ohl_structures::templates::PylonTemplate` | [Structure templates](../user-guide/structure-library.md#structure-templates-ohlpt) |
@@ -1153,6 +1153,26 @@ section solved in that state), `FinalState::lengthening()` (what the
 models add to the unstressed length: the linear models' stretch and the
 hot creep). The memo keys of the final state and of a stringing worked
 back hold `creep_stretch.hot`. Validation calculation `cables.hot_creep`.
+
+**Gap-type conductors** (wire library version 3, 2026-11-11, roadmap O22
+item 7): `bimetallic_behavior = "gap"` (`BimetallicBehavior::Gap`,
+`Cable::is_gap`, `BimetallicUse::Gap`; needs a core; refused as a line's
+`BimetallicModel`). `ohl_cables::mechanics`: a component's `offset`
+(taken off its mechanical strain; 0 but for a gap type's outer strands),
+`Mechanics::with_outer_offset`, `outer_offset`, `gap_offset(tension,
+temperature)` (the core alone carries the tension: its strain less the
+outer strands' thermal strain). `ohl_sagtension::nonlinear::
+NonlinearSection::from_known_state_gap` strings a section so (a fixed
+point on the offset and on the weight strain: the weight per metre as the
+conductor lies when strung; ≤ `GAP_PASSES` = 20). In the line:
+`solve::strung_section` (the one place a section's sag-tension section is
+built: `final_state`, `solve_rs`, the sagging table), the finite elements'
+curves path with `solve::memo::gap_mechanics` (kept per prepared section;
+`curves_of` gives a gap type's components also without curves). The
+per-line note `BimetallicUse::Gap.note` ("NOT ON THE SAFE SIDE: gap-type
+wire …") through `ohl_line::bimetallic_notes`; no per-span knee flags.
+`ohl sagtension` refuses a gap type. The app's wire library editor lists
+the option and raises the file to 3.
 
 **Stress-strain curves and the sag-tension job** (2026-10-22). A
 component's `stress_strain.max_strain` (optional, strain units; absent:

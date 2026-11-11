@@ -215,8 +215,16 @@ impl BimetallicModel {
         std::borrow::Cow::Owned(c)
     }
 
-    /// Checks the stress.
+    /// Checks the stress, and that the behaviour is one a line may choose
+    /// (a gap type is a wire type's own property).
     pub fn validate(&self) -> Result<(), String> {
+        if self.behavior == BimetallicBehavior::Gap {
+            return Err(
+                "bimetallic model: \"gap\" is a wire type's property (its wire file's \
+                 bimetallic_behavior), not a line's choice"
+                    .into(),
+            );
+        }
         if self
             .max_virtual_compression
             .is_some_and(|s| !(s.si().is_finite() && s.si() >= 0.0))
@@ -241,6 +249,14 @@ pub enum BimetallicBehavior {
     /// The outer strands take no compression (bird cage): the core
     /// carries the whole tension.
     BirdCage,
+    /// A gap-type conductor (wire library version 3; roadmap O22 item 7):
+    /// the outer layers slide on the core and the conductor is strung by
+    /// tensioning the core alone, so the outer strands carry **nothing in
+    /// the stringing state** of each section — the knee point is its
+    /// stringing temperature. Above it the core alone; below it the outer
+    /// strands pick up load from zero ([`mechanics::Mechanics::with_outer_offset`]).
+    /// A wire type's property only: never a line's choice.
+    Gap,
 }
 
 impl BimetallicBehavior {
@@ -249,6 +265,7 @@ impl BimetallicBehavior {
         match self {
             BimetallicBehavior::Compression => "compression",
             BimetallicBehavior::BirdCage => "bird_cage",
+            BimetallicBehavior::Gap => "gap",
         }
     }
 }
@@ -268,6 +285,10 @@ pub enum BimetallicUse {
     /// No compression: the core alone above the knee point — the smallest
     /// hot sag of the models.
     BirdCage,
+    /// A gap-type conductor: the outer strands unloaded at each section's
+    /// stringing state, the core alone above its stringing temperature —
+    /// a smaller hot sag still, valid only for a conductor installed so.
+    Gap,
 }
 
 impl BimetallicUse {
@@ -284,6 +305,7 @@ impl BimetallicUse {
             BimetallicUse::Unlimited => "compression".to_owned(),
             BimetallicUse::Limited(s) => format!("limited {} MPa", megapascals(s.si())),
             BimetallicUse::BirdCage => "bird cage".to_owned(),
+            BimetallicUse::Gap => "gap type".to_owned(),
         }
     }
 
@@ -311,6 +333,14 @@ impl BimetallicUse {
                 format!("with compression limited to {} MPa", megapascals(s.si()))
             }
             BimetallicUse::BirdCage => "as a bird cage".to_owned(),
+            BimetallicUse::Gap => {
+                return format!(
+                    "NOT ON THE SAFE SIDE: gap-type wire {wire}{of}: the outer strands taken as \
+                     unloaded at each section's stringing state (the core tensioned alone), the \
+                     core alone above its stringing temperature — a conductor installed otherwise \
+                     sags more when hot; its jumpers are taken as a bird cage"
+                );
+            }
         };
         format!(
             "NOT ON THE SAFE SIDE: wire type {wire}{of} modelled {model}: above the knee point \
@@ -622,7 +652,8 @@ impl Cable {
             return f64::INFINITY;
         }
         let virtual_stress = match self.bimetallic_behavior.unwrap_or_default() {
-            BimetallicBehavior::BirdCage => return 0.0,
+            // A gap type's outer strands carry no compression either.
+            BimetallicBehavior::BirdCage | BimetallicBehavior::Gap => return 0.0,
             BimetallicBehavior::Compression => self
                 .max_virtual_compression
                 .map_or(DEFAULT_MAX_VIRTUAL_COMPRESSION, |s| s.si()),
@@ -642,6 +673,9 @@ impl Cable {
     /// strength given: the default's value or more).
     pub fn bimetallic_model(&self) -> Option<BimetallicUse> {
         self.core.as_ref()?;
+        if self.is_gap() {
+            return Some(BimetallicUse::Gap);
+        }
         let limit = self.outer_compression_limit_with_curves();
         let area = self.area().si();
         let rts = self.rated_tensile_strength.si();
@@ -659,6 +693,12 @@ impl Cable {
         })
     }
 
+    /// Whether it is a gap-type conductor (`bimetallic_behavior = "gap"`,
+    /// with a core).
+    pub fn is_gap(&self) -> bool {
+        self.core.is_some() && self.bimetallic_behavior == Some(BimetallicBehavior::Gap)
+    }
+
     /// Checks that the data is physically plausible. Catches typos and unit
     /// mistakes in library files (e.g. mm² entered as m²).
     pub fn validate(&self) -> Result<(), CableError> {
@@ -666,6 +706,12 @@ impl Cable {
             id: self.id.clone(),
             message,
         };
+        if self.bimetallic_behavior == Some(BimetallicBehavior::Gap) && self.core.is_none() {
+            return Err(error(
+                "bimetallic_behavior = \"gap\" needs a core (the part tensioned at stringing)"
+                    .into(),
+            ));
+        }
         match self.model {
             CableModel::Nonlinear => {}
             CableModel::LinearCreepTemperature if self.creep_temperature_shift.is_none() => {
@@ -815,8 +861,10 @@ pub const WIRE_FILE_FORMAT: &str = "ohl-wire";
 
 /// Latest wire library format version: 3 adds a cable's optional law of
 /// creep at elevated temperature (`[cable.hot_creep]`,
-/// [`hot_creep::HotCreep`]; roadmap O22 item 6, 2026-11-11) — a file is of
-/// version 3 only when a cable of it gives one; 2 adds a cable's optional
+/// [`hot_creep::HotCreep`]; roadmap O22 item 6, 2026-11-11) and the
+/// gap-type conductor (`bimetallic_behavior = "gap"`,
+/// [`BimetallicBehavior::Gap`]; roadmap O22 item 7, the same raise) — a
+/// file is of version 3 only when a cable of it uses one; 2 adds a cable's optional
 /// `reference_temperature` (of its mass per length).
 pub const WIRE_FILE_VERSION: u32 = 3;
 

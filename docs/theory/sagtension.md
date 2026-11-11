@@ -270,6 +270,34 @@ Why the default sags most: above the knee the composite goes on expanding with \
 
 *Validation:* `tbbim-001…003` ([Textbook and published cases](../validation/textbook.md)); unit tests of the three models, the notes and the flags (`ohl-cables`, `ohl-line`: no flag at 60 °C, every span flagged at 180 °C, in both methods).
 
+### Gap-type conductors
+
+*Built, in active development (not approved yet) — the mechanism; **its source is missing**.* In a gap-type conductor the outer layers can slide on the core, and the conductor is strung by tensioning the **core alone**: in the stringing state the outer strands carry nothing. The knee point is then not a consequence of the data, as above, but **the stringing temperature of each section**: above it the core alone (its modulus and its expansion), below it the outer strands pick up load from zero.
+
+**Source.** No primary description of the installation and behaviour of gap-type conductors is among the project's sources. One is to be identified and supplied by the owner (the design note of 2026-11-10 names as candidates a CIGRE brochure on conductors for uprating or high-temperature conductors, and an IEC document on gap-type conductors — neither verified; manufacturers' notes do not qualify). Until then this section states the **model**, derived from the two sentences above, and cites nothing; the model is to be checked against the source when it is in hand.
+
+**The model** (`bimetallic_behavior = "gap"`). The outer strands' mechanical strain gets an offset \\( \varepsilon_g \\):
+
+\\[ \varepsilon_o^{mech} = \varepsilon - \alpha_o (t - t_0) - \varepsilon_g, \qquad \varepsilon_c^{mech} = \varepsilon - \alpha_c (t - t_0) \\]
+
+and they take no compression. \\( \varepsilon_g \\) is set by the section's stringing state (initial; \\( \bar T_s \\) the section's mean tension there, \\( t_s \\) its temperature): with \\( \varepsilon_s \\) the strain at which the **core alone** carries \\( \bar T_s \\) at \\( t_s \\),
+
+\\[ \varepsilon_g = \varepsilon_s - \alpha_o (t_s - t_0) \\]
+
+so that the outer strands' strain is zero there. Everything else is the stress-strain model unchanged: the states, the permanent sets (of the components' curves, when given), the ruling span and the finite elements (a gap type always follows its components there, also without curves). The offset belongs to the section: two sections of the same wire strung at different temperatures have different knee points. A stringing given after creep or after load sets it in the initial state worked back.
+
+**The weight.** The data sheet's weight is taken per metre of the conductor **as it lies in the stringing state**: the outer strands, most of the mass, are unstressed at that length; the core is longer than unstressed by \\( \varepsilon_s \\) (0.22 % on the benchmark). **Conservative** in the ruling-span method: the core's own mass per metre is taken too high by \\( \varepsilon_s \\) on its share of the mass (under 0.1 % of the weight). The finite elements keep their usual convention (the weight per metre of the elastic reference length): 0.08 % less weight on the benchmark, within 0.01 % of the split by components — the two methods' sags differ by that (5 mm in 6.4 m).
+
+Hand check (`tbgap`, the bimetallic benchmark's components as a gap type, 300 m at 28 kN at 20 °C): strung, the core alone carries the mean tension 28 034.2 N: \\( \varepsilon_s \\) = 28 034.2 / 12.502 MN = 2242.4 µε = \\( \varepsilon_g \\) (20 °C is the reference temperature). At 60 °C the conductor is exactly a single-material cable of the core (EA 12.502 MN, 11.5·10⁻⁶ /K): 25 450.6 N, 7.063 m. The same components as an ordinary conductor (both unstressed together, a bird cage above its knee) have 22 867.5 N and 7.853 m there: **0.79 m more sag at 60 °C**. At 0 °C the outer strands carry 4217 N of the mean tension.
+
+- **NOT ON THE SAFE SIDE unless the conductor is installed that way:** a gap type's hot sags are far smaller than the same wire's as an ordinary bimetallic conductor. Every result of a line with such a wire type says so, with its sections: "NOT ON THE SAFE SIDE: gap-type wire X (sections …): the outer strands taken as unloaded at each section's stringing state (the core tensioned alone), the core alone above its stringing temperature — a conductor installed otherwise sags more when hot".
+- The per-span notes of the knee point (above) are not given for a gap type: above its stringing temperature it is past its knee by its nature.
+- **Simplification:** its jumpers are taken as a bird cage (both components unstressed together), and said.
+- Not computed: `ohl sagtension` refuses a gap type (its tables are not of a section's stringing state); a line cannot choose "gap" for its wires — it is a wire type's property.
+- Creep: the components' own curves; above the stringing temperature only the core's acts (the outer strands carry nothing).
+
+*Validation:* `tbgap-001…003` (`benchmarks/sagtension/textbook-gap.toml`) against an independent calculation by quadrature with the components' strains in closed form; at 60 °C the same value from a plain single-material cable of the core.
+
 ## Sagging outputs
 
 What the stringing crew measures, from the states already solved — post-processing only, in `ohl_sagtension::sagging`; `ohl sagtension`'s `[sagging]` and the section window's **Sagging** panel ([Sagging outputs](../user-guide/sagging.md)). The section is in the blocks, initial state, bare, still air, at the conductor temperature of sagging. Each formula is derived here; the textbook formulas and a public-domain library are used only as cross-checks.

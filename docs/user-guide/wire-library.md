@@ -21,7 +21,7 @@ A `.ohlw` file is plain **TOML** text (any text editor works; editors highlight 
 | Field | Value | Meaning |
 |---|---|---|
 | `format` | `"ohl-wire"` | Identifies the file. Any other value is rejected. |
-| `version` | `3` | Format version (3: a wire type's law of creep at elevated temperature, `[cable.hot_creep]`; 2: a wire type's `reference_temperature`; older files read unchanged, and a file needs the higher version only when a wire type of it uses the field). Newer versions than the program supports are rejected. |
+| `version` | `3` | Format version (3: a wire type's law of creep at elevated temperature, `[cable.hot_creep]`, and the gap type, `bimetallic_behavior = "gap"`; 2: a wire type's `reference_temperature`; older files read unchanged, and a file needs the higher version only when a wire type of it uses the field). Newer versions than the program supports are rejected. |
 
 ## `[[cable]]`
 
@@ -40,7 +40,7 @@ A `.ohlw` file is plain **TOML** text (any text editor works; editors highlight 
 | `model` | no (`"nonlinear"`) | `"nonlinear"`, `"linear_creep_tension"`, `"linear_creep_temperature"` | The wire model (below). |
 | `creep_temperature_shift` | linear models | number, °C | The permanent stretch due to creep as a temperature increase. |
 | `creep_shift_tension` | `linear_creep_tension` | force | The creep weather case tension at which the stretch equals `creep_temperature_shift`. |
-| `bimetallic_behavior` | no (the line's choice) | `"compression"`, `"bird_cage"` | Wire types with a core: what the outer strands do above the transition temperature (below). Not given: the line's bimetallic conductor model (Line › Criteria › Bimetallic conductor model; compression unless chosen otherwise). |
+| `bimetallic_behavior` | no (the line's choice) | `"compression"`, `"bird_cage"`, `"gap"` | Wire types with a core: what the outer strands do above the transition temperature (below). Not given: the line's bimetallic conductor model (Line › Criteria › Bimetallic conductor model; compression unless chosen otherwise). `"gap"` (wire library version 3): a gap-type conductor, below. |
 | `max_virtual_compression` | `bimetallic_behavior = "compression"` (default `"68947.4 MPa"`, 10⁷ psi: in practice no limit) | stress | The outer strands' largest virtual compressive stress. |
 
 ### Wire models
@@ -61,6 +61,9 @@ The outer strands expand more with temperature than the core. Above a transition
 |---|---|
 | `compression` (default) | the outer strands go into compression, up to `max_virtual_compression` |
 | `bird_cage` | the outer strands take no compression: the core carries the whole tension |
+| `gap` | (*built, in active development — not approved yet*) a **gap-type conductor**, strung by tensioning its core alone: the outer strands carry nothing in each section's stringing state, so **the knee point is that section's stringing temperature**; above it the core alone, below it the outer strands pick up load |
+
+**Gap type: what it does to the results.** Much smaller hot sags than the same wire as an ordinary conductor (0.79 m less at 60 °C on the 300 m benchmark span) — **valid only for a conductor installed on its core**: every result of a line with such a wire type says "NOT ON THE SAFE SIDE: gap-type wire …" with its sections. It costs no solve time. It is a wire type's property, never the line's choice; `ohl sagtension` does not compute it (solve it on a line); its jumpers are taken as a bird cage. The description this model rests on has no source in the project yet: see [Gap-type conductors](../theory/sagtension.md#gap-type-conductors).
 
 **Which is on the safe side.** Compression without limit (the default) gives the **largest** hot sags — safe for clearances; its tension above the transition is the lowest (about 1 % on a 300 m span at 150 °C). A bird cage or a compression limit gives smaller hot sags (0.12 m in 10.6 m there): the results of a line with such a wire type say "NOT ON THE SAFE SIDE" with the wire type and its sections, and each weather case flags the spans past the transition. Below the transition the choice changes nothing; it costs no solve time. See [Bimetallic wires above the knee point](../theory/sagtension.md#bimetallic-wires-above-the-knee-point).
 

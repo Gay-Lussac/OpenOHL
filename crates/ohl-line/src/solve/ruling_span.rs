@@ -141,6 +141,53 @@ pub(crate) fn strung(
     Ok((spans, clamps, state, h))
 }
 
+/// A section's sag-tension section as strung, its clamps, the stringing
+/// state and the horizontal tension then, N ([`strung_section`]).
+pub(crate) type StrungSection = (
+    ohl_sagtension::nonlinear::NonlinearSection,
+    Vec<Vector3<f64>>,
+    ohl_sagtension::LoadState,
+    f64,
+);
+
+/// The sag-tension section of `section` as strung (initial), its clamps
+/// hanging in still air at stringing, the stringing state and the
+/// horizontal tension then ([`strung`]). A **gap-type conductor**
+/// ([`ohl_cables::Cable::is_gap`]) is strung with its outer strands
+/// unloaded in that state — the section's own knee point
+/// ([`ohl_sagtension::nonlinear::NonlinearSection::from_known_state_gap`]);
+/// with a stringing worked back from a final condition, in the initial
+/// state found.
+///
+/// Expected cost: [`strung`] (one still-air section solve) and the
+/// section's length; 2–3 times that length for a gap type.
+pub(crate) fn strung_section(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    budget: &Budget,
+) -> Result<StrungSection, LineError> {
+    use ohl_cables::mechanics::{MaterialState, Mechanics};
+    use ohl_core::units::Force;
+    use ohl_sagtension::nonlinear::NonlinearSection;
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
+    let (spans, clamps, strung_state, h) = strung(line, section, cable, budget)?;
+    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
+    let ns = if cable.is_gap() {
+        NonlinearSection::from_known_state_gap(spans, mechanics, strung_state, Force::from_si(h))
+    } else {
+        NonlinearSection::from_known_state(
+            spans,
+            mechanics,
+            strung_state,
+            Force::from_si(h),
+            &MaterialState::Initial,
+        )
+    }
+    .map_err(|e| invalid(e.to_string()))?;
+    Ok((ns, clamps, strung_state, h))
+}
+
 /// The cable's permanent state after creep or after load
 /// ([`crate::condition`]), from the line's creep-stretch weather cases.
 ///
@@ -169,25 +216,19 @@ pub fn final_state(
     budget: &Budget,
 ) -> Result<FinalState, LineError> {
     use crate::condition::Condition;
-    use ohl_cables::mechanics::{MaterialState, Mechanics};
-    use ohl_core::units::Force;
-    use ohl_sagtension::nonlinear::NonlinearSection;
     let cable = &*line.bimetallic.apply(cable);
     let cable = &*strung_cable(section, cable)?;
-    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
-    let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
-    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
-    let ns = NonlinearSection::from_known_state(
-        spans,
-        mechanics.clone(),
-        strung_state,
-        Force::from_si(h),
-        &MaterialState::Initial,
-    )
-    .map_err(|e| invalid(e.to_string()))?;
+    let (ns, _, strung_state, h) = strung_section(line, section, cable, budget)?;
     let strung_at = (strung_state, h);
     let mut state = permanent_set(
-        line, section, cable, condition, &ns, &mechanics, strung_at, budget,
+        line,
+        section,
+        cable,
+        condition,
+        &ns,
+        &ns.mechanics,
+        strung_at,
+        budget,
     )?;
     if condition == Condition::Creep && !line.creep_stretch.hot.is_empty() {
         hot_creep_of(line, section, cable, &ns, &mut state, budget)?;
@@ -432,21 +473,12 @@ pub(super) fn solve_rs(
     final_state: Option<&FinalState>,
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
-    use ohl_cables::mechanics::{MaterialState, Mechanics};
+    use ohl_cables::mechanics::MaterialState;
     use ohl_core::units::{Force, Length};
-    use ohl_sagtension::nonlinear::NonlinearSection;
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let st = |e: ohl_sagtension::SagTensionError| invalid(e.to_string());
-    let (spans, clamps, strung_state, h0) = strung(line, section, cable, budget)?;
-    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
-    let mut ns = NonlinearSection::from_known_state(
-        spans.clone(),
-        mechanics,
-        strung_state,
-        Force::from_si(h0),
-        &MaterialState::Initial,
-    )
-    .map_err(st)?;
+    let (mut ns, clamps, _, _) = strung_section(line, section, cable, budget)?;
+    let spans = ns.spans.clone();
     let material = match final_state {
         Some(f) => {
             // The linear models' stretch and the creep at elevated
@@ -469,8 +501,10 @@ pub(super) fn solve_rs(
         .map(|w| format!("stress-strain {w}"))
         .collect();
     // Bimetallic cables: the spans past the knee point (roadmap O22
-    // item 1), at each span's mean tension.
-    for (k, sol) in solved.spans.iter().enumerate() {
+    // item 1), at each span's mean tension. (A gap type is past it above
+    // its stringing temperature by its nature: said once per line.)
+    let knee = (!cable.is_gap()).then_some(&solved.spans);
+    for (k, sol) in knee.into_iter().flatten().enumerate() {
         let mean = Force::from_si(sol.tension_integral() / sol.length().si());
         let state = ns
             .mechanics
@@ -655,6 +689,11 @@ pub(super) fn q_scale(case: &WeatherCase, cable: &Cable, q: f64) -> f64 {
 /// The cable's stress-strain curves, when its model uses them (the
 /// non-linear model with curves given).
 pub(super) fn curves_of(cable: &Cable) -> Option<ohl_cables::mechanics::Mechanics> {
+    // A gap-type conductor follows its components whatever its model:
+    // their loads are not the composite's (the outer strands' offset).
+    if cable.is_gap() {
+        return ohl_cables::mechanics::Mechanics::from_cable(cable).ok();
+    }
     if cable.model != ohl_cables::CableModel::Nonlinear {
         return None;
     }

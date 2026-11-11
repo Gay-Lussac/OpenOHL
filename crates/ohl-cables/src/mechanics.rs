@@ -210,6 +210,10 @@ struct ComponentMechanics {
     /// Largest compressive load, N (the curves' and the bimetallic
     /// model's).
     max_compression: f64,
+    /// A strain taken off its mechanical strain (0 but for the outer
+    /// strands of a gap-type conductor: set by the stringing,
+    /// [`Mechanics::with_outer_offset`]).
+    offset: f64,
 }
 
 /// Which curve a state follows.
@@ -341,6 +345,7 @@ impl Mechanics {
                 linear_stiffness: component.axial_stiffness().si(),
                 curves,
                 max_compression,
+                offset: 0.0,
             });
         }
         Ok(Self {
@@ -391,7 +396,51 @@ impl Mechanics {
         let dt = (temperature - self.reference_temperature).kelvin();
         self.components
             .iter()
-            .map(move |c| strain - c.thermal_expansion * dt)
+            .map(move |c| strain - c.thermal_expansion * dt - c.offset)
+    }
+
+    /// The same cable as a **gap-type conductor** strung with its outer
+    /// strands unloaded: their mechanical strain is the total strain less
+    /// their thermal strain less `offset`, and they take no compression.
+    /// With [`Mechanics::gap_offset`] of the stringing state they carry
+    /// nothing there, pick up load below its temperature and stay slack
+    /// above it. No effect on a cable without a core.
+    pub fn with_outer_offset(mut self, offset: f64) -> Self {
+        if let [outer, _core] = self.components.as_mut_slice() {
+            outer.offset = offset;
+            outer.max_compression = 0.0;
+        }
+        self
+    }
+
+    /// The offset of the outer strands ([`Mechanics::with_outer_offset`];
+    /// 0 but for a gap-type conductor as strung).
+    pub fn outer_offset(&self) -> f64 {
+        self.components.first().map_or(0.0, |c| c.offset)
+    }
+
+    /// The offset that leaves the outer strands of a gap-type conductor
+    /// unloaded where the **core alone** carries `tension` at
+    /// `temperature` (the stringing state, initial): the core's strain
+    /// there, \\( \varepsilon_s \\), less the outer strands' thermal
+    /// strain, \\( \varepsilon_s - \alpha_o (t_s - t_0) \\). None without a
+    /// core.
+    pub fn gap_offset(
+        &self,
+        tension: Force,
+        temperature: Temperature,
+    ) -> Result<Option<f64>, CableError> {
+        let [outer, core] = self.components.as_slice() else {
+            return Ok(None);
+        };
+        let core_alone = Self {
+            components: vec![core.clone()],
+            reference_temperature: self.reference_temperature,
+            total_area: self.total_area,
+        };
+        let strain = core_alone.strain(tension, temperature, &MaterialState::Initial)?;
+        let dt = (temperature - self.reference_temperature).kelvin();
+        Ok(Some(strain - outer.thermal_expansion * dt))
     }
 
     /// Cable tension at total strain `strain` and `temperature`.
@@ -436,7 +485,11 @@ impl Mechanics {
         };
         let strain = self.strain(tension, temperature, state)?;
         let dt = (temperature - self.reference_temperature).kelvin();
-        let wanted = outer.unlimited_load(strain - outer.thermal_expansion * dt, state, 0);
+        let wanted = outer.unlimited_load(
+            strain - outer.thermal_expansion * dt - outer.offset,
+            state,
+            0,
+        );
         Ok(Some(if wanted >= 0.0 {
             OuterState::Tension
         } else if -wanted <= outer.max_compression {
@@ -1087,6 +1140,80 @@ mod tests {
         assert_eq!(of(&c, 20.0), Some(OuterState::Tension));
         c.core = None;
         assert_eq!(of(&c, 150.0), None);
+    }
+
+    /// A gap-type conductor: with the offset of its stringing state the
+    /// outer strands carry nothing there (the core the whole tension),
+    /// stay slack above its temperature — the cable then stretches as the
+    /// core alone — and pick up load below it. By hand, linear
+    /// components (outer 22.154 MN, 23e-6 /K; core 12.502 MN, 11.5e-6 /K),
+    /// strung at 28 kN at 35 °C: the core's strain 28000 / 12.502 MN +
+    /// 11.5e-6 × 15 = 2412.1 µε, the offset that less 23e-6 × 15 =
+    /// 2067.1 µε.
+    #[test]
+    fn a_gap_type_is_unloaded_where_it_was_strung() {
+        let mut c = cable();
+        for part in [Some(&mut c.outer), c.core.as_mut()].into_iter().flatten() {
+            part.stress_strain = None;
+        }
+        c.outer.area = ohl_core::units::Area::from_si(402.8e-6);
+        c.outer.modulus = ohl_core::units::Stress::from_si(55e9);
+        c.outer.thermal_expansion = 23e-6;
+        let core = c.core.as_mut().unwrap();
+        core.area = ohl_core::units::Area::from_si(65.8e-6);
+        core.modulus = ohl_core::units::Stress::from_si(190e9);
+        core.thermal_expansion = 11.5e-6;
+        c.bimetallic_behavior = Some(crate::BimetallicBehavior::Gap);
+        assert!(c.is_gap());
+        assert_eq!(c.outer_compression_limit(), 0.0);
+        let base = Mechanics::from_cable(&c).unwrap();
+        let (strung, t_s) = (Force::from_si(28_000.0), t(35.0));
+        let offset = base.gap_offset(strung, t_s).unwrap().unwrap();
+        let ea_core = 65.8e-6 * 190e9;
+        let by_hand = 28_000.0 / ea_core + 11.5e-6 * 15.0 - 23e-6 * 15.0;
+        assert!(
+            (offset - by_hand).abs() < 1e-12,
+            "{offset} against {by_hand}"
+        );
+        assert!((offset * 1e6 - 2067.1).abs() < 0.05, "{}", offset * 1e6);
+        let m = base.clone().with_outer_offset(offset);
+        assert_eq!(m.outer_offset(), offset);
+        let initial = MaterialState::Initial;
+        // Where it was strung: the outer strands unloaded.
+        let strain = m.strain(strung, t_s, &initial).unwrap();
+        let loads = m.component_loads(strain, t_s, &initial);
+        assert!(
+            loads[0].abs() < 1e-6 && (loads[1] - 28_000.0).abs() < 1e-6,
+            "{loads:?}"
+        );
+        // Warmer: slack, the core alone (its modulus and expansion).
+        let warm = m.strain(strung, t(75.0), &initial).unwrap();
+        assert!((warm - (28_000.0 / ea_core + 11.5e-6 * 55.0)).abs() < 1e-12);
+        assert_eq!(
+            m.outer_state(strung, t(75.0), &initial).unwrap(),
+            Some(OuterState::Slack)
+        );
+        // Colder: the outer strands carry a part.
+        let cold = m.strain(strung, t(0.0), &initial).unwrap();
+        let loads = m.component_loads(cold, t(0.0), &initial);
+        assert!(
+            loads[0] > 1000.0 && (loads[0] + loads[1] - 28_000.0).abs() < 1e-6,
+            "{loads:?}"
+        );
+        assert_eq!(
+            m.outer_state(strung, t(0.0), &initial).unwrap(),
+            Some(OuterState::Tension)
+        );
+        // Without the offset the same data is a bird cage: the outer
+        // strands loaded at 35 °C already.
+        let plain = base.strain(strung, t_s, &initial).unwrap();
+        assert!(base.component_loads(plain, t_s, &initial)[0] > 1000.0);
+        // No core: no offset.
+        c.core = None;
+        c.bimetallic_behavior = None;
+        let single = Mechanics::from_cable(&c).unwrap();
+        assert_eq!(single.gap_offset(strung, t_s).unwrap(), None);
+        assert_eq!(single.clone().with_outer_offset(1e-3), single);
     }
 
     #[test]

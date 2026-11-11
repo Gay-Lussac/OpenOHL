@@ -16,10 +16,9 @@
 //! Post-processing only.
 
 use ohl_cables::Cable;
-use ohl_cables::mechanics::{MaterialState, Mechanics};
+use ohl_cables::mechanics::MaterialState;
 use ohl_core::budget::Budget;
-use ohl_core::units::{Force, Length, Temperature};
-use ohl_sagtension::nonlinear::NonlinearSection;
+use ohl_core::units::{Length, Temperature};
 use ohl_sagtension::sagging;
 use ohl_weather::WeatherCase;
 
@@ -122,16 +121,7 @@ pub fn sagging_table(
     let st = |e: ohl_sagtension::SagTensionError| invalid(e.to_string());
     let cable = &*line.bimetallic.apply(cable);
     let cable = &*crate::solve::strung_cable(section, cable)?;
-    let (spans, _, strung_state, h) = crate::solve::strung(line, section, cable, budget)?;
-    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
-    let ns = NonlinearSection::from_known_state(
-        spans,
-        mechanics,
-        strung_state,
-        Force::from_si(h),
-        &MaterialState::Initial,
-    )
-    .map_err(st)?;
+    let (ns, _, strung_state, _) = crate::solve::strung_section(line, section, cable, budget)?;
     let t = options
         .temperature
         .unwrap_or(strung_state.temperature.celsius());

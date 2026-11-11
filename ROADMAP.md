@@ -729,8 +729,13 @@ against what line design practice uses). In the order proposed:
    Point loads across or along (`force_across`, `force_along` on a
    span point's object, line file 15, finite elements; the ruling span
    says the point loads it leaves out; benchmarks `ptforce-001…002`; the
-   object form's fields still to do).
-   Still open: gap-type conductors.
+   object form's fields still to do). Gap-type conductors
+   (`bimetallic_behavior = "gap"`, wire library 3: the outer strands
+   unloaded in each section's stringing state, the knee point its
+   stringing temperature; said "not on the safe side" on every result;
+   benchmarks `tbgap-001…003`) — **the mechanism only: no primary source
+   on gap-type conductors is in hand**, the theory cites none and the
+   model is to be checked against one.
 
 Three hand-sized comparison cases to keep with the benchmarks: three
 inclined spans in the blocks, clipped, and in the blocks then clipped; a

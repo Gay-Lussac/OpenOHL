@@ -862,6 +862,17 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         show(cable.weight(), units, 4),
         show(strung_at, units, 0)
     );
+    // A gap-type conductor's knee point is its section's stringing state:
+    // the tables of this job (the composite's linear ones, criteria on
+    // trial stringing tensions) do not model it.
+    if cable.is_gap() {
+        return Err(format!(
+            "wire type {}: a gap-type conductor (bimetallic_behavior = \"gap\") is not computed \
+             by `ohl sagtension` — its knee point is set by each section's stringing state: \
+             solve it on a line (`ohl line`)",
+            cable.id
+        ));
+    }
     // A bimetallic cable: its model above the knee point (roadmap O22
     // item 1). The linear tables take the composite throughout.
     if let Some(model) = cable.bimetallic_model() {

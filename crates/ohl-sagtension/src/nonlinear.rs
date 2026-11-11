@@ -50,6 +50,10 @@ fn cable_error(e: ohl_cables::CableError) -> SagTensionError {
     SagTensionError::InvalidInput(e.to_string())
 }
 
+/// Passes at most of the stringing state of a gap-type conductor
+/// ([`NonlinearSection::from_known_state_gap`]; it settles in 2–3).
+pub const GAP_PASSES: usize = 20;
+
 /// A tension section with a non-linear cable.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NonlinearSection {
@@ -110,6 +114,89 @@ impl NonlinearSection {
                 .1,
         );
         Ok(section)
+    }
+
+    /// Strings a **gap-type conductor** (roadmap O22 item 7): as
+    /// [`Self::from_known_state`] on the initial curve, with the outer
+    /// strands unloaded in that state — the conductor is strung by
+    /// tensioning its core alone. Their offset
+    /// ([`Mechanics::with_outer_offset`]) is the one at which the core
+    /// alone carries the section's mean tension in the known state
+    /// ([`Mechanics::gap_offset`]).
+    ///
+    /// **The weight** is the data sheet's per metre of the conductor **as
+    /// it lies in the known state** (`weight_strain`: the strain there,
+    /// not the zero-tension one): the outer strands — most of the mass —
+    /// are unstressed at that length, the core is longer than unstressed
+    /// by its strain. Conservative: the core's own mass per metre is then
+    /// taken a little too high (by its strain, 0.2 %, on its share of the
+    /// mass).
+    ///
+    /// The mean tension depends a little on the offset (the weight per
+    /// stretched metre), so both are a fixed point: repeated until they
+    /// move less than \\( 10^{-13} \\) (2–4 passes; exit clause
+    /// [`GAP_PASSES`]).
+    ///
+    /// `mechanics`: the cable's ([`Mechanics::from_cable`]), with a core.
+    pub fn from_known_state_gap(
+        spans: Vec<SpanGeometry>,
+        mechanics: Mechanics,
+        state: LoadState,
+        horizontal_tension: Force,
+    ) -> Result<Self, SagTensionError> {
+        if spans.is_empty() {
+            return Err(SagTensionError::InvalidInput(
+                "a section needs at least one span".into(),
+            ));
+        }
+        state.check()?;
+        let material = MaterialState::Initial;
+        let too_slack = SagTensionError::TooSlack {
+            ratio: f64::INFINITY,
+        };
+        let no_core = || {
+            SagTensionError::InvalidInput(
+                "a gap-type conductor needs a core (the part tensioned at stringing)".into(),
+            )
+        };
+        let (mut offset, mut weight_strain) = (
+            0.0,
+            mechanics
+                .strain(Force::ZERO, state.temperature, &material)
+                .map_err(cable_error)?,
+        );
+        for _ in 0..GAP_PASSES {
+            let mut section = Self {
+                spans: spans.clone(),
+                mechanics: mechanics.clone().with_outer_offset(offset),
+                unstressed_length: Length::ZERO,
+                weight_strain,
+            };
+            let (solved, total) = section
+                .at(horizontal_tension.si(), &state, &material)?
+                .ok_or(too_slack.clone())?;
+            section.unstressed_length = Length::from_si(total);
+            let (weighted, length) = solved.iter().fold((0.0, 0.0), |(w, l), s| {
+                (w + s.tension_integral(), l + s.length().si())
+            });
+            let mean = Force::from_si(weighted / length);
+            let next = section
+                .mechanics
+                .gap_offset(mean, state.temperature)
+                .map_err(cable_error)?
+                .ok_or_else(no_core)?;
+            let lies = section
+                .mechanics
+                .strain(mean, state.temperature, &material)
+                .map_err(cable_error)?;
+            if (next - offset).abs() <= 1e-13 && (lies - weight_strain).abs() <= 1e-13 {
+                return Ok(section);
+            }
+            (offset, weight_strain) = (next, lies);
+        }
+        Err(SagTensionError::InvalidInput(format!(
+            "the stringing state of the gap-type conductor did not settle in {GAP_PASSES} passes"
+        )))
     }
 
     /// Lengthens the cable by a permanent `stretch` (unit strain) that adds
@@ -506,6 +593,82 @@ mod tests {
 
     fn level(s: f64) -> Vec<SpanGeometry> {
         vec![SpanGeometry::level(Length::from_meters(s))]
+    }
+
+    /// A gap-type conductor strung by its core (the synthetic cable's
+    /// components, with their curves): in the known state the outer
+    /// strands carry nothing and the core the section's mean tension; the
+    /// known state solved gives its tension back; it carries its weight
+    /// per metre as it lies there; hotter, it keeps more tension than the
+    /// same wire with both components unstressed together (its outer
+    /// strands have nothing to lose); a wire without a core is refused.
+    #[test]
+    fn a_gap_type_is_strung_by_its_core() {
+        let mut c = cable();
+        c.bimetallic_behavior = Some(ohl_cables::BimetallicBehavior::Gap);
+        let budget = default_solver_budget();
+        let (known, h) = (state(15.7, 15.0), Force::from_kilonewtons(25.0));
+        let spans = vec![
+            SpanGeometry::level(Length::from_meters(300.0)),
+            SpanGeometry::inclined(Length::from_meters(380.0), Length::from_meters(25.0)),
+        ];
+        let gap = NonlinearSection::from_known_state_gap(
+            spans.clone(),
+            Mechanics::from_cable(&c).unwrap(),
+            known,
+            h,
+        )
+        .unwrap();
+        let initial = MaterialState::Initial;
+        let strung = gap.solve(known, &initial, &budget).unwrap();
+        assert!((strung.horizontal_tension.si() - 25_000.0).abs() < 1e-6);
+        let mean = NonlinearSection::section_mean_tension(&strung);
+        let strain = gap
+            .mechanics
+            .strain(Force::from_si(mean), known.temperature, &initial)
+            .unwrap();
+        let loads = gap
+            .mechanics
+            .component_loads(strain, known.temperature, &initial);
+        assert!(
+            loads[0].abs() < 1e-6 && (loads[1] - mean).abs() < 1e-6,
+            "{loads:?}"
+        );
+        assert!(gap.mechanics.outer_offset() > 1e-4);
+        // Its weight per metre as it lies when strung.
+        assert!((gap.weight_strain - strain).abs() < 1e-12);
+        // Hot: the outer strands were unloaded already.
+        c.bimetallic_behavior = Some(ohl_cables::BimetallicBehavior::BirdCage);
+        let cage = NonlinearSection::from_known_state(
+            spans,
+            Mechanics::from_cable(&c).unwrap(),
+            known,
+            h,
+            &initial,
+        )
+        .unwrap();
+        let hot = state(15.7, 80.0);
+        let (g, b) = (
+            gap.solve(hot, &initial, &budget).unwrap(),
+            cage.solve(hot, &initial, &budget).unwrap(),
+        );
+        assert!(
+            g.horizontal_tension.si() > b.horizontal_tension.si() + 500.0,
+            "gap {} bird cage {}",
+            g.horizontal_tension.si(),
+            b.horizontal_tension.si()
+        );
+        // No core: refused.
+        c.core = None;
+        c.bimetallic_behavior = None;
+        let e = NonlinearSection::from_known_state_gap(
+            level(300.0),
+            Mechanics::from_cable(&c).unwrap(),
+            known,
+            h,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("needs a core"), "{e}");
     }
 
     #[test]
