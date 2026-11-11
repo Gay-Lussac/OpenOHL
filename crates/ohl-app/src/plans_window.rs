@@ -46,6 +46,10 @@ pub struct PlanSheet {
     pub template: String,
     /// The values of its fields and the revisions.
     pub fields: SheetFields,
+    /// The name its files take in place of the application's (empty:
+    /// the application's; owner, 2026-11-11).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 impl Default for PlanSheet {
@@ -53,6 +57,7 @@ impl Default for PlanSheet {
         Self {
             template: "default".into(),
             fields: SheetFields::default(),
+            name: String::new(),
         }
     }
 }
@@ -607,11 +612,6 @@ impl PlansWindow {
                         );
                     ui.end_row();
                 }
-                crate::export_form::folder_row(
-                    ui,
-                    &mut self.out,
-                    drawings.out.as_ref().map(|p| (p, "Profile sheets'")),
-                );
             });
             // The window's own sections, below the settings.
             if self.set_mode {
@@ -668,6 +668,26 @@ impl PlansWindow {
                     self.groups_ui(ui, model);
                 }
             }
+            // Last: what the files are called and where they go (owner,
+            // 2026-11-11).
+            ui.separator();
+            crate::export_form::grid(ui, &format!("{title}-out"), |ui| {
+                let own = if self.set_mode {
+                    "each drawing's own, the one PDF after the set"
+                } else {
+                    match self.kind {
+                        PlanKind::Route => "route-plan, after the route",
+                        PlanKind::Situation => "situation-plan, after the route",
+                        PlanKind::Phase => "phase-plan, after the route or the plan",
+                    }
+                };
+                crate::export_form::name_row(ui, title, &mut self.sheet.name, own);
+                crate::export_form::folder_row(
+                    ui,
+                    &mut self.out,
+                    drawings.out.as_ref().map(|p| (p, "Profile sheets'")),
+                );
+            });
             start = crate::export_form::footer(ui, self.error.as_deref(), self.exporting());
         });
         // Its weather cases solved first ([`Self::wanted`]): the export
@@ -718,10 +738,16 @@ impl PlansWindow {
                                 &formats,
                                 one_pdf,
                                 out,
+                                self.sheet.name.trim(),
                             ) {
                                 Ok(jobs) => {
                                     self.error = None;
-                                    let set_name = set.name.clone();
+                                    let given = self.sheet.name.trim();
+                                    let set_name = if given.is_empty() {
+                                        set.name.clone()
+                                    } else {
+                                        given.to_owned()
+                                    };
                                     self.job = Some(Job::start(
                                         format!("Exporting the plan set {name}"),
                                         false,
@@ -755,6 +781,7 @@ impl PlansWindow {
                     // Its own template and values.
                     w.sheet.template = self.sheet.template.clone();
                     w.sheet.fields = self.sheet.fields.clone();
+                    w.sheet.name = self.sheet.name.clone();
                     let req = self.request();
                     match Input::for_plans(model, case, &w, out, &req) {
                         Ok(input) => {
@@ -830,6 +857,51 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(w.job.is_some() && !w.exporting());
+    }
+
+    /// Owner, 2026-11-11: a plan may be given a name; its files take it
+    /// in place of the application's, each route's id after it when
+    /// several are written, so none overwrites another. As many files as
+    /// without a name.
+    #[test]
+    fn a_plan_takes_the_name_given() {
+        let model = crate::tests::synthetic();
+        let dir = std::env::temp_dir().join(format!("ohl-app-{}-named", std::process::id()));
+        let names = |name: &str, kind: PlanKind| -> Vec<String> {
+            let _ = std::fs::remove_dir_all(&dir);
+            let mut w = crate::drawings::DrawingsWindow {
+                formats: vec![ohl_drawing::export::Format::Pdf],
+                ..Default::default()
+            };
+            w.sheet.name = name.into();
+            let req = PlansWindow::of(kind).request();
+            let input = Input::for_plans(&model, 0, &w, dir.clone(), &req).unwrap();
+            run_plans(&input, &req, &|_, _| {}).unwrap();
+            let mut v: Vec<String> = std::fs::read_dir(&dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            v.sort();
+            v
+        };
+        for kind in [PlanKind::Route, PlanKind::Phase] {
+            let own = names("", kind);
+            let given = names(" Submission 2026 ", kind);
+            assert_eq!(own.len(), given.len(), "{own:?} {given:?}");
+            assert!(
+                given.iter().all(|n| n.starts_with("Submission")),
+                "{given:?}"
+            );
+            assert!(own.iter().all(|n| !n.starts_with("Submission")), "{own:?}");
+            if given.len() == 1 {
+                assert_eq!(given[0], "Submission_2026.pdf", "{given:?}");
+            }
+        }
+        // The profile sheets take it too.
+        assert_eq!(ohl_drawing::export::named("", "r1", true), "");
+        assert_eq!(ohl_drawing::export::named("P", "r1", false), "P");
+        assert_eq!(ohl_drawing::export::named("P", "r1", true), "P-r1");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Owner, 2026-11-03: routes and alignments chosen into one phase
@@ -952,6 +1024,7 @@ mod tests {
                 &[Format::Pdf],
                 false,
                 dir.clone(),
+                "",
             )
             .map(|_| ())
         };
@@ -995,6 +1068,7 @@ mod tests {
             &[ohl_drawing::export::Format::Pdf],
             true,
             dir.clone(),
+            "",
         )
         .unwrap();
         assert_eq!(jobs.len(), 3);

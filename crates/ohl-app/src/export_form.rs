@@ -107,6 +107,32 @@ pub fn formats_row(ui: &mut egui::Ui, offered: &[Format], chosen: &mut Vec<Forma
     ui.end_row();
 }
 
+/// The Name row (owner, 2026-11-11: "the possibility to give the plan a
+/// name, not just the export name given by the app"): the name the files
+/// take, `own` what they are called without one.
+pub fn name_row(ui: &mut egui::Ui, id: &str, name: &mut String, own: &str) {
+    let label = ui.label("Name");
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            egui::TextEdit::singleline(name)
+                .id_salt((id, "name"))
+                .hint_text(own)
+                .desired_width(220.0),
+        )
+        .labelled_by(label.id)
+        .on_hover_text(format!(
+            "The name of the files written, in place of the application's ({own}). With \
+             several routes or plans written at once, each one's own name follows yours, so \
+             no file overwrites another; sheets, formats and a plan set's drawings keep \
+             their endings. Empty: the application's names"
+        ));
+        if !name.trim().is_empty() && ui.small_button("×").on_hover_text("No name").clicked() {
+            name.clear();
+        }
+    });
+    ui.end_row();
+}
+
 /// The Folder row: **Choose…** and the folder written into (none chosen:
 /// `fallback`, said so, else "no folder chosen").
 pub fn folder_row(

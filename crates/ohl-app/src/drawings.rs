@@ -857,6 +857,9 @@ pub struct Input {
     photo_source: PhotoSource,
     /// Output folder.
     pub out: PathBuf,
+    /// The name the files take in place of the application's (empty:
+    /// the application's).
+    pub name: String,
 }
 
 /// The orthophotos under the plan, opened once.
@@ -1343,6 +1346,7 @@ impl Input {
             plan_photo,
             photo_source: PhotoSource::new(),
             out,
+            name: w.sheet.name.trim().to_owned(),
         })
     }
 
@@ -1640,6 +1644,14 @@ fn run_plans_kept(
     } else {
         Vec::new()
     };
+    // The plans written (a name given: each one's own after it when
+    // there are several).
+    let drawn = grouped.len()
+        + input
+            .routes
+            .iter()
+            .filter(|r| !grouped.iter().any(|g| g.alignments.contains(&r.id)))
+            .count();
     for (k, g) in grouped.iter().enumerate() {
         report(
             format!("phase plan {} ({} of {})", g.name, k + 1, grouped.len()),
@@ -1662,10 +1674,14 @@ fn run_plans_kept(
         let mut refs: Vec<&ohl_drawing::RouteDrawing> = vec![&first];
         refs.extend(ds.iter().skip(1));
         let sheets = ohl_drawing::plans::phase_plan_of(&refs, &options, &page);
+        let stem = match ohl_drawing::export::named(&input.name, &g.name, drawn > 1) {
+            s if s.is_empty() => format!("{}-phase-plan", file_safe(&g.name)),
+            s => s,
+        };
         let mut written = ohl_drawing::export::write_plan(
             sheets,
             &input.export,
-            &format!("{}-phase-plan", file_safe(&g.name)),
+            &stem,
             &format!("{} — {}", req.kind.title(), g.name),
             &input.out,
             &budget,
@@ -1686,6 +1702,7 @@ fn run_plans_kept(
         .collect();
     let n = alone.len();
     for (r, route) in alone.into_iter().enumerate() {
+        let named = ohl_drawing::export::named(&input.name, &route.id, drawn > 1);
         report(
             format!("route {} ({} of {n})", route.id, r + 1),
             r as f32 / n.max(1) as f32,
@@ -1715,7 +1732,11 @@ fn run_plans_kept(
         let mut written = ohl_drawing::export::write_plan(
             sheets,
             &input.export,
-            &format!("{}-{what}", route.id),
+            &if named.is_empty() {
+                format!("{}-{what}", route.id)
+            } else {
+                named
+            },
             &format!("{} — {}", req.kind.title(), d.name),
             &input.out,
             &budget,
@@ -1806,6 +1827,7 @@ pub fn plan_set_inputs(
     formats: &[Format],
     one_pdf: bool,
     out: PathBuf,
+    name: &str,
 ) -> Result<SetJob, String> {
     use ohl_drawing::plan_set::SetKind;
     let mut jobs = Vec::new();
@@ -1814,6 +1836,12 @@ pub fn plan_set_inputs(
         let keep = |mut input: Input| {
             input.export.keep_pages = one_pdf;
             input.export.suffix = suffixes[k].clone();
+            // A name given to the set: before each drawing's own word.
+            input.name = if name.is_empty() {
+                String::new()
+            } else {
+                format!("{name}-{}", d.kind.as_str())
+            };
             input
         };
         let at = |e: String| format!("{} drawing {} ({}): {e}", set.name, k + 1, d.kind.as_str());
@@ -1950,8 +1978,12 @@ fn run_kept(
             r as f32 / n as f32,
         );
         let d = input.drawing_with_backgrounds(route)?;
+        let named = ohl_drawing::export::Export {
+            name: ohl_drawing::export::named(&input.name, &route.id, n > 1),
+            ..export.clone()
+        };
         let mut written =
-            ohl_drawing::export::write_route(&d, &options, &export, &input.out, &budget)?;
+            ohl_drawing::export::write_route(&d, &options, &named, &input.out, &budget)?;
         pages.append(&mut written.pages);
         if let Some(paper) = &written.paper {
             warnings.push(format!("route {}: optimised layout {paper}", route.id));
@@ -2607,7 +2639,6 @@ impl DrawingsWindow {
                 ui.end_row();
 
                 crate::export_form::formats_row(ui, &Format::ALL, &mut self.formats);
-                crate::export_form::folder_row(ui, &mut self.out, None);
             });
             if let Ok(t) = &template {
                 sheet_sections(ui, &mut self.sheet, t, model);
@@ -2666,6 +2697,18 @@ impl DrawingsWindow {
                     self.isoclearance = None;
                 }
             }
+            // Last: what the files are called and where they go (owner,
+            // 2026-11-11).
+            ui.separator();
+            crate::export_form::grid(ui, "drawings-grid-out", |ui| {
+                crate::export_form::name_row(
+                    ui,
+                    "drawings",
+                    &mut self.sheet.name,
+                    "the route's name",
+                );
+                crate::export_form::folder_row(ui, &mut self.out, None);
+            });
             if crate::export_form::footer(ui, self.error.as_deref(), false) {
                 match Input::new(model, case, self) {
                     Ok(input) => {

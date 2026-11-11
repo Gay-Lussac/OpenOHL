@@ -104,6 +104,10 @@ pub struct SheetChoice {
     /// The project's orthophotos under the key map, on or off (none: as
     /// the template's `[key_map] orthophoto` says; 2026-10-23).
     pub key_map_photo: Option<bool>,
+    /// The name the files written take in place of the route's (empty:
+    /// the route's; owner, 2026-11-11).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
     /// Where the profile's two side terrain lines run: `corridor`,
     /// `distance` or `lowest_arm` (none: as the template's `[corridor]
     /// profile_lines` says; 2026-11-10).
@@ -338,6 +342,7 @@ impl Default for SheetChoice {
             background_photo: None,
             key_map_drawings: None,
             key_map_photo: None,
+            name: String::new(),
             profile_lines: None,
             profile_distance: None,
             profile_circuits: None,

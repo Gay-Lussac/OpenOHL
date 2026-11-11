@@ -8,6 +8,28 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-11
+
+**Plans and sheets: a name of one's own; name and folder last (owner, 2026-11-11)**
+
+The owner: "for all plans, I would like the path to be given to be the
+last thing to do, as well as the possibility to give the plan a name,
+not just the export name given by the app."
+
+- **Name and Folder last.** In the Profile sheets window and the four
+  plan windows the Name and Folder rows stand after every other setting
+  and section, just above Export.
+- **Name.** Kept per plan and project line (`PlanSheet::name`,
+  `SheetChoice::name`). It takes the place of the application's file
+  name (`<route>`, `<route>-route-plan` …). Several routes or plans
+  written at once: each one's own name after it
+  (`ohl_drawing::export::named`), so no file overwrites another. A plan
+  set: the name before each drawing's kind, and its one PDF named after
+  it.
+- **Not changed:** the title on the sheet (a field of the template's
+  title block, set under *Values of the template*); the command line
+  (`ohl drawing` has no `--name` yet).
+
 ## 2026-11-10
 
 **Built-up sections drawn as their parts; the member view draws every member (owner, 2026-11-10)**

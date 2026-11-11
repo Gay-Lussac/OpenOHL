@@ -103,6 +103,10 @@ pub struct Export {
     /// set's second drawing of a kind `-2`, its third `-3` … (empty: the
     /// names as always).
     pub suffix: String,
+    /// The name the route's files take in place of the route's own
+    /// (empty: the route's, as always), before `suffix`: a name the user
+    /// gave the drawing ([`named`]).
+    pub name: String,
     /// The pages drawn kept in [`Written::pages`] (sheets only: a
     /// continuous drawing is not kept), for a plan set's one PDF. Off by
     /// default: the pages hold the orthophotos under the plan.
@@ -124,6 +128,7 @@ impl Default for Export {
             optimise: None,
             dpi: 150.0,
             suffix: String::new(),
+            name: String::new(),
             keep_pages: false,
         }
     }
@@ -162,6 +167,21 @@ pub fn file_stem(id: &str) -> String {
     if s.is_empty() { "route".into() } else { s }
 }
 
+/// The file name of a drawing the user named `name`: the name, and with
+/// `several` drawings written under it (routes, plans of several
+/// alignments) each one's own `part` after it, so no file overwrites
+/// another. Empty `name`: empty (the drawing keeps the name it has).
+pub fn named(name: &str, part: &str, several: bool) -> String {
+    let name = name.trim();
+    if name.is_empty() {
+        String::new()
+    } else if several {
+        format!("{name}-{part}")
+    } else {
+        name.to_owned()
+    }
+}
+
 /// `suffix` as part of a file name (empty stays empty).
 fn file_stem_part(suffix: &str) -> String {
     if suffix.is_empty() {
@@ -194,7 +214,12 @@ pub fn write_route(
     std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let mut run = budget.start();
     let mut written = Written::default();
-    let route = format!("{}{}", file_stem(&d.route), file_stem_part(&e.suffix));
+    let own = if e.name.trim().is_empty() {
+        &d.route
+    } else {
+        &e.name
+    };
+    let route = format!("{}{}", file_stem(own), file_stem_part(&e.suffix));
     let stem = if o.plan {
         route.clone()
     } else {

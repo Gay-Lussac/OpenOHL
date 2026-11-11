@@ -577,10 +577,18 @@ a line saying what it makes, then the same rows in the same order —
 **Route** (here only shown: set in Profile sheets, the button **Profile
 sheets…** opens it), **Paper** (the plan set: **Plan
 set**), **Scale**, the plan's own rows (**Under it**: the project's
-drawings, orthophotos, the corridor), **Formats** and **Folder** (none
-chosen: the sheets' folder) — then its own sections (the plan set's
-drawings, the phase plan's alignments drawn together) and **Export** at
-the bottom. Each window keeps its own settings (paper, scale, formats,
+drawings, orthophotos, the corridor) and **Formats** — then its own
+sections (the plan set's drawings, the phase plan's alignments drawn
+together) and, last (since 2026-11-11, in the Profile sheets window
+too), **Name** and **Folder** (none chosen: the sheets' folder), with
+**Export** at the bottom. **Name** is what the files are called in
+place of the application's names: `Submission 2026` gives
+`Submission_2026.pdf` instead of `<route>-route-plan.pdf`. Written for
+several routes or plans at once, each one's own name follows yours
+(`Submission_2026-<route>.pdf`), so no file overwrites another; the
+sheets' numbers and the formats' endings stay. A plan set puts the name
+before each drawing's kind (`<name>-sheets…`, `<name>-route…`) and
+names its one PDF after it. Empty: the application's names, as before. Each window keeps its own settings (paper, scale, formats,
 folder, template and values), so the route plan and the situation plans
 can be on different papers with different title blocks.
 
