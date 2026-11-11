@@ -172,9 +172,7 @@ impl exports::ohl::plugin::member_check::Guest for Example {
 }
 
 use exports::ohl::plugin::bolt_distances::{DistanceInput, Distances};
-use exports::ohl::plugin::joint_check::{
-    CaseUsage as PartUsage, JointInput, Part, PartResult,
-};
+use exports::ohl::plugin::joint_check::{CaseUsage as PartUsage, JointInput, Part, PartResult};
 
 /// A part's resistance by the example's invented rules, N, and what it
 /// is; none: the data it needs is not given.
@@ -217,7 +215,8 @@ impl exports::ohl::plugin::joint_check::Guest for Example {
                     .enumerate()
                     .map(|(n, f)| PartUsage {
                         load_case: n as u32,
-                        usage: f.abs() / (resistance * input.cases.get(n).map_or(1.0, |c| c.strength)),
+                        usage: f.abs()
+                            / (resistance * input.cases.get(n).map_or(1.0, |c| c.strength)),
                         check: check.clone(),
                     })
                     .collect();
@@ -234,7 +233,10 @@ impl exports::ohl::plugin::joint_check::Guest for Example {
 }
 
 impl exports::ohl::plugin::bolt_distances::Guest for Example {
-    fn minimum_distances(method: String, input: DistanceInput) -> Result<Option<Distances>, String> {
+    fn minimum_distances(
+        method: String,
+        input: DistanceInput,
+    ) -> Result<Option<Distances>, String> {
         if method != METHOD {
             return Err(format!("no method \"{method}\" (it gives: {METHOD})"));
         }
