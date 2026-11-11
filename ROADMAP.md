@@ -1117,6 +1117,11 @@ Built, in active development (not approved yet):
   files with connections change to the simple form (intended); the
   results say which form was used. The joints' own checks (plates,
   covers, welds), drawings and exports do not depend on it.
+- **Usability pass on OHL-Structure**: the header counts only what
+  blocks a calculation (*ready to calculate*, *optional: level 4, N
+  advice*); fewer default tabs so every title shows; notices above the
+  tool hotbar; the Inspector's fields beside their labels; the joint
+  workflow walked step by step in a window test (undo and redo exact).
 
 ### Just finished (2026-11-07)
 All built, in active development (not approved yet):

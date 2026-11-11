@@ -51,9 +51,8 @@ fn a_new_file_has_two_panes_text_left_3d_right() {
     for p in [
         Panel::Inspector,
         Panel::Level,
-        Panel::PointsInsulators,
         Panel::Joints,
-        Panel::Supports,
+        Panel::Members,
     ] {
         assert_eq!(leaf(p), leaf(Panel::Inspector), "{p:?}");
         let r = rect_of(app, p);
@@ -284,7 +283,7 @@ fn the_arrangement_is_kept_between_runs() {
     assert!(next.is_open(Panel::StructureFields));
     let mut fresh = crate::app::StructureApp::new(None);
     fresh.restore(Some(&Memory::default()));
-    assert!(fresh.is_open(Panel::Supports));
+    assert!(fresh.is_open(Panel::Members));
     assert!(fresh.is_open(Panel::Inspector));
     // An older arrangement (no version kept): the default instead.
     eframe::Storage::remove_string(&mut storage, crate::layout::DOCK_VERSION_KEY);
@@ -325,13 +324,13 @@ fn old_default(detail: bool) -> egui_dock::DockState<Panel> {
 fn a_custom_split_survives_a_restart() {
     use egui_dock::NodeIndex;
     let mut app = crate::app::StructureApp::new(None);
-    // The tables split: Supports in a pane of its own below the others.
-    let at = app.dock.find_tab(&Panel::Supports).unwrap();
+    // The tables split: Members in a pane of its own below the others.
+    let at = app.dock.find_tab(&Panel::Members).unwrap();
     app.dock.remove_tab(at);
     let left = app.dock.find_tab(&Panel::Inspector).unwrap().node;
     app.dock
         .main_surface_mut()
-        .split_below(left, 0.5, vec![Panel::Supports]);
+        .split_below(left, 0.5, vec![Panel::Members]);
     let custom = crate::layout::shape(&app.dock);
     assert_eq!(app.dock.iter_leaves().count(), 3);
     let mut storage = Memory::default();
@@ -341,7 +340,7 @@ fn a_custom_split_survives_a_restart() {
     assert_eq!(crate::layout::shape(&next.dock), custom);
     assert!(!crate::layout::same_leaf(
         &next.dock,
-        Panel::Supports,
+        Panel::Members,
         Panel::Joints
     ));
     // Kept by version 2: still theirs.

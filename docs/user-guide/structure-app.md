@@ -250,8 +250,9 @@ their own ticks beside the scales (the same settings). **Reset layout** puts eve
 back, and **Fit the view** shows the whole structure. The arrangement is
 kept for the next start. By default (2026-11-04) the window has **two
 panes**: on the **left the text and edit panels** as tabs — the
-**Inspector**, the **To do** list, Points & strings, Joints, Members,
-Supports (as many as show their titles; the others — Wire points & sets,
+**Inspector**, the **To do** list, Joints and Members, and the panel of
+the file's level in front (Points & strings at level 1, Supports at
+level 3), so that every title shows whole (2026-11-11; the others — Wire points & sets,
 Generators, Groups, the load table, FE results, Line loads, … — open
 there too, from their menus, in front); on the **right the 3D view**
 with its hotbar. The **Detail view** opens as a **tab on top of the 3D
@@ -273,7 +274,8 @@ sided*); hovering one gives the key it has in the file
 (`line_case`…).
 
 The last message (what an action did, or why not) is at the bottom of
-the window, and shows as a **notice** at the bottom right: a success or
+the window, and shows as a **notice** at the bottom right, above the 3D
+view's tool hotbar (it never covers a tool): a success or
 information fades after a few seconds, an **error stays** until its
 **×** is clicked (a long one scrolls in a box of fixed height, so the ×
 stays in reach).

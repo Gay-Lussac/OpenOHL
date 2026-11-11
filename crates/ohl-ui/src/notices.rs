@@ -105,6 +105,13 @@ impl Notices {
     /// again every `tick` s (none: only as other things ask, an
     /// application's tests whose frames come as they step).
     pub fn ui(&mut self, ctx: &egui::Context, tick: Option<f64>) {
+        self.ui_lifted(ctx, tick, 0.0);
+    }
+
+    /// The same, the notices `lift` points higher: above what an
+    /// application keeps at the bottom of its window (a tool bar), so that
+    /// a notice never covers it.
+    pub fn ui_lifted(&mut self, ctx: &egui::Context, tick: Option<f64>, lift: f32) {
         if self.hidden {
             return;
         }
@@ -128,7 +135,7 @@ impl Notices {
         }
         let mut close: Option<u64> = None;
         egui::Area::new(egui::Id::new("notices"))
-            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -40.0))
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -40.0 - lift))
             .order(egui::Order::Foreground)
             .interactable(true)
             .show(ctx, |ui| {

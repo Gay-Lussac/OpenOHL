@@ -1967,6 +1967,196 @@ fn problems_are_fixed_bolts_change_leg_and_two_plates_are_drawn() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// The joint workflow walked as a person would (UI review 2026-11-11), a
+/// picture at each step with `OHL_RENDER_PNG`: Design › Joint details on
+/// a joint, a member end's connection defined (the bolt layout applied),
+/// a bolt added, moved and removed in the Detail view, a plate added,
+/// the joint copied to the joints like it — each one undo step that
+/// restores the file's text exactly, and redone the same again. The
+/// panel says which form the members' check takes.
+#[test]
+fn a_joint_is_detailed_step_by_step() {
+    use crate::joint_panel::Drawn;
+    use crate::joint_tools::Act;
+    type H = egui_kittest::Harness<'static, crate::app::StructureApp>;
+    let path = copy_of("type-02.ohls", "joint-walk");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES.split("[[connection]]").next().unwrap()).unwrap();
+    let shots = ohl_core::env::var_os("OHL_RENDER_PNG").map(std::path::PathBuf::from);
+    let shot = |h: &mut H, name: &str| {
+        if let Some(dir) = &shots {
+            h.run_steps(4);
+            h.render().unwrap().save(dir.join(name)).unwrap();
+        }
+    };
+    let text = |h: &H| h.state().file.as_ref().unwrap().text();
+    // One step undone restores the text exactly; redone, it is back.
+    let undo_redo = |h: &mut H, before: &str| {
+        let after = text(h);
+        assert_ne!(after, before);
+        h.get_by_label("Undo").click();
+        h.run();
+        assert_eq!(text(h), before);
+        h.get_by_label("Redo").click();
+        h.run();
+        assert_eq!(text(h), after);
+    };
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run();
+    h.run();
+    // No connection yet: the simple form, said, with what level 4 lacks.
+    h.get_by_label_contains("checked in the simple form: joint details not taken");
+    let bare = |h: &H| {
+        let f = h.state().file.as_ref().unwrap();
+        f.structure().ends_without_joint_details().len()
+    };
+    let n0 = bare(&h);
+    assert!(n0 >= 8, "{n0}");
+    h.get_by_label_contains(&format!("{n0} end(s) still without"));
+    shot(&mut h, "walk-1-joint.png");
+    // H1's bolts (the member's) clicked: the layout, applied at this end.
+    let t0 = text(&h);
+    h.get_by_label("2 × M16").scroll_to_me();
+    h.run();
+    h.get_by_label("2 × M16").click();
+    h.run();
+    h.get_by_label_contains("Bolt layout — H1 at N2");
+    shot(&mut h, "walk-2-layout.png");
+    h.get_by_label("Apply").scroll_to_me();
+    h.run();
+    h.get_by_label("Apply").click();
+    h.run();
+    undo_redo(&mut h, &t0);
+    assert_eq!(bare(&h), n0 - 1);
+    h.get_by_label_contains(&format!("{} end(s) still without", n0 - 1));
+    shot(&mut h, "walk-3-defined.png");
+    // The face view: a bolt added, moved, removed with the tools' acts.
+    h.state_mut().joints.drawn = Drawn::Face;
+    h.run();
+    h.run();
+    let details = |h: &mut H| {
+        h.state_mut()
+            .joint_details()
+            .unwrap()
+            .as_ref()
+            .as_ref()
+            .unwrap()
+            .clone()
+    };
+    let points = |h: &H| {
+        h.state()
+            .file
+            .as_ref()
+            .unwrap()
+            .structure()
+            .connection("H1", "N2")
+            .unwrap()
+            .bolt_points
+            .iter()
+            .map(|p| [p[0].si(), p[1].si()])
+            .collect::<Vec<_>>()
+    };
+    let act = |h: &mut H, pts: Vec<[f64; 2]>| {
+        let d = details(h);
+        h.state_mut().apply_joint_acts(
+            vec![Act::BoltPoints("H1".into(), "N2".into(), pts, None)],
+            &d,
+        );
+        h.run();
+    };
+    let t1 = text(&h);
+    act(&mut h, vec![[0.03, 0.03], [0.08, 0.03], [0.13, 0.03]]);
+    assert_eq!(points(&h).len(), 3);
+    undo_redo(&mut h, &t1);
+    h.run();
+    h.get_by_label_contains("3 × M16");
+    shot(&mut h, "walk-4-bolt-added.png");
+    let t2 = text(&h);
+    act(&mut h, vec![[0.03, 0.03], [0.08, 0.03], [0.14, 0.03]]);
+    assert!((points(&h)[2][0] - 0.14).abs() < 1e-9);
+    undo_redo(&mut h, &t2);
+    let t3 = text(&h);
+    act(&mut h, vec![[0.03, 0.03], [0.08, 0.03]]);
+    assert_eq!(points(&h).len(), 2);
+    undo_redo(&mut h, &t3);
+    h.run();
+    h.get_by_label_contains("2 × M16");
+    shot(&mut h, "walk-5-bolt-removed.png");
+    // A plate at the joint.
+    let t4 = text(&h);
+    h.get_by_label("+ Plate").scroll_to_me();
+    h.run();
+    h.get_by_label("+ Plate").click();
+    h.run();
+    undo_redo(&mut h, &t4);
+    h.get_by_label("Members onto it");
+    shot(&mut h, "walk-6-plate.png");
+    std::fs::remove_dir_all(dir).ok();
+    // Copy to the joints like it, on the example tower as a lattice.
+    let path = copy_of("type-02.ohls", "joint-walk-copy");
+    let all = std::fs::read_to_string(&path).unwrap();
+    let t = ohl_structures::StructureType::parse(&path, &all).unwrap();
+    let joint = t.nodes[4].id.clone();
+    let member = t
+        .members
+        .iter()
+        .find(|m| m.nodes.contains(&joint))
+        .unwrap()
+        .id
+        .clone();
+    std::fs::write(
+        &path,
+        format!(
+            "{}\n[[connection]]\nmember = \"{member}\"\njoint = \"{joint}\"\nleg = \"long\"\n\
+             bolts = {{ count = 3, diameter = \"16 mm\", grade = \"8.8\" }}\n\
+             gauges = [\"30 mm\"]\ngauge_lines = 1\npitch = \"55 mm\"\nend_distance = \"30 mm\"\n",
+            all.replace("kind = \"other\"", "kind = \"lattice\"")
+        ),
+    )
+    .unwrap();
+    let mut h = harness(&path);
+    assert_eq!(kind(&h), StructureKind::Lattice);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint(joint.clone())];
+    h.run();
+    h.run();
+    let t5 = text(&h);
+    let copy = h
+        .query_all_by_label_contains("joint(s) like it")
+        .next()
+        .expect("the copy button");
+    copy.scroll_to_me();
+    h.run();
+    shot(&mut h, "walk-7-before-copy.png");
+    h.query_all_by_label_contains("joint(s) like it")
+        .next()
+        .unwrap()
+        .click();
+    h.run();
+    let n = h
+        .state()
+        .file
+        .as_ref()
+        .unwrap()
+        .structure()
+        .connections
+        .len();
+    assert!(n > 1, "{n}");
+    undo_redo(&mut h, &t5);
+    shot(&mut h, "walk-8-copied.png");
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
+
 /// Level 4 and the option (owner 2026-11-11): the angle tower with a
 /// connection at every member end is level 4, said in the header; the
 /// tick "Joint details in the calculation" in Results writes

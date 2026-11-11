@@ -202,20 +202,20 @@ fn edit_tools_hold_a_tool_and_file_close_closes() {
 fn a_panel_moves_from_its_tabs_menu() {
     use crate::layout::same_leaf;
     let mut app = StructureApp::new(None);
-    move_panel(&mut app.dock, Panel::Supports, Place::Window);
-    let at = app.dock.find_tab(&Panel::Supports).unwrap();
+    move_panel(&mut app.dock, Panel::Members, Place::Window);
+    let at = app.dock.find_tab(&Panel::Members).unwrap();
     assert_ne!(at.surface, egui_dock::SurfaceIndex::main());
-    move_panel(&mut app.dock, Panel::Supports, Place::Right);
-    assert!(same_leaf(&app.dock, Panel::Supports, Panel::View3d));
-    move_panel(&mut app.dock, Panel::Supports, Place::Left);
-    assert!(same_leaf(&app.dock, Panel::Supports, Panel::Joints));
-    assert!(same_leaf(&app.dock, Panel::Supports, Panel::Inspector));
+    move_panel(&mut app.dock, Panel::Members, Place::Right);
+    assert!(same_leaf(&app.dock, Panel::Members, Panel::View3d));
+    move_panel(&mut app.dock, Panel::Members, Place::Left);
+    assert!(same_leaf(&app.dock, Panel::Members, Panel::Joints));
+    assert!(same_leaf(&app.dock, Panel::Members, Panel::Inspector));
     // The 3D view to the left: with the text and edit panels.
     move_panel(&mut app.dock, Panel::View3d, Place::Left);
     assert!(same_leaf(&app.dock, Panel::View3d, Panel::Inspector));
     // Back on the right: no view there any more, a new pane.
     move_panel(&mut app.dock, Panel::View3d, Place::Right);
     assert!(!same_leaf(&app.dock, Panel::View3d, Panel::Inspector));
-    assert_eq!(app.dock.main_surface().num_tabs(), 7);
+    assert_eq!(app.dock.main_surface().num_tabs(), 5);
     assert_eq!(app.dock.iter_leaves().count(), 2);
 }

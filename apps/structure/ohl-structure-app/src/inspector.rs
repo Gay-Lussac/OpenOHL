@@ -37,6 +37,18 @@ fn design_text(d: &toml::Value) -> String {
     }
 }
 
+/// A value field beside its label: as the tables' fields, but at the left
+/// of its cell (the tables set numbers to the right of a column; here the
+/// last column is as wide as the pane, and the field ended far from its
+/// label — UI review 2026-11-11).
+fn field(ui: &mut egui::Ui, drag: egui::DragValue<'_>) -> egui::Response {
+    ui.scope(|ui| {
+        crate::style::field_visuals(ui);
+        ui.add(drag)
+    })
+    .inner
+}
+
 /// A label and its value field (m), in a grid row; the value when changed.
 fn length_row(
     ui: &mut egui::Ui,
@@ -46,7 +58,7 @@ fn length_row(
     what: &str,
 ) -> bool {
     ui.label(label);
-    let r = crate::style::field(ui, egui::DragValue::new(v).speed(0.01).max_decimals(3));
+    let r = field(ui, egui::DragValue::new(v).speed(0.01).max_decimals(3));
     hold(f, &r, what);
     ui.end_row();
     r.changed()
@@ -292,7 +304,7 @@ impl StructureApp {
                     let a = ui.checkbox(&mut on, "");
                     let b = ui
                         .add_enabled_ui(on, |ui| {
-                            crate::style::field(
+                            field(
                                 ui,
                                 egui::DragValue::new(&mut k)
                                     .range(0.1..=5.0)
@@ -487,7 +499,7 @@ impl StructureApp {
                         ui.label(format!("{now:.3}"))
                             .on_hover_text("Its assembly's length");
                     } else {
-                        let r = crate::style::field(
+                        let r = field(
                             ui,
                             egui::DragValue::new(&mut l)
                                 .range(0.01..=50.0)
@@ -504,7 +516,7 @@ impl StructureApp {
                 ui.label(w.set.map_or("—".to_owned(), |s| s.to_string()));
                 ui.end_row();
                 ui.label("counterweight [N]");
-                let r = crate::style::field(
+                let r = field(
                     ui,
                     egui::DragValue::new(&mut cw)
                         .range(0.0..=1e6)

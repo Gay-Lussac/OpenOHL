@@ -1090,7 +1090,10 @@ impl eframe::App for StructureApp {
         self.continuous_window(&ctx);
         self.status_bar(ui);
         self.notices.observe(&self.message, ctx.input(|i| i.time));
-        self.notices.ui(&ctx, crate::notices::TICK);
+        // Above the 3D view's hotbar: a notice never covers a tool (the
+        // delete tool at its right end, UI review 2026-11-11).
+        self.notices
+            .ui_lifted(&ctx, crate::notices::TICK, crate::notices::ABOVE_HOTBAR);
         self.windows(&ctx);
         if self.file.is_some() {
             egui::Panel::top("header").show(ui, |ui| self.header(ui));

@@ -412,7 +412,8 @@ pub fn is_view(panel: Panel) -> bool {
 /// The default arrangement (owner, 2026-11-04: "the text and edit
 /// parameters on the left and 3d view with toolbar on the right"): two
 /// panes. On the left the text and edit panels as tabs — the Inspector,
-/// the To do list and as many tables as show their titles (the others —
+/// the To do list and the tables of the joints and members, so that every
+/// title shows whole (the others — points and strings, supports,
 /// wire points, generators, loads, results … — open beside them from
 /// their menus; Joint and
 /// Member details there too, in front, when a joint or member is opened in
@@ -420,13 +421,14 @@ pub fn is_view(panel: Panel) -> bool {
 /// view opens as a tab on top of it, not in a third pane. The header
 /// (file, level, to do) is above them all, not a panel.
 pub fn default_dock() -> DockState<Panel> {
+    // Four tabs, with room for the one a level's area brings to the front
+    // when a file opens (Points & strings, Supports …): six did not fit
+    // the pane, the last title cut off (UI review 2026-11-11).
     let mut dock = DockState::new(vec![
         Panel::Inspector,
         Panel::Level,
-        Panel::PointsInsulators,
         Panel::Joints,
         Panel::Members,
-        Panel::Supports,
     ]);
     dock.main_surface_mut()
         .split_right(NodeIndex::root(), LEFT_SHARE, vec![Panel::View3d]);
