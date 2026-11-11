@@ -705,7 +705,7 @@ pub type PlateCase<'a> = (&'a str, f64, &'a BTreeMap<String, f64>);
 /// check a plugin's method — that plugin's joint check, **one call with
 /// every part and case** (`ohl_member_check::joints::check_joints`). A
 /// plugin without a joint check, or that fails: every part is "NOT
-/// CHECKED by <plugin>, NOT ON THE SAFE SIDE", without a usage — never
+/// CHECKED by the plugin, NOT ON THE SAFE SIDE", without a usage — never
 /// ASCE 10-97 in its place; so is a part or a load case it returns
 /// nothing for. What it flags as not safe is said with the part.
 pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<PlateUsage>> {

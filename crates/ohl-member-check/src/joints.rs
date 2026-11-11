@@ -37,7 +37,7 @@ use ohl_structures_fe::model::PluginMethod;
 use ohl_structures_fe::plates::{BoltGroup, PlateSteel, WeldInput};
 
 /// Said for a joint part the plugin `p` names did not check: "NOT CHECKED
-/// by <plugin>, NOT ON THE SAFE SIDE".
+/// by the plugin, NOT ON THE SAFE SIDE".
 pub fn not_checked_by(p: &PluginMethod) -> String {
     format!("NOT CHECKED by {}, NOT ON THE SAFE SIDE", p.plugin)
 }
@@ -159,7 +159,7 @@ type Distances =
 static DISTANCES: Mutex<Option<Distances>> = Mutex::new(None);
 
 /// The plugin's minimum distances for `input`. Err: why there are none —
-/// "no minimum distances from <plugin>: …".
+/// "no minimum distances from the plugin: …".
 pub fn minimum_distances(
     p: &PluginMethod,
     input: &dist::DistanceInput,
@@ -202,7 +202,7 @@ pub fn minimum_distances(
 /// The minimum distances at member `idx`'s end `end` of `model` (whose
 /// file names a plugin's method) from that plugin, as the bolt tools take
 /// them (arguments as [`ohl_structures_fe::bolt_rules::rules_in`]). Err:
-/// the words to show instead — "no minimum distances from <plugin>: …" —
+/// the words to show instead — "no minimum distances from the plugin: …" —
 /// never another code's values. None: the model names no plugin, or the
 /// end has no bolts of known diameter.
 pub fn bolt_rules(

@@ -268,7 +268,7 @@ pub fn member_capacity(
 }
 
 /// How [`member_capacity`]'s message starts when the structure's method
-/// is a plugin's: "resistance: from <plugin> after a run".
+/// is a plugin's: "resistance: from the plugin after a run".
 pub const RESISTANCE_FROM_PLUGIN: &str = "resistance: from";
 
 /// The minimum distances of member `idx`'s end `end` in `model`
@@ -291,7 +291,7 @@ pub(crate) fn rules_in(
 
 /// Why the structure file `text` has no bolt rules of a design code: its
 /// member check is a plugin's method and that plugin gives no minimum
-/// distances ("no minimum distances from <plugin>: …"); none: the method
+/// distances ("no minimum distances from the plugin: …"); none: the method
 /// is the core's, or the plugin gives them.
 pub fn no_bolt_rules(text: &str) -> Option<String> {
     use ohl_structures::LibraryItem as _;

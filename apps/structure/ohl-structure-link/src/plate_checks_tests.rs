@@ -283,9 +283,9 @@ fn a_plugins_joint_check_and_minimum_distances_are_used() {
 
 /// A plugin with the member check alone (no `joint-check`, no
 /// `bolt-distances` export): every plate part and the weld read "NOT
-/// CHECKED by <plugin>, NOT ON THE SAFE SIDE" without a usage — no silent
+/// CHECKED by the plugin, NOT ON THE SAFE SIDE" without a usage — no silent
 /// ASCE 10-97 —, the bolt tools have no rules and say "no minimum
-/// distances from <plugin>". With a method of the core the same file is
+/// distances from the plugin". With a method of the core the same file is
 /// checked as before.
 #[test]
 fn a_plugin_without_a_joint_check_leaves_the_joints_not_checked() {

@@ -317,7 +317,7 @@ impl StructureApp {
             .reduce(f64::max)
     }
 
-    /// "no minimum distances from <plugin>: …" when the structure's
+    /// "no minimum distances from the plugin: …" when the structure's
     /// member check is a plugin's method and that plugin gives none (the
     /// bolt tools then say so, and never show another code's); asked
     /// again when the file changes.
