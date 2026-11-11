@@ -124,3 +124,56 @@ fn a_tension_rule_takes_its_own_calculation() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `--sag-to-limits` on a copy of the example line (invented factors):
+/// each section in the blocks gets the largest stringing tension the
+/// rules allow, so the check that follows passes (exit status 0) with a
+/// span at its limit; nothing is written without `--write`; with it the
+/// line file holds the tensions found and checks the same again.
+#[test]
+fn ohl_tensions_sags_to_the_limits_and_writes_them_back() {
+    let ex = root().join("examples/synthetic-line");
+    let dir = std::env::temp_dir().join(format!("ohl-sag-to-limits-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let line = dir.join("line.ohl.json");
+    let before = std::fs::read_to_string(ex.join("synthetic-line.ohl.json")).unwrap();
+    std::fs::write(&line, &before).unwrap();
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ohl"))
+            .arg("tensions")
+            .arg(&line)
+            .arg("--weather")
+            .arg(ex.join("weather-cases.ohlwc"))
+            .arg("--rules")
+            .arg(ex.join("tension-rules.ohlr"))
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    // Not written: the file as it was, the stringings printed.
+    let out = run(&["--sag-to-limits", "--sections", "S1"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Sag to limits:") && text.contains("not written (give --write)"));
+    assert!(text.contains("check the clearances"), "{text}");
+    assert!(text.contains("governed by \"Everyday horizontal"), "{text}");
+    assert!(!text.contains("\n  S3 "), "only the section asked: {text}");
+    assert_eq!(std::fs::read_to_string(&line).unwrap(), before);
+    // Written: every section in the blocks; the check passes at the limit.
+    let out = run(&["--sag-to-limits", "--write"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(text.contains("written: 2 stringings"), "{text}");
+    assert!(text.contains("clipped in: only a section in the blocks is sagged"));
+    assert!(
+        text.contains("100.0 pass") && !text.contains("FAIL"),
+        "{text}"
+    );
+    let after = std::fs::read_to_string(&line).unwrap();
+    assert_ne!(after, before);
+    // The file as written checks the same without sagging again.
+    let again = run(&[]);
+    assert_eq!(again.status.code(), Some(0));
+    // --write needs --sag-to-limits.
+    assert_eq!(run(&["--write"]).status.code(), Some(2));
+    let _ = std::fs::remove_dir_all(&dir);
+}

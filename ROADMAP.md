@@ -685,7 +685,11 @@ against what line design practice uses). In the order proposed:
    catenary constant (`"kind": "catenary_constant"`), line file 15, the
    initial tension worked back and said beside the value (`ohl line`),
    the section form and the Sections table, the benchmarks
-   `finstr-001…004`.
+   `finstr-001…004`; sagging to tension limits as a command (`ohl
+   tensions --sag-to-limits`, `--write`), tension rules by catenary
+   constant or tension (rule file 2), the benchmarks `saglim-001…002`.
+   Still to do: the window's "Sag to these limits…", the initial tension
+   in the Sections table.
 4. **Wind on wires with a direction and with height.** The wind is one
    pressure, square to every span. Wanted: a wind direction (the part
    square to each span acting, with the part along it — a load case with

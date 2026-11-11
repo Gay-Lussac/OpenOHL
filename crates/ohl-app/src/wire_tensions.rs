@@ -462,8 +462,23 @@ impl WireTensionsWindow {
                             &mut r.calculation,
                         );
                         ui.end_row();
+                        // A limit other than a factor (a catenary constant or
+                        // a tension, from a rule file): shown, kept as it is.
+                        if r.since_version_2() {
+                            ui.label("Limit");
+                            ui.label(r.limit().describe()).on_hover_text(
+                                "This rule limits the tension by a catenary constant (the \
+                                 horizontal tension over the wire's bare weight per metre as \
+                                 strung) or by a tension, set in its rule file: usage = tension / \
+                                 allowed as for a factor. No solve time.",
+                            );
+                            ui.end_row();
+                        }
                         ui.label("Factor of RTS");
                         ui.horizontal(|ui| {
+                            if r.since_version_2() {
+                                ui.disable();
+                            }
                             let mut f = r.factor;
                             let response = crate::style::field(
                                 ui,
@@ -476,7 +491,7 @@ impl WireTensionsWindow {
                                 r.factor = f;
                             }
                             changed |= response.drag_stopped() || response.lost_focus();
-                            if r.factor <= 0.0 {
+                            if r.factor <= 0.0 && !r.since_version_2() {
                                 ui.label(
                                     egui::RichText::new("set the factor")
                                         .color(ui.visuals().warn_fg_color),
@@ -684,10 +699,10 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
 /// cases ice; every wire".
 pub fn rule_text(r: &TensionRule) -> String {
     format!(
-        "{}: {} × RTS, {}, {}; {}",
+        "{}: {}, {}, {}; {}",
         r.name,
-        r.factor,
-        r.measure.describe(),
+        r.limit().describe(),
+        r.measured().describe(),
         if r.cases.is_empty() {
             "every case".to_owned()
         } else {
@@ -709,13 +724,13 @@ impl check_ui::RuleRow for TensionRule {
 
     fn summary(&self, _: &[f64]) -> check_ui::Summary {
         check_ui::Summary {
-            target: format!("tension, {}", self.measure.describe()),
+            target: format!("tension, {}", self.measured().describe()),
             voltages: "-".into(),
             cases: crate::rule_table::cases_words(&self.cases),
             distance: if self.problem().is_some() {
                 "not set".into()
             } else {
-                format!("{} × RTS", self.factor)
+                self.limit().describe()
             },
             wires: self.targets.describe(),
         }

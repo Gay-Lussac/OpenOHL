@@ -10,6 +10,39 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Sag to limits: a command; tension rules by catenary constant or tension (roadmap O22 item 3)**
+
+- **What.** `ohl tensions --sag-to-limits`: for each section in the
+  blocks the largest stringing tension (at its temperature, in its
+  stringing's condition) that keeps every `[[tension_rule]]`; bracketed
+  from 0.1 × RTS, bisected to 1e-6, rounded down to a newton and solved
+  there once more. `--write` writes the stringings back (a line file,
+  or a project as one logged change per section).
+- **Open question of the design, the recommended option taken.** A
+  **command that writes a tension back**, not a stringing kind solved
+  again on every change: editing a rule file never re-sags a line. And
+  the rule extension: `catenary_constant = "1800 m"` or `tension =
+  "25 kN"` in place of `factor` (rule file version **2**, written only
+  when used).
+- **A choice made here.** A catenary-constant rule takes w as the
+  **bare** weight per metre of the wire as strung in every case of the
+  rule (the same w as a stringing by catenary constant): in an iced
+  case that is the stricter reading — on the safe side.
+- **Safe side.** Sagging to limits gives the tightest line: least sag,
+  highest structure loads. The result says so and asks for the
+  clearance and structure checks after it. The tension written is
+  always within the rules (the low end of the bracket), also when the
+  time limit stops the search (said).
+- **Coupled sections** are sagged one at a time, the others as they
+  are; the command prints the check of the whole line afterwards.
+- **Not done.** The window (Checks › Wire tensions… › "Sag to these
+  limits…"): after the UI refactor. The Wire tensions window shows a
+  rule's other limit read-only.
+- **Validation.** `saglim-001…002` against an independent bisection
+  (25 347 N to the newton). The design's `nlcrit` cases are not re-used
+  through the line: their load states are loads per metre, which a
+  weather case cannot give exactly.
+
 **Stringing at a final condition and by catenary constant (roadmap O22 item 3; owner "go ahead and through with O22 too")**
 
 - **What.** A section's stringing value may hold *after creep* or

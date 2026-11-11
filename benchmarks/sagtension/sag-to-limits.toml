@@ -1,0 +1,146 @@
+# Sag to limits: the largest stringing tension of a section that keeps
+# the tension rules (docs/theory/sagtension.md, "Sag to limits on the
+# line"; `ohl tensions --sag-to-limits`).
+#
+# The textbook cable (EA 30 MN, alpha 20e-6 /K, 1.6 kg/m at 20 °C, RTS
+# 120 kN), one level 300 m span between fixed wire points, strung at
+# 10 °C. Weather: "everyday" (10 °C, still air) and "ice" (-5 °C, 15 mm of
+# glaze ice). The factors are INVENTED for the test — not from any code.
+#
+# Expected values: benchmarks/reference/textbook_reference.py
+# (sag_to_limits_cases; `python3 -I benchmarks/reference/textbook_reference.py
+# saglim`): per limit a bisection of fixed length on the stringing tension,
+# each trial the elastic span by quadrature; the smallest governs, rounded
+# down to a newton as the command gives it.
+#
+# By hand:
+# - the everyday limit of saglim-001 is the stringing state itself: the
+#   largest stringing tension is the limit, 0.25 x 120 kN = 30 000 N; the
+#   ice limit (0.40 x 120 kN = 48 kN at the support under ice) allows
+#   25 347.76 N of stringing tension and governs;
+# - saglim-002: a catenary constant of 1400 m in the stringing state is
+#   H = C w, w the bare weight per metre as strung at 10 °C,
+#   1.6 x exp(-20e-6 x (10 - 20)) x 9.80665 = 15.693778 N/m:
+#   21 971.29 N, which governs (the ice limit as above).
+#
+# Tolerances: the tension to the newton it is rounded to; the usages 1e-6
+# relative.
+
+[[case]]
+id = "saglim-001"
+title = "Sag to limits: everyday 0.25 RTS horizontal, ice 0.40 RTS at the support — the ice rule governs, 25 347 N"
+calculation = "line.sag_to_limits"
+reference = "Independent bisection on the elastic span by quadrature (benchmarks/reference/textbook_reference.py)"
+max_seconds = 30.0
+expected.tension_n = { value = 25347.0, abs_tol = 0.5 }
+expected.governing_rule = { value = 1.0, abs_tol = 0.0 }
+expected.usage_0 = { value = 0.8449, rel_tol = 1e-6 }
+expected.usage_1 = { value = 0.999979521, rel_tol = 1e-6 }
+
+[case.inputs]
+weather = [
+    { name = "everyday", temperature = "10 °C" },
+    { name = "ice", temperature = "-5 °C", ice_thickness = "15 mm" },
+]
+rules = '''
+format = "ohl-clearance-rules"
+version = 1
+name = "invented limits"
+
+[[tension_rule]]
+name = "everyday"
+cases = ["everyday"]
+factor = 0.25
+measure = "horizontal"
+
+[[tension_rule]]
+name = "ice"
+cases = ["ice"]
+factor = 0.40
+'''
+library = '''
+format = "ohl-wire"
+version = 1
+
+[[cable]]
+id = "tb"
+name = "Textbook cable"
+kind = "aaac"
+source = "Invented textbook data"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "120 kN"
+outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 }
+'''
+line = '''
+{"format": "ohl-line", "version": 6, "name": "sag to limits", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 15000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "saglim-002"
+title = "Sag to limits: everyday catenary constant 1400 m (H = C w), ice 0.40 RTS at the support — the catenary constant governs, 21 971 N"
+calculation = "line.sag_to_limits"
+reference = "H = C w by hand; the ice usage by the elastic span by quadrature (benchmarks/reference/textbook_reference.py)"
+max_seconds = 30.0
+expected.tension_n = { value = 21971.0, abs_tol = 0.5 }
+expected.governing_rule = { value = 0.0, abs_tol = 0.0 }
+expected.usage_0 = { value = 0.9999868092, rel_tol = 1e-6 }
+expected.usage_1 = { value = 0.9030399316, rel_tol = 1e-6 }
+
+[case.inputs]
+weather = [
+    { name = "everyday", temperature = "10 °C" },
+    { name = "ice", temperature = "-5 °C", ice_thickness = "15 mm" },
+]
+rules = '''
+format = "ohl-clearance-rules"
+version = 2
+name = "invented limits"
+
+[[tension_rule]]
+name = "everyday"
+cases = ["everyday"]
+catenary_constant = "1400 m"
+
+[[tension_rule]]
+name = "ice"
+cases = ["ice"]
+factor = 0.40
+'''
+library = '''
+format = "ohl-wire"
+version = 1
+
+[[cable]]
+id = "tb"
+name = "Textbook cable"
+kind = "aaac"
+source = "Invented textbook data"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "120 kN"
+outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 }
+'''
+line = '''
+{"format": "ohl-line", "version": 6, "name": "sag to limits", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 15000.0, "temperature": 10.0}}]
+}
+'''

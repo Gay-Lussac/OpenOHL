@@ -116,6 +116,15 @@ The references of the forward cases run backwards: asked for the tension an inde
 | `finstr-003` | the same given as a catenary constant after creep, C = H / w = 1410.50 m (w at 10 °C) → 25 kN | `tbcreep-001`, C by hand |
 | `finstr-004` | an invented wire with stress-strain and creep curves, ruling span: 23 579.69 N after creep at 15 °C → 25 kN | `nlstate-001` |
 
+### Sag to limits (`benchmarks/sagtension/sag-to-limits.toml`)
+
+The largest stringing tension of a dead-end span that keeps two tension rules (invented factors), against an independent bisection on the elastic span by quadrature (`textbook_reference.py`, `saglim`) ([theory](../theory/sagtension.md#sag-to-limits-on-the-line)).
+
+| Case | What | Reference |
+|---|---|---|
+| `saglim-001` | everyday 0.25 RTS horizontal, 15 mm ice 0.40 RTS at the support: the ice rule governs, 25 347 N (to the newton) | independent bisection |
+| `saglim-002` | everyday catenary constant 1400 m, the same ice rule: H = C w = 21 971 N governs | by hand; the ice usage by quadrature |
+
 ### Bimetallic conductor (`benchmarks/sagtension/textbook-bimetallic.toml`)
 
 Linear aluminium on a linear steel core (TB 324's typical component

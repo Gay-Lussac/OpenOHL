@@ -129,7 +129,8 @@ what they are to (the ground, LiDAR classes, the line's own wires, other
 lines) and give per rule the weather cases it uses. A preset's rule file
 may also say which checks it is for (`checks = ["vertical", "radial",
 "vegetation", "tension", "strings", "internal"]`; `tension`: its `[[tension_rule]]` tables for
-the [wire tension check](desktop-app.md#wire-tensions), 2026-10-22;
+the [wire tension check](desktop-app.md#wire-tensions), 2026-10-22 — and for sagging a line
+to those limits (`ohl tensions --sag-to-limits`, [Wire tension rules](terrain.md#wire-tension-rules-tension_rule), 2026-11-11);
 `strings`: its `[[string_rule]]` tables for the [string
 check](desktop-app.md#string-checks), 2026-10-24; `internal`: its
 `[[internal_rule]]` tables for the [internal

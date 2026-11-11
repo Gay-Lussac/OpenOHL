@@ -1417,6 +1417,26 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   keeps the window's rules in `<model>.ice-shedding-rules.ohlr`; the 3D
   layer `Layer::IceShedding` (`ice_shedding::scene`); the panel
   `Panel::IceShedding`.
+- **Tension rules: other limits, sag to limits** (2026-11-11, roadmap
+  O22 item 3): a `[[tension_rule]]` may give, in place of `factor`,
+  `tension` (a force) or `catenary_constant` (a length: H over the bare
+  weight per metre of the wire as strung, the measure then horizontal) —
+  `TensionRule::{tension, catenary_constant}` (`Option<f64>`, N and m),
+  `TensionRule::limit() -> RuleLimit`, `measured()`, `allowed(rts,
+  weight)`; exactly one limit (`RawTensionRule::resolve`). Rule file
+  version **2** (`RULE_FILE_VERSION`), written only by a set with such a
+  rule (`RuleSet::to_toml`, else 1). The CSV gains a last column `limit`.
+  `tension::sag_to_limits(line, library, rules, weather, sections,
+  filter, budget) -> SaggedToLimits { sections: [SagToLimits { section,
+  stringing?, governing?, usages, trials, stopped, notes }], line, notes
+  }`: per section in the blocks the largest `Stringing::Tension` (its
+  temperature and `condition` kept) within the rules, by bisection on
+  the rows of `check` (`span_rows`, one implementation), each section
+  alone (`solve::solve_one`); no state is kept — `ohl tensions
+  --sag-to-limits [--sections] [--write] [--user] [--seconds]` writes the
+  stringings back (a line file rewritten from the stored line; a project
+  through `Command::SetStringing`). Validation calculation
+  `line.sag_to_limits`.
 - **Tension rules** (2026-10-22, additive): a rule file (`.ohlr`) may
   hold optional `[[tension_rule]]` tables — `name`, `cases` (patterns;
   none: every case), `factor` (> 0: the allowed tension is factor × the

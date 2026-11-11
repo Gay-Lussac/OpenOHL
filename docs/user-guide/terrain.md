@@ -235,6 +235,8 @@ targets = { wire_types = ["acsr-*"], systems = ["S1", "none"], circuits = ["Nort
 | `cases` | weather case names (`*` `?` wildcards); none: every case |
 | `calculation` | (2026-11-01) how every wire is solved for the rule: a condition and a method as a section's calculation is named (`initial-fe`, `creep-rs`, `load-fe`, `max-sag-fe`, …); none: each section's own calculation. Each weather case is solved once per calculation the rules ask; a finding names the calculation beside its case |
 | `factor` | the allowed tension as a factor of the wire type's rated tensile strength; above 0. **No factor is built in**: the example's are invented |
+| `tension` | (rule file version 2, 2026-11-11, in place of `factor`) the allowed tension itself, `"25 kN"` |
+| `catenary_constant` | (version 2, in place of `factor`) the largest catenary constant H / w, `"1800 m"`: the **horizontal** tension over the bare weight per metre of the wire as strung (`measure` is left out). In an iced case the bare weight is still used: the stricter reading |
 | `measure` | `max`: the tension at the span's most tensioned support (default); `horizontal`: the horizontal tension |
 | `targets` | `wire_types` (ids, wildcards), `systems` (ids; `none`: the sections without a system), `circuits` (names); a wire counts when it is in every list given; none: every wire |
 
@@ -254,6 +256,35 @@ usage_pct, status, x, y, z`, the point the most tensioned support). Exit
 status 0: every span within its allowed tension, 1: some above, 2: an
 error (a rule file without tension rules too). The example's rule file
 (`examples/synthetic-line/tension-rules.ohlr`) uses **invented** factors.
+The CSV ends with a `limit` column (`0.45 × RTS`, `H/w ≤ 1800 m`,
+`25.00 kN`).
+
+**Sag to limits** (*built, in active development — not approved yet*):
+
+```sh
+ohl tensions line.ohl.json --weather cases.ohlwc --rules rules.ohlr \
+  --sag-to-limits [--sections S1,S3] [--write] [--seconds 60]
+```
+
+gives each section in the blocks (or those named) the **largest
+stringing tension that keeps every tension rule** — at its stringing
+temperature and in its stringing's condition (initial, after creep or
+after load) — then prints the check of the line so sagged. Per section:
+the tension found, the rule, case and span that govern, every rule's
+usage. What it does to the results: the **tightest** line the rules
+allow — the least sag, the highest tensions and structure loads; check
+clearances and structures after it. Time: about 40 trial solves of a
+section per weather case of the rules (seconds per section); `--seconds`
+caps a section (60 by default: the tension found so far is then given,
+within the rules but not the tightest, and said). Nothing is written
+without `--write`: the stringings found are printed as JSON. With
+`--write` a line file is rewritten with them; in a project each is one
+logged, undoable change (`--user`). A rule file edited later never
+re-sags a line: run the command again. Sections sharing an assembly or
+a spacer are sagged one at a time, the others as they are. A design-code
+preset's tension rules ([Design codes](design-codes.md)) drive it like
+any other rule file. Theory: [Sag-tension › Sag to limits on the
+line](../theory/sagtension.md#sag-to-limits-on-the-line).
 
 ### Lightning shielding rules (`[[lightning_rule]]`)
 

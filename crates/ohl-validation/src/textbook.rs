@@ -14,6 +14,7 @@ use crate::{Calculation, Inputs, Outputs, Registry};
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(LineSection));
+    registry.register(Box::new(SagToLimits));
     registry.register(Box::new(CableProperties));
 }
 
@@ -160,6 +161,93 @@ impl Calculation for LineSection {
                     out.insert(format!("string_{k}_{j}_{axis}_m"), s.bottom[a]);
                 }
             }
+        }
+        Ok(out)
+    }
+}
+
+/// `line.sag_to_limits`: one section of a line (`.ohl.json` text) sagged
+/// to the limits of the tension rules of a rule file (`rules`, `.ohlr`
+/// text) in the weather cases `weather` (a list of `.ohlwc` cases, also
+/// the line's weather cases), with the wire types of a wire library
+/// (`library`, `.ohlw` text): [`ohl_clearance::tension::sag_to_limits`].
+///
+/// Outputs: `tension_n` (the stringing tension found, whole newtons),
+/// `governing_rule` (its index in the rule file), `usage_k` (rule `k`'s
+/// largest usage at that tension) and `trials`.
+struct SagToLimits;
+
+impl Calculation for SagToLimits {
+    fn id(&self) -> &'static str {
+        "line.sag_to_limits"
+    }
+
+    fn description(&self) -> &'static str {
+        "One section of a line sagged to the limits of tension rules (inputs: line = .ohl.json \
+         text, library = .ohlw text, weather = list of weather cases, rules = .ohlr text, \
+         optional section index); outputs tension_n, governing_rule, usage_k per rule, trials"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let mut line =
+            ohl_line::Line::from_json(string_input(inputs, "line")?).map_err(|e| e.to_string())?;
+        let mut library = ohl_cables::Library::default();
+        library
+            .add_toml(
+                std::path::Path::new("library"),
+                string_input(inputs, "library")?,
+            )
+            .map_err(|e| e.to_string())?;
+        let weather: Vec<ohl_weather::WeatherCase> = table_input(inputs, "weather")?;
+        for w in &weather {
+            w.validate()?;
+        }
+        line.set_weather_cases(&weather);
+        let rules = ohl_clearance::rules::RuleSet::parse(string_input(inputs, "rules")?)?;
+        let index = match inputs.get("section") {
+            Some(v) => usize::try_from(
+                v.as_integer()
+                    .ok_or("input \"section\" must be an integer")?,
+            )
+            .map_err(|e| e.to_string())?,
+            None => 0,
+        };
+        let id = line
+            .sections
+            .get(index)
+            .ok_or_else(|| format!("no section {index}"))?
+            .id
+            .clone();
+        let sagged = ohl_clearance::tension::sag_to_limits(
+            &line,
+            &library,
+            &rules.tension_rules,
+            &weather,
+            std::slice::from_ref(&id),
+            &Default::default(),
+            &ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(
+                ohl_clearance::tension::SAG_TO_LIMITS_SECONDS,
+            )),
+        );
+        let s = sagged
+            .sections
+            .first()
+            .ok_or_else(|| format!("section {id} not sagged"))?;
+        let Some(ohl_line::Stringing::Tension {
+            horizontal_tension, ..
+        }) = &s.stringing
+        else {
+            return Err(format!("section {id}: {}", s.notes.join("; ")));
+        };
+        let mut out = Outputs::from([
+            ("tension_n".to_owned(), *horizontal_tension),
+            ("trials".to_owned(), s.trials as f64),
+        ]);
+        if let Some(g) = &s.governing {
+            out.insert("governing_rule".to_owned(), g.rule as f64);
+        }
+        for (rule, usage) in &s.usages {
+            out.insert(format!("usage_{rule}"), *usage);
         }
         Ok(out)
     }

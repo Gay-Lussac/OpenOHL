@@ -39,6 +39,22 @@ usage, pass or fail — are sorted by usage, the largest first. A span
 above its allowed tension fails. A wire type without an RTS is not
 checked (said in the notes).
 
+**Other limits than a factor** (*built, in active development — not
+approved yet*). In place of the factor a rule may give an absolute
+tension \\( T_{\text{allowed}} \\) (`tension = "25 kN"`), or a largest
+**catenary constant** \\( C \\) (`catenary_constant = "1800 m"`): the
+horizontal tension is then compared with
+
+\\[ T_{\text{allowed}} = C\\,w \\]
+
+\\( w \\) the **bare** weight per metre of the wire as strung (at the
+section's stringing temperature). **Conservative** in an iced or windy
+case: the ratio of \\( H \\) to the case's own load per metre would be
+smaller than \\( H / w \\), so the rule is the stricter one there.
+
+**Sagging to these limits**: [Sag-tension › Sag to limits on the
+line](sagtension.md#sag-to-limits-on-the-line).
+
 **No factor is built in.** The factors are the user's, or a design-code
 plugin's preset (its `[[tension_rule]]` tables); the repository's
 examples use invented factors, labelled as such.

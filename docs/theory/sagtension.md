@@ -127,6 +127,24 @@ A level 300 m span, \\( w \\) = 15.970 N/m, \\( EA \\) = 34.656 MN, \\( \alpha \
 
 *Validation:* `finstr-001…004` (`benchmarks/sagtension/final-stringing.toml`): the independent references of `tbcreep-001`, `tbcreep-002` and `nlstate-001` run backwards — asked for the tension those give after creep, the line finds their 25 kN initial (linear wire by finite elements and by ruling span, by catenary constant, and the invented wire with curves).
 
+### Sag to limits on the line
+
+*Built, in active development (not approved yet).* `ohl tensions --sag-to-limits` finds, for each section in the blocks, the largest stringing tension that keeps every [tension rule](wire-tensions.md) taking the section: a **command** whose result is written back as the section's stringing (`--write`) — never a stringing that is silently solved again when a rule file changes.
+
+The unknown \\( X \\) is the section's horizontal tension at its stringing temperature, in its stringing's condition (initial, after creep or after load, [above](#stringing-given-at-a-final-condition)). For a trial \\( X \\) the section is solved in each weather case of the rules, by each rule's calculation (none: the section's own), and
+
+\\[ u(X) = \max_{\text{rules, cases, spans}} \frac{T}{T_{\text{allowed}}} \\]
+
+with the rows of the tension check itself (one implementation). \\( u \\) rises with \\( X \\): the root of \\( u(X) = 1 \\) is bracketed from 0.1 × RTS (halved or doubled, never beyond the RTS) and bisected to \\( 10^{-6} \\) relative. The result is the bracket's low end rounded **down** to a newton and solved once more: every rule is at or below its limit there, whatever the permanent sets of a wire with curves do (a rule above its limit steps the tension down, at most 10 times).
+
+Exit clauses: a time limit per section (60 s by default, `--seconds`; about 40 trials, each one section solve per weather case and calculation of the rules) — when it is reached the low end of the bracket is given, **within the rules but not the tightest**, and said; 60 trials at most. A section the rules do not bind below the RTS, a clipped section, a section no rule takes: not sagged, with the reason.
+
+Each section is sagged alone: sections sharing an assembly or joined by spacers keep the others as they are, and the whole line is checked afterwards (the command prints that check).
+
+**Not a conservative result by itself:** sagging to limits gives the **tightest** line the rules allow — the least sag, and the highest tensions and structure loads. The result says so: clearances and structures are to be checked after it.
+
+*Validation:* `saglim-001…002` (`benchmarks/sagtension/sag-to-limits.toml`): against an independent bisection on the elastic span by quadrature (25 347 N where an ice rule governs, to the newton; the usages to 10⁻⁶), and \\( H = C\\,w \\) by hand where a catenary-constant rule governs.
+
 ## Weather loads
 
 Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \\): \\( w_i = \rho_i g \frac{\pi}{4}[(d+2t)^2 - d^2] \\). Wind pressure \\( q \\) on the iced diameter: \\( w_h = q(d + 2t) \\). Resultant \\( \sqrt{(w_c + w_i)^2 + w_h^2} \\), in a plane swung by \\( \arctan(w_h / w_v) \\). Sag-tension uses the resultant in the span plane (exact for level spans).

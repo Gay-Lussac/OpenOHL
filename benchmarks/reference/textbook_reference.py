@@ -10,6 +10,7 @@ Covers:
     benchmarks/sagtension/textbook-ruling-span.toml
     benchmarks/sagtension/textbook-point-load.toml
     benchmarks/sagtension/textbook-bimetallic.toml
+    benchmarks/sagtension/sag-to-limits.toml
     benchmarks/sagtension/cigre-tb324.toml
     benchmarks/weather/textbook-ice-wind.toml
     benchmarks/wirefe/textbook-elastic-catenary.toml
@@ -1104,6 +1105,51 @@ def creep_cases():
                                              "fe_minus_rs_n": fe["h_0_n"] - H})
 
 
+def sag_to_limits_cases():
+    """saglim-001...002 (benchmarks/sagtension/sag-to-limits.toml): the
+    largest stringing tension of a dead-end span that keeps tension limits
+    in two weather cases. The textbook cable (RTS 120 kN), level 300 m
+    between fixed wire points, strung at 10 degC; the limits (INVENTED
+    factors, not from any code): the horizontal tension in still air at
+    10 degC, and the largest tension under 15 mm of glaze ice at -5 degC.
+    Per limit a bisection of fixed length on the stringing tension (each
+    trial the elastic span by quadrature, dead_end_span); the smallest
+    governs. The line's command gives it rounded down to a newton."""
+    print("== sag to limits ==")
+    d, EA, alpha = CABLE["d"], CABLE["EA"], CABLE["alpha"]
+    mass = strung_mass(CABLE["mass"], alpha, 10.0)
+    rts = 120_000.0
+    everyday, ice = {"t": 10.0}, {"t": -5.0, "ice": 0.015}
+
+    def state(H, case):
+        return dead_end_span(300.0, 30.0, mass, d, EA, alpha, H, 10.0, case)
+
+    def largest(value, allowed):
+        lo, hi = 5_000.0, 100_000.0
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            lo, hi = (lo, mid) if value(mid) > allowed else (mid, hi)
+        return lo
+
+    # saglim-001: everyday horizontal <= 0.25 RTS, ice maximum <= 0.40 RTS.
+    limits = [largest(lambda H: state(H, everyday)["h_0_n"], 0.25 * rts),
+              largest(lambda H: state(H, ice)["max_tension_0_n"], 0.40 * rts)]
+    H = math.floor(min(limits))
+    show("saglim-001 everyday 0.25 RTS horizontal, ice 0.40 RTS maximum",
+         {"limit_everyday_n": limits[0], "limit_ice_n": limits[1], "tension_n": H,
+          "usage_0": state(H, everyday)["h_0_n"] / (0.25 * rts),
+          "usage_1": state(H, ice)["max_tension_0_n"] / (0.40 * rts)})
+    # saglim-002: a catenary constant of 1400 m everyday (H = C w, w the
+    # bare weight per metre as strung), ice maximum <= 0.40 RTS.
+    w = mass * G
+    limits = [1400.0 * w, limits[1]]
+    H = math.floor(min(limits))
+    show("saglim-002 everyday H/w <= 1400 m, ice 0.40 RTS maximum",
+         {"limit_everyday_n": limits[0], "limit_ice_n": limits[1], "tension_n": H,
+          "usage_0": state(H, everyday)["h_0_n"] / (1400.0 * w),
+          "usage_1": state(H, ice)["max_tension_0_n"] / (0.40 * rts)})
+
+
 def heated_span_cases():
     """tbheat-001...003: a level 400 m span between fixed wire points at
     30 m, strung at 25 kN at 10 degC, at 150 degC: the closed-form change of
@@ -1414,10 +1460,14 @@ def main():
     if sys.argv[1:] == ["iced"]:
         iced_span_cases()
         return
+    if sys.argv[1:] == ["saglim"]:
+        sag_to_limits_cases()
+        return
     self_check()
     textbook_catenary()
     textbook_cos()
     creep_cases()
+    sag_to_limits_cases()
     heated_span_cases()
     weight_reference_cases()
     iced_span_cases()

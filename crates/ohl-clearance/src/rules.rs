@@ -156,11 +156,15 @@ use serde::Deserialize;
 pub const RULE_FILE_EXTENSION: &str = "ohlr";
 /// Format identifier.
 pub const RULE_FILE_FORMAT: &str = "ohl-clearance-rules";
-/// Newest format version read: 2 (2026-11-11) adds a rule's `to_ground`,
-/// written only when a rule has it ([`RuleSet::written_version`]) — an
-/// older program then says "newer" instead of checking without it.
+/// Newest format version read: 2 (2026-11-11) adds a rule's `to_ground`
+/// and a tension rule's limit as a catenary constant or a tension in
+/// place of the factor of the RTS (`catenary_constant`, `tension`;
+/// roadmap O22 item 3), written only when the set has one of them
+/// ([`RuleSet::written_version`]) — an older program then says "newer"
+/// instead of checking without it.
 pub const RULE_FILE_VERSION: u32 = 2;
-/// The version of a rule file without `to_ground`.
+/// The version of a rule file without `to_ground` and without such a
+/// tension rule.
 pub const BEFORE_TO_GROUND_VERSION: u32 = 1;
 
 /// What a rule checks against.
@@ -1941,10 +1945,13 @@ impl RuleSet {
     }
 
     /// The oldest format version that holds the set: 2 with a rule "down
-    /// to the ground" ([`Rule::to_ground`]), else 1 — so a file without
-    /// it is still read by an older program.
+    /// to the ground" ([`Rule::to_ground`]) or a tension rule limited by
+    /// a catenary constant or a tension, else 1 — so a file without them
+    /// is still read by an older program.
     pub fn written_version(&self) -> u32 {
-        if self.rules.iter().any(|r| r.to_ground) {
+        if self.rules.iter().any(|r| r.to_ground)
+            || self.tension_rules.iter().any(|r| r.since_version_2())
+        {
             RULE_FILE_VERSION
         } else {
             BEFORE_TO_GROUND_VERSION
