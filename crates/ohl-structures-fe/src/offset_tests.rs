@@ -77,7 +77,7 @@ section = "s"
 kind = "{kind}"
 {connection}"#
     );
-    Model::from_structure_type_with_bolts(
+    Model::from_structure_type_with_joint_details(
         &text,
         &SectionLibrary::default(),
         &BoltLibrary::default(),

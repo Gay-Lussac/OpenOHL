@@ -93,7 +93,7 @@ fn l_r() -> f64 {
 }
 
 fn model(extra: &str, bolts: &BoltLibrary) -> Model {
-    Model::from_structure_type_with_bolts(
+    Model::from_structure_type_with_joint_details(
         &format!("{TOWER}{extra}"),
         &SectionLibrary::default(),
         bolts,
@@ -189,7 +189,7 @@ fn given_then_the_members_then_worked_out() {
         "thickness = \"6 mm\"",
         "thickness = \"6 mm\"\nend_restraint = \"one_end\"",
     );
-    let m = Model::from_structure_type_with_bolts(
+    let m = Model::from_structure_type_with_joint_details(
         &text,
         &SectionLibrary::default(),
         &BoltLibrary::default(),
@@ -310,7 +310,7 @@ fn without_connections_as_before() {
         )
     };
     let lib = BoltLibrary::default();
-    let base = Model::from_structure_type_with_bolts(
+    let base = Model::from_structure_type_with_joint_details(
         &flags(TOWER),
         &SectionLibrary::default(),
         &lib,
@@ -326,23 +326,131 @@ fn without_connections_as_before() {
         "{}[[connection]]\nmember = \"X9\"\njoint = \"N2\"\nrestrained = true\n",
         flags(TOWER)
     );
-    let m = Model::from_structure_type_with_bolts(&nowhere, &SectionLibrary::default(), &lib, None)
-        .unwrap();
+    let m = Model::from_structure_type_with_joint_details(
+        &nowhere,
+        &SectionLibrary::default(),
+        &lib,
+        None,
+    )
+    .unwrap();
     assert_eq!(asce10::capacity(&m, D1, None), before);
     let same = format!(
         "{}[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nleg = \"long\"\n",
         flags(TOWER)
     );
-    let m = Model::from_structure_type_with_bolts(&same, &SectionLibrary::default(), &lib, None)
-        .unwrap();
+    let m = Model::from_structure_type_with_joint_details(
+        &same,
+        &SectionLibrary::default(),
+        &lib,
+        None,
+    )
+    .unwrap();
     let mut after = asce10::capacity(&m, D1, None);
     assert!(!after.joints.is_empty());
     after.joints.clear();
     assert_eq!(after, before);
 }
 
+/// A whole structure file of [`TOWER`]: D1's end at N2 with one library
+/// bolt, shifted 20 mm onto L1, and (`all`) a connection for every other
+/// member end too — level 4; `option`: its `joint_details` line.
+fn file(option: &str, all: bool) -> String {
+    let mut t = format!(
+        "id = \"t\"\nname = \"t\"\nkind = \"lattice\"\n{option}\n{TOWER}[[connection]]\n\
+         member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\nshift = \"20 mm\"\n\
+         bolts = {{ count = 1, bolt = \"X17-example\" }}\n"
+    );
+    if all {
+        for (m, j) in [
+            ("D1", "N4"),
+            ("L1", "N1"),
+            ("L1", "N2"),
+            ("L2", "N2"),
+            ("L2", "N3"),
+        ] {
+            t.push_str(&format!(
+                "[[connection]]\nmember = \"{m}\"\njoint = \"{j}\"\n"
+            ));
+        }
+    }
+    t
+}
+
+/// The calculation's model takes the joint details only when the file
+/// asks for them at level 4 (owner 2026-11-11). Off (the default): the
+/// model and every member's capacity are those of the same file without
+/// its connections. On at level 4: the connections read (the bolt, the
+/// shift as an end offset). On at level 3 (an end without its joint
+/// detail): not applied, the simple form, and said.
+#[test]
+fn the_joint_details_are_taken_only_when_asked_for_at_level_4() {
+    use crate::model::JointUse;
+    let lib = BoltLibrary::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../libraries/bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let read = |t: &str| {
+        Model::from_structure_type_with_bolts(t, &SectionLibrary::default(), &lib, None).unwrap()
+    };
+    let capacities = |m: &Model| -> Vec<_> {
+        (0..m.members.len())
+            .map(|k| asce10::capacity(m, k, None))
+            .collect()
+    };
+    // No connections: nothing to say.
+    let bare_text = file("", true)
+        .split("[[connection]]")
+        .next()
+        .unwrap()
+        .to_owned();
+    let bare = read(&bare_text);
+    assert_eq!(bare.joint_use, JointUse::NoDetails);
+    assert_eq!(bare.joint_use.note(), None);
+    // Off, at level 4: as without connections, said.
+    let off = read(&file("", true));
+    assert_eq!(off.joint_use, JointUse::Simple);
+    assert!(off.joint_use.note().unwrap().contains("simple form"));
+    assert_eq!(off.members, bare.members);
+    assert_eq!(capacities(&off), capacities(&bare));
+    assert!(off.members.iter().all(|m| m.design.ends == [None, None]));
+    assert!(off.members.iter().all(|m| m.offsets == [[0.0; 3]; 2]));
+    assert_eq!(
+        read(&file("joint_details = false", true)).members,
+        bare.members
+    );
+    // On, at level 4: taken — as the model with the joint details read.
+    let on = read(&file("joint_details = true", true));
+    assert_eq!(on.joint_use, JointUse::Taken);
+    assert!(on.joint_use.note().unwrap().contains("joint details taken"));
+    let aid = Model::from_structure_type_with_joint_details(
+        &file("", true),
+        &SectionLibrary::default(),
+        &lib,
+        None,
+    )
+    .unwrap();
+    assert_eq!(on.members, aid.members);
+    let e = on.members[D1].design.ends[1].as_ref().unwrap();
+    assert!((e.bolts.unwrap().diameter.unwrap() - 0.017).abs() < 1e-12);
+    assert!(on.members[D1].offsets[1].iter().any(|v| v.abs() > 1e-6));
+    assert_ne!(capacities(&on)[D1], capacities(&bare)[D1]);
+    // On, at level 3 (five ends without a joint detail): not applied.
+    let early = read(&file("joint_details = true", false));
+    let JointUse::NotApplied(why) = &early.joint_use else {
+        panic!("{:?}", early.joint_use);
+    };
+    assert!(
+        why.contains("not taken") && why.contains("5 member end(s)") && why.contains("simple form"),
+        "{why}"
+    );
+    assert_eq!(early.joint_use.note().as_deref(), Some(why.as_str()));
+    assert_eq!(early.members, bare.members);
+    assert_eq!(capacities(&early), capacities(&bare));
+}
+
 /// A structure file's bolts are looked up in `Bolts/` beside it when it
-/// is read from its path.
+/// is read from its path (its joint details asked for, at level 4).
 #[test]
 fn the_bolts_beside_the_file() {
     let dir = std::env::temp_dir().join(format!("ohl-bolts-beside-{}", std::process::id()));
@@ -354,13 +462,7 @@ fn the_bolts_beside_the_file() {
     )
     .unwrap();
     let path = dir.join("t.ohls");
-    std::fs::write(
-        &path,
-        format!(
-            "{TOWER}[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nbolts = {{ count = 1, bolt = \"X17-example\" }}\n"
-        ),
-    )
-    .unwrap();
+    std::fs::write(&path, file("joint_details = true", true)).unwrap();
     let m = Model::load_with(&path, &SectionLibrary::default()).unwrap();
     let e = m.members[D1].design.ends[1].as_ref().unwrap();
     assert!((e.bolts.unwrap().diameter.unwrap() - 0.017).abs() < 1e-12);

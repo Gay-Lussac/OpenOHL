@@ -10,6 +10,51 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Level 4 and the option "joint details in the calculation" (owner, 2026-11-11)**
+
+The owner: "the structural calculations should be kept on their simpler form with an option to consider the full joint once it's modelled, maybe as a level 4 structure. Without the full joint details it should be level 3". Built, in active development (not approved yet).
+
+- **Level 4** (`Detail::Joints`, "full design with joint details"): a
+  level 3 lattice whose every checked member end has its joint detail —
+  a `[[connection]]` for that end, or the end running on through the
+  joint as one part with a member that says so (`continuous_with`):
+  `StructureType::ends_without_joint_details()` is empty. A modelling
+  member (`check = false`) and a cable need none. A pole and a structure
+  with a separate `model` stay at level 3. Everywhere else level 4
+  behaves as level 3. The level is derived, never stored.
+- **The option** `joint_details = true`, at the top of the `.ohls`
+  (structure file version 11; a file is written at 11 only when it is
+  set). Off — the default, also for every existing file: the member
+  checks and the finite-element model do not read the connections at
+  all (ends from the member's own design data or assumed on the safe
+  side, no bolt shear, bearing or net section from connections, no
+  `shift` end offsets): exactly the same file without its connections.
+  On: as before this decision, and honoured **only at level 4**; set on
+  a level 3 file it is not applied and the results say so, with the
+  number of ends still without a joint detail.
+- **This changes results** of existing files that have connections: they
+  are now calculated in the simple form. Intended. The results, the
+  report and `ohl structures fe` say which form was used ("members
+  checked in the simple form; joint details not taken" / "joint details
+  taken").
+- **Not on the safe side in every member**: the simple form leaves out a
+  connection's bolt shear, bearing and net section and the moment of a
+  shifted end, which can govern; it is the form used before the joint
+  details existed. Said in the result's note and in the theory pages.
+- **Independent of the option**: the joints' own checks (plates, covers,
+  welds), Joint details and Member details (the joint's design aid, the
+  member shown with its joint details and saying so when the run takes
+  the simple form), the drawings and the exports.
+- **In OHL-Structure**: a tick *Joint details in the calculation* in
+  Results (disabled with the reason below level 4), the header's badge
+  *Level 4 — joint details*, and the To do list naming at level 3 what
+  level 4 lacks, grouped by joint.
+- **The header's count** (UI review the same day): only what blocks a
+  calculation counts as "N to do"; on a level 3 structure the header says
+  *ready to calculate* and, apart, *optional: level 4, N advice*. The
+  "40 to do" of the example tower were 40 advice items (X-braces crossing
+  without a joint).
+
 **An internal clearance rule by the system's insulation level (owner, 2026-11-11)**
 
 The owner: "Insulation level stays in the plugin for the preset but if

@@ -1966,3 +1966,79 @@ fn problems_are_fixed_bolts_change_leg_and_two_plates_are_drawn() {
     }
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Level 4 and the option (owner 2026-11-11): the angle tower with a
+/// connection at every member end is level 4, said in the header; the
+/// tick "Joint details in the calculation" in Results writes
+/// `joint_details = true` (one undo step) and says the joints are taken.
+/// At level 3 (one end without) the tick is disabled, and a file that
+/// asks for it all the same is told it is not applied.
+#[test]
+fn the_joints_are_taken_only_when_ticked_at_level_4() {
+    use egui_kittest::kittest::NodeT;
+    let path = copy_of("type-02.ohls", "joint-level-4");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    let t = ohl_structures::StructureType::parse(&tower, ANGLES).unwrap();
+    assert_eq!(t.detail(), ohl_structures::Detail::Design);
+    let mut all = ANGLES.to_owned();
+    for (m, j) in t.ends_without_joint_details() {
+        all.push_str(&format!(
+            "\n[[connection]]\nmember = \"{m}\"\njoint = \"{j}\"\n"
+        ));
+    }
+    std::fs::write(&tower, &all).unwrap();
+    let mut h = harness(&tower);
+    h.get_by_label("Level 4 — joint details");
+    h.get_by_label("ready to calculate");
+    menu(&mut h, "Results", "FE results");
+    let structure = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        h.state().file.as_ref().unwrap().structure().clone()
+    };
+    assert!(!structure(&h).joint_details_taken());
+    h.get_by_label("members checked in the simple form; joint details not taken");
+    h.get_by_label("Joint details in the calculation").click();
+    h.run();
+    assert_eq!(structure(&h).joint_details, Some(true));
+    assert!(structure(&h).joint_details_taken());
+    h.get_by_label("joint details taken");
+    if let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(std::path::Path::new(&dir).join("results-joint-details.png"))
+            .unwrap();
+    }
+    h.get_by_label("Undo").click();
+    h.run();
+    assert_eq!(structure(&h).joint_details, None);
+    assert_eq!(h.state().file.as_ref().unwrap().text(), all);
+    // Level 3: the tick is there, disabled.
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    h.get_by_label("Level 3 — full design");
+    menu(&mut h, "Results", "FE results");
+    assert!(
+        h.get_by_label("Joint details in the calculation")
+            .accesskit_node()
+            .is_disabled()
+    );
+    // Asked for in the file all the same: not applied, said; the tick
+    // can be taken off.
+    std::fs::write(&tower, format!("joint_details = true\n{ANGLES}")).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Results", "FE results");
+    h.get_by_label_contains("not applied: the structure is level 3, not 4");
+    assert!(!structure(&h).joint_details_taken());
+    h.get_by_label("Joint details in the calculation").click();
+    h.run();
+    assert_eq!(structure(&h).joint_details, None);
+    std::fs::remove_dir_all(dir).ok();
+}

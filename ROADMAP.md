@@ -1106,6 +1106,18 @@ hotbar's drawing and the check footer into the shared UI crate (Part C).
 
 ## Where it stands
 
+### Level 4 and the joints in the calculation (2026-11-11)
+Built, in active development (not approved yet):
+- **Level 4, "full design with joint details"**: a level 3 tower whose
+  every checked member end has its joint detail. The structural
+  calculation stays in its **simple form** by default (connections not
+  taken); the option *Joint details in the calculation*
+  (`joint_details = true`, structure file version 11) takes them, at
+  level 4 only — set below it, not applied and said. Results of existing
+  files with connections change to the simple form (intended); the
+  results say which form was used. The joints' own checks (plates,
+  covers, welds), drawings and exports do not depend on it.
+
 ### Just finished (2026-11-07)
 All built, in active development (not approved yet):
 - **Joint details** (O19): plates several per joint, welded plates, a

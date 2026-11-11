@@ -60,7 +60,11 @@ pub struct FeArgs {
     sections: Option<PathBuf>,
     /// Bolt library (.ohlb file or folder): the bolts the structure's
     /// connections name (`bolts = { bolt = "…" }`); default: the `Bolts`
-    /// folder next to the structure file.
+    /// folder next to the structure file. The connections and their bolts
+    /// go into the member check only when the structure file sets
+    /// `joint_details = true` and is level 4 (every member end with its
+    /// joint detail); otherwise the members are checked in the simple
+    /// form and this library is not used — the output says which.
     #[arg(long)]
     bolts: Option<PathBuf>,
     /// Member wind: factored wind pressure, Pa, on the members whose
@@ -401,6 +405,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             println!("  {note}");
         }
         if let Some(note) = ohl_structures_fe::eccentricity_note(&model, &s) {
+            println!("  {note}");
+        }
+        if let Some(note) = model.joint_use.note() {
             println!("  {note}");
         }
         match &plugin {

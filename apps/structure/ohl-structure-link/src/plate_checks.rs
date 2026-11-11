@@ -163,7 +163,8 @@ pub fn plate_plans(
         return Ok(PlatePlans::default());
     }
     let details = crate::joint_details(text, library, bolts)?;
-    let Ok(model) = Model::from_structure_type_with_bolts(text, library, bolts, None) else {
+    let Ok(model) = Model::from_structure_type_with_joint_details(text, library, bolts, None)
+    else {
         return Ok(PlatePlans::default());
     };
     let mut out = PlatePlans {

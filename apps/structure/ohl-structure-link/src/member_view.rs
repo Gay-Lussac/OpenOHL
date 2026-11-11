@@ -222,7 +222,10 @@ pub struct MemberCapacity {
 }
 
 /// The ASCE 10-97 capacities of member `id` of the structure `text`, with
-/// the connections and the bolt library as the check reads them; a
+/// the connections and the bolt library as the check reads them when the
+/// joint details are taken (always read here, an aid to the joints'
+/// design: a run takes them only with `joint_details = true` at level 4,
+/// 2026-11-11); a
 /// crossing diagonal's partner not known (no load case: as the check
 /// without one). Err: the model is not built (below level 3), or no such
 /// member.
@@ -232,7 +235,7 @@ pub fn member_capacity(
     bolts: &BoltLibrary,
     id: &str,
 ) -> Result<MemberCapacity, String> {
-    let model = Model::from_structure_type_with_bolts(text, sections, bolts, None)?;
+    let model = Model::from_structure_type_with_joint_details(text, sections, bolts, None)?;
     let idx = model
         .members
         .iter()
@@ -269,7 +272,7 @@ pub fn bolt_rules(
     joint: &str,
     force: Option<f64>,
 ) -> Option<ohl_structures_fe::bolt_rules::BoltRules> {
-    let model = Model::from_structure_type_with_bolts(text, sections, bolts, None).ok()?;
+    let model = Model::from_structure_type_with_joint_details(text, sections, bolts, None).ok()?;
     let idx = model.members.iter().position(|m| m.id == id)?;
     let m = &model.members[idx];
     let end = if model.nodes[m.i].id == joint {

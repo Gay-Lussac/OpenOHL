@@ -104,9 +104,12 @@ fn a_structure_is_edited_undone_and_saved() {
     h.get_by_label("Level 3 — full design");
     assert_eq!(h.state().area, Area::Design);
     assert_eq!(h.state_mut().focused(), Some(Panel::Supports));
-    // The X-braces cross without a joint: advice, not a lack (the
-    // header's "N to do").
-    h.get_by_label("40 to do");
+    // The X-braces cross without a joint: advice, not a lack — nothing
+    // blocks a calculation, and the header says so; level 4 and the
+    // advice are optional.
+    h.get_by_label("ready to calculate");
+    h.get_by_label("optional: level 4, 40 advice");
+    assert!(h.query_by_label_contains(" to do").is_none());
     menu(&mut h, "Body", "Joints");
     assert_eq!(h.state().area, Area::Body);
     h.state_mut().selected = vec![Handle::Joint("A1".into())];

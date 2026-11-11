@@ -615,19 +615,20 @@ pub fn joint_details(
     let mut notes = t.connection_notes();
     // Level 3: the model (design data, sections) and the members' axes and
     // profiles as the exports take them.
-    let (model, export) = match Model::from_structure_type_with_bolts(text, library, bolts, None) {
-        Ok(m) if !m.members.is_empty() => {
-            let e = crate::export_structure(text, library, None, &[]).ok();
-            (Some(m), e)
-        }
-        Ok(_) => (None, None),
-        Err(e) => {
-            if t.members.iter().any(|m| m.section.is_some()) {
-                notes.push(format!("the model is not built ({e}): the arrivals only"));
+    let (model, export) =
+        match Model::from_structure_type_with_joint_details(text, library, bolts, None) {
+            Ok(m) if !m.members.is_empty() => {
+                let e = crate::export_structure(text, library, None, &[]).ok();
+                (Some(m), e)
             }
-            (None, None)
-        }
-    };
+            Ok(_) => (None, None),
+            Err(e) => {
+                if t.members.iter().any(|m| m.section.is_some()) {
+                    notes.push(format!("the model is not built ({e}): the arrivals only"));
+                }
+                (None, None)
+            }
+        };
     // Each member's end conditions as the check takes them.
     let conditions: BTreeMap<&str, member_ends::EndConditions> = model
         .as_ref()

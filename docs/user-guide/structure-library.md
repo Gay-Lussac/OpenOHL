@@ -90,15 +90,16 @@ A wire point is placed from its strings (their tops placed first): at its one st
 
 ### Detail levels
 
-A structure file describes its structure at one of three levels. The level is **worked out from what the file holds** (a `detail = …` in older files is read and ignored) and shown in the structure's properties; it rises as the structure is filled in:
+A structure file describes its structure at one of four levels. The level is **worked out from what the file holds** (a `detail = …` in older files is read and ignored) and shown in the structure's properties; it rises as the structure is filled in:
 
 | Level | What the file holds | Used for |
 |---|---|---|
 | **1 — stick figure** | Only the points, strings and wire points: a shaft from the centre to the top and crossarms to the points are drawn — or `[[body]]` polylines that all lie in one plane (a face of the structure). | Placing the wires, drawings, the 3D view. |
 | **2 — sticks of the structure** | Joints (`[[node]]`) and members (`[[member]]`) without cross-sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the structure's members; distances to the structure (planned). |
 | **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint (a joint with a `support`; a joint held only by a `spring` does not count, so a structure standing only on springs stays at level 2) — or a separate `model = "….ohlfe"`. An extension with a body: its members with cross-sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
+| **4 — full design with joint details** | A level 3 lattice tower whose every checked member end has its joint detail: a `[[connection]]` for that end, or the end running on through the joint as one part (a continuous leg). A pole and a structure with a separate model stay at level 3. | As level 3; and the calculation may take the joint details (`joint_details = true`, OHL-Structure: Results › *Joint details in the calculation*). Without that option the members are checked in the simple form. |
 
-A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a cross-section) level 3. A pole named by a `.ohlp` file is level 3. The structure's level is the higher of its members' and its pole's.
+A **pole** has the first three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a cross-section) level 3. A pole named by a `.ohlp` file is level 3. The structure's level is the higher of its members' and its pole's.
 
 ```toml
 [[node]]                             # a joint, local axes

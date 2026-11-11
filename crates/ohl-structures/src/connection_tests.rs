@@ -252,7 +252,7 @@ fn version_9_is_read() {
     ))
     .unwrap();
     assert_eq!(t.connections.len(), 1);
-    assert!(parse(&format!("format = \"ohl-structure\"\nversion = 11\n{BODY}")).is_err());
+    assert!(parse(&format!("format = \"ohl-structure\"\nversion = 12\n{BODY}")).is_err());
 }
 
 /// The leg L1–L2 in line through N2 with a section, the diagonal D1.
@@ -388,4 +388,72 @@ fn a_wrong_splice_is_refused() {
     assert!(parse(&in_line(&clash)).unwrap_err().contains("has that id"));
     let thin = SPLICE.replace("\"8 mm\"", "\"0 mm\"");
     assert!(parse(&in_line(&thin)).unwrap_err().contains("above 0"));
+}
+
+/// Level 4 (owner 2026-11-11): a full design whose every checked member
+/// end has its joint detail — a `[[connection]]`, or the end running on
+/// through the joint as one part with a member that says so. One end
+/// without: level 3, and `joint_details = true` is not applied, said.
+#[test]
+fn level_4_is_a_full_design_with_every_end_detailed() {
+    use crate::Detail;
+    let mut body = BODY.to_owned();
+    for nodes in ["[\"N1\", \"N2\"]", "[\"N2\", \"N3\"]", "[\"N4\", \"N2\"]"] {
+        body = body.replace(nodes, &format!("{nodes}\nsection = \"S\""));
+    }
+    let end = |m: &str, j: &str| format!("[[connection]]\nmember = \"{m}\"\njoint = \"{j}\"\n");
+    // L2 runs on into L1 through N2: both ends there are covered.
+    let through = "[[connection]]\nmember = \"L2\"\njoint = \"N2\"\nkind = \"continuous\"\n\
+                   onto = \"L1\"\n";
+    let t = parse(&body).unwrap();
+    assert_eq!(t.detail(), Detail::Design);
+    assert_eq!(t.ends_without_joint_details().len(), 6);
+    let most = format!(
+        "{body}{CONNECTION}{through}{}{}",
+        end("L1", "N1"),
+        end("L2", "N3")
+    );
+    let t = parse(&most).unwrap();
+    assert_eq!(t.detail(), Detail::Design);
+    assert_eq!(t.ends_without_joint_details(), vec![("D1", "N4")]);
+    assert!(!t.joint_details_taken());
+    assert_eq!(t.joint_details_not_applied(), None);
+    // Asked for at level 3: not applied, in words.
+    let asked = parse(&format!("joint_details = true\n{most}")).unwrap();
+    assert!(!asked.joint_details_taken());
+    let why = asked.joint_details_not_applied().unwrap();
+    assert!(
+        why.contains("not taken") && why.contains("1 member end(s)") && why.contains("simple form"),
+        "{why}"
+    );
+    // Every end: level 4; taken only when asked for.
+    let all = format!("{most}{}", end("D1", "N4"));
+    let t = parse(&all).unwrap();
+    assert_eq!(t.detail(), Detail::Joints);
+    assert!(t.ends_without_joint_details().is_empty());
+    assert!(!t.joint_details_taken());
+    let on = parse(&format!("joint_details = true\n{all}")).unwrap();
+    assert!(on.joint_details_taken());
+    assert_eq!(on.joint_details_not_applied(), None);
+    // A modelling member (check = false) needs none.
+    let modelling = most.replace(
+        "[\"N4\", \"N2\"]\nsection = \"S\"",
+        "[\"N4\", \"N2\"]\nsection = \"S\"\ncheck = false",
+    );
+    assert_eq!(parse(&modelling).unwrap().detail(), Detail::Joints);
+    // The level's number and name; everywhere else it counts as level 3.
+    assert_eq!(Detail::try_from(4), Ok(Detail::Joints));
+    assert_eq!(Detail::Joints.level(), 4);
+    assert_eq!(Detail::Joints.name(), "full design with joint details");
+    assert!(Detail::Joints.is_design() && Detail::Design.is_design());
+    assert!(!Detail::Outline.is_design());
+    assert!(Detail::try_from(5).is_err());
+    // A file is read at version 11; the key is unknown to nothing older
+    // than it (an older program refuses the key).
+    assert!(
+        parse(&format!(
+            "format = \"ohl-structure\"\nversion = 11\njoint_details = true\n{all}"
+        ))
+        .is_ok()
+    );
 }

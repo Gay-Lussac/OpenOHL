@@ -15,6 +15,15 @@ A structure type says how much of the structure its file describes
    A pole is a full design when the pole check can read it (a `.ohlp`
    named, or a complete `[pole]`); the higher of the two levels counts.
 
+4. **full design with joint details** (2026-11-11) — a level 3 lattice
+   whose every checked member end has its joint detail: a `[[connection]]`
+   for that end, or the end running on through the joint as one part
+   (`StructureType::ends_without_joint_details` empty). A pole and a
+   structure with a separate model stay at 3. Only at level 4 may the
+   calculation take the joints (`joint_details = true`,
+   `StructureType::joint_details_taken`); everywhere else level 4 behaves
+   as level 3 (`Detail::is_design`).
+
 The level follows from the file's content (`StructureType::detail()`), so it
 rises as a structure is filled in.
 
@@ -32,6 +41,9 @@ anything reading `body`, the joints and members, or the `.ohlfe` model):
 
 In code the level is `ohl_structures::Detail` (`StructureType::detail()`).
 
-Agreed so far: clearances to the structure body — none at level 1 (LiDAR
+Agreed so far: the member checks and the finite-element model take the
+connections only at level 4 with the file's option on; below, or with
+the option off, the simple form, said in the results (owner, 2026-11-11).
+Also agreed: clearances to the structure body — none at level 1 (LiDAR
 points are a separate topic), computed at levels 2 and 3, the tests to be
 defined with the project owner.

@@ -287,6 +287,8 @@ net width.
 
 ## Connections
 
+> **When the connections are taken (2026-11-11).** The check reads a member end's `[[connection]]` only when the structure file asks for it (`joint_details = true`) **and** is level 4 (every checked member end with its joint detail). Otherwise — the default — the members are checked in the simple form: the member's own design data only, the ends assumed eccentric and not restrained where nothing is given. That simple form does not check a connection's bolt shear, bearing and net section nor the moment of a shifted end, which can govern: it is **not on the safe side for those**, and the results say which form was used. Everything below that names a connection applies when they are taken.
+
 Per end, the bolts the end's `[[connection]]` gives, else the member's
 `bolts` (a hole or shear capacity of the member's only for bolts of the
 same diameter). The standard assumes the bolts of a connection share its
@@ -354,6 +356,8 @@ the root fillet (\\( t + r + d/2 \\) from the heel: geometry, not a code
 rule).
 
 ## End conditions
+
+> **When the connections are taken (2026-11-11).** The check reads a member end's `[[connection]]` only when the structure file asks for it (`joint_details = true`) **and** is level 4 (every checked member end with its joint detail). Otherwise — the default — the members are checked in the simple form: the member's own design data only, the ends assumed eccentric and not restrained where nothing is given. That simple form does not check a connection's bolt shear, bearing and net section nor the moment of a shifted end, which can govern: it is **not on the safe side for those**, and the results say which form was used. Everything below that names a connection applies when they are taken.
 
 Each end of a member is **eccentric** or not and **restrained** against
 turning or not (`member_ends::end_conditions`); the two ends together give

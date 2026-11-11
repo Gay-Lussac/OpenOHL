@@ -192,6 +192,9 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// quantities of those pulls (`pull_back_transverse`, … in
 /// `[[load_case.load]]`) — raw tables here, read by the structure
 /// application; a file is written at 10 only when a case uses them.
+/// Version 11 (2026-11-11) adds `joint_details = true`
+/// ([`StructureType::joint_details`]: the calculation takes the joint
+/// details, at level 4 only); a file is written at 11 only when it is set.
 /// Version 9 (2026-11-02) adds the
 /// connections of the members at the joints and the gusset plates
 /// (`[[connection]]`, `[[plate]]`, [`crate::connections`]); a file is written
@@ -223,7 +226,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 10;
+pub const STRUCTURE_FILE_VERSION: u32 = 11;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -260,6 +263,13 @@ pub enum Detail {
     /// (or a separate finite-element model, `model`); for structure
     /// analysis.
     Design = 3,
+    /// 4 — a full design with its joint details (owner 2026-11-11): level
+    /// 3 by its members, and every end of every checked member with its
+    /// joint detail ([`StructureType::ends_without_joint_details`] none).
+    /// Only here may the calculation take the joints
+    /// ([`StructureType::joint_details`]); everywhere else it behaves as
+    /// level 3.
+    Joints = 4,
 }
 
 impl TryFrom<u8> for Detail {
@@ -270,8 +280,10 @@ impl TryFrom<u8> for Detail {
             1 => Ok(Detail::Stick),
             2 => Ok(Detail::Outline),
             3 => Ok(Detail::Design),
+            4 => Ok(Detail::Joints),
             _ => Err(format!(
-                "detail {v}: 1 (stick figure), 2 (outline) or 3 (full design)"
+                "detail {v}: 1 (stick figure), 2 (outline), 3 (full design) or 4 (full design \
+                 with joint details)"
             )),
         }
     }
@@ -289,7 +301,13 @@ impl Detail {
             Detail::Stick => "stick figure",
             Detail::Outline => "outline",
             Detail::Design => "full design",
+            Detail::Joints => "full design with joint details",
         }
+    }
+
+    /// A full design (level 3 or 4): what structure analysis needs.
+    pub fn is_design(self) -> bool {
+        self >= Detail::Design
     }
 }
 
@@ -1084,6 +1102,15 @@ pub struct StructureType {
     /// (2026-11-05, still version 9).
     #[serde(rename = "splice", default)]
     pub splices: Vec<crate::connections::TypeSplice>,
+    /// Version 11 (owner 2026-11-11): the calculation takes the joint
+    /// details — each member end's eccentricity, restraint and bolts from
+    /// its `[[connection]]`, a connection's `shift` as a rigid end offset.
+    /// None or false (the default): the members are checked in their
+    /// simple form, the connections not taken. Only honoured at level 4
+    /// ([`Detail::Joints`]); set on a level 3 file it is not applied and
+    /// the results say so ([`StructureType::joint_details_not_applied`]).
+    #[serde(default)]
+    pub joint_details: Option<bool>,
     /// Finite-element check: analysis options (read by
     /// `ohl_structures_fe`).
     #[serde(default)]
@@ -1954,7 +1981,17 @@ impl StructureType {
     pub fn detail(&self) -> Detail {
         let pole = self.pole_detail().unwrap_or(Detail::Stick);
         let body = if self.model.is_some() || self.missing_for_design().is_empty() {
-            Detail::Design
+            // Level 4: the members' own design with every end's joint
+            // detail; a pole or a separate model stays at 3.
+            if self.model.is_none()
+                && self.pole.is_none()
+                && !self.connections.is_empty()
+                && self.ends_without_joint_details().is_empty()
+            {
+                Detail::Joints
+            } else {
+                Detail::Design
+            }
         } else if !self.members.is_empty() || self.body_is_3d() {
             Detail::Outline
         } else {

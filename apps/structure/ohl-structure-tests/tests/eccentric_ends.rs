@@ -9,7 +9,10 @@
 //! shifted 20 mm at N2 onto C and pulled by 10 kN at N3. With C a frame
 //! the moment P·e = 0.20 kN m goes to C (said in T's results and in the
 //! notes); with C a truss (N2 held along x) only bars meet N2: left out,
-//! said.
+//! said. The file asks for its joint details in the calculation
+//! (`joint_details = true`) and is level 4, every member end with a
+//! connection (owner 2026-11-11); without the option the shift is not
+//! taken, said.
 
 use std::path::Path;
 
@@ -18,10 +21,15 @@ use ohl_structure_loads::{At, LoadRow, LoadTable, Source};
 use ohl_structures::{LibraryItem, StructureType};
 
 fn text(column: &str, n2: &str) -> String {
+    text_with(column, n2, "joint_details = true")
+}
+
+fn text_with(column: &str, n2: &str, option: &str) -> String {
     format!(
         r#"id = "E"
 name = "eccentric end"
 kind = "lattice"
+{option}
 [analysis]
 nonlinear = false
 self_weight = false
@@ -62,6 +70,15 @@ member = "T"
 joint = "N2"
 onto = "C"
 shift = "20 mm"
+[[connection]]
+member = "T"
+joint = "N3"
+[[connection]]
+member = "C"
+joint = "N1"
+[[connection]]
+member = "C"
+joint = "N2"
 "#
     )
 }
@@ -149,4 +166,31 @@ fn onto_a_bar_only_joint_the_moment_is_left_out_and_said() {
         "{:?}",
         r.notes
     );
+}
+
+/// Without the option (the default) the same file is solved in the simple
+/// form: no end offset, nothing eccentric said for T — as the same file
+/// with its connections removed.
+#[test]
+fn without_the_option_the_shift_is_not_taken() {
+    let off = text_with("frame", "", "");
+    let t = StructureType::parse(Path::new("e.ohls"), &off).unwrap();
+    assert_eq!(t.detail(), ohl_structures::Detail::Joints);
+    assert!(!t.joint_details_taken());
+    let r = solved(&off);
+    let bare = off.split("[[connection]]").next().unwrap().to_owned();
+    assert_eq!(
+        StructureType::parse(Path::new("e.ohls"), &bare)
+            .unwrap()
+            .detail(),
+        ohl_structures::Detail::Design
+    );
+    let plain = solved(&bare);
+    for (a, b) in r.members.iter().zip(&plain.members) {
+        assert_eq!(a, b, "{}", a.id);
+    }
+    assert!(r.members.iter().all(|m| m.eccentric.is_none()));
+    // With it, T's end is eccentric.
+    let on = solved(&text("frame", ""));
+    assert!(on.members.iter().any(|m| m.eccentric.is_some()));
 }

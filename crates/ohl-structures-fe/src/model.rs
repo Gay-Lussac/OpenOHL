@@ -786,6 +786,77 @@ pub struct Model {
     /// The structure type's points on nodes (2026-10-21; a separate
     /// model's nodes name theirs by [`Node::attachment`]).
     pub joint_points: Vec<JointPoint>,
+    /// Whether the joint details of a structure file were taken into the
+    /// members' ends and end offsets (owner 2026-11-11).
+    pub joint_use: JointUse,
+}
+
+/// How a structure file's joint details (`[[connection]]`) went into the
+/// model (owner 2026-11-11: "the structural calculations should be kept
+/// on their simpler form with an option to consider the full joint once
+/// it's modelled"): taken only when the file asks for it
+/// (`joint_details = true`) and is level 4
+/// ([`ohl_structures::Detail::Joints`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum JointUse {
+    /// No connections in the file (or a model file): nothing to say.
+    #[default]
+    NoDetails,
+    /// Connections in the file, not asked for: the simple form.
+    Simple,
+    /// Asked for, not applied (why, in words): the simple form.
+    NotApplied(String),
+    /// Taken: each end's eccentricity, restraint and bolts from its
+    /// connection, a connection's `shift` as a rigid end offset.
+    Taken,
+}
+
+impl JointUse {
+    /// What the file's text asks for and whether its level allows it.
+    pub fn of(text: &str, file: &toml::Table) -> Self {
+        let has = file
+            .get("connection")
+            .and_then(toml::Value::as_array)
+            .is_some_and(|a| !a.is_empty());
+        if file.get("joint_details").and_then(toml::Value::as_bool) != Some(true) {
+            return if has { Self::Simple } else { Self::NoDetails };
+        }
+        use ohl_structures::LibraryItem;
+        match ohl_structures::StructureType::parse(Path::new("structure.ohls"), text) {
+            Ok(t) => match t.joint_details_not_applied() {
+                None => Self::Taken,
+                Some(why) => Self::NotApplied(why),
+            },
+            Err(e) => Self::NotApplied(format!(
+                "joint details asked for (joint_details = true) but not taken: the structure \
+                 file does not read ({}); members checked in the simple form",
+                e.message
+            )),
+        }
+    }
+
+    /// Whether the connections go into the model.
+    pub fn taken(&self) -> bool {
+        *self == Self::Taken
+    }
+
+    /// The line for the results (none: no connections, nothing to say).
+    pub fn note(&self) -> Option<String> {
+        match self {
+            Self::NoDetails => None,
+            Self::Simple => Some(
+                "members checked in the simple form; joint details not taken (the file's \
+                 connections are used only when joint_details = true, at level 4)"
+                    .to_owned(),
+            ),
+            Self::NotApplied(why) => Some(why.clone()),
+            Self::Taken => Some(
+                "joint details taken: each member end's eccentricity, restraint and bolts from \
+                 its connection, a connection's shift as a rigid end offset"
+                    .to_owned(),
+            ),
+        }
+    }
 }
 
 fn dof_index(name: &str) -> Option<usize> {
@@ -1019,6 +1090,7 @@ impl Model {
             members,
             loads,
             joint_points: Vec::new(),
+            joint_use: JointUse::default(),
         };
         model.check()?;
         Ok(model)
@@ -1057,16 +1129,44 @@ impl Model {
 
     /// The same, the bolts its connections name (`[[connection]] bolts =
     /// { bolt = "…" }`) looked up in `bolts` (stage 4 of the joint
-    /// details, 2026-11-02): each member end's connection read into its
-    /// design data ([`crate::design::MemberDesign::ends`],
-    /// [`crate::member_ends`]).
+    /// details, 2026-11-02). This is the calculation's model (owner
+    /// 2026-11-11): the connections are taken only when the file asks for
+    /// it (`joint_details = true`) at level 4 — each member end's
+    /// connection then read into its design data
+    /// ([`crate::design::MemberDesign::ends`], [`crate::member_ends`]) and
+    /// its `shift` into an end offset; otherwise the members are as in a
+    /// tower without connections. [`Model::joint_use`] says which.
     pub fn from_structure_type_with_bolts(
         text: &str,
         library: &SectionLibrary,
         bolts: &BoltLibrary,
         extension: Option<&str>,
     ) -> Result<Self, String> {
+        Self::from_structure_type_joints(text, library, bolts, extension, None)
+    }
+
+    /// The model with the joint details always read, whatever the file's
+    /// option and level: for the joints' own design aid (what a joint's
+    /// table and sketch show, the plates' and covers' checks, drawings
+    /// and exports), never for the members' check of a run.
+    pub fn from_structure_type_with_joint_details(
+        text: &str,
+        library: &SectionLibrary,
+        bolts: &BoltLibrary,
+        extension: Option<&str>,
+    ) -> Result<Self, String> {
+        Self::from_structure_type_joints(text, library, bolts, extension, Some(JointUse::Taken))
+    }
+
+    fn from_structure_type_joints(
+        text: &str,
+        library: &SectionLibrary,
+        bolts: &BoltLibrary,
+        extension: Option<&str>,
+        joints: Option<JointUse>,
+    ) -> Result<Self, String> {
         let mut file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+        let joints = joints.unwrap_or_else(|| JointUse::of(text, &file));
         if let Some(name) = extension {
             use ohl_structures::LibraryItem;
             let t = ohl_structures::StructureType::parse(Path::new("structure.ohls"), text)
@@ -1079,7 +1179,7 @@ impl Model {
                 with_extension(&mut file, name, &x);
             }
         }
-        Self::from_structure_table(file, library, bolts)
+        Self::from_structure_table(file, library, bolts, joints)
     }
 
     /// The model of a structure file's tables.
@@ -1087,6 +1187,7 @@ impl Model {
         mut file: toml::Table,
         library: &SectionLibrary,
         bolts: &BoltLibrary,
+        joints: JointUse,
     ) -> Result<Self, String> {
         ohl_structures::on_members::apply_to_table(&mut file)?;
         let mut model = toml::Table::new();
@@ -1122,7 +1223,10 @@ impl Model {
             library,
         )?;
         out.link_points(file.get("point").and_then(toml::Value::as_array))?;
-        crate::member_ends::read_connections(&mut out, &file, bolts)?;
+        if joints.taken() {
+            crate::member_ends::read_connections(&mut out, &file, bolts)?;
+        }
+        out.joint_use = joints;
         out.check()?;
         Ok(out)
     }

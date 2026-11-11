@@ -247,8 +247,24 @@ impl StructureApp {
                 }
             }
         }
+        // The aid shows the member with its joint details; the run may
+        // take the simple form (owner 2026-11-11): said.
+        let simple = self.file.as_ref().is_some_and(|f| {
+            let t = f.structure();
+            !t.connections.is_empty() && !t.joint_details_taken()
+        });
         ui.group(|ui| {
             ui.strong("Resistance (ASCE 10-97, worked out live)");
+            if simple {
+                ui.label(
+                    egui::RichText::new(
+                        "With this member's joint details, as an aid to their design. The \
+                         calculation (Results) checks the members in the simple form \u{2014} \
+                         joint details not taken \u{2014} so its capacity and usage can differ.",
+                    )
+                    .weak(),
+                );
+            }
             match c.as_ref() {
                 Err(e) => {
                     crate::app::error_label(ui, format!("Not worked out: {e}"));

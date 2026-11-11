@@ -61,7 +61,7 @@ pub use load_cases::{
     remove_load_case, set_case_tables, set_load_case_field, set_load_field, store_given_cases,
     take_line_load_cases,
 };
-pub use missing::{Missing, Need, Place, missing, next_level};
+pub use missing::{Missing, Need, Place, missing, next_level, next_level_of};
 pub use rebuild::{Report, apply, rebuild, rebuild_all, remove_generator};
 
 #[cfg(test)]

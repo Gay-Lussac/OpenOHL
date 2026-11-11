@@ -644,7 +644,9 @@ fn a_full_design_needs_nothing_but_gets_advice() {
     let f = example("type-02.ohls");
     let t = f.structure();
     assert_eq!(t.detail(), Detail::Design);
-    assert_eq!(next_level(t.detail()), None);
+    // Level 4 (the joint details) is the next; a pole has none.
+    assert_eq!(next_level(t.detail()), Some(4));
+    assert_eq!(crate::next_level_of(t), Some(4));
     let m = missing(t, 3);
     assert!(level_items(&m).is_empty(), "{m:?}");
     let crossing: Vec<&Missing> = m.iter().filter(|m| m.reason.contains("cross")).collect();
@@ -1533,4 +1535,57 @@ fn continuous_ends_splices_and_faces_are_edited() {
     ce::remove_splice(&mut doc, "S1");
     let t = read(&doc);
     assert!(t.splices.is_empty() && t.connection("M1", &j).is_none());
+}
+
+/// The option "joint details in the calculation" (owner 2026-11-11): one
+/// key at the top of the file, the file raised to version 11, one undo
+/// step; off, the key is gone. On a level 3 tower (example type-02, no
+/// connections) it is not applied, and the To do list for level 4 names
+/// the member ends without joint details — grouped by joint, kept short.
+#[test]
+fn the_joint_details_option_is_one_key_and_level_4_lists_what_lacks() {
+    let mut f = example("type-02.ohls");
+    let before = f.text();
+    assert_eq!(f.structure().joint_details, None);
+    f.edit("Joint details in the calculation", |doc, _| {
+        crate::connection_edits::set_joint_details(doc, true);
+    });
+    assert!(f.error().is_none(), "{:?}", f.error());
+    assert_eq!(f.structure().joint_details, Some(true));
+    assert_eq!(
+        f.doc()["version"].as_integer(),
+        Some(crate::connection_edits::JOINT_DETAILS_VERSION)
+    );
+    assert_eq!(f.structure().detail(), Detail::Design);
+    assert!(!f.structure().joint_details_taken());
+    assert!(f.structure().joint_details_not_applied().is_some());
+    f.edit("Members in the simple form", |doc, _| {
+        crate::connection_edits::set_joint_details(doc, false);
+    });
+    assert_eq!(f.structure().joint_details, None);
+    assert!(!f.text().contains("joint_details"));
+    f.undo();
+    f.undo();
+    assert_eq!(f.text(), before);
+    // Level 4's list: every end of type-02 lacks its joint detail.
+    let t = f.structure();
+    let ends = t.ends_without_joint_details().len();
+    assert!(ends > 100, "{ends}");
+    let m = missing(t, 4);
+    let items = level_items(&m);
+    assert!(
+        items[0].starts_with(&format!("{ends} member end(s) without joint details")),
+        "{}",
+        items[0]
+    );
+    assert!(items.len() <= 10, "{}", items.len());
+    assert!(items.last().unwrap().contains("more joint(s)"));
+    let linked: Vec<&Missing> = m
+        .iter()
+        .filter(|m| m.place == Place::JointDetails && m.target.is_some())
+        .collect();
+    assert_eq!(linked.len(), 8);
+    assert!(matches!(linked[0].target, Some(Handle::Joint(_))));
+    // Nothing of it at level 3 (the level reached).
+    assert!(level_items(&missing(t, 3)).is_empty());
 }

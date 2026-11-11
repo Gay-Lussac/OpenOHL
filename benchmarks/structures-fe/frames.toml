@@ -788,6 +788,12 @@ inputs.force_x = 10000.0
 inputs.force_y = 0.0
 inputs.force_z = 0.0
 inputs.structure = '''
+# The joint details go into the calculation only when asked for, at level 4
+# (every member end with its connection; 2026-11-11).
+id = "E"
+name = "eccentric end"
+kind = "lattice"
+joint_details = true
 [analysis]
 nonlinear = false
 self_weight = false
@@ -826,6 +832,15 @@ member = "T"
 joint = "N2"
 onto = "C"
 shift = "20 mm"
+[[connection]]
+member = "T"
+joint = "N3"
+[[connection]]
+member = "C"
+joint = "N1"
+[[connection]]
+member = "C"
+joint = "N2"
 [[point]]
 label = "A1"
 node = "N3"

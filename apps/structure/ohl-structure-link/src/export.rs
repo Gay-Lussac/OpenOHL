@@ -565,7 +565,12 @@ pub fn export_structure(
 ) -> Result<ExportStructure, String> {
     let structure = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
-    let model = Model::from_structure_type_with(text, library)?;
+    let model = Model::from_structure_type_with_joint_details(
+        text,
+        library,
+        &ohl_structures::bolts::BoltLibrary::default(),
+        None,
+    )?;
     if model.members.is_empty() {
         return Err(format!(
             "structure {}: no members (exports need level 3: joints, members with \

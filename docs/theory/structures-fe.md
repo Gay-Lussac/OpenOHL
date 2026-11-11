@@ -140,6 +140,8 @@ Benchmarks `structfe-013` (a cantilever crossarm, its tip carrying a point 0.5 m
 
 ## Eccentric member ends: rigid end offsets
 
+> **Only when the joint details are taken (2026-11-11):** the structure file asks for it (`joint_details = true`) and is level 4 (every checked member end with its joint detail). Otherwise — the default — a connection's `shift` is not read and every member runs to its joint: the moment of the eccentricity is then left out, which is **not on the safe side**; the results say *members checked in the simple form; joint details not taken*.
+
 *Built 2026-11-02 (stage 4.4 of the [joint details](../development/joint-details.md); in active development, not approved yet).* At a tower's joint the members' axes are drawn to one **work point**, so their forces meet there. To fit the members on the gusset plate or beside the leg, a member end may be moved **sideways**: the connection's `shift` \\( s \\) (signed). The end's axis is then beside the work point, and its force passes it at the eccentricity \\( e = |s| \\).
 
 **The offset.** The shift's direction \\( \mathbf u \\) is across the member, towards what it bolts onto: with \\( \mathbf a \\) the unit direction of the member from the joint and \\( \mathbf t \\) that of the member it bolts onto (given), else of the joint's leg (the core's rule, also for a plate or nothing given), \\( \mathbf u = (\mathbf t - (\mathbf t\cdot\mathbf a)\,\mathbf a) / |\ldots| \\) (`ohl_structures::connections::shift_direction`). The member's **rigid end offset** is \\( \mathbf r = s\,\mathbf u \\), from the joint to where its axis ends. A shift that has no direction (nothing to measure it towards, or that member in line with it) is left out and said in the member's joint conditions.

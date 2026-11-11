@@ -266,16 +266,39 @@ impl StructureApp {
         let Some(j) = details.joint(&chosen) else {
             return;
         };
-        ui.label(
-            egui::RichText::new(
-                "The ASCE 10-97 check takes from this table each end's eccentric and restrained \
-                 (as shown) and its bolts, holes and leg bolted for the bolt shear, bearing and \
-                 net section, the weaker end governing. The plates and their welds are checked \
-                 per case with the analysis (Results › Run): below, under Plate checks. An end \
-                 without a connection is checked from the \
-                 member's design data, as before. Values in a connection override the member's \
-                 design data at that end.",
+        // Which form the members' check takes (owner 2026-11-11).
+        let (taken, bare) = self.file.as_ref().map_or((false, 0), |f| {
+            let t = f.structure();
+            (
+                t.joint_details_taken(),
+                t.ends_without_joint_details().len(),
             )
+        });
+        let how = if taken {
+            "Joint details taken (Results \u{203a} Joint details in the calculation is on, level \
+             4): the ASCE 10-97 check takes from this table each end's eccentric and restrained \
+             (as shown) and its bolts, holes and leg bolted for the bolt shear, bearing and net \
+             section, the weaker end governing; a shift is a rigid end offset in the model."
+                .to_owned()
+        } else if bare == 0 {
+            "Level 4: every member end has its joint detail. The members are still checked in \
+             the simple form \u{2014} joint details not taken \u{2014} until Results \u{203a} \
+             Joint details in the calculation is ticked."
+                .to_owned()
+        } else {
+            format!(
+                "The members are checked in the simple form: joint details not taken. This \
+                 table is the joint's design aid until every member end has its joint detail \
+                 (level 4; {bare} end(s) still without, the To do list names the joints) and \
+                 Results \u{203a} Joint details in the calculation is ticked."
+            )
+        };
+        ui.label(
+            egui::RichText::new(format!(
+                "{how} The plates and their welds are checked per case with the analysis \
+                 (Results \u{203a} Run) whatever that option: below, under Plate checks. Values \
+                 in a connection override the member's design data at that end."
+            ))
             .small()
             .weak(),
         );

@@ -53,7 +53,8 @@ pub mod wind;
 pub use check::{MemberUsage, member_usage};
 pub use links::PointLoad;
 pub use model::{
-    Analysis, CapacityMethod, JointPoint, Member, MemberKind, Model, NodalLoad, Node, Section,
+    Analysis, CapacityMethod, JointPoint, JointUse, Member, MemberKind, Model, NodalLoad, Node,
+    Section,
 };
 pub use offsets::{EccentricEnd, eccentricity_note};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole, check_pole_factored};

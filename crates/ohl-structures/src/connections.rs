@@ -686,6 +686,73 @@ impl StructureType {
             .then_some(onto)
     }
 
+    /// The ends of checked members without a joint detail, as (member,
+    /// joint), in the members' order (owner 2026-11-11: none, on a full
+    /// design, is level 4, [`crate::Detail::Joints`]). An end has its
+    /// joint detail when the file gives a `[[connection]]` for it
+    /// ([`Self::connection`]: bolted onto a leg, a plate or a splice), or
+    /// when it runs on through the joint as one part with a member whose
+    /// end there says so ([`Self::continuous_with`]) — the two ways an end
+    /// gets its design data in the member check. A modelling member
+    /// (`check = false`) and a cable need none.
+    pub fn ends_without_joint_details(&self) -> Vec<(&str, &str)> {
+        let mut have: std::collections::HashSet<(&str, &str)> = self
+            .connections
+            .iter()
+            .map(|c| (c.member.as_str(), c.joint.as_str()))
+            .collect();
+        for c in &self.connections {
+            if c.kind() == ConnectionKind::Continuous
+                && let Some(onto) = self.continuous_with(&c.member, &c.joint)
+            {
+                have.insert((onto, c.joint.as_str()));
+            }
+        }
+        let mut out = Vec::new();
+        for m in &self.members {
+            if m.check == Some(false) || m.kind.as_deref() == Some("cable") {
+                continue;
+            }
+            for j in &m.nodes {
+                if !have.contains(&(m.id.as_str(), j.as_str())) {
+                    out.push((m.id.as_str(), j.as_str()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether the calculation takes the joint details: asked for
+    /// (`joint_details = true`) on a level 4 structure. Asked for below
+    /// level 4 it is not applied ([`Self::joint_details_not_applied`]).
+    pub fn joint_details_taken(&self) -> bool {
+        self.joint_details == Some(true) && self.detail() == crate::Detail::Joints
+    }
+
+    /// Why `joint_details = true` is not applied (none: it is applied, or
+    /// not asked for): the structure is not level 4.
+    pub fn joint_details_not_applied(&self) -> Option<String> {
+        if self.joint_details != Some(true) || self.detail() == crate::Detail::Joints {
+            return None;
+        }
+        Some(if self.model.is_some() || self.pole.is_some() {
+            "joint details asked for (joint_details = true) but not taken: a pole or a \
+             separate model has no level 4; members checked in the simple form"
+                .to_owned()
+        } else if self.detail() < crate::Detail::Design {
+            "joint details asked for (joint_details = true) but not taken: the structure is \
+             not a full design; members checked in the simple form"
+                .to_owned()
+        } else {
+            format!(
+                "joint details asked for (joint_details = true) but not taken: {} member \
+                 end(s) without a joint detail (level 3, not 4); members checked in the simple \
+                 form",
+                self.ends_without_joint_details().len()
+            )
+        })
+    }
+
     /// The splice `id` at `joint`, if the file gives one.
     pub fn splice(&self, id: &str, joint: &str) -> Option<&TypeSplice> {
         self.splices.iter().find(|s| s.id == id && s.joint == joint)

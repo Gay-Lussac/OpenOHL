@@ -15,7 +15,7 @@ use eframe::egui;
 use eframe::egui_wgpu;
 use ohl_structure_edit::{
     Geometry, Handle, Missing, Need, Place, Removal, StructureFile, geometry_with, missing,
-    next_level,
+    next_level_of,
 };
 use ohl_structure_loads::PlacedValues;
 use ohl_structures::InsulatorLibrary;
@@ -670,8 +670,7 @@ impl StructureApp {
     /// reached), what it needs, the advice.
     fn open_items(&mut self) -> Option<(Option<u8>, Vec<Missing>, Vec<Missing>)> {
         let f = self.file.as_ref()?;
-        let d = f.structure().detail();
-        let next = next_level(d);
+        let next = next_level_of(f.structure());
         let level = next.unwrap_or(3);
         let key = (f.revision(), level);
         let items = match &self.missing {
@@ -716,7 +715,12 @@ impl StructureApp {
                 ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
             }
             ui.separator();
-            let badge = egui::RichText::new(format!("Level {} — {}", d.level(), d.name()))
+            // Level 4 by what it adds (owner 2026-11-11).
+            let chip = match d {
+                ohl_structures::Detail::Joints => "joint details",
+                d => d.name(),
+            };
+            let badge = egui::RichText::new(format!("Level {} — {chip}", d.level()))
                 .strong()
                 .color(ui.visuals().strong_text_color());
             egui::Frame::new()
@@ -726,21 +730,46 @@ impl StructureApp {
                 .show(ui, |ui| {
                     ui.label(badge).on_hover_text(match next {
                         Some(n) => format!("What level {n} needs: the To do list"),
-                        None => "The full design: the highest level".to_owned(),
+                        None => format!("Level {}: the highest level it has", d.level()),
                     });
                 });
-            let n = needed.len() + advice.len();
-            if n > 0 {
-                let text = format!("{n} to do");
+            // Only what blocks a calculation counts as "to do" (level 3
+            // is what Results need); level 4 and the advice are optional
+            // and said apart (UI review 2026-11-11: "40 to do" on a
+            // finished tower read as broken).
+            let blocking = if next.is_some_and(|n| n <= 3) {
+                needed.len()
+            } else {
+                0
+            };
+            if blocking > 0 {
+                let text = format!("{blocking} to do");
                 let tip = format!(
-                    "{} for level {}, {} advice: the To do list (click an item to show it)",
-                    needed.len(),
+                    "{blocking} needed for level {} (Results need level 3), {} advice \
+                     (optional): the To do list (click an item to show it)",
                     next.unwrap_or(3),
                     advice.len()
                 );
                 to_do = ui.button(text).on_hover_text(tip).clicked();
             } else {
-                ui.colored_label(ok_color(ui), "nothing to do");
+                ui.colored_label(ok_color(ui), "ready to calculate")
+                    .on_hover_text("Nothing blocks a calculation: Results \u{203a} Run");
+                let mut parts = Vec::new();
+                if next == Some(4) && !needed.is_empty() {
+                    parts.push("level 4".to_owned());
+                }
+                if !advice.is_empty() {
+                    parts.push(format!("{} advice", advice.len()));
+                }
+                if !parts.is_empty() {
+                    let tip = "Optional, nothing of it blocks a calculation: what level 4 (the \
+                               joint details) still needs, and advice worth a look \u{2014} the \
+                               To do list (click an item to show it)";
+                    to_do = ui
+                        .button(format!("optional: {}", parts.join(", ")))
+                        .on_hover_text(tip)
+                        .clicked();
+                }
             }
             if let Some(text) = self.loads.placed_title() {
                 ui.separator();
@@ -792,8 +821,30 @@ impl StructureApp {
             }
         };
         match next {
+            Some(4) if !needed.is_empty() => {
+                ui.colored_label(
+                    ok_color(ui),
+                    "Level 3, the full design: nothing blocks a calculation.",
+                );
+                ui.add_space(6.0);
+                ui.strong("For level 4, the joint details \u{2014} optional");
+                ui.label(
+                    egui::RichText::new(
+                        "Only at level 4 can the calculation take the joint details (Results \
+                         \u{203a} Joint details in the calculation); until then the members \
+                         are checked in the simple form.",
+                    )
+                    .weak(),
+                );
+                for m in &needed {
+                    item(ui, m, &mut go);
+                }
+            }
             Some(n) if !needed.is_empty() => {
-                ui.strong(format!("For level {n} ({})", needed.len()));
+                ui.strong(format!(
+                    "For level {n} ({}) \u{2014} needed before a calculation",
+                    needed.len()
+                ));
                 for m in &needed {
                     item(ui, m, &mut go);
                 }
@@ -802,14 +853,21 @@ impl StructureApp {
                 ui.label(format!("Nothing lacks for level {n}."));
             }
             None => {
-                ui.colored_label(ok_color(ui), "Level 3, the full design: nothing lacks.");
+                let d = self
+                    .file
+                    .as_ref()
+                    .map_or(ohl_structures::Detail::Design, |f| f.structure().detail());
+                ui.colored_label(
+                    ok_color(ui),
+                    format!("Level {}, the {}: nothing lacks.", d.level(), d.name()),
+                );
             }
         }
         if !advice.is_empty() {
             ui.add_space(6.0);
-            egui::CollapsingHeader::new(format!("Advice ({})", advice.len()))
+            egui::CollapsingHeader::new(format!("Advice ({}) \u{2014} optional", advice.len()))
                 .id_salt("advice")
-                .default_open(needed.is_empty())
+                .default_open(needed.is_empty() || next == Some(4))
                 .show(ui, |ui| {
                     for m in &advice {
                         item(ui, m, &mut go);
@@ -824,6 +882,14 @@ impl StructureApp {
     /// An item of the header clicked: its panel (opened if closed) and
     /// table, its row picked.
     pub fn go_to(&mut self, m: &Missing) {
+        // A joint's details (level 4): the Joint details panel, on it.
+        if m.place == Place::JointDetails {
+            if let Some(h) = &m.target {
+                self.selected = vec![h.clone()];
+            }
+            self.focus_request = Some(Panel::JointDetails);
+            return;
+        }
         let sheet = match (m.need, m.place) {
             (Need::Level, Place::Members) if m.target.is_some() => Sheet::Design,
             (_, Place::Members) => Sheet::Members,
@@ -840,7 +906,7 @@ impl StructureApp {
                 Sheet::PoleDesign
             }
             (_, Place::Pole) => Sheet::Pole,
-            (_, Place::Extensions) => Sheet::Extensions,
+            (_, Place::Extensions | Place::JointDetails) => Sheet::Extensions,
         };
         let panel = Panel::of_sheet(sheet);
         self.sheets.insert(panel, sheet);

@@ -35,6 +35,8 @@ pub enum Place {
     Pole,
     /// The height extensions (their bodies and legs).
     Extensions,
+    /// The joints' details (connections, plates): level 4.
+    JointDetails,
 }
 
 /// One thing missing, or one piece of advice.
@@ -73,7 +75,9 @@ impl Missing {
 /// Distance under which members are taken to cross, m.
 const CROSSING: f64 = 1e-3;
 
-/// What `t` lacks for `level` (1 to 3; nothing when it is there already),
+/// What `t` lacks for `level` (1 to 4; nothing when it is there already;
+/// level 4, the joint details, only on a level 3 lattice — grouped by
+/// joint, the list kept short),
 /// then the advice: a point on no joint or member (it carries no load in
 /// the analysis), a joint on one member (or none), members crossing
 /// without a joint.
@@ -215,6 +219,9 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
                 ));
             }
         }
+    }
+    if level >= 4 && now == 3 && next_level_of(t) == Some(4) {
+        out.extend(joint_items(t));
     }
     out.extend(advice(t));
     out
@@ -372,7 +379,71 @@ fn crosses(p0: [f64; 3], p1: [f64; 3], q0: [f64; 3], q1: [f64; 3]) -> bool {
     dot(gap, gap).sqrt() < CROSSING
 }
 
-/// The level after `d` (none above a full design).
+/// The level after `d` (none above a full design with joint details).
 pub fn next_level(d: Detail) -> Option<u8> {
-    (d.level() < 3).then(|| d.level() + 1)
+    (d.level() < 4).then(|| d.level() + 1)
+}
+
+/// The level after `t`'s: as [`next_level`], but none above level 3 for a
+/// pole or a separate model (they have no level 4).
+pub fn next_level_of(t: &StructureType) -> Option<u8> {
+    let d = t.detail();
+    if d == Detail::Design && (t.model.is_some() || t.pole.is_some() || t.members.is_empty()) {
+        return None;
+    }
+    next_level(d)
+}
+
+/// Joints listed one by one for level 4 before the rest is summed up.
+const JOINTS_LISTED: usize = 8;
+
+/// What level 4 lacks on a level 3 lattice: the member ends without a
+/// joint detail (`StructureType::ends_without_joint_details`), one line
+/// for all, then a line per joint for the first [`JOINTS_LISTED`] joints
+/// (most ends first) and one for the rest.
+fn joint_items(t: &StructureType) -> Vec<Missing> {
+    let bare = t.ends_without_joint_details();
+    if bare.is_empty() {
+        return Vec::new();
+    }
+    let mut at: Vec<(&str, usize)> = Vec::new();
+    let mut index: std::collections::HashMap<&str, usize> = Default::default();
+    for (_, j) in &bare {
+        match index.get(j) {
+            Some(&k) => at[k].1 += 1,
+            None => {
+                index.insert(j, at.len());
+                at.push((j, 1));
+            }
+        }
+    }
+    at.sort_by_key(|a| std::cmp::Reverse(a.1));
+    let mut out = vec![Missing::level(
+        format!(
+            "{} member end(s) without joint details, at {} joint(s): a connection for each \
+             (Design \u{203a} Joint details; copy a joint to the joints like it)",
+            bare.len(),
+            at.len()
+        ),
+        None,
+        Place::JointDetails,
+    )];
+    for (j, n) in at.iter().take(JOINTS_LISTED) {
+        out.push(Missing::level(
+            format!("joint {j}: {n} member end(s) without joint details"),
+            Some(Handle::Joint((*j).to_owned())),
+            Place::JointDetails,
+        ));
+    }
+    if at.len() > JOINTS_LISTED {
+        out.push(Missing::level(
+            format!(
+                "\u{2026} and {} more joint(s) (Design \u{203a} Joint details lists them)",
+                at.len() - JOINTS_LISTED
+            ),
+            None,
+            Place::JointDetails,
+        ));
+    }
+    out
 }

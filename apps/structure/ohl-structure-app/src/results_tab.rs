@@ -280,13 +280,24 @@ impl ResultsTab {
     }
 }
 
+/// What the tick "Joint details in the calculation" does to the results.
+const JOINT_DETAILS_TIP: &str = "Off (the default): every member is checked in its simple form \
+     \u{2014} its ends as its own design data says (eccentric and not restrained where nothing is \
+     given, on the safe side), no bolt shear, bearing or net section from the connections, the \
+     members running to the joints.\n\nOn (level 4 only: every member end with its joint \
+     detail): each end's eccentricity, restraint and bolts come from its connection, and a \
+     connection's shift becomes a rigid end offset in the model. A member's usage can go up \
+     (bolts, net section, the moment of an offset) or down (an end worked out as concentric or \
+     restrained): run again to see.\n\nThe plates', covers' and welds' own checks and the \
+     drawings do not depend on this. Stored in the file (joint_details = true).";
+
 impl StructureApp {
     /// A run can start: level 3, a case in the load table, none running.
     pub fn can_run_results(&mut self) -> bool {
         let Some(f) = &self.file else {
             return false;
         };
-        if f.structure().detail() != Detail::Design || self.results.running() {
+        if !f.structure().detail().is_design() || self.results.running() {
             return false;
         }
         self.loads.refresh(f);
@@ -437,7 +448,7 @@ impl StructureApp {
             return;
         };
         let t = f.structure().clone();
-        if t.detail() != Detail::Design {
+        if !t.detail().is_design() {
             ui.label(
                 "Results need level 3: every member with a cross-section and a supported joint (or a \
                  model = \"….ohlfe\" file), or a pole the pole check can read. What is still \
@@ -526,6 +537,63 @@ impl StructureApp {
                 .on_disabled_hover_text("Run the cases first (results of the file as it is)")
                 .clicked();
         });
+        // The joints in the calculation (owner 2026-11-11): a lattice's,
+        // honoured at level 4 only.
+        let mut joints: Option<bool> = None;
+        if t.model.is_none() && t.pole.is_none() && !t.members.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                let level4 = t.detail() == Detail::Joints;
+                let mut on = t.joint_details == Some(true);
+                let r = ui
+                    .add_enabled(
+                        level4 || on,
+                        egui::Checkbox::new(&mut on, "Joint details in the calculation"),
+                    )
+                    .on_hover_text(JOINT_DETAILS_TIP)
+                    .on_disabled_hover_text(format!(
+                        "Needs level 4: {} member end(s) have no joint detail yet (the To do \
+                         list names the joints; Design \u{203a} Joint details). Until then the \
+                         members are checked in the simple form.",
+                        t.ends_without_joint_details().len()
+                    ));
+                if r.changed() {
+                    joints = Some(on);
+                }
+                match (on, level4) {
+                    (true, false) => {
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            "not applied: the structure is level 3, not 4 — members checked in \
+                             the simple form",
+                        );
+                    }
+                    (true, true) => {
+                        ui.label(egui::RichText::new("joint details taken").weak());
+                    }
+                    (false, _) if !t.connections.is_empty() => {
+                        ui.label(
+                            egui::RichText::new(
+                                "members checked in the simple form; joint details not taken",
+                            )
+                            .weak(),
+                        );
+                    }
+                    (false, _) => {}
+                }
+            });
+        }
+        if let Some(on) = joints
+            && let Some(f) = self.file.as_mut()
+        {
+            let what = if on {
+                "Joint details in the calculation"
+            } else {
+                "Members in the simple form"
+            };
+            f.edit(what, |doc, _| {
+                ohl_structure_edit::connection_edits::set_joint_details(doc, on);
+            });
+        }
         // Another extension chosen: solve again.
         if self.results.results.is_some()
             && !self.results.running()

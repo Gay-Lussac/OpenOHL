@@ -748,7 +748,11 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         let (m, notes) = model_on(input);
         run.notes.extend(notes);
         match m {
-            Ok(m) => Some(m),
+            Ok(m) => {
+                // Which form the member ends were taken in (2026-11-11).
+                run.notes.extend(m.joint_use.note());
+                Some(m)
+            }
             // A pole with members not designed: the pole check alone.
             Err(e) if pole.is_some() => {
                 run.notes.push(format!(

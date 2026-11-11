@@ -151,6 +151,22 @@ fn find<'a>(doc: &'a mut DocumentMut, member: &str, joint: &str) -> Option<&'a m
         })
 }
 
+/// The file version that brings `joint_details`.
+pub const JOINT_DETAILS_VERSION: i64 = 11;
+
+/// Sets whether the calculation takes the joint details (`joint_details
+/// = true` at the top of the file, version 11; off: the key removed, the
+/// file as before). Only honoured at level 4: the edit itself does not
+/// check the level, the calculation says when it is not applied.
+pub fn set_joint_details(doc: &mut DocumentMut, on: bool) {
+    if on {
+        doc["joint_details"] = toml_edit::value(true);
+        raise_version(doc, JOINT_DETAILS_VERSION);
+    } else {
+        doc.remove("joint_details");
+    }
+}
+
 /// The `[[connection]]` of `member` at `joint`, made when missing.
 fn find_or_make<'a>(doc: &'a mut DocumentMut, member: &str, joint: &str) -> &'a mut Table {
     if find(doc, member, joint).is_none() {

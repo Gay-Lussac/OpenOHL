@@ -220,9 +220,11 @@ nothing, with something selected: the selection's menu (**Inspector**,
 
 Under the menus, the **header**: the file's name (its full path and the
 structure's id and name on hover), *\* unsaved* when it has changes, the
-level as a badge (**Level 3 — full design**), and a button **N to do**
-(what the next level lacks and the advice, counted) that brings the
-**To do** list to the front; for a placed structure, its loads (a link
+level as a badge (**Level 3 — full design**, **Level 4 — joint details**),
+and what is left: a button **N to do** counting only what blocks a
+calculation (what levels 2 and 3 still lack), or, once nothing blocks,
+*ready to calculate* and a button **optional: level 4, N advice** — both
+bring the **To do** list to the front; for a placed structure, its loads (a link
 to Line loads).
 
 Under the header, the **panels**, docked as in the line application:
@@ -298,9 +300,14 @@ at level 3 (Pole design for a pole). Panels closed by default (Structure
 fields, Pole, Extensions, Cross-sections & materials, Pole design) open from
 their menu or from View.
 
-- **To do** (the Level panel; the header's **N to do** brings it to the
-  front): the level is worked out from the file, never stated (the
-  header's badge). **For level N + 1** lists what the next level still
+- **To do** (the Level panel; the header's **N to do** or **optional: …**
+  brings it to the front): the level is worked out from the file, never
+  stated (the header's badge). What is needed before a calculation (for
+  levels 2 and 3) is listed apart from what is optional: at level 3,
+  **For level 4, the joint details — optional** names the member ends
+  without joint details, one line for all and one per joint (the eight
+  joints with the most, then the rest counted; a click opens Joint
+  details on that joint), and **Advice (n) — optional**. **For level N + 1** lists what the next level still
   lacks — no member yet,
   a member without a cross-section (one item per member; more than three:
   one line, set per group in Design › Groups), no supported joint, an

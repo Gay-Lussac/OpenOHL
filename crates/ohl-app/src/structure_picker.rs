@@ -189,7 +189,7 @@ impl TypeRow {
                 Some(p) if t.members.is_empty() => p.missing_for_design(),
                 _ => t.missing_for_design(),
             },
-            ohl_structures::Detail::Design => Vec::new(),
+            ohl_structures::Detail::Design | ohl_structures::Detail::Joints => Vec::new(),
         };
         let source = t.source.clone().unwrap_or_default();
         let notes = path
