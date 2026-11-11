@@ -376,7 +376,7 @@ impl ArcPointCheck {
             band: def.vertical_band,
             depth: def.vertical_depth,
             margin: def.search_margin,
-            to_ground: def.to_ground,
+            to_ground: def.to_ground.on(),
             measures: [def.vertical.is_some(), def.radial.is_some()],
         }
     }

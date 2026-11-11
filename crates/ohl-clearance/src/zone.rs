@@ -154,8 +154,9 @@ pub struct ZoneRule {
     /// Vertical, its classes: **down to the ground**
     /// ([`Rule::to_ground`]) — each point stands for the whole height
     /// from the ground up to it (kept as the rule file has it; the
-    /// ground target and the radial window do not use it).
-    pub to_ground: bool,
+    /// ground target and the radial window do not use it). Not given: by
+    /// the terrain's classes ([`default_to_ground`]).
+    pub to_ground: crate::rules::ToGround,
     /// How the wires are solved for it (owner, 2026-11-01: e.g. the
     /// ground at max sag; none: each section's own, or the `[check]`
     /// method) — the rule file's `calculation`.
@@ -202,10 +203,12 @@ impl ZoneRule {
                 // A screen is a vertical rule: in the radial window its
                 // 1000 m would set the reach of a radial check (2026-10-27).
                 screen: self.screen && vertical,
-                to_ground: self.to_ground
-                    && vertical
-                    && !self.screen
-                    && matches!(target, Target::Points { .. }),
+                // (Elsewhere: not given, never on, nothing written.)
+                to_ground: if vertical && !self.screen && matches!(target, Target::Points { .. }) {
+                    self.to_ground
+                } else {
+                    crate::rules::ToGround::ByTerrain
+                },
                 altitude: self.altitude,
                 target,
             }
@@ -222,6 +225,58 @@ impl ZoneRule {
         }
         out
     }
+}
+
+impl ZoneRule {
+    /// Whether the row, not giving "down to the ground" itself, could
+    /// take it by default in a window of `measure`: a vertical rule on
+    /// LiDAR classes that is not a screen.
+    pub fn to_ground_open(&self, measure: Measure) -> bool {
+        measure == Measure::Vertical
+            && !self.classes.is_empty()
+            && !self.screen
+            && self.to_ground == crate::rules::ToGround::ByTerrain
+    }
+
+    /// Whether its points are taken down to the ground in a window of
+    /// `measure` with the terrain's classes `terrain`: as given, else by
+    /// default when all its classes are among them
+    /// ([`crate::rules::to_ground_by_terrain`]).
+    pub fn down_to_ground(&self, measure: Measure, terrain: &[u8]) -> bool {
+        if self.to_ground_open(measure) {
+            crate::rules::to_ground_by_terrain(&self.name, &self.classes, terrain).0
+        } else {
+            measure == Measure::Vertical
+                && !self.classes.is_empty()
+                && !self.screen
+                && self.to_ground.on()
+        }
+    }
+}
+
+/// Gives the rows of a window of `measure` that do not say "down to the
+/// ground" themselves their default for a run (owner, 2026-11-11: "use
+/// the same as for the TIN; if none then mention it"): taken when all a
+/// row's classes are classes the terrain surface is built from
+/// (`terrain`). What the results say of it: one note per row taken or
+/// left because its classes are mixed, or
+/// [`crate::rules::NO_TERRAIN_CLASSES_NOTE`]
+/// ([`crate::rules::default_to_ground`], the same for rule files).
+pub fn default_to_ground(rules: &mut [ZoneRule], measure: Measure, terrain: &[u8]) -> Vec<String> {
+    let mut notes: Vec<String> = Vec::new();
+    let mut open = false;
+    for r in rules.iter_mut().filter(|r| r.to_ground_open(measure)) {
+        open = true;
+        let (taken, note) = crate::rules::to_ground_by_terrain(&r.name, &r.classes, terrain);
+        if taken {
+            r.to_ground = crate::rules::ToGround::Taken;
+        }
+        notes.extend(note.filter(|n| !notes.contains(n)));
+    }
+    if open && terrain.is_empty() {
+        notes.push(crate::rules::NO_TERRAIN_CLASSES_NOTE.to_owned());
+    }
+    notes
 }
 
 /// A rule file of a window's rules, its zone, its wind and what it
@@ -1561,7 +1616,7 @@ mod tests {
             wires: Wires::Both,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: crate::rules::ToGround::ByTerrain,
             calculation: None,
         }
     }
@@ -1700,7 +1755,7 @@ mod tests {
                 altitude: None,
                 name: "screen".into(),
                 screen: true,
-                to_ground: false,
+                to_ground: crate::rules::ToGround::ByTerrain,
                 distance: Requirement::Formula {
                     base: 5.0,
                     per_kv: 0.01,
@@ -1927,7 +1982,7 @@ mod tests {
             said[0]
         );
         let down = ZoneRule {
-            to_ground: true,
+            to_ground: crate::rules::ToGround::Given(true),
             ..plain.clone()
         };
         let report = run(&down);
@@ -1955,7 +2010,10 @@ mod tests {
             std::slice::from_ref(&both),
         );
         assert_eq!(
-            set.rules.iter().map(|r| r.to_ground).collect::<Vec<_>>(),
+            set.rules
+                .iter()
+                .map(|r| r.to_ground.on())
+                .collect::<Vec<_>>(),
             [true, false]
         );
         assert_eq!(set.written_version(), 2);
@@ -1966,7 +2024,158 @@ mod tests {
         assert_eq!(before.written_version(), 1);
         // The radial window: not a measure of the option.
         let radial = Zone::new(Measure::Radial);
-        assert!(down.to_rules(&radial).iter().all(|r| !r.to_ground));
+        assert!(down.to_rules(&radial).iter().all(|r| !r.to_ground.on()));
+    }
+
+    /// Down to the ground by the terrain's classes (owner, 2026-11-11): a
+    /// row that does not say it takes it for a run when all its classes
+    /// are classes the terrain surface is built from — said, and the "not
+    /// on the safe side" note gone; with mixed classes it is left off and
+    /// says so; an explicit "off" wins; no terrain class known: said, and
+    /// the "not on the safe side" note stays. The rows of the window are
+    /// not changed by it (a copy is resolved for the run).
+    #[test]
+    fn a_zone_rule_takes_down_to_the_ground_by_the_terrains_classes() {
+        use crate::rules::{NO_TERRAIN_CLASSES_NOTE, ToGround};
+        let case = WeatherCase::still("still", Temperature::from_celsius(15.0));
+        let mid = s1_middle(&case);
+        // The top of something the wire passes beside, 8 m above it.
+        let top = [mid[0], mid[1] + 1.0, mid[2] + 8.0];
+        let zone = Zone {
+            width: 2.0,
+            ..Zone::new(Measure::Vertical)
+        };
+        let run = |row: &ZoneRule, terrain: &[u8]| {
+            let mut rows = vec![row.clone()];
+            let said = default_to_ground(&mut rows, zone.measure, terrain);
+            let report = check(
+                &zone,
+                &rows,
+                std::slice::from_ref(&case),
+                &WindSteps::default(),
+                &[top],
+            )
+            .1;
+            let unsafe_side = report
+                .notes
+                .iter()
+                .any(|n| n.contains("passing beside a tall object"));
+            (
+                s1(&report).map(|f| f.distance),
+                said,
+                unsafe_side,
+                rows.remove(0),
+            )
+        };
+        let row = rule(3.0, &[5]);
+        assert_eq!(row.to_ground, ToGround::ByTerrain);
+        // Its class is one the terrain is built from: on, said.
+        let (found, said, unsafe_side, resolved) = run(&row, &[2, 5]);
+        assert_eq!(found, Some(0.0));
+        assert_eq!(resolved.to_ground, ToGround::Taken);
+        assert!(row.down_to_ground(Measure::Vertical, &[2, 5]));
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(
+            said[0].starts_with("\"r\": \"down to the ground\" taken by default: its classes are"),
+            "{}",
+            said[0]
+        );
+        assert!(!unsafe_side);
+        // Written as the window has it: not given, version 1.
+        let wind = WindSteps::default();
+        let set = to_rule_set("x", &zone, &wind, &CheckScope::default(), &[resolved]);
+        assert_eq!(set.written_version(), 1);
+        assert!(!set.to_toml().contains("to_ground"));
+        // Mixed classes: left off, said with both sides.
+        let mixed = ZoneRule {
+            classes: vec![5, 6],
+            ..row.clone()
+        };
+        let (found, said, unsafe_side, resolved) = run(&mixed, &[2, 5]);
+        assert_eq!(found, None);
+        assert_eq!(resolved.to_ground, ToGround::ByTerrain);
+        assert!(!mixed.down_to_ground(Measure::Vertical, &[2, 5]));
+        assert!(
+            said.len() == 1 && said[0].contains("(class 5 are, class 6 are not)"),
+            "{said:?}"
+        );
+        assert!(unsafe_side);
+        // An explicit off wins over the terrain's classes; nothing said.
+        let off = ZoneRule {
+            to_ground: ToGround::Given(false),
+            ..row.clone()
+        };
+        let (found, said, unsafe_side, _) = run(&off, &[2, 5]);
+        assert_eq!((found, said.len(), unsafe_side), (None, 0, true));
+        // No terrain class known: nothing taken, said; still unsafe.
+        let (found, said, unsafe_side, _) = run(&row, &[]);
+        assert_eq!(found, None);
+        assert_eq!(said, [NO_TERRAIN_CLASSES_NOTE]);
+        assert!(unsafe_side);
+        // The radial window: not a measure of it — nothing to say.
+        let mut rows = vec![row.clone()];
+        assert!(default_to_ground(&mut rows, Measure::Radial, &[5]).is_empty());
+        assert_eq!(rows[0], row);
+    }
+
+    /// The plain case stays what it was: ground points under a normal
+    /// span, their rule "down to the ground" — on, off or by default —
+    /// gives the same clearances and findings (a wire is flagged only at
+    /// or below a point's height plus the distance to keep, as without).
+    #[test]
+    fn down_to_the_ground_changes_nothing_over_ground_points() {
+        use crate::rules::ToGround;
+        let case = WeatherCase::still("still", Temperature::from_celsius(15.0));
+        let mid = s1_middle(&case);
+        // Ground points 18 to 22 m below the wire, across the zone.
+        let ground: Vec<[f64; 3]> = (0..40)
+            .map(|k| {
+                let k = k as f64;
+                [
+                    mid[0] + (k % 8.0 - 3.5) * 0.4,
+                    mid[1] + (k / 8.0).floor() * 0.3 - 0.6,
+                    mid[2] - 18.0 - k * 0.1,
+                ]
+            })
+            .collect();
+        let zone = Zone {
+            width: 2.0,
+            ..Zone::new(Measure::Vertical)
+        };
+        for required in [3.0, 25.0] {
+            let of = |to_ground: ToGround| {
+                let mut rows = vec![ZoneRule {
+                    to_ground,
+                    ..rule(required, &[5])
+                }];
+                default_to_ground(&mut rows, zone.measure, &[5]);
+                let report = check(
+                    &zone,
+                    &rows,
+                    std::slice::from_ref(&case),
+                    &WindSteps::default(),
+                    &ground,
+                )
+                .1;
+                (rows[0].to_ground.on(), report.findings, report.lowest)
+            };
+            let off = of(ToGround::Given(false));
+            let on = of(ToGround::Given(true));
+            let by_default = of(ToGround::ByTerrain);
+            assert!(!off.0 && on.0 && by_default.0);
+            assert_eq!(on.1, off.1, "{required} m");
+            assert_eq!(on.2, off.2, "{required} m");
+            assert_eq!(by_default.1, off.1);
+            assert_eq!(by_default.2, off.2);
+            // 25 m to keep: the spans over the points are findings, about
+            // 18 m; 3 m: none.
+            assert_eq!(
+                off.1
+                    .iter()
+                    .any(|f| (f.section.as_str(), f.span) == ("S1", 0)),
+                required > 20.0
+            );
+        }
     }
 
     /// A rule by voltage: each wire meets the row of its system's nominal
@@ -2269,7 +2478,7 @@ mod tests {
             altitude: None,
             width: Some(2.5),
             screen: false,
-            to_ground: false,
+            to_ground: crate::rules::ToGround::ByTerrain,
             ..rules[0].clone()
         }];
         let (_, v) = check(
@@ -2354,7 +2563,7 @@ mod tests {
                 wires: Wires::Both,
                 width: None,
                 screen: false,
-                to_ground: false,
+                to_ground: crate::rules::ToGround::ByTerrain,
                 calculation: None,
             },
             ZoneRule {
@@ -2370,7 +2579,7 @@ mod tests {
                 // Its own half width.
                 width: Some(4.0),
                 screen: false,
-                to_ground: false,
+                to_ground: crate::rules::ToGround::ByTerrain,
                 calculation: None,
             },
             ZoneRule {
@@ -2385,7 +2594,7 @@ mod tests {
                 wires: Wires::Jumpers,
                 width: None,
                 screen: false,
-                to_ground: false,
+                to_ground: crate::rules::ToGround::ByTerrain,
                 calculation: None,
             },
         ];

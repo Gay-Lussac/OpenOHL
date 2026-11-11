@@ -1062,7 +1062,7 @@ impl PointCheck {
             return true;
         };
         let depth = self.rule.vertical_depth;
-        let to_ground = self.rule.to_ground;
+        let to_ground = self.rule.to_ground.on();
         // Passed over (2026-10-26): a block of segments (a group's, e.g. a
         // span's in every wind state) none of which can come within the
         // reach — the radial lower bound from the block's box, the
@@ -2686,7 +2686,7 @@ mod tests {
         };
         let plain = rule(&text(""));
         let down = rule(&text("to_ground = true"));
-        assert!(!plain.to_ground && down.to_ground);
+        assert!(!plain.to_ground.on() && down.to_ground.on());
         let set = WireSet::new(vec![wire], 20.0);
         let of = |r: &Rule, p: [f64; 3]| {
             let mut pc = PointCheck::new(r, &[6], &set);

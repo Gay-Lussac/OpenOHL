@@ -432,7 +432,7 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: ohl_clearance::rules::ToGround::ByTerrain,
             calculation: None,
         });
     }
@@ -571,7 +571,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: ohl_clearance::rules::ToGround::ByTerrain,
             calculation: None,
         });
     }
@@ -619,14 +619,20 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
     std::fs::remove_dir_all(dir).ok();
 }
 
-/// Checks › Vertical clearances: a rule on LiDAR classes shows the tick
-/// **down to the ground** (owner, 2026-11-11) with its effect on hover;
-/// ticked, the rule keeps it, its row says it and the rule file is
-/// written as version 2 — a ground-only rule has no such tick, and a
-/// file without it stays version 1.
+/// Checks › Vertical clearances: a rule on LiDAR classes shows **down to
+/// the ground** in three states (owner, 2026-11-11) — by the terrain's
+/// classes, with what that comes to now (on for the classes the terrain
+/// surface is built from, off for others), always, never — with its
+/// effect on hover. "Always" and "never" are written in the rule file
+/// (version 2); "by the terrain's classes" writes nothing (version 1). A
+/// ground-only rule has no such choice.
 #[test]
-fn a_vertical_rule_can_be_ticked_down_to_the_ground() {
-    use crate::clearance_zones::{TO_GROUND_HELP, TO_GROUND_LABEL};
+fn a_vertical_rule_goes_down_to_the_ground_in_three_states() {
+    use crate::check_ui::RuleRow;
+    use crate::clearance_zones::{
+        TO_GROUND_HELP, TO_GROUND_LABEL, TO_GROUND_OFF, TO_GROUND_ON, to_ground_auto_label,
+    };
+    use ohl_clearance::rules::ToGround;
     let model = synthetic();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 1600.0))
@@ -637,6 +643,11 @@ fn a_vertical_rule_can_be_ticked_down_to_the_ground() {
     std::fs::create_dir_all(&dir).unwrap();
     {
         let r = harness.state_mut().ready().unwrap();
+        // The classes the terrain surface is built from: the scheme's
+        // ground role (the ASPRS ground class here), not 6.
+        let terrain = crate::clearance_zones::terrain_classes(&r.model);
+        assert_eq!(terrain, r.model.scheme.codes_with_role("ground"));
+        assert!(!terrain.is_empty() && !terrain.contains(&6), "{terrain:?}");
         let w = &mut r.vertical_clearances;
         w.file = Some(dir.join("rules.ohlr"));
         w.rules.clear();
@@ -652,43 +663,88 @@ fn a_vertical_rule_can_be_ticked_down_to_the_ground() {
             ground: false,
             ..crate::clearance_zones::first_rule()
         });
+        w.rules.push(ohl_clearance::ZoneRule {
+            name: "Ground points".into(),
+            distance: ohl_clearance::Requirement::Fixed(7.0),
+            classes: terrain,
+            ground: false,
+            ..crate::clearance_zones::first_rule()
+        });
+        assert!(w.rules.iter().all(|x| x.to_ground == ToGround::ByTerrain));
         assert_eq!(w.rule_set().written_version(), 1);
     }
-    harness.run();
-    // The ground's rule: no tick.
-    harness.get_by_label("Open ground").click();
-    harness.run();
-    assert!(harness.query_by_label(TO_GROUND_LABEL).is_none());
-    // The classes' rule: the tick, saying what it does to the results.
-    harness.get_by_label("Masts").click();
     harness.run();
     for said in [
         "more findings, never fewer",
         "Time: unchanged",
         "the default",
+        "the class scheme's ground role",
+        "not on the safe side",
     ] {
         assert!(TO_GROUND_HELP.contains(said), "{said}");
     }
-    harness.get_by_label(TO_GROUND_LABEL).click();
+    // The ground's rule: no such choice.
+    harness.get_by_label("Open ground").click();
     harness.run();
-    let r = harness.state_mut().ready().unwrap();
-    let w = &r.vertical_clearances;
-    assert!(w.rules[1].to_ground && !w.rules[0].to_ground);
-    use crate::check_ui::RuleRow;
-    assert_eq!(w.rules[1].summary(&[]).distance, "5 m, down to the ground");
-    let set = w.rule_set();
-    assert_eq!(set.written_version(), 2);
-    let text = set.to_toml();
-    assert!(text.contains("to_ground = true"), "{text}");
-    // Read back as the same rows.
-    let back = ohl_clearance::RuleSet::parse(&text).unwrap();
-    let rows = ohl_clearance::zone::from_rule_set(
-        &back,
-        ohl_clearance::Measure::Vertical,
-        |_| Vec::new(),
-        &[],
+    assert!(harness.query_by_label(TO_GROUND_LABEL).is_none());
+    // The terrain's own classes: by default on, said in the choice.
+    harness.get_by_label("Ground points").click();
+    harness.run();
+    harness.get_by_label(TO_GROUND_LABEL);
+    harness.get_by_label(&to_ground_auto_label(true));
+    assert!(
+        harness
+            .query_by_label(&to_ground_auto_label(false))
+            .is_none()
     );
-    assert_eq!(rows.rules, w.rules);
+    // Other classes: by default off; the three states.
+    harness.get_by_label("Masts").click();
+    harness.run();
+    harness.get_by_label(&to_ground_auto_label(false));
+    let state = |h: &mut Harness<'_, App>| {
+        let w = &h.state_mut().ready().unwrap().vertical_clearances;
+        (
+            w.rules[1].to_ground,
+            w.rules[1].summary(&[]).distance,
+            w.rule_set().written_version(),
+            w.rule_set().to_toml(),
+        )
+    };
+    harness.get_by_label(TO_GROUND_ON).click_accesskit();
+    harness.run();
+    let (given, row, version, text) = state(&mut harness);
+    assert_eq!(given, ToGround::Given(true));
+    assert_eq!(row, "5 m, down to the ground");
+    assert_eq!(version, 2);
+    assert!(text.contains("to_ground = true\n"), "{text}");
+    // Read back as the same rows.
+    {
+        let w = &harness.state_mut().ready().unwrap().vertical_clearances;
+        let back = ohl_clearance::RuleSet::parse(&text).unwrap();
+        let rows = ohl_clearance::zone::from_rule_set(
+            &back,
+            ohl_clearance::Measure::Vertical,
+            |_| Vec::new(),
+            &[],
+        );
+        assert_eq!(rows.rules, w.rules);
+    }
+    harness.get_by_label(TO_GROUND_OFF).click_accesskit();
+    harness.run();
+    let (given, row, version, text) = state(&mut harness);
+    assert_eq!(given, ToGround::Given(false));
+    assert_eq!(row, "5 m");
+    assert_eq!(version, 2);
+    assert!(text.contains("to_ground = false\n"), "{text}");
+    // Back to the terrain's classes: nothing written, version 1.
+    harness
+        .get_by_label(&to_ground_auto_label(false))
+        .click_accesskit();
+    harness.run();
+    let (given, _, version, text) = state(&mut harness);
+    assert_eq!(given, ToGround::ByTerrain);
+    assert_eq!(version, 1);
+    assert!(!text.contains("to_ground"), "{text}");
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -730,7 +786,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: ohl_clearance::rules::ToGround::ByTerrain,
             calculation: None,
         });
     }

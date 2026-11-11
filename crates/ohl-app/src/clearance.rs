@@ -491,6 +491,16 @@ pub fn run(input: &Input) -> Result<Report, String> {
         .iter()
         .map(|r| r.point_classes(|role| input.scheme.codes_with_role(role)))
         .collect();
+    // "Down to the ground" by the terrain's classes (owner, 2026-11-11):
+    // the rules that do not give it take it for this run when all their
+    // classes are classes the terrain surface is built from; said.
+    let mut resolved = rules.clone();
+    let by_default = ohl_clearance::rules::default_to_ground(
+        &mut resolved,
+        &point_classes,
+        &input.scheme.codes_with_role("ground"),
+    );
+    let rules = &resolved;
     // The LiDAR points of the point rules' classes, read once from the
     // point cloud in a corridor around the spans (every position checked
     // against them).
@@ -789,6 +799,7 @@ pub fn run(input: &Input) -> Result<Report, String> {
         }
     }
     report.notes.extend(skipped.into_iter().map(|(_, t)| t));
+    report.notes.extend(by_default);
     // Vertical point rules that cannot see a wire beside a tall object
     // (2026-11-11), once per rule.
     let point_rules: Vec<(&Rule, Vec<u8>)> = rules.iter().zip(point_classes).collect();

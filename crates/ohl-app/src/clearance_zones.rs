@@ -211,7 +211,7 @@ pub fn first_rule() -> ZoneRule {
         wires: ohl_clearance::Wires::Both,
         width: None,
         screen: false,
-        to_ground: false,
+        to_ground: ohl_clearance::rules::ToGround::ByTerrain,
         calculation: None,
     }
 }
@@ -504,6 +504,10 @@ impl ZoneWindow {
         let read = Arc::new(ohl_pointcloud::ReadProgress::default());
         let reading = read.clone();
         let points = cloud.as_ref().map_or(0, |_| rule_points(model, &rules));
+        // "Down to the ground" by the terrain's classes, for this run (the
+        // window's rows stay as they are): what was taken is said.
+        let mut rules = rules;
+        let by_default = zone::default_to_ground(&mut rules, zone.measure, &terrain_classes(model));
         self.stamp.started(model.revision());
         self.rules_hash.0 = Some(self.settings_hash());
         #[cfg(test)]
@@ -532,6 +536,7 @@ impl ZoneWindow {
             )
             .map(|mut rep| {
                 rep.zone.notes.splice(0..0, local.notes());
+                rep.zone.notes.extend(by_default);
                 rep
             });
             local.finish(LOCAL.1, started.elapsed());
@@ -1101,6 +1106,9 @@ impl ZoneWindow {
         let groups = crate::case_groups::groups(model);
         let classes = cloud_classes(model, &self.rules);
         let zone_width = self.zone.width;
+        // The classes the terrain surface is built from: what a rule's
+        // "down to the ground" follows when it is not given.
+        let terrain = terrain_classes(model);
         let preview_voltages = voltages.clone();
         let t = check_ui::RuleTable::new(self.title(), &mut self.rules, &voltages)
             .add(
@@ -1179,10 +1187,7 @@ impl ZoneWindow {
                             ui.end_row();
                             if !r.classes.is_empty() && !r.screen {
                                 ui.label("Points");
-                                changed |= ui
-                                    .checkbox(&mut r.to_ground, TO_GROUND_LABEL)
-                                    .on_hover_text(TO_GROUND_HELP)
-                                    .changed();
+                                changed |= to_ground_ui(ui, r, &terrain);
                                 ui.end_row();
                             }
                         }
@@ -1737,22 +1742,76 @@ fn cloud_classes(model: &Model, rules: &[ZoneRule]) -> Vec<(u8, String)> {
         .collect()
 }
 
-/// The tick of a vertical rule's "down to the ground"
-/// ([`ZoneRule::to_ground`]).
+/// The classes the terrain surface is built from: those with the ground
+/// role in the project's class scheme (what the LiDAR ground and the
+/// surfaces made from point clouds take) — none: no such class known.
+pub fn terrain_classes(model: &Model) -> Vec<u8> {
+    model.scheme.codes_with_role("ground")
+}
+
+/// The choice of a vertical rule's "down to the ground"
+/// ([`ZoneRule::to_ground`]): its name before the three states.
 pub const TO_GROUND_LABEL: &str = "down to the ground";
 
-/// What the tick does to the results, said on hover (every setting says
+/// Its state "not given": by the classes the terrain surface is built
+/// from (the class scheme's ground role).
+pub const TO_GROUND_AUTO: &str = "by the terrain's classes";
+
+/// Its state "on" (given in the rule).
+pub const TO_GROUND_ON: &str = "always";
+
+/// Its state "off" (given in the rule).
+pub const TO_GROUND_OFF: &str = "never";
+
+/// The label of the state "not given", with what it comes to now.
+pub fn to_ground_auto_label(on: bool) -> String {
+    format!("{TO_GROUND_AUTO} (now: {})", if on { "on" } else { "off" })
+}
+
+/// What the choice does to the results, said on hover (every setting says
 /// its effect).
-pub const TO_GROUND_HELP: &str = "Each point of the rule's classes stands for the whole height \
-     from the ground up to it (a building, a mast): a wire within the zone's width of the \
-     point in plan, at or below the point's height, is inside the object — clearance 0, a \
-     finding. Above the point the clearance is measured as without the tick.\n\nEffect: more \
-     findings, never fewer — a wire passing beside a tall object below its top is found. \
-     Not ticked (the default), the vertical measure looks only above and below each point: \
-     such a wire is missed unless the classes are also checked radially, and the results \
-     say so. Not for vegetation under the wires or for crossing lines: every point above a \
-     wire then counts as a finding.\n\nTime: unchanged (the same points and wires are \
-     compared).";
+pub const TO_GROUND_HELP: &str = "On: each point of the rule's classes stands for the whole \
+     height from the ground up to it (a building, a mast, the ground itself): a wire within \
+     the zone's width of the point in plan, at or below the point's height, is inside it — \
+     clearance 0, a finding. Above the point the clearance is measured as without it.\n\nBy \
+     the terrain's classes (the default, nothing written in the rule file): on when every \
+     class of the rule is a class the terrain surface is built from (the class scheme's \
+     ground role), else off — a rule with only some such classes stays off and the results \
+     say which, so that it can be split. Always / never: as chosen, whatever the classes \
+     (written in the rule file).\n\nEffect: on gives more findings, never fewer — a wire \
+     passing beside something tall below its top is found; over points below the wire \
+     nothing changes. Off, the vertical measure looks only above and below each point: such \
+     a wire is missed unless the classes are also checked radially, and the results say so \
+     (not on the safe side). Not for vegetation under the wires or for crossing lines: \
+     every point above a wire then counts as a finding.\n\nTime: unchanged (the same points \
+     and wires are compared).";
+
+/// The three states of a vertical rule's "down to the ground", with what
+/// "by the terrain's classes" comes to now (`terrain`: the classes the
+/// terrain surface is built from).
+fn to_ground_ui(ui: &mut egui::Ui, r: &mut ZoneRule, terrain: &[u8]) -> bool {
+    use ohl_clearance::rules::ToGround;
+    let now = ohl_clearance::rules::to_ground_by_terrain(&r.name, &r.classes, terrain).0;
+    // (A row resolved for a run is "not given" here.)
+    let mut state = match r.to_ground {
+        ToGround::Taken => ToGround::ByTerrain,
+        s => s,
+    };
+    let before = state;
+    ui.horizontal(|ui| {
+        ui.label(TO_GROUND_LABEL).on_hover_text(TO_GROUND_HELP);
+        for (value, label) in [
+            (ToGround::ByTerrain, to_ground_auto_label(now)),
+            (ToGround::Given(true), TO_GROUND_ON.to_owned()),
+            (ToGround::Given(false), TO_GROUND_OFF.to_owned()),
+        ] {
+            ui.radio_value(&mut state, value, label)
+                .on_hover_text(TO_GROUND_HELP);
+        }
+    });
+    r.to_ground = state;
+    state != before
+}
 
 /// A clearance window's rule as a row of the shared rule table.
 impl check_ui::RuleRow for ZoneRule {
@@ -1795,10 +1854,15 @@ impl check_ui::RuleRow for ZoneRule {
             cases: crate::rule_table::cases_words(&self.cases),
             distance: if self.screen {
                 format!("screen, band {distance}")
-            } else if self.to_ground && !self.classes.is_empty() {
-                format!("{distance}, down to the ground")
-            } else {
+            } else if self.classes.is_empty() {
                 distance
+            } else {
+                use ohl_clearance::rules::ToGround;
+                match self.to_ground {
+                    ToGround::Given(true) => format!("{distance}, down to the ground"),
+                    ToGround::Taken => format!("{distance}, down to the ground (by default)"),
+                    ToGround::Given(false) | ToGround::ByTerrain => distance,
+                }
             },
             wires: match self.wires {
                 Wires::Both => "sections + jumpers",

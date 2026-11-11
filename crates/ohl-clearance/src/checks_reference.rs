@@ -108,7 +108,7 @@ impl OldPointCheck {
                 // depth, to the wire's lowest (highest) in the slice.
                 // Measured vertically on the sloping piece (2026-10-26).
                 let off = wire.vertical_allowance(a, b);
-                let gap = wire.vertical_gap(q, z, a, b, self.rule.to_ground)
+                let gap = wire.vertical_gap(q, z, a, b, self.rule.to_ground.on())
                     - slice_rise(a, b, self.rule.vertical_depth)
                     - off;
                 let hit = Hit {
@@ -332,7 +332,7 @@ mod tests {
                 band,
                 depth,
             );
-            assert!(r.to_ground);
+            assert!(r.to_ground.on());
             let plain = rule("target = \"points\"\nclasses = [3, 4, 5]", band, depth);
             for set in [
                 WireSet::new(wires.clone(), 25.0),

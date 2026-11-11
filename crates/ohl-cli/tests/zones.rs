@@ -156,6 +156,57 @@ fn zones_by_a_rule_file_with_its_check() {
         "{stdout}"
     );
     assert!(stdout.contains("reading the points:"), "{stdout}");
+    // "Down to the ground" by the terrain's classes (2026-11-11). The
+    // trees' class is not one the terrain surface is built from: not
+    // taken, and the vertical rule alone is said not on the safe side.
+    assert!(!stdout.contains("taken by default"), "{stdout}");
+    assert!(
+        stdout.contains("NOT ON THE SAFE SIDE: \"Trees\": the vertical measure"),
+        "{stdout}"
+    );
+    // A rule on the ground class (ASPRS 2): taken by default, said, and
+    // no longer "not on the safe side"; with the trees' class beside it:
+    // left off, said with both sides; switched off in the rule: nothing
+    // taken, nothing said of a default.
+    let with = |classes: &str, extra: &str| {
+        let file = s.dir.join("default.ohlr");
+        let rule_text = RULES.replace(
+            "classes = [5]\n",
+            &format!("classes = [{classes}]\n{extra}"),
+        );
+        std::fs::write(&file, rule_text).unwrap();
+        let out = ohl(&[
+            "zones",
+            &text(&line),
+            "--rules",
+            &text(&file),
+            "--weather",
+            &text(&weather),
+            "--cloud",
+            &s.cloud,
+            "--terrain",
+            &text(&survey),
+        ]);
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let said = with("2", "");
+    assert!(
+        said.contains(
+            "note: \"Trees\": \"down to the ground\" taken by default: its classes are those \
+             the terrain surface is built from (class 2)"
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("NOT ON THE SAFE SIDE: \"Trees\""), "{said}");
+    let said = with("2, 5", "");
+    assert!(
+        said.contains("not taken by default") && said.contains("(class 2 are, class 5 are not)"),
+        "{said}"
+    );
+    assert!(said.contains("NOT ON THE SAFE SIDE: \"Trees\""), "{said}");
+    let said = with("2", "to_ground = false\n");
+    assert!(!said.contains("by default"), "{said}");
+    assert!(said.contains("NOT ON THE SAFE SIDE: \"Trees\""), "{said}");
     // A route chosen: only its sections; an unknown one refused.
     let routed = |route: &str| {
         ohl(&[

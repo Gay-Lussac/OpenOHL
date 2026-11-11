@@ -72,9 +72,11 @@
 //!   the ground: default 0, straight below the wire);
 //!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
 //!   depth, the wire taken at its lowest over each slice.
-//! - `to_ground = true` (2026-11-11, optional, default false; point rules
+//! - `to_ground = true` / `false` (2026-11-11, optional; point rules
 //!   with a vertical requirement; file version 2, written only when a rule
-//!   has it): **down to the ground** — each point stands for the whole
+//!   gives it; **not given**: on when all the rule's classes are classes
+//!   the terrain surface is built from, the class scheme's ground role —
+//!   [`ToGround`], [`default_to_ground`]): **down to the ground** — each point stands for the whole
 //!   height from the ground up to it (a building, a mast), so the zone is
 //!   the band in plan from the ground to the point plus the vertical
 //!   distance: a wire within the band at or below the point's height has
@@ -593,11 +595,127 @@ pub struct Rule {
     /// the point's height is inside the object — clearance 0 — instead of
     /// being measured upwards from the point to the wire's underside.
     /// The ground's height is not needed: a wire is above the ground.
-    /// Off (default): the separation above or below the point.
-    pub to_ground: bool,
+    /// Off: the separation above or below the point. Given, or not
+    /// ([`ToGround`]): then taken by default for the classes the terrain
+    /// surface is built from ([`default_to_ground`]).
+    pub to_ground: ToGround,
     /// The distances' increase with the altitude (none: as given at any
     /// height).
     pub altitude: Option<Altitude>,
+}
+
+/// A rule's "down to the ground" ([`Rule::to_ground`]): given in the rule
+/// file, or not — and then, in a run, taken by default or not (owner,
+/// 2026-11-11: "use the same as for the TIN; if none then mention it").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToGround {
+    /// Not given: by the terrain's classes — on in a run when all the
+    /// rule's classes are classes the terrain surface is built from
+    /// ([`default_to_ground`] then makes it [`ToGround::Taken`]); off
+    /// until then.
+    #[default]
+    ByTerrain,
+    /// Given in the rule (`to_ground = true` / `false`): it always wins.
+    Given(bool),
+    /// Not given, and taken by default in this run: on. Never written to
+    /// a file (a file keeps "not given").
+    Taken,
+}
+
+impl ToGround {
+    /// Whether the checks take each point down to the ground.
+    pub fn on(self) -> bool {
+        matches!(self, Self::Given(true) | Self::Taken)
+    }
+
+    /// The value the rule itself gives (none: not given).
+    pub fn given(self) -> Option<bool> {
+        match self {
+            Self::Given(v) => Some(v),
+            Self::ByTerrain | Self::Taken => None,
+        }
+    }
+}
+
+/// What a run says when no rule could take "down to the ground" by
+/// default because the terrain's classes are not known.
+pub const NO_TERRAIN_CLASSES_NOTE: &str = "no rule took \"down to the ground\" by default: no \
+     class the terrain surface is built from is known in this run (the class scheme has no \
+     class with the ground role)";
+
+/// Whether a rule that does not give `to_ground` takes it by default
+/// (`Some(true)`), and what the results say of it: a rule on `classes`
+/// that could take it at all (`eligible`: a point rule with a vertical
+/// requirement, not a screen), with `terrain` the classes the terrain
+/// surface is built from.
+/// - all its classes among them: taken, said;
+/// - some of them: **not** taken (a rule is not split silently), said
+///   with the classes on either side;
+/// - none of them, or no terrain classes known: not taken, no note here
+///   ([`NO_TERRAIN_CLASSES_NOTE`] is the run's to say, once).
+pub fn to_ground_by_terrain(name: &str, classes: &[u8], terrain: &[u8]) -> (bool, Option<String>) {
+    let list = |v: &[u8]| {
+        format!(
+            "class{} {}",
+            if v.len() == 1 { "" } else { "es" },
+            v.iter().map(u8::to_string).collect::<Vec<_>>().join(", ")
+        )
+    };
+    let (inside, outside): (Vec<u8>, Vec<u8>) = classes.iter().partition(|c| terrain.contains(c));
+    if classes.is_empty() || inside.is_empty() {
+        return (false, None);
+    }
+    if outside.is_empty() {
+        return (
+            true,
+            Some(format!(
+                "\"{name}\": \"down to the ground\" taken by default: its classes are those \
+                 the terrain surface is built from ({})",
+                list(&inside)
+            )),
+        );
+    }
+    (
+        false,
+        Some(format!(
+            "\"{name}\": \"down to the ground\" not taken by default: only some of its \
+             classes are those the terrain surface is built from ({} are, {} are not) — split \
+             the rule, or set to_ground in it",
+            list(&inside),
+            list(&outside)
+        )),
+    )
+}
+
+/// Gives every rule of `rules` (each with its point classes resolved)
+/// that does not say `to_ground` itself its default for this run
+/// ([`to_ground_by_terrain`]; `terrain`: the classes the terrain surface
+/// is built from), and returns what the results say: one note per rule
+/// taken or left because its classes are mixed, or
+/// [`NO_TERRAIN_CLASSES_NOTE`] when no terrain class is known and a rule
+/// could have taken it. An explicit value is never changed.
+pub fn default_to_ground(rules: &mut [Rule], classes: &[Vec<u8>], terrain: &[u8]) -> Vec<String> {
+    let mut notes: Vec<String> = Vec::new();
+    let mut open = false;
+    for (r, classes) in rules.iter_mut().zip(classes) {
+        let eligible = r.vertical.is_some()
+            && !r.screen
+            && matches!(r.target, Target::Points { .. })
+            && r.to_ground == ToGround::ByTerrain;
+        if !eligible {
+            continue;
+        }
+        open = true;
+        let (taken, note) = to_ground_by_terrain(&r.name, classes, terrain);
+        if taken {
+            r.to_ground = ToGround::Taken;
+        }
+        notes.extend(note.filter(|n| !notes.contains(n)));
+    }
+    if open && terrain.is_empty() {
+        notes.push(NO_TERRAIN_CLASSES_NOTE.to_owned());
+    }
+    notes
 }
 
 /// What the results say of vertical point rules that can miss a wire
@@ -617,7 +735,7 @@ pub fn beside_notes(rules: &[(&Rule, Vec<u8>)]) -> Vec<String> {
     }
     let mut notes: Vec<String> = Vec::new();
     for (r, classes) in rules {
-        if r.vertical.is_none() || r.screen || r.to_ground {
+        if r.vertical.is_none() || r.screen || r.to_ground.on() {
             continue;
         }
         let open: Vec<String> = classes
@@ -870,7 +988,7 @@ struct RawRule {
     #[serde(default)]
     screen: bool,
     #[serde(default)]
-    to_ground: bool,
+    to_ground: Option<bool>,
     #[serde(default)]
     search_margin: Option<Length>,
     #[serde(default)]
@@ -1722,15 +1840,15 @@ impl RuleSet {
                         "screen: a vertical requirement (the band in plan) and a point target needed",
                     );
                 }
-                if r.to_ground
-                    && (vertical.is_none() || !matches!(target, Target::Points { .. }))
+                let to_ground = r.to_ground == Some(true);
+                if to_ground && (vertical.is_none() || !matches!(target, Target::Points { .. }))
                 {
                     return bad(
                         "to_ground: a vertical requirement and a point target needed (each \
                          point stands for the height from the ground up to it)",
                     );
                 }
-                if r.to_ground && r.screen {
+                if to_ground && r.screen {
                     return bad(
                         "to_ground with screen: a screen reports every point within its band \
                          at any height already",
@@ -1767,7 +1885,7 @@ impl RuleSet {
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
                     surface,
                     screen: r.screen,
-                    to_ground: r.to_ground,
+                    to_ground: r.to_ground.map_or(ToGround::ByTerrain, ToGround::Given),
                     altitude,
                 })
             })
@@ -1909,7 +2027,7 @@ impl RuleSet {
                 vertical_depth: 0.0,
                 surface: None,
                 screen: false,
-                to_ground: false,
+                to_ground: ToGround::ByTerrain,
                 altitude: None,
             }],
             wind: None,
@@ -1949,7 +2067,7 @@ impl RuleSet {
     /// a catenary constant or a tension, else 1 — so a file without them
     /// is still read by an older program.
     pub fn written_version(&self) -> u32 {
-        if self.rules.iter().any(|r| r.to_ground)
+        if self.rules.iter().any(|r| r.to_ground.given().is_some())
             || self.tension_rules.iter().any(|r| r.since_version_2())
         {
             RULE_FILE_VERSION
@@ -2152,8 +2270,10 @@ impl Rule {
         if self.screen {
             t.push_str("screen = true\n");
         }
-        if self.to_ground {
-            t.push_str("to_ground = true\n");
+        // Only what the rule itself gives: "not given" stays not given
+        // (also when a run took it by default).
+        if let Some(v) = self.to_ground.given() {
+            let _ = writeln!(t, "to_ground = {v}");
         }
         if self.vertical_band != default_band(&self.target) {
             let _ = writeln!(t, "vertical_band = {}", length(self.vertical_band));
@@ -2226,19 +2346,109 @@ mod to_ground_tests {
             "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n{POINTS}vertical = 5.0\n"
         ))
         .unwrap();
-        assert!(!old.rules[0].to_ground);
+        assert_eq!(old.rules[0].to_ground, ToGround::ByTerrain);
+        assert!(!old.rules[0].to_ground.on());
         assert_eq!(old.written_version(), 1);
         let text = old.to_toml();
         assert!(text.contains("version = 1\n") && !text.contains("to_ground"));
         assert_eq!(RuleSet::parse(&text).unwrap(), old);
 
         let mut new = old.clone();
-        new.rules[0].to_ground = true;
+        new.rules[0].to_ground = ToGround::Given(true);
         let text = new.to_toml();
         assert!(text.contains("version = 2\n") && text.contains("to_ground = true\n"));
         assert_eq!(RuleSet::parse(&text).unwrap(), new);
         let e = RuleSet::parse(&text.replace("version = 2", "version = 3")).unwrap_err();
         assert!(e.contains("newer than supported"), "{e}");
+    }
+
+    /// By the terrain's classes (owner, 2026-11-11): a rule that does not
+    /// give `to_ground` takes it when all its classes are classes the
+    /// terrain surface is built from, said; with only some of them it is
+    /// left off and says which are and which are not; an explicit value
+    /// always wins; with no terrain class known the run says so and the
+    /// "not on the safe side" note stays. A file never gets the default
+    /// written into it.
+    #[test]
+    fn to_ground_by_default_for_the_terrains_classes() {
+        let rule = |classes: &str, extra: &str| {
+            format!(
+                "[[rule]]\nname = \"R{classes}\"\ntarget = \"points\"\nclasses = [{classes}]\n\
+                 vertical = 5.0\n{extra}\n"
+            )
+        };
+        let text = format!(
+            "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n{}{}{}{}{}\
+             [[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 7.0\n",
+            rule("2", ""),
+            rule("2, 8", ""),
+            rule("2, 6", ""),
+            rule("8", "to_ground = false"),
+            rule("6", ""),
+        );
+        let file = RuleSet::parse(&text).unwrap();
+        let classes: Vec<Vec<u8>> = file
+            .rules
+            .iter()
+            .map(|r| r.point_classes(|_| Vec::new()))
+            .collect();
+        let mut run = file.clone();
+        let notes = default_to_ground(&mut run.rules, &classes, &[2, 8]);
+        let states: Vec<ToGround> = run.rules.iter().map(|r| r.to_ground).collect();
+        assert_eq!(
+            states,
+            [
+                ToGround::Taken,
+                ToGround::Taken,
+                ToGround::ByTerrain,
+                ToGround::Given(false),
+                ToGround::ByTerrain,
+                ToGround::ByTerrain,
+            ]
+        );
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert_eq!(
+            notes[0],
+            "\"R2\": \"down to the ground\" taken by default: its classes are those the terrain \
+             surface is built from (class 2)"
+        );
+        assert!(notes[1].contains("(classes 2, 8)"), "{}", notes[1]);
+        assert_eq!(
+            notes[2],
+            "\"R2, 6\": \"down to the ground\" not taken by default: only some of its classes \
+             are those the terrain surface is built from (class 2 are, class 6 are not) — split \
+             the rule, or set to_ground in it"
+        );
+        // The "not on the safe side" note: no longer for the rules that
+        // took it, still for the others without it.
+        let with: Vec<(&Rule, Vec<u8>)> = run.rules.iter().zip(classes.clone()).collect();
+        let beside = beside_notes(&with);
+        let named = |n: &str| beside.iter().any(|b| b.contains(&format!("\"{n}\"")));
+        assert!(!named("R2") && !named("R2, 8"), "{beside:?}");
+        assert!(named("R2, 6") && named("R8") && named("R6"), "{beside:?}");
+        // The run's default is not written: the file as it was, version 1
+        // but for its explicit value.
+        assert_eq!(RuleSet::parse(&run.to_toml()).unwrap(), file);
+        let mut plain = RuleSet::parse(&text.replace("to_ground = false\n", "")).unwrap();
+        assert_eq!(plain.written_version(), 1);
+        default_to_ground(&mut plain.rules, &classes, &[2, 8]);
+        assert!(plain.rules[0].to_ground.on());
+        assert_eq!(plain.written_version(), 1);
+        assert!(!plain.to_toml().contains("to_ground"));
+        // An explicit false is kept in the file, at version 2.
+        assert_eq!(file.written_version(), 2);
+        assert!(file.to_toml().contains("to_ground = false\n"));
+        // No terrain class known: nothing taken, said once.
+        let mut none = file.clone();
+        let notes = default_to_ground(&mut none.rules, &classes, &[]);
+        assert_eq!(notes, [NO_TERRAIN_CLASSES_NOTE]);
+        assert!(none.rules.iter().all(|r| !r.to_ground.on()));
+        let with: Vec<(&Rule, Vec<u8>)> = none.rules.iter().zip(classes.clone()).collect();
+        assert_eq!(beside_notes(&with).len(), 5);
+        // Only explicit rules (and the ground): nothing to say.
+        let mut explicit = RuleSet::parse(&rule("2", "to_ground = true")).unwrap();
+        assert!(default_to_ground(&mut explicit.rules, &[vec![2]], &[]).is_empty());
+        assert_eq!(explicit.rules[0].to_ground, ToGround::Given(true));
     }
 
     /// Only a point rule with a vertical requirement, and not a screen.

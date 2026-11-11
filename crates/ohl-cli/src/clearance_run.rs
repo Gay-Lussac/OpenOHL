@@ -415,6 +415,16 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
             Err(e) => println!("  note: rule \"{}\": surface {n} not read: {e}", r.name),
         }
     }
+    // "Down to the ground" by the terrain's classes (owner, 2026-11-11):
+    // the rules that do not give it take it when all their classes are
+    // classes the terrain surface is built from (--ground-role); said.
+    for n in ohl_clearance::rules::default_to_ground(
+        &mut rules,
+        &point_classes,
+        &scheme.codes_with_role(o.ground_role),
+    ) {
+        println!("  note: {n}");
+    }
     // Vertical point rules that cannot see a wire beside a tall object
     // (2026-11-11), once per rule.
     let point_rules: Vec<(&ohl_clearance::Rule, Vec<u8>)> =

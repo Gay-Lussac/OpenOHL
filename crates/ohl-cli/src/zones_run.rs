@@ -475,7 +475,12 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
             Some(ohl_clearance::rules::parse_method(m).map_err(|e| format!("--method {e}"))?);
     }
     z.search = check.search_distance;
-    let rules = imported.rules;
+    // "Down to the ground" by the terrain's classes (owner, 2026-11-11):
+    // the rules that do not give it take it when all their classes are
+    // classes the terrain surface is built from; said with the notes.
+    let mut rules = imported.rules;
+    let by_default =
+        zone::default_to_ground(&mut rules, measure, &scheme.codes_with_role("ground"));
 
     // The weather cases and the wind positions.
     let (weather, weather_from) = weather_cases(args, session.as_ref(), &libs)?;
@@ -574,6 +579,9 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         describe_check(&z, &wind, &check)
     );
     for n in condense_notes(&imported.notes) {
+        println!("  note: {n}");
+    }
+    for n in &by_default {
         println!("  note: {n}");
     }
     libs.print(&["cables", "structures", "insulators"]);

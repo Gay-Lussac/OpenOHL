@@ -95,7 +95,8 @@ rule without one of the three says so, once per rule, naming the classes
 left open (`rules::beside_notes`).
 
 The option **down to the ground** of a vertical rule (`to_ground = true`,
-`Rule::to_ground`; owner, 2026-11-11; default off) closes it: each point
+`Rule::to_ground`; owner, 2026-11-11; its default
+[below](#the-default-by-the-terrains-classes)) closes it: each point
 of the rule's classes stands for the whole height from the ground up to
 it. The zone to keep free is then the band in plan, from the ground up to
 the point's height plus the vertical distance \\( c \\):
@@ -120,8 +121,38 @@ as the band at every height (a point at the band's edge counts in full),
 and as standing from the ground to the point without a gap — a point on
 a crossing wire, a tree top overhanging a low wire or a bridge's deck
 makes everything below it a finding. It is meant for the classes of
-buildings and masts, not for vegetation; the default for each class is
-left to the user's rules (no class is given the option by the program).
+buildings and masts, not for vegetation.
+
+#### The default: by the terrain's classes
+
+A rule may say `to_ground = true` or `false`; an explicit value always
+wins. A rule that says **nothing** takes it by default "the same as for
+the TIN" (owner, 2026-11-11): on when **every** class of the rule is a
+class the terrain surface is built from — the classes with the **ground
+role** in the class scheme in use (the set the program builds the LiDAR
+ground and the surfaces made from point clouds from; `--ground-role` for
+`ohl line`). The program holds no list of its own.
+
+- **All its classes are terrain classes**: on, and the results say so
+  once per rule ("down to the ground taken by default: its classes are
+  those the terrain surface is built from"). For these points nothing
+  stands between them and the ground, so a wire at or below one of them
+  is at or under the ground: clearance 0. Over points below the wire
+  the result is the same as without it (test
+  `down_to_the_ground_changes_nothing_over_ground_points`).
+- **Only some are**: the rule is **not** split silently; it stays off
+  and the results name the classes on either side, so that the user can
+  split it. The "NOT ON THE SAFE SIDE" note above stays for it.
+- **No terrain class is known** in the run (the class scheme has no
+  class with the ground role): no rule takes it, the results say exactly
+  that, and the "NOT ON THE SAFE SIDE" note stays.
+
+**Conservative direction**: against the results before 2026-11-11 a rule
+on the terrain's classes can only gain findings (a wire lower than a
+ground point within its band), never lose one; the note "NOT ON THE SAFE
+SIDE" no longer appears for the rules that take it. The classes of
+buildings and masts are not terrain classes: for them the option is
+still the user's to set, and the note says so.
 
 Each rule gives the wires' voltage, its weather cases, the distance to
 keep (one, by voltage, or base + per kV) and its targets; each span's

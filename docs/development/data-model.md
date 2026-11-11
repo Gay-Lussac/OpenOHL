@@ -1269,20 +1269,35 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   there; `Rule::reach` / `reach_in_plan` take the highest wire point of
   the case (`top`). Written only when given: still version 1, older
   files read the same.
-  Since 2026-11-11 an optional `to_ground = true` (`Rule::to_ground`,
-  `ZoneRule::to_ground`; point rules with a vertical requirement, not a
-  screen): each point stands for the height from the ground up to it —
+  Since 2026-11-11 an optional `to_ground = true` / `false`
+  (`Rule::to_ground`, `ZoneRule::to_ground`: `rules::ToGround` —
+  `ByTerrain` not given, `Given(bool)`, and `Taken`, the state of a run
+  that took it by default, never written; `ToGround::on`, `given`;
+  point rules with a vertical requirement, not a screen). **Not given
+  (every older file too): by the terrain's classes** — on in a run when
+  all the rule's classes are classes the terrain surface is built from,
+  the class scheme's ground role (`ClassScheme::codes_with_role("ground")`
+  in the desktop and `ohl zones`, `--ground-role` in `ohl line`):
+  `rules::to_ground_by_terrain`, `rules::default_to_ground` (rule files:
+  the Clearances tab, `ohl line`), `zone::default_to_ground` and
+  `ZoneRule::down_to_ground` (the vertical window, `ohl zones`), their
+  notes ("… taken by default: …", "… not taken by default: only some of
+  its classes …", `rules::NO_TERRAIN_CLASSES_NOTE`) in the results'
+  notes. A copy of the rules is resolved for the run: the window's rows
+  and the file keep "not given". On: each point stands for the height from the ground up to it —
   a wire within the band at or below the point's height has the
   clearance 0 (`Wire::vertical_gap`, the bounds `Block::vertical_low`;
   on a swing arc `ArcVertical::above`, `ArcPointCheck`). File **version
-  2**, written only when a rule has it (`RuleSet::written_version`,
+  2**, written only when a rule gives it, `true` or `false` (`RuleSet::written_version`,
   `BEFORE_TO_GROUND_VERSION` 1; `RULE_FILE_VERSION` 2 read); files
   without it are written as version 1. `rules::beside_notes`: the note
   "NOT ON THE SAFE SIDE: …" of a vertical point rule without it, a
   radial distance or a screen for its classes — in `ZoneReport::notes`
   (`check_zones`), the Clearances tab's `Report::notes` and `ohl line`'s
-  output. A vertical window's row shows the tick (`clearance_zones::
-  TO_GROUND_LABEL`, `TO_GROUND_HELP`).
+  output. A vertical window's row shows the three states
+  (`clearance_zones::to_ground_ui`, `TO_GROUND_LABEL`, `TO_GROUND_AUTO`,
+  `TO_GROUND_ON`, `TO_GROUND_OFF`, `to_ground_auto_label`,
+  `TO_GROUND_HELP`; `clearance_zones::terrain_classes`).
 - `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
   2026-10-20 `arc` (bool, default false; written only when true, so a
   file without it is written as before and older programs read it) —

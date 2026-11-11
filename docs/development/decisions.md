@@ -10,6 +10,45 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**"Down to the ground" by default for the terrain's classes (owner, 2026-11-11)**
+
+On the open question which classes take `to_ground` by default, the
+owner: "use the same as for the TIN; if none then mention it."
+
+- **The set.** The classes the terrain surface is built from: those with
+  the **ground role** in the class scheme in use
+  (`ClassScheme::codes_with_role("ground")`, what the desktop's LiDAR
+  ground and `ohl zones` build the surface from; `--ground-role` in
+  `ohl line`). No list of the program's own. In the ASPRS scheme
+  shipped these are the classes it gives that role, today 2, 9 and 11.
+- **Three states.** `to_ground` given `true`, given `false`, or not
+  given. An explicit value always wins. Not given: on when **all** the
+  rule's classes are terrain classes.
+- **Mixed classes are not split silently**: the rule stays off and the
+  results name the classes on either side, so that the user can split
+  it.
+- **Said in the results**, once per rule: taken by default and from
+  which classes; or, when the class scheme has no ground class, that no
+  rule took it by default. The "NOT ON THE SAFE SIDE" note of a vertical
+  point rule without it no longer appears for a rule that takes it, and
+  stays for every other.
+- **This changes existing results**, in the conservative direction
+  only: a vertical rule on terrain classes, in a file of any age, now
+  reports a wire at or below one of its points within the band at 0 m
+  — more findings, never fewer. Over points below the wires nothing
+  changes (tested on a normal span; on the synthetic example with its
+  LiDAR an invented 7 m rule on the ground classes gives the same
+  output with the default as with `to_ground = false`).
+- **Files.** A default taken in a run is never written: a file without
+  the key stays without it, at version 1; version 2 is raised only by a
+  given `to_ground` (true or false) or the tension rule limits.
+- **Where.** The vertical clearances window (three states, with what
+  "by the terrain's classes" comes to now), `ohl zones`, the Clearances
+  window and `ohl line` (with it the command line's thermal clearance
+  limit, which reads its rules the same way). Not yet: the desktop's
+  thermal limit and the other users of rule files, which read
+  `to_ground` as given (off when not given).
+
 **Gap-type conductors: the mechanism; the source is missing (roadmap O22 item 7)**
 
 - **What.** `bimetallic_behavior = "gap"` (wire library version **3**,

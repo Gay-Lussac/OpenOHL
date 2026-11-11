@@ -241,7 +241,7 @@ fn closing_a_clearance_window_takes_its_marks_off() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: ohl_clearance::rules::ToGround::ByTerrain,
             calculation: None,
         });
     }

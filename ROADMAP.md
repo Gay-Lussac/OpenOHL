@@ -804,11 +804,14 @@ From a review on 2026-11-10.
    plus the vertical distance), the default for the classes it suits to
    be decided.
    *Status (2026-11-11), built, in active development (not approved
-   yet):* the rule option `to_ground` (off by default for every class;
-   the Vertical clearances window's tick, `ohl zones`, `ohl line`); a
-   vertical point rule without it, a radial rule or a screen for its
-   classes says "NOT ON THE SAFE SIDE" in its results. Open: which
-   classes should have it by default (none has).
+   yet):* the rule option `to_ground` (the Vertical clearances window's
+   choice, `ohl zones`, `ohl line`); a vertical point rule without it, a
+   radial rule or a screen for its classes says "NOT ON THE SAFE SIDE"
+   in its results. Its default (owner, 2026-11-11: "use the same as for
+   the TIN; if none then mention it"): a rule that does not give it
+   takes it when all its classes are classes the terrain surface is
+   built from (the class scheme's ground role), said in the results;
+   mixed classes or no terrain class known: not taken, said.
 2. **A horizontal-only measure between wires** (the distance in plan,
    whatever the height difference), beside the radial and the vertical.
 3. **A printable clearance report**: per finding a cross-section at its

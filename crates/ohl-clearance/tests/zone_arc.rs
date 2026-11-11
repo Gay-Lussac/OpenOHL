@@ -47,7 +47,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: ohl_clearance::rules::ToGround::ByTerrain,
             calculation: None,
         },
         ZoneRule {
@@ -62,7 +62,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
-            to_ground: false,
+            to_ground: ohl_clearance::rules::ToGround::ByTerrain,
             calculation: None,
         },
     ]
@@ -235,7 +235,7 @@ fn down_to_the_ground_on_the_swing_arc() {
     };
     let found = |to_ground: bool| {
         let mut rules = rules(3.0);
-        rules[1].to_ground = to_ground;
+        rules[1].to_ground = ohl_clearance::rules::ToGround::Given(to_ground);
         let r = run_rules(Measure::Vertical, &arc, &[top], rules);
         r.zone
             .findings
